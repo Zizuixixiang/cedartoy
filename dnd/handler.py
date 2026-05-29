@@ -100,10 +100,6 @@ TOOLS = [
                     "description": "1-10位字母数字 ID。",
                     "pattern": "^[a-zA-Z0-9]{1,10}$",
                 },
-                "full": {
-                    "type": "boolean",
-                    "description": "是否返回完整英文原文描述。默认 false 返回中文摘要。",
-                },
             },
             "required": ["player_id"],
             "additionalProperties": False,
@@ -282,7 +278,6 @@ def dnd_answer_batch(arguments):
 
 def dnd_get_result(arguments):
     player_id = _require_player_id(arguments)
-    full = bool(arguments.get("full", False))
     now = time.time()
     with _connect() as conn:
         _init_db(conn)
@@ -297,7 +292,7 @@ def dnd_get_result(arguments):
     detail = json.loads(detail_json or "{}")
     mode = detail.get("mode") or "unknown"
     label = datetime.fromtimestamp(completed_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    return format_stored_result(mode, result_value, detail, label, full=full)
+    return format_stored_result(mode, result_value, detail, label)
 
 
 def _finish_test(conn, player_id, mode, questions, answers, now):

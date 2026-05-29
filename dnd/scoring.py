@@ -50,7 +50,6 @@ def score_answers(questions, answers):
 def format_result(mode, questions, answers):
     result = score_answers(questions, answers)
     desc = ALIGNMENT_DESCRIPTIONS[result["alignment"]]
-    ft_len = len(desc["full_text"])
     return "\n".join(
         [
             f"【DND阵营测试完成 · {mode}模式】",
@@ -65,16 +64,14 @@ def format_result(mode, questions, answers):
             _raw_line(result["raw_buckets"]),
             "",
             "━━━ 阵营描述 ━━━",
-            desc["summary"],
-            "",
-            f"完整阵营描述约{ft_len}字，可用 dnd_get_result 传入 full=true 查看原文",
+            desc["text"],
             "",
             "（结果已存档 48 小时，可用 dnd_get_result 凭 player_id 查询。）",
         ]
     )
 
 
-def format_stored_result(mode, result_value, detail, completed_at_label, full=False):
+def format_stored_result(mode, result_value, detail, completed_at_label):
     desc = ALIGNMENT_DESCRIPTIONS[result_value]
     scores = detail.get("scores") or {}
     bands = detail.get("bands") or {}
@@ -92,13 +89,7 @@ def format_stored_result(mode, result_value, detail, completed_at_label, full=Fa
                 f"善良 ←→ 邪恶：{scores.get('good_evil', 0):.1f}/100（{bands.get('good_evil', 'N/A')}）",
             ]
         )
-    if full:
-        lines.extend(["", "━━━ 阵营描述（完整原文） ━━━", desc["full_text"]])
-    else:
-        ft_len = len(desc["full_text"])
-        lines.extend(["", "━━━ 阵营描述 ━━━", desc["summary"]])
-        lines.append("")
-        lines.append(f"完整阵营描述约{ft_len}字，可用 dnd_get_result 传入 full=true 查看原文")
+    lines.extend(["", "━━━ 阵营描述 ━━━", desc["text"]])
     return "\n".join(lines)
 
 
