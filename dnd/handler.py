@@ -37,7 +37,7 @@ TOOLS = [
                 "mode": {
                     "type": "string",
                     "enum": list(VALID_MODES),
-                    "description": "short 18题逐题；full 36题逐题；short_fast 18题一次性提交；full_fast 36题每批18题。",
+                    "description": "full 36题逐题；full_fast 36题一次性提交。",
                 },
             },
             "required": ["player_id", "mode"],
@@ -158,7 +158,7 @@ def dnd_start(arguments):
     player_id = _require_player_id(arguments)
     mode = arguments.get("mode")
     if mode not in VALID_MODES:
-        raise JsonRpcError(-32602, "mode 须为 short、full、short_fast、full_fast 之一。")
+        raise JsonRpcError(-32602, "mode 须为 full 或 full_fast。")
 
     questions = get_questions(mode)
     total = len(questions)
@@ -325,7 +325,15 @@ def _finish_test(conn, player_id, mode, questions, answers, now):
     return format_result(mode, questions, answers)
 
 
+def _strip_scoring(questions):
+    return [
+        {**q, "options": [{"value": o["value"], "text": o["text"]} for o in q["options"]]}
+        for q in questions
+    ]
+
+
 def _format_question(mode, questions, index):
+    questions = _strip_scoring(questions)
     question = questions[index]
     total = len(questions)
     lines = [f"第{index + 1}题 / 共{total}题", question["text"], ""]
@@ -339,6 +347,7 @@ def _format_question(mode, questions, index):
 
 
 def _format_fast_batch(mode, questions, start_index, total):
+    questions = _strip_scoring(questions)
     remaining = total - start_index
     per_batch = fast_batch_size(mode)
     batch_size = min(per_batch, remaining)

@@ -59,10 +59,7 @@ _PLATFORM_TOOLS = [
     },
     {
         "name": "play",
-        "description": (
-            "执行游戏操作。先用list_games查看游戏列表，再用get_guide(game)获取该游戏的action说明，"
-            "然后传入对应参数执行。"
-        ),
+        "description": "执行游戏操作，参数详见 get_guide(game)",
         "inputSchema": {
             "type": "object",
             "properties": {

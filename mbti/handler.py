@@ -29,7 +29,7 @@ PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
 TOOLS = [
     {
         "name": "mbti_start",
-        "description": "开始或重置一次 MBTI 测试。",
+        "description": "开始或重置一次 MBTI 测试。（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -53,7 +53,7 @@ TOOLS = [
     },
     {
         "name": "mbti_answer",
-        "description": "提交当前题的 A 选项得分。5=完全偏向A，4=比较偏向A，3=略偏向A，2=略偏向B，1=比较偏向B，0=完全偏向B；A+B=5，因此只需提交A的0-5整数分。",
+        "description": "提交当前题的 A 选项得分。5=完全偏向A，4=比较偏向A，3=略偏向A，2=略偏向B，1=比较偏向B，0=完全偏向B；A+B=5，因此只需提交A的0-5整数分。（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -78,6 +78,7 @@ TOOLS = [
         "description": (
             "快速模式专用：一次提交本批全部答案（short_fast 须一次提交 16 题；"
             "full_fast 每批最多 16 题，最后一批可能不足 16）。a_scores 长度须等于本批题数。"
+            "（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）"
         ),
         "inputSchema": {
             "type": "object",
@@ -108,7 +109,7 @@ TOOLS = [
     },
     {
         "name": "mbti_get_result",
-        "description": "查询该 player_id 最近一次已完成测试的结果（仅四字母类型存档，文案现场拼装；完成超过48小时自动删除）。",
+        "description": "查询该 player_id 最近一次已完成测试的结果（仅四字母类型存档，文案现场拼装；完成超过48小时自动删除）。（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）",
         "inputSchema": {
             "type": "object",
             "properties": {

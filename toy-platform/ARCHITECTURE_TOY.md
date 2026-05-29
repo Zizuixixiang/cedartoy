@@ -225,7 +225,7 @@ AI 内容扫描标记表。
 
 - `player_id`：1-10 位字母数字，联合主键的一部分。
 - `game`：`mbti` 或 `dnd`，联合主键的一部分。
-- `mode`：`short`、`full`、`short_fast`、`full_fast`。
+- `mode`：MBTI 为 `short`、`full`、`short_fast`、`full_fast`；DND 为 `full`、`full_fast`。
 - `current_question`：当前题序。
 - `answers`：JSON 字符串，保存分数数组。
 - `created_at` / `last_active`：Unix timestamp float。
@@ -538,7 +538,7 @@ MBTI 参数：
 DND 参数：
 
 - `player_id`：1-10 位字母数字。
-- `mode`：`short`、`full`、`short_fast`、`full_fast`。
+- `mode`：`full`（36题逐题）、`full_fast`（36题一次性提交）。
 - `answer`：逐题答案，1-4 整数。
 - `answers`：批量答案数组，快速模式使用。
 

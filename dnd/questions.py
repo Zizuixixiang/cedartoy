@@ -4,10 +4,10 @@ Each option keeps the original JavaScript scoring bucket:
 lx/nx/cx for law-neutral-chaos, xg/xn/xe for good-neutral-evil.
 """
 
-VALID_MODES = ("short", "full", "short_fast", "full_fast")
-MODE_QUESTION_TOTAL = {"short": 18, "short_fast": 18, "full": 36, "full_fast": 36}
-FAST_MODES = frozenset({"short_fast", "full_fast"})
-FAST_BATCH_SIZE_MAX = 18
+VALID_MODES = ("full", "full_fast")
+MODE_QUESTION_TOTAL = {"full": 36, "full_fast": 36}
+FAST_MODES = frozenset({"full_fast"})
+FAST_BATCH_SIZE_MAX = 36
 
 FULL_QUESTIONS = [{'id': 1,
   'text': 'Family elders are expressing disapproval of you to the rest of the family.  Do you:',
@@ -393,25 +393,17 @@ FULL_QUESTIONS = [{'id': 1,
                'points': 2}],
   'axis': 'law_chaos'}]
 
-SHORT_QUESTION_IDS = [1, 2, 3, 7, 8, 9, 13, 14, 15, 4, 5, 6, 10, 11, 12, 16, 17, 18]
-SHORT_QUESTIONS = [q for q in FULL_QUESTIONS if q["id"] in set(SHORT_QUESTION_IDS)]
-
-
 def is_fast_mode(mode: str) -> bool:
     return mode in FAST_MODES
 
 
 def fast_batch_size(mode: str) -> int:
-    if mode == "short_fast":
-        return 18
     if mode == "full_fast":
-        return 18
+        return 36
     raise ValueError("invalid fast mode")
 
 
 def get_questions(mode):
-    if mode in ("short", "short_fast"):
-        return SHORT_QUESTIONS
     if mode in ("full", "full_fast"):
         return FULL_QUESTIONS
     raise ValueError("invalid mode")
