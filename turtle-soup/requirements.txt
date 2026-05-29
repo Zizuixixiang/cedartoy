@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+aiosqlite
+python-jose[cryptography]
+passlib
+httpx
+apscheduler

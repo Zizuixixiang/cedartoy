@@ -1,0 +1,7 @@
+configs:
+  - name: openai-compatible
+    api_url: https://api.openai.com/v1
+    api_key: sk-...
+    model: gpt-4o-mini
+    enabled: 1
+    priority: 0

@@ -1,0 +1,200 @@
+import os
+from pathlib import Path
+from typing import Any, Iterable
+
+import aiosqlite
+
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = Path(os.getenv("TURTLE_SOUP_DB", BASE_DIR / "turtle_soup.db"))
+
+
+DEFAULT_SETTINGS = {
+    "max_rooms": "5",
+    "hint_trigger_count": "30",
+    "ai_cooldown_questions": "5",
+    "ai_cooldown_seconds": "3",
+    "generate_cooldown_seconds": "5",
+    "guest_expire_hours": "48",
+}
+
+
+async def get_db() -> aiosqlite.Connection:
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA foreign_keys = ON")
+    return db
+
+
+def row_to_dict(row: aiosqlite.Row | None) -> dict[str, Any] | None:
+    return dict(row) if row is not None else None
+
+
+async def fetch_one(query: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
+    db = await get_db()
+    try:
+        async with db.execute(query, tuple(params)) as cur:
+            return row_to_dict(await cur.fetchone())
+    finally:
+        await db.close()
+
+
+async def fetch_all(query: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
+    db = await get_db()
+    try:
+        async with db.execute(query, tuple(params)) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+    finally:
+        await db.close()
+
+
+async def execute(query: str, params: Iterable[Any] = ()) -> int:
+    db = await get_db()
+    try:
+        cur = await db.execute(query, tuple(params))
+        await db.commit()
+        return int(cur.lastrowid or 0)
+    finally:
+        await db.close()
+
+
+async def get_setting(key: str, default: str | None = None) -> str:
+    row = await fetch_one("SELECT value FROM settings WHERE key = ?", (key,))
+    if row:
+        return str(row["value"])
+    if default is not None:
+        return default
+    return DEFAULT_SETTINGS.get(key, "")
+
+
+async def init_db() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db = await get_db()
+    try:
+        await db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password_hash TEXT,
+                is_guest INTEGER DEFAULT 0,
+                is_ai INTEGER DEFAULT 0,
+                is_admin INTEGER DEFAULT 0,
+                source TEXT DEFAULT 'web',
+                ask_count INTEGER DEFAULT 0,
+                ask_count_y INTEGER DEFAULT 0,
+                ask_count_n INTEGER DEFAULT 0,
+                ask_count_u INTEGER DEFAULT 0,
+                ask_count_p INTEGER DEFAULT 0,
+                win_count INTEGER DEFAULT 0,
+                game_count INTEGER DEFAULT 0,
+                last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS puzzles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                surface TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                enabled INTEGER DEFAULT 1,
+                created_by INTEGER REFERENCES players(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS puzzle_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                surface TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                submitted_by INTEGER REFERENCES players(id),
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS rooms (
+                id TEXT PRIMARY KEY,
+                puzzle_id INTEGER REFERENCES puzzles(id),
+                surface TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                status TEXT DEFAULT 'waiting',
+                created_by INTEGER REFERENCES players(id),
+                winner_id INTEGER REFERENCES players(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                finished_at TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS game_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT REFERENCES rooms(id),
+                player_id INTEGER REFERENCES players(id),
+                type TEXT NOT NULL,
+                content TEXT,
+                judgment TEXT,
+                hint_text TEXT,
+                resolved INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS room_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT REFERENCES rooms(id),
+                player_id INTEGER REFERENCES players(id),
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS judge_api_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                priority INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_id INTEGER REFERENCES players(id),
+                target_player_id INTEGER REFERENCES players(id),
+                room_id TEXT REFERENCES rooms(id),
+                log_id INTEGER REFERENCES game_logs(id),
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS ban_ips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT UNIQUE NOT NULL,
+                reason TEXT,
+                banned_by INTEGER REFERENCES players(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS flagged_content (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL,
+                ref_id INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """
+        )
+        for key, value in DEFAULT_SETTINGS.items():
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (key, value),
+            )
+        seed_count = await db.execute_fetchall("SELECT COUNT(*) AS c FROM puzzles")
+        if int(seed_count[0]["c"]) == 0:
+            await db.executemany(
+                "INSERT INTO puzzles (surface, answer, tags, enabled) VALUES (?, ?, ?, 1)",
+                [
+                    ("一个人走进餐厅点了一碗海龟汤，喝了一口后就自杀了。为什么？", "他曾经在海难中被同伴骗吃了所谓海龟汤，实际是妻子的肉。餐厅真正的海龟汤让他发现真相。", "经典"),
+                    ("男人每天坐电梯到 10 楼，再爬楼梯到 15 楼。下雨天却能直接到 15 楼。为什么？", "他个子矮，只能按到 10 楼；下雨天带伞，可以用伞尖按到 15 楼。", "日常"),
+                    ("房间里有一具尸体、一滩水和碎玻璃。发生了什么？", "死者是一条鱼，鱼缸碎了，水流出，鱼死了。", "经典"),
+                ],
+            )
+        await db.commit()
+    finally:
+        await db.close()

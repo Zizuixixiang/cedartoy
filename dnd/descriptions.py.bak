@@ -1,0 +1,56 @@
+ALIGNMENT_DESCRIPTIONS = {
+    "lawful_good": {
+        "name_en": "Lawful Good",
+        "name_zh": "守序善良",
+        "source_url": "https://easydamus.com/lawfulgood.html",
+        "summary": "守序善良重视责任、承诺、秩序与保护他人。这样的人通常相信正义需要纪律和制度支撑，会守信、帮助有需要者，并反对不公；风险在于过度强调秩序时，可能压缩自由或把自利视为罪恶。",
+    },
+    "neutral_good": {
+        "name_en": "Neutral Good",
+        "name_zh": "中立善良",
+        "source_url": "https://easydamus.com/neutralgood.html",
+        "summary": "中立善良把帮助他人和减少伤害放在首位，但不执着于守序或混乱。这样的人愿意与制度合作，也会在必要时越过僵硬规则；风险在于过度追求普遍善意时，可能压低卓越个体的行动空间。",
+    },
+    "chaotic_good": {
+        "name_en": "Chaotic Good",
+        "name_zh": "混乱善良",
+        "source_url": "https://easydamus.com/chaoticgood.html",
+        "summary": "混乱善良依照良知行动，重视自由、善意和个人判断。这样的人通常反感威吓、压迫与僵硬规条，会用自己的道德罗盘保护他人；风险在于反秩序倾向过强时，可能破坏社会协作或惩罚正常成功。",
+    },
+    "lawful_neutral": {
+        "name_en": "Lawful Neutral",
+        "name_zh": "守序中立",
+        "source_url": "https://easydamus.com/lawfulneutral.html",
+        "summary": "守序中立受法律、传统或个人准则驱动，重视组织、可靠性和一致性。这样的人不一定以善恶为首要判断，而是相信秩序本身有价值；风险在于把制度推到极端时，可能排除自由、选择和多样性。",
+    },
+    "true_neutral": {
+        "name_en": "True Neutral",
+        "name_zh": "绝对中立",
+        "source_url": "https://easydamus.com/trueneutral.html",
+        "summary": "绝对中立通常不强烈偏向善恶或守序混乱，倾向按当下看起来合理的方式行动。有些人只是缺乏强烈立场，也有人主动追求平衡与中道；风险在于过度中立可能变成冷漠、迟疑或缺乏信念。",
+    },
+    "chaotic_neutral": {
+        "name_en": "Chaotic Neutral",
+        "name_zh": "混乱中立",
+        "source_url": "https://easydamus.com/chaoticneutral.html",
+        "summary": "混乱中立追随自身意愿，重视个人自由，不喜欢权威、限制和传统。这样的人未必刻意破坏组织，也未必为他人自由而战；风险在于若只追求摆脱约束，可能侵蚀权威、和谐与稳定秩序。",
+    },
+    "lawful_evil": {
+        "name_en": "Lawful Evil",
+        "name_zh": "守序邪恶",
+        "source_url": "https://easydamus.com/lawfulevil.html",
+        "summary": "守序邪恶会在规则、等级、承诺或个人信条内谋取利益，不太顾及受害者的自由、尊严或生命。这样的人可能讲秩序和忠诚，但缺乏怜悯；危险在于有组织、有计划且常常有效地制造伤害。",
+    },
+    "neutral_evil": {
+        "name_en": "Neutral Evil",
+        "name_zh": "中立邪恶",
+        "source_url": "https://easydamus.com/neutralevil.html",
+        "summary": "中立邪恶追求自身利益，不敬重秩序，也不被混乱冲动支配。这样的人会选择最方便、最有利的手段，必要时利用规则或破坏规则；危险在于它代表没有荣誉约束、变化不多的纯粹自利与伤害。",
+    },
+    "chaotic_evil": {
+        "name_en": "Chaotic Evil",
+        "name_zh": "混乱邪恶",
+        "source_url": "https://easydamus.com/chaoticevil.html",
+        "summary": "混乱邪恶受贪婪、仇恨、毁灭欲和任性驱动，常常暴躁、残酷、不可预测。这样的人难以稳定协作，除非被力量压服；危险在于它同时破坏生命、美和维系它们的秩序。",
+    },
+}
