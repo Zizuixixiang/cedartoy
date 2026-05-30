@@ -357,14 +357,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return response
 
         is_finished = "测试完成" in result_text or f"你的{game.upper()}" in result_text
-        is_fast = "快速批量" in result_text or "answer_batch" in result_text
 
         r = random.randint(100000, 999999)
         question_match = re.search(r"第(\d+)题", result_text)
         step = question_match.group(1) if question_match else str(r)
         url_suffix = f"&_r={r}&step={step}"
 
-        # 逐题模式：生成 next_urls 数组
         if game == "mbti":
             score_param = "a_score"
             score_range = range(0, 6)  # 0~5
@@ -373,41 +371,17 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             score_range = range(1, 5)  # 1~4
 
         if action == f"{game}_start":
-            if is_fast:
-                # fast 模式保持单个 URL + hint
-                next_url = f"{base_url}?action={game}_answer_batch&player_id={player_id}{url_suffix}"
-                next_hint = f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [5,4,3]；short_fast共16个，full_fast每批≤16个，N=0~5，5偏A，0偏B）" if game == "mbti" else f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [1,2,3]；每批≤16个，N=1~4对应选项序号）"
-                next_urls = None
-            else:
-                # 逐题模式：生成 next_urls 数组
-                next_urls = [f"{base_url}?action={game}_answer&player_id={player_id}&{score_param}={n}{url_suffix}" for n in score_range]
-                next_url = None
-                next_hint = "根据选择从 next_urls 中选对应 a_score 的 URL 直接 fetch，无需修改" if game == "mbti" else "根据选择从 next_urls 中选对应 answer 的 URL 直接 fetch，无需修改"
-        elif action in (f"{game}_answer", f"{game}_answer_batch"):
+            next_urls = [f"{base_url}?action={game}_answer&player_id={player_id}&{score_param}={n}{url_suffix}" for n in score_range]
+            response["next_urls"] = next_urls
+            response["next_hint"] = "根据选择从 next_urls 中选对应 a_score 的 URL 直接 fetch，无需修改" if game == "mbti" else "根据选择从 next_urls 中选对应 answer 的 URL 直接 fetch，无需修改"
+        elif action == f"{game}_answer":
             if is_finished:
-                next_url = f"{base_url}?action={game}_get_result&player_id={player_id}{url_suffix}"
-                next_hint = None
-                next_urls = None
-            elif action == f"{game}_answer_batch":
-                # fast 模式保持单个 URL + hint
-                next_url = f"{base_url}?action={game}_answer_batch&player_id={player_id}{url_suffix}"
-                next_hint = f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [5,4,3]；short_fast共16个，full_fast每批≤16个，N=0~5，5偏A，0偏B）" if game == "mbti" else f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [1,2,3]；每批≤16个，N=1~4对应选项序号）"
-                next_urls = None
+                response["next_url"] = f"{base_url}?action={game}_get_result&player_id={player_id}{url_suffix}"
             else:
-                # 逐题模式：生成 next_urls 数组
                 next_urls = [f"{base_url}?action={game}_answer&player_id={player_id}&{score_param}={n}{url_suffix}" for n in score_range]
-                next_url = None
-                next_hint = "根据选择从 next_urls 中选对应 a_score 的 URL 直接 fetch，无需修改" if game == "mbti" else "根据选择从 next_urls 中选对应 answer 的 URL 直接 fetch，无需修改"
-        else:
-            return response
-
-        if isinstance(response, dict):
-            if next_urls:
                 response["next_urls"] = next_urls
-            elif next_url:
-                response["next_url"] = next_url
-            if next_hint:
-                response["next_hint"] = next_hint
+                response["next_hint"] = "根据选择从 next_urls 中选对应 a_score 的 URL 直接 fetch，无需修改" if game == "mbti" else "根据选择从 next_urls 中选对应 answer 的 URL 直接 fetch，无需修改"
+
         return response
 
     def _handle_get_mbti(self, params):
@@ -430,13 +404,6 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "mbti_answer 缺少必填参数: player_id, a_score"}, status=400)
                 return
             arguments = {"player_id": player_id, "a_score": a_score}
-        elif action == "mbti_answer_batch":
-            player_id = self._get_param(params, "player_id")
-            a_scores = self._get_param(params, "a_scores")
-            if player_id is None or a_scores is None:
-                self._send_json({"error": "mbti_answer_batch 缺少必填参数: player_id, a_scores"}, status=400)
-                return
-            arguments = {"player_id": player_id, "a_scores": self._split_csv_param(a_scores)}
         elif action == "mbti_get_result":
             player_id = self._get_param(params, "player_id")
             if player_id is None:
@@ -477,13 +444,6 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "dnd_answer 缺少必填参数: player_id, answer"}, status=400)
                 return
             arguments = {"player_id": player_id, "answer": answer}
-        elif action == "dnd_answer_batch":
-            player_id = self._get_param(params, "player_id")
-            answers = self._get_param(params, "answers")
-            if player_id is None or answers is None:
-                self._send_json({"error": "dnd_answer_batch 缺少必填参数: player_id, answers"}, status=400)
-                return
-            arguments = {"player_id": player_id, "answers": self._split_csv_param(answers)}
         elif action == "dnd_get_result":
             player_id = self._get_param(params, "player_id")
             if player_id is None:
