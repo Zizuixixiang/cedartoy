@@ -143,7 +143,7 @@ def _tool_list_games():
             {"name": "dnd", "display": "DND阵营测试", "desc": "测试你的D&D道德阵营，守序善良还是混乱邪恶？"},
         ],
         "小游戏": [
-            {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，提问猜汤底"},
+            {"name": "turtle_soup", "display": "海龟汤（没做好）", "desc": "横向思维推理游戏，提问猜汤底"},
         ],
         "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, ...) 执行操作",
     }, ensure_ascii=False)
