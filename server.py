@@ -38,6 +38,8 @@ JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
 BINDING_TOKEN_SECONDS = 10 * 60
 TURTLE_DB_PATH = Path(os.getenv("TURTLE_SOUP_DB", Path(__file__).resolve().parent / "turtle-soup" / "backend" / "turtle_soup.db"))
+SESSIONS_DB_PATH = Path(os.getenv("SESSIONS_DB", Path(__file__).resolve().parent / "data" / "sessions.db"))
+GAME_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
 GUIDE_DIR = Path(__file__).resolve().parent / "turtle-soup" / "backend" / "guides"
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 HOP_BY_HOP_HEADERS = {
@@ -100,22 +102,19 @@ _PLATFORM_TOOLS = [
     {
         "name": "account",
         "description": (
-            "账号仅供存档用，不登录也能玩，但存档48小时后自动清除。\n\n"
-            "login_or_register：传固定的 username + password，自动登录或注册，返回 token。\n"
-            "人类网页端：https://toy.cedarstar.org 右上角登录。\n\n"
-            "【AI 持久化登录】\n"
-            "方式一：每次对话开始用固定账密调用一次，当次有效。\n"
-            "方式二（推荐）：登录后请让人类将 MCP 地址改为 https://toy.cedarstar.org/{token}\n"
-            "重新连接后永久生效，token 永不过期。适合有记忆库的 AI。\n\n"
-            "generate_binding_token：生成10分钟有效绑定码，告知人类登录后输入完成绑定。\n"
-            "绑定后双方可互看存档，一个人类可绑定多个 AI。"
+            "账号管理（仅供存档用，不登录也能玩）。\n"
+            "action=login_or_register：传 username+password，自动登录或注册，返回token。\n"
+            "action=generate_binding_token：生成绑定码供人类绑定。\n"
+            "action=get_profile：查看自己的账号信息和游戏数据。\n"
+            "action=get_bindings：查看绑定了自己的账号列表。\n"
+            '详细说明请调用 get_guide(game="account")。'
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register 或 generate_binding_token",
+                    "description": "login_or_register、generate_binding_token、get_profile、get_bindings",
                 },
                 "username": {"type": "string"},
                 "password": {"type": "string"},
@@ -192,13 +191,22 @@ def _db_connect():
     return conn
 
 
+def _sessions_db_connect():
+    conn = sqlite3.connect(SESSIONS_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _game_player_ids(user):
+    ids = [str(user["id"])]
+    username = user.get("username") or ""
+    if GAME_PLAYER_ID_RE.fullmatch(username):
+        ids.append(username)
+    return list(dict.fromkeys(ids))
+
+
 def _row_dict(row):
     return dict(row) if row is not None else None
-
-
-def _is_ai_user_agent(user_agent):
-    ua = (user_agent or "").lower()
-    return "claude" in ua or "mcp" in ua
 
 
 def _hash_password(password):
@@ -329,11 +337,12 @@ def _validate_credentials(username, password):
         raise _McpError(-32602, "密码至少 6 位")
 
 
-def _login_or_register(username, password, user_agent=""):
+def _login_or_register(username, password, *, is_ai):
+    """Shared login/register; callers set is_ai (MCP=1, REST human=0)."""
     username = (username or "").strip()
     password = password or ""
     _validate_credentials(username, password)
-    is_ai = 1 if _is_ai_user_agent(user_agent) else 0
+    is_ai = 1 if is_ai else 0
     with _db_connect() as conn:
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE username = ?", (username,)).fetchone())
         if user:
@@ -342,7 +351,7 @@ def _login_or_register(username, password, user_agent=""):
             conn.execute(
                 """
                 UPDATE toy_users
-                SET is_ai = CASE WHEN ? = 1 THEN 1 ELSE is_ai END,
+                SET is_ai = ?,
                     last_active_at = CURRENT_TIMESTAMP,
                     deleted_at = NULL
                 WHERE id = ?
@@ -359,6 +368,14 @@ def _login_or_register(username, password, user_agent=""):
             conn.commit()
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
     return {"token": _create_account_token(user), "user": _public_user(user)}
+
+
+def _login_or_register_ai(username, password):
+    return _login_or_register(username, password, is_ai=1)
+
+
+def _login_or_register_human(username, password):
+    return _login_or_register(username, password, is_ai=0)
 
 
 def _generate_binding_token(raw_token):
@@ -404,6 +421,101 @@ def _bind_account(human_token, binding_token):
         conn.execute("UPDATE binding_tokens SET used = 1 WHERE token = ?", (binding_token,))
         conn.commit()
     return {"ok": True}
+
+
+def _binding_rows(conn, user):
+    if user.get("is_ai"):
+        return conn.execute(
+            """
+            SELECT u.username, b.created_at AS bound_at
+            FROM user_bindings b
+            JOIN toy_users u ON u.id = b.human_user_id
+            WHERE b.ai_user_id = ? AND u.deleted_at IS NULL
+            ORDER BY b.created_at DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+    return conn.execute(
+        """
+        SELECT u.username, b.created_at AS bound_at
+        FROM user_bindings b
+        JOIN toy_users u ON u.id = b.ai_user_id
+        WHERE b.human_user_id = ? AND u.deleted_at IS NULL
+        ORDER BY b.created_at DESC
+        """,
+        (user["id"],),
+    ).fetchall()
+
+
+def _public_binding(row):
+    return {"username": row["username"], "bound_at": row["bound_at"]}
+
+
+def _turtle_soup_stats(conn, user):
+    row = conn.execute(
+        "SELECT game_count, win_count FROM players WHERE username = ?",
+        (user["username"],),
+    ).fetchone()
+    if not row:
+        return {"game_count": 0, "win_count": 0}
+    return {"game_count": int(row["game_count"] or 0), "win_count": int(row["win_count"] or 0)}
+
+
+def _test_stats(user):
+    player_ids = _game_player_ids(user)
+    if not player_ids or not SESSIONS_DB_PATH.exists():
+        return {"mbti": {"test_count": 0}, "dnd": {"test_count": 0}}
+    placeholders = ",".join("?" * len(player_ids))
+    counts = {"mbti": 0, "dnd": 0}
+    with _sessions_db_connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT game, COUNT(*) AS test_count
+            FROM test_results
+            WHERE player_id IN ({placeholders}) AND game IN ('mbti', 'dnd')
+            GROUP BY game
+            """,
+            player_ids,
+        ).fetchall()
+        for row in rows:
+            counts[row["game"]] = int(row["test_count"])
+    return {
+        "mbti": {"test_count": counts["mbti"]},
+        "dnd": {"test_count": counts["dnd"]},
+    }
+
+
+def _game_overview(conn, user):
+    tests = _test_stats(user)
+    soup = _turtle_soup_stats(conn, user)
+    return {
+        "turtle_soup": soup,
+        "mbti": tests["mbti"],
+        "dnd": tests["dnd"],
+    }
+
+
+def _get_bindings(raw_token):
+    user = _current_account(raw_token)
+    if not user.get("is_ai"):
+        raise _McpError(-32602, "只有 AI 账号可以查看绑定自己的人类列表")
+    with _db_connect() as conn:
+        rows = _binding_rows(conn, user)
+    return {"bindings": [_public_binding(dict(row)) for row in rows]}
+
+
+def _get_profile(raw_token):
+    user = _current_account(raw_token)
+    with _db_connect() as conn:
+        rows = _binding_rows(conn, user)
+        games = _game_overview(conn, user)
+    return {
+        "username": user["username"],
+        "is_ai": bool(user.get("is_ai")),
+        "created_at": user.get("created_at"),
+        "bindings": [_public_binding(dict(row)) for row in rows],
+        "games": games,
+    }
 
 
 def _account_me(raw_token):
@@ -464,7 +576,7 @@ def _tool_get_guide(arguments):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
-    if game in {"mbti", "dnd"}:
+    if game in {"mbti", "dnd", "account"}:
         path = GUIDE_DIR / f"{game}.md"
         if not path.exists():
             raise _McpError(-32603, f"{game} 说明文件不存在")
@@ -493,11 +605,18 @@ def _tool_play(arguments):
 def _tool_account(arguments, user_agent="", path_token=None):
     action = arguments.get("action")
     if action == "login_or_register":
-        result = _login_or_register(arguments.get("username"), arguments.get("password"), user_agent=user_agent)
+        result = _login_or_register_ai(arguments.get("username"), arguments.get("password"))
         return json.dumps(result, ensure_ascii=False)
     if action == "generate_binding_token":
         raw_token = arguments.get("token") or path_token
         result = _generate_binding_token(raw_token)
+        return json.dumps(result, ensure_ascii=False)
+    raw_token = arguments.get("token") or path_token
+    if action == "get_bindings":
+        result = _get_bindings(raw_token)
+        return json.dumps(result, ensure_ascii=False)
+    if action == "get_profile":
+        result = _get_profile(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raise _McpError(-32602, "未知 account action")
 
@@ -697,10 +816,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     def _handle_api_login_or_register(self):
         try:
             body = self._read_json_body()
-            result = _login_or_register(
+            result = _login_or_register_human(
                 body.get("username"),
                 body.get("password"),
-                user_agent=self.headers.get("User-Agent", ""),
             )
             self._send_json(result)
         except _McpError as exc:
