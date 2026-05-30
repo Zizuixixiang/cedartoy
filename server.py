@@ -336,6 +336,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         return ""
 
     def _split_csv_param(self, value):
+        value = value.strip("()[]")
         return [item.strip() for item in value.split(",") if item.strip()]
 
     def _append_next_url(self, response, game, action, player_id):
@@ -375,7 +376,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             if is_fast:
                 # fast 模式保持单个 URL + hint
                 next_url = f"{base_url}?action={game}_answer_batch&player_id={player_id}{url_suffix}"
-                next_hint = f"末尾加 &{score_param}s=N1,N2,...（short_fast共16个，full_fast每批≤16个，N=0~5，5偏A，0偏B）" if game == "mbti" else f"末尾加 &{score_param}s=N1,N2,...（每批≤16个，N=1~4对应选项序号）"
+                next_hint = f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [5,4,3]；short_fast共16个，full_fast每批≤16个，N=0~5，5偏A，0偏B）" if game == "mbti" else f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [1,2,3]；每批≤16个，N=1~4对应选项序号）"
                 next_urls = None
             else:
                 # 逐题模式：生成 next_urls 数组
@@ -390,7 +391,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             elif action == f"{game}_answer_batch":
                 # fast 模式保持单个 URL + hint
                 next_url = f"{base_url}?action={game}_answer_batch&player_id={player_id}{url_suffix}"
-                next_hint = f"末尾加 &{score_param}s=N1,N2,...（short_fast共16个，full_fast每批≤16个，N=0~5，5偏A，0偏B）" if game == "mbti" else f"末尾加 &{score_param}s=N1,N2,...（每批≤16个，N=1~4对应选项序号）"
+                next_hint = f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [5,4,3]；short_fast共16个，full_fast每批≤16个，N=0~5，5偏A，0偏B）" if game == "mbti" else f"末尾加 &{score_param}s=N1,N2,...（支持方括号/圆括号包裹，如 [1,2,3]；每批≤16个，N=1~4对应选项序号）"
                 next_urls = None
             else:
                 # 逐题模式：生成 next_urls 数组
