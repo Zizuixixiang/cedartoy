@@ -396,6 +396,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             if player_id is None or mode is None:
                 self._send_json({"error": "mbti_start 缺少必填参数: player_id, mode"}, status=400)
                 return
+            if mode not in ("short", "full"):
+                self._send_json({"error": "GET 接口仅支持 short 和 full 模式"}, status=400)
+                return
             arguments = {"player_id": player_id, "mode": mode}
         elif action == "mbti_answer":
             player_id = self._get_param(params, "player_id")
@@ -435,6 +438,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             mode = self._get_param(params, "mode")
             if player_id is None or mode is None:
                 self._send_json({"error": "dnd_start 缺少必填参数: player_id, mode"}, status=400)
+                return
+            if mode != "full":
+                self._send_json({"error": "GET 接口仅支持 full 模式"}, status=400)
                 return
             arguments = {"player_id": player_id, "mode": mode}
         elif action == "dnd_answer":
