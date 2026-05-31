@@ -54,6 +54,14 @@ export async function logoutToGuest() {
   return ensureGuestToken({ forceGuest: true })
 }
 
+function formatApiDetail(detail) {
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || JSON.stringify(item)).join('；')
+  }
+  if (typeof detail === 'string' && detail) return detail
+  return '请求失败'
+}
+
 export async function api(path, options = {}) {
   const { __retried, ...fetchOptions } = options
   const headers = {
@@ -69,7 +77,7 @@ export async function api(path, options = {}) {
       await ensureGuestToken()
       return api(path, { ...fetchOptions, __retried: true })
     }
-    const error = new Error(data.detail || '请求失败')
+    const error = new Error(formatApiDetail(data.detail))
     error.status = res.status
     throw error
   }

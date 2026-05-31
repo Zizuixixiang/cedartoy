@@ -1,12 +1,13 @@
 import json
+import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from fastapi import HTTPException
 
-from database import fetch_all, get_setting
+from database import DEFAULT_SETTINGS, fetch_all, fetch_one
 
 
 fail_counts: dict[int, int] = {}
@@ -15,15 +16,25 @@ FAIL_LIMIT = 5
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 
 
-def _file_prompt() -> str:
+def _file_judge_prompt() -> str:
     path = CONFIG_DIR / "judge_prompt.txt"
     if path.exists():
         return path.read_text(encoding="utf-8")
-    return "你是海龟汤游戏裁判。"
+    return DEFAULT_SETTINGS["judge_prompt"]
 
 
-async def _judge_prompt() -> str:
-    return await get_setting("judge_prompt", _file_prompt())
+async def _get_judge_prompt() -> str:
+    row = await fetch_one("SELECT value FROM settings WHERE key = 'judge_prompt'")
+    if row and str(row.get("value") or "").strip():
+        return str(row["value"])
+    return _file_judge_prompt()
+
+
+async def _get_generate_prompt() -> str:
+    row = await fetch_one("SELECT value FROM settings WHERE key = 'generate_prompt'")
+    if row and str(row.get("value") or "").strip():
+        return str(row["value"])
+    return DEFAULT_SETTINGS["generate_prompt"]
 
 
 async def _configs() -> list[dict[str, Any]]:
@@ -38,6 +49,13 @@ def _endpoint(base: str) -> str:
     if base.endswith("/chat/completions"):
         return base
     return f"{base}/chat/completions"
+
+
+def _models_endpoint(base: str) -> str:
+    base = base.rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    return f"{base}/models"
 
 
 async def _chat(messages: list[dict[str, str]], temperature: float = 0.1) -> str:
@@ -76,6 +94,68 @@ async def _chat(messages: list[dict[str, str]], temperature: float = 0.1) -> str
             errors.append(f"{cfg.get('name')}: {exc}")
             continue
     raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
+
+
+async def list_models(cfg: dict[str, Any]) -> dict[str, Any]:
+    api_key = (cfg.get("api_key") or "").strip()
+    api_url = (cfg.get("api_url") or "").strip()
+    if not api_url or not api_key:
+        return {"success": False, "models": [], "message": "配置缺少 API Key 或接口地址"}
+
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            resp = await client.get(
+                _models_endpoint(api_url),
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            try:
+                raw = resp.json()
+            except Exception:
+                raw = {"_raw_text": (resp.text or "")[:4000]}
+            if resp.status_code >= 400:
+                return {
+                    "success": False,
+                    "models": [],
+                    "raw": raw,
+                    "http_status": resp.status_code,
+                    "message": f"拉取失败: HTTP {resp.status_code}",
+                }
+            data = raw.get("data") if isinstance(raw, dict) else raw
+            if not isinstance(data, list):
+                return {
+                    "success": False,
+                    "models": [],
+                    "raw": raw,
+                    "http_status": resp.status_code,
+                    "message": "模型列表格式错误",
+                }
+            models: list[str] = []
+            for item in data:
+                model_id = item.get("id") if isinstance(item, dict) else item
+                if isinstance(model_id, str) and model_id.strip():
+                    models.append(model_id.strip())
+            models = sorted(set(models))
+            return {
+                "success": True,
+                "models": models,
+                "raw": raw,
+                "http_status": resp.status_code,
+                "message": f"拉取成功，共 {len(models)} 个模型",
+            }
+    except Exception as exc:
+        return {"success": False, "models": [], "message": f"拉取请求失败: {exc}"}
+
+
+async def _chat_validated(
+    messages: list[dict[str, str]],
+    validator: Callable[[str], bool],
+    max_retry: int = 3,
+) -> str | None:
+    for _ in range(max_retry):
+        text = await _chat(messages)
+        if validator(text):
+            return text
+    return None
 
 
 def _extract_reply(raw: Any) -> str:
@@ -158,68 +238,124 @@ async def test_config(cfg: dict[str, Any]) -> dict[str, Any]:
         return {"success": False, "data": None, "message": f"测试请求失败: {exc}"}
 
 
-async def judge_ask(answer: str, question: str) -> str:
-    text = await _chat(
-        [
-            {"role": "system", "content": await _judge_prompt()},
-            {
-                "role": "user",
-                "content": (
-                    "汤底如下，仅用于判断问题，不要泄露：\n"
-                    f"{answer}\n\n玩家问题变量：{question}\n"
-                    "只返回 yes / no / unrelated / partial 之一。"
-                ),
-            },
-        ]
-    )
-    value = text.lower().strip("` \n\t。.")
-    mapping = {"是": "yes", "否": "no", "不相关": "unrelated", "是也不是": "partial"}
-    value = mapping.get(value, value)
-    if value not in {"yes", "no", "unrelated", "partial"}:
-        return "unrelated"
-    return value
+_ASK_CHOICES = {"是", "不是", "无关", "是也不是"}
+_ASK_MAPPING = {"是": "yes", "不是": "no", "无关": "unrelated", "是也不是": "partial"}
+_CLUE_PREFIX = "【线索公布】"
 
 
-async def judge_guess(answer: str, guess: str) -> bool:
-    text = await _chat(
-        [
-            {"role": "system", "content": "你是海龟汤终局裁判。只返回 true 或 false。"},
-            {
-                "role": "user",
-                "content": f"标准汤底变量：{answer}\n玩家猜测变量：{guess}\n是否基本猜中核心真相？",
-            },
-        ]
-    )
-    return text.lower().strip("` \n\t。.") in {"true", "yes", "1", "对", "正确"}
+def _ask_first_line_valid(text: str) -> bool:
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    return bool(lines) and lines[0].strip() in _ASK_CHOICES
 
 
-async def generate_hint(answer: str, game_log: list[dict[str, Any]]) -> str:
+def _extract_clue_from_ask(text: str) -> str | None:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(_CLUE_PREFIX):
+            content = stripped[len(_CLUE_PREFIX) :].strip()
+            return content or None
+    return None
+
+
+async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str | None]:
+    messages = [
+        {"role": "system", "content": await _get_judge_prompt()},
+        {
+            "role": "user",
+            "content": (
+                f"汤面：{surface}\n"
+                f"汤底：{answer}\n"
+                f"玩家问题：{question}"
+            ),
+        },
+    ]
+    text = await _chat_validated(messages, _ask_first_line_valid)
+    if text is None:
+        return {
+            "judgment": "unrelated",
+            "clue": None,
+            "content_override": "裁判开小差了，请再次提问",
+        }
+    first_line = next(line.strip() for line in text.strip().splitlines() if line.strip())
+    return {
+        "judgment": _ASK_MAPPING[first_line],
+        "clue": _extract_clue_from_ask(text),
+    }
+
+
+def _parse_guess_result(text: str) -> dict[str, Any] | None:
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    if len(lines) < 2 or lines[0] not in {"【通关】", "【未通关】"}:
+        return None
+    score_match = re.search(r"\d+", lines[1])
+    if not score_match:
+        return None
+    answer_text = None
+    marker = "【汤底】"
+    marker_idx = text.find(marker)
+    if marker_idx >= 0:
+        answer_text = text[marker_idx + len(marker) :].strip() or None
+    return {
+        "success": lines[0] == "【通关】",
+        "score": int(score_match.group(0)),
+        "answer": answer_text,
+    }
+
+
+async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
+    messages = [
+        {"role": "system", "content": await _get_judge_prompt()},
+        {
+            "role": "user",
+            "content": (
+                f"汤面：{surface}\n"
+                f"汤底：{answer}\n"
+                f"玩家猜测：{guess}"
+            ),
+        },
+    ]
+    text = await _chat_validated(messages, lambda value: _parse_guess_result(value) is not None)
+    if text is None:
+        return {"success": False, "score": 0, "answer": None, "error": "裁判开小差了，请再次提问"}
+    return _parse_guess_result(text) or {
+        "success": False,
+        "score": 0,
+        "answer": None,
+        "error": "裁判开小差了，请再次提问",
+    }
+
+
+async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]]) -> str | None:
     compact = [
         {"q": r.get("content"), "a": r.get("judgment")}
         for r in game_log
         if r.get("type") == "ask"
     ][-40:]
-    text = await _chat(
-        [
-            {"role": "system", "content": "你是海龟汤主持人。给一句引导性提示，但不能直接泄露汤底。"},
-            {
-                "role": "user",
-                "content": f"汤底变量：{answer}\n已问记录变量：{json.dumps(compact, ensure_ascii=False)}",
-            },
-        ],
-        temperature=0.4,
+    messages = [
+        {"role": "system", "content": await _get_judge_prompt()},
+        {
+            "role": "user",
+            "content": (
+                f"汤面：{surface}\n"
+                f"汤底：{answer}\n"
+                f"已问记录：{json.dumps(compact, ensure_ascii=False)}"
+            ),
+        },
+    ]
+    text = await _chat_validated(
+        messages,
+        lambda value: value.strip().startswith("【提示】"),
+        max_retry=3,
     )
-    return text[:120]
+    if text is None:
+        return None
+    return text.strip()[len("【提示】") :].strip()[:120]
 
 
 async def generate_puzzle() -> dict[str, str]:
-    prompt = await get_setting(
-        "generate_prompt",
-        "你是海龟汤出题人。返回 JSON，字段 surface 和 answer。生成一道适合多人推理、无血腥露骨描写的中文海龟汤。",
-    )
     text = await _chat(
         [
-            {"role": "system", "content": prompt},
+            {"role": "system", "content": await _get_generate_prompt()},
             {"role": "user", "content": "请按系统提示生成题目，只返回 JSON。"},
         ],
         temperature=0.8,

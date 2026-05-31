@@ -30,8 +30,8 @@ function HintBanner({ log, onRespond, busy }) {
   }
 
   return (
-    <div className={`log-hint-banner hint-offer${resolved ? ' readonly' : ''}`} role="region" aria-label="提示">
-      <div className="log-hint-label">&gt; 提示</div>
+    <div className={`log-hint-banner hint-offer${resolved ? ' readonly' : ''}`} role="region" aria-label="请求提示">
+      <div className="log-hint-label">&gt; 【请求提示】</div>
       <p>{body}</p>
       {!resolved && (
         <div className="hint-actions">
@@ -46,8 +46,8 @@ function HintBanner({ log, onRespond, busy }) {
 
 function AutoHintBanner({ log }) {
   return (
-    <div className="log-hint-banner auto" role="region" aria-label="自动提示">
-      <div className="log-hint-label">&gt; 自动提示</div>
+    <div className="log-hint-banner auto" role="region" aria-label="线索公布">
+      <div className="log-hint-label">&gt; 【线索公布】</div>
       <p>{log.hint_text || log.content}</p>
     </div>
   )

@@ -62,6 +62,7 @@ export default function Lobby() {
   const [roomSearch, setRoomSearch] = useState('')
   const [activeTagFilters, setActiveTagFilters] = useState([])
   const [loginOpen, setLoginOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   const load = async () => {
     try {
@@ -99,11 +100,20 @@ export default function Lobby() {
     setRandom(await api('/puzzles/random'))
   }
   const create = async (body) => {
+    if (creating) return
+    setCreating(true)
+    setError('')
     try {
       const data = await post('/rooms/create', body)
       nav(`/room/${data.room_id}`)
-    } catch (e) { setError(e.message) }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreating(false)
+    }
   }
+  const createBtnClass = `pixel-primary${creating ? ' loading' : ''}`
+  const createLabel = creating ? '创建中…' : '创建'
   const generate = async () => {
     setAiCooldown(cooldownSeconds)
     setGenerated(await post('/game/generate'))
@@ -155,7 +165,7 @@ export default function Lobby() {
           </div>
           <div className="actions">
             <button type="button" disabled={randomCooldown > 0} onClick={roll}>{randomCooldown ? `${randomCooldown}s` : '随机抽题'}</button>
-            <button type="button" className="pixel-primary" disabled={!random} onClick={() => create({ mode: 'random', puzzle_id: random.id })}>创建</button>
+            <button type="button" className={createBtnClass} disabled={!random || creating} onClick={() => create({ mode: 'random', puzzle_id: random.id })}>{createLabel}</button>
           </div>
         </div>
       )}
@@ -163,7 +173,7 @@ export default function Lobby() {
         <div className="create-body">
           <label className="terminal-label">汤面<textarea value={custom.surface} onChange={(e) => setCustom({ ...custom, surface: e.target.value })} /></label>
           <label className="terminal-label">汤底<textarea value={custom.answer} onChange={(e) => setCustom({ ...custom, answer: e.target.value })} /></label>
-          <button type="button" className="pixel-primary wide" onClick={() => create({ mode: 'custom', ...custom })}>创建</button>
+          <button type="button" className={`${createBtnClass} wide`} disabled={creating} onClick={() => create({ mode: 'custom', ...custom })}>{createLabel}</button>
         </div>
       )}
       {createTab === 'ai' && (
@@ -174,7 +184,7 @@ export default function Lobby() {
           </div>
           <div className="actions">
             <button type="button" disabled={aiCooldown > 0} onClick={generate}>{aiCooldown ? `${aiCooldown}s` : '生成'}</button>
-            <button type="button" className="pixel-primary" disabled={!generated} onClick={() => create({ mode: 'generated', ...generated })}>创建</button>
+            <button type="button" className={createBtnClass} disabled={!generated || creating} onClick={() => create({ mode: 'generated', ...generated })}>{createLabel}</button>
           </div>
         </div>
       )}
@@ -272,7 +282,7 @@ export default function Lobby() {
                     <p>{room.surface}</p>
                     <div className="room-meta">
                       {tags.map((tag) => <span className="soup-badge" key={tag}>{tag}</span>)}
-                      <span className="soup-badge pale">{room.status === 'finished' ? '已结束' : '进行中'}</span>
+                      <span className={`soup-badge ${room.status === 'finished' ? 'pale' : 'playing'}`}>{room.status === 'finished' ? '已结束' : '进行中'}</span>
                     </div>
                     <div className="room-stats"><span>提问 {room.ask_count || 0}</span><span>在房 {room.active_players || 0}</span></div>
                   </div>

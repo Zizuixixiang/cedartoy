@@ -15,9 +15,12 @@ async def _room(room_id: str) -> dict:
     room = await fetch_one("SELECT * FROM rooms WHERE id = ?", (room_id,))
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")
+    return room
+
+
+def _ensure_active(room: dict) -> None:
     if room["status"] == "finished":
         raise HTTPException(status_code=400, detail="游戏已结束")
-    return room
 
 
 async def _log_payload(log_id: int) -> dict:
@@ -46,9 +49,11 @@ async def _pending_hint(room_id: str) -> dict | None:
     )
 
 
-async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False) -> dict:
+async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False) -> dict | None:
     logs = await fetch_all("SELECT * FROM game_logs WHERE room_id = ? ORDER BY id ASC", (room["id"],))
-    hint = await judge.generate_hint(room["answer"], logs)
+    hint = await judge.generate_hint(room["surface"], room["answer"], logs)
+    if hint is None:
+        return None
     if manual:
         if await _pending_hint(room["id"]):
             raise HTTPException(status_code=400, detail="请先处理当前提示")
@@ -90,6 +95,7 @@ async def _maybe_auto_hint(room: dict, ask_count: int) -> None:
 async def ask(body: ContentBody, player: dict = Depends(current_player)):
     question = clean_content(body.content, 200)
     room = await _room(body.room_id)
+    _ensure_active(room)
     if player.get("is_ai"):
         n = int(await get_setting("ai_cooldown_questions", "5"))
         seconds = int(await get_setting("ai_cooldown_seconds", "3"))
@@ -114,10 +120,12 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
             )
             if int(too_fast["c"]) >= n:
                 raise HTTPException(status_code=429, detail="AI 提问太快，请稍后再试")
-    judgment = await judge.judge_ask(room["answer"], question)
+    result = await judge.judge_ask(room["surface"], room["answer"], question)
+    judgment = result["judgment"]
+    log_content = result.get("content_override") or question
     log_id = await execute(
         "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'ask', ?, ?)",
-        (body.room_id, player["id"], question, judgment),
+        (body.room_id, player["id"], log_content, judgment),
     )
     column = {"yes": "ask_count_y", "no": "ask_count_n", "unrelated": "ask_count_u", "partial": "ask_count_p"}[judgment]
     await execute(
@@ -127,6 +135,14 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
     payload = await _log_payload(log_id)
     await touch_room(body.room_id, player["id"])
     await broadcast(body.room_id, "new_log", payload)
+    clue = result.get("clue")
+    if clue is not None:
+        clue_id = await execute(
+            "INSERT INTO game_logs (room_id, type, content, hint_text, judgment) VALUES (?, 'auto_hint', ?, ?, 'auto_hint')",
+            (body.room_id, clue, clue),
+        )
+        clue_payload = await _log_payload(clue_id)
+        await broadcast(body.room_id, "new_log", clue_payload)
 
     ask_count = await _ask_count(body.room_id)
     await _maybe_auto_hint(room, ask_count)
@@ -137,10 +153,14 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
 async def guess(body: ContentBody, player: dict = Depends(current_player)):
     guess_text = clean_content(body.content, 200)
     room = await _room(body.room_id)
-    correct = await judge.judge_guess(room["answer"], guess_text)
+    _ensure_active(room)
+    result = await judge.judge_guess(room["surface"], room["answer"], guess_text)
+    correct = bool(result["success"])
+    score = int(result["score"])
+    log_content = result.get("error") or f"{guess_text}\n还原度：{score}%"
     log_id = await execute(
         "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'guess', ?, ?)",
-        (body.room_id, player["id"], guess_text, "yes" if correct else "no"),
+        (body.room_id, player["id"], log_content, "yes" if correct else "no"),
     )
     payload = await _log_payload(log_id)
     await touch_room(body.room_id, player["id"])
@@ -161,28 +181,32 @@ async def guess(body: ContentBody, player: dict = Depends(current_player)):
             await db.commit()
         finally:
             await db.close()
+        reveal_answer = result.get("answer") or room["answer"]
         reveal_id = await execute(
             "INSERT INTO game_logs (room_id, type, content, judgment) VALUES (?, 'system', ?, 'game_over')",
-            (body.room_id, room["answer"]),
+            (body.room_id, reveal_answer),
         )
         reveal_payload = await _log_payload(reveal_id)
         await broadcast(body.room_id, "new_log", payload)
         await broadcast(body.room_id, "new_log", reveal_payload)
-        await broadcast(body.room_id, "game_over", {"answer": room["answer"], "winner": {"id": player["id"], "username": player.get("username") or f"游客{player['id']}"}})
+        await broadcast(body.room_id, "game_over", {"answer": reveal_answer, "winner": {"id": player["id"], "username": player.get("username") or f"游客{player['id']}"}})
     else:
         await broadcast(body.room_id, "new_log", payload)
-    return payload | {"correct": correct}
+    return payload | {"correct": correct, "score": score}
 
 
 @router.post("/hint/request")
 async def hint_request(body: HintRequestBody, player: dict = Depends(current_player)):
     del player
     room = await _room(body.room_id)
+    _ensure_active(room)
     manual_count = int(room.get("manual_hint_count") or 0)
     if manual_count >= 3:
         raise HTTPException(status_code=400, detail="手动提示次数已用完")
     ask_count = await _ask_count(body.room_id)
     payload = await _offer_hint(room, ask_count, manual=True)
+    if payload is None:
+        raise HTTPException(status_code=503, detail="暂时无法生成提示，请稍后再试")
     return payload | {"manual_hint_remaining": 3 - manual_count - 1}
 
 

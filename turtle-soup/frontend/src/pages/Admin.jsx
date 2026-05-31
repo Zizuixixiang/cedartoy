@@ -161,7 +161,7 @@ const formFields = {
   ],
   settings: [
     { key: 'key', label: '配置项', required: true, readOnlyOnEdit: true },
-    { key: 'value', label: '值', required: true },
+    { key: 'value', label: '值', required: true, type: 'textarea' },
   ],
 }
 
@@ -239,8 +239,10 @@ function TestResultBlock({ result, onClose, className = '' }) {
   )
 }
 
-async function runApiConfigTest(configId) {
-  const data = await post(`/admin/api-configs/${configId}/test`)
+async function runApiConfigTest(configId, payload = null) {
+  const data = payload
+    ? await post('/admin/api-configs/test', payload)
+    : await post(`/admin/api-configs/${configId}/test`)
   const reply = data.data?.reply || ''
   const rawText = data.data?.raw ? JSON.stringify(data.data.raw, null, 2) : ''
   if (data.success) {
@@ -258,6 +260,20 @@ async function runApiConfigTest(configId) {
   }
 }
 
+async function runApiModelFetch(payload) {
+  const data = await post('/admin/api-configs/models', payload)
+  const models = Array.isArray(data.models) ? data.models : []
+  const body = data.success
+    ? models.join('\n') || '(没有返回可用模型)'
+    : JSON.stringify(data.raw || data.message || '(无详情)', null, 2).slice(0, 2000)
+  return {
+    success: Boolean(data.success),
+    title: data.success ? `拉取成功 · ${models.length} 个模型` : '拉取失败',
+    body,
+    models,
+  }
+}
+
 export default function Admin() {
   const [tab, setTab] = useState('overview')
   const [rows, setRows] = useState(null)
@@ -268,6 +284,7 @@ export default function Admin() {
   const [authError, setAuthError] = useState(null)
   const [testingConfigId, setTestingConfigId] = useState(null)
   const [testResult, setTestResult] = useState(null)
+  const [modalError, setModalError] = useState('')
 
   const load = async () => {
     try {
@@ -309,6 +326,7 @@ export default function Admin() {
   }, [rows, query, tab])
 
   const openAdd = () => {
+    setModalError('')
     setDraft({ ...(defaults[tab] || {}) })
     setModal({ mode: 'add', tab, title: `新增${tableNames[tab]}` })
   }
@@ -320,6 +338,7 @@ export default function Admin() {
   }
 
   const openEdit = async (row) => {
+    setModalError('')
     const detail = await detailRow(row)
     const normalized = tab === 'api-configs' ? { ...detail, api_key: '' } : detail
     setDraft({ ...(defaults[tab] || {}), ...normalized })
@@ -362,7 +381,7 @@ export default function Admin() {
         configId: row.id,
         success: false,
         title: '网络错误',
-        body: e.message || '请检查网络或稍后重试',
+        body: e.message || '请检查接口地址、密钥或模型',
       })
     } finally {
       setTestingConfigId(null)
@@ -370,18 +389,23 @@ export default function Admin() {
   }
 
   const saveModal = async () => {
-    const payload = serializeDraft(tab, draft)
-    if (modal.mode === 'add') {
-      if (tab === 'puzzles') await post('/puzzles/', payload)
-      else if (tab === 'settings') await put(`/admin/settings/${encodeURIComponent(payload.key)}`, { value: payload.value })
-      else await post(`/admin/${tab}`, payload)
-    } else {
-      if (tab === 'puzzles') await put(`/puzzles/${draft.id}`, payload)
-      else if (tab === 'settings') await put(`/admin/settings/${encodeURIComponent(draft.key)}`, { value: payload.value })
-      else await put(`/admin/${tab}/${draft.id}`, payload)
+    setModalError('')
+    try {
+      const payload = serializeDraft(tab, draft)
+      if (modal.mode === 'add') {
+        if (tab === 'puzzles') await post('/puzzles/', payload)
+        else if (tab === 'settings') await put(`/admin/settings/${encodeURIComponent(payload.key)}`, { value: payload.value })
+        else await post(`/admin/${tab}`, payload)
+      } else {
+        if (tab === 'puzzles') await put(`/puzzles/${draft.id}`, payload)
+        else if (tab === 'settings') await put(`/admin/settings/${encodeURIComponent(draft.key)}`, { value: payload.value })
+        else await put(`/admin/${tab}/${draft.id}`, payload)
+      }
+      setModal(null)
+      await load()
+    } catch (e) {
+      setModalError(formatApiError(e))
     }
-    setModal(null)
-    load()
   }
 
   return (
@@ -429,6 +453,7 @@ export default function Admin() {
           modal={modal}
           draft={draft}
           setDraft={setDraft}
+          error={modalError}
           onClose={() => setModal(null)}
           onSave={saveModal}
         />
@@ -446,6 +471,14 @@ function AdminAuthError({ error }) {
       <a className="primary link-button" href="/">去开始页登录</a>
     </div>
   )
+}
+
+function formatApiError(error) {
+  const detail = error?.message
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || JSON.stringify(item)).join('；')
+  }
+  return detail || '保存失败，请稍后重试'
 }
 
 function serializeDraft(tab, draft) {
@@ -535,13 +568,16 @@ function extraActions(tab, row, onAction, onTest, testingConfigId) {
   return null
 }
 
-function FormModal({ modal, draft, setDraft, onClose, onSave }) {
+function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
   const fields = modal.mode === 'view'
     ? Object.keys(draft).map((key) => ({ key, label: fieldLabels[key] || key, readOnly: true }))
     : formFields[modal.tab] || []
   const [testing, setTesting] = useState(false)
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [modelOptions, setModelOptions] = useState([])
   const [modalTestResult, setModalTestResult] = useState(null)
   const canTest = modal.tab === 'api-configs' && modal.mode === 'edit' && draft.id
+  const canFetchModels = modal.tab === 'api-configs' && modal.mode !== 'view'
 
   const handleTestConfig = async () => {
     if (!draft.id) {
@@ -555,16 +591,49 @@ function FormModal({ modal, draft, setDraft, onClose, onSave }) {
     setTesting(true)
     setModalTestResult(null)
     try {
-      const result = await runApiConfigTest(draft.id)
+      const result = await runApiConfigTest(draft.id, {
+        config_id: draft.id || null,
+        name: draft.name || '',
+        api_url: draft.api_url || '',
+        api_key: draft.api_key || '',
+        model: draft.model || '',
+      })
       setModalTestResult(result)
     } catch (e) {
       setModalTestResult({
         success: false,
         title: '网络错误',
-        body: e.message || '请检查网络或稍后重试',
+        body: e.message || '请检查接口地址、密钥或模型',
       })
     } finally {
       setTesting(false)
+    }
+  }
+
+  const handleFetchModels = async () => {
+    setFetchingModels(true)
+    setModalTestResult(null)
+    try {
+      const result = await runApiModelFetch({
+        config_id: draft.id || null,
+        name: draft.name || '',
+        api_url: draft.api_url || '',
+        api_key: draft.api_key || '',
+        model: draft.model || '',
+      })
+      setModalTestResult(result)
+      setModelOptions(result.models || [])
+      if (result.success && !draft.model && result.models?.length) {
+        setDraft((old) => ({ ...old, model: result.models[0] }))
+      }
+    } catch (e) {
+      setModalTestResult({
+        success: false,
+        title: '网络错误',
+        body: e.message || '请检查接口地址和密钥',
+      })
+    } finally {
+      setFetchingModels(false)
     }
   }
 
@@ -579,7 +648,7 @@ function FormModal({ modal, draft, setDraft, onClose, onSave }) {
           {fields.map((field) => (
             <label className="admin-field" key={field.key}>
               <span>{field.label}</span>
-              <FieldInput field={field} draft={draft} setDraft={setDraft} mode={modal.mode} />
+              <FieldInput field={field} draft={draft} setDraft={setDraft} mode={modal.mode} modelOptions={modelOptions} />
             </label>
           ))}
         </div>
@@ -590,13 +659,19 @@ function FormModal({ modal, draft, setDraft, onClose, onSave }) {
             className="cfg-test-result--modal"
           />
         )}
+        {error && <p className="error">{error}</p>}
         <div className="modal-actions">
+          {canFetchModels && (
+            <button type="button" className="btn-test-leading" onClick={handleFetchModels} disabled={testing || fetchingModels}>
+              {fetchingModels ? '拉取中…' : '拉取模型'}
+            </button>
+          )}
           {canTest && (
-            <button type="button" className="btn-test-leading" onClick={handleTestConfig} disabled={testing}>
+            <button type="button" onClick={handleTestConfig} disabled={testing || fetchingModels}>
               {testing ? '测试中…' : '测试'}
             </button>
           )}
-          {modal.mode !== 'view' && <button className="primary" onClick={onSave} disabled={testing}>保存</button>}
+          {modal.mode !== 'view' && <button className="primary" onClick={onSave} disabled={testing || fetchingModels}>保存</button>}
           <button onClick={onClose}>取消</button>
         </div>
       </div>
@@ -604,7 +679,7 @@ function FormModal({ modal, draft, setDraft, onClose, onSave }) {
   )
 }
 
-function FieldInput({ field, draft, setDraft, mode }) {
+function FieldInput({ field, draft, setDraft, mode, modelOptions = [] }) {
   const readOnly = field.readOnly || (mode === 'edit' && field.readOnlyOnEdit)
   const value = draft[field.key] ?? ''
   if (mode === 'view') return <output>{displayValue(field.key, value)}</output>
@@ -620,6 +695,22 @@ function FieldInput({ field, draft, setDraft, mode }) {
   }
   if (field.type === 'textarea') {
     return <textarea required={field.required} readOnly={readOnly} value={value} onChange={(e) => setDraft((old) => ({ ...old, [field.key]: e.target.value }))} />
+  }
+  if (field.key === 'model' && modelOptions.length > 0) {
+    return (
+      <>
+        <input
+          list="api-model-options"
+          required={field.required}
+          readOnly={readOnly}
+          value={value}
+          onChange={(e) => setDraft((old) => ({ ...old, [field.key]: e.target.value }))}
+        />
+        <datalist id="api-model-options">
+          {modelOptions.map((model) => <option key={model} value={model} />)}
+        </datalist>
+      </>
+    )
   }
   return (
     <input

@@ -292,6 +292,11 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   white-space: nowrap;
 }
 
+.lobby-status.playing {
+  background: rgba(134, 239, 172, 0.28);
+  color: #166534;
+}
+
 .online-dot {
   width: 8px;
   height: 8px;
@@ -600,6 +605,12 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   border-color: rgba(194,139,147,0.36);
 }
 
+.soup-badge.playing {
+  color: #166534;
+  background: rgba(134, 239, 172, 0.38);
+  border-color: rgba(34, 197, 94, 0.55);
+}
+
 .room-stats {
   display: flex;
   gap: 10px;
@@ -834,6 +845,53 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   background: var(--pixel-pink);
   border-right: 4px solid var(--pixel-pink-dark);
   border-bottom: 4px solid var(--pixel-pink-dark);
+  cursor: pointer;
+  transition: transform 0.08s ease, border-width 0.08s ease, filter 0.12s ease, opacity 0.12s ease;
+}
+
+.pixel-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.pixel-primary:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+}
+
+.pixel-primary:focus-visible {
+  outline: 2px solid var(--pixel-purple);
+  outline-offset: 2px;
+}
+
+.pixel-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pixel-primary.loading {
+  opacity: 0.82;
+  cursor: wait;
+  filter: brightness(0.94);
+}
+
+.pixel-create .actions button:not(.pixel-primary) {
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.pixel-create .actions button:not(.pixel-primary):hover:not(:disabled) {
+  color: #fff;
+  background: #2f2540;
+}
+
+.pixel-create .actions button:not(.pixel-primary):active:not(:disabled) {
+  transform: translate(2px, 2px);
+}
+
+.pixel-create .actions button:not(.pixel-primary):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .pixel-primary.wide {
@@ -1118,6 +1176,18 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
     border-right: 3px solid var(--pixel-pink-dark);
     border-bottom: 3px solid var(--pixel-pink-dark);
     border-radius: 0;
+    cursor: pointer;
+    transition: transform 0.08s ease, border-width 0.08s ease, filter 0.12s ease;
+  }
+
+  .create-fab:hover {
+    filter: brightness(1.08);
+  }
+
+  .create-fab:active {
+    transform: translate(2px, 2px);
+    border-right-width: 1px;
+    border-bottom-width: 1px;
   }
   .create-drawer {
     position: fixed;
@@ -1368,6 +1438,15 @@ body:has(.room-page) {
 .room-page input {
   border-radius: 0;
   font-family: inherit;
+}
+
+.lobby-actions .close-room-btn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 2px solid rgba(255, 255, 255, 0.46);
+  background: rgba(157, 67, 72, 0.28);
+  color: #fff;
+  font-size: 13px;
 }
 
 .loading-screen {
@@ -1677,14 +1756,28 @@ body:has(.room-page) {
   border: 0;
   background: transparent;
   color: var(--pixel-muted);
-  padding: 4px 0;
+  padding: 6px 0;
   font-family: "Silkscreen", cursive;
-  font-size: 13px;
+  font-size: 18px;
+  line-height: 1.25;
 }
 
 .composer-tabs button.active {
   color: var(--pixel-pink);
-  box-shadow: inset 0 -3px 0 var(--pixel-pink);
+  box-shadow: inset 0 -4px 0 var(--pixel-pink);
+}
+
+.composer-tabs button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-finished-hint {
+  margin: 0;
+  padding-top: 4px;
+  font-size: 14px;
+  color: var(--pixel-muted);
+  text-align: center;
 }
 
 .composer-row {
@@ -1901,7 +1994,48 @@ body:has(.room-page) {
   transform: translateX(0);
 }
 
+.room-close-backdrop {
+  z-index: 70;
+  background: rgba(31, 23, 41, 0.48);
+  font-family: "Courier New", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.room-close-modal {
+  width: min(420px, calc(100vw - 32px));
+  border: 4px solid var(--pixel-purple);
+  border-radius: 0;
+  box-shadow: 8px 8px 0 var(--pixel-purple-dark);
+  color: var(--pixel-text);
+}
+
+.room-close-modal h2 {
+  margin: 0 0 10px;
+  color: #2f2935;
+  font-family: "Silkscreen", cursive;
+  font-size: 20px;
+}
+
+.room-close-modal p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--pixel-purple-darker);
+}
+
+.room-close-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.room-close-actions button {
+  min-height: 42px;
+}
+
 @media (max-width: 900px) {
+  .room-page .lobby-actions .close-room-btn {
+    display: inline-flex;
+  }
   .room-main {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);

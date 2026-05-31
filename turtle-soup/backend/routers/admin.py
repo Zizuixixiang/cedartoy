@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from auth_utils import admin_player, verify_password
 from database import execute, fetch_all, fetch_one
-from judge import test_config
+from judge import list_models, test_config
 from models import RoomCreateBody
 from utils import clean_content, room_id
 
@@ -34,8 +34,24 @@ class ApiConfigBody(BaseModel):
     priority: int = 0
 
 
+class ApiModelsBody(BaseModel):
+    config_id: Optional[int] = None
+    name: str = ""
+    api_url: str = ""
+    api_key: str = ""
+    model: str = ""
+
+
+class ApiTestBody(BaseModel):
+    config_id: Optional[int] = None
+    name: str = ""
+    api_url: str = ""
+    api_key: str = ""
+    model: str = ""
+
+
 class SettingBody(BaseModel):
-    value: str = Field(max_length=100)
+    value: str = Field(max_length=50000)
 
 
 class BanBody(BaseModel):
@@ -447,6 +463,38 @@ async def add_api_config(body: ApiConfigBody, admin: dict = Depends(admin_player
         (body.name, body.api_url, body.api_key, body.model, body.enabled, body.priority),
     )
     return {"id": cid}
+
+
+@router.post("/api-configs/models")
+async def fetch_api_models(body: ApiModelsBody, admin: dict = Depends(admin_player)):
+    del admin
+    existing = None
+    if body.config_id:
+        existing = await fetch_one("SELECT * FROM judge_api_configs WHERE id = ?", (body.config_id,))
+        if not existing:
+            raise HTTPException(status_code=404, detail="配置不存在")
+    cfg = {
+        "api_url": body.api_url.strip() or (existing["api_url"] if existing else ""),
+        "api_key": body.api_key.strip() or (existing["api_key"] if existing else ""),
+    }
+    return await list_models(cfg)
+
+
+@router.post("/api-configs/test")
+async def test_api_config_draft(body: ApiTestBody, admin: dict = Depends(admin_player)):
+    del admin
+    existing = None
+    if body.config_id:
+        existing = await fetch_one("SELECT * FROM judge_api_configs WHERE id = ?", (body.config_id,))
+        if not existing:
+            raise HTTPException(status_code=404, detail="配置不存在")
+    cfg = {
+        "name": body.name.strip() or (existing["name"] if existing else ""),
+        "api_url": body.api_url.strip() or (existing["api_url"] if existing else ""),
+        "api_key": body.api_key.strip() or (existing["api_key"] if existing else ""),
+        "model": body.model.strip() or (existing["model"] if existing else ""),
+    }
+    return await test_config(cfg)
 
 
 @router.put("/api-configs/{config_id}")

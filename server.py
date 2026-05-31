@@ -687,6 +687,7 @@ def _json_rpc_result(request_id, result):
 
 class CedarToyHandler(BaseHTTPRequestHandler):
     server_version = "CedarToy/1.0"
+    protocol_version = "HTTP/1.1"
 
     def do_POST(self):
         if self._is_soup_path():
@@ -1042,6 +1043,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         }
         headers["Host"] = self.headers.get("Host", "toy.cedarstar.org")
         headers["X-Forwarded-For"] = self.client_address[0]
+        is_sse = "/sse/" in self.path
         conn = http.client.HTTPConnection(SOUP_HOST, SOUP_PORT, timeout=60)
         try:
             conn.request(self.command, self.path, body=body, headers=headers)
@@ -1050,9 +1052,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             for key, value in resp.getheaders():
                 if key.lower() not in HOP_BY_HOP_HEADERS:
                     self.send_header(key, value)
+            if is_sse:
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
+            stream = resp.fp if is_sse and resp.fp is not None else resp
+            read_chunk = getattr(stream, "read1", None) or stream.read
             while True:
-                chunk = resp.read(8192)
+                chunk = read_chunk(8192)
                 if not chunk:
                     break
                 self.wfile.write(chunk)

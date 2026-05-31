@@ -30,6 +30,12 @@ async def list_rooms(player: dict = Depends(current_player)):
         FROM rooms r
         LEFT JOIN players p ON p.id = r.created_by
         LEFT JOIN puzzles pz ON pz.id = r.puzzle_id
+        WHERE r.status IN ('waiting', 'playing')
+           OR (
+             r.status = 'finished'
+             AND r.finished_at IS NOT NULL
+             AND r.finished_at >= datetime('now', '-48 hours')
+           )
         ORDER BY CASE r.status WHEN 'playing' THEN 0 WHEN 'waiting' THEN 1 ELSE 2 END, r.created_at DESC
         LIMIT 50
         """

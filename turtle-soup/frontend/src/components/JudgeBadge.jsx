@@ -1,8 +1,8 @@
 const JUDGMENT_STYLES = {
-  yes: ['YES', 'judgment-yes'],
-  no: ['NO', 'judgment-no'],
-  partial: ['???', 'judgment-partial'],
-  unrelated: ['--', 'judgment-unrelated'],
+  yes: ['是', 'judgment-yes'],
+  no: ['不是', 'judgment-no'],
+  partial: ['是也不是', 'judgment-partial'],
+  unrelated: ['不相干', 'judgment-unrelated'],
 }
 
 export default function JudgeBadge({ value }) {
