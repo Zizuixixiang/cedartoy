@@ -172,7 +172,17 @@ export default function Lobby() {
       {createTab === 'custom' && (
         <div className="create-body">
           <label className="terminal-label">汤面<textarea value={custom.surface} onChange={(e) => setCustom({ ...custom, surface: e.target.value })} /></label>
-          <label className="terminal-label">汤底<textarea value={custom.answer} onChange={(e) => setCustom({ ...custom, answer: e.target.value })} /></label>
+          <label className="terminal-label">
+            汤底
+            <span className="textarea-wrap textarea-wrap--hint">
+              <textarea value={custom.answer} onChange={(e) => setCustom({ ...custom, answer: e.target.value })} />
+              {!custom.answer.trim() && (
+                <span className="textarea-overlay-hint" aria-hidden="true">
+                  {`若需在中间阶段公布特殊线索，可在汤底插入【线索公布】，标记后写该阶段要公开的内容。\n\n示例：用户猜测主持人在说反话【线索公布】一段追加背景介绍……`}
+                </span>
+              )}
+            </span>
+          </label>
           <button type="button" className={`${createBtnClass} wide`} disabled={creating} onClick={() => create({ mode: 'custom', ...custom })}>{createLabel}</button>
         </div>
       )}

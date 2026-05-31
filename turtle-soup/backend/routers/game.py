@@ -182,9 +182,10 @@ async def guess(body: ContentBody, player: dict = Depends(current_player)):
         finally:
             await db.close()
         reveal_answer = result.get("answer") or room["answer"]
+        reveal_content = f"还原度：{score}%\n{reveal_answer}"
         reveal_id = await execute(
             "INSERT INTO game_logs (room_id, type, content, judgment) VALUES (?, 'system', ?, 'game_over')",
-            (body.room_id, reveal_answer),
+            (body.room_id, reveal_content),
         )
         reveal_payload = await _log_payload(reveal_id)
         await broadcast(body.room_id, "new_log", payload)

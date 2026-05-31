@@ -37,6 +37,11 @@ async def _get_generate_prompt() -> str:
     return DEFAULT_SETTINGS["generate_prompt"]
 
 
+async def _get_judge_prompt_clue() -> str:
+    row = await fetch_one("SELECT value FROM settings WHERE key = 'judge_prompt_clue'")
+    return str(row["value"]) if row else ""
+
+
 async def _configs() -> list[dict[str, Any]]:
     rows = await fetch_all(
         "SELECT * FROM judge_api_configs WHERE enabled = 1 ORDER BY priority ASC, id ASC"
@@ -238,14 +243,34 @@ async def test_config(cfg: dict[str, Any]) -> dict[str, Any]:
         return {"success": False, "data": None, "message": f"测试请求失败: {exc}"}
 
 
-_ASK_CHOICES = {"是", "不是", "无关", "是也不是"}
-_ASK_MAPPING = {"是": "yes", "不是": "no", "无关": "unrelated", "是也不是": "partial"}
+SYSTEM_BUSY_NOTICE = "【系统提示】系统开小差了，请再次提问"
+_ASK_CHOICES = {"是", "不是", "无关", "不相关", "没有关联", "是也不是"}
+_ASK_MAPPING = {
+    "是": "yes",
+    "不是": "no",
+    "无关": "unrelated",
+    "不相关": "unrelated",
+    "没有关联": "unrelated",
+    "是也不是": "partial",
+}
 _CLUE_PREFIX = "【线索公布】"
 
 
 def _ask_first_line_valid(text: str) -> bool:
-    lines = [line for line in text.strip().splitlines() if line.strip()]
+    lines = [line for line in _strip_code_fence(text).splitlines() if line.strip()]
     return bool(lines) and lines[0].strip() in _ASK_CHOICES
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return stripped
 
 
 def _extract_clue_from_ask(text: str) -> str | None:
@@ -258,11 +283,26 @@ def _extract_clue_from_ask(text: str) -> str | None:
 
 
 async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str | None]:
+    has_clue = "【线索公布】" in answer
+    system = await _get_judge_prompt()
+    if has_clue:
+        clue_prompt = await _get_judge_prompt_clue()
+        if clue_prompt:
+            system = system + "\n\n" + clue_prompt
+    ask_instruction = (
+        "本次请求类型是普通提问判定。第一行必须且只能是以下之一："
+        "是、不是、无关、是也不是。不要输出 yes/no/unrelated/partial，"
+        "不要输出通关格式。"
+    )
+    if has_clue:
+        ask_instruction += "若触发线索，可在第二行输出【线索公布】..."
     messages = [
-        {"role": "system", "content": await _get_judge_prompt()},
+        {"role": "system", "content": system},
+        {"role": "system", "content": ask_instruction},
         {
             "role": "user",
             "content": (
+                "请判定下面的玩家问题。\n"
                 f"汤面：{surface}\n"
                 f"汤底：{answer}\n"
                 f"玩家问题：{question}"
@@ -274,17 +314,21 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
         return {
             "judgment": "unrelated",
             "clue": None,
-            "content_override": "裁判开小差了，请再次提问",
+            "content_override": SYSTEM_BUSY_NOTICE,
         }
-    first_line = next(line.strip() for line in text.strip().splitlines() if line.strip())
+    first_line = next(line.strip() for line in _strip_code_fence(text).splitlines() if line.strip())
+    clue = _extract_clue_from_ask(text)
+    if not has_clue:
+        clue = None
     return {
         "judgment": _ASK_MAPPING[first_line],
-        "clue": _extract_clue_from_ask(text),
+        "clue": clue,
     }
 
 
 def _parse_guess_result(text: str) -> dict[str, Any] | None:
-    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    cleaned = _strip_code_fence(text)
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     if len(lines) < 2 or lines[0] not in {"【通关】", "【未通关】"}:
         return None
     score_match = re.search(r"\d+", lines[1])
@@ -292,9 +336,9 @@ def _parse_guess_result(text: str) -> dict[str, Any] | None:
         return None
     answer_text = None
     marker = "【汤底】"
-    marker_idx = text.find(marker)
+    marker_idx = cleaned.find(marker)
     if marker_idx >= 0:
-        answer_text = text[marker_idx + len(marker) :].strip() or None
+        answer_text = cleaned[marker_idx + len(marker) :].strip() or None
     return {
         "success": lines[0] == "【通关】",
         "score": int(score_match.group(0)),
@@ -306,8 +350,19 @@ async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
     messages = [
         {"role": "system", "content": await _get_judge_prompt()},
         {
+            "role": "system",
+            "content": (
+                "本次请求类型是猜测汤底，不是普通提问。禁止只回答 是/不是/无关/是也不是。"
+                "必须严格返回以下二选一格式：\n"
+                "【未通关】\n还原度：xx%\n"
+                "或\n"
+                "【通关】\n还原度：xx%\n【汤底】完整汤底故事文本"
+            ),
+        },
+        {
             "role": "user",
             "content": (
+                "请评估下面的玩家汤底猜测。\n"
                 f"汤面：{surface}\n"
                 f"汤底：{answer}\n"
                 f"玩家猜测：{guess}"
@@ -316,12 +371,12 @@ async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
     ]
     text = await _chat_validated(messages, lambda value: _parse_guess_result(value) is not None)
     if text is None:
-        return {"success": False, "score": 0, "answer": None, "error": "裁判开小差了，请再次提问"}
+        return {"success": False, "score": 0, "answer": None, "error": SYSTEM_BUSY_NOTICE}
     return _parse_guess_result(text) or {
         "success": False,
         "score": 0,
         "answer": None,
-        "error": "裁判开小差了，请再次提问",
+        "error": SYSTEM_BUSY_NOTICE,
     }
 
 

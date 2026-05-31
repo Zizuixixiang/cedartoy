@@ -82,6 +82,7 @@ const settingDescriptions = {
   generate_cooldown_seconds: 'AI 生成题目的按钮冷却秒数。',
   generate_prompt: 'AI 生成题目使用的提示词。该请求使用裁判 API 配置。',
   judge_prompt: '裁判判断提问时使用的系统提示词。',
+  judge_prompt_clue: '线索汤专用补充提示词。仅当汤底含【线索公布】标记时拼接到 judge_prompt 后。',
   guest_expire_hours: '游客身份/临时数据可保留的小时数。',
 }
 

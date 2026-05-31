@@ -73,6 +73,15 @@ function sortLogs(logs) {
   return [...main, ...reveals]
 }
 
+function systemNoticeContent(content) {
+  const text = String(content || '').trim()
+  if (text.startsWith('【系统提示】')) return text
+  if (/^(系统|裁判)开小差了/.test(text)) {
+    return text.replace(/^(系统|裁判)/, '【系统提示】系统')
+  }
+  return ''
+}
+
 export default function GameLog({ logs, onReport, onHintRespond, hintBusy }) {
   const ordered = sortLogs(logs)
 
@@ -104,12 +113,13 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy }) {
         if (log.type === 'system' && log.judgment === 'game_over') {
           return null
         }
+        const notice = systemNoticeContent(log.content)
         const time = formatLogTime(log.created_at)
         const name = log.username || (log.player_id ? `游客${log.player_id}` : '系统')
         const prefix = log.type === 'guess' ? '猜测' : log.type === 'system' ? '系统' : name
         return (
           <div
-            className={`session-log-line ${log.type}`}
+            className={`session-log-line ${log.type}${notice ? ' system-notice' : ''}`}
             key={log.id}
             onContextMenu={(event) => {
               event.preventDefault()
@@ -117,10 +127,10 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy }) {
             }}
           >
             <span className="log-time">{time}</span>
-            <JudgeBadge value={log.judgment} />
+            {!notice && <JudgeBadge value={log.judgment} />}
             <span className="log-text">
-              {log.type === 'system' ? '' : `${prefix}：`}
-              {log.content}
+              {notice || (log.type === 'system' ? '' : `${prefix}：`)}
+              {notice ? '' : log.content}
             </span>
           </div>
         )
