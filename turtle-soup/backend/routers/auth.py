@@ -1,4 +1,7 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from auth_utils import create_token, current_player, hash_password, verify_password
 from database import execute, fetch_one
@@ -12,8 +15,36 @@ def _source(source: str) -> str:
     return "mcp" if source == "mcp" else "web"
 
 
+class GuestRequest(BaseModel):
+    user_id: Optional[int] = None
+
+
 @router.post("/guest")
-async def guest_login():
+async def guest_login(body: GuestRequest | None = None):
+    user_id = body.user_id if body else None
+    if user_id:
+        toy_user = await fetch_one("SELECT username, is_ai, is_admin FROM toy_users WHERE id = ? AND deleted_at IS NULL", (user_id,))
+        if not toy_user:
+            raise HTTPException(status_code=401, detail="统一账号不存在或已删除")
+        named_player = await fetch_one("SELECT * FROM players WHERE username = ?", (toy_user["username"],))
+        player = await fetch_one("SELECT * FROM players WHERE user_id = ?", (user_id,))
+        if named_player and (not named_player.get("user_id") or int(named_player["user_id"]) == int(user_id)):
+            if player and player["id"] != named_player["id"]:
+                await execute("UPDATE players SET user_id = NULL WHERE id = ?", (player["id"],))
+            player = named_player
+        if not player:
+            player_id = await execute(
+                "INSERT INTO players (username, user_id, is_guest, is_ai, is_admin, source) VALUES (?, ?, 0, ?, ?, 'web')",
+                (toy_user["username"], user_id, 1 if toy_user["is_ai"] else 0, 1 if toy_user["is_admin"] else 0),
+            )
+            player = await fetch_one("SELECT * FROM players WHERE id = ?", (player_id,))
+        else:
+            await execute(
+                "UPDATE players SET user_id = ?, is_guest = 0, is_ai = ?, is_admin = ?, source = 'web', last_active_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (user_id, 1 if toy_user["is_ai"] else 0, 1 if toy_user["is_admin"] else 0, player["id"]),
+            )
+            player = await fetch_one("SELECT * FROM players WHERE id = ?", (player["id"],))
+        return {"token": create_token(player), "player": public_player(player)}
     player_id = await execute("INSERT INTO players (is_guest, source) VALUES (1, 'web')")
     player = await fetch_one("SELECT * FROM players WHERE id = ?", (player_id,))
     return {"token": create_token(player), "player": public_player(player)}

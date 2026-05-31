@@ -4,6 +4,7 @@ import judge
 from auth_utils import current_player
 from database import execute, fetch_all, fetch_one, get_db, get_setting
 from models import ContentBody, HintResponseBody
+from presence import touch_room
 from sse import broadcast
 from utils import clean_content
 
@@ -71,6 +72,7 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
         (player["id"],),
     )
     payload = await _log_payload(log_id)
+    await touch_room(body.room_id, player["id"])
     await broadcast(body.room_id, "new_log", payload)
 
     trigger = int(await get_setting("hint_trigger_count", "30"))
@@ -102,6 +104,7 @@ async def guess(body: ContentBody, player: dict = Depends(current_player)):
         (body.room_id, player["id"], guess_text, "yes" if correct else "no"),
     )
     payload = await _log_payload(log_id)
+    await touch_room(body.room_id, player["id"])
     if correct:
         db = await get_db()
         try:
@@ -152,3 +155,11 @@ async def hint_respond(body: HintResponseBody, player: dict = Depends(current_pl
 async def generate(player: dict = Depends(current_player)):
     del player
     return await judge.generate_puzzle()
+
+
+@router.get("/public-settings")
+async def public_settings(player: dict = Depends(current_player)):
+    del player
+    return {
+        "generate_cooldown_seconds": int(await get_setting("generate_cooldown_seconds", "5")),
+    }

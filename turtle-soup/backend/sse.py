@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from auth_utils import current_player
+from presence import enter_room, leave_room
 
 
 router = APIRouter()
@@ -21,7 +22,8 @@ async def broadcast(room_id: str, event: str, data: dict[str, Any]) -> None:
 
 @router.get("/sse/{room_id}")
 async def room_events(room_id: str, player: dict = Depends(current_player)):
-    del player
+    player_id = player["id"]
+    await enter_room(room_id, player_id)
     queue: asyncio.Queue = asyncio.Queue()
     _connections[room_id].add(queue)
 
@@ -36,5 +38,6 @@ async def room_events(room_id: str, player: dict = Depends(current_player)):
                     yield ": ping\n\n"
         finally:
             _connections[room_id].discard(queue)
+            await leave_room(room_id, player_id)
 
     return StreamingResponse(stream(), media_type="text/event-stream")

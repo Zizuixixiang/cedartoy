@@ -15,6 +15,8 @@ DEFAULT_SETTINGS = {
     "ai_cooldown_questions": "5",
     "ai_cooldown_seconds": "3",
     "generate_cooldown_seconds": "5",
+    "judge_prompt": "你是海龟汤游戏裁判。",
+    "generate_prompt": "你是海龟汤出题人。返回 JSON，字段 surface 和 answer。生成一道适合多人推理、无血腥露骨描写的中文海龟汤。",
     "guest_expire_hours": "48",
 }
 
@@ -88,11 +90,13 @@ async def init_db() -> None:
                 ask_count_p INTEGER DEFAULT 0,
                 win_count INTEGER DEFAULT 0,
                 game_count INTEGER DEFAULT 0,
+                user_id INTEGER,
                 last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS puzzles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT DEFAULT '',
                 surface TEXT NOT NULL,
                 answer TEXT NOT NULL,
                 tags TEXT DEFAULT '',
@@ -178,6 +182,15 @@ async def init_db() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS room_presence (
+                room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+                player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (room_id, player_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_room_presence_active
+                ON room_presence(room_id, last_active_at);
             """
         )
         for key, value in DEFAULT_SETTINGS.items():
@@ -185,14 +198,22 @@ async def init_db() -> None:
                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                 (key, value),
             )
+        async with db.execute("PRAGMA table_info(players)") as cur:
+            player_cols = {row[1] for row in await cur.fetchall()}
+        if "user_id" not in player_cols:
+            await db.execute("ALTER TABLE players ADD COLUMN user_id INTEGER")
+        async with db.execute("PRAGMA table_info(puzzles)") as cur:
+            puzzle_cols = {row[1] for row in await cur.fetchall()}
+        if "title" not in puzzle_cols:
+            await db.execute("ALTER TABLE puzzles ADD COLUMN title TEXT DEFAULT ''")
         seed_count = await db.execute_fetchall("SELECT COUNT(*) AS c FROM puzzles")
         if int(seed_count[0]["c"]) == 0:
             await db.executemany(
-                "INSERT INTO puzzles (surface, answer, tags, enabled) VALUES (?, ?, ?, 1)",
+                "INSERT INTO puzzles (title, surface, answer, tags, enabled) VALUES (?, ?, ?, ?, 1)",
                 [
-                    ("一个人走进餐厅点了一碗海龟汤，喝了一口后就自杀了。为什么？", "他曾经在海难中被同伴骗吃了所谓海龟汤，实际是妻子的肉。餐厅真正的海龟汤让他发现真相。", "经典"),
-                    ("男人每天坐电梯到 10 楼，再爬楼梯到 15 楼。下雨天却能直接到 15 楼。为什么？", "他个子矮，只能按到 10 楼；下雨天带伞，可以用伞尖按到 15 楼。", "日常"),
-                    ("房间里有一具尸体、一滩水和碎玻璃。发生了什么？", "死者是一条鱼，鱼缸碎了，水流出，鱼死了。", "经典"),
+                    ("餐厅海龟汤", "一个人走进餐厅点了一碗海龟汤，喝了一口后就自杀了。为什么？", "他曾经在海难中被同伴骗吃了所谓海龟汤，实际是妻子的肉。餐厅真正的海龟汤让他发现真相。", "经典"),
+                    ("电梯与雨伞", "男人每天坐电梯到 10 楼，再爬楼梯到 15 楼。下雨天却能直接到 15 楼。为什么？", "他个子矮，只能按到 10 楼；下雨天带伞，可以用伞尖按到 15 楼。", "日常"),
+                    ("鱼与鱼缸", "房间里有一具尸体、一滩水和碎玻璃。发生了什么？", "死者是一条鱼，鱼缸碎了，水流出，鱼死了。", "经典"),
                 ],
             )
         await db.commit()

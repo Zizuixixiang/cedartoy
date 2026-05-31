@@ -1252,7 +1252,7 @@
       }
       return ranks.map((rank, index) => {
         const label = rank.label || rank.username || rank[1] || "玩家";
-        const score = rank.score ?? rank[2] ?? "";
+        const score = rank.score != null ? rank.score : (rank[2] != null ? rank[2] : "");
         const width = Math.max(24, 92 - index * 12);
         return `<li><span>${index + 1}</span><span class="bar"><span style="width:${width}%"></span></span><span>${label} ${score}</span></li>`;
       }).join("");
@@ -1442,8 +1442,10 @@
           <button class="pixel-btn secondary desktop-only" id="logoutBtn" type="button">登出</button>
         </span>
       `;
-      $("bindOpen")?.addEventListener("click", () => openModal("bindModal"));
-      $("historyOpen")?.addEventListener("click", () => openPlaceholder("历史", "游玩历史筹备中，敬请期待。"));
+      const bindOpen = $("bindOpen");
+      const historyOpen = $("historyOpen");
+      if (bindOpen) bindOpen.addEventListener("click", () => openModal("bindModal"));
+      if (historyOpen) historyOpen.addEventListener("click", () => openPlaceholder("历史", "游玩历史筹备中，敬请期待。"));
       $("logoutBtn").addEventListener("click", logout);
     }
 
@@ -1485,8 +1487,12 @@
         const res = await fetch("/api/auth/me", {headers: headers(false)});
         if (!res.ok) throw new Error("auth failed");
         me = await res.json();
+        if (me && me.user && me.user.id) {
+          localStorage.setItem("cedartoy_user_id", me.user.id);
+        }
       } catch (err) {
         localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem("cedartoy_user_id");
         me = null;
       }
       renderAuth();
@@ -1520,6 +1526,7 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "登录失败");
         localStorage.setItem(TOKEN_KEY, data.token);
+        localStorage.setItem("cedartoy_user_id", data.user.id);
         me = {user: data.user, bindings: []};
         closeModals();
         renderAuth();
@@ -1554,6 +1561,7 @@
 
     function logout() {
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem("cedartoy_user_id");
       me = null;
       renderAuth();
       renderMine();

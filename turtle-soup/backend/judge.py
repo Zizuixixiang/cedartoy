@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
-from database import fetch_all
+from database import fetch_all, get_setting
 
 
 fail_counts: dict[int, int] = {}
@@ -13,11 +13,15 @@ FAIL_LIMIT = 5
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 
 
-def _prompt() -> str:
+def _file_prompt() -> str:
     path = CONFIG_DIR / "judge_prompt.txt"
     if path.exists():
         return path.read_text(encoding="utf-8")
     return "你是海龟汤游戏裁判。"
+
+
+async def _judge_prompt() -> str:
+    return await get_setting("judge_prompt", _file_prompt())
 
 
 async def _configs() -> list[dict[str, Any]]:
@@ -67,7 +71,7 @@ async def _chat(messages: list[dict[str, str]], temperature: float = 0.1) -> str
 async def judge_ask(answer: str, question: str) -> str:
     text = await _chat(
         [
-            {"role": "system", "content": _prompt()},
+            {"role": "system", "content": await _judge_prompt()},
             {
                 "role": "user",
                 "content": (
@@ -119,10 +123,14 @@ async def generate_hint(answer: str, game_log: list[dict[str, Any]]) -> str:
 
 
 async def generate_puzzle() -> dict[str, str]:
+    prompt = await get_setting(
+        "generate_prompt",
+        "你是海龟汤出题人。返回 JSON，字段 surface 和 answer。生成一道适合多人推理、无血腥露骨描写的中文海龟汤。",
+    )
     text = await _chat(
         [
-            {"role": "system", "content": "你是海龟汤出题人。返回 JSON，字段 surface 和 answer。"},
-            {"role": "user", "content": "生成一道适合多人推理、无血腥露骨描写的中文海龟汤。"},
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": "请按系统提示生成题目，只返回 JSON。"},
         ],
         temperature=0.8,
     )

@@ -1,12 +1,23 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth_utils import admin_player, verify_password
 from database import execute, fetch_all, fetch_one
 from models import RoomCreateBody
-from utils import clean_content
+from utils import clean_content, room_id
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def _source(value: str) -> str:
+    return value if value in {"web", "mcp"} else "web"
+
+
+def _optional_clean(value: str, limit: int) -> str | None:
+    text = (value or "").strip()
+    return clean_content(text, limit) if text else None
 
 
 class AdminPasswordBody(BaseModel):
@@ -31,6 +42,49 @@ class BanBody(BaseModel):
     reason: str = ""
 
 
+class SubmissionBody(BaseModel):
+    surface: str = ""
+    answer: str = ""
+    tags: str = ""
+    status: str = "pending"
+
+
+class PlayerBody(BaseModel):
+    username: str = ""
+    is_guest: int = 0
+    is_ai: int = 0
+    is_admin: int = 0
+    source: str = "web"
+
+
+class RoomAdminBody(BaseModel):
+    surface: str = ""
+    answer: str = ""
+    status: str = "waiting"
+    winner_id: Optional[int] = None
+
+
+class ReportAdminBody(BaseModel):
+    reporter_id: Optional[int] = None
+    target_player_id: Optional[int] = None
+    room_id: Optional[str] = None
+    log_id: Optional[int] = None
+    reason: str = ""
+    status: str = "pending"
+
+
+class ReportBody(BaseModel):
+    reason: str = ""
+    status: str = "pending"
+
+
+class FlagBody(BaseModel):
+    type: str = "manual"
+    ref_id: int = 0
+    reason: str = ""
+    status: str = "pending"
+
+
 @router.post("/verify")
 async def verify_admin_password(body: AdminPasswordBody, admin: dict = Depends(admin_player)):
     if not verify_password(body.password, admin["password_hash"] or ""):
@@ -51,7 +105,7 @@ async def overview(admin: dict = Depends(admin_player)):
 @router.get("/submissions")
 async def submissions(admin: dict = Depends(admin_player)):
     del admin
-    return await fetch_all("SELECT * FROM puzzle_submissions WHERE status = 'pending' ORDER BY id DESC")
+    return await fetch_all("SELECT * FROM puzzle_submissions ORDER BY id DESC")
 
 
 @router.post("/submissions/{submission_id}/add")
@@ -62,8 +116,8 @@ async def add_submission(submission_id: int, body: RoomCreateBody, admin: dict =
     surface = clean_content(body.surface or sub["surface"], 500)
     answer = clean_content(body.answer or sub["answer"], 1000)
     await execute(
-        "INSERT INTO puzzles (surface, answer, tags, created_by) VALUES (?, ?, ?, ?)",
-        (surface, answer, (body.tags or sub["tags"])[:100], admin["id"]),
+        "INSERT INTO puzzles (title, surface, answer, tags, created_by) VALUES (?, ?, ?, ?, ?)",
+        ("", surface, answer, (body.tags or sub["tags"])[:100], admin["id"]),
     )
     await execute("UPDATE puzzle_submissions SET status = 'added' WHERE id = ?", (submission_id,))
     return {"ok": True}
@@ -76,10 +130,76 @@ async def ignore_submission(submission_id: int, admin: dict = Depends(admin_play
     return {"ok": True}
 
 
+@router.post("/submissions")
+async def create_submission(body: SubmissionBody, admin: dict = Depends(admin_player)):
+    del admin
+    sid = await execute(
+        "INSERT INTO puzzle_submissions (surface, answer, tags, status) VALUES (?, ?, ?, ?)",
+        (
+            clean_content(body.surface, 500),
+            clean_content(body.answer, 1000),
+            body.tags[:100],
+            body.status[:32],
+        ),
+    )
+    return {"id": sid}
+
+
+@router.put("/submissions/{submission_id}")
+async def update_submission(submission_id: int, body: SubmissionBody, admin: dict = Depends(admin_player)):
+    del admin
+    existing = await fetch_one("SELECT id FROM puzzle_submissions WHERE id = ?", (submission_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    await execute(
+        "UPDATE puzzle_submissions SET surface = ?, answer = ?, tags = ?, status = ? WHERE id = ?",
+        (
+            clean_content(body.surface, 500),
+            clean_content(body.answer, 1000),
+            body.tags[:100],
+            body.status[:32],
+            submission_id,
+        ),
+    )
+    return {"ok": True}
+
+
+@router.delete("/submissions/{submission_id}")
+async def delete_submission(submission_id: int, admin: dict = Depends(admin_player)):
+    del admin
+    await execute("DELETE FROM puzzle_submissions WHERE id = ?", (submission_id,))
+    return {"ok": True}
+
+
 @router.get("/players")
 async def players(admin: dict = Depends(admin_player)):
     del admin
-    return await fetch_all("SELECT id, username, is_guest, is_ai, is_admin, source, ask_count, win_count, game_count, created_at, last_active_at FROM players ORDER BY id DESC")
+    return await fetch_all("SELECT id, username, user_id, is_guest, is_ai, is_admin, source, ask_count, win_count, game_count, created_at, last_active_at FROM players ORDER BY id DESC")
+
+
+@router.post("/players")
+async def create_player(body: PlayerBody, admin: dict = Depends(admin_player)):
+    del admin
+    username = _optional_clean(body.username, 32)
+    pid = await execute(
+        "INSERT INTO players (username, is_guest, is_ai, is_admin, source) VALUES (?, ?, ?, ?, ?)",
+        (username, 1 if body.is_guest else 0, 1 if body.is_ai else 0, 1 if body.is_admin else 0, _source(body.source)),
+    )
+    return {"id": pid}
+
+
+@router.put("/players/{player_id}")
+async def update_player(player_id: int, body: PlayerBody, admin: dict = Depends(admin_player)):
+    del admin
+    existing = await fetch_one("SELECT id FROM players WHERE id = ?", (player_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="玩家不存在")
+    username = _optional_clean(body.username, 32)
+    await execute(
+        "UPDATE players SET username = ?, is_guest = ?, is_ai = ?, is_admin = ?, source = ? WHERE id = ?",
+        (username, 1 if body.is_guest else 0, 1 if body.is_ai else 0, 1 if body.is_admin else 0, _source(body.source), player_id),
+    )
+    return {"ok": True}
 
 
 @router.patch("/players/{player_id}/admin")
@@ -102,6 +222,15 @@ async def reset_stats(player_id: int, admin: dict = Depends(admin_player)):
 @router.delete("/players/{player_id}")
 async def delete_player(player_id: int, admin: dict = Depends(admin_player)):
     del admin
+    await execute("UPDATE puzzles SET created_by = NULL WHERE created_by = ?", (player_id,))
+    await execute("UPDATE puzzle_submissions SET submitted_by = NULL WHERE submitted_by = ?", (player_id,))
+    await execute("UPDATE rooms SET created_by = NULL WHERE created_by = ?", (player_id,))
+    await execute("UPDATE rooms SET winner_id = NULL WHERE winner_id = ?", (player_id,))
+    await execute("UPDATE game_logs SET player_id = NULL WHERE player_id = ?", (player_id,))
+    await execute("UPDATE room_notes SET player_id = NULL WHERE player_id = ?", (player_id,))
+    await execute("UPDATE reports SET reporter_id = NULL WHERE reporter_id = ?", (player_id,))
+    await execute("UPDATE reports SET target_player_id = NULL WHERE target_player_id = ?", (player_id,))
+    await execute("UPDATE ban_ips SET banned_by = NULL WHERE banned_by = ?", (player_id,))
     await execute("DELETE FROM players WHERE id = ?", (player_id,))
     return {"ok": True}
 
@@ -112,10 +241,66 @@ async def admin_rooms(admin: dict = Depends(admin_player)):
     return await fetch_all("SELECT id, surface, answer, status, created_by, winner_id, created_at, finished_at FROM rooms ORDER BY created_at DESC LIMIT 100")
 
 
+@router.post("/rooms")
+async def create_admin_room(body: RoomAdminBody, admin: dict = Depends(admin_player)):
+    rid = room_id()
+    while await fetch_one("SELECT id FROM rooms WHERE id = ?", (rid,)):
+        rid = room_id()
+    status = body.status[:32] or "waiting"
+    await execute(
+        "INSERT INTO rooms (id, surface, answer, status, created_by, winner_id, finished_at) VALUES (?, ?, ?, ?, ?, ?, CASE WHEN ? = 'finished' THEN CURRENT_TIMESTAMP ELSE NULL END)",
+        (
+            rid,
+            clean_content(body.surface, 500),
+            clean_content(body.answer, 1000),
+            status,
+            admin["id"],
+            body.winner_id,
+            status,
+        ),
+    )
+    return {"id": rid}
+
+
 @router.post("/rooms/{room_id}/finish")
 async def finish_room(room_id: str, admin: dict = Depends(admin_player)):
     del admin
     await execute("UPDATE rooms SET status = 'finished', finished_at = CURRENT_TIMESTAMP WHERE id = ?", (room_id,))
+    return {"ok": True}
+
+
+@router.put("/rooms/{room_id}")
+async def update_room(room_id: str, body: RoomAdminBody, admin: dict = Depends(admin_player)):
+    del admin
+    existing = await fetch_one("SELECT id FROM rooms WHERE id = ?", (room_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="房间不存在")
+    finished_at_sql = ", finished_at = CASE WHEN ? = 'finished' THEN COALESCE(finished_at, CURRENT_TIMESTAMP) ELSE NULL END"
+    await execute(
+        f"UPDATE rooms SET surface = ?, answer = ?, status = ?, winner_id = ?{finished_at_sql} WHERE id = ?",
+        (
+            clean_content(body.surface, 500),
+            clean_content(body.answer, 1000),
+            body.status[:32],
+            body.winner_id,
+            body.status[:32],
+            room_id,
+        ),
+    )
+    return {"ok": True}
+
+
+@router.delete("/rooms/{room_id}")
+async def delete_room(room_id: str, admin: dict = Depends(admin_player)):
+    del admin
+    await execute("UPDATE reports SET room_id = NULL WHERE room_id = ?", (room_id,))
+    await execute(
+        "UPDATE reports SET log_id = NULL WHERE log_id IN (SELECT id FROM game_logs WHERE room_id = ?)",
+        (room_id,),
+    )
+    await execute("DELETE FROM room_notes WHERE room_id = ?", (room_id,))
+    await execute("DELETE FROM game_logs WHERE room_id = ?", (room_id,))
+    await execute("DELETE FROM rooms WHERE id = ?", (room_id,))
     return {"ok": True}
 
 
@@ -125,6 +310,41 @@ async def reports(admin: dict = Depends(admin_player)):
     return await fetch_all("SELECT * FROM reports ORDER BY id DESC")
 
 
+@router.post("/reports")
+async def create_report(body: ReportAdminBody, admin: dict = Depends(admin_player)):
+    del admin
+    rid = await execute(
+        "INSERT INTO reports (reporter_id, target_player_id, room_id, log_id, reason, status) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            body.reporter_id,
+            body.target_player_id,
+            (body.room_id or None),
+            body.log_id,
+            body.reason[:200],
+            body.status[:32],
+        ),
+    )
+    return {"id": rid}
+
+
+@router.put("/reports/{report_id}")
+async def update_report(report_id: int, body: ReportAdminBody, admin: dict = Depends(admin_player)):
+    del admin
+    await execute(
+        "UPDATE reports SET reporter_id = ?, target_player_id = ?, room_id = ?, log_id = ?, reason = ?, status = ? WHERE id = ?",
+        (
+            body.reporter_id,
+            body.target_player_id,
+            (body.room_id or None),
+            body.log_id,
+            body.reason[:200],
+            body.status[:32],
+            report_id,
+        ),
+    )
+    return {"ok": True}
+
+
 @router.post("/reports/{report_id}/resolve")
 async def resolve_report(report_id: int, admin: dict = Depends(admin_player)):
     del admin
@@ -132,16 +352,50 @@ async def resolve_report(report_id: int, admin: dict = Depends(admin_player)):
     return {"ok": True}
 
 
+@router.delete("/reports/{report_id}")
+async def delete_report(report_id: int, admin: dict = Depends(admin_player)):
+    del admin
+    await execute("DELETE FROM reports WHERE id = ?", (report_id,))
+    return {"ok": True}
+
+
 @router.get("/flags")
 async def flags(admin: dict = Depends(admin_player)):
     del admin
-    return await fetch_all("SELECT * FROM flagged_content WHERE status = 'pending' ORDER BY id DESC")
+    return await fetch_all("SELECT * FROM flagged_content ORDER BY id DESC")
+
+
+@router.post("/flags")
+async def create_flag(body: FlagBody, admin: dict = Depends(admin_player)):
+    del admin
+    fid = await execute(
+        "INSERT INTO flagged_content (type, ref_id, reason, status) VALUES (?, ?, ?, ?)",
+        (body.type[:32], body.ref_id, body.reason[:200], body.status[:32]),
+    )
+    return {"id": fid}
+
+
+@router.put("/flags/{flag_id}")
+async def update_flag(flag_id: int, body: FlagBody, admin: dict = Depends(admin_player)):
+    del admin
+    await execute(
+        "UPDATE flagged_content SET type = ?, ref_id = ?, reason = ?, status = ? WHERE id = ?",
+        (body.type[:32], body.ref_id, body.reason[:200], body.status[:32], flag_id),
+    )
+    return {"ok": True}
 
 
 @router.post("/flags/{flag_id}/resolve")
 async def resolve_flag(flag_id: int, admin: dict = Depends(admin_player)):
     del admin
     await execute("UPDATE flagged_content SET status = 'resolved' WHERE id = ?", (flag_id,))
+    return {"ok": True}
+
+
+@router.delete("/flags/{flag_id}")
+async def delete_flag(flag_id: int, admin: dict = Depends(admin_player)):
+    del admin
+    await execute("DELETE FROM flagged_content WHERE id = ?", (flag_id,))
     return {"ok": True}
 
 
@@ -157,6 +411,13 @@ async def add_ban(body: BanBody, admin: dict = Depends(admin_player)):
         "INSERT OR REPLACE INTO ban_ips (ip, reason, banned_by) VALUES (?, ?, ?)",
         (body.ip.strip(), body.reason[:200], admin["id"]),
     )
+    return {"ok": True}
+
+
+@router.put("/bans/{ban_id}")
+async def update_ban(ban_id: int, body: BanBody, admin: dict = Depends(admin_player)):
+    del admin
+    await execute("UPDATE ban_ips SET ip = ?, reason = ? WHERE id = ?", (body.ip.strip(), body.reason[:200], ban_id))
     return {"ok": True}
 
 
@@ -218,4 +479,11 @@ async def settings(admin: dict = Depends(admin_player)):
 async def update_setting(key: str, body: SettingBody, admin: dict = Depends(admin_player)):
     del admin
     await execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, body.value))
+    return {"ok": True}
+
+
+@router.delete("/settings/{key}")
+async def delete_setting(key: str, admin: dict = Depends(admin_player)):
+    del admin
+    await execute("DELETE FROM settings WHERE key = ?", (key,))
     return {"ok": True}

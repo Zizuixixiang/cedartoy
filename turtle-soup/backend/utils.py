@@ -9,6 +9,15 @@ SAFE_TEXT_RE = re.compile(r"[<>{}]")
 ROOM_ALPHABET = string.ascii_letters + string.digits
 
 
+def strip_puzzle_text(value: str | None, *, required: bool = False, label: str = "内容") -> str:
+    text = (value or "").strip()
+    if required and not text:
+        raise HTTPException(status_code=400, detail=f"{label}不能为空")
+    if text and SAFE_TEXT_RE.search(text):
+        raise HTTPException(status_code=400, detail="内容包含不允许的字符")
+    return text
+
+
 def clean_content(value: str, limit: int = 200) -> str:
     text = (value or "").strip()
     if not text:

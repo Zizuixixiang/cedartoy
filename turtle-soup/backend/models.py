@@ -15,6 +15,14 @@ class RoomCreateBody(BaseModel):
     tags: str = Field(default="", max_length=100)
 
 
+class PuzzleBody(BaseModel):
+    """管理员题库直写/编辑，不做字数上限。"""
+    title: str = ""
+    surface: str
+    answer: str
+    tags: str = ""
+
+
 class ContentBody(BaseModel):
     room_id: str
     content: str = Field(min_length=1, max_length=200)
