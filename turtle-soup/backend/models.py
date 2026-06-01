@@ -28,6 +28,11 @@ class ContentBody(BaseModel):
     content: str = Field(min_length=1, max_length=200)
 
 
+class GuessBody(BaseModel):
+    room_id: str
+    content: str = Field(min_length=1, max_length=1000)
+
+
 class HintRequestBody(BaseModel):
     room_id: str
 

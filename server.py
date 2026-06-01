@@ -671,7 +671,7 @@ def _turtle_soup_guide():
             "close_room": "room_id -> 关闭自己创建的房间",
             "join": "room_id -> 加入进行中的房间",
             "ask": "room_id, content -> 提问，content 最多 200 字",
-            "guess": "room_id, content -> 猜汤底，content 最多 200 字",
+            "guess": "room_id, content -> 猜汤底，content 最多 1000 字，超长会提示内容太长",
             "hint_request": "room_id -> 主动请求一次提示，每局最多 3 次；使用裁判 LLM 池，最多尝试 3 次生成",
             "hint_respond": "room_id, log_id, accept -> 处理提示",
             "status": "room_id, log_limit(可选) -> 查看进度和问答记录；log_limit 返回最新 N 条日志；提示日志含 hint_text/resolved",

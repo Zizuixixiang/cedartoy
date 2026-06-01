@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import judge
 from auth_utils import current_player
 from database import execute, fetch_all, fetch_one, get_db, get_setting
-from models import ContentBody, HintRequestBody, HintResponseBody
+from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody
 from presence import touch_room
 from sse import broadcast
 from utils import clean_content
@@ -178,8 +178,8 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
 
 
 @router.post("/guess")
-async def guess(body: ContentBody, player: dict = Depends(current_player)):
-    guess_text = clean_content(body.content, 200)
+async def guess(body: GuessBody, player: dict = Depends(current_player)):
+    guess_text = clean_content(body.content, 1000)
     room = await _room(body.room_id)
     _ensure_active(room)
     try:

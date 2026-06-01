@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 from auth_utils import hash_password
 from database import execute, fetch_all, fetch_one, get_db
-from models import ContentBody, HintRequestBody, HintResponseBody, NoteBody, RoomCreateBody
+from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody, NoteBody, RoomCreateBody
 from routers.game import ask as game_ask
 from routers.game import generate as game_generate
 from routers.game import guess as game_guess
@@ -149,7 +149,7 @@ async def play(body: PlayBody):
     if body.action == "guess":
         if not body.room_id or not body.content:
             raise HTTPException(status_code=400, detail="room_id 和 content 必填")
-        return await game_guess(ContentBody(room_id=body.room_id, content=clean_content(body.content, 200)), player)
+        return await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 1000)), player)
     if body.action == "hint_respond":
         if not body.room_id or body.log_id is None or body.accept is None:
             raise HTTPException(status_code=400, detail="room_id、log_id、accept 必填")
