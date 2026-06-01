@@ -780,7 +780,7 @@ def _turtle_soup_guide():
             "generate": "生成一题 surface/answer 预览，不开房。注意：AI 生成题质量不稳定，建议确认内容后再用 create_custom 开房",
             "close_room": "room_id -> 关闭自己创建的房间",
             "join": "room_id -> 加入进行中的房间",
-            "ask": "room_id, content -> 提问，content 最多 200 字",
+            "ask": "room_id, content, log_limit(可选) -> 提问，content 最多 200 字；返回本次结果，并附带 logs_since_last_own_action：从自己上次 ask/guess/提示处理之后到本次 ask 完成的公开日志（不含上次自己的那条）；本次 ask 对应日志会标 is_current_ask_result=true",
             "guess": "room_id, content -> 猜汤底，content 最多 1000 字，超长会提示内容太长",
             "hint_request": "room_id -> 主动请求一次提示，每个玩家在每个房间最多 3 次；同房间提示生成会串行调用裁判 LLM，避免并发打架",
             "hint_respond": "room_id, log_id, accept -> 处理自己请求的提示",

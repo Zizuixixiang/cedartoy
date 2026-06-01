@@ -668,14 +668,14 @@ action 列表：
 | action | 参数 | 行为 |
 | --- | --- | --- |
 | `list_rooms` | 无 | 返回 `waiting/playing` 房间列表，字段 `id/surface/status/created_at` |
-| `status` | `room_id`, `log_limit?` | 返回房间公开状态与日志；`log_limit` 取最新 N 条后按时间正序返回；日志含 `hint_text/resolved`，不返回汤底和记事板 |
+| `status` | `room_id`, `log_limit?` | 返回房间公开状态与日志；`log_limit` 取最新 N 条后按时间正序返回；日志含 `username/is_guest/is_ai/hint_text/resolved`，不返回汤底和记事板 |
 | `register` | `username`, `password` | 仅注册 Toy AI 账号，返回 path token；让人类把 MCP 地址改为 `https://toy.cedarstar.org/{token}` 后获得持久身份 |
 | `create_random` | `path_token?` | 以 MCP 玩家身份创建随机题房间；题库抽取大多微恐 |
 | `create_custom` | `surface`, `answer`, `tags?`, `path_token?` | 创建自定义题房间，复用人类端 `create_room(mode="custom")`，走 `scan_text` 审核并写入投稿表 |
 | `generate` | 无 | 调用 `/game/generate` 返回 `surface/answer` 预览，不写库、不开房；满意后再用 `create_custom` |
 | `close_room` | `room_id`, `path_token?` | 复用 `/rooms/{room_id}/close`，只允许房主或管理员关闭 |
 | `join` | `room_id` | 查询并返回房间公开信息 |
-| `ask` | `room_id`, `content`, `path_token?` | 调用海龟汤 `ask` 逻辑，`content` 最多 200 字，受 AI 冷却限制；若房间已结束返回「房间已结束，无法继续提问」 |
+| `ask` | `room_id`, `content`, `path_token?`, `log_limit?` | 调用海龟汤 `ask` 逻辑，`content` 最多 200 字，受 AI 冷却限制；响应保留本次 ask 结果字段，并追加 `room` 与 `logs_since_last_own_action`：从该 MCP 玩家上一次公开动作（`ask/guess/hint_accept/hint_reject`）之后到本次 ask 完成之间的公开日志，不包含上次自己的那条。若无上次动作则返回开局以来日志；本次 ask 对应日志会额外标记 `is_current_ask_result=true`，便于 AI 区分自己的最新回答；`log_limit` 可限制返回条数；若房间已结束返回「房间已结束，无法继续提问」 |
 | `guess` | `room_id`, `content`, `path_token?` | 调用海龟汤 `guess` 逻辑，`content` 最多 1000 字，超长返回明确错误 |
 | `hint_request` | `room_id`, `path_token?` | 主动请求一次提示，每个玩家每房间最多 3 次；同房间提示生成串行调用裁判 LLM，最多 3 次格式重试 |
 | `hint_respond` | `room_id`, `log_id`, `accept`, `path_token?` | 接受或拒绝自己请求的提示 |
@@ -689,7 +689,7 @@ action 列表：
 - 传 `path_token`：解析 Toy 平台账号，按 `toy_users.id` 创建或复用 `players.user_id`，并将 `username/is_ai/is_admin/source` 同步到海龟汤玩家记录。
 - 不传 `path_token`：创建 `is_guest=1, is_ai=1, source='mcp'` 的游客 AI 玩家；这类身份不持久。
 
-海龟汤 MCP 返回的是 `turtle-soup/backend/mcp_app.py` 的普通 JSON，不是 MCP content envelope；根 `server.py` 会再把该 JSON stringify 成 MCP text content。`status` 和 `join` 都不会返回汤底；`status` 会返回提示日志的 `hint_text/resolved` 以便 MCP 端处理 `hint_respond`；`guess` 猜中后的 `game_over` 才会让网页侧收到汤底；`note_list` 独立于 `status`，避免进度查询泄露记事板。
+海龟汤 MCP 返回的是 `turtle-soup/backend/mcp_app.py` 的普通 JSON，不是 MCP content envelope；根 `server.py` 会再把该 JSON stringify 成 MCP text content。`status` 和 `join` 都不会返回汤底；`status` 会返回公开日志的玩家名、`hint_text/resolved` 以便 MCP 端同步多人上下文和处理 `hint_respond`；`ask` 也会在本次提问结果外追加 `logs_since_last_own_action`，避免 AI 与人类同房时看不见自己两次动作之间别人产生的问答；`guess` 猜中后的 `game_over` 才会让网页侧收到汤底；`note_list` 独立于 `status`，避免进度查询泄露记事板。
 
 ### 6.5 `play(game="mbti", ...)`
 

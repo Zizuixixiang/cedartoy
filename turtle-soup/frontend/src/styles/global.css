@@ -1635,7 +1635,7 @@ body:has(.room-page) {
 
 .room-surface-panel .terminal-head {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
@@ -1643,6 +1643,38 @@ body:has(.room-page) {
   border-bottom: 2px solid var(--pixel-purple-light);
   color: var(--pixel-text);
   font-family: "Silkscreen", cursive;
+}
+
+.surface-head-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--pixel-purple-darker);
+  font-family: "Silkscreen", cursive;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.surface-head-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid rgba(190, 177, 209, 0.75);
+  background: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+}
+
+.surface-head-meta .surface-state.playing {
+  color: #6f4f95;
+  border-color: rgba(230, 168, 177, 0.78);
+  background: rgba(230, 168, 177, 0.18);
+}
+
+.surface-head-meta .surface-state.pale {
+  color: var(--pixel-muted);
 }
 
 .session-log-panel .terminal-head strong {
@@ -2196,6 +2228,22 @@ body:has(.room-page) {
   }
   .room-surface-panel .terminal-head strong {
     font-size: 14px;
+  }
+  .room-surface-panel .terminal-head {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 7px 8px;
+  }
+  .room-surface-panel .terminal-head .lights {
+    display: none;
+  }
+  .surface-head-meta {
+    gap: 3px;
+    font-size: 9px;
+  }
+  .surface-head-meta span {
+    min-height: 18px;
+    padding: 1px 4px;
   }
   .session-log-panel .terminal-head {
     display: flex;

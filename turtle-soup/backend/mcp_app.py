@@ -58,37 +58,7 @@ async def play(body: PlayBody):
     if body.action == "status":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
-        room = await fetch_one("SELECT id, surface, status, winner_id, created_at, finished_at FROM rooms WHERE id = ?", (body.room_id,))
-        if not room:
-            raise HTTPException(status_code=404, detail="房间不存在")
-        if body.log_limit is None:
-            logs = await fetch_all(
-                """
-                SELECT id, player_id, type, content, judgment, hint_text, resolved, created_at
-                FROM game_logs
-                WHERE room_id = ?
-                ORDER BY id ASC
-                """,
-                (body.room_id,),
-            )
-        else:
-            if body.log_limit < 0:
-                raise HTTPException(status_code=400, detail="log_limit 不能为负数")
-            logs = await fetch_all(
-                """
-                SELECT id, player_id, type, content, judgment, hint_text, resolved, created_at
-                FROM (
-                    SELECT id, player_id, type, content, judgment, hint_text, resolved, created_at
-                    FROM game_logs
-                    WHERE room_id = ?
-                    ORDER BY id DESC
-                    LIMIT ?
-                )
-                ORDER BY id ASC
-                """,
-                (body.room_id, body.log_limit),
-            )
-        return {"room": room, "logs": logs}
+        return await _room_context(body.room_id, body.log_limit)
     if body.action == "register":
         return await _register_toy_user(body.username, body.password)
     if body.action == "join":
@@ -146,10 +116,18 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail="房间已结束，无法继续提问")
+        previous_own_log = await _previous_own_public_log(body.room_id, player["id"])
         payload, hint_task = await _ask_impl(ContentBody(room_id=body.room_id, content=clean_content(body.content, 200)), player)
         hint_result = await hint_task
         if hint_result:
             payload["auto_hint"] = hint_result
+        payload["room"] = await _public_room(body.room_id)
+        payload["logs_since_last_own_action"] = await _room_logs_after(
+            body.room_id,
+            previous_own_log["id"] if previous_own_log else None,
+            body.log_limit,
+            current_log_id=payload.get("id"),
+        )
         return payload
     if body.action == "guess":
         if not body.room_id or not body.content:
@@ -179,6 +157,69 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=400, detail="note_id 必填")
         return await delete_note(body.note_id, player)
     raise HTTPException(status_code=400, detail="未知 action")
+
+
+async def _public_room(room_id: str) -> dict:
+    room = await fetch_one("SELECT id, surface, status, winner_id, created_at, finished_at FROM rooms WHERE id = ?", (room_id,))
+    if not room:
+        raise HTTPException(status_code=404, detail="房间不存在")
+    return room
+
+
+async def _room_context(room_id: str, log_limit: int | None = None) -> dict:
+    return {"room": await _public_room(room_id), "logs": await _room_logs_after(room_id, None, log_limit)}
+
+
+async def _previous_own_public_log(room_id: str, player_id: int) -> dict | None:
+    return await fetch_one(
+        """
+        SELECT id
+        FROM game_logs
+        WHERE room_id = ?
+          AND player_id = ?
+          AND type IN ('ask', 'guess', 'hint_accept', 'hint_reject')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (room_id, player_id),
+    )
+
+
+async def _room_logs_after(
+    room_id: str,
+    after_log_id: int | None,
+    log_limit: int | None = None,
+    current_log_id: int | None = None,
+) -> list[dict]:
+    if log_limit is not None and log_limit < 0:
+        raise HTTPException(status_code=400, detail="log_limit 不能为负数")
+    params: list = [room_id]
+    after_clause = ""
+    if after_log_id is not None:
+        after_clause = "AND gl.id > ?"
+        params.append(after_log_id)
+    limit_clause = ""
+    if log_limit is not None:
+        limit_clause = "LIMIT ?"
+        params.append(log_limit)
+    rows = await fetch_all(
+        f"""
+        SELECT gl.id, gl.player_id, gl.type, gl.content, gl.judgment,
+               gl.hint_text, gl.resolved, gl.created_at,
+               p.username, p.is_guest, p.is_ai
+        FROM game_logs gl
+        LEFT JOIN players p ON p.id = gl.player_id
+        WHERE gl.room_id = ?
+          {after_clause}
+        ORDER BY gl.id ASC
+        {limit_clause}
+        """,
+        tuple(params),
+    )
+    if current_log_id is not None:
+        for row in rows:
+            row["is_current_ask_result"] = int(row["id"]) == int(current_log_id)
+    return rows
 
 
 async def _mcp_player(path_token: str | None) -> dict:

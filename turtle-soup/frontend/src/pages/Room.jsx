@@ -283,6 +283,11 @@ export default function Room() {
           <div className="terminal-head">
             <span className="lights"><i /><i /><i /></span>
             <strong>汤面</strong>
+            <div className="surface-head-meta" aria-label="房间状态">
+              <span className={`surface-state ${finished ? 'pale' : 'playing'}`}>{finished ? '已结束' : '进行中'}</span>
+              <span>提问 {room.ask_count ?? logs.filter((row) => row.type === 'ask').length}</span>
+              <span>在房 {room.active_players || 1}</span>
+            </div>
             <button type="button" className="surface-toggle" onClick={() => setSurfaceCollapsed(!surfaceCollapsed)} aria-label={surfaceCollapsed ? '展开汤面' : '收起汤面'}>
               {surfaceCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
             </button>
@@ -292,11 +297,6 @@ export default function Room() {
             <p>{room.surface}</p>
             <div className="room-meta">
               {tags.map((tag) => <span className="soup-badge" key={tag}>{tag}</span>)}
-              <span className={`soup-badge ${finished ? 'pale' : 'playing'}`}>{finished ? '已结束' : '进行中'}</span>
-            </div>
-            <div className="room-stats">
-              <span>提问 {room.ask_count ?? logs.filter((row) => row.type === 'ask').length}</span>
-              <span>在房 {room.active_players || 1}</span>
             </div>
           </div>
         </aside>
