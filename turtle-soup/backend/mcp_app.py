@@ -145,11 +145,11 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail="房间已结束，无法继续提问")
-        return await game_ask(ContentBody(room_id=body.room_id, content=body.content), player)
+        return await game_ask(ContentBody(room_id=body.room_id, content=clean_content(body.content, 200)), player)
     if body.action == "guess":
         if not body.room_id or not body.content:
             raise HTTPException(status_code=400, detail="room_id 和 content 必填")
-        return await game_guess(ContentBody(room_id=body.room_id, content=body.content), player)
+        return await game_guess(ContentBody(room_id=body.room_id, content=clean_content(body.content, 200)), player)
     if body.action == "hint_respond":
         if not body.room_id or body.log_id is None or body.accept is None:
             raise HTTPException(status_code=400, detail="room_id、log_id、accept 必填")
