@@ -240,12 +240,12 @@ async def guess(body: GuessBody, player: dict = Depends(current_player)):
         raise
     correct = bool(result["success"])
     score = int(result["score"])
-    log_content = result.get("error") or f"{guess_text}\n还原度：{score}%"
     log_id = await execute(
         "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'guess', ?, ?)",
-        (body.room_id, player["id"], log_content, "yes" if correct else "no"),
+        (body.room_id, player["id"], guess_text, "yes" if correct else "no"),
     )
     payload = await _log_payload(log_id)
+    result_content = result.get("error") or f"还原度：{score}%"
     await touch_room(body.room_id, player["id"])
     if correct:
         db = await get_db()
@@ -274,9 +274,16 @@ async def guess(body: GuessBody, player: dict = Depends(current_player)):
         await broadcast(body.room_id, "new_log", payload)
         await broadcast(body.room_id, "new_log", reveal_payload)
         await broadcast(body.room_id, "game_over", {"answer": reveal_answer, "winner": {"id": player["id"], "username": player.get("username") or f"游客{player['id']}"}})
+        result_payload = reveal_payload
     else:
+        result_id = await execute(
+            "INSERT INTO game_logs (room_id, type, content, judgment) VALUES (?, 'system', ?, 'guess_result')",
+            (body.room_id, result_content),
+        )
+        result_payload = await _log_payload(result_id)
         await broadcast(body.room_id, "new_log", payload)
-    return payload | {"correct": correct, "score": score}
+        await broadcast(body.room_id, "new_log", result_payload)
+    return payload | {"correct": correct, "score": score, "result_log": result_payload}
 
 
 @router.post("/hint/request")

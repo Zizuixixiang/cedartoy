@@ -150,7 +150,10 @@ export default function Room() {
     setSendLoading(true)
     try {
       const entry = await post(`/game/${kind}`, { room_id: roomId, content })
-      setLogs((items) => upsertLog(items, entry))
+      setLogs((items) => {
+        const next = upsertLog(items, entry)
+        return entry.result_log ? upsertLog(next, entry.result_log) : next
+      })
       if (!entry.system_error) {
         setContent('')
       }

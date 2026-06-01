@@ -49,17 +49,62 @@ function HintBanner({ log, onRespond, busy, currentPlayerId }) {
 function AutoHintBanner({ log }) {
   return (
     <div className="log-hint-banner auto" role="region" aria-label="线索公布">
-      <div className="log-hint-label">&gt; 【线索公布】</div>
+      <div className="log-hint-label">&gt; 【特殊线索】</div>
       <p>{log.hint_text || log.content}</p>
     </div>
   )
 }
 
+function parseGuessContent(content) {
+  const lines = String(content || '').split(/\r?\n/)
+  const tail = lines[lines.length - 1]?.trim() || ''
+  const scoreMatch = tail.match(/^还原度[:：]\s*(\d+)%?$/)
+  if (!scoreMatch) return { guess: String(content || '').trim(), score: '' }
+  return {
+    guess: lines.slice(0, -1).join('\n').trim(),
+    score: `${scoreMatch[1]}%`,
+  }
+}
+
+function GuessCard({ log, time }) {
+  const name = log.username || (log.player_id ? `游客${log.player_id}` : '玩家')
+  const parsed = parseGuessContent(log.content)
+  return (
+    <div className="log-guess-card" role="article" aria-label="玩家猜测">
+      <div className="log-card-meta">
+        <span>{time}</span>
+        <strong>{name}</strong>
+      </div>
+      <div className="log-guess-label">&gt; 猜测汤底</div>
+      <p>{parsed.guess || log.content}</p>
+    </div>
+  )
+}
+
+function GuessResultCard({ log, score = '' }) {
+  const content = String(log.content || '').trim()
+  const parsed = parseGuessContent(content)
+  const displayScore = score || parsed.score
+  const isCorrect = log.judgment === 'yes'
+  const isError = systemNoticeContent(content)
+  return (
+    <div className={`log-guess-result${isCorrect ? ' correct' : ''}${isError ? ' system-notice' : ''}`} role="region" aria-label="裁判判定">
+      <div className="log-guess-result-label">&gt; 裁判判定</div>
+      <p>
+        {isError || (isCorrect ? '通关' : '未通关，请继续')}
+        {displayScore && <span>还原度 {displayScore}</span>}
+      </p>
+    </div>
+  )
+}
+
 function GameOverReveal({ content }) {
+  const parsed = parseGuessContent(content)
   return (
     <div className="log-game-over" role="region" aria-label="汤底揭晓">
       <div className="log-game-over-label">&gt; 汤底揭晓</div>
-      <p>{content}</p>
+      {parsed.score && <div className="log-game-over-score">还原度 {parsed.score}</div>}
+      <p>{parsed.guess || content}</p>
     </div>
   )
 }
@@ -93,6 +138,9 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy, curre
         if (log.judgment === 'game_over') {
           return <GameOverReveal key={`reveal-${log.id}`} content={log.content} />
         }
+        if (log.judgment === 'guess_result') {
+          return <GuessResultCard key={`guess-result-${log.id}`} log={log} />
+        }
         if (log.type === 'hint_offer') {
           return (
             <HintBanner
@@ -119,6 +167,15 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy, curre
         const notice = systemNoticeContent(log.content)
         const time = formatLogTime(log.created_at)
         const name = log.username || (log.player_id ? `游客${log.player_id}` : '系统')
+        if (log.type === 'guess') {
+          const parsed = parseGuessContent(log.content)
+          return (
+            <div className="log-guess-group" key={log.id}>
+              <GuessCard log={log} time={time} />
+              {parsed.score && <GuessResultCard log={log} score={parsed.score} />}
+            </div>
+          )
+        }
         const prefix = log.type === 'guess' ? '猜测' : log.type === 'system' ? '系统' : name
         return (
           <div

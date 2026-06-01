@@ -1841,9 +1841,101 @@ body:has(.room-page) {
   word-break: break-word;
 }
 
+.session-log-body .log-guess-group,
+.session-log-body .log-guess-card,
+.session-log-body .log-guess-result,
 .session-log-body .log-hint-banner,
 .session-log-body .log-game-over {
   grid-column: 1 / -1;
+}
+
+.log-guess-group {
+  display: grid;
+  gap: 8px;
+}
+
+.log-guess-card,
+.log-guess-result {
+  padding: 12px 14px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 15px;
+}
+
+.log-guess-card {
+  border: 2px solid rgba(134, 239, 172, 0.7);
+  background: rgba(22, 101, 52, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(134, 239, 172, 0.18);
+}
+
+.log-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+}
+
+.log-card-meta strong {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.log-guess-label,
+.log-guess-result-label {
+  font-family: "Silkscreen", cursive;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.log-guess-label {
+  color: #86efac;
+}
+
+.log-guess-card p,
+.log-guess-result p {
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-guess-result {
+  border: 2px solid rgba(253, 224, 71, 0.7);
+  background: rgba(113, 63, 18, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(253, 224, 71, 0.2);
+}
+
+.log-guess-result.correct {
+  border-color: var(--pixel-pink);
+  background: rgba(230, 168, 177, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(230, 168, 177, 0.25);
+}
+
+.log-guess-result.system-notice {
+  border-color: rgba(156, 163, 175, 0.6);
+  background: rgba(75, 85, 99, 0.18);
+}
+
+.log-guess-result-label {
+  color: #fde047;
+}
+
+.log-guess-result.correct .log-guess-result-label {
+  color: var(--pixel-pink);
+}
+
+.log-guess-result p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.log-guess-result p span {
+  color: #fde047;
+  font-weight: 700;
 }
 
 .log-hint-banner {
@@ -1861,9 +1953,9 @@ body:has(.room-page) {
 }
 
 .log-hint-banner.auto {
-  border-color: #beb1d1;
-  background: rgba(190, 177, 209, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(190, 177, 209, 0.3);
+  border-color: #86efac;
+  background: rgba(22, 101, 52, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(134, 239, 172, 0.25);
 }
 
 .log-hint-banner.readonly {
@@ -1878,7 +1970,7 @@ body:has(.room-page) {
 }
 
 .log-hint-banner.auto .log-hint-label {
-  color: #beb1d1;
+  color: #86efac;
 }
 
 .log-hint-banner p {
@@ -1936,10 +2028,21 @@ body:has(.room-page) {
   margin-bottom: 8px;
 }
 
+.log-game-over-score {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border: 1px solid rgba(230, 168, 177, 0.75);
+  color: var(--pixel-pink);
+  font-weight: 700;
+}
+
 .log-game-over p {
   margin: 0;
   line-height: 1.65;
   font-size: 15px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .room-composer {
@@ -2368,6 +2471,34 @@ body:has(.room-page) {
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  .log-guess-group {
+    gap: 5px;
+  }
+  .log-guess-card,
+  .log-guess-result {
+    padding: 8px 9px;
+    border-width: 1px;
+    font-size: 12px;
+  }
+  .log-card-meta {
+    margin-bottom: 4px;
+    font-size: 9px;
+  }
+  .log-card-meta strong {
+    font-size: 13px;
+  }
+  .log-guess-label,
+  .log-guess-result-label {
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .log-guess-card p,
+  .log-guess-result p {
+    line-height: 1.45;
+  }
+  .log-guess-result p {
+    gap: 7px;
+  }
   .log-hint-banner {
     padding: 8px 9px;
     border-width: 1px;
@@ -2400,6 +2531,11 @@ body:has(.room-page) {
   .log-game-over {
     padding: 10px;
     border-width: 2px;
+  }
+  .log-game-over-score {
+    margin-bottom: 6px;
+    padding: 3px 6px;
+    font-size: 12px;
   }
   .log-game-over-label,
   .log-game-over p {
