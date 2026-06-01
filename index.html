@@ -861,10 +861,39 @@
       .brand { font-size: 16px; gap: 9px; }
       .top-actions { justify-content: end; }
       .status-strip, .user-actions .desktop-only, .auth-area .desktop-only { display: none; }
+      .mobile-only { display: inline-flex; }
+      .auth-area, .user-actions {
+        gap: 6px;
+      }
       .auth-area .pixel-btn {
         min-height: 34px;
         padding: 7px 11px;
         font-size: 10px;
+      }
+      .auth-area .mobile-top-link {
+        min-height: 26px;
+        padding: 3px 6px;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.14);
+        border: 2px solid rgba(255, 255, 255, 0.42);
+        border-radius: 0;
+        box-shadow: none;
+        font-size: 9px;
+      }
+      .auth-area .mobile-logout-link {
+        width: 28px;
+        min-width: 28px;
+        height: 28px;
+        min-height: 28px;
+        padding: 0;
+        color: #fff;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+      }
+      .auth-area .mobile-logout-link svg {
+        width: 17px;
+        height: 17px;
       }
       .user-name { max-width: 108px; font-size: 10px; }
       .main {
@@ -1222,6 +1251,27 @@
         tags: ["守序/混乱", "善良/邪恶"],
         url: "/dnd",
         ranks: []
+      },
+      {
+        id: "admin",
+        category: "mini",
+        adminOnly: true,
+        name: "总管理",
+        mission: "MISSION: ADMIN",
+        location: "LOCATION: CONTROL ROOM",
+        glyph: "⚙",
+        badge: "ADMIN",
+        level: "SYS",
+        metricLabel: "权限",
+        metric: "ADMIN",
+        short: "系统管理 / 总后台",
+        desc: "CEDAR TOY 总管理入口，用于统一账号和平台级管理。",
+        logs: ["管理员身份已确认。", "控制台入口待命。", "进入后可管理平台账号。"],
+        stats: [["USERS", "88%"], ["SYSTEM", "76%"]],
+        footerIcons: ["⚙", "▣", "●"],
+        tags: ["管理员", "总后台"],
+        url: "/admin",
+        ranks: []
       }
     ];
 
@@ -1244,6 +1294,10 @@
 
     function currentGame() {
       return games.find((game) => game.id === selected) || games[0];
+    }
+
+    function canShowGame(game) {
+      return !game.adminOnly || Boolean(me && me.user && me.user.is_admin);
     }
 
     function rankHtml(ranks) {
@@ -1296,9 +1350,13 @@
 
     function renderGames() {
       const query = $("searchInput").value.trim().toLowerCase();
+      const visibleGames = games.filter(canShowGame);
+      if (!visibleGames.some((game) => game.id === selected)) {
+        selected = visibleGames[0]?.id || "soup";
+      }
       $("gameList").innerHTML = games.map((game) => {
         const searchable = `${game.name} ${game.short} ${game.tags.join(" ")}`.toLowerCase();
-        const hidden = game.category !== filter || (query && !searchable.includes(query));
+        const hidden = !canShowGame(game) || game.category !== filter || (query && !searchable.includes(query));
         const tags = game.tags.map((tag, index) => `<span class="tag ${index === 0 ? "pink" : ""}">${tag}</span>`).join("");
         return `
           <button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}" data-game="${game.id}" type="button">
@@ -1438,6 +1496,14 @@
         <span class="user-name">● ${me.user.username}</span>
         <span class="user-actions">
           ${me.user.is_admin ? '<a class="pixel-btn secondary desktop-only" href="/admin">管理</a>' : ''}
+          ${me.user.is_admin ? '<a class="pixel-btn secondary mobile-only mobile-top-link" href="/admin">总管理</a>' : ''}
+          <button class="pixel-btn secondary mobile-only mobile-logout-link" id="mobileLogoutBtn" type="button" aria-label="登出" title="登出">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <path d="M16 17l5-5-5-5"></path>
+              <path d="M21 12H9"></path>
+            </svg>
+          </button>
           <button class="pixel-btn secondary desktop-only" id="historyOpen" type="button">历史</button>
           <button class="pixel-btn secondary desktop-only" id="bindOpen" type="button">绑定</button>
           <button class="pixel-btn secondary desktop-only" id="logoutBtn" type="button">登出</button>
@@ -1448,6 +1514,8 @@
       if (bindOpen) bindOpen.addEventListener("click", () => openModal("bindModal"));
       if (historyOpen) historyOpen.addEventListener("click", () => openPlaceholder("历史", "游玩历史筹备中，敬请期待。"));
       $("logoutBtn").addEventListener("click", logout);
+      const mobileLogout = $("mobileLogoutBtn");
+      if (mobileLogout) mobileLogout.addEventListener("click", logout);
     }
 
     function renderMine() {
@@ -1498,6 +1566,8 @@
         me = null;
       }
       renderAuth();
+      renderGames();
+      renderDetail();
     }
 
     const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fff]{2,20}$/;
@@ -1532,6 +1602,8 @@
         me = {user: data.user, bindings: []};
         closeModals();
         renderAuth();
+        renderGames();
+        renderDetail();
       } catch (err) {
         $("loginMsg").textContent = err.message;
       }
@@ -1566,6 +1638,8 @@
       localStorage.removeItem("cedartoy_user_id");
       me = null;
       renderAuth();
+      renderGames();
+      renderDetail();
       renderMine();
     }
 

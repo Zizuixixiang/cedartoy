@@ -483,6 +483,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   border-color: #262232;
 }
 
+.mobile-admin-shortcuts {
+  display: none;
+}
+
 .rooms-head {
   display: flex;
   align-items: center;
@@ -681,6 +685,20 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   width: 132px;
   justify-self: start;
   margin-top: 12px;
+}
+
+.profile-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.profile-admin-actions .profile-enter {
+  width: auto;
+  min-width: 112px;
+  gap: 6px;
+  margin-top: 0;
 }
 
 .pixel-room-card > button:disabled {
@@ -1056,6 +1074,19 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   }
   .lobby-back { width: 32px; height: 32px; }
   .lobby-actions { gap: 8px; }
+  .lobby-actions .admin-nav-link {
+    min-height: 28px;
+    padding: 4px 6px;
+    border: 2px solid rgba(255, 255, 255, 0.42);
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 11px;
+    gap: 3px;
+    white-space: nowrap;
+  }
+  .lobby-actions .admin-nav-link svg {
+    width: 14px;
+    height: 14px;
+  }
   .lobby-actions .avatar-pill { width: 28px; height: 28px; font-size: 11px; }
   .room-page .lobby-actions .close-room-btn { min-height: 26px; padding: 4px 8px; font-size: 11px; }
   .lobby-title-group {
@@ -1066,6 +1097,16 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   }
   .lobby-title { font-size: 16px; gap: 6px; white-space: nowrap; }
   .lobby-title .pixel-mark { width: 18px; height: 18px; font-size: 10px; }
+  .room-page .lobby-title {
+    display: none;
+  }
+  .room-page .lobby-title-group {
+    overflow: hidden;
+  }
+  .room-page .lobby-status {
+    min-width: 0;
+    overflow: hidden;
+  }
   .lobby-status {
     padding: 0;
     background: none;
@@ -1075,7 +1116,25 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
     white-space: nowrap;
   }
   .lobby-status .online-dot { width: 6px; height: 6px; }
-  .lobby-actions a:not(.avatar-pill), .lobby-actions button { display: none; }
+  .lobby-actions a:not(.avatar-pill):not(.admin-nav-link), .lobby-actions button:not(.avatar-pill):not(.soup-logout-link) { display: none; }
+  .lobby-actions .soup-logout-link {
+    width: 28px;
+    height: 28px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .lobby-actions .soup-logout-link svg {
+    width: 17px;
+    height: 17px;
+  }
+  .lobby-actions .soup-logout-link span {
+    display: none;
+  }
   .lobby-main {
     display: block;
     height: 100%;
@@ -1101,6 +1160,23 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   .room-tag-filter {
     min-height: 30px;
     padding: 6px 11px;
+    font-size: 12px;
+  }
+  .mobile-admin-shortcuts {
+    display: flex;
+    gap: 8px;
+  }
+  .mobile-admin-shortcuts a {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 7px 10px;
+    border: 2px solid var(--pixel-purple-light);
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--pixel-purple-darker);
+    font-family: "Silkscreen", cursive;
     font-size: 12px;
   }
   .pixel-room-list { overflow: visible; padding-bottom: 52px; gap: 14px; }

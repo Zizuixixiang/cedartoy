@@ -211,14 +211,14 @@ export default function Lobby() {
           <div className="lobby-status"><span className="online-dot" /> 在线：<b>{String(Math.max(online, activeRooms.length)).padStart(2, '0')}</b><span>房间：<b>{String(activeRooms.length).padStart(2, '0')}</b></span></div>
         </div>
         <nav className="lobby-actions">
-          {me?.is_admin && <Link to="/add-puzzle"><ListPlus size={17} />加题</Link>}
-          {me?.is_admin && <Link to="/admin"><Shield size={17} />管理</Link>}
+          {me?.is_admin && <Link className="admin-nav-link" to="/add-puzzle"><ListPlus size={17} />加题</Link>}
+          {me?.is_admin && <Link className="admin-nav-link" to="/admin"><Shield size={17} />管理</Link>}
           {!me || me?.is_guest ? (
             <button type="button" className="avatar-pill" aria-label="登录" onClick={() => setLoginOpen(true)}>{initials(me)}</button>
           ) : (
             <Link className="avatar-pill" to="/profile" aria-label="个人资料">{initials(me)}</Link>
           )}
-          {!me?.is_guest && <button type="button" onClick={logout}><LogOut size={17} />退出</button>}
+          {!me?.is_guest && <button type="button" className="soup-logout-link" onClick={logout} aria-label="退出"><LogOut size={17} /><span>退出</span></button>}
         </nav>
       </header>
 
@@ -249,6 +249,12 @@ export default function Lobby() {
             </div>
             <div className="panel pixel-view-panel">
               <p>当前用户：{me?.username || `游客${me?.id || ''}`}</p>
+              {me?.is_admin && (
+                <div className="profile-admin-actions" aria-label="管理员入口">
+                  <Link className="enter-room profile-enter" to="/add-puzzle"><ListPlus size={16} />加题</Link>
+                  <Link className="enter-room profile-enter" to="/admin"><Shield size={16} />管理后台</Link>
+                </div>
+              )}
               <Link className="enter-room profile-enter" to="/profile">进入个人页 →</Link>
             </div>
           </section>
@@ -283,6 +289,12 @@ export default function Lobby() {
                 </button>
               ))}
             </div>
+            {me?.is_admin && (
+              <div className="mobile-admin-shortcuts" aria-label="管理员入口">
+                <Link to="/add-puzzle"><ListPlus size={16} />加题</Link>
+                <Link to="/admin"><Shield size={16} />管理后台</Link>
+              </div>
+            )}
           </div>
           <div className="pixel-room-list">
             {filteredRooms.map((room) => {

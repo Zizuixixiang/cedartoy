@@ -258,8 +258,8 @@ export default function Room() {
           </div>
         </div>
         <nav className="lobby-actions">
-          {me?.is_admin && <Link to="/add-puzzle"><ListPlus size={17} />加题</Link>}
-          {me?.is_admin && <Link to="/admin"><Shield size={17} />管理</Link>}
+          {me?.is_admin && <Link className="admin-nav-link" to="/add-puzzle"><ListPlus size={17} />加题</Link>}
+          {me?.is_admin && <Link className="admin-nav-link" to="/admin"><Shield size={17} />管理</Link>}
           {canCloseRoom && (
             <button
               type="button"
@@ -274,7 +274,7 @@ export default function Room() {
           ) : (
             <Link className="avatar-pill" to="/profile" aria-label="个人资料">{initials(me)}</Link>
           )}
-          {!me?.is_guest && <button type="button" onClick={logout}><LogOut size={17} />退出</button>}
+          {!me?.is_guest && <button type="button" className="soup-logout-link" onClick={logout} aria-label="退出"><LogOut size={17} /><span>退出</span></button>}
         </nav>
       </header>
 
