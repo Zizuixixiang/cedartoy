@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Bot } from 'lucide-react'
 import JudgeBadge from './JudgeBadge.jsx'
 import { formatDbDateTime, formatDbLogClock, formatDbTime } from '../utils/display.js'
 
@@ -34,10 +35,10 @@ function HintBanner({ log, onRespond, busy, currentPlayerId }) {
   )
 }
 
-function AutoHintBanner({ log }) {
+function AutoHintBanner({ log, special = false }) {
   return (
-    <div className="log-hint-banner auto" role="region" aria-label="线索公布">
-      <div className="log-hint-label">&gt; 【特殊线索】</div>
+    <div className={`log-hint-banner readonly${special ? ' special-clue' : ' auto-prompt'}`} role="region" aria-label={special ? '特殊线索' : '提示'}>
+      <div className="log-hint-label">&gt; {special ? '【特殊线索】' : '【提示】'}</div>
       <p>{log.hint_text || log.content}</p>
     </div>
   )
@@ -54,6 +55,15 @@ function parseGuessContent(content) {
   }
 }
 
+function PlayerName({ name, isAi }) {
+  return (
+    <span className="log-player-name">
+      <span>{name}</span>
+      {isAi ? <Bot className="log-ai-icon" aria-label="AI 玩家" /> : null}
+    </span>
+  )
+}
+
 function GuessCard({ log, time }) {
   const name = log.username || (log.player_id ? `游客${log.player_id}` : '玩家')
   const parsed = parseGuessContent(log.content)
@@ -61,7 +71,7 @@ function GuessCard({ log, time }) {
     <div className="log-guess-card" role="article" aria-label="玩家猜测">
       <div className="log-card-meta">
         <span>{time}</span>
-        <strong>{name}</strong>
+        <strong><PlayerName name={name} isAi={log.is_ai} /></strong>
       </div>
       <div className="log-guess-label">&gt; 猜测汤底</div>
       <p>{parsed.guess || log.content}</p>
@@ -151,7 +161,7 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy, curre
           )
         }
         if (log.type === 'auto_hint' || log.judgment === 'auto_hint') {
-          return <AutoHintBanner key={`auto-${log.id}`} log={log} />
+          return <AutoHintBanner key={`auto-${log.id}`} log={log} special={log.judgment === 'auto_hint'} />
         }
         if (log.type === 'hint_accept' || log.type === 'hint_reject') {
           return null
@@ -187,7 +197,11 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy, curre
           >
             <span className="log-time" title={timeFull}>{time}</span>
             <span className="log-text">
-              {notice || (log.type === 'system' ? '' : `${prefix}：`)}
+              {notice || (log.type === 'system' ? '' : (
+                <>
+                  <PlayerName name={prefix} isAi={log.is_ai} />：
+                </>
+              ))}
               {notice ? '' : log.content}
             </span>
             {!notice && <JudgeBadge value={log.judgment} />}

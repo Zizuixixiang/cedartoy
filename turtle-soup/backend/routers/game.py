@@ -127,7 +127,7 @@ async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False, playe
             await broadcast(room["id"], "hint_offer", payload)
             return payload
         hint_id = await execute(
-            "INSERT INTO game_logs (room_id, type, content, hint_text, judgment) VALUES (?, 'auto_hint', ?, ?, 'auto_hint')",
+            "INSERT INTO game_logs (room_id, type, content, hint_text) VALUES (?, 'auto_hint', ?, ?)",
             (room["id"], hint, hint),
         )
         await execute(

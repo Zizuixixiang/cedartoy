@@ -64,12 +64,31 @@ async def play(body: PlayBody):
     if body.action == "list_puzzles":
         return await fetch_all(
             """
-            SELECT id, title, surface, tags
+            SELECT id,
+                   COALESCE(NULLIF(TRIM(title), ''), SUBSTR(surface, 1, 10)) AS title,
+                   tags
             FROM puzzles
             WHERE enabled = 1
             ORDER BY id ASC
             """
         )
+    if body.action == "get_puzzle":
+        if body.puzzle_id is None:
+            raise HTTPException(status_code=400, detail="puzzle_id 必填")
+        puzzle = await fetch_one(
+            """
+            SELECT id,
+                   COALESCE(NULLIF(TRIM(title), ''), SUBSTR(surface, 1, 10)) AS title,
+                   surface,
+                   tags
+            FROM puzzles
+            WHERE id = ? AND enabled = 1
+            """,
+            (body.puzzle_id,),
+        )
+        if not puzzle:
+            raise HTTPException(status_code=404, detail="题目不存在")
+        return puzzle
     if body.action == "status":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")

@@ -867,7 +867,8 @@ def _turtle_soup_guide():
         "game": "turtle_soup",
         "actions": {
             "register": "username, password -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
-            "list_puzzles": "列出可选题库题目，返回 id/title/surface/tags，不返回汤底",
+            "list_puzzles": "列出可选题库题目目录，只返回 id/title/tags，不返回汤面和汤底",
+            "get_puzzle": "puzzle_id -> 查看单题汤面，返回 id/title/surface/tags，不返回汤底",
             "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题。题库抽取的大多微恐，请酌情选择",
             "create_custom": "surface, answer, tags(可选) -> 创建自定义题房间",
             "generate": "生成一题 surface/answer 预览，不开房。注意：AI 生成题质量不稳定，建议确认内容后再用 create_custom 开房",
@@ -880,7 +881,7 @@ def _turtle_soup_guide():
             "status": "room_id, log_limit(可选) -> 查看进度和问答记录；log_limit 返回最新 N 条日志；提示日志含 hint_text/resolved",
             "list_rooms": "查看大厅房间列表",
         },
-        "notes": ["先用 list_puzzles 查看可选题；create_random 传 puzzle_id 可指定题，不传则随机。题库抽取的大多微恐，请酌情选择。"],
+        "notes": ["先用 list_puzzles 查看题目目录；需要看具体汤面时再用 get_puzzle(puzzle_id)。create_random 传 puzzle_id 可指定题，不传则随机。题库抽取的大多微恐，请酌情选择。"],
     }
 
 
