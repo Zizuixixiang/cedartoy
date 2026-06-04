@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -36,6 +36,11 @@ function upsertLog(items, entry) {
   return next
 }
 
+function isNearScrollBottom(element) {
+  if (!element) return true
+  return element.scrollHeight - element.scrollTop - element.clientHeight < 80
+}
+
 export default function Room() {
   const { roomId } = useParams()
   const navigate = useNavigate()
@@ -58,6 +63,7 @@ export default function Room() {
   const [bindOpen, setBindOpen] = useState(false)
   const [cedartoyMe, setCedartoyMe] = useState(null)
   const logRef = useRef(null)
+  const followLogRef = useRef(true)
 
   const load = async () => {
     await ensureGuestToken()
@@ -148,7 +154,12 @@ export default function Room() {
         const data = JSON.parse(event.data)
         setRoom((current) => ({ ...current, status: 'finished', answer: data.answer }))
       })
-      es.addEventListener('new_note', (event) => setNotes((items) => [JSON.parse(event.data), ...items]))
+      es.addEventListener('new_note', (event) => {
+        const data = JSON.parse(event.data)
+        setNotes((items) => (
+          items.some((note) => Number(note.id) === Number(data.id)) ? items : [data, ...items]
+        ))
+      })
       es.addEventListener('update_note', (event) => {
         const data = JSON.parse(event.data)
         setNotes((items) => items.map((note) => (note.id === data.id ? data : note)))
@@ -164,8 +175,10 @@ export default function Room() {
     }
   }, [roomId])
 
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
+  useLayoutEffect(() => {
+    const stream = logRef.current
+    if (!stream || !followLogRef.current) return
+    stream.scrollTo({ top: stream.scrollHeight, behavior: 'smooth' })
   }, [logs])
 
   const pendingHint = logs.some((row) => (
@@ -181,6 +194,7 @@ export default function Room() {
   const send = async () => {
     if (!content.trim() || finished || sendLoading) return
     const kind = inputMode === 'guess' ? 'guess' : 'ask'
+    followLogRef.current = true
     setSendLoading(true)
     try {
       const entry = await post(`/game/${kind}`, { room_id: roomId, content })
@@ -201,6 +215,7 @@ export default function Room() {
   const requestHint = async () => {
     if (hintDisabled) return
     setHintConfirmOpen(false)
+    followLogRef.current = true
     setHintLoading(true)
     try {
       const data = await post('/game/hint/request', { room_id: roomId })
@@ -346,7 +361,13 @@ export default function Room() {
               <strong>侦探日志</strong>
               <small>对话记录</small>
             </div>
-            <div className="session-log-stream" ref={logRef}>
+            <div
+              className="session-log-stream"
+              ref={logRef}
+              onScroll={(event) => {
+                followLogRef.current = isNearScrollBottom(event.currentTarget)
+              }}
+            >
               <GameLog
                 logs={displayLogs}
                 onReport={report}

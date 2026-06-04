@@ -401,16 +401,29 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
         for r in game_log
         if r.get("type") == "ask"
     ][-40:]
+    previous_hints = [
+        log["hint_text"] for log in game_log
+        if log.get("hint_text") and log.get("judgment") != "auto_hint"
+    ]
+    hint_system_content = (
+        "本次请求类型是用户申请提示。不要执行线索汤专用特殊规则，"
+        "不要输出【线索公布】，不要泄露完整汤底。"
+        "只给一个基于汤面、汤底和已问记录的温和提示。"
+        "必须以【提示】开头，总字数不超过 120 字。"
+    )
+    if previous_hints:
+        numbered_list = "\n".join(
+            f"{index}. {hint}" for index, hint in enumerate(previous_hints, start=1)
+        )
+        hint_system_content += (
+            "\n\n已经提供过以下提示，请给出完全不同方向的新线索，不要重复任何已有提示：\n"
+            f"{numbered_list}"
+        )
     messages = [
         {"role": "system", "content": await _get_judge_prompt()},
         {
             "role": "system",
-            "content": (
-                "本次请求类型是用户申请提示。不要执行线索汤专用特殊规则，"
-                "不要输出【线索公布】，不要泄露完整汤底。"
-                "只给一个基于汤面、汤底和已问记录的温和提示。"
-                "必须以【提示】开头，总字数不超过 120 字。"
-            ),
+            "content": hint_system_content,
         },
         {
             "role": "user",

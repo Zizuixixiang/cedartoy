@@ -20,19 +20,12 @@ from routers.game import hint_request as game_hint_request
 from routers.game import hint_respond as game_hint_respond
 from routers.notes import add_note, delete_note, update_note
 from routers.rooms import close_room, create_room
-from utils import SQL_NOW, clean_content
+from utils import ROOM_FINISHED_STATUS_HINT, SQL_NOW, clean_content
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
-ROOM_FINISHED_STATUS_HINT = (
-    "房间已结束，无法继续操作。请调用 "
-    'play(game="turtle_soup", action="status", room_id=...) '
-    "查看最终汤底和完整日志（未参与本局时请谨慎查看，可能包含剧透）。"
-)
-
-
 class PlayBody(BaseModel):
     model_config = ConfigDict(extra="allow")
 

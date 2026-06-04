@@ -9,7 +9,7 @@ from database import execute, fetch_all, fetch_one, get_db, get_setting
 from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody
 from presence import touch_room
 from sse import broadcast
-from utils import SQL_NOW, clean_content
+from utils import ROOM_FINISHED_STATUS_HINT, SQL_NOW, clean_content
 
 router = APIRouter(prefix="/game", tags=["game"])
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def _room(room_id: str) -> dict:
 
 def _ensure_active(room: dict) -> None:
     if room["status"] == "finished":
-        raise HTTPException(status_code=400, detail="游戏已结束")
+        raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
 
 
 async def _log_payload(log_id: int) -> dict:
@@ -99,8 +99,17 @@ async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False, playe
             manual_count = await _manual_hint_count(room["id"], player_id)
             if manual_count >= 3:
                 raise HTTPException(status_code=400, detail="手动提示次数已用完")
-        elif await _pending_hint(room["id"]):
-            return None
+        else:
+            latest_room = await _room(room["id"])
+            trigger = int(await get_setting("hint_trigger_count", "30"))
+            latest_ask_count = await _ask_count(room["id"])
+            last_hint_at = int(latest_room.get("last_hint_at_ask_count") or 0)
+            if trigger <= 0 or latest_ask_count < last_hint_at + trigger:
+                return None
+            if await _pending_hint(room["id"]):
+                return None
+            room = latest_room
+            ask_count = latest_ask_count
 
         logs = await fetch_all("SELECT * FROM game_logs WHERE room_id = ? ORDER BY id ASC", (room["id"],))
         hint = await judge.generate_hint(room["surface"], room["answer"], logs)

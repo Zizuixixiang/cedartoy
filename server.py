@@ -819,6 +819,20 @@ def _tool_get_guide(arguments):
     raise _McpError(-32602, "未知游戏")
 
 
+def _soup_error_message(resp):
+    try:
+        data = resp.json()
+    except ValueError:
+        return resp.text.strip() or f"海龟汤服务返回 HTTP {resp.status_code}"
+    detail = data.get("detail") if isinstance(data, dict) else None
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    error = data.get("error") if isinstance(data, dict) else None
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    return f"海龟汤服务返回 HTTP {resp.status_code}"
+
+
 def _tool_play(arguments, path_token=None):
     game = arguments.get("game")
     action = arguments.get("action")
@@ -831,7 +845,9 @@ def _tool_play(arguments, path_token=None):
         if path_token:
             payload["path_token"] = path_token
         resp = httpx.post(f"{SOUP_BASE}/mcp/play", json=payload, timeout=60)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            code = -32001 if resp.status_code == 401 else -32602
+            raise _McpError(code, _soup_error_message(resp))
         return json.dumps(resp.json(), ensure_ascii=False)
     if game == "mbti":
         return json.dumps(_play_mbti(arguments), ensure_ascii=False)

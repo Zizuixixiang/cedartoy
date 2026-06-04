@@ -10,6 +10,10 @@ ROOM_ALPHABET = string.ascii_letters + string.digits
 
 # SQLite CURRENT_TIMESTAMP / datetime('now') are UTC; store/compare China wall time (server TZ).
 SQL_NOW = "datetime('now', 'localtime')"
+ROOM_FINISHED_STATUS_HINT = (
+    "该房间游戏已结束，无法继续操作。详情可查看 status："
+    'play(game="turtle_soup", action="status", room_id=...)。'
+)
 
 
 def strip_puzzle_text(value: str | None, *, required: bool = False, label: str = "内容") -> str:

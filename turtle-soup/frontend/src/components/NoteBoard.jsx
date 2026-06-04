@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { del, post, put } from '../api'
 import { noteAuthor } from '../utils/display.js'
 
+function prependNoteOnce(items, note) {
+  return items.some((item) => Number(item.id) === Number(note.id)) ? items : [note, ...items]
+}
+
 export default function NoteBoard({ roomId, notes, setNotes }) {
   const [content, setContent] = useState('')
 
@@ -9,7 +13,7 @@ export default function NoteBoard({ roomId, notes, setNotes }) {
     const text = content.trim()
     if (!text) return
     const note = await post(`/notes/${roomId}`, { content: text })
-    setNotes((items) => [note, ...items])
+    setNotes((items) => prependNoteOnce(items, note))
     setContent('')
   }
 
