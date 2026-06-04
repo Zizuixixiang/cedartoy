@@ -3,16 +3,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth_utils import admin_player, current_player
 from database import execute, fetch_all, fetch_one
 from models import PuzzleBody, RoomCreateBody
-from utils import clean_content, strip_puzzle_text
+from utils import ANSWER_LIMIT, SURFACE_LIMIT, TAGS_LIMIT, TITLE_LIMIT, clean_content, strip_puzzle_text
 
 router = APIRouter(prefix="/puzzles", tags=["puzzles"])
 
 
 def _normalize_puzzle_body(body: PuzzleBody) -> tuple[str, str, str, str]:
-    title = strip_puzzle_text(body.title, label="汤名")
-    surface = strip_puzzle_text(body.surface, required=True, label="汤面")
-    answer = strip_puzzle_text(body.answer, required=True, label="汤底")
-    tags = strip_puzzle_text(body.tags, label="标签")
+    title = strip_puzzle_text(body.title, label="汤名", limit=TITLE_LIMIT)
+    surface = strip_puzzle_text(body.surface, required=True, label="汤面", limit=SURFACE_LIMIT)
+    answer = strip_puzzle_text(body.answer, required=True, label="汤底", limit=ANSWER_LIMIT)
+    tags = strip_puzzle_text(body.tags, label="标签", limit=TAGS_LIMIT)
     return title, surface, answer, tags
 
 
@@ -42,8 +42,8 @@ async def public_puzzles(player: dict = Depends(current_player)):
 
 @router.post("/submit")
 async def submit_puzzle(body: RoomCreateBody, player: dict = Depends(current_player)):
-    surface = clean_content(body.surface or "", 500)
-    answer = clean_content(body.answer or "", 1000)
+    surface = clean_content(body.surface or "", SURFACE_LIMIT)
+    answer = clean_content(body.answer or "", ANSWER_LIMIT)
     sid = await execute(
         "INSERT INTO puzzle_submissions (surface, answer, tags, submitted_by) VALUES (?, ?, ?, ?)",
         (surface, answer, body.tags[:100], player["id"]),

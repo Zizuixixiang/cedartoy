@@ -151,10 +151,25 @@ export default function GameLog({ logs, roomId, roomStatus, onHintRespond, hintB
   const ordered = sortLogs(logs)
   const [hintDecisions, setHintDecisions] = useState(() => loadHintDecisions(roomId))
   useEffect(() => {
+    setHintDecisions(loadHintDecisions(roomId))
+  }, [roomId])
+  useEffect(() => {
     if (roomStatus === 'finished') {
-      localStorage.removeItem(`hint_decisions_${roomId}`)
+      if (hintDecisions.__expired) return
+      const expiresAt = Number(hintDecisions.__expiresAt || 0)
+      const now = Date.now()
+      if (expiresAt && expiresAt <= now) {
+        localStorage.removeItem(`hint_decisions_${roomId}`)
+        setHintDecisions({ __expired: true })
+        return
+      }
+      if (!expiresAt) {
+        const next = { ...hintDecisions, __expiresAt: now + 60 * 60 * 1000 }
+        saveHintDecisions(roomId, next)
+        setHintDecisions(next)
+      }
     }
-  }, [roomStatus, roomId])
+  }, [roomStatus, roomId, hintDecisions])
   const [compactLogTime, setCompactLogTime] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
   )

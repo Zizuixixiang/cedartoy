@@ -83,7 +83,7 @@ const settingDescriptions = {
   generate_cooldown_seconds: 'AI 生成题目的按钮冷却秒数。',
   generate_prompt: 'AI 生成题目使用的提示词。该请求使用裁判 API 配置。',
   judge_prompt: '裁判判断提问时使用的系统提示词。',
-  judge_prompt_clue: '线索汤专用补充提示词。仅当汤底含【线索公布】标记时拼接到 judge_prompt 后。',
+  judge_prompt_clue: '线索汤专用补充提示词。汤底中用【线索公布】和【线索公布结束】包住中途公开内容。',
   guest_expire_hours: '游客身份/临时数据可保留的小时数。',
   room_inactive_expire_hours: '房间最后一条玩家发言后自动结束的小时数。',
   finished_room_retention_hours: '已结束房间继续保留的小时数。',

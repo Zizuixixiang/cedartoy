@@ -4,7 +4,7 @@ from auth_utils import current_player
 from database import execute, fetch_all, fetch_one, get_setting
 from judge import scan_text
 from models import RoomCreateBody
-from utils import SQL_NOW, clean_content, public_player, room_id
+from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT, SQL_NOW, clean_content, public_player, room_id
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -74,9 +74,9 @@ async def create_room(body: RoomCreateBody, player: dict = Depends(current_playe
         title = puzzle["title"]
         surface, answer = puzzle["surface"], puzzle["answer"]
     else:
-        title = clean_content(body.title or "", 80)
-        surface = clean_content(body.surface or "", 500)
-        answer = clean_content(body.answer or "", 1000)
+        title = clean_content(body.title or "", TITLE_LIMIT)
+        surface = clean_content(body.surface or "", SURFACE_LIMIT)
+        answer = clean_content(body.answer or "", ANSWER_LIMIT)
         if body.mode == "custom":
             reason = await scan_text(f"{surface}\n{answer}")
             if reason:

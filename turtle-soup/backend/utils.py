@@ -7,6 +7,10 @@ from fastapi import HTTPException
 
 SAFE_TEXT_RE = re.compile(r"[<>{}]")
 ROOM_ALPHABET = string.ascii_letters + string.digits
+TITLE_LIMIT = 20
+SURFACE_LIMIT = 500
+ANSWER_LIMIT = 3000
+TAGS_LIMIT = 100
 
 # SQLite CURRENT_TIMESTAMP / datetime('now') are UTC; store/compare China wall time (server TZ).
 SQL_NOW = "datetime('now', 'localtime')"
@@ -16,10 +20,12 @@ ROOM_FINISHED_STATUS_HINT = (
 )
 
 
-def strip_puzzle_text(value: str | None, *, required: bool = False, label: str = "内容") -> str:
+def strip_puzzle_text(value: str | None, *, required: bool = False, label: str = "内容", limit: int | None = None) -> str:
     text = (value or "").strip()
     if required and not text:
         raise HTTPException(status_code=400, detail=f"{label}不能为空")
+    if limit is not None and len(text) > limit:
+        raise HTTPException(status_code=400, detail=f"{label}不能超过 {limit} 字")
     if text and SAFE_TEXT_RE.search(text):
         raise HTTPException(status_code=400, detail="内容包含不允许的字符")
     return text

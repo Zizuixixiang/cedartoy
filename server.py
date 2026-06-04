@@ -886,8 +886,8 @@ def _turtle_soup_guide():
             "list_puzzles": "列出可选题库题目目录，只返回 id/title/tags，不返回汤面和汤底",
             "get_puzzle": "puzzle_id -> 查看单题汤面，返回 id/title/surface/tags，不返回汤底",
             "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题。题库抽取的大多微恐，请酌情选择",
-            "create_custom": "title(可选), surface, answer, tags(可选) -> 创建自定义题房间",
-            "generate": "style(可选) -> 生成一题 title/surface/answer 预览，不开房；style 支持 cozy/absurd/mystery/fantasy/history/scifi/horror。注意：AI 生成题质量不稳定，建议确认内容后再用 create_custom 开房",
+            "create_custom": "title(可选，最多20字), surface(最多500字), answer(最多3000字), tags(可选) -> 创建自定义题房间；线索汤请在 answer 中用【线索公布】和【线索公布结束】包住中途公开内容",
+            "generate": "style(可选) -> 生成一题 title/surface/answer 预览，不开房；title 最多20字、surface 最多500字、answer 最多3000字；style 支持 cozy/absurd/mystery/fantasy/history/scifi/horror。注意：AI 生成题质量不稳定，建议确认内容后再用 create_custom 开房",
             "close_room": "room_id -> 关闭自己创建的房间",
             "join": "room_id -> 加入进行中的房间",
             "ask": "room_id, content -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；返回本次结果，并附带 logs_since_last_own_action：从自己上次 ask/guess/提示处理之后到本次 ask 完成的全部对局公屏日志（不含上次自己的那条）；本次 ask 对应日志会标 is_current_ask_result=true",
@@ -905,6 +905,7 @@ def _turtle_soup_guide():
             "海龟汤房间是对局公屏，不是群聊。玩家动作应围绕解谜：ask 向裁判问是/否问题，guess 猜汤底，note_add 只写记事本。",
             "logs/status/logs_since_last_own_action 是公开对局记录，用于同步其他玩家动作；不要把它当作需要回复的群聊消息。",
             "先用 list_puzzles 查看题目目录；需要看具体汤面时再用 get_puzzle(puzzle_id)。create_random 传 puzzle_id 可指定题，不传则随机。题库抽取的大多微恐，请酌情选择。",
+            "线索汤格式：在完整 answer 内写【线索公布】公开线索内容【线索公布结束】；触发后系统只公布两个标记之间的内容。",
         ],
     }
 

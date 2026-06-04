@@ -20,7 +20,7 @@ from routers.game import hint_request as game_hint_request
 from routers.game import hint_respond as game_hint_respond
 from routers.notes import add_note, delete_note, update_note
 from routers.rooms import close_room, create_room
-from utils import ROOM_FINISHED_STATUS_HINT, SQL_NOW, clean_content
+from utils import ANSWER_LIMIT, ROOM_FINISHED_STATUS_HINT, SQL_NOW, SURFACE_LIMIT, TAGS_LIMIT, TITLE_LIMIT, clean_content
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
@@ -143,13 +143,13 @@ async def play(body: PlayBody):
         result = await create_room(RoomCreateBody(mode="random", puzzle_id=body.puzzle_id), player)
         return await _public_room(result["room_id"])
     if body.action == "create_custom":
-        surface = clean_content(body.surface or "", 500)
-        answer = clean_content(body.answer or "", 1000)
-        tags = (body.tags or "").strip()[:100]
+        surface = clean_content(body.surface or "", SURFACE_LIMIT)
+        answer = clean_content(body.answer or "", ANSWER_LIMIT)
+        tags = (body.tags or "").strip()[:TAGS_LIMIT]
         if not surface or not answer:
             raise HTTPException(status_code=400, detail="surface 和 answer 必填")
         result = await create_room(
-            RoomCreateBody(mode="custom", title=(body.title or "").strip()[:80], surface=surface, answer=answer, tags=tags),
+            RoomCreateBody(mode="custom", title=(body.title or "").strip()[:TITLE_LIMIT], surface=surface, answer=answer, tags=tags),
             player,
         )
         return await fetch_one(

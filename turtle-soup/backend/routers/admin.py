@@ -7,7 +7,7 @@ from auth_utils import admin_player, verify_password
 from database import execute, fetch_all, fetch_one
 from judge import list_models, test_config
 from models import RoomCreateBody
-from utils import SQL_NOW, clean_content, room_id
+from utils import ANSWER_LIMIT, SURFACE_LIMIT, SQL_NOW, clean_content, room_id
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -137,8 +137,8 @@ async def add_submission(submission_id: int, body: RoomCreateBody, admin: dict =
     sub = await fetch_one("SELECT * FROM puzzle_submissions WHERE id = ?", (submission_id,))
     if not sub:
         raise HTTPException(status_code=404, detail="投稿不存在")
-    surface = clean_content(body.surface or sub["surface"], 500)
-    answer = clean_content(body.answer or sub["answer"], 1000)
+    surface = clean_content(body.surface or sub["surface"], SURFACE_LIMIT)
+    answer = clean_content(body.answer or sub["answer"], ANSWER_LIMIT)
     await execute(
         "INSERT INTO puzzles (title, surface, answer, tags, created_by) VALUES (?, ?, ?, ?, ?)",
         ("", surface, answer, (body.tags or sub["tags"])[:100], admin["id"]),
@@ -160,8 +160,8 @@ async def create_submission(body: SubmissionBody, admin: dict = Depends(admin_pl
     sid = await execute(
         "INSERT INTO puzzle_submissions (surface, answer, tags, status) VALUES (?, ?, ?, ?)",
         (
-            clean_content(body.surface, 500),
-            clean_content(body.answer, 1000),
+            clean_content(body.surface, SURFACE_LIMIT),
+            clean_content(body.answer, ANSWER_LIMIT),
             body.tags[:100],
             body.status[:32],
         ),
@@ -178,8 +178,8 @@ async def update_submission(submission_id: int, body: SubmissionBody, admin: dic
     await execute(
         "UPDATE puzzle_submissions SET surface = ?, answer = ?, tags = ?, status = ? WHERE id = ?",
         (
-            clean_content(body.surface, 500),
-            clean_content(body.answer, 1000),
+            clean_content(body.surface, SURFACE_LIMIT),
+            clean_content(body.answer, ANSWER_LIMIT),
             body.tags[:100],
             body.status[:32],
             submission_id,
@@ -282,8 +282,8 @@ async def create_admin_room(body: RoomAdminBody, admin: dict = Depends(admin_pla
         f"INSERT INTO rooms (id, surface, answer, status, created_by, winner_id, finished_at) VALUES (?, ?, ?, ?, ?, ?, CASE WHEN ? = 'finished' THEN {SQL_NOW} ELSE NULL END)",
         (
             rid,
-            clean_content(body.surface, 500),
-            clean_content(body.answer, 1000),
+            clean_content(body.surface, SURFACE_LIMIT),
+            clean_content(body.answer, ANSWER_LIMIT),
             status,
             admin["id"],
             body.winner_id,
@@ -310,8 +310,8 @@ async def update_room(room_id: str, body: RoomAdminBody, admin: dict = Depends(a
     await execute(
         f"UPDATE rooms SET surface = ?, answer = ?, status = ?, winner_id = ?{finished_at_sql} WHERE id = ?",
         (
-            clean_content(body.surface, 500),
-            clean_content(body.answer, 1000),
+            clean_content(body.surface, SURFACE_LIMIT),
+            clean_content(body.answer, ANSWER_LIMIT),
             body.status[:32],
             body.winner_id,
             body.status[:32],

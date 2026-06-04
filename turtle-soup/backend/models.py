@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from utils import ANSWER_LIMIT, SURFACE_LIMIT, TAGS_LIMIT, TITLE_LIMIT
+
 
 class AuthBody(BaseModel):
     username: str | None = Field(default=None, max_length=32)
@@ -10,14 +12,14 @@ class AuthBody(BaseModel):
 class RoomCreateBody(BaseModel):
     mode: str = "random"
     puzzle_id: int | None = None
-    title: str = Field(default="", max_length=80)
-    surface: str | None = Field(default=None, max_length=500)
-    answer: str | None = Field(default=None, max_length=1000)
-    tags: str = Field(default="", max_length=100)
+    title: str = Field(default="", max_length=TITLE_LIMIT)
+    surface: str | None = Field(default=None, max_length=SURFACE_LIMIT)
+    answer: str | None = Field(default=None, max_length=ANSWER_LIMIT)
+    tags: str = Field(default="", max_length=TAGS_LIMIT)
 
 
 class PuzzleBody(BaseModel):
-    """管理员题库直写/编辑，不做字数上限。"""
+    """管理员题库直写/编辑，使用统一题目长度上限。"""
     title: str = ""
     surface: str
     answer: str

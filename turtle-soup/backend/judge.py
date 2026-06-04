@@ -10,6 +10,7 @@ import httpx
 from fastapi import HTTPException
 
 from database import DEFAULT_SETTINGS, fetch_all, fetch_one
+from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
 fail_counts: dict[int, int] = {}
@@ -293,6 +294,7 @@ _ASK_MAPPING = {
     "是也不是": "partial",
 }
 _CLUE_PREFIX = "【线索公布】"
+_CLUE_SUFFIX = "【线索公布结束】"
 
 
 def _ask_first_line_valid(text: str) -> bool:
@@ -313,12 +315,45 @@ def _strip_code_fence(text: str) -> str:
 
 
 def _extract_clue_from_ask(text: str) -> str | None:
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith(_CLUE_PREFIX):
-            content = stripped[len(_CLUE_PREFIX) :].strip()
+            clue_lines = [stripped[len(_CLUE_PREFIX) :].strip()]
+            for next_line in lines[index + 1 :]:
+                next_stripped = next_line.strip()
+                if not next_stripped:
+                    continue
+                if next_stripped.startswith("【"):
+                    break
+                clue_lines.append(next_stripped)
+            content = "\n".join(line for line in clue_lines if line).strip()
             return content or None
     return None
+
+
+def _extract_clue_from_answer(answer: str) -> str | None:
+    marker_index = answer.find(_CLUE_PREFIX)
+    if marker_index < 0:
+        return None
+    clue_start = marker_index + len(_CLUE_PREFIX)
+    suffix_index = answer.find(_CLUE_SUFFIX, clue_start)
+    if suffix_index >= 0:
+        content = answer[clue_start:suffix_index].strip()
+        return content or None
+    clue_text = answer[clue_start:]
+    clue_lines: list[str] = []
+    for line in clue_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if clue_lines:
+                clue_lines.append("")
+            continue
+        if stripped.startswith("【"):
+            break
+        clue_lines.append(stripped)
+    content = "\n".join(clue_lines).strip()
+    return content or None
 
 
 async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str | None]:
@@ -334,7 +369,7 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
         "不要输出通关格式。"
     )
     if has_clue:
-        ask_instruction += "若触发线索，可在第二行输出【线索公布】..."
+        ask_instruction += "若触发线索，可在第二行输出【线索公布】。实际公布内容会从汤底的【线索公布】与【线索公布结束】之间读取。"
     messages = [
         {"role": "system", "content": system},
         {"role": "system", "content": ask_instruction},
@@ -359,6 +394,8 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
     clue = _extract_clue_from_ask(text)
     if not has_clue:
         clue = None
+    elif clue is not None:
+        clue = _extract_clue_from_answer(answer) or clue
     return {
         "judgment": _ASK_MAPPING[first_line],
         "clue": clue,
@@ -433,7 +470,7 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
         "本次请求类型是用户申请提示。不要执行线索汤专用特殊规则，"
         "不要输出【线索公布】，不要泄露完整汤底。"
         "只给一个基于汤面、汤底和已问记录的温和提示。"
-        "必须以【提示】开头，总字数不超过 20 字，必须是无标点的一句话。"
+        "必须以【提示】开头，总字数不超过 30 字，必须是无标点的一句话。"
     )
     if previous_hints:
         numbered_list = "\n".join(
@@ -479,7 +516,7 @@ async def generate_puzzle(style: str = "horror") -> dict[str, str]:
     prompt = (
         f"{prompt}\n\n"
         "本次返回的 JSON 必须包含 title、surface、answer 三个字段；"
-        "title 是单独题目标题，不是汤面，限 2-12 个中文字符。"
+        f"title 是单独题目标题，不是汤面，不超过 {TITLE_LIMIT} 字；surface 不超过 {SURFACE_LIMIT} 字；answer 不超过 {ANSWER_LIMIT} 字。"
     )
     text = await _chat(
         [
@@ -493,9 +530,9 @@ async def generate_puzzle(style: str = "horror") -> dict[str, str]:
         end = text.rfind("}") + 1
         data = json.loads(text[start:end])
         return {
-            "title": str(data.get("title") or "")[:80],
-            "surface": str(data["surface"])[:500],
-            "answer": str(data["answer"])[:1000],
+            "title": str(data.get("title") or "")[:TITLE_LIMIT],
+            "surface": str(data["surface"])[:SURFACE_LIMIT],
+            "answer": str(data["answer"])[:ANSWER_LIMIT],
         }
     except Exception:
         raise HTTPException(status_code=502, detail="AI 生成结果格式错误") from None

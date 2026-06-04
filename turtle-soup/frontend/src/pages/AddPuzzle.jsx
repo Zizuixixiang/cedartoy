@@ -117,7 +117,7 @@ export default function AddPuzzle() {
       <div className="section-head">
         <div>
           <h2>临时加题</h2>
-          <p className="muted">直接写入海龟汤题库（需管理员登录）；本页不限制字数。</p>
+          <p className="muted">直接写入海龟汤题库（需管理员登录）；线索汤请用【线索公布】和【线索公布结束】包住中途公开内容。</p>
         </div>
         <Link to="/admin">管理后台</Link>
       </div>
@@ -144,7 +144,7 @@ export default function AddPuzzle() {
         <label>
           汤底
           <textarea
-            placeholder="汤底"
+            placeholder={'汤底\n\n线索汤格式：\n【线索公布】\n这里写中途要公开的线索\n【线索公布结束】\n\n后面继续写完整汤底和通关条件'}
             value={form.answer}
             onChange={(e) => setForm({ ...form, answer: e.target.value })}
             required
