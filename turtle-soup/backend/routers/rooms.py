@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth_utils import current_player
-from database import execute, fetch_all, fetch_one
+from database import execute, fetch_all, fetch_one, get_setting
 from judge import scan_text
 from models import RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT, SQL_NOW, clean_content, public_player, room_id
@@ -17,6 +17,7 @@ def _public_room(row: dict) -> dict:
 @router.get("/")
 async def list_rooms(player: dict = Depends(current_player)):
     del player
+    finished_visible_hours = int(await get_setting("lobby_finished_visible_hours", "1"))
     rows = await fetch_all(
         """
         SELECT r.id, r.surface, r.status, r.created_by, r.winner_id, r.created_at, r.finished_at,
@@ -33,9 +34,15 @@ async def list_rooms(player: dict = Depends(current_player)):
         LEFT JOIN players p ON p.id = r.created_by
         LEFT JOIN puzzles pz ON pz.id = r.puzzle_id
         WHERE r.status IN ('waiting', 'playing')
-        ORDER BY COALESCE((SELECT MAX(gl.created_at) FROM game_logs gl WHERE gl.room_id = r.id), r.created_at) DESC
+           OR (
+             r.status = 'finished'
+             AND r.finished_at IS NOT NULL
+             AND r.finished_at >= datetime('now', 'localtime', ?)
+           )
+        ORDER BY CASE r.status WHEN 'finished' THEN 2 ELSE 0 END, COALESCE((SELECT MAX(gl.created_at) FROM game_logs gl WHERE gl.room_id = r.id), r.created_at) DESC
         LIMIT 50
-        """
+        """,
+        (f"-{finished_visible_hours} hours",),
     )
     return rows
 

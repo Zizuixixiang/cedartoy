@@ -86,7 +86,8 @@ const settingDescriptions = {
   judge_prompt_clue: '线索汤专用补充提示词。汤底中用【线索公布】和【线索公布结束】包住中途公开内容。',
   guest_expire_hours: '游客身份/临时数据可保留的小时数。',
   room_inactive_expire_hours: '房间最后一条玩家发言后自动结束的小时数。',
-  finished_room_retention_hours: '已结束房间后端继续保留的小时数；大厅会立即隐藏已结束房间。',
+  lobby_finished_visible_hours: '已结束房间在大厅继续显示的小时数。',
+  finished_room_retention_hours: '已结束房间后端继续保留的小时数；到期后删除房间、日志和记事。',
 }
 
 const statusText = {

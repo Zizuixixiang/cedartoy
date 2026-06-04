@@ -19,6 +19,7 @@ DEFAULT_SETTINGS = {
     "generate_prompt": "你是海龟汤出题人。返回 JSON，字段 surface 和 answer。生成一道适合多人推理、无血腥露骨描写的中文海龟汤。",
     "guest_expire_hours": "1",
     "room_inactive_expire_hours": "48",
+    "lobby_finished_visible_hours": "3",
     "finished_room_retention_hours": "24",
 }
 
