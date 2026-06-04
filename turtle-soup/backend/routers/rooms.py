@@ -17,7 +17,7 @@ def _public_room(row: dict) -> dict:
 @router.get("/")
 async def list_rooms(player: dict = Depends(current_player)):
     del player
-    finished_visible_hours = int(await get_setting("lobby_finished_visible_hours", "1"))
+    finished_visible_hours = int(await get_setting("lobby_finished_visible_hours", "3"))
     rows = await fetch_all(
         """
         SELECT r.id, r.surface, r.status, r.created_by, r.winner_id, r.created_at, r.finished_at,

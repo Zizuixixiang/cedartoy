@@ -895,7 +895,7 @@ def _turtle_soup_guide():
             "hint_request": "room_id -> 主动请求一次提示并直接返回/显示提示内容，每个玩家在每个房间最多 3 次；同房间提示生成会串行调用裁判 LLM，避免并发打架",
             "hint_respond": "room_id, log_id, accept -> 兼容旧提示记录的处理接口；新请求提示无需调用，只有自动提示在网页端本地选择是否查看",
             "status": "room_id, log_limit(可选) -> 查看进度和问答记录；log_limit 返回最新 N 条对局公屏日志；提示日志含 hint_text/resolved",
-            "list_rooms": "查看大厅房间列表",
+            "list_rooms": "查看大厅房间列表；返回 waiting/playing 房间，以及结束 3 小时内的 finished 房间",
             "note_list": "room_id -> 查看该房间记事本",
             "note_add": "room_id, content -> 新增自己的记事，最多 50 字；同时写入一条不含记事内容的系统公屏日志【系统提示】记事本有新记录。",
             "note_edit": "note_id, content -> 修改自己的记事，最多 50 字；不写公屏日志",
