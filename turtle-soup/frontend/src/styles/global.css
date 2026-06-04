@@ -2498,6 +2498,7 @@ body:has(.room-page) {
 
 .notepad-item p {
   margin: 0 0 6px;
+  font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
 }
@@ -2606,6 +2607,7 @@ body:has(.room-page) {
 .notepad-drawer-panel {
   width: min(280px, calc(100vw - 34px));
   height: 100%;
+  overflow: hidden;
   transform: translateX(100%);
   transition: transform 220ms ease;
   border-left: 4px solid var(--pixel-purple-dark);

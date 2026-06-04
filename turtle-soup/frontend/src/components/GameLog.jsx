@@ -127,7 +127,7 @@ function systemNoticeContent(content) {
   return ''
 }
 
-export default function GameLog({ logs, onReport, onHintRespond, hintBusy, currentPlayerId }) {
+export default function GameLog({ logs, onHintRespond, hintBusy, currentPlayerId }) {
   const ordered = sortLogs(logs)
   const [compactLogTime, setCompactLogTime] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
@@ -193,7 +193,20 @@ export default function GameLog({ logs, onReport, onHintRespond, hintBusy, curre
             key={log.id}
             onContextMenu={(event) => {
               event.preventDefault()
-              onReport?.(log)
+              const text = log.content?.trim()
+              if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                  const tip = document.createElement('div')
+                  tip.textContent = '已复制'
+                  Object.assign(tip.style, {
+                    position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+                    background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '8px 18px',
+                    borderRadius: '6px', fontSize: '14px', zIndex: '9999', pointerEvents: 'none',
+                  })
+                  document.body.appendChild(tip)
+                  setTimeout(() => tip.remove(), 1200)
+                })
+              }
             }}
           >
             <span className="log-time" title={timeFull}>{time}</span>

@@ -261,17 +261,6 @@ export default function Room() {
     }
   }
 
-  const report = async (log) => {
-    const reason = prompt('举报原因')
-    if (!reason) return
-    await post('/report', {
-      room_id: roomId,
-      log_id: log.id,
-      target_player_id: log.player_id,
-      reason,
-    })
-  }
-
   const logout = async () => {
     await logoutToGuest()
     setCedartoyMe(null)
@@ -379,7 +368,7 @@ export default function Room() {
             >
               <GameLog
                 logs={displayLogs}
-                onReport={report}
+
                 onHintRespond={respondHint}
                 hintBusy={hintBusy}
                 currentPlayerId={me?.id}
@@ -468,7 +457,7 @@ export default function Room() {
           aria-label="记事板"
           onClick={(event) => event.stopPropagation()}
         >
-          <NoteBoard roomId={roomId} notes={notes} setNotes={setNotes} />
+          <NoteBoard roomId={roomId} notes={notes} setNotes={setNotes} currentPlayer={me} />
         </div>
       </div>
 

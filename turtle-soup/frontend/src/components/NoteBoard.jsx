@@ -6,7 +6,7 @@ function prependNoteOnce(items, note) {
   return items.some((item) => Number(item.id) === Number(note.id)) ? items : [note, ...items]
 }
 
-export default function NoteBoard({ roomId, notes, setNotes }) {
+export default function NoteBoard({ roomId, notes, setNotes, currentPlayer }) {
   const [content, setContent] = useState('')
 
   const addNote = async () => {
@@ -44,10 +44,12 @@ export default function NoteBoard({ roomId, notes, setNotes }) {
                 <p>{note.content}</p>
                 <footer>
                   <small>{noteAuthor(note)}</small>
-                  <div>
-                    <button type="button" onClick={() => edit(note)}>改</button>
-                    <button type="button" onClick={() => remove(note.id)}>删</button>
-                  </div>
+                  {Number(note.player_id) === Number(currentPlayer?.id) && (
+                    <div>
+                      <button type="button" onClick={() => edit(note)}>改</button>
+                      <button type="button" onClick={() => remove(note.id)}>删</button>
+                    </div>
+                  )}
                 </footer>
               </div>
             ))}
