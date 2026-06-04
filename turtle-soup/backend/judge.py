@@ -515,7 +515,7 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
     ]
     text = await _chat_validated(
         messages,
-        lambda value: value.strip().startswith("【提示】"),
+        _valid_hint_response,
         max_retry=3,
         log_label="generate_hint",
         timeout=12,
@@ -524,6 +524,19 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
     if text is None:
         return None
     return text.strip()[len("【提示】") :].strip()[:120]
+
+
+def _valid_hint_response(value: str) -> bool:
+    text = value.strip()
+    if not text.startswith("【提示】"):
+        return False
+    hint = text[len("【提示】") :].strip()
+    if len(hint) < 6:
+        return False
+    if "【线索公布】" in hint:
+        return False
+    dangling_suffixes = ("的", "了", "是", "在", "和", "与", "把", "被", "从", "向", "对", "将", "让", "但", "而")
+    return not hint.endswith(dangling_suffixes)
 
 
 async def generate_puzzle(style: str = "horror") -> dict[str, str]:
