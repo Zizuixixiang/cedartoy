@@ -140,16 +140,16 @@ function systemNoticeContent(content) {
   return ''
 }
 
-function loadAcceptedHints() {
-  try { return new Set(JSON.parse(sessionStorage.getItem('accepted_hints') || '[]')) } catch { return new Set() }
+function loadHintDecisions() {
+  try { return JSON.parse(sessionStorage.getItem('hint_decisions') || '{}') } catch { return {} }
 }
-function saveAcceptedHints(ids) {
-  sessionStorage.setItem('accepted_hints', JSON.stringify([...ids]))
+function saveHintDecisions(obj) {
+  sessionStorage.setItem('hint_decisions', JSON.stringify(obj))
 }
 
 export default function GameLog({ logs, onHintRespond, hintBusy, currentPlayerId }) {
   const ordered = sortLogs(logs)
-  const [acceptedAutoHints, setAcceptedAutoHints] = useState(loadAcceptedHints)
+  const [hintDecisions, setHintDecisions] = useState(loadHintDecisions)
   const [compactLogTime, setCompactLogTime] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
   )
@@ -183,24 +183,23 @@ export default function GameLog({ logs, onHintRespond, hintBusy, currentPlayerId
         }
         if (log.type === 'auto_hint' || log.judgment === 'auto_hint') {
           const special = log.judgment === 'auto_hint'
-          const accepted = acceptedAutoHints.has(log.id)
+          const decision = hintDecisions[log.id]
+          if (decision === 'reject') return null
           return (
             <AutoHintBanner
               key={`auto-${log.id}`}
               log={log}
               special={special}
-              accepted={accepted}
+              accepted={decision === 'accept'}
               onAccept={(id) => {
-                const next = new Set(acceptedAutoHints)
-                next.add(id)
-                saveAcceptedHints(next)
-                setAcceptedAutoHints(next)
+                const next = { ...hintDecisions, [id]: 'accept' }
+                saveHintDecisions(next)
+                setHintDecisions(next)
               }}
               onReject={(id) => {
-                const next = new Set(acceptedAutoHints)
-                next.add(id)
-                saveAcceptedHints(next)
-                setAcceptedAutoHints(next)
+                const next = { ...hintDecisions, [id]: 'reject' }
+                saveHintDecisions(next)
+                setHintDecisions(next)
               }}
             />
           )
