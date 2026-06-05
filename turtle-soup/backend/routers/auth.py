@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from auth_utils import create_token, current_player, hash_password, verify_password
-from database import execute, fetch_one
+from database import execute, fetch_one, get_db
 from models import AuthBody
 from utils import SQL_NOW, clean_content, public_player
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+GUEST_NUMBER_MAX = 999
+GUEST_NEXT_NUMBER_KEY = "guest_next_number"
 
 
 def _source(source: str) -> str:
@@ -17,6 +19,50 @@ def _source(source: str) -> str:
 
 class GuestRequest(BaseModel):
     user_id: Optional[int] = None
+
+
+async def _create_guest_player() -> dict:
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, '1')",
+            (GUEST_NEXT_NUMBER_KEY,),
+        )
+        row = await db.execute_fetchall(
+            "SELECT value FROM settings WHERE key = ?",
+            (GUEST_NEXT_NUMBER_KEY,),
+        )
+        try:
+            start = int(row[0]["value"]) if row else 1
+        except Exception:
+            start = 1
+        start = ((start - 1) % GUEST_NUMBER_MAX) + 1
+        for offset in range(GUEST_NUMBER_MAX):
+            number = ((start - 1 + offset) % GUEST_NUMBER_MAX) + 1
+            username = f"游客{number}"
+            existing = await db.execute_fetchall(
+                "SELECT id FROM players WHERE username = ?",
+                (username,),
+            )
+            if existing:
+                continue
+            cur = await db.execute(
+                "INSERT INTO players (username, is_guest, source) VALUES (?, 1, 'web')",
+                (username,),
+            )
+            next_number = (number % GUEST_NUMBER_MAX) + 1
+            await db.execute(
+                "UPDATE settings SET value = ? WHERE key = ?",
+                (str(next_number), GUEST_NEXT_NUMBER_KEY),
+            )
+            await db.commit()
+            player_id = int(cur.lastrowid)
+            player = await db.execute_fetchall("SELECT * FROM players WHERE id = ?", (player_id,))
+            return dict(player[0])
+        raise HTTPException(status_code=503, detail="游客编号已用完，请稍后再试")
+    finally:
+        await db.close()
 
 
 @router.post("/guest")
@@ -45,8 +91,7 @@ async def guest_login(body: GuestRequest | None = None):
             )
             player = await fetch_one("SELECT * FROM players WHERE id = ?", (player["id"],))
         return {"token": create_token(player), "player": public_player(player)}
-    player_id = await execute("INSERT INTO players (is_guest, source) VALUES (1, 'web')")
-    player = await fetch_one("SELECT * FROM players WHERE id = ?", (player_id,))
+    player = await _create_guest_player()
     return {"token": create_token(player), "player": public_player(player)}
 
 

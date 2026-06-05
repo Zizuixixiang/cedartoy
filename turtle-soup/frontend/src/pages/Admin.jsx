@@ -56,6 +56,7 @@ const fieldLabels = {
   api_url: '接口地址',
   api_key: '密钥',
   model: '模型',
+  purpose: '用途',
   priority: '优先级',
   key: '配置项',
   value: '值',
@@ -71,13 +72,13 @@ const tabDescriptions = {
   bans: '按 IP 封禁访问，命中后会阻止继续使用海龟汤。',
   reports: '玩家对房间发言或用户的举报记录。',
   flags: '系统或管理员标记的风险内容，用于后续处理。',
-  'api-configs': '裁判 LLM 的接口配置。按优先级排序后轮转调度；停用或连续失败 5 次后不会被调度。保存后可点「测试」探测连通性。',
+  'api-configs': '裁判 LLM 的接口配置。用途决定进入问答池、提示池或两边都用；同一池内按优先级轮转，停用或连续失败 5 次后不会被调度。',
   settings: '运行参数。修改后会影响新请求或后续流程。',
 }
 
 const settingDescriptions = {
   max_rooms: '大厅允许同时保留的活跃房间数量上限。',
-  hint_trigger_count: '距上次提示后再 ask 多少条触发自动提示。',
+  hint_trigger_count: '距上次自动提示尝试或成功后再 ask 多少条触发自动提示。',
   ai_cooldown_questions: 'AI 裁判相关操作按提问数计算的冷却间隔。',
   ai_cooldown_seconds: 'AI 裁判请求之间的最短秒级间隔。',
   generate_cooldown_seconds: 'AI 生成题目的按钮冷却秒数。',
@@ -98,6 +99,9 @@ const statusText = {
   waiting: '等待中',
   playing: '进行中',
   finished: '已结束',
+  judge: '问答',
+  hint: '提示',
+  both: '两边',
 }
 
 const columns = {
@@ -108,7 +112,7 @@ const columns = {
   bans: ['id', 'ip', 'reason', 'banned_by', 'created_at'],
   reports: ['id', 'reporter_id', 'target_player_id', 'room_id', 'log_id', 'reason', 'status', 'created_at'],
   flags: ['id', 'type', 'ref_id', 'reason', 'status', 'created_at'],
-  'api-configs': ['id', 'name', 'api_url', 'api_key', 'model', 'enabled', 'priority', 'created_at'],
+  'api-configs': ['id', 'name', 'api_url', 'api_key', 'model', 'purpose', 'enabled', 'priority', 'created_at'],
   settings: ['key', 'value', 'description'],
 }
 
@@ -161,6 +165,7 @@ const formFields = {
     { key: 'api_url', label: '接口地址', required: true },
     { key: 'api_key', label: '密钥', secretOnEdit: true },
     { key: 'model', label: '模型', required: true },
+    { key: 'purpose', label: '用途', type: 'select', options: ['judge', 'hint', 'both'] },
     { key: 'enabled', label: '启用', type: 'checkbox' },
     { key: 'priority', label: '优先级', type: 'number' },
   ],
@@ -178,7 +183,7 @@ const defaults = {
   bans: { ip: '', reason: '' },
   reports: { reporter_id: '', target_player_id: '', room_id: '', log_id: '', reason: '', status: 'pending' },
   flags: { type: 'manual', ref_id: 0, reason: '', status: 'pending' },
-  'api-configs': { name: '', api_url: '', api_key: '', model: '', enabled: 1, priority: 0 },
+  'api-configs': { name: '', api_url: '', api_key: '', model: '', purpose: 'judge', enabled: 1, priority: 0 },
   settings: { key: '', value: '' },
 }
 
@@ -191,7 +196,7 @@ const timestampFields = new Set(['created_at', 'last_active_at', 'finished_at', 
 function displayValue(key, value) {
   if (value === null || value === undefined || value === '') return '未填写'
   if (['enabled', 'is_guest', 'is_ai', 'is_admin'].includes(key)) return Number(value) ? '是' : '否'
-  if (key === 'status') return statusText[value] || value
+  if (key === 'status' || key === 'purpose') return statusText[value] || value
   if (timestampFields.has(key)) return formatDbDateTime(value)
   if (Array.isArray(value)) return value.map((item, index) => `${index + 1}. ${displayValue('', item)}`).join('\n')
   if (typeof value === 'object') {

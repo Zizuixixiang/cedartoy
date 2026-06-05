@@ -37,6 +37,7 @@ class ApiConfigBody(BaseModel):
     api_url: str
     api_key: str = ""
     model: str
+    purpose: str = "judge"
     enabled: int = 1
     priority: int = 0
 
@@ -64,6 +65,14 @@ class SettingBody(BaseModel):
 class BanBody(BaseModel):
     ip: str
     reason: str = ""
+
+
+API_CONFIG_PURPOSES = {"judge", "hint", "both"}
+
+
+def normalize_api_config_purpose(value: str | None) -> str:
+    purpose = (value or "judge").strip()
+    return purpose if purpose in API_CONFIG_PURPOSES else "judge"
 
 
 class SubmissionBody(BaseModel):
@@ -472,9 +481,10 @@ async def api_configs(admin: dict = Depends(admin_player)):
 @router.post("/api-configs")
 async def add_api_config(body: ApiConfigBody, admin: dict = Depends(admin_player)):
     del admin
+    purpose = normalize_api_config_purpose(body.purpose)
     cid = await execute(
-        "INSERT INTO judge_api_configs (name, api_url, api_key, model, enabled, priority) VALUES (?, ?, ?, ?, ?, ?)",
-        (body.name, body.api_url, body.api_key, body.model, body.enabled, body.priority),
+        "INSERT INTO judge_api_configs (name, api_url, api_key, model, purpose, enabled, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (body.name, body.api_url, body.api_key, body.model, purpose, body.enabled, body.priority),
     )
     return {"id": cid}
 
@@ -518,9 +528,10 @@ async def update_api_config(config_id: int, body: ApiConfigBody, admin: dict = D
     if not existing:
         raise HTTPException(status_code=404, detail="配置不存在")
     key = body.api_key or existing["api_key"]
+    purpose = normalize_api_config_purpose(body.purpose)
     await execute(
-        "UPDATE judge_api_configs SET name=?, api_url=?, api_key=?, model=?, enabled=?, priority=? WHERE id=?",
-        (body.name, body.api_url, key, body.model, body.enabled, body.priority, config_id),
+        "UPDATE judge_api_configs SET name=?, api_url=?, api_key=?, model=?, purpose=?, enabled=?, priority=? WHERE id=?",
+        (body.name, body.api_url, key, body.model, purpose, body.enabled, body.priority, config_id),
     )
     return {"ok": True}
 

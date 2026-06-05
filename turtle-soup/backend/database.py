@@ -18,6 +18,7 @@ DEFAULT_SETTINGS = {
     "judge_prompt": "你是海龟汤游戏裁判。",
     "generate_prompt": "你是海龟汤出题人。返回 JSON，字段 surface 和 answer。生成一道适合多人推理、无血腥露骨描写的中文海龟汤。",
     "guest_expire_hours": "1",
+    "guest_next_number": "1",
     "room_inactive_expire_hours": "48",
     "lobby_finished_visible_hours": "3",
     "finished_room_retention_hours": "24",
@@ -271,6 +272,7 @@ async def init_db() -> None:
                 api_url TEXT NOT NULL,
                 api_key TEXT NOT NULL,
                 model TEXT NOT NULL,
+                purpose TEXT DEFAULT 'judge',
                 enabled INTEGER DEFAULT 1,
                 priority INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
@@ -355,6 +357,11 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE rooms ADD COLUMN manual_hint_count INTEGER DEFAULT 0")
         if "last_hint_at_ask_count" not in room_cols:
             await db.execute("ALTER TABLE rooms ADD COLUMN last_hint_at_ask_count INTEGER DEFAULT 0")
+        async with db.execute("PRAGMA table_info(judge_api_configs)") as cur:
+            api_config_cols = {row[1] for row in await cur.fetchall()}
+        if "purpose" not in api_config_cols:
+            await db.execute("ALTER TABLE judge_api_configs ADD COLUMN purpose TEXT DEFAULT 'judge'")
+            await db.execute("UPDATE judge_api_configs SET purpose = 'hint' WHERE id IN (3, 8)")
         seed_count = await db.execute_fetchall("SELECT COUNT(*) AS c FROM puzzles")
         if int(seed_count[0]["c"]) == 0:
             await db.executemany(

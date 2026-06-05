@@ -15,6 +15,7 @@ from utils import ROOM_FINISHED_STATUS_HINT, SQL_NOW, clean_content
 router = APIRouter(prefix="/game", tags=["game"])
 logger = logging.getLogger(__name__)
 _hint_locks: dict[str, asyncio.Lock] = {}
+_ask_locks: dict[str, asyncio.Lock] = {}
 
 
 def _hint_lock(room_id: str) -> asyncio.Lock:
@@ -22,6 +23,14 @@ def _hint_lock(room_id: str) -> asyncio.Lock:
     if lock is None:
         lock = asyncio.Lock()
         _hint_locks[room_id] = lock
+    return lock
+
+
+def _ask_lock(room_id: str) -> asyncio.Lock:
+    lock = _ask_locks.get(room_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ask_locks[room_id] = lock
     return lock
 
 
@@ -166,17 +175,30 @@ async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False, playe
             ask_count = latest_ask_count
 
         logs = await fetch_all("SELECT * FROM game_logs WHERE room_id = ? ORDER BY id ASC", (room["id"],))
-        hint = await judge.generate_hint(room["surface"], room["answer"], logs)
+        try:
+            hint = await judge.generate_hint(room["surface"], room["answer"], logs)
+        except Exception:
+            if manual:
+                raise
+            logger.exception("auto hint generation failed: room_id=%s ask_count=%s", room["id"], ask_count)
+            await execute(
+                "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
+                (ask_count, room["id"]),
+            )
+            return None
+        if hint is None and not manual:
+            logger.warning("auto hint generation returned empty: room_id=%s ask_count=%s", room["id"], ask_count)
+            await execute(
+                "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
+                (ask_count, room["id"]),
+            )
+            return None
         if hint is None:
             return None
         if manual:
             hint_id = await execute(
                 "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, resolved) VALUES (?, ?, 'hint_offer', ?, ?, 1)",
                 (room["id"], player_id, f"hint:{ask_count}", hint),
-            )
-            await execute(
-                "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
-                (ask_count, room["id"]),
             )
             payload = {
                 "log_id": hint_id,
@@ -223,66 +245,67 @@ async def _maybe_auto_hint_safely(room: dict, ask_count: int) -> dict | None:
 
 async def _ask_impl(body: ContentBody, player: dict) -> tuple[dict, asyncio.Task]:
     """Core ask logic. Returns (payload, hint_task)."""
-    question = clean_content(body.content, 200)
-    room = await _room(body.room_id)
-    _ensure_active(room)
-    if player.get("is_ai"):
-        n = int(await get_setting("ai_cooldown_questions", "5"))
-        seconds = int(await get_setting("ai_cooldown_seconds", "3"))
-        recent = await fetch_all(
-            """
-            SELECT created_at FROM game_logs
-            WHERE room_id = ? AND player_id = ? AND type = 'ask'
-            ORDER BY id DESC LIMIT ?
-            """,
-            (body.room_id, player["id"], n),
-        )
-        if len(recent) >= n:
-            too_fast = await fetch_one(
+    async with _ask_lock(body.room_id):
+        question = clean_content(body.content, 200)
+        room = await _room(body.room_id)
+        _ensure_active(room)
+        if player.get("is_ai"):
+            n = int(await get_setting("ai_cooldown_questions", "5"))
+            seconds = int(await get_setting("ai_cooldown_seconds", "3"))
+            recent = await fetch_all(
                 """
-                SELECT COUNT(*) AS c FROM (
-                  SELECT created_at FROM game_logs
-                  WHERE room_id = ? AND player_id = ? AND type = 'ask'
-                  ORDER BY id DESC LIMIT ?
-                ) WHERE datetime(created_at) >= datetime('now', 'localtime', ?)
+                SELECT created_at FROM game_logs
+                WHERE room_id = ? AND player_id = ? AND type = 'ask'
+                ORDER BY id DESC LIMIT ?
                 """,
-                (body.room_id, player["id"], n, f"-{seconds} seconds"),
+                (body.room_id, player["id"], n),
             )
-            if int(too_fast["c"]) >= n:
-                raise HTTPException(status_code=429, detail="AI 提问太快了，请先思考已有线索，稍等几秒后再问。")
-    try:
-        result = await judge.judge_ask(room["surface"], room["answer"], question)
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            resp = await _system_notice(body.room_id, player["id"])
-            return resp, asyncio.create_task(asyncio.sleep(0))
-        raise
-    judgment = result["judgment"]
-    log_content = result.get("content_override") or question
-    log_id = await execute(
-        "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'ask', ?, ?)",
-        (body.room_id, player["id"], log_content, judgment),
-    )
-    column = {"yes": "ask_count_y", "no": "ask_count_n", "unrelated": "ask_count_u", "partial": "ask_count_p"}[judgment]
-    await execute(
-        f"UPDATE players SET ask_count = ask_count + 1, {column} = {column} + 1 WHERE id = ?",
-        (player["id"],),
-    )
-    payload = await _log_payload(log_id)
-    await touch_room(body.room_id, player["id"])
-    await broadcast(body.room_id, "new_log", payload)
-    clue = result.get("clue")
-    if clue is not None and not await _published_clue_for_player(body.room_id, player["id"], clue):
-        clue_id = await execute(
-            "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, judgment) VALUES (?, ?, 'auto_hint', ?, ?, 'auto_hint')",
-            (body.room_id, player["id"], clue, clue),
+            if len(recent) >= n:
+                too_fast = await fetch_one(
+                    """
+                    SELECT COUNT(*) AS c FROM (
+                      SELECT created_at FROM game_logs
+                      WHERE room_id = ? AND player_id = ? AND type = 'ask'
+                      ORDER BY id DESC LIMIT ?
+                    ) WHERE datetime(created_at) >= datetime('now', 'localtime', ?)
+                    """,
+                    (body.room_id, player["id"], n, f"-{seconds} seconds"),
+                )
+                if int(too_fast["c"]) >= n:
+                    raise HTTPException(status_code=429, detail="AI 提问太快了，请先思考已有线索，稍等几秒后再问。")
+        try:
+            result = await judge.judge_ask(room["surface"], room["answer"], question)
+        except HTTPException as exc:
+            if exc.status_code == 503:
+                resp = await _system_notice(body.room_id, player["id"])
+                return resp, asyncio.create_task(asyncio.sleep(0))
+            raise
+        judgment = result["judgment"]
+        log_content = result.get("content_override") or question
+        log_id = await execute(
+            "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'ask', ?, ?)",
+            (body.room_id, player["id"], log_content, judgment),
         )
-        clue_payload = await _log_payload(clue_id)
-        await broadcast(body.room_id, "new_log", clue_payload)
+        column = {"yes": "ask_count_y", "no": "ask_count_n", "unrelated": "ask_count_u", "partial": "ask_count_p"}[judgment]
+        await execute(
+            f"UPDATE players SET ask_count = ask_count + 1, {column} = {column} + 1 WHERE id = ?",
+            (player["id"],),
+        )
+        payload = await _log_payload(log_id)
+        await touch_room(body.room_id, player["id"])
+        await broadcast(body.room_id, "new_log", payload)
+        clue = result.get("clue")
+        if clue is not None and not await _published_clue_for_player(body.room_id, player["id"], clue):
+            clue_id = await execute(
+                "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, judgment) VALUES (?, ?, 'auto_hint', ?, ?, 'auto_hint')",
+                (body.room_id, player["id"], clue, clue),
+            )
+            clue_payload = await _log_payload(clue_id)
+            await broadcast(body.room_id, "new_log", clue_payload)
 
-    ask_count = await _ask_count(body.room_id)
-    hint_task = asyncio.create_task(_maybe_auto_hint_safely(room, ask_count))
-    return payload, hint_task
+        ask_count = await _ask_count(body.room_id)
+        hint_task = asyncio.create_task(_maybe_auto_hint_safely(room, ask_count))
+        return payload, hint_task
 
 
 @router.post("/ask")

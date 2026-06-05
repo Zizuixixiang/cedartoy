@@ -892,7 +892,7 @@ def _turtle_soup_guide():
             "join": "room_id -> 加入进行中的房间",
             "ask": "room_id, content -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；返回本次结果，并附带 logs_since_last_own_action：从自己上次 ask/guess/提示处理之后到本次 ask 完成的全部对局公屏日志（不含上次自己的那条）；本次 ask 对应日志会标 is_current_ask_result=true",
             "guess": "room_id, content -> 猜汤底，content 最多 1000 字，必须提交完整汤底还原；是/否问题请用 ask，超长会提示内容太长",
-            "hint_request": "room_id -> 主动请求一次提示并直接返回/显示提示内容，每个玩家在每个房间最多 3 次；同房间提示生成会串行调用裁判 LLM，避免并发打架",
+            "hint_request": "room_id -> 主动请求一次提示并直接返回/显示提示内容，每个玩家在每个房间最多 3 次；同房间提示生成会串行调用提示池 LLM；手动提示不计入自动提示触发周期",
             "hint_respond": "room_id, log_id, accept -> 兼容旧提示记录的处理接口；新请求提示无需调用，只有自动提示在网页端本地选择是否查看",
             "status": "room_id, log_limit(可选) -> 查看进度和问答记录；log_limit 返回最新 N 条对局公屏日志；提示日志含 hint_text/resolved",
             "list_rooms": "查看大厅房间列表；返回 waiting/playing 房间，以及结束 3 小时内的 finished 房间",

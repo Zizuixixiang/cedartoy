@@ -13,9 +13,10 @@ from database import DEFAULT_SETTINGS, fetch_all, fetch_one
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
-fail_counts: dict[int, int] = {}
-_rr_index: int = 0
-_rr_lock = asyncio.Lock()
+fail_counts: dict[str, dict[int, int]] = {"judge": {}, "hint": {}}
+_rr_index: dict[str, int] = {"judge": 0, "hint": 0}
+_rr_locks: dict[str, asyncio.Lock] = {"judge": asyncio.Lock(), "hint": asyncio.Lock()}
+_config_locks: dict[str, asyncio.Lock] = {}
 _guess_lock = asyncio.Lock()
 FAIL_LIMIT = 5
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
@@ -72,11 +73,30 @@ async def _get_judge_prompt_clue() -> str:
     return str(row["value"]) if row else ""
 
 
-async def _configs() -> list[dict[str, Any]]:
+def _pool_name(pool: str) -> str:
+    return pool if pool in fail_counts else "judge"
+
+
+def _config_lock(cfg: dict[str, Any]) -> asyncio.Lock:
+    key = "|".join(str(cfg.get(part) or "") for part in ("api_url", "api_key", "model"))
+    lock = _config_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _config_locks[key] = lock
+    return lock
+
+
+async def _configs(pool: str = "judge") -> list[dict[str, Any]]:
+    pool = _pool_name(pool)
     rows = await fetch_all(
         "SELECT * FROM judge_api_configs WHERE enabled = 1 ORDER BY priority ASC, id ASC"
     )
-    return [r for r in rows if fail_counts.get(int(r["id"]), 0) < FAIL_LIMIT]
+    rows = [
+        row for row in rows
+        if str(row.get("purpose") or "judge") in {pool, "both"}
+    ]
+    pool_fail_counts = fail_counts[pool]
+    return [r for r in rows if pool_fail_counts.get(int(r["id"]), 0) < FAIL_LIMIT]
 
 
 def _endpoint(base: str) -> str:
@@ -99,43 +119,45 @@ async def _chat(
     *,
     timeout: float = 45,
     max_tokens: int | None = None,
+    pool: str = "judge",
 ) -> str:
-    global _rr_index
+    pool = _pool_name(pool)
     errors: list[str] = []
-    available = await _configs()
+    available = await _configs(pool)
     if not available:
         raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
     n = len(available)
-    async with _rr_lock:
-        start = _rr_index % n
-        _rr_index = (_rr_index + 1) % n
+    async with _rr_locks[pool]:
+        start = _rr_index[pool] % n
+        _rr_index[pool] = (_rr_index[pool] + 1) % n
     for i in range(n):
         cfg = available[(start + i) % n]
         cid = int(cfg["id"])
         try:
-            payload: dict[str, Any] = {
-                "model": cfg["model"],
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if max_tokens is not None:
-                payload["max_tokens"] = max_tokens
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    _endpoint(cfg["api_url"]),
-                    headers={"Authorization": f"Bearer {cfg['api_key']}"},
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                text = data["choices"][0]["message"]["content"]
-            fail_counts[cid] = 0
+            async with _config_lock(cfg):
+                payload: dict[str, Any] = {
+                    "model": cfg["model"],
+                    "messages": messages,
+                    "temperature": temperature,
+                }
+                if max_tokens is not None:
+                    payload["max_tokens"] = max_tokens
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(
+                        _endpoint(cfg["api_url"]),
+                        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    text = data["choices"][0]["message"]["content"]
+            fail_counts[pool][cid] = 0
             return str(text).strip()
         except Exception as exc:
-            fail_counts[cid] = fail_counts.get(cid, 0) + 1
+            fail_counts[pool][cid] = fail_counts[pool].get(cid, 0) + 1
             errors.append(f"{cfg.get('name')}: {exc}")
             continue
-    logger.warning("judge chat failed across configs: %s", "; ".join(errors))
+    logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
     raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
 
 
@@ -196,11 +218,17 @@ async def _chat_validated(
     log_label: str = "chat",
     **chat_kwargs: Any,
 ) -> str | None:
+    retry_messages = messages
     for _ in range(max_retry):
-        text = await _chat(messages, **chat_kwargs)
+        text = await _chat(retry_messages, **chat_kwargs)
         if validator(text):
             return text
         logger.warning("%s response failed validation: %r", log_label, text[:300])
+        repair_prompt = "上次回复为空或格式错误，请重新生成，并严格遵守本次任务的输出格式。"
+        retry_messages = retry_messages + [
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": repair_prompt},
+        ]
     return None
 
 
@@ -329,7 +357,7 @@ def _extract_clue_from_ask(text: str) -> str | None:
                     break
                 clue_lines.append(next_stripped)
             content = "\n".join(line for line in clue_lines if line).strip()
-            return content or None
+            return content if content else _CLUE_PREFIX
     return None
 
 
@@ -624,6 +652,29 @@ def public_answer_from_full_answer(answer: str) -> str:
         return answer.split(marker, 1)[0].strip()
     return answer.strip()
 
+
+def _recent_user_utterances(game_log: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+    utterances: list[dict[str, Any]] = []
+    for log in game_log:
+        if not log.get("player_id"):
+            continue
+        if log.get("type") not in {"ask", "guess"}:
+            continue
+        content = str(log.get("content") or "").strip()
+        if not content:
+            continue
+        item: dict[str, Any] = {
+            "type": log.get("type"),
+            "content": content,
+        }
+        if log.get("username"):
+            item["username"] = log.get("username")
+        if log.get("type") == "ask" and log.get("judgment"):
+            item["judgment"] = log.get("judgment")
+        utterances.append(item)
+    return utterances[-limit:]
+
+
 async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]]) -> str | None:
     compact = [
         {"q": r.get("content"), "a": r.get("judgment")}
@@ -638,7 +689,9 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
         "本次请求类型是用户申请提示。不要执行线索汤专用特殊规则，"
         "不要输出【线索公布】，不要泄露完整汤底。"
         "只给一个基于汤面、汤底和已问记录的温和提示。"
+        "可以根据用户偏离的方向适当引导，但不能直接提示答案。"
         "必须以【提示】开头，总字数不超过 30 字，必须是无标点的一句话。"
+        "即使无法生成更具体的提示，也不要空回复，必须按格式给出一个低剧透的观察方向。"
     )
     if previous_hints:
         numbered_list = "\n".join(
@@ -660,17 +713,19 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
                 "用户申请提示。\n"
                 f"汤面：{surface}\n"
                 f"汤底：{answer}\n"
-                f"已问记录：{json.dumps(compact, ensure_ascii=False)}"
+                f"已问记录：{json.dumps(compact, ensure_ascii=False)}\n"
+                f"最近20条用户发言：{json.dumps(_recent_user_utterances(game_log), ensure_ascii=False)}"
             ),
         },
     ]
     text = await _chat_validated(
         messages,
         _valid_hint_response,
-        max_retry=3,
+        max_retry=5,
         log_label="generate_hint",
         timeout=12,
         max_tokens=180,
+        pool="hint",
     )
     if text is None:
         return None
