@@ -2285,11 +2285,44 @@ body:has(.room-page) {
   margin-bottom: 0;
 }
 
+.answer-reveal-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 2px solid #fde047;
+  background: rgba(113, 63, 18, 0.2);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 15px;
+  box-shadow: inset 0 0 0 1px rgba(253, 224, 71, 0.2);
+}
+
+.answer-reveal-prompt-label {
+  margin-bottom: 6px;
+  color: #fde047;
+  font-family: "Silkscreen", cursive;
+  font-size: 15px;
+}
+
+.answer-reveal-prompt p {
+  margin: 0;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.answer-reveal-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .hint-actions {
   display: flex;
   gap: 8px;
 }
 
+.answer-reveal-actions button,
 .hint-actions button {
   min-height: 36px;
   min-width: 64px;
@@ -2300,6 +2333,11 @@ body:has(.room-page) {
   font-size: 15px;
 }
 
+.answer-reveal-actions button:not(.pixel-primary) {
+  border-color: rgba(253, 224, 71, 0.68);
+}
+
+.answer-reveal-actions .pixel-primary,
 .hint-actions .pixel-primary {
   border: 0;
   color: #fff;
@@ -3038,7 +3076,19 @@ body:has(.room-page) {
     border-width: 1px;
     font-size: 12px;
   }
+  .answer-reveal-prompt {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 9px;
+    border-width: 1px;
+    font-size: 12px;
+  }
   .log-hint-label {
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .answer-reveal-prompt-label {
     margin-bottom: 4px;
     font-size: 12px;
   }
@@ -3046,15 +3096,23 @@ body:has(.room-page) {
     margin-bottom: 7px;
     line-height: 1.45;
   }
+  .answer-reveal-prompt p {
+    line-height: 1.45;
+  }
+  .answer-reveal-actions {
+    gap: 6px;
+  }
   .hint-actions {
     gap: 6px;
   }
+  .answer-reveal-actions button,
   .hint-actions button {
     min-height: 28px;
     padding: 4px 9px;
     border-width: 1px;
     font-size: 12px;
   }
+  .answer-reveal-actions .pixel-primary,
   .hint-actions .pixel-primary {
     border-right-width: 2px;
     border-bottom-width: 2px;

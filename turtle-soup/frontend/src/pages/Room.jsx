@@ -62,6 +62,7 @@ export default function Room() {
   const [revealConfirmOpen, setRevealConfirmOpen] = useState(false)
   const [revealFinalConfirmOpen, setRevealFinalConfirmOpen] = useState(false)
   const [revealLoading, setRevealLoading] = useState(false)
+  const [revealPromptMilestone, setRevealPromptMilestone] = useState(0)
   const [answerRevealPromptCount, setAnswerRevealPromptCount] = useState(100)
   const [mineOpen, setMineOpen] = useState(false)
   const [bindOpen, setBindOpen] = useState(false)
@@ -205,15 +206,17 @@ export default function Room() {
   const actionLocked = finished || answerRevealed
   const hintDisabled = actionLocked || hintRemaining <= 0 || pendingHint || hintLoading
   const askCount = Math.max(Number(room?.ask_count || 0), logs.filter((row) => row.type === 'ask').length)
-  const revealPromptKey = `answer_reveal_prompt_${roomId}_${askCount}`
+  const revealPromptProgressKey = `answer_reveal_prompt_last_${roomId}`
 
   useEffect(() => {
     if (!room || actionLocked || answerRevealPromptCount <= 0 || askCount <= 0) return
-    if (askCount % answerRevealPromptCount !== 0) return
-    if (localStorage.getItem(revealPromptKey)) return
-    localStorage.setItem(revealPromptKey, '1')
+    const milestone = Math.floor(askCount / answerRevealPromptCount) * answerRevealPromptCount
+    if (milestone <= 0) return
+    const promptedCount = Number(localStorage.getItem(revealPromptProgressKey) || 0)
+    if (promptedCount >= milestone) return
+    setRevealPromptMilestone(milestone)
     setRevealConfirmOpen(true)
-  }, [room, actionLocked, askCount, answerRevealPromptCount, revealPromptKey])
+  }, [room, actionLocked, askCount, answerRevealPromptCount, revealPromptProgressKey, roomId])
 
   const send = async () => {
     if (!content.trim() || actionLocked || sendLoading) return
@@ -323,6 +326,23 @@ export default function Room() {
     }
   }
 
+  const markRevealPromptHandled = () => {
+    if (revealPromptMilestone > 0) {
+      localStorage.setItem(revealPromptProgressKey, String(revealPromptMilestone))
+    }
+  }
+
+  const acceptRevealPrompt = () => {
+    markRevealPromptHandled()
+    setRevealFinalConfirmOpen(true)
+  }
+
+  const rejectRevealPrompt = () => {
+    markRevealPromptHandled()
+    setRevealConfirmOpen(false)
+    setRevealFinalConfirmOpen(false)
+  }
+
   if (!room) {
     return <div className="room-page loading-screen">加载中…</div>
   }
@@ -403,6 +423,25 @@ export default function Room() {
         </aside>
 
         <section className="room-play">
+          {revealConfirmOpen && !revealFinalConfirmOpen && (
+            <div className="answer-reveal-prompt" role="region" aria-label="公布汤底提示">
+              <div>
+                <div className="answer-reveal-prompt-label">&gt; 【公布汤底】</div>
+                <p>
+                  本房间已经累计 {askCount} 次提问。是否查看汤底？查看后你将不能继续提问、猜测或操作记事板。
+                </p>
+              </div>
+              <div className="answer-reveal-actions">
+                <button type="button" disabled={revealLoading} onClick={rejectRevealPrompt}>
+                  拒绝
+                </button>
+                <button type="button" className="pixel-primary" disabled={revealLoading} onClick={acceptRevealPrompt}>
+                  接受
+                </button>
+              </div>
+            </div>
+          )}
+
           <section className="session-log-panel">
             <div className="terminal-head">
               <span className="lights"><i /><i /><i /></span>
@@ -519,32 +558,6 @@ export default function Room() {
           />
         </div>
       </div>
-
-      {revealConfirmOpen && !revealFinalConfirmOpen && (
-        <div className="modal-backdrop room-close-backdrop" onClick={() => setRevealConfirmOpen(false)}>
-          <div
-            className="modal room-close-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="公布汤底确认"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2>公布汤底？</h2>
-            <p>
-              本房间已经累计 {askCount} 次提问。你可以查看汤底，但查看后本局会对你锁定，
-              你将不能继续提问、猜测或操作记事板。
-            </p>
-            <div className="room-close-actions">
-              <button type="button" disabled={revealLoading} onClick={() => setRevealConfirmOpen(false)}>
-                继续推理
-              </button>
-              <button type="button" className="pixel-primary" disabled={revealLoading} onClick={() => setRevealFinalConfirmOpen(true)}>
-                公布汤底
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {revealFinalConfirmOpen && (
         <div className="modal-backdrop room-close-backdrop" onClick={() => setRevealFinalConfirmOpen(false)}>

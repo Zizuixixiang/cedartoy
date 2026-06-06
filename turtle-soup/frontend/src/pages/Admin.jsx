@@ -80,7 +80,7 @@ const tabDescriptions = {
 const settingDescriptions = {
   max_rooms: '大厅允许同时保留的活跃房间数量上限。',
   hint_trigger_count: '距上次自动提示尝试或成功后再 ask 多少条触发自动提示。',
-  answer_reveal_prompt_count: '距上次公布汤底确认弹窗后再 ask 多少条触发一次；默认 100。',
+  answer_reveal_prompt_count: '距上次公布汤底提示后再 ask 多少条触发一次；默认 100。',
   ai_cooldown_questions: 'AI 裁判相关操作按提问数计算的冷却间隔。',
   ai_cooldown_seconds: 'AI 裁判请求之间的最短秒级间隔。',
   generate_cooldown_seconds: 'AI 生成题目的按钮冷却秒数。',

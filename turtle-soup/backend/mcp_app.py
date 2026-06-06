@@ -278,7 +278,7 @@ async def _answer_reveal_prompt(room_id: str) -> dict | None:
         return None
     return {
         "ask_count": ask_count,
-        "message": f"本房间已经累计 {ask_count} 次提问。若用户确认查看汤底，请在下一次 ask 中传 confirm_reveal=true；房间不会结束，但你查看后不能继续 ask/guess/hint_request 或操作记事本。本次确认不要调用其它 action。",
+        "message": f"本房间已经累计 {ask_count} 次提问。若用户接受查看汤底提示，请在下一次 ask 中顺便传 confirm_reveal=true；房间不会结束，但你查看后不能继续 ask/guess/hint_request 或操作记事本。",
         "requires_confirmation": True,
         "next_ask_confirm_parameters": {"confirm_reveal": True},
     }

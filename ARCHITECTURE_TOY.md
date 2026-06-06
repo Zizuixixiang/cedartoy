@@ -675,7 +675,7 @@ https://toy.cedarstar.org/
 
 ### 6.3 `get_guide`
 
-- `game=turtle_soup`：返回硬编码 action 字典和 notes（含 `list_puzzles` 选题、`create_random(puzzle_id)` 指定题/随机题说明、自动提示与 100 题查看汤底均通过下一次 `ask` 带参确认、`note_add/note_edit/note_delete` 记事本说明，以及“海龟汤房间是对局公屏，不是群聊”的 MCP 使用提醒）。
+- `game=turtle_soup`：返回硬编码 action 字典和 notes（含 `list_puzzles` 选题、`create_random(puzzle_id)` 指定题/随机题说明、自动提示与 100 题查看汤底提示均通过下一次 `ask` 顺便带参处理、`note_add/note_edit/note_delete` 记事本说明，以及“海龟汤房间是对局公屏，不是群聊”的 MCP 使用提醒）。
 - `game=account`：读取 `/opt/cedartoy/turtle-soup/backend/guides/account.md` 并返回 `{game, guide}`。
 - `game=mbti`：读取 `/opt/cedartoy/turtle-soup/backend/guides/mbti.md` 并返回 `{game, guide}`。
 - `game=dnd`：读取 `/opt/cedartoy/turtle-soup/backend/guides/dnd.md` 并返回 `{game, guide}`。
@@ -718,7 +718,7 @@ action 列表：
 | `generate` | `style?` | 调用 `/game/generate` 返回 `title/surface/answer` 预览，不写库、不开房；生成结果按 `title` 20、`surface` 500、`answer` 3000 截断；`style` 支持 `cozy/absurd/mystery/fantasy/history/scifi/horror`，缺省走后端默认风格；满意后再用 `create_custom` |
 | `close_room` | `room_id`, `path_token?` | 复用 `/rooms/{room_id}/close`，只允许房主或管理员关闭 |
 | `join` | `room_id` | 查询并返回房间公开信息，含 `title/surface/status/created_at` |
-| `ask` | `room_id`, `content?`, `path_token?`, `auto_hint_log_id?`, `accept_auto_hint?`, `confirm_reveal?` | 调用海龟汤 `ask` 逻辑，`content` 最多 200 字，受 AI 冷却限制；响应保留本次 ask 结果字段，并追加 `room` 与 `logs_since_last_own_action`：从该 MCP 玩家上一次公开动作之后到本次 ask 完成之间的全部公开日志，不包含上次自己的那条。若自动提示确认已出现，下一次 `ask` 可同时传 `auto_hint_log_id` 和 `accept_auto_hint=true/false` 查看或拒绝该提示；若 100 题查看汤底确认已出现，下一次 `ask` 传 `confirm_reveal=true` 会直接返回汤底并锁定当前玩家，本次不会再判题且不要求 `content`；若房间已结束或当前玩家已查看汤底，返回错误 |
+| `ask` | `room_id`, `content?`, `path_token?`, `auto_hint_log_id?`, `accept_auto_hint?`, `confirm_reveal?` | 调用海龟汤 `ask` 逻辑，`content` 最多 200 字，受 AI 冷却限制；响应保留本次 ask 结果字段，并追加 `room` 与 `logs_since_last_own_action`：从该 MCP 玩家上一次公开动作之后到本次 ask 完成之间的全部公开日志，不包含上次自己的那条。若自动提示确认已出现，下一次 `ask` 可同时传 `auto_hint_log_id` 和 `accept_auto_hint=true/false` 查看或拒绝该提示；若 100 题查看汤底提示已出现，下一次 `ask` 顺便传 `confirm_reveal=true` 会接受提示、直接返回汤底并锁定当前玩家，本次不会再判题且不要求 `content`；若房间已结束或当前玩家已查看汤底，返回错误 |
 | `guess` | `room_id`, `content`, `path_token?` | 调用海龟汤 `guess` 逻辑，`content` 最多 1000 字，应提交完整汤底还原而不是是/否问题；超长返回明确错误；若房间已结束，返回带 `status` 查看指引的错误 |
 | `hint_request` | `room_id`, `path_token?` | 主动请求一次提示并直接返回/显示提示内容，每个玩家每房间最多 3 次；同房间提示生成串行调用提示池 LLM，最多 5 次格式重试；手动提示不重置自动提示周期；若房间已结束，返回带 `status` 查看指引的错误 |
 | `note_list` | `room_id` | 返回该房间所有记事 |
@@ -731,7 +731,7 @@ action 列表：
 - 传 `path_token`：解析 Toy 平台账号，按 `toy_users.id` 创建或复用 `players.user_id`，并将 `username/is_ai/is_admin/source` 同步到海龟汤玩家记录。
 - 不传 `path_token`：创建 `is_guest=1, is_ai=1, source='mcp'` 的游客 AI 玩家；这类身份不持久。
 
-海龟汤 MCP 返回的是 `turtle-soup/backend/mcp_app.py` 的普通 JSON，不是 MCP content envelope；根 `server.py` 会再把该 JSON stringify 成 MCP text content，并在海龟汤后端返回 4xx 时透传 JSON 中的 `detail/error` 为 MCP 工具错误文本，避免调用方只看到 HTTP 400。`join` 不会返回汤底；`status` 不直接返回房间表 `answer`，但会返回公开对局日志的玩家名、`note_notice` 系统事件和结束后的 `game_over` 揭晓行。MCP 自动提示不直接暴露提示文本，日志会给出 `next_ask_confirm_parameters` / `next_ask_reject_parameters`，要求 AI 在下一次 `ask` 中带 `auto_hint_log_id` 和 `accept_auto_hint` 处理；100 题查看汤底确认也只给出 `next_ask_confirm_parameters: {confirm_reveal: true}`，要求下一次 `ask` 带参确认。直接调用 `hint_respond` 或 `reveal_answer` 的 MCP action 会被拒绝，以免 AI 混用路径；`ask` 也会在本次提问结果外追加 `logs_since_last_own_action`，避免 AI 与人类同房时看不见自己两次动作之间别人产生的问答或系统事件；`guess` 猜中后的 `game_over` 会让网页侧收到汤底，也会写入公开日志；`note_list` 独立于 `status`，用于读取记事本具体内容。
+海龟汤 MCP 返回的是 `turtle-soup/backend/mcp_app.py` 的普通 JSON，不是 MCP content envelope；根 `server.py` 会再把该 JSON stringify 成 MCP text content，并在海龟汤后端返回 4xx 时透传 JSON 中的 `detail/error` 为 MCP 工具错误文本，避免调用方只看到 HTTP 400。`join` 不会返回汤底；`status` 不直接返回房间表 `answer`，但会返回公开对局日志的玩家名、`note_notice` 系统事件和结束后的 `game_over` 揭晓行。MCP 自动提示不直接暴露提示文本，日志会给出 `next_ask_confirm_parameters` / `next_ask_reject_parameters`，要求 AI 在下一次 `ask` 中带 `auto_hint_log_id` 和 `accept_auto_hint` 处理；100 题查看汤底提示也只给出 `next_ask_confirm_parameters: {confirm_reveal: true}`，要求下一次 `ask` 顺便带参接受。`ask` 也会在本次提问结果外追加 `logs_since_last_own_action`，避免 AI 与人类同房时看不见自己两次动作之间别人产生的问答或系统事件；`guess` 猜中后的 `game_over` 会让网页侧收到汤底，也会写入公开日志；`note_list` 独立于 `status`，用于读取记事本具体内容。
 
 ### 6.5 `play(game="mbti", ...)`
 
@@ -1145,7 +1145,7 @@ Room 移动端规则：顶部栏只保留房间状态（隐藏「游戏大厅」
 6. 裁判 LLM 不配置可用 `judge_api_configs` 时，`ask/guess/generate/hint/AI扫描` 会返回裁判不可用或失败；普通登录、开房、房间列表不依赖 LLM。注意 `purpose='hint'` 只服务提示池，`purpose='judge'` 只服务问答/猜底/生成/扫描，`purpose='both'` 两边都用。
 7. `judge_api_configs.api_key` 存在 SQLite 中，管理 API 列表会脱敏，但数据库文件本身需要限制访问权限。启用配置前不只要测 HTTP 连通，还要用真实 `ask/guess/hint_request` 场景确认输出格式与语义；`guess` 现在要求严格 JSON，提示生成要求低剧透且不空回。连通但格式错误的节点会在后端内部重试，连续失败后玩家才会看到 `【系统提示】系统开小差了...` 或提示请求失败。
 8. `settings.judge_prompt`、`settings.generate_prompt`、`settings.judge_prompt_clue` 不走缓存；通过管理后台或直接改表后，下一次裁判/生成调用立即生效。提示生成另有房间级异步锁，同一房间内手动/自动提示会排队调用提示池 LLM；手动提示不重置自动提示周期。
-9. 汤底保护：普通 `/rooms/{room_id}`、MCP `join` 和进行中房间的 MCP `status` 不返回房间表 `answer`；管理员 `/admin/rooms` 会返回完整 answer；猜中后 SSE `game_over` 会下发纯 `answer`，同时写入含还原度和汤底的公开揭晓日志，因此结束后 MCP `status` 可通过日志看到最终汤底。100 题查看汤底是个人行为：网页端二次弹窗确认，MCP 端只允许下一次 `ask` 带 `confirm_reveal=true`；确认后写入 `room_answer_reveals`，不结束房间、不广播答案，但该玩家不能继续答题、请求提示或操作记事板。若题目包含 `【隐藏后台设定】`，公开揭晓默认只使用该标记之前的汤底段，除非裁判 JSON 提供 `public_answer`。
+9. 汤底保护：普通 `/rooms/{room_id}`、MCP `join` 和进行中房间的 MCP `status` 不返回房间表 `answer`；管理员 `/admin/rooms` 会返回完整 answer；猜中后 SSE `game_over` 会下发纯 `answer`，同时写入含还原度和汤底的公开揭晓日志，因此结束后 MCP `status` 可通过日志看到最终汤底。100 题查看汤底是个人行为：网页端先显示页面内提示条，点“接受”后才进入最终确认弹窗；MCP 端在下一次 `ask` 顺便带 `confirm_reveal=true` 接受提示。确认后写入 `room_answer_reveals`，不结束房间、不广播答案，但该玩家不能继续答题、请求提示或操作记事板。若题目包含 `【隐藏后台设定】`，公开揭晓默认只使用该标记之前的汤底段，除非裁判 JSON 提供 `public_answer`。
 10. `rooms/profile/me` 当前存在路由顺序风险，可能被 `/{room_id}` 捕获；若个人页不可用，应先修正 `routers/rooms.py` 中路由顺序。
 11. SSE 通过内存连接池实现，多进程部署时不同进程之间不会共享事件；当前 supervisord 启动单 uvicorn 进程。
 12. `cedartoy` MBTI 和 DND session 上限均为 `MAX_SESSIONS=500`，进行中 session 24 小时未活动清理，结果 48 小时清理。
