@@ -540,9 +540,8 @@ def _parse_guess_json(text: str) -> dict[str, Any] | None:
         if not 40 <= score <= 59:
             score = 59
     elif missing_core_count == 1:
-        success = False
-        if not 60 <= score <= 79:
-            score = 79
+        score = max(60, min(score, 79))
+        success = score >= 75
     else:
         success = True
         if not 80 <= score <= 100:
@@ -603,10 +602,11 @@ async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
                 "本次请求类型是猜测汤底，不是普通提问。"
                 "如果玩家内容只是单个事实确认、是非问题、局部追问、或没有尝试还原完整故事，"
                 "必须判定 success=false。"
-                "逐条判断 core_conditions 中每一条是否被玩家猜测明确盘出；只要 missing_core_count > 0，success 必须为 false。"
+                "逐条判断 core_conditions 中每一条是否被玩家猜测明确盘出；missing_core_count >= 2 时必须判定 success=false。"
                 "score 必须遵守：missing_core_count >= 3 时只能 0-39；missing_core_count == 2 时只能 40-59；"
-                "missing_core_count == 1 时只能 60-79；"
+                "missing_core_count == 1 时只能 60-79，只有 score >= 75 才允许 success=true；"
                 "missing_core_count == 0 且 score >= 80 才允许 success=true。"
+                "success=true 时 public_answer 必须输出面向玩家的完整汤底；success=false 时 public_answer 必须为 null。"
                 "只输出以下 JSON 对象："
                 '{"success":false,"score":0,"missing_core_count":0,'
                 '"core_checks":[{"id":1,"passed":false,"reason":"..."}],'

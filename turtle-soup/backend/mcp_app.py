@@ -51,6 +51,7 @@ class PlayBody(BaseModel):
     accept_auto_hint_log_id: int | None = None
     reject_auto_hint_log_id: int | None = None
     confirm_reveal: bool | None = None
+    confirm_hint: bool | None = None
     confirm: bool | None = None
 
 

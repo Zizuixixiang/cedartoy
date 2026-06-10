@@ -52,11 +52,15 @@ export function noteAuthor(note) {
   return '未知'
 }
 
+export function stripSurfaceColorMarkers(value) {
+  return String(value || '').replace(/\[\[\s*([^\]|\n]{1,12}?)\s*\|\s*([^\]]{1,200})\]\]/g, '$2')
+}
+
 /** 汤名：优先题库 title，自填房无题时用汤面首句 */
 export function soupName(room, maxLen = 24) {
   const title = (room?.title || '').trim()
   if (title) return title.length > maxLen ? `${title.slice(0, maxLen)}…` : title
-  const text = (room?.surface || '').trim()
+  const text = stripSurfaceColorMarkers(room?.surface).trim()
   if (!text) return '未命名汤'
   const fallback = text.split(/[，。！？,.!?\n]/)[0].trim() || text.slice(0, maxLen)
   return fallback.length > maxLen ? `${fallback.slice(0, maxLen)}…` : fallback

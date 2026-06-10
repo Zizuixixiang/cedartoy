@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { api, ensureGuestToken, getToken, logoutToGuest, post } from '../api'
 import BindModal from '../components/BindModal.jsx'
+import ColoredSurface from '../components/ColoredSurface.jsx'
 import GameLog from '../components/GameLog.jsx'
 import LoginModal from '../components/LoginModal.jsx'
 import MineDrawer from '../components/MineDrawer.jsx'
@@ -409,13 +410,7 @@ export default function Room() {
           </div>
           <div className="room-surface-scroll">
             <h1>{soupName(room)}</h1>
-            <p>{room.surface}</p>
-            {answerRevealed && (
-              <div className="log-game-over private-answer-reveal" role="region" aria-label="已公布汤底">
-                <div className="log-game-over-label">&gt; 已查看汤底</div>
-                <p>{room.revealed_answer || room.answer}</p>
-              </div>
-            )}
+            <ColoredSurface text={room.surface} />
             <div className="room-meta">
               {tags.map((tag) => <span className="soup-badge" key={tag}>{tag}</span>)}
             </div>
@@ -463,6 +458,12 @@ export default function Room() {
                 hintBusy={hintBusy}
                 currentPlayerId={me?.id}
               />
+              {answerRevealed && (
+                <div className="log-game-over private-answer-reveal" role="region" aria-label="已公布汤底" style={{ marginTop: 10 }}>
+                  <div className="log-game-over-label">&gt; 已查看汤底</div>
+                  <p>{room.revealed_answer || room.answer}</p>
+                </div>
+              )}
             </div>
           </section>
 

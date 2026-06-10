@@ -115,6 +115,25 @@ main { width: min(1280px, 100%); margin: 0 auto; padding: 18px; }
 .puzzle-bank-list p { margin: 8px 0 4px; line-height: 1.5; }
 .add-puzzle-form textarea { min-height: 120px; }
 
+.colored-surface-token {
+  font-weight: 700;
+}
+.colored-surface-token.color-red { color: #b42318; }
+.colored-surface-token.color-orange { color: #b54708; }
+.colored-surface-token.color-yellow { color: #8a6116; }
+.colored-surface-token.color-green { color: #067647; }
+.colored-surface-token.color-blue { color: #175cd3; }
+.colored-surface-token.color-purple { color: #6941c6; }
+.colored-surface-token.color-pink { color: #c11574; }
+.colored-surface-token.color-gray { color: #475467; }
+.colored-surface-token.color-black { color: #111827; }
+.colored-surface-token.color-white {
+  color: #fff;
+  background: #475467;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
 .textarea-wrap {
   position: relative;
   display: grid;
@@ -1817,9 +1836,13 @@ body:has(.room-page) {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) min-content;
+  grid-template-rows: auto minmax(0, 1fr) min-content;
   gap: 12px;
 }
+
+.room-play > .answer-reveal-prompt { grid-row: 1; }
+.room-play > .session-log-panel  { grid-row: 2; }
+.room-play > .room-composer      { grid-row: 3; }
 
 .session-log-panel {
   min-height: 0;

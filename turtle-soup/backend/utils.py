@@ -8,7 +8,7 @@ from fastapi import HTTPException
 SAFE_TEXT_RE = re.compile(r"[<>{}]")
 ROOM_ALPHABET = string.ascii_letters + string.digits
 TITLE_LIMIT = 20
-SURFACE_LIMIT = 500
+SURFACE_LIMIT = 1000
 ANSWER_LIMIT = 3000
 TAGS_LIMIT = 100
 

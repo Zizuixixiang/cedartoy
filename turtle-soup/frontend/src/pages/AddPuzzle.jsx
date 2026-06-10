@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, del, post, put } from '../api'
+import ColoredSurface from '../components/ColoredSurface.jsx'
 import TagInput, { joinTags, parseTags } from '../components/TagInput.jsx'
 
 const emptyForm = { title: '', surface: '', answer: '', tagList: [] }
@@ -117,7 +118,7 @@ export default function AddPuzzle() {
       <div className="section-head">
         <div>
           <h2>临时加题</h2>
-          <p className="muted">直接写入海龟汤题库（需管理员登录）；线索汤请用【线索公布】和【线索公布结束】包住中途公开内容。</p>
+          <p className="muted">直接写入海龟汤题库（需管理员登录）；汤面可用 [[红|文字]] 标颜色；线索汤请用【线索公布】和【线索公布结束】包住中途公开内容。</p>
         </div>
         <Link to="/admin">管理后台</Link>
       </div>
@@ -135,7 +136,7 @@ export default function AddPuzzle() {
         <label>
           汤面
           <textarea
-            placeholder="汤面"
+            placeholder="汤面；彩色文字格式：[[红|要标红的内容]]"
             value={form.surface}
             onChange={(e) => setForm({ ...form, surface: e.target.value })}
             required
@@ -199,7 +200,7 @@ export default function AddPuzzle() {
                   </div>
                 </div>
                 {item.title ? <h4 className="puzzle-title">{item.title}</h4> : null}
-                <p>{item.surface}</p>
+                <ColoredSurface text={item.surface} />
                 {item.tags ? (
                   <div className="tag-chip-row">
                     {parseTags(item.tags).map((tag) => (

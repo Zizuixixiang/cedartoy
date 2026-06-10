@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, History, House, ListPlus, LogOut, Plus, RefreshCw, Search, Shield, Trophy, UserRound } from 'lucide-react'
 import { api, ensureGuestToken, logoutToGuest, post } from '../api'
 import BindModal from '../components/BindModal.jsx'
+import ColoredSurface from '../components/ColoredSurface.jsx'
 import Leaderboard from '../components/Leaderboard.jsx'
 import LoginModal from '../components/LoginModal.jsx'
 import MineDrawer from '../components/MineDrawer.jsx'
 import PlaceholderModal from '../components/PlaceholderModal.jsx'
+import { stripSurfaceColorMarkers } from '../utils/display.js'
 
 const TITLE_MAX = 24
 const TAG_FILTERS = ['红汤', '黑汤', '本格', '变格']
@@ -24,7 +26,7 @@ const AI_STYLE_OPTIONS = [
 function roomTitle(room) {
   const title = (room.title || '').trim()
   if (title) return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX)}…` : title
-  const text = (room.surface || '未命名汤面').trim()
+  const text = stripSurfaceColorMarkers(room.surface || '未命名汤面').trim()
   const fallback = text.split(/[，。！？,.!?]/)[0]
   return fallback.length > TITLE_MAX ? `${fallback.slice(0, TITLE_MAX)}…` : fallback
 }
@@ -38,7 +40,7 @@ function parseTags(tags) {
 function roomTitleText(room) {
   const title = (room.title || '').trim()
   if (title) return title
-  const text = (room.surface || '未命名汤面').trim()
+  const text = stripSurfaceColorMarkers(room.surface || '未命名汤面').trim()
   return text.split(/[，。！？,.!?]/)[0] || '未命名汤面'
 }
 
@@ -239,7 +241,7 @@ export default function Lobby() {
             {!random && <p>&gt; 正在等待选题...</p>}
             <p>&gt; 当前题目：<b>{random?.title || '尚未抽取'}</b></p>
             {!random && <p>&gt; 点击标题选择题目。</p>}
-            <p className="type-line">&gt; {random?.surface || '或点击"随机抽题"抽取一碗未解之汤。'}</p>
+            <ColoredSurface className="type-line" text={`> ${random?.surface || '或点击"随机抽题"抽取一碗未解之汤。'}`} />
           </div>
           <div className="actions">
             <button type="button" disabled={randomCooldown > 0} onClick={roll}>{randomCooldown ? `${randomCooldown}s` : '随机抽题'}</button>
@@ -277,7 +279,7 @@ export default function Lobby() {
           <div className="terminal-preview">
             <p>&gt; {aiGenerating ? '生成中...' : '生成器已就绪'}</p>
             <p>&gt; 题目：<b>{generated?.title || '尚未生成'}</b></p>
-            <p className="type-line">&gt; {generated?.surface || '生成提示词可在管理界面的运行参数里调整。'}</p>
+            <ColoredSurface className="type-line" text={`> ${generated?.surface || '生成提示词可在管理界面的运行参数里调整。'}`} />
           </div>
           <div className="actions">
             <button type="button" disabled={aiGenerating} onClick={generate}>{aiGenerating ? '生成中…' : '生成'}</button>
@@ -381,7 +383,7 @@ export default function Lobby() {
                   <div className="room-glyph" aria-hidden="true">?</div>
                   <div className="room-copy">
                     <h2>{roomTitle(room)}</h2>
-                    <p>{room.surface}</p>
+                    <ColoredSurface text={room.surface} />
                     <div className="room-footer">
                       <div className="room-meta">
                         {tags.map((tag) => <span className="soup-badge" key={tag}>{tag}</span>)}
