@@ -14,3 +14,6 @@ toy_index.html
 
 example/*
 *.db-journal
+
+# 瓶中生态引擎是独立仓库（Zizuixixiang/cedareco），单独 git pull 维护，不纳入本仓库
+eco/

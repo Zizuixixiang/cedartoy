@@ -6,7 +6,8 @@
 
 Toy Platform 目前由两个本地服务组成：
 
-- `cedartoy`：Toy 聚合层，监听 `127.0.0.1:8002`。根路径 `POST /` 是统一 MCP 入口，直接实现 `list_games`、`get_guide`、`play`、`account`；MBTI 和 DND 在本进程处理，海龟汤动作按需转发到 `turtle-soup:8012`。`GET /` 返回 Toy 首页 `index.html`（含登录/绑定 UI）；`POST /{token}` 支持 AI 持久化 MCP 连接。
+- `cedartoy`：Toy 聚合层，监听 `127.0.0.1:8002`。根路径 `POST /` 是统一 MCP 入口，直接实现 `list_games`、`get_guide`、`play`、`account`；MBTI、DND、BDSMTest、瓶中生态（eco）都在本进程处理（BDSMTest 内部再 HTTP 调 bdsmtest.org 官方接口），海龟汤动作按需转发到 `turtle-soup:8012`。`GET /` 返回 Toy 首页 `index.html`（含登录/绑定 UI）；`POST /{token}` 支持 AI 持久化 MCP 连接。
+- 瓶中生态引擎 `eco/` 是独立 GitHub 仓库（`Zizuixixiang/cedareco`）clone 进来的，单独 `git pull` 维护，不纳入 cedartoy 仓库版本控制（已 gitignore）；cedartoy 只提供 `eco/handler.py` 这层 MCP 适配。
 - `turtle-soup`：海龟汤服务，监听 `127.0.0.1:8012`，提供海龟汤 Web/API/SSE，以及只属于海龟汤自身的 `/mcp/play` 接口。
 
 公网实际链路：
@@ -42,7 +43,17 @@ Cloudflare Tunnel
 │   ├── questions.py          # DND 题库与模式
 │   ├── scoring.py            # DND 计分
 │   └── descriptions.py       # 阵营说明
-├── data/sessions.db          # MBTI/DND 共用 SQLite 数据库
+├── bdsmtest/
+│   ├── handler.py            # BDSMTest JSON-RPC MCP 工具实现
+│   ├── api.py                # 封装 bdsmtest.org 官方接口调用
+│   ├── questions.py          # BDSMTest 题库
+│   └── __init__.py
+├── eco/                      # 瓶中生态（独立仓库 Zizuixixiang/cedareco，单独 git pull，已 gitignore）
+│   ├── handler.py            # eco MCP 适配层（cedartoy 自有；存档读写、绕过 engine 自带文件存档）
+│   ├── engine.py            # 生态模拟引擎（来自上游仓库，不改）
+│   ├── ecosystem.py         # 引擎盲玩打包版（来自上游仓库）
+│   └── __init__.py          # cedartoy 自有
+├── data/sessions.db          # MBTI/DND/BDSMTest/eco 共用 SQLite 数据库
 └── supervisord.conf
 
 /opt/cedartoy/turtle-soup/
@@ -59,7 +70,9 @@ Cloudflare Tunnel
 │   ├── guides/
 │   │   ├── account.md        # 平台账号 MCP 使用说明，由 cedartoy 读取
 │   │   ├── mbti.md           # MBTI MCP 使用说明，由 cedartoy 读取
-│   │   └── dnd.md            # DND MCP 使用说明，由 cedartoy 读取
+│   │   ├── dnd.md            # DND MCP 使用说明，由 cedartoy 读取
+│   │   ├── bdsmtest.md       # BDSMTest MCP 使用说明，由 cedartoy 读取
+│   │   └── eco.md            # 瓶中生态 MCP 使用说明，由 cedartoy 读取
 │   ├── routers/
 │   │   ├── auth.py
 │   │   ├── puzzles.py
@@ -91,7 +104,7 @@ Cloudflare Tunnel
 
 | 服务 | 端口 | 监听地址 | 管理方式 | 职责 |
 | --- | --- | --- | --- | --- |
-| `cedartoy` | `8002` | `127.0.0.1` | supervisord | Toy 聚合层、根 MCP `POST /`、MBTI `/mbti`、DND `/dnd`、反代 `/soup*` 和 legacy `/mcp*` 到 `8012` |
+| `cedartoy` | `8002` | `127.0.0.1` | supervisord | Toy 聚合层、根 MCP `POST /`、MBTI `/mbti`、DND `/dnd`、本进程处理 BDSMTest/eco（仅经 `play`，无独立 HTTP 路由）、反代 `/soup*` 和 legacy `/mcp*` 到 `8012` |
 | `turtle-soup` | `8012` | `127.0.0.1` | supervisord | 海龟汤后端、静态前端、SSE、海龟汤自身 `/mcp/play` |
 | nginx | `80` | public/local | system nginx | 本机 HTTP 反代，`toy.cedarstar.org` server 块 |
 | Cloudflare Tunnel | HTTPS | Cloudflare edge | systemd `cloudflared` | 公网 HTTPS 入口，当前直连本机 `cedartoy:8002` |
@@ -113,6 +126,8 @@ Cloudflare Tunnel
 | AI 调用根 MCP | MCP Client -> `POST /` 或 `POST /{token}` -> `cedartoy` | `/{token}` 作为 AI 持久账号 token |
 | AI 玩海龟汤 | 根 MCP `play(game=turtle_soup, ...)` -> `cedartoy` -> `127.0.0.1:8012/mcp/play` | 海龟汤 MCP 玩家写入 `players.is_ai=1` |
 | AI 玩 MBTI/DND | 根 MCP `play(game=mbti/dnd, ...)` -> `server.py` 本进程 handler | 状态写入 `data/sessions.db` |
+| AI 玩 BDSMTest | 根 MCP `play(game=bdsmtest, ...)` -> `bdsmtest.handler` -> HTTP 调 bdsmtest.org | 进度写入 `data/sessions.db` |
+| AI 玩瓶中生态 | 根 MCP `play(game=eco, action=eco_*, params={...})` -> `eco.handler` -> `eco.engine.cmd()` | 存档写入 `data/sessions.db` 的 `eco_sessions` 表 |
 
 ### 3.3 身份与 Token 分层
 
@@ -303,7 +318,7 @@ AI 内容扫描标记表。
 
 位置：`/opt/cedartoy/data/sessions.db`
 
-由 `/opt/cedartoy/mbti/handler.py:_init_db()` 和 `/opt/cedartoy/dnd/handler.py:_init_db()` 按需创建。两套测试共用表，通过 `game` 字段区分 `mbti` 与 `dnd`。
+由 `/opt/cedartoy/mbti/handler.py:_init_db()` 和 `/opt/cedartoy/dnd/handler.py:_init_db()` 按需创建。MBTI/DND/BDSMTest 三套测试共用 `test_sessions`/`test_results` 表，通过 `game` 字段区分 `mbti`、`dnd`、`bdsmtest`。瓶中生态（eco）不共用这两张表，而是用同一个 db 文件里独立的 `eco_sessions` 表（见 4.2.2）。
 
 MBTI/DND handler 每次工具调用都会先 `_cleanup_expired(conn, now)`：
 
@@ -349,6 +364,16 @@ MBTI/DND handler 每次工具调用都会先 `_cleanup_expired(conn, now)`：
 | DND | `full_fast` | `answers` 批量提交 | 批量覆盖到结束 | `result_detail` 保存模式和分数 |
 
 handler 返回 JSON-RPC 结构。工具级错误会以 MCP tool result 的 `isError` 风格返回给上层；协议级错误才使用 JSON-RPC error。
+
+### 4.2.2 eco_sessions（瓶中生态存档）
+
+同一个 `data/sessions.db` 里的独立表，由 `/opt/cedartoy/eco/handler.py:_init_db()` 按需创建。一行一个玩家的当前池塘存档：
+
+- `player_id`：1-10 位字母数字，主键。
+- `save_data`：引擎状态 `engine._STATE` 的 JSON 文本（整局存档）。
+- `created_at` / `last_active`：`Asia/Shanghai` 时区的字符串时间戳。
+
+每次 `eco_*` 调用先 `_cleanup_expired`：删除 `last_active` 超过 30 天的存档；活跃存档达 `MAX_SESSIONS=500` 时拒绝新建（同 `player_id` 重开除外）。与 MBTI/DND 不同，eco 没有「结果表」，只有一张滚动存档表。
 
 ### 4.3 cedartoy 平台账号表
 
@@ -633,8 +658,8 @@ MCP 聚合层由 `/opt/cedartoy/server.py` 的根路径 `POST /` 提供：
 
 - `tools/list` 暴露 `list_games`、`get_guide`、`play`、`account` 四个工具。
 - `tools/call name=list_games`：在 `server.py` 返回硬编码游戏列表。
-- `tools/call name=get_guide`：`turtle_soup` 返回硬编码 action 字典和提示 notes；`account`、`mbti`、`dnd` 读取 `/opt/cedartoy/turtle-soup/backend/guides/*.md`。
-- `tools/call name=play`：由 `server.py` 按 `game` 分发。
+- `tools/call name=get_guide`：`turtle_soup` 返回硬编码 action 字典和提示 notes；`account`、`mbti`、`dnd`、`bdsmtest`、`eco` 读取 `/opt/cedartoy/turtle-soup/backend/guides/*.md`。
+- `tools/call name=play`：由 `server.py` 按 `game` 分发。`play` 的入参约定为 `game` + `action` + `params` 对象：各游戏 action 的业务参数统一放进 `params`（`_tool_play` 会把 `params` 并入顶层做兼容）。`game` 的 `enum` 为 `turtle_soup/mbti/dnd/bdsmtest/eco`。
 
 公网访问时：
 
@@ -646,6 +671,8 @@ https://toy.cedarstar.org/
       -> game=turtle_soup 转发到 127.0.0.1:8012/mcp/play
       -> game=mbti 本地调用 mbti.handler.handle_mcp
       -> game=dnd 本地调用 dnd.handler.handle_mcp
+      -> game=bdsmtest 本地调用 bdsmtest.handler.handle_mcp（内部 HTTP 调 bdsmtest.org）
+      -> game=eco 本地调用 eco.handler.handle_mcp（驱动 eco.engine）
 ```
 
 根 MCP 协议行为：
@@ -664,12 +691,14 @@ https://toy.cedarstar.org/
 {
   "测试": [
     {"name": "mbti", "display": "MBTI", "desc": "16型人格测试，4种模式可选（短/完整/快速）"},
-    {"name": "dnd", "display": "DND阵营测试", "desc": "测试你的D&D道德阵营，守序善良还是混乱邪恶？"}
+    {"name": "dnd", "display": "DND阵营测试", "desc": "测试你的D&D道德阵营，守序善良还是混乱邪恶？"},
+    {"name": "bdsmtest", "display": "BDSMTest", "desc": "调用 bdsmtest.org 官方接口测 BDSM 倾向，给出各原型百分比；逐题或一次性两种模式"}
   ],
   "小游戏": [
-    {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"}
+    {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"},
+    {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化"}
   ],
-  "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, ...) 执行操作"
+  "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, params={...}) 执行操作"
 }
 ```
 
@@ -679,6 +708,8 @@ https://toy.cedarstar.org/
 - `game=account`：读取 `/opt/cedartoy/turtle-soup/backend/guides/account.md` 并返回 `{game, guide}`。
 - `game=mbti`：读取 `/opt/cedartoy/turtle-soup/backend/guides/mbti.md` 并返回 `{game, guide}`。
 - `game=dnd`：读取 `/opt/cedartoy/turtle-soup/backend/guides/dnd.md` 并返回 `{game, guide}`。
+- `game=bdsmtest`：读取 `/opt/cedartoy/turtle-soup/backend/guides/bdsmtest.md` 并返回 `{game, guide}`。
+- `game=eco`：读取 `/opt/cedartoy/turtle-soup/backend/guides/eco.md` 并返回 `{game, guide}`。
 
 ### 6.4 `play(game="turtle_soup", ...)`
 
@@ -797,7 +828,47 @@ DND 参数：
 
 DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；快速模式批量接收答案，完成后写入 `test_results` 并删除进行中 session。
 
-### 6.7 `account`
+### 6.7 `play(game="bdsmtest", ...)`
+
+`server.py` 的 `_play_bdsmtest` 在本进程内转换为 JSON-RPC payload，调用 `bdsmtest.handler.handle_mcp`；handler 内部再用 HTTP 调用 bdsmtest.org 官方接口完成测题与计分。
+
+支持 action：
+
+| action | 参数 | 转换后的 JSON-RPC |
+| --- | --- | --- |
+| `initialize` / `tools/list` | 可选额外字段 | `{jsonrpc:"2.0", id, method}` |
+| `bdsmtest_start` | `player_id`, `mode` | `tools/call`，`name=bdsmtest_start` |
+| `bdsmtest_answer` | `player_id`, ... | `tools/call`，`name=bdsmtest_answer` |
+| `bdsmtest_answer_batch` | `player_id`, ... | `tools/call`，`name=bdsmtest_answer_batch` |
+| `bdsmtest_get_result` | `player_id` | `tools/call`，`name=bdsmtest_get_result` |
+| raw JSON-RPC | `method` 等额外字段 | 含 `method` 时按原始 JSON-RPC 透传 |
+
+逐题或一次性两种模式，最终返回各 BDSM 原型百分比；进度/结果存于 `data/sessions.db`。具体题目和参数细节见 `guides/bdsmtest.md`。
+
+### 6.8 `play(game="eco", ...)`
+
+瓶中生态。引擎在独立仓库 `Zizuixixiang/cedareco`（`eco/engine.py`），cedartoy 只写 `eco/handler.py` 这层 MCP 适配。
+
+调用约定与其它游戏略有不同：eco 工具自身用 `action` 作为**子参数**（如 `summon`/`observe`），与 `play` 顶层的 `action`（工具名，如 `eco_act`）同名。因此 `_tool_play` 对 `game="eco"` **传原始 `arguments`** 给 `_play_eco`，由它从 `params` 取子参数，避免被顶层 merge 覆盖——业务参数必须放进 `params`：
+
+```json
+{"game":"eco","action":"eco_act","params":{"player_id":"u1","action":"summon","species":"水藻","quantity":50}}
+```
+
+`tools/list` 暴露 5 个语义化工具（`eco_play` 已隐藏但保留实现以兼容旧调用）：
+
+| 工具 | 子参数（params 内） | 拼成的 engine 指令 |
+| --- | --- | --- |
+| `eco_new` | `player_id`, `seed?` | `engine.new_game(seed)` 开新局，存入 `eco_sessions` |
+| `eco_observe` | `action`=observe/wait/gaze/look, `days?`(1-7), `target?` | `observe` / `wait N` / `gaze` / `look 目标` |
+| `eco_act` | `action`=summon/remove/feed/clean/crack/shelter/choose, `species?`, `quantity?`, `option?` | `summon 物种 数量` / `remove ...` / `feed N` / `clean` / `crack` / `shelter` / `choose N` |
+| `eco_info` | `action`=status/folio/chronicle/encyclopedia, `scope?`=recent/all | `status` / `folio` / `chronicle [all]` / `encyclopedia` |
+| `eco_save` | `action`=export/import, `mode?`=full/lite, `save_data?` | `export [lite]` / `import_save <base64>` |
+| `eco_play`（隐藏） | `command` | 万能文本指令，直接透传给 `engine.cmd(command)` |
+
+存档机制：engine 默认自己读写 `eco/eco_save.json`，handler 层在导入时把 `engine.save_state` 替换为 no-op，并用进程级 `threading.Lock` 串行化「装载 `engine._STATE` → `engine.cmd()` → 取回序列化」整段，存档以 JSON 文本存入 `data/sessions.db` 的 `eco_sessions` 表（`player_id` 主键），30 天未活动清理。`player_id` 同样限定 1-10 位字母数字。具体玩法见 `guides/eco.md`。
+
+### 6.9 `account`
 
 平台统一账号工具（存档用；不登录也可玩，但游客数据 1 小时后清理）。
 

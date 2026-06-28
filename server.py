@@ -22,7 +22,9 @@ try:
 except ImportError:
     CryptContext = None
 
+from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
 from dnd.handler import handle_mcp as handle_dnd_mcp
+from eco.handler import handle_mcp as handle_eco_mcp
 from mbti.handler import handle_mcp as handle_mbti_mcp
 
 
@@ -86,17 +88,23 @@ _PLATFORM_TOOLS = [
     },
     {
         "name": "play",
-        "description": "执行游戏操作；除 game/action 外，可直接传入 player_id、mode、room_id 等游戏参数，具体要求先看 get_guide(game)。",
+        "description": "执行游戏操作；先看 get_guide(game)，再把该 action 的业务参数放进 params 对象。",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "game": {
                     "type": "string",
-                    "description": "游戏名称",
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco"],
+                    "description": "游戏名称。",
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等。",
+                },
+                "params": {
+                    "type": "object",
+                    "description": "该 action 需要的业务参数；例如 turtle_soup join 用 {\"room_id\":\"...\"}，ask 用 {\"room_id\":\"...\",\"content\":\"...\"}。",
+                    "additionalProperties": True,
                 },
             },
             "required": ["game", "action"],
@@ -699,15 +707,15 @@ def _turtle_soup_stats(conn, user):
 def _test_stats(user):
     player_ids = _game_player_ids(user)
     if not player_ids or not SESSIONS_DB_PATH.exists():
-        return {"mbti": {"test_count": 0}, "dnd": {"test_count": 0}}
+        return {"mbti": {"test_count": 0}, "dnd": {"test_count": 0}, "bdsmtest": {"test_count": 0}}
     placeholders = ",".join("?" * len(player_ids))
-    counts = {"mbti": 0, "dnd": 0}
+    counts = {"mbti": 0, "dnd": 0, "bdsmtest": 0}
     with _sessions_db_connect() as conn:
         rows = conn.execute(
             f"""
             SELECT game, COUNT(*) AS test_count
             FROM test_results
-            WHERE player_id IN ({placeholders}) AND game IN ('mbti', 'dnd')
+            WHERE player_id IN ({placeholders}) AND game IN ('mbti', 'dnd', 'bdsmtest')
             GROUP BY game
             """,
             player_ids,
@@ -717,6 +725,7 @@ def _test_stats(user):
     return {
         "mbti": {"test_count": counts["mbti"]},
         "dnd": {"test_count": counts["dnd"]},
+        "bdsmtest": {"test_count": counts["bdsmtest"]},
     }
 
 
@@ -727,6 +736,7 @@ def _game_overview(conn, user):
         "turtle_soup": soup,
         "mbti": tests["mbti"],
         "dnd": tests["dnd"],
+        "bdsmtest": tests["bdsmtest"],
     }
 
 
@@ -793,11 +803,13 @@ def _tool_list_games():
         "测试": [
             {"name": "mbti", "display": "MBTI", "desc": "16型人格测试，4种模式可选（短/完整/快速）"},
             {"name": "dnd", "display": "DND阵营测试", "desc": "测试你的D&D道德阵营，守序善良还是混乱邪恶？"},
+            {"name": "bdsmtest", "display": "BDSMTest", "desc": "调用 bdsmtest.org 官方接口测 BDSM 倾向，给出各原型百分比；逐题或一次性两种模式"},
         ],
         "小游戏": [
             {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"},
+            {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化"},
         ],
-        "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, ...) 执行操作",
+        "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, params={...}) 执行操作",
     }, ensure_ascii=False)
 
 
@@ -811,7 +823,7 @@ def _tool_get_guide(arguments):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
-    if game in {"mbti", "dnd", "account"}:
+    if game in {"mbti", "dnd", "bdsmtest", "eco", "account"}:
         path = GUIDE_DIR / f"{game}.md"
         if not path.exists():
             raise _McpError(-32603, f"{game} 说明文件不存在")
@@ -840,8 +852,18 @@ def _tool_play(arguments, path_token=None):
         raise _McpError(-32602, "game 参数必填")
     if not action or not isinstance(action, str):
         raise _McpError(-32602, "action 参数必填")
+    params = arguments.get("params")
+    if params is not None and not isinstance(params, dict):
+        raise _McpError(-32602, "params 必须是对象")
+    merged_arguments = {
+        key: value
+        for key, value in arguments.items()
+        if key not in {"params"} or value is not None
+    }
+    if isinstance(params, dict):
+        merged_arguments.update(params)
     if game == "turtle_soup":
-        payload = dict(arguments)
+        payload = dict(merged_arguments)
         if path_token:
             payload["path_token"] = path_token
         resp = httpx.post(f"{SOUP_BASE}/mcp/play", json=payload, timeout=60)
@@ -850,9 +872,15 @@ def _tool_play(arguments, path_token=None):
             raise _McpError(code, _soup_error_message(resp))
         return json.dumps(resp.json(), ensure_ascii=False)
     if game == "mbti":
-        return json.dumps(_play_mbti(arguments), ensure_ascii=False)
+        return json.dumps(_play_mbti(merged_arguments), ensure_ascii=False)
     if game == "dnd":
-        return json.dumps(_play_dnd(arguments), ensure_ascii=False)
+        return json.dumps(_play_dnd(merged_arguments), ensure_ascii=False)
+    if game == "bdsmtest":
+        return json.dumps(_play_bdsmtest(merged_arguments), ensure_ascii=False)
+    if game == "eco":
+        # eco 工具自身用 action 作为子参数（summon/observe/...），与 play 的 action
+        # （工具名）同名。这里传原始 arguments，由 _play_eco 从 params 取子参数，避免覆盖。
+        return json.dumps(_play_eco(arguments), ensure_ascii=False)
     raise _McpError(-32602, "未知游戏")
 
 
@@ -881,6 +909,7 @@ def _tool_account(arguments, user_agent="", path_token=None):
 def _turtle_soup_guide():
     return {
         "game": "turtle_soup",
+        "call_format": "调用 play 时固定传 game=\"turtle_soup\" 和 action；action 需要的 room_id/content 等业务参数放入 params 对象，例如 play(game=\"turtle_soup\", action=\"ask\", params={\"room_id\":\"...\",\"content\":\"...\"})。",
         "actions": {
             "register": "username, password -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
             "list_puzzles": "列出可选题库题目目录，只返回 id/title/tags，不返回汤面和汤底",
@@ -952,6 +981,55 @@ def _play_dnd(arguments):
     else:
         raise _McpError(-32602, "未知 DND action")
     return handle_dnd_mcp(payload)
+
+
+def _play_bdsmtest(arguments):
+    action = arguments.get("action")
+    extra = {key: value for key, value in arguments.items() if key not in {"game", "action"}}
+    request_id = extra.pop("id", None) or f"bdsmtest-{action or 'call'}"
+    if action in {"initialize", "tools/list"}:
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
+        if extra:
+            payload["params"] = extra
+    elif action in {"bdsmtest_start", "bdsmtest_answer", "bdsmtest_answer_batch", "bdsmtest_get_result"}:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
+        }
+    elif "method" in extra:
+        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
+    else:
+        raise _McpError(-32602, "未知 BDSMTest action")
+    return handle_bdsmtest_mcp(payload)
+
+
+def _play_eco(arguments):
+    # action（顶层）= 路由到哪个 eco 工具；子参数（含同名的 action，如 summon）放在 params 里。
+    # 先取顶层路由 action，再把 params 内容并入 extra，避免被 merge 覆盖。
+    action = arguments.get("action")
+    extra = {key: value for key, value in arguments.items() if key not in {"game", "action", "params"}}
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update(params)
+    request_id = extra.pop("id", None) or f"eco-{action or 'call'}"
+    if action in {"initialize", "tools/list"}:
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
+        if extra:
+            payload["params"] = extra
+    elif action in {"eco_new", "eco_observe", "eco_act", "eco_info", "eco_save", "eco_play"}:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
+        }
+    elif "method" in extra:
+        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
+    else:
+        raise _McpError(-32602, "未知 eco action")
+    return handle_eco_mcp(payload)
 
 
 def _json_rpc_result(request_id, result):
