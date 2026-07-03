@@ -104,8 +104,8 @@ TOOLS = [
                 },
                 "option": {
                     "type": "integer",
-                    "enum": [1, 2],
-                    "description": "选项 1 或 2（choose 用）。",
+                    "enum": [1, 2, 3],
+                    "description": "选项编号（choose 用，通常 1–2，蛇事件可选 3）。",
                 },
                 "settler": {
                     "type": "string",
@@ -323,8 +323,8 @@ def eco_act(arguments):
         command = "shelter"
     elif action == "choose":
         option = _coerce_int(arguments.get("option"), "option", default=None)
-        if option not in (1, 2):
-            raise JsonRpcError(-32602, "option 须为 1 或 2。")
+        if option not in (1, 2, 3):
+            raise JsonRpcError(-32602, "option 须为 1、2 或 3。")
         command = f"choose {option}"
     elif action == "name":
         settler = arguments.get("settler")
