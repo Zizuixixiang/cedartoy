@@ -23,6 +23,7 @@ except ImportError:
     CryptContext = None
 
 from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
+from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
 from dnd.handler import handle_mcp as handle_dnd_mcp
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
 from mbti.handler import handle_mcp as handle_mbti_mcp
@@ -94,7 +95,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -808,6 +809,7 @@ def _tool_list_games():
         "小游戏": [
             {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"},
             {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化"},
+            {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在"},
         ],
         "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, params={...}) 执行操作",
     }, ensure_ascii=False)
@@ -823,7 +825,7 @@ def _tool_get_guide(arguments):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
-    if game in {"mbti", "dnd", "bdsmtest", "eco", "account"}:
+    if game in {"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "account"}:
         path = GUIDE_DIR / f"{game}.md"
         if not path.exists():
             raise _McpError(-32603, f"{game} 说明文件不存在")
@@ -881,6 +883,9 @@ def _tool_play(arguments, path_token=None):
         # eco 工具自身用 action 作为子参数（summon/observe/...），与 play 的 action
         # （工具名）同名。这里传原始 arguments，由 _play_eco 从 params 取子参数，避免覆盖。
         return json.dumps(_play_eco(arguments), ensure_ascii=False)
+    if game == "ciyuwu":
+        # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
+        return json.dumps(_play_ciyuwu(arguments), ensure_ascii=False)
     raise _McpError(-32602, "未知游戏")
 
 
@@ -1030,6 +1035,32 @@ def _play_eco(arguments):
     else:
         raise _McpError(-32602, "未知 eco action")
     return handle_eco_mcp(payload)
+
+
+def _play_ciyuwu(arguments):
+    # 顶层 action = 路由到哪个 ciyuwu 工具；子参数（含同名 action，如 status）放 params 里。
+    action = arguments.get("action")
+    extra = {key: value for key, value in arguments.items() if key not in {"game", "action", "params"}}
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update(params)
+    request_id = extra.pop("id", None) or f"ciyuwu-{action or 'call'}"
+    if action in {"initialize", "tools/list"}:
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
+        if extra:
+            payload["params"] = extra
+    elif action in {"ciyuwu_new", "ciyuwu_cmd", "ciyuwu_info", "ciyuwu_save"}:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
+        }
+    elif "method" in extra:
+        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
+    else:
+        raise _McpError(-32602, "未知 ciyuwu action")
+    return handle_ciyuwu_mcp(payload)
 
 
 def _json_rpc_result(request_id, result):
