@@ -1234,23 +1234,11 @@ def _epoch_to_local_str(epoch):
 
 
 def _tool_list_games():
-    return json.dumps({
-        "测试": [
-            {"name": "mbti", "display": "MBTI", "desc": "16型人格测试", "author": "南山君（小红书：501518888）"},
-            {"name": "dnd", "display": "DND阵营测试", "desc": "D&D道德阵营测试", "author": "南山君（小红书：501518888）"},
-            {"name": "bdsmtest", "display": "BDSMTest", "desc": "BDSM倾向测试，逐题或批量", "author": "南山君（小红书：501518888）"},
-        ],
-        "小游戏": [
-            {"name": "turtle_soup", "display": "海龟汤", "desc": "海龟汤推理游戏", "author": "南山君（小红书：501518888）"},
-            {"name": "fishing", "display": "AI钓鱼", "desc": "钓鱼模拟，抛竿卖鱼升级装备", "author": "初一（小红书：95352909039）"},
-            {"name": "eco", "display": "瓶中生态", "desc": "文字生态模拟，造物主养池塘", "author": "南山君 & 🤖Clio（小红书：501518888）"},
-            {"name": "ciyuwu", "display": "词与物", "desc": "文字Roguelike：审查中说话求生", "author": "与一旋夏（小红书：94326164228）"},
-            {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "A股模拟器，交易成长", "author": "贰拾壹_21Za4tilR9qy6（小红书：95628666552）"},
-            {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅，赌戏合集", "author": "多肉饲养员（小红书：49925064711）"},
-            {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营", "author": "飞鸢（小红书：6403083078）"},
-        ],
-        "提示": "get_guide(game) 查玩法，play(game, action, params={...}) 执行操作",
-    }, ensure_ascii=False)
+    return (
+        "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
+        "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋夏 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢"
+    )
 
 
 def _root_tools():

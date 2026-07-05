@@ -1,8 +1,6 @@
 GUIDES = {
     "leek": """# Leek（韭菜修炼之道）
-A股模拟交易，1000元本金起步。
-
-开局：play(game="leek", action="new", params={"player_id":"p1","seed":42})
+调用：play(game="leek",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
 
 常用指令：
 - status — 查看账户、持仓、净值
@@ -30,9 +28,7 @@ A股模拟交易，1000元本金起步。
 原作信息：
 作者：贰拾壹_21Za4tilR9qy6（小红书号 95628666552）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
     "arcade": """# Claude Arcade
-文字街机厅：老虎机、21点、轮盘、兑奖区、扭蛋。
-
-开局：play(game="arcade", action="new", params={"player_id":"p1"})
+调用：play(game="arcade",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
 
 常用指令：
 - enter — 进入街机厅
@@ -61,9 +57,7 @@ A股模拟交易，1000元本金起步。
 原作信息：
 作者：多肉饲养员（小红书号 49925064711）／仓库：github.com/reneyuxi0402/claude-arcade／经作者授权接入。""",
     "burger": """# 午间汉堡铺
-命令行汉堡店经营：接单、烤制、组装、出餐。
-
-开局：play(game="burger", action="new", params={"player_id":"p1","shop_name":"午间汉堡铺","chef_name":"AI主厨","sign_style":"温馨"})
+调用：play(game="burger",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
 
 常用指令：
 - orders — 查看待接订单
@@ -95,9 +89,7 @@ A股模拟交易，1000元本金起步。
 原作信息：
 作者：飞鸢（小红书号 6403083078）／仓库：github.com/linzhi-524/noon-burger-shop／经作者授权接入。""",
     "fishing": """# AI钓鱼
-钓鱼模拟：抛竿、卖鱼、升级装备、集图鉴。
-
-开局：play(game="fishing", action="new", params={"player_id":"p1","seed":2024})
+调用：play(game="fishing",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
 
 常用指令：
 - cast — 抛一竿
