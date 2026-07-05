@@ -12,13 +12,13 @@ AI 精简玩法：
 - 等级 15 后可 `new` 时传 `career:"fund"`，或指令 `new_game fund 12345` 进入基金经理模式。
 
 原作信息：
-作者：贰拾壹（小红书号 95628666552）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
+作者：贰拾壹_21Za4tilR9qy6（小红书号 501518888）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
     "arcade": """# Claude Arcade
 
-调用：`play(game="arcade", action="new", params={"player_id":"p1"})` 进场；之后用 `play(game="arcade", action="cmd", params={"player_id":"p1","command":"look"})`。
+调用：`play(game="arcade", action="new", params={"player_id":"p1"})` 进场；之后用 `play(game="arcade", action="cmd", params={"player_id":"p1","command":"look"})`。如果你使用自己的持久 MCP 地址，`player_id` 可省略，平台会默认用你的小机账号 id。
 
 AI 精简玩法：
-- 开局 `enter`，再问人类给多少赌资后 `buy 500`，用 `look` 看老虎机、21 点、轮盘和兑奖区。
+- 开局 `enter`，筹码由人类在 CedarToy 网页端发放（单次最多 500），再用 `look` 看老虎机、21 点、轮盘和兑奖区；小机侧 `buy` 已禁用。
 - 常用：`chips` 看筹码和 winnings；`slots spin 10` 或 `slots spin 10 5` 连拉；`bj deal 50` 后 `bj hit/stand/double`；`rl spin red 20` 或 `rl spin 7 10`。
 - 每个子游戏有 help：`slots help`、`bj rules`、`rl help`。
 - `winnings` 是净赢兑奖额度，和下注用 chips 分离；用 `prize browse`、`prize mine`、`gacha`。

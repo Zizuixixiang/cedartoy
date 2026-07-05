@@ -51,6 +51,7 @@ GAME_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
 GUIDE_DIR = Path(__file__).resolve().parent / "turtle-soup" / "backend" / "guides"
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
+VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -746,6 +747,68 @@ def _game_overview(conn, user):
     }
 
 
+def _count_table_rows(table_name):
+    if not SESSIONS_DB_PATH.exists():
+        return 0
+    with _sessions_db_connect() as conn:
+        if not _table_exists(conn, table_name):
+            return 0
+        return int(conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0] or 0)
+
+
+def _sum_ciyuwu_runs():
+    if not SESSIONS_DB_PATH.exists():
+        return 0
+    total = 0
+    with _sessions_db_connect() as conn:
+        if not _table_exists(conn, "ciyuwu_sessions"):
+            return 0
+        rows = conn.execute("SELECT meta_data FROM ciyuwu_sessions").fetchall()
+    for row in rows:
+        try:
+            meta = json.loads(row["meta_data"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            meta = {}
+        try:
+            total += max(1, int(meta.get("runs") or 1))
+        except (TypeError, ValueError):
+            total += 1
+    return total
+
+
+def _vendor_save_stats(game):
+    root = VENDOR_SAVE_ROOT / game
+    if not root.exists():
+        return {"save_count": 0, "file_count": 0}
+    player_dirs = [path for path in root.iterdir() if path.is_dir()]
+    file_count = 0
+    for path in player_dirs:
+        file_count += sum(1 for child in path.iterdir() if child.is_file() and child.name != ".lock")
+    return {"save_count": len(player_dirs), "file_count": file_count}
+
+
+def _public_game_stats():
+    stats = {
+        "eco": {
+            "metric_label": "存档数",
+            "metric": _count_table_rows("eco_sessions"),
+        },
+        "ciyuwu": {
+            "metric_label": "对局数",
+            "metric": _sum_ciyuwu_runs(),
+            "save_count": _count_table_rows("ciyuwu_sessions"),
+        },
+    }
+    for game in ("arcade", "burger", "leek"):
+        vendor_stats = _vendor_save_stats(game)
+        stats[game] = {
+            "metric_label": "存档数",
+            "metric": vendor_stats["save_count"],
+            "file_count": vendor_stats["file_count"],
+        }
+    return stats
+
+
 def _get_bindings(raw_token):
     user = _current_account(raw_token)
     if not user.get("is_ai"):
@@ -797,6 +860,47 @@ def _account_me(raw_token):
     return {"user": _public_user(user), "bindings": [_public_user(dict(row)) for row in rows]}
 
 
+def _require_bound_ai(raw_token, ai_user_id):
+    human = _current_account(raw_token)
+    if human.get("is_ai"):
+        raise _McpError(-32602, "只有人类账号可以发放街机厅筹码")
+    try:
+        ai_user_id = int(ai_user_id)
+    except (TypeError, ValueError):
+        raise _McpError(-32602, "ai_user_id 必填")
+    with _db_connect() as conn:
+        row = _row_dict(conn.execute(
+            """
+            SELECT u.id, u.username, u.is_ai, u.is_admin, u.created_at, u.last_active_at
+            FROM user_bindings b
+            JOIN toy_users u ON u.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND b.ai_user_id = ?
+              AND u.is_ai = 1
+              AND u.deleted_at IS NULL
+            """,
+            (human["id"], ai_user_id),
+        ).fetchone())
+    if not row:
+        raise _McpError(-32004, "未绑定该小机")
+    return row
+
+
+def _arcade_chips_status(raw_token, ai_user_id):
+    ai_user = _require_bound_ai(raw_token, ai_user_id)
+    status = arcade_adapter.status(str(ai_user["id"]))
+    return {"ai": _public_user(ai_user), **status}
+
+
+def _arcade_chips_grant(raw_token, ai_user_id, amount):
+    ai_user = _require_bound_ai(raw_token, ai_user_id)
+    try:
+        status = arcade_adapter.grant_chips(str(ai_user["id"]), amount)
+    except VendorCmdError as exc:
+        raise _McpError(-32602, str(exc)) from exc
+    return {"ok": True, "ai": _public_user(ai_user), **status}
+
+
 def _extract_bearer(headers):
     value = headers.get("Authorization", "")
     if value.lower().startswith("bearer "):
@@ -813,11 +917,11 @@ def _tool_list_games():
         ],
         "小游戏": [
             {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"},
-            {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化"},
-            {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在"},
-            {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "给 AI 玩的 A 股模拟器：1000 元本金、新闻、周期、崩盘与交易员成长", "author": "小红书：贰拾壹"},
-            {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅：老虎机、21 点、轮盘、兑奖区和扭蛋，共享筹码池", "author": "小红书：多肉饲养员"},
-            {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营：接单、烤制、组装、批量订单、装修与隐藏菜单", "author": "小红书：飞鸢"},
+            {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化", "author": "南山君 & 🤖Clio（小红书：94326164228）"},
+            {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在", "author": "与一旋夏（小红书：94326164228）"},
+            {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "给 AI 玩的 A 股模拟器：1000 元本金、新闻、周期、崩盘与交易员成长", "author": "贰拾壹_21Za4tilR9qy6（小红书：501518888）"},
+            {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅：老虎机、21 点、轮盘、兑奖区和扭蛋，共享筹码池", "author": "多肉饲养员（小红书：49925064711）"},
+            {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营：接单、烤制、组装、批量订单、装修与隐藏菜单", "author": "飞鸢（小红书：6403083078）"},
         ],
         "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, params={...}) 执行操作",
     }, ensure_ascii=False)
@@ -897,7 +1001,13 @@ def _tool_play(arguments, path_token=None):
         # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
         return json.dumps(_play_ciyuwu(arguments), ensure_ascii=False)
     if game in {"leek", "arcade", "burger"}:
-        return json.dumps(_play_vendor_cmd(game, arguments), ensure_ascii=False)
+        vendor_arguments = arguments
+        if game == "arcade" and path_token:
+            params_for_default = dict(arguments.get("params") or {})
+            params_for_default["player_id"] = str(_current_account(path_token)["id"])
+            vendor_arguments = dict(arguments)
+            vendor_arguments["params"] = params_for_default
+        return json.dumps(_play_vendor_cmd(game, vendor_arguments), ensure_ascii=False)
     raise _McpError(-32602, "未知游戏")
 
 
@@ -1118,6 +1228,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_bind()
             return
 
+        if path == "/api/arcade/chips":
+            self._handle_api_arcade_grant()
+            return
+
         if path.startswith("/api/admin/users/") and path.endswith("/reset-password"):
             self._handle_admin_reset_password(path)
             return
@@ -1175,8 +1289,16 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "service": "cedartoy", "endpoints": ["https://toy.cedarstar.org/mbti", "https://toy.cedarstar.org/dnd", "https://toy.cedarstar.org/"]})
             return
 
+        if path == "/api/games/stats":
+            self._send_json(_public_game_stats(), extra_headers={"Cache-Control": "no-cache, no-store"})
+            return
+
         if path == "/api/auth/me":
             self._handle_api_me()
+            return
+
+        if path == "/api/arcade/chips":
+            self._handle_api_arcade_status(params)
             return
 
         if path == "/api/admin/users":
@@ -1304,6 +1426,34 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=401)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_arcade_status(self, params):
+        try:
+            ai_user_id = self._get_param(params, "ai_user_id")
+            result = _arcade_chips_status(_extract_bearer(self.headers), ai_user_id)
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (404 if exc.code == -32004 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_arcade_grant(self):
+        try:
+            body = self._read_json_body()
+            result = _arcade_chips_grant(
+                _extract_bearer(self.headers),
+                body.get("ai_user_id"),
+                body.get("amount"),
+            )
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (404 if exc.code == -32004 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
@@ -1533,6 +1683,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except OSError:
             self._send_json({"error": "index not found"}, status=404)
             return
+        self._send_html_bytes(body)
+
+    def _send_html_bytes(self, body):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
