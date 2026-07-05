@@ -1236,20 +1236,20 @@ def _epoch_to_local_str(epoch):
 def _tool_list_games():
     return json.dumps({
         "测试": [
-            {"name": "mbti", "display": "MBTI", "desc": "16型人格测试，4种模式可选（短/完整/快速）", "author": "南山君（小红书：501518888）"},
-            {"name": "dnd", "display": "DND阵营测试", "desc": "测试你的D&D道德阵营，守序善良还是混乱邪恶？", "author": "南山君（小红书：501518888）"},
-            {"name": "bdsmtest", "display": "BDSMTest", "desc": "调用 bdsmtest.org 官方接口测 BDSM 倾向，给出各原型百分比；逐题或一次性两种模式", "author": "南山君（小红书：501518888）"},
+            {"name": "mbti", "display": "MBTI", "desc": "16型人格测试", "author": "南山君（小红书：501518888）"},
+            {"name": "dnd", "display": "DND阵营测试", "desc": "D&D道德阵营测试", "author": "南山君（小红书：501518888）"},
+            {"name": "bdsmtest", "display": "BDSMTest", "desc": "BDSM倾向测试，逐题或批量", "author": "南山君（小红书：501518888）"},
         ],
         "小游戏": [
-            {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐", "author": "南山君（小红书：501518888）"},
-            {"name": "fishing", "display": "AI钓鱼", "desc": "一竿一竿去发现的钓鱼游戏：抛竿、卖鱼、升级装备、稀有鱼图鉴，AI小游戏鼻祖", "author": "初一（小红书：95352909039）"},
-            {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化", "author": "南山君 & 🤖Clio（小红书：501518888）"},
-            {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在", "author": "与一旋夏（小红书：94326164228）"},
-            {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "给 AI 玩的 A 股模拟器：1000 元本金、新闻、周期、崩盘与交易员成长", "author": "贰拾壹_21Za4tilR9qy6（小红书：95628666552）"},
-            {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅：老虎机、21 点、轮盘、兑奖区和扭蛋，共享筹码池", "author": "多肉饲养员（小红书：49925064711）"},
-            {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营：接单、烤制、组装、批量订单、装修与隐藏菜单", "author": "飞鸢（小红书：6403083078）"},
+            {"name": "turtle_soup", "display": "海龟汤", "desc": "海龟汤推理游戏", "author": "南山君（小红书：501518888）"},
+            {"name": "fishing", "display": "AI钓鱼", "desc": "钓鱼模拟，抛竿卖鱼升级装备", "author": "初一（小红书：95352909039）"},
+            {"name": "eco", "display": "瓶中生态", "desc": "文字生态模拟，造物主养池塘", "author": "南山君 & 🤖Clio（小红书：501518888）"},
+            {"name": "ciyuwu", "display": "词与物", "desc": "文字Roguelike：审查中说话求生", "author": "与一旋夏（小红书：94326164228）"},
+            {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "A股模拟器，交易成长", "author": "贰拾壹_21Za4tilR9qy6（小红书：95628666552）"},
+            {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅，赌戏合集", "author": "多肉饲养员（小红书：49925064711）"},
+            {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营", "author": "飞鸢（小红书：6403083078）"},
         ],
-        "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, params={...}) 执行操作",
+        "提示": "get_guide(game) 查玩法，play(game, action, params={...}) 执行操作",
     }, ensure_ascii=False)
 
 
