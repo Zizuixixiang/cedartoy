@@ -29,6 +29,7 @@ from eco_adapter.handler import handle_mcp as handle_eco_mcp
 from mbti.handler import handle_mcp as handle_mbti_mcp
 from vendor_cmd_adapter import arcade as arcade_adapter
 from vendor_cmd_adapter import burger as burger_adapter
+from vendor_cmd_adapter import fishing as fishing_adapter
 from vendor_cmd_adapter import leek as leek_adapter
 from vendor_cmd_adapter.base import VendorCmdError
 from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
@@ -101,7 +102,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -129,11 +130,12 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings",
+                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况）",
                 },
                 "username": {"type": "string"},
                 "password": {"type": "string"},
                 "token": {"type": "string"},
+                "claim_code": {"type": "string", "description": "claim 用：游客开档时发放的一次性认领码"},
             },
             "required": ["action"],
             "additionalProperties": False,
@@ -264,6 +266,7 @@ def _migrate_platform_timestamps():
             """
         )
         _create_platform_localtime_triggers(conn)
+        _init_guest_claim_table(conn)
         if conn.execute("SELECT value FROM settings WHERE key = ?", (TIMEZONE_MIGRATION_KEY,)).fetchone():
             conn.commit()
             return
@@ -799,7 +802,7 @@ def _public_game_stats():
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
     }
-    for game in ("arcade", "burger", "leek"):
+    for game in ("arcade", "burger", "leek", "fishing"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -908,6 +911,328 @@ def _extract_bearer(headers):
     return ""
 
 
+# ---- play 层统一身份 ----
+# 带 path_token 的请求：解析账号并强制 player_id = str(user.id)，无视自报 id。
+# 无 token 的自报 id：统一加 guest: 前缀落档，防止游客自称任意 id 触碰账号存档。
+GUEST_PREFIX = "guest:"
+PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
+# 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
+IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing"})
+# 有长期存档、值得给游客发认领码的游戏。
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing"})
+VENDOR_GAMES = ("leek", "arcade", "burger", "fishing")
+
+
+def _guest_player_id(raw):
+    """自报裸 id → guest: 前缀 id；已带前缀或不合法的原样返回（由各游戏自行报错）。"""
+    if isinstance(raw, str) and PLAIN_PLAYER_ID_RE.fullmatch(raw):
+        return GUEST_PREFIX + raw
+    return raw
+
+
+def _reported_player_id(arguments):
+    params = arguments.get("params")
+    if isinstance(params, dict) and params.get("player_id") is not None:
+        return params.get("player_id")
+    return arguments.get("player_id")
+
+
+def _override_player_id(arguments, player_id):
+    """顶层和 params 里的 player_id 一律覆盖（各 adapter 以 params 优先合并）。"""
+    new_arguments = dict(arguments)
+    new_arguments["player_id"] = player_id
+    params = new_arguments.get("params")
+    if isinstance(params, dict):
+        params = dict(params)
+        params["player_id"] = player_id
+        new_arguments["params"] = params
+    return new_arguments
+
+
+def _guestify_mcp_payload(payload):
+    """/mbti、/dnd 直连 MCP 端点无 token，同样把自报 player_id 隔离到 guest: 命名空间。"""
+    if payload.get("method") != "tools/call":
+        return payload
+    params = payload.get("params")
+    arguments = params.get("arguments") if isinstance(params, dict) else None
+    if not isinstance(arguments, dict):
+        return payload
+    raw = arguments.get("player_id")
+    guest = _guest_player_id(raw)
+    if guest == raw:
+        return payload
+    payload = dict(payload)
+    params = dict(params)
+    arguments = dict(arguments)
+    arguments["player_id"] = guest
+    params["arguments"] = arguments
+    payload["params"] = params
+    return payload
+
+
+def _init_guest_claim_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS guest_claim_codes (
+            code TEXT PRIMARY KEY,
+            guest_player_id TEXT NOT NULL UNIQUE,
+            created_at TEXT,
+            claimed_by INTEGER,
+            claimed_at TEXT
+        )
+        """
+    )
+
+
+def _ensure_guest_claim_code(guest_player_id):
+    """游客首次开档时生成一次性认领码；已有码（或已认领过）返回 None，不重复提示。"""
+    with _db_connect() as conn:
+        _init_guest_claim_table(conn)
+        row = conn.execute(
+            "SELECT code FROM guest_claim_codes WHERE guest_player_id = ?",
+            (guest_player_id,),
+        ).fetchone()
+        if row:
+            return None
+        code = secrets.token_urlsafe(9)
+        try:
+            conn.execute(
+                "INSERT INTO guest_claim_codes (code, guest_player_id, created_at) VALUES (?, ?, datetime('now', 'localtime'))",
+                (code, guest_player_id),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            return None
+    return code
+
+
+def _sessions_table_columns(conn, table):
+    if not _table_exists(conn, table):
+        return set()
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _stamp_save_owner(game, player_id, user_id):
+    """token 玩家写档后回填 user_id 列（表或列不存在时静默跳过）。"""
+    if not SESSIONS_DB_PATH.exists():
+        return
+    if game == "eco":
+        targets = [("eco_sessions", False)]
+    elif game == "ciyuwu":
+        targets = [("ciyuwu_sessions", False)]
+    elif game in {"mbti", "dnd", "bdsmtest"}:
+        targets = [("test_sessions", True), ("test_results", True)]
+    else:
+        return
+    try:
+        with _sessions_db_connect() as conn:
+            for table, has_game_column in targets:
+                if "user_id" not in _sessions_table_columns(conn, table):
+                    continue
+                if has_game_column:
+                    conn.execute(
+                        f"UPDATE {table} SET user_id = ? WHERE player_id = ? AND game = ? AND (user_id IS NULL OR user_id <> ?)",
+                        (user_id, player_id, game, user_id),
+                    )
+                else:
+                    conn.execute(
+                        f"UPDATE {table} SET user_id = ? WHERE player_id = ? AND (user_id IS NULL OR user_id <> ?)",
+                        (user_id, player_id, user_id),
+                    )
+            conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
+def _collect_player_saves(old_player_id, target_player_id):
+    """列出 old_player_id 名下所有存档，以及迁到 target_player_id 会撞上的冲突。
+
+    返回 (found, conflicts)：found 形如 {"eco": {...}, "vendor:arcade": {...}}。
+    """
+    found = {}
+    conflicts = []
+    if SESSIONS_DB_PATH.exists():
+        with _sessions_db_connect() as conn:
+            for table, game_label in (("eco_sessions", "eco"), ("ciyuwu_sessions", "ciyuwu")):
+                if not _table_exists(conn, table):
+                    continue
+                row = conn.execute(
+                    f"SELECT last_active FROM {table} WHERE player_id = ?", (old_player_id,)
+                ).fetchone()
+                if not row:
+                    continue
+                found[game_label] = {"table": table, "last_active": row["last_active"]}
+                if conn.execute(
+                    f"SELECT 1 FROM {table} WHERE player_id = ?", (target_player_id,)
+                ).fetchone():
+                    conflicts.append(f"{game_label}（账号名下已有存档）")
+            for table in ("test_sessions", "test_results"):
+                if not _table_exists(conn, table):
+                    continue
+                for row in conn.execute(
+                    f"SELECT game FROM {table} WHERE player_id = ?", (old_player_id,)
+                ).fetchall():
+                    game = row["game"]
+                    found[f"{table}:{game}"] = {"table": table, "game": game}
+                    if conn.execute(
+                        f"SELECT 1 FROM {table} WHERE player_id = ? AND game = ?",
+                        (target_player_id, game),
+                    ).fetchone():
+                        conflicts.append(f"{game}/{table}（账号名下已有记录）")
+    for game in VENDOR_GAMES:
+        old_dir = VENDOR_SAVE_ROOT / game / old_player_id
+        if not old_dir.is_dir():
+            continue
+        found[f"vendor:{game}"] = {"dir": str(old_dir)}
+        if (VENDOR_SAVE_ROOT / game / target_player_id).exists():
+            conflicts.append(f"{game}（账号名下已有存档目录）")
+    return found, conflicts
+
+
+def _migrate_player_saves(old_player_id, user_id):
+    """把 old_player_id 名下所有存档改绑到账号：player_id 迁为 str(user_id) 并回填 user_id 列。
+
+    冲突时整体报错、不迁移、绝不覆盖或删除任何存档。返回迁移摘要。
+    """
+    target_player_id = str(int(user_id))
+    if old_player_id == target_player_id:
+        raise _McpError(-32602, "旧 id 与账号 id 相同，无需迁移")
+    found, conflicts = _collect_player_saves(old_player_id, target_player_id)
+    if not found:
+        raise _McpError(-32004, f"没有找到 player_id={old_player_id} 的任何存档")
+    if conflicts:
+        raise _McpError(
+            -32602,
+            "以下游戏在账号名下已有存档，迁移会冲突，已全部取消（不覆盖不删档）：" + "、".join(conflicts),
+        )
+    migrated = []
+    if SESSIONS_DB_PATH.exists():
+        with _sessions_db_connect() as conn:
+            for table in ("eco_sessions", "ciyuwu_sessions", "test_sessions", "test_results"):
+                if not _table_exists(conn, table):
+                    continue
+                if "user_id" in _sessions_table_columns(conn, table):
+                    cur = conn.execute(
+                        f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
+                        (target_player_id, int(user_id), old_player_id),
+                    )
+                else:
+                    cur = conn.execute(
+                        f"UPDATE {table} SET player_id = ? WHERE player_id = ?",
+                        (target_player_id, old_player_id),
+                    )
+                if cur.rowcount:
+                    migrated.append(f"{table}×{cur.rowcount}")
+            conn.commit()
+    for game in VENDOR_GAMES:
+        old_dir = VENDOR_SAVE_ROOT / game / old_player_id
+        if old_dir.is_dir():
+            old_dir.rename(VENDOR_SAVE_ROOT / game / target_player_id)
+            migrated.append(f"vendor_saves/{game}")
+    return {"old_player_id": old_player_id, "new_player_id": target_player_id, "migrated": migrated}
+
+
+def _claim_guest_saves(raw_token, claim_code):
+    user = _current_account(raw_token)
+    claim_code = (claim_code or "").strip()
+    if not claim_code:
+        raise _McpError(-32602, "claim_code 必填")
+    with _db_connect() as conn:
+        _init_guest_claim_table(conn)
+        row = _row_dict(conn.execute(
+            "SELECT * FROM guest_claim_codes WHERE code = ?", (claim_code,)
+        ).fetchone())
+    if not row or row.get("claimed_by") is not None:
+        raise _McpError(-32001, "认领码无效或已被使用")
+    result = _migrate_player_saves(row["guest_player_id"], int(user["id"]))
+    with _db_connect() as conn:
+        conn.execute(
+            "UPDATE guest_claim_codes SET claimed_by = ?, claimed_at = datetime('now', 'localtime') WHERE code = ?",
+            (int(user["id"]), claim_code),
+        )
+        conn.commit()
+    return {
+        "ok": True,
+        "user": _public_user(user),
+        **result,
+        "message": "游客存档已认领并转入账号名下；之后带 token 游玩会自动续档。",
+    }
+
+
+def _account_my_saves(raw_token):
+    """按账号聚合返回该用户在所有游戏的存档概况；没有存档的游戏不列。"""
+    user = _current_account(raw_token)
+    uid = int(user["id"])
+    candidate_ids = _game_player_ids(user)
+    placeholders = ",".join("?" * len(candidate_ids))
+    games = {}
+    if SESSIONS_DB_PATH.exists():
+        with _sessions_db_connect() as conn:
+            def _owned_rows(table, select_columns):
+                has_uid = "user_id" in _sessions_table_columns(conn, table)
+                where = f"player_id IN ({placeholders})" + (" OR user_id = ?" if has_uid else "")
+                args = list(candidate_ids) + ([uid] if has_uid else [])
+                return conn.execute(f"SELECT {select_columns} FROM {table} WHERE {where}", args).fetchall()
+
+            if _table_exists(conn, "test_results"):
+                for row in _owned_rows("test_results", "game, result_value, completed_at"):
+                    entry = games.setdefault(row["game"], {})
+                    if (row["completed_at"] or 0) > (entry.get("_completed_at") or 0):
+                        entry["_completed_at"] = row["completed_at"]
+                        entry["latest_result"] = row["result_value"]
+                        entry["completed_at"] = _epoch_to_local_str(row["completed_at"])
+            if _table_exists(conn, "test_sessions"):
+                for row in _owned_rows("test_sessions", "game, mode, current_question"):
+                    entry = games.setdefault(row["game"], {})
+                    entry["in_progress"] = {"mode": row["mode"], "current_question": row["current_question"]}
+            if _table_exists(conn, "eco_sessions"):
+                best = None
+                for row in _owned_rows("eco_sessions", "save_data, last_active"):
+                    if best is None or (row["last_active"] or "") > (best["last_active"] or ""):
+                        best = row
+                if best is not None:
+                    from eco_adapter import handler as eco_handler
+                    summary = eco_handler.summarize_save(best["save_data"]) or {}
+                    summary["last_active"] = best["last_active"]
+                    games["eco"] = summary
+            if _table_exists(conn, "ciyuwu_sessions"):
+                best = None
+                for row in _owned_rows("ciyuwu_sessions", "save_data, meta_data, last_active"):
+                    if best is None or (row["last_active"] or "") > (best["last_active"] or ""):
+                        best = row
+                if best is not None:
+                    from ciyuwu_adapter import handler as ciyuwu_handler
+                    summary = ciyuwu_handler.summarize_save(best["save_data"], best["meta_data"]) or {}
+                    summary["last_active"] = best["last_active"]
+                    games["ciyuwu"] = summary
+    vendor_summaries = {
+        "leek": leek_adapter.save_summary,
+        "arcade": arcade_adapter.save_summary,
+        "burger": burger_adapter.save_summary,
+        "fishing": fishing_adapter.save_summary,
+    }
+    for game, summarize in vendor_summaries.items():
+        for candidate in candidate_ids:
+            try:
+                summary = summarize(candidate)
+            except VendorCmdError:
+                summary = None
+            if summary is not None:
+                games[game] = summary
+                break
+    for entry in games.values():
+        if isinstance(entry, dict):
+            entry.pop("_completed_at", None)
+    return {"user": _public_user(user), "saves": games}
+
+
+def _epoch_to_local_str(epoch):
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(epoch)))
+    except (TypeError, ValueError):
+        return None
+
+
 def _tool_list_games():
     return json.dumps({
         "测试": [
@@ -917,8 +1242,9 @@ def _tool_list_games():
         ],
         "小游戏": [
             {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"},
+            {"name": "fishing", "display": "AI钓鱼", "desc": "一竿一竿去发现的钓鱼游戏：抛竿、卖鱼、升级装备、稀有鱼图鉴，AI小游戏鼻祖", "author": "小红书：初一"},
             {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化", "author": "南山君 & 🤖Clio（小红书：94326164228）"},
-            {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在", "author": "与一旋夏（小红书：94326164228）"},
+            {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在", "author": "小红书：与一旋夏"},
             {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "给 AI 玩的 A 股模拟器：1000 元本金、新闻、周期、崩盘与交易员成长", "author": "贰拾壹_21Za4tilR9qy6（小红书：501518888）"},
             {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅：老虎机、21 点、轮盘、兑奖区和扭蛋，共享筹码池", "author": "多肉饲养员（小红书：49925064711）"},
             {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营：接单、烤制、组装、批量订单、装修与隐藏菜单", "author": "飞鸢（小红书：6403083078）"},
@@ -971,6 +1297,23 @@ def _tool_play(arguments, path_token=None):
     params = arguments.get("params")
     if params is not None and not isinstance(params, dict):
         raise _McpError(-32602, "params 必须是对象")
+
+    # 统一身份：带 token 强制 player_id=账号 id；游客自报 id 落到 guest: 命名空间。
+    account_user = None
+    guest_player_id = None
+    if game in IDENTITY_GAMES:
+        if path_token:
+            account_user = _current_account(path_token)
+            arguments = _override_player_id(arguments, str(account_user["id"]))
+        else:
+            raw = _reported_player_id(arguments)
+            guest = _guest_player_id(raw)
+            if guest != raw:
+                arguments = _override_player_id(arguments, guest)
+            if isinstance(guest, str) and guest.startswith(GUEST_PREFIX):
+                guest_player_id = guest
+        params = arguments.get("params")
+
     merged_arguments = {
         key: value
         for key, value in arguments.items()
@@ -988,27 +1331,44 @@ def _tool_play(arguments, path_token=None):
             raise _McpError(code, _soup_error_message(resp))
         return json.dumps(resp.json(), ensure_ascii=False)
     if game == "mbti":
-        return json.dumps(_play_mbti(merged_arguments), ensure_ascii=False)
-    if game == "dnd":
-        return json.dumps(_play_dnd(merged_arguments), ensure_ascii=False)
-    if game == "bdsmtest":
-        return json.dumps(_play_bdsmtest(merged_arguments), ensure_ascii=False)
-    if game == "eco":
+        response = _play_mbti(merged_arguments)
+    elif game == "dnd":
+        response = _play_dnd(merged_arguments)
+    elif game == "bdsmtest":
+        response = _play_bdsmtest(merged_arguments)
+    elif game == "eco":
         # eco 工具自身用 action 作为子参数（summon/observe/...），与 play 的 action
         # （工具名）同名。这里传原始 arguments，由 _play_eco 从 params 取子参数，避免覆盖。
-        return json.dumps(_play_eco(arguments), ensure_ascii=False)
-    if game == "ciyuwu":
+        response = _play_eco(arguments)
+    elif game == "ciyuwu":
         # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
-        return json.dumps(_play_ciyuwu(arguments), ensure_ascii=False)
-    if game in {"leek", "arcade", "burger"}:
-        vendor_arguments = arguments
-        if game == "arcade" and path_token:
-            params_for_default = dict(arguments.get("params") or {})
-            params_for_default["player_id"] = str(_current_account(path_token)["id"])
-            vendor_arguments = dict(arguments)
-            vendor_arguments["params"] = params_for_default
-        return json.dumps(_play_vendor_cmd(game, vendor_arguments), ensure_ascii=False)
-    raise _McpError(-32602, "未知游戏")
+        response = _play_ciyuwu(arguments)
+    elif game in {"leek", "arcade", "burger", "fishing"}:
+        if game == "fishing" and action == "import":
+            response = _fishing_import(arguments)
+        else:
+            response = _play_vendor_cmd(game, arguments)
+    else:
+        raise _McpError(-32602, "未知游戏")
+
+    succeeded = True
+    if isinstance(response, dict):
+        result = response.get("result")
+        if "error" in response or (isinstance(result, dict) and result.get("isError")):
+            succeeded = False
+    if succeeded and account_user is not None:
+        _stamp_save_owner(game, str(account_user["id"]), int(account_user["id"]))
+    if succeeded and guest_player_id and game in PERSISTENT_SAVE_GAMES and isinstance(response, dict):
+        code = _ensure_guest_claim_code(guest_player_id)
+        if code:
+            response = dict(response)
+            response["guest_save_notice"] = (
+                f"当前是游客身份，存档记在 {guest_player_id} 名下。"
+                f"一次性认领码：{code}（请保存好）。"
+                '注册账号后调用 account(action="claim", claim_code="...") 可把该游客的全部存档转入账号；'
+                "之后把 MCP 地址改为 https://toy.cedarstar.org/{token} 即获得持久身份。"
+            )
+    return json.dumps(response, ensure_ascii=False)
 
 
 def _tool_account(arguments, user_agent="", path_token=None):
@@ -1029,6 +1389,12 @@ def _tool_account(arguments, user_agent="", path_token=None):
         return json.dumps(result, ensure_ascii=False)
     if action == "get_profile":
         result = _get_profile(raw_token)
+        return json.dumps(result, ensure_ascii=False)
+    if action == "claim":
+        result = _claim_guest_saves(raw_token, arguments.get("claim_code"))
+        return json.dumps(result, ensure_ascii=False)
+    if action == "my_saves":
+        result = _account_my_saves(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raise _McpError(-32602, "未知 account action")
 
@@ -1185,6 +1551,34 @@ def _play_ciyuwu(arguments):
     return handle_ciyuwu_mcp(payload)
 
 
+def _fishing_import(arguments):
+    extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update(params)
+    save_data = extra.get("save_data")
+    if save_data is None:
+        raise _McpError(-32602, "save_data 必填")
+    if isinstance(save_data, str):
+        try:
+            parsed = json.loads(save_data)
+        except (json.JSONDecodeError, ValueError):
+            raise _McpError(-32602, "save_data 不是合法 JSON 字符串")
+        if not isinstance(parsed, dict):
+            raise _McpError(-32602, "save_data 必须是 JSON 对象")
+    elif isinstance(save_data, dict):
+        pass
+    else:
+        raise _McpError(-32602, "save_data 必须是 JSON 对象或 JSON 字符串")
+    serialized = json.dumps(save_data, ensure_ascii=False)
+    if len(serialized.encode("utf-8")) > 128 * 1024:
+        raise _McpError(-32602, "save_data 序列化后超过 128KB")
+    try:
+        return fishing_adapter.play(extra)
+    except VendorCmdError as exc:
+        raise _McpError(-32602, str(exc))
+
+
 def _play_vendor_cmd(game, arguments):
     action = arguments.get("action")
     extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
@@ -1200,6 +1594,8 @@ def _play_vendor_cmd(game, arguments):
             return arcade_adapter.play(extra)
         if game == "burger":
             return burger_adapter.play(extra)
+        if game == "fishing":
+            return fishing_adapter.play(extra)
     except VendorCmdError as exc:
         raise _McpError(-32602, str(exc))
     raise _McpError(-32602, "未知游戏")
@@ -1258,9 +1654,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/mbti":
-            response = handle_mbti_mcp(payload)
+            response = handle_mbti_mcp(_guestify_mcp_payload(payload))
         elif path == "/dnd":
-            response = handle_dnd_mcp(payload)
+            response = handle_dnd_mcp(_guestify_mcp_payload(payload))
         else:
             response = _handle_root_mcp(
                 payload,
@@ -1610,6 +2006,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": f"未知 action: {action}"}, status=400)
             return
 
+        # GET 端点无 token，自报 id 一律隔离到 guest: 命名空间。
+        player_id = _guest_player_id(player_id)
+        arguments["player_id"] = player_id
         payload = {
             "jsonrpc": "2.0",
             "id": f"mbti-{action}",
@@ -1653,6 +2052,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": f"未知 action: {action}"}, status=400)
             return
 
+        # GET 端点无 token，自报 id 一律隔离到 guest: 命名空间。
+        player_id = _guest_player_id(player_id)
+        arguments["player_id"] = player_id
         payload = {
             "jsonrpc": "2.0",
             "id": f"dnd-{action}",

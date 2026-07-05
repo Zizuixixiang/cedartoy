@@ -22,7 +22,8 @@ DB_PATH = "/opt/cedartoy/data/sessions.db"
 GAME = "eco"
 MAX_SESSIONS = 500
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
-PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
+# 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id，游客=guest:xxx。
+PLAYER_ID_RE = re.compile(r"^(?:guest:)?[a-zA-Z0-9]{1,64}$")
 
 _PLAYER_ID_SCHEMA = {
     "type": "string",
@@ -456,6 +457,29 @@ def _engine_run(state, command):
     return text, save_data
 
 
+def summarize_save(save_data):
+    """给平台 my_saves 用：从存档 JSON 提取概况（天数/评分/存活物种数），失败返回 None。"""
+    try:
+        state = json.loads(save_data)
+    except (TypeError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    summary = {"day": state.get("turn")}
+    populations = state.get("populations")
+    if isinstance(populations, dict):
+        summary["alive_species"] = sum(1 for v in populations.values() if isinstance(v, (int, float)) and v >= 1)
+    try:
+        with _ENGINE_LOCK:
+            engine._migrate(state)
+            score, word = engine._pond_score(state)
+        summary["pond_score"] = score
+        summary["pond_score_word"] = word
+    except Exception:
+        pass
+    return summary
+
+
 def _require_player_id(arguments):
     player_id = arguments.get("player_id")
     if not isinstance(player_id, str) or PLAYER_ID_RE.fullmatch(player_id) is None:
@@ -513,9 +537,16 @@ def _init_db(conn):
             player_id TEXT PRIMARY KEY,
             save_data TEXT,
             created_at TEXT,
-            last_active TEXT
+            last_active TEXT,
+            user_id INTEGER
         )
         """
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(eco_sessions)")}
+    if "user_id" not in columns:
+        conn.execute("ALTER TABLE eco_sessions ADD COLUMN user_id INTEGER")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_eco_sessions_user_id ON eco_sessions(user_id)"
     )
 
 

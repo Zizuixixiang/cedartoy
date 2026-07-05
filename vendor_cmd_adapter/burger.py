@@ -1,4 +1,6 @@
-from .base import VendorCmdError, VendorCmdGame
+import json
+
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
 
 
 RUNNER_CODE = r'''
@@ -138,6 +140,24 @@ print(buf.getvalue(), end="")
 
 
 GAME = VendorCmdGame("burger", "vendor/noon-burger-shop", RUNNER_CODE)
+
+
+def save_summary(player_id):
+    """给平台 my_saves 用：读存档提取店名/天数/金币/口碑，无档或解析失败返回 None。"""
+    path = SAVE_ROOT / "burger" / require_player_id(player_id) / "save.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    return {
+        "shop_name": state.get("shop_name"),
+        "day": state.get("day"),
+        "week": state.get("week"),
+        "coins": state.get("coins"),
+        "reputation": state.get("reputation"),
+    }
 
 
 def play(arguments):

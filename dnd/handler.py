@@ -20,7 +20,8 @@ GAME = "dnd"
 MAX_SESSIONS = 500
 SESSION_TTL_SECONDS = 24 * 60 * 60
 RESULT_TTL_SECONDS = 48 * 60 * 60
-PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
+# 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id，游客=guest:xxx。
+PLAYER_ID_RE = re.compile(r"^(?:guest:)?[a-zA-Z0-9]{1,64}$")
 
 
 TOOLS = [

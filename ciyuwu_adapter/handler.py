@@ -61,7 +61,8 @@ _ENGINE_LOCK = threading.Lock()
 DB_PATH = "/opt/cedartoy/data/sessions.db"
 MAX_SESSIONS = 500
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
-PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
+# 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id，游客=guest:xxx。
+PLAYER_ID_RE = re.compile(r"^(?:guest:)?[a-zA-Z0-9]{1,64}$")
 EXPORT_VERSION = 1
 
 _PLAYER_ID_SCHEMA = {
@@ -409,6 +410,28 @@ def _parse_meta(raw):
     except (json.JSONDecodeError, ValueError):
         return {}
     return meta if isinstance(meta, dict) else {}
+
+
+def summarize_save(save_data, meta_data):
+    """给平台 my_saves 用：从两层存档提取跨局进度概况，失败返回 None。"""
+    meta = _parse_meta(meta_data)
+    try:
+        state = json.loads(save_data) if save_data else {}
+    except (TypeError, json.JSONDecodeError, ValueError):
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    if not meta and not state:
+        return None
+    summary = {"runs": meta.get("runs")}
+    echoes = meta.get("echoes")
+    if isinstance(echoes, (int, float)):
+        summary["echoes"] = echoes
+    for key, label in (("unlocked_achievements", "achievements"), ("killed_bosses", "bosses_killed")):
+        value = meta.get(key)
+        if isinstance(value, (list, dict)):
+            summary[label] = len(value)
+    return summary
 
 
 def _dumps(obj):

@@ -1,4 +1,6 @@
-from .base import VendorCmdError, VendorCmdGame
+import json
+
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
 
 
 RUNNER_CODE = r'''
@@ -27,6 +29,23 @@ print(leek.cmd(command), end="")
 
 
 GAME = VendorCmdGame("leek", "vendor/leek", RUNNER_CODE)
+
+
+def save_summary(player_id):
+    """给平台 my_saves 用：读存档提取天数/现金/职业，无档或解析失败返回 None。"""
+    path = SAVE_ROOT / "leek" / require_player_id(player_id) / "leek_save.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    return {
+        "day": state.get("day"),
+        "cash": state.get("cash"),
+        "career": state.get("career"),
+        "holdings": len(state.get("holdings") or {}),
+    }
 
 
 def play(arguments):

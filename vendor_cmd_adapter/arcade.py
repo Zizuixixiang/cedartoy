@@ -95,6 +95,14 @@ def status(player_id):
         return _status_from_state(_load_state(save_dir / "arcade_save.json"))
 
 
+def save_summary(player_id):
+    """给平台 my_saves 用：有档返回筹码概况，无档返回 None。"""
+    save_dir = _save_dir(player_id, create=False)
+    if not (save_dir / "arcade_save.json").exists():
+        return None
+    return status(player_id)
+
+
 def grant_chips(player_id, amount):
     try:
         amount = int(amount)

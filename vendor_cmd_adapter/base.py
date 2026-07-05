@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SAVE_ROOT = ROOT_DIR / "data" / "vendor_saves"
-PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
+# 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id，游客=guest:xxx（作目录名，Linux 下冒号合法）。
+PLAYER_ID_RE = re.compile(r"^(?:guest:)?[a-zA-Z0-9]{1,64}$")
 
 
 class VendorCmdError(Exception):
