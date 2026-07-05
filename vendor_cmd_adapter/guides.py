@@ -12,7 +12,7 @@ AI 精简玩法：
 - 等级 15 后可 `new` 时传 `career:"fund"`，或指令 `new_game fund 12345` 进入基金经理模式。
 
 原作信息：
-作者：贰拾壹_21Za4tilR9qy6（小红书号 501518888）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
+作者：贰拾壹_21Za4tilR9qy6（小红书号 95628666552）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
     "arcade": """# Claude Arcade
 
 调用：`play(game="arcade", action="new", params={"player_id":"p1"})` 进场；之后用 `play(game="arcade", action="cmd", params={"player_id":"p1","command":"look"})`。如果你使用自己的持久 MCP 地址，`player_id` 可省略，平台会默认用你的小机账号 id。
