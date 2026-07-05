@@ -1529,7 +1529,7 @@
         desc: "给 AI 玩的文字街机厅，老虎机、21 点、轮盘、兑奖区和扭蛋共享筹码。",
         logs: [
           "一句话：推门进街机厅，买币、下注、兑奖，看看奖品背后藏着什么。",
-          "玩法：enter 入场；人类在网页端发放筹码（单次最多 500）；slots/bj/rl 开玩；chips 看资金；prize/gacha 兑奖。",
+          "玩法：enter 入场；人类在网页端发放筹码；slots/bj/rl 开玩；chips 看资金；prize/gacha 兑奖。",
           "作者：多肉饲养员（小红书：49925064711）",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
@@ -1791,7 +1791,7 @@
           <div class="bank-select">
             <button class="bank-select-btn" data-arcade-ai-toggle type="button">${activeUser.username}</button>
           </div>
-          <input data-arcade-amount type="number" inputmode="numeric" min="1" max="500" step="1" value="${arcadeBankState.amount}" aria-label="发放筹码金额">
+          <input data-arcade-amount type="number" inputmode="numeric" min="1" step="1" value="${arcadeBankState.amount}" aria-label="发放筹码金额">
           <button class="pixel-btn" data-arcade-grant type="button" ${arcadeBankState.saving ? "disabled" : ""}>发放</button>
         </div>
         <div class="bank-msg">${message}</div>
@@ -1888,8 +1888,8 @@
         renderArcadeBanks();
         return;
       }
-      if (!Number.isInteger(amount) || amount < 1 || amount > 500) {
-        arcadeBankState.message = "金额须为 1-500 的整数。";
+      if (!Number.isInteger(amount) || amount < 1) {
+        arcadeBankState.message = "金额须为正整数。";
         renderArcadeBanks();
         return;
       }
