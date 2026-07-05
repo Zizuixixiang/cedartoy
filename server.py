@@ -13,7 +13,7 @@ import urllib.parse
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Lock
 
 import httpx
 
@@ -30,6 +30,7 @@ from mbti.handler import handle_mcp as handle_mbti_mcp
 from vendor_cmd_adapter import arcade as arcade_adapter
 from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import fishing as fishing_adapter
+from vendor_cmd_adapter import imitator_td as imitator_td_adapter
 from vendor_cmd_adapter import leek as leek_adapter
 from vendor_cmd_adapter.base import VendorCmdError
 from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
@@ -67,6 +68,16 @@ PWD_CONTEXT = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto") if Cryp
 # SQLite CURRENT_TIMESTAMP is UTC; use China wall time for stored timestamps.
 SQL_NOW = "datetime('now', 'localtime')"
 TIMEZONE_MIGRATION_KEY = "platform_timezone_utc_to_shanghai_20260602"
+REQUEST_RATE_LIMIT_WINDOW_SECONDS = 60
+REQUEST_RATE_LIMIT_MAX = 60
+REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+REGISTER_RATE_LIMIT_MAX = 3
+RATE_LIMIT_ERROR_CODE = -32029
+REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
+REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
+_REQUEST_RATE_LIMIT = {}
+_REGISTER_RATE_LIMIT = {}
+_RATE_LIMIT_LOCK = Lock()
 
 
 _PLATFORM_TOOLS = [
@@ -102,7 +113,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -130,11 +141,12 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况）",
+                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况）",
                 },
                 "username": {"type": "string"},
                 "password": {"type": "string"},
                 "token": {"type": "string"},
+                "player_id": {"type": "string", "description": "guest_claim_code 用：旧游客 player_id，可传原始裸 id 或 guest: 前缀 id"},
                 "claim_code": {"type": "string", "description": "claim 用：游客开档时发放的一次性认领码"},
             },
             "required": ["action"],
@@ -145,7 +157,7 @@ _PLATFORM_TOOLS = [
 _ROOT_TOOL_NAMES = frozenset({"list_games", "get_guide", "play", "account"})
 
 
-def _handle_root_mcp(payload, user_agent="", path_token=None):
+def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
     request_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params") or {}
@@ -173,7 +185,12 @@ def _handle_root_mcp(payload, user_agent="", path_token=None):
                 elif name == "play":
                     text = _tool_play(arguments, path_token=path_token)
                 elif name == "account":
-                    text = _tool_account(arguments, user_agent=user_agent, path_token=path_token)
+                    text = _tool_account(
+                        arguments,
+                        user_agent=user_agent,
+                        path_token=path_token,
+                        client_ip=client_ip,
+                    )
                 else:
                     raise _McpError(-32601, f"未知工具：{name}")
                 return _json_rpc_result(
@@ -416,6 +433,72 @@ def _current_account(raw_token):
     return user
 
 
+def _path_token_user_id(path_token):
+    if not path_token:
+        return None
+    try:
+        payload = _jwt_decode(path_token)
+        return int(payload["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _prune_rate_limit_buckets(buckets, now, window_seconds):
+    empty_keys = []
+    for key, timestamps in buckets.items():
+        while timestamps and now - timestamps[0] >= window_seconds:
+            timestamps.pop(0)
+        if not timestamps:
+            empty_keys.append(key)
+    for key in empty_keys:
+        buckets.pop(key, None)
+
+
+def _check_sliding_window_limit(buckets, identity, *, now, window_seconds, max_count):
+    with _RATE_LIMIT_LOCK:
+        _prune_rate_limit_buckets(buckets, now, window_seconds)
+        timestamps = buckets.setdefault(identity, [])
+        while timestamps and now - timestamps[0] >= window_seconds:
+            timestamps.pop(0)
+        if len(timestamps) >= max_count:
+            return False
+        timestamps.append(now)
+        return True
+
+
+def _check_request_rate_limit(identity):
+    return _check_sliding_window_limit(
+        _REQUEST_RATE_LIMIT,
+        identity,
+        now=time.time(),
+        window_seconds=REQUEST_RATE_LIMIT_WINDOW_SECONDS,
+        max_count=REQUEST_RATE_LIMIT_MAX,
+    )
+
+
+def _check_register_rate_limit(ip):
+    return _check_sliding_window_limit(
+        _REGISTER_RATE_LIMIT,
+        f"ip:{ip or 'unknown'}",
+        now=time.time(),
+        window_seconds=REGISTER_RATE_LIMIT_WINDOW_SECONDS,
+        max_count=REGISTER_RATE_LIMIT_MAX,
+    )
+
+
+def _user_exists(username):
+    with _db_connect() as conn:
+        return conn.execute("SELECT 1 FROM toy_users WHERE username = ?", (username,)).fetchone() is not None
+
+
+def _enforce_register_rate_limit(username, client_ip):
+    username = (username or "").strip()
+    if not username or _user_exists(username):
+        return
+    if not _check_register_rate_limit(client_ip):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, REGISTER_RATE_LIMIT_MESSAGE)
+
+
 def _validate_credentials(username, password):
     if not username or not password:
         raise _McpError(-32602, "username 和 password 必填")
@@ -427,7 +510,7 @@ def _validate_credentials(username, password):
         raise _McpError(-32602, "密码至少 6 位")
 
 
-def _login_or_register(username, password, *, is_ai):
+def _login_or_register(username, password, *, is_ai, client_ip=None):
     """Shared login/register; callers set is_ai (MCP=1, REST human=0)."""
     username = (username or "").strip()
     password = password or ""
@@ -451,6 +534,7 @@ def _login_or_register(username, password, *, is_ai):
             conn.commit()
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
         else:
+            _enforce_register_rate_limit(username, client_ip)
             cur = conn.execute(
                 "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, ?)",
                 (username, _hash_password(password), is_ai),
@@ -460,13 +544,14 @@ def _login_or_register(username, password, *, is_ai):
     return {"token": _create_account_token(user), "user": _public_user(user)}
 
 
-def _login_or_register_ai(username, password):
+def _login_or_register_ai(username, password, client_ip=None):
     username = (username or "").strip()
     password = password or ""
     _validate_credentials(username, password)
     with _db_connect() as conn:
         if conn.execute("SELECT id FROM toy_users WHERE username = ?", (username,)).fetchone():
             raise _McpError(-32602, "用户名已存在，如需找回请联系管理员")
+        _enforce_register_rate_limit(username, client_ip)
         cur = conn.execute(
             "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
             (username, _hash_password(password)),
@@ -501,8 +586,8 @@ def _login_existing_account(username, password):
     }
 
 
-def _login_or_register_human(username, password):
-    return _login_or_register(username, password, is_ai=0)
+def _login_or_register_human(username, password, client_ip=None):
+    return _login_or_register(username, password, is_ai=0, client_ip=client_ip)
 
 
 def _require_admin_account(raw_token):
@@ -917,10 +1002,10 @@ def _extract_bearer(headers):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing"})
+IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing"})
-VENDOR_GAMES = ("leek", "arcade", "burger", "fishing")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td"})
+VENDOR_GAMES = ("leek", "arcade", "burger", "fishing", "imitator_td")
 
 
 def _guest_player_id(raw):
@@ -1004,6 +1089,57 @@ def _ensure_guest_claim_code(guest_player_id):
         except sqlite3.IntegrityError:
             return None
     return code
+
+
+def _normalize_guest_player_id(value):
+    if not isinstance(value, str) or not value.strip():
+        raise _McpError(-32602, "player_id 必填")
+    raw = value.strip()
+    if raw.startswith(GUEST_PREFIX):
+        suffix = raw[len(GUEST_PREFIX):]
+        if PLAIN_PLAYER_ID_RE.fullmatch(suffix):
+            return raw
+        raise _McpError(-32602, "guest player_id 格式不合法")
+    if PLAIN_PLAYER_ID_RE.fullmatch(raw):
+        return GUEST_PREFIX + raw
+    raise _McpError(-32602, "player_id 只能包含 1-64 位字母数字；也可传 guest: 前缀")
+
+
+def _guest_claim_code_for_player_id(player_id):
+    guest_player_id = _normalize_guest_player_id(player_id)
+    found, _conflicts = _collect_player_saves(guest_player_id, "__claim_probe__")
+    if not found:
+        raise _McpError(-32004, f"没有找到 {guest_player_id} 名下的游客存档")
+
+    with _db_connect() as conn:
+        _init_guest_claim_table(conn)
+        row = _row_dict(conn.execute(
+            "SELECT * FROM guest_claim_codes WHERE guest_player_id = ?",
+            (guest_player_id,),
+        ).fetchone())
+        if row:
+            return {
+                "guest_player_id": guest_player_id,
+                "claim_code": row["code"],
+                "claimed_by": row.get("claimed_by"),
+                "claimed_at": row.get("claimed_at"),
+                "saves": found,
+                "message": "该游客存档已有认领码；若 claimed_by 为空，可用 account(action=\"claim\", claim_code=\"...\") 转入账号。",
+            }
+        code = secrets.token_urlsafe(9)
+        conn.execute(
+            "INSERT INTO guest_claim_codes (code, guest_player_id, created_at) VALUES (?, ?, datetime('now', 'localtime'))",
+            (code, guest_player_id),
+        )
+        conn.commit()
+    return {
+        "guest_player_id": guest_player_id,
+        "claim_code": code,
+        "claimed_by": None,
+        "claimed_at": None,
+        "saves": found,
+        "message": "已为旧游客存档生成认领码；登录账号后调用 account(action=\"claim\", claim_code=\"...\") 可转入账号。",
+    }
 
 
 def _sessions_table_columns(conn, table):
@@ -1132,6 +1268,87 @@ def _migrate_player_saves(old_player_id, user_id):
     return {"old_player_id": old_player_id, "new_player_id": target_player_id, "migrated": migrated}
 
 
+def _auto_migrate_legacy_account_saves(user):
+    """Best-effort bridge for pre-account saves keyed by username.
+
+    Older games used the account username as ``player_id``. Token-based play now
+    uses the numeric account id, so move only non-conflicting username saves to
+    the numeric id before dispatching the game command.
+    """
+    username = (user.get("username") or "").strip()
+    if not username or not GAME_PLAYER_ID_RE.fullmatch(username):
+        return []
+    target_player_id = str(int(user["id"]))
+    if username == target_player_id:
+        return []
+
+    migrated = []
+    if SESSIONS_DB_PATH.exists():
+        try:
+            with _sessions_db_connect() as conn:
+                for table in ("eco_sessions", "ciyuwu_sessions"):
+                    if not _table_exists(conn, table):
+                        continue
+                    old_row = conn.execute(
+                        f"SELECT 1 FROM {table} WHERE player_id = ?",
+                        (username,),
+                    ).fetchone()
+                    target_row = conn.execute(
+                        f"SELECT 1 FROM {table} WHERE player_id = ?",
+                        (target_player_id,),
+                    ).fetchone()
+                    if old_row and not target_row:
+                        conn.execute(
+                            f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
+                            (target_player_id, int(user["id"]), username),
+                        )
+                        migrated.append(table)
+                    elif target_row and "user_id" in _sessions_table_columns(conn, table):
+                        conn.execute(
+                            f"UPDATE {table} SET user_id = ? WHERE player_id = ? AND (user_id IS NULL OR user_id <> ?)",
+                            (int(user["id"]), target_player_id, int(user["id"])),
+                        )
+
+                for table in ("test_sessions", "test_results"):
+                    if not _table_exists(conn, table):
+                        continue
+                    rows = conn.execute(
+                        f"SELECT DISTINCT game FROM {table} WHERE player_id = ?",
+                        (username,),
+                    ).fetchall()
+                    for row in rows:
+                        game = row["game"]
+                        target_row = conn.execute(
+                            f"SELECT 1 FROM {table} WHERE player_id = ? AND game = ?",
+                            (target_player_id, game),
+                        ).fetchone()
+                        if target_row:
+                            continue
+                        if "user_id" in _sessions_table_columns(conn, table):
+                            conn.execute(
+                                f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ? AND game = ?",
+                                (target_player_id, int(user["id"]), username, game),
+                            )
+                        else:
+                            conn.execute(
+                                f"UPDATE {table} SET player_id = ? WHERE player_id = ? AND game = ?",
+                                (target_player_id, username, game),
+                            )
+                        migrated.append(f"{table}:{game}")
+                conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+    for game in VENDOR_GAMES:
+        old_dir = VENDOR_SAVE_ROOT / game / username
+        target_dir = VENDOR_SAVE_ROOT / game / target_player_id
+        if old_dir.is_dir() and not target_dir.exists():
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            old_dir.rename(target_dir)
+            migrated.append(f"vendor_saves/{game}")
+    return migrated
+
+
 def _claim_guest_saves(raw_token, claim_code):
     user = _current_account(raw_token)
     claim_code = (claim_code or "").strip()
@@ -1162,6 +1379,7 @@ def _claim_guest_saves(raw_token, claim_code):
 def _account_my_saves(raw_token):
     """按账号聚合返回该用户在所有游戏的存档概况；没有存档的游戏不列。"""
     user = _current_account(raw_token)
+    _auto_migrate_legacy_account_saves(user)
     uid = int(user["id"])
     candidate_ids = _game_player_ids(user)
     placeholders = ",".join("?" * len(candidate_ids))
@@ -1210,6 +1428,7 @@ def _account_my_saves(raw_token):
         "arcade": arcade_adapter.save_summary,
         "burger": burger_adapter.save_summary,
         "fishing": fishing_adapter.save_summary,
+        "imitator_td": imitator_td_adapter.save_summary,
     }
     for game, summarize in vendor_summaries.items():
         for candidate in candidate_ids:
@@ -1237,7 +1456,7 @@ def _tool_list_games():
     return (
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋夏 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか"
     )
 
 
@@ -1292,6 +1511,7 @@ def _tool_play(arguments, path_token=None):
     if game in IDENTITY_GAMES:
         if path_token:
             account_user = _current_account(path_token)
+            _auto_migrate_legacy_account_saves(account_user)
             arguments = _override_player_id(arguments, str(account_user["id"]))
         else:
             raw = _reported_player_id(arguments)
@@ -1331,7 +1551,7 @@ def _tool_play(arguments, path_token=None):
     elif game == "ciyuwu":
         # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
         response = _play_ciyuwu(arguments)
-    elif game in {"leek", "arcade", "burger", "fishing"}:
+    elif game in {"leek", "arcade", "burger", "fishing", "imitator_td"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -1359,13 +1579,16 @@ def _tool_play(arguments, path_token=None):
     return json.dumps(response, ensure_ascii=False)
 
 
-def _tool_account(arguments, user_agent="", path_token=None):
+def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
     action = arguments.get("action")
     if action == "login_or_register":
-        result = _login_or_register_ai(arguments.get("username"), arguments.get("password"))
+        result = _login_or_register_ai(arguments.get("username"), arguments.get("password"), client_ip=client_ip)
         return json.dumps(result, ensure_ascii=False)
     if action == "login":
         result = _login_existing_account(arguments.get("username"), arguments.get("password"))
+        return json.dumps(result, ensure_ascii=False)
+    if action == "guest_claim_code":
+        result = _guest_claim_code_for_player_id(arguments.get("player_id"))
         return json.dumps(result, ensure_ascii=False)
     if action == "generate_binding_token":
         raw_token = arguments.get("token") or path_token
@@ -1584,6 +1807,8 @@ def _play_vendor_cmd(game, arguments):
             return burger_adapter.play(extra)
         if game == "fishing":
             return fishing_adapter.play(extra)
+        if game == "imitator_td":
+            return imitator_td_adapter.play(extra)
     except VendorCmdError as exc:
         raise _McpError(-32602, str(exc))
     raise _McpError(-32602, "未知游戏")
@@ -1603,6 +1828,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
 
         path, path_token = self._request_path_and_token()
+        client_ip = self._client_ip()
 
         if path == "/api/auth/login_or_register":
             self._handle_api_login_or_register()
@@ -1641,6 +1867,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json(_json_rpc_error(None, -32600, "Invalid Request"), status=400)
             return
 
+        if not _check_request_rate_limit(self._request_rate_limit_identity(path_token, client_ip)):
+            self._send_json(_json_rpc_error(payload.get("id"), RATE_LIMIT_ERROR_CODE, REQUEST_RATE_LIMIT_MESSAGE), status=429)
+            return
+
         if path == "/mbti":
             response = handle_mbti_mcp(_guestify_mcp_payload(payload))
         elif path == "/dnd":
@@ -1650,6 +1880,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 payload,
                 user_agent=self.headers.get("User-Agent", ""),
                 path_token=path_token,
+                client_ip=client_ip,
             )
         self._send_json(response)
 
@@ -1747,6 +1978,25 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return path, token
         return path, None
 
+    def _client_ip(self):
+        forwarded_for = self.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            first_ip = forwarded_for.split(",", 1)[0].strip()
+            if first_ip:
+                return first_ip
+        real_ip = self.headers.get("X-Real-IP", "").strip()
+        if real_ip:
+            return real_ip
+        if self.client_address:
+            return self.client_address[0]
+        return "unknown"
+
+    def _request_rate_limit_identity(self, path_token, client_ip):
+        user_id = _path_token_user_id(path_token)
+        if user_id is not None:
+            return f"user:{user_id}"
+        return f"ip:{client_ip or 'unknown'}"
+
     def _read_json_body(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -1769,6 +2019,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             result = _login_or_register_human(
                 body.get("username"),
                 body.get("password"),
+                client_ip=self._client_ip(),
             )
             self._send_json(result)
         except _McpError as exc:
