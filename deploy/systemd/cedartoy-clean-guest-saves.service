@@ -1,0 +1,7 @@
+[Unit]
+Description=Cedar Toy guest save cleanup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cedartoy
+ExecStart=/usr/bin/python3 /opt/cedartoy/scripts/clean_guest_saves.py

@@ -1,0 +1,4 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 4 * * * root cd /opt/cedartoy && /usr/bin/python3 /opt/cedartoy/scripts/clean_guest_saves.py >> /var/log/cedartoy-clean-guest-saves.log 2>&1

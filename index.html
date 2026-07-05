@@ -414,6 +414,7 @@
       height: 100%;
       display: flex;
       flex-direction: column;
+      min-height: 0;
     }
 
     .screen-head {
@@ -421,7 +422,8 @@
       justify-content: space-between;
       gap: 20px;
       align-items: start;
-      margin-bottom: 24px;
+      margin-bottom: 18px;
+      flex: none;
     }
 
     .mission {
@@ -449,9 +451,10 @@
     .screen-body {
       flex: 1;
       min-height: 0;
-      display: flex;
+      display: grid;
+      grid-template-columns: 140px minmax(0, 1fr);
       gap: 32px;
-      align-items: center;
+      align-items: start;
     }
 
     .art {
@@ -497,8 +500,9 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
       min-width: 0;
+      min-height: 0;
     }
 
     .info h3 {
@@ -513,6 +517,12 @@
     }
 
     .desc { margin: 0; max-width: 760px; font-size: 15px; color: rgba(255,255,255,0.8); }
+    .rank-panel {
+      display: grid;
+      gap: 8px;
+      min-height: 0;
+    }
+    .rank-panel[hidden] { display: none; }
     .rank-title { color: var(--pink); margin: 0; font-size: 17px; text-transform: uppercase; }
     .info.arcade-mode .stat-bars {
       display: none;
@@ -530,6 +540,7 @@
       padding: 0;
       list-style: none;
       font-size: 14px;
+      min-height: 0;
     }
 
     .rank-list li {
@@ -563,6 +574,7 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
+      flex: none;
     }
 
     .stat-item {
@@ -696,7 +708,8 @@
     .bank-msg { color: rgba(255,255,255,0.62); min-height: 14px; line-height: 1.35; }
 
     .screen-footer {
-      margin-top: auto;
+      flex: none;
+      margin-top: 14px;
       padding-top: 14px;
       border-top: 1px solid rgba(255,255,255,0.1);
       display: flex;
@@ -1325,8 +1338,10 @@
                       <div class="stat-track"><div class="stat-fill" id="statTwoFill"></div></div>
                     </div>
                   </div>
-                  <div class="rank-title">排行榜</div>
-                  <ol class="rank-list" id="rankList"></ol>
+                  <div class="rank-panel" id="rankPanel">
+                    <div class="rank-title">排行榜</div>
+                    <ol class="rank-list" id="rankList"></ol>
+                  </div>
                   <div class="arcade-bank" data-bank-scope="screen"></div>
                 </div>
               </div>
@@ -1525,13 +1540,39 @@
         logs: [
           "一句话：在灰白世界里用词语战斗，越想说，世界越痛。",
           "玩法：ciyuwu_new 开局；新角/确认建角色；前进探索；说 关键词战斗；遗刻和解锁跨局保留。",
-          "作者：与一旋夏（小红书：94326164228）",
+          "作者：与一旋复（小红书：94326164228）",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
         stats: [["WORDS", "91%"], ["DARK", "76%"]],
         footerIcons: ["言", "□", "◌"],
         tags: ["文字", "Roguelike", "MCP"],
         url: "https://github.com/yuyixuanfu/ci-yu-wu",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "imitator_td",
+        category: "mini",
+        name: "植物大战丧尸随机版",
+        mission: "MISSION: RANDOMIZE",
+        location: "LOCATION: LAWN",
+        glyph: "模",
+        badge: "TD",
+        level: "LV.11",
+        metricLabel: "对局数",
+        metric: "--",
+        short: "随机塔防 / 模仿者",
+        desc: "纯文本塔防，模仿者开奖可能变成植物，也可能放出僵尸，AI 要边观察边守住草坪。",
+        logs: [
+          "一句话：每个模仿者都是盲盒，草坪上同时长出希望和事故。",
+          "玩法：imitator_td new 开局；cards 选卡；种 模仿者 3-4；等待推进；特殊模式可全模仿者无尽。",
+          "作者：すみか（小红书：26256537720）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["RNG", "93%"], ["LAWN", "5x9"]],
+        footerIcons: ["模", "☀", "尸"],
+        tags: ["塔防", "随机", "MCP"],
+        url: "https://github.com/wxynora/random-imitator-td",
         ctaLabel: "完整玩法 →",
         ranks: []
       },
@@ -1762,9 +1803,7 @@
 
     function renderRanks(game) {
       const hasRanks = Array.isArray(game.ranks) && game.ranks.length > 0;
-      document.querySelectorAll(".rank-title, #rankList").forEach((el) => {
-        el.style.display = hasRanks ? "" : "none";
-      });
+      $("rankPanel").hidden = !hasRanks;
       $("rankList").innerHTML = rankHtml(game.ranks);
       if ($("gameDrawer").classList.contains("show")) {
         $("drawerRanks").innerHTML = rankHtml(game.ranks);
