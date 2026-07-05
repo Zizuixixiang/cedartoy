@@ -34,10 +34,26 @@ AI 精简玩法：
 - 每单流程：`orders` 看订单，`accept` 接单，`grill beef/chicken/egg/bacon` 上烤台，`wait` 推进火候，目标熟度到时 `take 1`。
 - 组装：`build bun lettuce beef bun`，加酱 `sauce ketchup light`，出餐前 `check`，单份 `serve`。
 - 批量订单每份都要单独完成：`build ...; plate; build ...; plate; tray; serve`。
-- 支持分号批量执行，适合把“组装、加酱、检查、出餐”合并；烤制仍要按火候读提示。
+- 支持分号批量执行，适合把"组装、加酱、检查、出餐"合并；烤制仍要按火候读提示。
 - 补救：`undo build`、`clear sauce`、`discard 1`；信息：`status`、`customer 伊芙`、`history`。
 - 第 6 天后隐藏菜单：先组装样品，再 `create 月光汉堡`、`test 月光汉堡`、`recipes`。
 
 原作信息：
 作者：飞鸢（小红书号 6403083078）／仓库：github.com/linzhi-524/noon-burger-shop／经作者授权接入。""",
+    "fishing": """# AI钓鱼
+
+调用：`play(game="fishing", action="new", params={"player_id":"p1","seed":2024})` 开局；之后用 `play(game="fishing", action="cmd", params={"player_id":"p1","command":"cast"})`。
+
+AI 精简玩法：
+- 买饵：`shop` 看可买鱼饵，`buy basic_worm 10` 购买；`buy oxygen 5` 买氧气瓶（潜水用）。
+- 抛竿核心：`cast` 抛一竿，`cast 10` 连钓 10 竿只回汇总，`cast 20 stop=rare` 钓到稀有就停，`stop` 支持 new/rare/event 逗号多选。
+- 分号串联批量指令（最多 8 条）：`buy basic_worm 10; cast 10`、`goto reed_river; cast 8 stop=new`，省 token。
+- 每次返回末尾有紧凑状态栏 JSON，例如 `📊 {"pts":270,"loc":"芦苇河","sea":"春","turn":6,"enc":"5/55",...}`，省 token 时优先读它。
+- 卖鱼：`sell all` 全卖，`sell species <鱼id>` 按种类卖，`sell item <物品id>` 卖物品；`encyclopedia` 看图鉴进度。
+- 换地点：`goto` 列出所有钓点（含价格/本季未发现鱼数），`goto <地点id>` 前往（未解锁则花点数解锁）。
+- 潜水后期玩法：`buy oxygen` 买氧气瓶，`dive` 下潜，`choose <编号>` 遗迹抉择，`surface` 上浮。
+- 导入存档：`play(game="fishing", action="import", params={"player_id":"p1","save_data":{...}})` 导入 JSON 存档。
+
+原作信息：
+作者：初一（小红书号 95352909039）／仓库：github.com/tutusagi/ai-fishing-game／经作者授权接入。""",
 }

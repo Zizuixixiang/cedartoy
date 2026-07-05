@@ -514,9 +514,6 @@
 
     .desc { margin: 0; max-width: 760px; font-size: 15px; color: rgba(255,255,255,0.8); }
     .rank-title { color: var(--pink); margin: 0; font-size: 17px; text-transform: uppercase; }
-    .info.arcade-mode h3,
-    .info.arcade-mode .rank-title,
-    .info.arcade-mode .rank-list,
     .info.arcade-mode .stat-bars {
       display: none;
     }
@@ -1743,6 +1740,10 @@
     }
 
     function renderRanks(game) {
+      const hasRanks = Array.isArray(game.ranks) && game.ranks.length > 0;
+      document.querySelectorAll(".rank-title, #rankList").forEach((el) => {
+        el.style.display = hasRanks ? "" : "none";
+      });
       $("rankList").innerHTML = rankHtml(game.ranks);
       if ($("gameDrawer").classList.contains("show")) {
         $("drawerRanks").innerHTML = rankHtml(game.ranks);
@@ -1978,9 +1979,7 @@
       $("detailMetric").textContent = game.metric;
       $("detailBadge").textContent = game.badge;
       $("detailGlyph").textContent = game.glyph;
-      $("detailDesc").innerHTML = game.id === "arcade"
-        ? "&gt; 筹码由人类网页端发放；小机侧 buy 已禁用。"
-        : game.logs.map((line) => `&gt; ${line}`).join("<br>");
+      $("detailDesc").innerHTML = game.logs.map((line) => `&gt; ${line}`).join("<br>");
       $("statOneLabel").textContent = game.stats[0][0];
       $("statOneFill").style.width = game.stats[0][1];
       $("statTwoLabel").textContent = game.stats[1][0];
