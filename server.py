@@ -27,6 +27,11 @@ from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
 from dnd.handler import handle_mcp as handle_dnd_mcp
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
 from mbti.handler import handle_mcp as handle_mbti_mcp
+from vendor_cmd_adapter import arcade as arcade_adapter
+from vendor_cmd_adapter import burger as burger_adapter
+from vendor_cmd_adapter import leek as leek_adapter
+from vendor_cmd_adapter.base import VendorCmdError
+from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
 
 
 HOST = "127.0.0.1"
@@ -95,7 +100,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -810,6 +815,9 @@ def _tool_list_games():
             {"name": "turtle_soup", "display": "海龟汤", "desc": "横向思维推理游戏，题库抽取大多微恐"},
             {"name": "eco", "display": "瓶中生态", "desc": "你是造物主，从一池清水开始养一个池塘；投放物种、推进时间、观察生态自行演化"},
             {"name": "ciyuwu", "display": "词与物", "desc": "暗黑文字Roguelike，关于审查、沉默和说出真话；说话是武器也是伤口，死了跨局进度还在"},
+            {"name": "leek", "display": "Leek 韭菜修炼之道", "desc": "给 AI 玩的 A 股模拟器：1000 元本金、新闻、周期、崩盘与交易员成长", "author": "小红书：贰拾壹"},
+            {"name": "arcade", "display": "Claude Arcade", "desc": "文字街机厅：老虎机、21 点、轮盘、兑奖区和扭蛋，共享筹码池", "author": "小红书：多肉饲养员"},
+            {"name": "burger", "display": "午间汉堡铺", "desc": "命令行汉堡店经营：接单、烤制、组装、批量订单、装修与隐藏菜单", "author": "小红书：飞鸢"},
         ],
         "提示": "用 get_guide(game) 查看具体玩法，再用 play(game, action, params={...}) 执行操作",
     }, ensure_ascii=False)
@@ -825,6 +833,8 @@ def _tool_get_guide(arguments):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
+    if game in VENDOR_CMD_GUIDES:
+        return json.dumps({"game": game, "guide": VENDOR_CMD_GUIDES[game]}, ensure_ascii=False)
     if game in {"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "account"}:
         path = GUIDE_DIR / f"{game}.md"
         if not path.exists():
@@ -886,6 +896,8 @@ def _tool_play(arguments, path_token=None):
     if game == "ciyuwu":
         # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
         return json.dumps(_play_ciyuwu(arguments), ensure_ascii=False)
+    if game in {"leek", "arcade", "burger"}:
+        return json.dumps(_play_vendor_cmd(game, arguments), ensure_ascii=False)
     raise _McpError(-32602, "未知游戏")
 
 
@@ -1061,6 +1073,26 @@ def _play_ciyuwu(arguments):
     else:
         raise _McpError(-32602, "未知 ciyuwu action")
     return handle_ciyuwu_mcp(payload)
+
+
+def _play_vendor_cmd(game, arguments):
+    action = arguments.get("action")
+    extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update(params)
+    extra["action"] = action
+
+    try:
+        if game == "leek":
+            return leek_adapter.play(extra)
+        if game == "arcade":
+            return arcade_adapter.play(extra)
+        if game == "burger":
+            return burger_adapter.play(extra)
+    except VendorCmdError as exc:
+        raise _McpError(-32602, str(exc))
+    raise _McpError(-32602, "未知游戏")
 
 
 def _json_rpc_result(request_id, result):
