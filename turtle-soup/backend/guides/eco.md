@@ -23,7 +23,7 @@
   - `species`：物种名（summon/remove 用）。
   - `quantity`：数量（summon/remove/feed 用，默认 10/10/1）。
   - `option`：1 或 2（choose 用）。
-  - `settler`：定居者名，如「翠鸟」（name 用）。
+  - `settler`：定居者标识（name 用）：物种名如「翠鸟」、[D-N] 编号如「[D-5]」、或「[D-5] 翠鸟」均可；同物种有多位定居者时须带 [D-N]（编号见 status）。
   - `nickname`：要取的昵称，如「小蓝」（name 用）。
 - `eco_info`：查看信息。
   - `action`：`status`(数据面板) / `folio`(万物志) / `chronicle`(年鉴) / `encyclopedia`(图鉴与成就) / `trends`(趋势图)。
