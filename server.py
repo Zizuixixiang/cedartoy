@@ -122,7 +122,15 @@ _PLATFORM_TOOLS = [
                 },
                 "params": {
                     "type": "object",
-                    "description": "该 action 需要的业务参数；例如 turtle_soup join 用 {\"room_id\":\"...\"}，ask 用 {\"room_id\":\"...\",\"content\":\"...\"}。",
+                    "description": "该 action 需要的业务参数；账号用户可传 slot=1-5 选择存档槽，默认 1；例如 turtle_soup join 用 {\"room_id\":\"...\"}，ask 用 {\"room_id\":\"...\",\"content\":\"...\"}。",
+                    "properties": {
+                        "slot": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5,
+                            "description": "账号用户可选存档槽，1-5，默认 1；游客请求忽略。",
+                        },
+                    },
                     "additionalProperties": True,
                 },
             },
@@ -236,6 +244,23 @@ def _game_player_ids(user):
     username = user.get("username") or ""
     if GAME_PLAYER_ID_RE.fullmatch(username):
         ids.append(username)
+    return list(dict.fromkeys(ids))
+
+
+MIN_SAVE_SLOT = 1
+MAX_SAVE_SLOT = 5
+
+
+def _account_slot_player_id(user_id, slot):
+    user_id = str(int(user_id))
+    return user_id if slot == 1 else f"{user_id}:{slot}"
+
+
+def _account_slot_player_ids(user):
+    ids = [(_account_slot_player_id(user["id"], slot), slot) for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1)]
+    username = user.get("username") or ""
+    if GAME_PLAYER_ID_RE.fullmatch(username):
+        ids.append((username, 1))
     return list(dict.fromkeys(ids))
 
 
@@ -1034,6 +1059,27 @@ def _override_player_id(arguments, player_id):
     return new_arguments
 
 
+def _save_slot_from_arguments(arguments):
+    params = arguments.get("params")
+    raw = params.get("slot", MIN_SAVE_SLOT) if isinstance(params, dict) else MIN_SAVE_SLOT
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    if raw < MIN_SAVE_SLOT or raw > MAX_SAVE_SLOT:
+        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    return raw
+
+
+def _without_slot_param(arguments):
+    params = arguments.get("params")
+    if not isinstance(params, dict) or "slot" not in params:
+        return arguments
+    new_arguments = dict(arguments)
+    params = dict(params)
+    params.pop("slot", None)
+    new_arguments["params"] = params
+    return new_arguments
+
+
 def _guestify_mcp_payload(payload):
     """/mbti、/dnd 直连 MCP 端点无 token，同样把自报 player_id 隔离到 guest: 命名空间。"""
     if payload.get("method") != "tools/call":
@@ -1381,48 +1427,72 @@ def _account_my_saves(raw_token):
     user = _current_account(raw_token)
     _auto_migrate_legacy_account_saves(user)
     uid = int(user["id"])
-    candidate_ids = _game_player_ids(user)
+    candidate_pairs = _account_slot_player_ids(user)
+    candidate_ids = [player_id for player_id, _slot in candidate_pairs]
+    slot_by_player_id = dict(candidate_pairs)
     placeholders = ",".join("?" * len(candidate_ids))
     games = {}
+
+    def _slot_entry(game, slot):
+        game_entry = games.setdefault(game, {"slots": [], "_slot_entries": {}})
+        entry = game_entry["_slot_entries"].get(slot)
+        if entry is None:
+            entry = {"slot": slot}
+            game_entry["_slot_entries"][slot] = entry
+            game_entry["slots"].append(entry)
+        return entry
+
     if SESSIONS_DB_PATH.exists():
         with _sessions_db_connect() as conn:
             def _owned_rows(table, select_columns):
                 has_uid = "user_id" in _sessions_table_columns(conn, table)
                 where = f"player_id IN ({placeholders})" + (" OR user_id = ?" if has_uid else "")
                 args = list(candidate_ids) + ([uid] if has_uid else [])
-                return conn.execute(f"SELECT {select_columns} FROM {table} WHERE {where}", args).fetchall()
+                return conn.execute(f"SELECT player_id, {select_columns} FROM {table} WHERE {where}", args).fetchall()
 
             if _table_exists(conn, "test_results"):
                 for row in _owned_rows("test_results", "game, result_value, completed_at"):
-                    entry = games.setdefault(row["game"], {})
+                    slot = slot_by_player_id.get(row["player_id"])
+                    if slot is None:
+                        continue
+                    entry = _slot_entry(row["game"], slot)
                     if (row["completed_at"] or 0) > (entry.get("_completed_at") or 0):
                         entry["_completed_at"] = row["completed_at"]
                         entry["latest_result"] = row["result_value"]
                         entry["completed_at"] = _epoch_to_local_str(row["completed_at"])
             if _table_exists(conn, "test_sessions"):
                 for row in _owned_rows("test_sessions", "game, mode, current_question"):
-                    entry = games.setdefault(row["game"], {})
+                    slot = slot_by_player_id.get(row["player_id"])
+                    if slot is None:
+                        continue
+                    entry = _slot_entry(row["game"], slot)
                     entry["in_progress"] = {"mode": row["mode"], "current_question": row["current_question"]}
             if _table_exists(conn, "eco_sessions"):
-                best = None
                 for row in _owned_rows("eco_sessions", "save_data, last_active"):
-                    if best is None or (row["last_active"] or "") > (best["last_active"] or ""):
-                        best = row
-                if best is not None:
+                    slot = slot_by_player_id.get(row["player_id"])
+                    if slot is None:
+                        continue
+                    entry = _slot_entry("eco", slot)
+                    if entry.get("last_active") and (row["last_active"] or "") <= (entry.get("last_active") or ""):
+                        continue
                     from eco_adapter import handler as eco_handler
-                    summary = eco_handler.summarize_save(best["save_data"]) or {}
-                    summary["last_active"] = best["last_active"]
-                    games["eco"] = summary
+                    summary = eco_handler.summarize_save(row["save_data"]) or {}
+                    summary["last_active"] = row["last_active"]
+                    entry.clear()
+                    entry.update({"slot": slot, **summary})
             if _table_exists(conn, "ciyuwu_sessions"):
-                best = None
                 for row in _owned_rows("ciyuwu_sessions", "save_data, meta_data, last_active"):
-                    if best is None or (row["last_active"] or "") > (best["last_active"] or ""):
-                        best = row
-                if best is not None:
+                    slot = slot_by_player_id.get(row["player_id"])
+                    if slot is None:
+                        continue
+                    entry = _slot_entry("ciyuwu", slot)
+                    if entry.get("last_active") and (row["last_active"] or "") <= (entry.get("last_active") or ""):
+                        continue
                     from ciyuwu_adapter import handler as ciyuwu_handler
-                    summary = ciyuwu_handler.summarize_save(best["save_data"], best["meta_data"]) or {}
-                    summary["last_active"] = best["last_active"]
-                    games["ciyuwu"] = summary
+                    summary = ciyuwu_handler.summarize_save(row["save_data"], row["meta_data"]) or {}
+                    summary["last_active"] = row["last_active"]
+                    entry.clear()
+                    entry.update({"slot": slot, **summary})
     vendor_summaries = {
         "leek": leek_adapter.save_summary,
         "arcade": arcade_adapter.save_summary,
@@ -1431,17 +1501,22 @@ def _account_my_saves(raw_token):
         "imitator_td": imitator_td_adapter.save_summary,
     }
     for game, summarize in vendor_summaries.items():
-        for candidate in candidate_ids:
+        for candidate, slot in candidate_pairs:
             try:
                 summary = summarize(candidate)
             except VendorCmdError:
                 summary = None
             if summary is not None:
-                games[game] = summary
-                break
-    for entry in games.values():
-        if isinstance(entry, dict):
-            entry.pop("_completed_at", None)
+                entry = _slot_entry(game, slot)
+                if len(entry) == 1:
+                    entry.update(summary)
+    for game_entry in games.values():
+        if isinstance(game_entry, dict):
+            game_entry.pop("_slot_entries", None)
+            for entry in game_entry.get("slots", []):
+                if isinstance(entry, dict):
+                    entry.pop("_completed_at", None)
+            game_entry["slots"].sort(key=lambda item: item.get("slot", 0))
     return {"user": _public_user(user), "saves": games}
 
 
@@ -1507,19 +1582,26 @@ def _tool_play(arguments, path_token=None):
 
     # 统一身份：带 token 强制 player_id=账号 id；游客自报 id 落到 guest: 命名空间。
     account_user = None
+    account_player_id = None
     guest_player_id = None
     if game in IDENTITY_GAMES:
         if path_token:
             account_user = _current_account(path_token)
             _auto_migrate_legacy_account_saves(account_user)
-            arguments = _override_player_id(arguments, str(account_user["id"]))
+            slot = _save_slot_from_arguments(arguments)
+            account_player_id = _account_slot_player_id(account_user["id"], slot)
+            arguments = _override_player_id(_without_slot_param(arguments), account_player_id)
         else:
+            arguments = _without_slot_param(arguments)
             raw = _reported_player_id(arguments)
             guest = _guest_player_id(raw)
             if guest != raw:
                 arguments = _override_player_id(arguments, guest)
             if isinstance(guest, str) and guest.startswith(GUEST_PREFIX):
                 guest_player_id = guest
+        params = arguments.get("params")
+    else:
+        arguments = _without_slot_param(arguments)
         params = arguments.get("params")
 
     merged_arguments = {
@@ -1565,7 +1647,7 @@ def _tool_play(arguments, path_token=None):
         if "error" in response or (isinstance(result, dict) and result.get("isError")):
             succeeded = False
     if succeeded and account_user is not None:
-        _stamp_save_owner(game, str(account_user["id"]), int(account_user["id"]))
+        _stamp_save_owner(game, account_player_id, int(account_user["id"]))
     if succeeded and guest_player_id and game in PERSISTENT_SAVE_GAMES and isinstance(response, dict):
         code = _ensure_guest_claim_code(guest_player_id)
         if code:

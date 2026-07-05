@@ -9,8 +9,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SAVE_ROOT = ROOT_DIR / "data" / "vendor_saves"
-# 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id，游客=guest:xxx（作目录名，Linux 下冒号合法）。
-PLAYER_ID_RE = re.compile(r"^(?:guest:)?[a-zA-Z0-9]{1,64}$")
+# 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id 或 id:slot，游客=guest:xxx（作目录名，Linux 下冒号合法）。
+PLAYER_ID_RE = re.compile(r"^(?:guest:[a-zA-Z0-9]{1,64}|[a-zA-Z0-9]{1,64}(?::[1-5])?)$")
 
 
 class VendorCmdError(Exception):
@@ -64,5 +64,5 @@ def require_player_id(value):
         raise VendorCmdError("player_id 必须是字符串")
     value = value.strip()
     if not PLAYER_ID_RE.fullmatch(value):
-        raise VendorCmdError("player_id 只能包含 1-64 位字母数字")
+        raise VendorCmdError("player_id 只能包含 1-64 位字母数字，账号存档槽可使用 id:2 到 id:5")
     return value

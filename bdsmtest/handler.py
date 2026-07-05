@@ -23,7 +23,7 @@ MAX_SESSIONS = 500
 SESSION_TTL_SECONDS = 24 * 60 * 60
 RESULT_TTL_SECONDS = 48 * 60 * 60
 # 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id，游客=guest:xxx。
-PLAYER_ID_RE = re.compile(r"^(?:guest:)?[a-zA-Z0-9]{1,64}$")
+PLAYER_ID_RE = re.compile(r"^(?:guest:[a-zA-Z0-9]{1,64}|[a-zA-Z0-9]{1,64}(?::[1-5])?)$")
 RESULT_URL = "https://bdsmtest.org/r/{rid}"
 
 TOTAL_QUESTIONS_HINT = 93
