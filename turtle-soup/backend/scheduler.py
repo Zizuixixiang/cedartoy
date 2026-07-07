@@ -15,9 +15,36 @@ async def _delete_room(room_id: str) -> None:
         (room_id,),
     )
     await execute("UPDATE reports SET room_id = NULL WHERE room_id = ?", (room_id,))
+    await execute(
+        "UPDATE judge_audit_logs SET game_log_id = NULL WHERE game_log_id IN (SELECT id FROM game_logs WHERE room_id = ?)",
+        (room_id,),
+    )
+    await execute("UPDATE judge_audit_logs SET room_id = NULL WHERE room_id = ?", (room_id,))
+    await execute(
+        "DELETE FROM room_hint_views WHERE log_id IN (SELECT id FROM game_logs WHERE room_id = ?)",
+        (room_id,),
+    )
+    await execute("DELETE FROM room_answer_reveals WHERE room_id = ?", (room_id,))
+    await execute("DELETE FROM room_presence WHERE room_id = ?", (room_id,))
     await execute("DELETE FROM room_notes WHERE room_id = ?", (room_id,))
     await execute("DELETE FROM game_logs WHERE room_id = ?", (room_id,))
     await execute("DELETE FROM rooms WHERE id = ?", (room_id,))
+
+
+async def _unlink_player_refs(player_id: int) -> None:
+    await execute("UPDATE reports SET reporter_id = NULL WHERE reporter_id = ?", (player_id,))
+    await execute("UPDATE reports SET target_player_id = NULL WHERE target_player_id = ?", (player_id,))
+    await execute("UPDATE judge_audit_logs SET player_id = NULL WHERE player_id = ?", (player_id,))
+    await execute("UPDATE ban_ips SET banned_by = NULL WHERE banned_by = ?", (player_id,))
+    await execute("UPDATE rooms SET created_by = NULL WHERE created_by = ?", (player_id,))
+    await execute("UPDATE rooms SET winner_id = NULL WHERE winner_id = ?", (player_id,))
+    await execute("UPDATE puzzles SET created_by = NULL WHERE created_by = ?", (player_id,))
+    await execute("UPDATE puzzle_submissions SET submitted_by = NULL WHERE submitted_by = ?", (player_id,))
+    await execute("UPDATE room_notes SET player_id = NULL WHERE player_id = ?", (player_id,))
+    await execute("UPDATE game_logs SET player_id = NULL WHERE player_id = ?", (player_id,))
+    await execute("DELETE FROM room_answer_reveals WHERE player_id = ?", (player_id,))
+    await execute("DELETE FROM room_hint_views WHERE player_id = ?", (player_id,))
+    await execute("DELETE FROM room_presence WHERE player_id = ?", (player_id,))
 
 
 async def cleanup_inactive_rooms() -> None:
@@ -52,7 +79,10 @@ async def cleanup_finished_rooms() -> None:
         (f"-{hours} hours",),
     )
     for room in rooms:
-        await _delete_room(room["id"])
+        try:
+            await _delete_room(room["id"])
+        except Exception as exc:
+            logger.warning("清理已结束房间失败，跳过 room_id=%s: %s", room["id"], exc, exc_info=True)
 
 
 async def cleanup_guests() -> None:
@@ -94,32 +124,38 @@ async def cleanup_guests() -> None:
     )
     for guest in guests:
         pid = guest["id"]
-        guest_rooms = await fetch_all(
-            """
-            SELECT id FROM rooms
-            WHERE created_by = ?
-              AND datetime(COALESCE(
-                    (
-                      SELECT MAX(gl.created_at)
-                      FROM game_logs gl
-                      WHERE gl.room_id = rooms.id
-                        AND gl.player_id IS NOT NULL
-                    ),
-                    rooms.created_at
-                  )) < datetime('now', 'localtime', ?)
-            """,
-            (pid, f"-{room_hours} hours"),
-        )
-        for room in guest_rooms:
-            await _delete_room(room["id"])
-        await execute("UPDATE reports SET reporter_id = NULL WHERE reporter_id = ?", (pid,))
-        await execute("UPDATE reports SET target_player_id = NULL WHERE target_player_id = ?", (pid,))
-        await execute("UPDATE rooms SET winner_id = NULL WHERE winner_id = ?", (pid,))
-        await execute("UPDATE puzzles SET created_by = NULL WHERE created_by = ?", (pid,))
-        await execute("UPDATE puzzle_submissions SET submitted_by = NULL WHERE submitted_by = ?", (pid,))
-        await execute("UPDATE room_notes SET player_id = NULL WHERE player_id = ?", (pid,))
-        await execute("UPDATE game_logs SET player_id = NULL WHERE player_id = ?", (pid,))
-        await execute("DELETE FROM players WHERE id = ?", (pid,))
+        try:
+            guest_rooms = await fetch_all(
+                """
+                SELECT id FROM rooms
+                WHERE created_by = ?
+                  AND datetime(COALESCE(
+                        (
+                          SELECT MAX(gl.created_at)
+                          FROM game_logs gl
+                          WHERE gl.room_id = rooms.id
+                            AND gl.player_id IS NOT NULL
+                        ),
+                        rooms.created_at
+                      )) < datetime('now', 'localtime', ?)
+                """,
+                (pid, f"-{room_hours} hours"),
+            )
+            for room in guest_rooms:
+                try:
+                    await _delete_room(room["id"])
+                except Exception as exc:
+                    logger.warning(
+                        "清理游客旧房间失败，继续处理 guest_id=%s room_id=%s: %s",
+                        pid,
+                        room["id"],
+                        exc,
+                        exc_info=True,
+                    )
+            await _unlink_player_refs(pid)
+            await execute("DELETE FROM players WHERE id = ?", (pid,))
+        except Exception as exc:
+            logger.warning("清理游客失败，跳过 guest_id=%s: %s", pid, exc, exc_info=True)
 
 
 async def scan_recent_content() -> None:

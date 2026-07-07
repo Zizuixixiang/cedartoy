@@ -431,6 +431,11 @@ def summarize_save(save_data, meta_data):
         value = meta.get(key)
         if isinstance(value, (list, dict)):
             summary[label] = len(value)
+            if key == "unlocked_achievements":
+                if isinstance(value, dict):
+                    summary["achievements_list"] = list(value.keys())[:12]
+                else:
+                    summary["achievements_list"] = [str(item) for item in value[:12]]
     return summary
 
 

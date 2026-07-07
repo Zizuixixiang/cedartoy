@@ -87,16 +87,30 @@ def _config_lock(cfg: dict[str, Any]) -> asyncio.Lock:
 
 
 async def _configs(pool: str = "judge") -> list[dict[str, Any]]:
+    rows = await _matching_configs(pool)
+    pool = _pool_name(pool)
+    pool_fail_counts = fail_counts[pool]
+    return [r for r in rows if pool_fail_counts.get(int(r["id"]), 0) < FAIL_LIMIT]
+
+
+async def _matching_configs(pool: str = "judge") -> list[dict[str, Any]]:
     pool = _pool_name(pool)
     rows = await fetch_all(
         "SELECT * FROM judge_api_configs WHERE enabled = 1 ORDER BY priority ASC, id ASC"
     )
-    rows = [
+    return [
         row for row in rows
         if str(row.get("purpose") or "judge") in {pool, "both"}
     ]
-    pool_fail_counts = fail_counts[pool]
-    return [r for r in rows if pool_fail_counts.get(int(r["id"]), 0) < FAIL_LIMIT]
+
+
+def reset_fail_counts(config_id: int | None = None, purpose: str | None = None) -> None:
+    pools = list(fail_counts) if purpose is None or purpose == "both" else [_pool_name(purpose)]
+    for pool in pools:
+        if config_id is None:
+            fail_counts[pool].clear()
+        else:
+            fail_counts[pool].pop(int(config_id), None)
 
 
 def _endpoint(base: str) -> str:
@@ -125,7 +139,13 @@ async def _chat(
     errors: list[str] = []
     available = await _configs(pool)
     if not available:
-        raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
+        matching = await _matching_configs(pool)
+        if matching:
+            logger.warning("%s configs exhausted by failure counts; resetting pool for retry", pool)
+            reset_fail_counts(purpose=pool)
+            available = matching
+        else:
+            raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
     n = len(available)
     async with _rr_locks[pool]:
         start = _rr_index[pool] % n

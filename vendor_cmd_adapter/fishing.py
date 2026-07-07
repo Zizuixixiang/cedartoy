@@ -16,6 +16,14 @@ command = (payload.get("command") or "status").strip()
 sys.path.insert(0, vendor_dir)
 os.chdir(save_dir)
 import fishing
+fishing._SAVE = os.path.join(save_dir, "fishing_save.json")
+fishing.S = None
+try:
+    import engine
+    engine._SAVE = fishing._SAVE
+    engine.S = None
+except Exception:
+    pass
 
 if payload.get("reset"):
     try:

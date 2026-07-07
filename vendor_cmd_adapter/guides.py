@@ -60,30 +60,35 @@ GUIDES = {
 调用：play(game="burger",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
 
 常用指令：
+- status — 查看店铺、城市事件、难度、烤台和当前制作
 - orders — 查看待接订单
 - accept — 接受订单
 - grill <食材> — 上烤台（beef/chicken/egg/bacon）
+- flip <编号> — 翻面
 - wait — 推进火候
 - take <编号> — 取下烤好的食材
 - build <食材序列> — 组装汉堡（如 build bun lettuce beef bun）
 - sauce <酱料> <用量> — 加酱（如 sauce ketchup light）
 - check — 检查成品
-- serve — 出餐单份
-- plate — 装盘
-- tray — 整理托盘
-- status — 查看当前状态
+- serve — 出餐
+- renovate list — 查看装修列表
+- renovate buy <编号|cheapest|recommended> — 非交互购买装修
+- goal <目标> — 设置周目标（均衡经营/速度优先/精致摆盘/顾客至上/利润冲刺）
+- difficulty <普通|忙碌|地狱午高峰> — 设置难度
+- strategy <balanced|profit|story|reputation|speed> — 设置自动策略
+- auto on/off/summary/order N/day N — 自动经营与摘要
+- plate — 兼容旧指令：当前成品准备出餐
+- tray — 兼容旧指令：查看当前工作台
 - customer <名字> — 查看顾客信息
-- history — 查看历史订单
+- history — 查看经营记录
 - undo build — 撤销组装
 - clear sauce — 清除酱料
 - discard <编号> — 丢弃食材
-- create <菜名> — 创建隐藏菜单（第6天后）
-- test <菜名> — 测试隐藏菜品
-- recipes — 查看已解锁食谱
+- create/test/recipes — 兼容旧自创菜单指令
 - help — 查看全部指令
 
 批量：分号串联，如 accept; grill beef; wait; build bun beef bun; serve
-每单都要单独完成，批量订单逐份 build→plate→tray→serve。
+每单都要单独完成；v0.6 起可用 auto order N / auto day N 快速推进。
 完整文档见 toy.cedarstar.org
 
 原作信息：
@@ -117,4 +122,84 @@ GUIDES = {
 
 原作信息：
 作者：初一（小红书号 95352909039）／仓库：github.com/tutusagi/ai-fishing-game／经作者授权接入。""",
+    "imitator_td": """# 植物大战丧尸随机版
+调用：play(game="imitator_td",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+
+常用指令：
+- look / 打开 / 继续 — 查看当前棋盘或继续存档
+- new_game level=1 seed=demo — 普通关卡新局
+- new_game mode=特殊 chaos=off — 全模仿者无尽
+- new_game mode=特殊 chaos=airdrop — 全模仿者无尽 + 空投箱
+- cards 模仿者 模仿者 模仿者 模仿者 向日葵 窝瓜 — 选卡并开始结算
+- 种 模仿者 3-4 — 在 3 行 4 列种植
+- 种 向日葵 2-3 — 种普通植物
+- 开空投 3-5 — 打开空投箱
+- 铲 3-4 — 铲除指定格子
+- 等待 / 等待 200 — 推进时间
+- status — 查看关卡、回合、种子、卡槽等紧凑状态
+- note 第一局复盘 — 写跨局复盘
+- recap — 查看本局复盘摘要
+- 结束本局 — 主动结束当前局
+- help — 查看全部指令
+
+批量：分号串联，最多12条；但种植这类自然语言动作可直接写一句。先 cards，再按棋盘状态种植/等待。
+每 5 次玩家决策后会触发一次防沉迷暂停，下一次继续即可。
+末尾有紧凑状态栏JSON，省token优先读它。
+完整文档见 toy.cedarstar.org
+
+原作信息：
+作者：すみか（小红书号 26256537720）／仓库：github.com/wxynora/random-imitator-td。""",
+    "memoria": """# Memoria Station
+调用：play(game="memoria",action="new",params={"level":1}) 开指定关；之后 action="cmd" 传 command；持久MCP地址可省 player_id。
+
+关卡：
+- 1 蓝玫瑰庄园
+- 2 午夜特快
+- 3 褪色车站
+- 4 循环车站
+- 5 档案室终点
+
+常用 params：
+- level：1-5，默认 1
+- difficulty：normal / hard / hell（部分关卡支持）
+
+常用 command：
+- help：查看本关可用指令
+- status：查看当前状态
+- look：观察当前位置
+- look <对象>：调查物品/地点
+- go <地点>：移动
+- talk <人物>：对话
+- ask <人物> <话题>：询问
+- clues：查看线索
+- save / load：存档 / 读档
+
+每关可用指令不同，以本关 help 返回为准。攻略是给人类玩家看的，AI 玩家不可读取。
+
+原作信息：
+作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/Memoria-Station／经作者授权接入。""",
+    "market": """# 出门买菜上桌吃饭
+调用：play(game="market",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id。
+
+常用 command：
+- 帮助：查看完整指令
+- 新局：过一天（篮子并入冰箱、食材会过期腐坏、季节随天数轮转）。做完饭再开新局，不要空开
+- 菜场：查看摊位
+- 去 <摊位id/分区>：逛摊或分区
+- 买 <菜名> [数量]：买菜
+- 砍价 <菜名> [话术]：讨价还价
+- 细看 <菜名/秤/摊主>：深入观察
+- 聊：和摊主闲聊
+- 回家：回厨房
+- 做 <菜名>：决定做什么菜
+- 做法 <步骤>：一句话描述做法
+- 出锅 / 上桌：端上桌
+- 她说 <内容>：记录她的反馈
+- 记得 <内容>：记住她的口味
+- 状态 / 篮子 / 冰箱 / 成就 / 菜谱 / 图鉴 / 技能：查看信息
+
+中文指令直接透传；她说/记得机制原样保留。
+
+原作信息：
+作者：与一旋复（小红书号 94326164228）／仓库：github.com/yuyixuanfu/shangzhuochifan／经作者授权接入。""",
 }

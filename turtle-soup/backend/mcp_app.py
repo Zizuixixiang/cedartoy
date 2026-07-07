@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import time
@@ -23,6 +24,7 @@ from routers.rooms import close_room, create_room
 from utils import ANSWER_LIMIT, ROOM_FINISHED_STATUS_HINT, SQL_NOW, SURFACE_LIMIT, TAGS_LIMIT, TITLE_LIMIT, clean_content
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
+logger = logging.getLogger(__name__)
 
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
@@ -438,10 +440,10 @@ async def _mcp_player(path_token: str | None) -> dict:
             return await get_player_from_token(db, path_token)
         finally:
             await db.close()
-    # 分配游客编号（1-999），与网页游客共用编号池
+    # 分配游客编号（1-9999），与网页游客共用编号池
     db = await get_db()
     try:
-        GUEST_NUMBER_MAX = 999
+        GUEST_NUMBER_MAX = 9999
         GUEST_NEXT_NUMBER_KEY = "guest_next_number"
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
@@ -478,6 +480,7 @@ async def _mcp_player(path_token: str | None) -> dict:
             await db.commit()
             player_id = int(cur.lastrowid)
             return dict((await db.execute_fetchall("SELECT * FROM players WHERE id = ?", (player_id,)))[0])
+        logger.warning("guest number pool exhausted for mcp guest login: max=%s start=%s", GUEST_NUMBER_MAX, start)
         raise HTTPException(status_code=503, detail="游客编号已用完")
     finally:
         await db.close()

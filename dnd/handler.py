@@ -324,7 +324,19 @@ def _finish_test(conn, player_id, mode, questions, answers, now):
         (player_id, GAME, result["alignment"], json.dumps(detail, ensure_ascii=False), now),
     )
     conn.execute("DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME))
-    return format_result(mode, questions, answers)
+    return format_result(mode, questions, answers) + "\n" + _platform_result_line(conn, result["alignment"])
+
+
+def _platform_result_line(conn, result_value):
+    total = conn.execute(
+        "SELECT COUNT(*) FROM test_results WHERE game = ?",
+        (GAME,),
+    ).fetchone()[0]
+    same = conn.execute(
+        "SELECT COUNT(*) FROM test_results WHERE game = ? AND result_value = ?",
+        (GAME, result_value),
+    ).fetchone()[0]
+    return f"全平台已有{int(total)}只完成此测试，与你同型的共{int(same)}只（含你）"
 
 
 def _strip_scoring(questions):

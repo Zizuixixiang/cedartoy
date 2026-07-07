@@ -390,7 +390,19 @@ def _finish_test(conn, player_id, mode, questions, answers, now):
     mbti_type = result["type"]
     _save_result(conn, player_id, mode, mbti_type, result, now)
     conn.execute("DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME))
-    return format_result(mode, questions, answers)
+    return format_result(mode, questions, answers) + "\n" + _platform_result_line(conn, mbti_type)
+
+
+def _platform_result_line(conn, result_value):
+    total = conn.execute(
+        "SELECT COUNT(*) FROM test_results WHERE game = ?",
+        (GAME,),
+    ).fetchone()[0]
+    same = conn.execute(
+        "SELECT COUNT(*) FROM test_results WHERE game = ? AND result_value = ?",
+        (GAME, result_value),
+    ).fetchone()[0]
+    return f"全平台已有{int(total)}只完成此测试，与你同型的共{int(same)}只（含你）"
 
 
 def _save_result(conn, player_id, mode, mbti_type, result, now):

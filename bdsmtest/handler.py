@@ -373,7 +373,8 @@ def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now):
     conn.execute(
         "DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME)
     )
-    return _format_result(scores, rid, header="【BDSMTest 测试完成】")
+    result_value = scores[0].get("name") if scores else ""
+    return _format_result(scores, rid, header="【BDSMTest 测试完成】") + "\n" + _platform_result_line(conn, result_value)
 
 
 def _save_result(conn, player_id, mode, scores, rid, now):
@@ -390,6 +391,18 @@ def _save_result(conn, player_id, mode, scores, rid, now):
         """,
         (player_id, GAME, result_value, json.dumps(detail, ensure_ascii=False), now),
     )
+
+
+def _platform_result_line(conn, result_value):
+    total = conn.execute(
+        "SELECT COUNT(*) FROM test_results WHERE game = ?",
+        (GAME,),
+    ).fetchone()[0]
+    same = conn.execute(
+        "SELECT COUNT(*) FROM test_results WHERE game = ? AND result_value = ?",
+        (GAME, result_value),
+    ).fetchone()[0]
+    return f"全平台已有{int(total)}只完成此测试，与你同型的共{int(same)}只（含你）"
 
 
 def _validate_batch(raw, question_ids):

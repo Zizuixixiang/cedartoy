@@ -15,6 +15,16 @@ toy_index.html
 example/*
 *.db-journal
 
+# 运行时产物：日志、玩家存档、数据库备份
+server.log
+data/vendor_saves/
+data/*.db.bak*
+toy-platform/
+
 # 瓶中生态引擎是独立仓库（Zizuixixiang/cedareco）的 clone，单独 git pull 维护，不纳入本仓库。
 # cedartoy 自有的 MCP 适配层在 eco_adapter/（纳入版本控制），通过命名空间包 import eco.engine。
 eco/
+
+# vendor/ 下各游戏均为第三方独立仓库的 clone（各自带 .git，单独 git pull 维护）；
+# cedartoy 的 MCP 适配层在 vendor_cmd_adapter/、eco_adapter/ 等（纳入版本控制）。
+vendor/

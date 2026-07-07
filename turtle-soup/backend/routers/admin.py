@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from auth_utils import admin_player, verify_password
 from database import execute, fetch_all, fetch_one
-from judge import list_models, test_config
+from judge import list_models, reset_fail_counts, test_config
 from models import RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, SQL_NOW, clean_content, room_id
 
@@ -496,6 +496,7 @@ async def add_api_config(body: ApiConfigBody, admin: dict = Depends(admin_player
         "INSERT INTO judge_api_configs (name, api_url, api_key, model, purpose, enabled, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (body.name, body.api_url, body.api_key, body.model, purpose, body.enabled, body.priority),
     )
+    reset_fail_counts(config_id=cid, purpose=purpose)
     return {"id": cid}
 
 
@@ -528,7 +529,11 @@ async def test_api_config_draft(body: ApiTestBody, admin: dict = Depends(admin_p
         "api_key": body.api_key.strip() or (existing["api_key"] if existing else ""),
         "model": body.model.strip() or (existing["model"] if existing else ""),
     }
-    return await test_config(cfg)
+    result = await test_config(cfg)
+    if result.get("success") and body.config_id:
+        purpose = normalize_api_config_purpose(existing.get("purpose") if existing else "judge")
+        reset_fail_counts(config_id=body.config_id, purpose=purpose)
+    return result
 
 
 @router.put("/api-configs/{config_id}")
@@ -543,6 +548,7 @@ async def update_api_config(config_id: int, body: ApiConfigBody, admin: dict = D
         "UPDATE judge_api_configs SET name=?, api_url=?, api_key=?, model=?, purpose=?, enabled=?, priority=? WHERE id=?",
         (body.name, body.api_url, key, body.model, purpose, body.enabled, body.priority, config_id),
     )
+    reset_fail_counts(config_id=config_id)
     return {"ok": True}
 
 
@@ -550,6 +556,7 @@ async def update_api_config(config_id: int, body: ApiConfigBody, admin: dict = D
 async def delete_api_config(config_id: int, admin: dict = Depends(admin_player)):
     del admin
     await execute("DELETE FROM judge_api_configs WHERE id = ?", (config_id,))
+    reset_fail_counts(config_id=config_id)
     return {"ok": True}
 
 
@@ -559,7 +566,10 @@ async def test_api_config(config_id: int, admin: dict = Depends(admin_player)):
     cfg = await fetch_one("SELECT * FROM judge_api_configs WHERE id = ?", (config_id,))
     if not cfg:
         raise HTTPException(status_code=404, detail="配置不存在")
-    return await test_config(cfg)
+    result = await test_config(cfg)
+    if result.get("success"):
+        reset_fail_counts(config_id=config_id, purpose=normalize_api_config_purpose(cfg.get("purpose")))
+    return result
 
 
 @router.get("/settings")

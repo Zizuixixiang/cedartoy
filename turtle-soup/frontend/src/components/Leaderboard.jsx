@@ -13,6 +13,7 @@ export default function Leaderboard() {
   const [tab, setTab] = useState('games')
   const [rows, setRows] = useState([])
   useEffect(() => { api(`/leaderboard/${tab}`).then(setRows).catch(() => setRows([])) }, [tab])
+
   return (
     <section className="panel leaderboard-panel">
       <div className="tabs leaderboard-tabs">{tabs.map(([id, label]) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}>{label}</button>)}</div>

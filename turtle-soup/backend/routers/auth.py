@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,8 @@ from models import AuthBody
 from utils import SQL_NOW, clean_content, public_player
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-GUEST_NUMBER_MAX = 999
+logger = logging.getLogger(__name__)
+GUEST_NUMBER_MAX = 9999
 GUEST_NEXT_NUMBER_KEY = "guest_next_number"
 
 
@@ -60,6 +62,7 @@ async def _create_guest_player() -> dict:
             player_id = int(cur.lastrowid)
             player = await db.execute_fetchall("SELECT * FROM players WHERE id = ?", (player_id,))
             return dict(player[0])
+        logger.warning("guest number pool exhausted for web guest login: max=%s start=%s", GUEST_NUMBER_MAX, start)
         raise HTTPException(status_code=503, detail="游客编号已用完，请稍后再试")
     finally:
         await db.close()

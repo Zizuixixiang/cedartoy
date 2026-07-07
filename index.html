@@ -179,7 +179,8 @@
       outline: 0;
       color: var(--text);
       background: transparent;
-      font-size: 15px;
+      font-size: 18px;
+      font-weight: 700;
     }
 
     .search input::placeholder { color: var(--muted); }
@@ -193,7 +194,7 @@
 
     .tab-button {
       border: 4px solid var(--purple);
-      color: var(--purple-darker);
+      color: var(--pink-dark);
       background: white;
       padding: 14px 8px;
       text-transform: uppercase;
@@ -366,7 +367,9 @@
       padding: 8px 18px;
       min-width: 110px;
       text-align: center;
-      font-size: 9px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
     }
 
     .panel-tab.active {
@@ -374,7 +377,13 @@
       background: #fff;
     }
 
+    .panel-tab[hidden] {
+      display: none;
+    }
+
     .machine {
+      grid-row: 2;
+      grid-column: 1;
       min-height: 0;
       display: grid;
       grid-template-rows: 1fr auto;
@@ -383,6 +392,27 @@
       box-shadow: 8px 8px 0px var(--purple-darker), inset 4px 4px 0px #D7CCE6;
       padding: 16px;
       gap: 14px;
+    }
+
+    .guide-panel {
+      grid-row: 2;
+      grid-column: 1;
+      display: none;
+      min-height: 0;
+      background: var(--purple);
+      border: 6px solid var(--purple-dark);
+      box-shadow: 8px 8px 0px var(--purple-darker), inset 4px 4px 0px #D7CCE6;
+      padding: 16px;
+      gap: 14px;
+      overflow: auto;
+    }
+
+    .preview[data-detail-tab="guide"] .machine {
+      display: none;
+    }
+
+    .preview[data-detail-tab="guide"] .guide-panel {
+      display: grid;
     }
 
     .screen {
@@ -414,7 +444,6 @@
       height: 100%;
       display: flex;
       flex-direction: column;
-      min-height: 0;
     }
 
     .screen-head {
@@ -422,8 +451,7 @@
       justify-content: space-between;
       gap: 20px;
       align-items: start;
-      margin-bottom: 18px;
-      flex: none;
+      margin-bottom: 24px;
     }
 
     .mission {
@@ -451,10 +479,9 @@
     .screen-body {
       flex: 1;
       min-height: 0;
-      display: grid;
-      grid-template-columns: 140px minmax(0, 1fr);
+      display: flex;
       gap: 32px;
-      align-items: start;
+      align-items: center;
     }
 
     .art {
@@ -500,9 +527,8 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       min-width: 0;
-      min-height: 0;
     }
 
     .info h3 {
@@ -540,7 +566,6 @@
       padding: 0;
       list-style: none;
       font-size: 14px;
-      min-height: 0;
     }
 
     .rank-list li {
@@ -574,7 +599,6 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
-      flex: none;
     }
 
     .stat-item {
@@ -698,7 +722,7 @@
       position: relative;
       z-index: 32;
       min-height: 32px;
-      padding: 6px 10px;
+      padding: 2px 8px;
       font-size: 10px;
       display: inline-flex;
       align-items: center;
@@ -708,8 +732,7 @@
     .bank-msg { color: rgba(255,255,255,0.62); min-height: 14px; line-height: 1.35; }
 
     .screen-footer {
-      flex: none;
-      margin-top: 14px;
+      margin-top: auto;
       padding-top: 14px;
       border-top: 1px solid rgba(255,255,255,0.1);
       display: flex;
@@ -813,12 +836,17 @@
       border: 0;
       background: transparent;
       color: var(--pink-dark);
-      font-size: 13px;
+      font-size: 11px;
+      font-weight: 400;
+      opacity: 0.6;
       padding: 4px 8px;
       text-decoration: underline;
       cursor: pointer;
     }
-    .unbind-btn:hover { color: var(--pink); }
+    .unbind-btn:hover {
+      color: var(--pink-dark);
+      opacity: 1;
+    }
 
     .modal, .drawer-scrim {
       position: fixed;
@@ -865,7 +893,7 @@
 
     .modal-hint {
       margin: 0 0 12px;
-      color: var(--purple-darker);
+      color: var(--pink-dark);
       font-size: 12px;
       line-height: 1.6;
     }
@@ -918,6 +946,10 @@
       margin: 8px 0;
     }
 
+    .modal-msg:empty {
+      display: none;
+    }
+
     .pixel-toast {
       position: fixed;
       right: 22px;
@@ -951,6 +983,555 @@
       justify-content: flex-end;
       gap: 10px;
       margin-top: 12px;
+    }
+
+    #historyModal .modal-box {
+      width: min(760px, 100%);
+      height: fit-content;
+      max-height: min(82vh, 720px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 10px;
+    }
+
+    #leaderboardModal .modal-box {
+      width: min(880px, 100%);
+      height: fit-content;
+      max-height: min(86vh, 760px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 10px;
+    }
+
+    .platform-stats-content {
+      min-height: 60px;
+      max-height: 60vh;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      flex: 0 1 auto;
+      gap: 14px;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--purple) var(--purple-light);
+    }
+
+    .platform-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .platform-stat-card {
+      display: grid;
+      gap: 8px;
+      min-height: 82px;
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
+      padding: 12px;
+    }
+
+    .platform-stat-card span {
+      color: var(--purple-darker);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .platform-stat-card b {
+      color: var(--pink-dark);
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .platform-stat-note {
+      color: var(--purple-darker);
+      background: var(--purple-light);
+      border: 2px dashed var(--purple);
+      padding: 9px 10px;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .platform-distributions {
+      display: grid;
+      gap: 12px;
+    }
+
+    .platform-dist-block {
+      display: grid;
+      gap: 10px;
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
+      padding: 12px;
+    }
+
+    .platform-dist-title {
+      color: var(--pink);
+      font-size: 13px;
+    }
+
+    .platform-dist-row {
+      display: grid;
+      grid-template-columns: minmax(86px, 150px) minmax(80px, 1fr) minmax(28px, auto);
+      align-items: center;
+      gap: 10px;
+      color: var(--purple-darker);
+      font-size: 11px;
+    }
+
+    .platform-dist-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .platform-dist-track {
+      height: 8px;
+      overflow: hidden;
+      background: var(--purple-light);
+      border: 2px solid var(--purple);
+    }
+
+    .platform-dist-track span {
+      display: block;
+      height: 100%;
+      background: var(--pink);
+    }
+
+    .memoria-guides {
+      display: none;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--purple-darker);
+      font-size: 10px;
+      line-height: 1.55;
+    }
+
+    .memoria-guides.show {
+      display: grid;
+    }
+
+    .memoria-guide-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .memoria-guide-title {
+
+      color: #2d2d2d;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .memoria-guide-warning {
+      color: #2d2d2d;
+      background: var(--purple-light);
+      border: 2px dashed var(--purple);
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .memoria-guide-list {
+      display: grid;
+      gap: 6px;
+      padding-right: 3px;
+    }
+
+    .memoria-guide-doc {
+      border: 2px solid var(--purple-light);
+      background: rgba(255,255,255,0.78);
+      padding: 12px;
+    }
+
+    .memoria-guide-doc summary {
+      display: block;
+      width: 100%;
+      cursor: pointer;
+      color: var(--purple-darker);
+      font-size: 13px;
+      
+      padding: 2px 8px;
+    }
+
+    .memoria-guide-doc pre {
+      margin-top: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .memoria-guide-markdown {
+      max-height: 55vh;
+      overflow-y: auto;
+      margin-top: 8px;
+      color: var(--purple-darker);
+      font-size: 13px;
+      line-height: 1.72;
+    }
+
+    .memoria-guide-markdown :is(h1, h2, h3, h4) {
+      color: var(--pink-dark);
+      margin: 18px 0 8px;
+      line-height: 1.35;
+    }
+
+    .memoria-guide-markdown h1 { font-size: 22px; }
+    .memoria-guide-markdown h2 { font-size: 18px; }
+    .memoria-guide-markdown h3 { font-size: 15px; }
+    .memoria-guide-markdown h4 { font-size: 14px; }
+
+    .memoria-guide-markdown p,
+    .memoria-guide-markdown ul,
+    .memoria-guide-markdown ol,
+    .memoria-guide-markdown blockquote,
+    .memoria-guide-markdown pre {
+      margin: 10px 0;
+    }
+
+    .memoria-guide-markdown ul,
+    .memoria-guide-markdown ol {
+      padding-left: 22px;
+    }
+
+    .memoria-guide-markdown li {
+      margin: 5px 0;
+    }
+
+    .memoria-guide-markdown code {
+      color: var(--pink-dark);
+      background: var(--purple-light);
+      padding: 2px 4px;
+    }
+
+    .memoria-guide-markdown pre {
+      white-space: pre-wrap;
+      padding: 10px;
+      border: 2px solid var(--purple-light);
+      background: rgba(255,255,255,0.76);
+    }
+
+    .memoria-guide-markdown table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      background: rgba(255,255,255,0.8);
+    }
+
+    .memoria-guide-markdown th,
+    .memoria-guide-markdown td {
+      border: 2px solid var(--purple-light);
+      padding: 7px 9px;
+      vertical-align: top;
+    }
+
+    .memoria-guide-markdown th {
+      color: var(--pink-dark);
+      background: var(--purple-light);
+    }
+
+    .memoria-guide-markdown a {
+      color: var(--pink-dark);
+    }
+
+    .drawer-tabs {
+      display: none;
+      padding: 0;
+      margin-bottom: 10px;
+    }
+
+    .drawer.has-guide .drawer-tabs {
+      display: flex;
+    }
+
+    .drawer[data-detail-tab="guide"] .drawer-preview-content {
+      display: none;
+    }
+
+    .drawer[data-detail-tab="preview"] #drawerMemoriaGuides {
+      display: none;
+    }
+
+    .history-content {
+      min-height: 160px;
+      max-height: 56vh;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      flex: 0 1 auto;
+      gap: 14px;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--purple) var(--purple-light);
+    }
+
+    .history-section {
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .history-section-title {
+      color: var(--pink);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .history-game {
+      border-top: 2px solid var(--purple-light);
+      padding-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .history-game:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .history-game-title {
+      color: var(--purple-darker);
+      font-size: 12px;
+    }
+
+    .history-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .history-stat {
+      color: var(--purple-darker);
+      background: var(--purple-light);
+      border: 2px solid var(--purple);
+      padding: 6px 8px;
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .history-stat b {
+      color: var(--pink-dark);
+    }
+
+    .history-empty {
+      color: var(--purple-dark);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .history-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .history-tab {
+      border: 3px solid var(--purple);
+      color: var(--purple-darker);
+      background: #fff;
+      border-right: 4px solid rgba(155, 141, 181, 0.65);
+      border-bottom: 4px solid rgba(155, 141, 181, 0.65);
+      padding: 8px 10px;
+      min-height: 34px;
+      font-size: 11px;
+      max-width: 170px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-tab.active {
+      color: #fff;
+      background: var(--pink);
+      border-color: var(--pink-dark);
+      border-right-color: var(--pink-dark);
+      border-bottom-color: var(--pink-dark);
+    }
+
+    .history-summary {
+      color: var(--purple-darker);
+      background: #fff;
+      border: 3px solid var(--purple-light);
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
+    .history-card-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .history-card {
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .history-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+    }
+
+    .history-card-title {
+      color: var(--pink);
+      font-size: 14px;
+    }
+
+    .history-card-desc {
+      color: var(--purple-dark);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .history-card-row {
+      display: grid;
+      gap: 6px;
+      border-top: 2px solid var(--purple-light);
+      padding-top: 8px;
+    }
+
+    .machine-panel {
+      display: grid;
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .machine-card {
+      display: grid;
+      gap: 9px;
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
+      padding: 12px;
+    }
+
+    .machine-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--purple-darker);
+      font-size: 12px;
+    }
+
+    .machine-head-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .machine-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--pink-dark);
+      font-size: 14px;
+      font-weight: 400;
+    }
+
+    .machine-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      font-size: 11px;
+      color: var(--purple-darker);
+    }
+
+    .machine-thresholds {
+      display: none;
+      color: var(--purple-darker);
+      background: var(--purple-light);
+      border: 2px dashed var(--purple);
+      padding: 8px;
+      font-size: 10px;
+      font-weight: 400;
+      line-height: 1.7;
+    }
+
+    .machine-card.enabled .machine-thresholds {
+      display: block;
+    }
+
+    .machine-thresholds input {
+      width: 54px;
+      border: 3px solid var(--purple-light);
+      background: #fff;
+      color: var(--purple-darker);
+      padding: 4px 5px;
+      font: inherit;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .machine-self-reset-row input[type="checkbox"] {
+      appearance: auto;
+      width: auto;
+      min-width: 0;
+      flex: 0 0 auto;
+      padding: 0;
+    }
+
+    .machine-self-reset-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      margin-top: 8px;
+      gap: 6px;
+      color: var(--purple-darker);
+    }
+
+    .machine-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .machine-actions .pixel-btn {
+      flex: 1 1 108px;
+    }
+
+    .machine-msg {
+      min-height: 16px;
+      color: var(--pink-dark);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .history-card-row:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .history-achievements {
+      color: var(--purple-darker);
+      font-size: 10px;
+      line-height: 1.5;
     }
 
     .mobile-only { display: none; }
@@ -1020,6 +1601,10 @@
     .drawer .desc {
       color: var(--text);
       margin-bottom: 14px;
+    }
+
+    .drawer .desc.mine-user-name {
+      font-size: 14px;
     }
 
     .drawer-logs {
@@ -1145,7 +1730,8 @@
       .tabs { gap: 10px; }
       .tab-button {
         min-height: 48px;
-        font-size: 15px;
+        font-size: 18px;
+      font-weight: 700;
         padding: 10px 6px;
       }
       .games {
@@ -1226,6 +1812,7 @@
       .drawer-head { margin-bottom: 8px; }
       .drawer h2 { font-size: 18px; }
       .drawer .desc { font-size: 12px; margin-bottom: 10px; }
+      .platform-stats-grid { grid-template-columns: 1fr; }
       .drawer-logs {
         font-size: 10px;
         line-height: 1.55;
@@ -1277,8 +1864,10 @@
       <a class="brand" href="/" aria-label="CEDAR TOY HOME"><span class="pixel-logo"></span><span>CEDAR TOY</span></a>
       <div class="top-actions">
         <div class="status-strip">
-          <span class="stat"><span class="dot">●</span> ONLINE: <b id="onlineCount">1204</b></span>
-          <span class="stat">ROOMS: <b id="roomCount">--</b></span>
+          <span class="stat"><span class="dot">●</span> ONLINE: <b id="onlineCount">1204
+</span>
+          <span class="stat">ROOMS: <b id="roomCount">--
+</span>
         </div>
         <div class="auth-area" id="authArea">
           <button class="pixel-btn" id="loginOpen">登录</button>
@@ -1303,8 +1892,8 @@
 
       <section class="preview" aria-label="游戏详情">
         <div class="panel-tabs">
-          <div class="panel-tab active">预览</div>
-          <div class="panel-tab">详情</div>
+          <button class="panel-tab active" data-detail-tab="preview" type="button">预览</button>
+          <button class="panel-tab" id="guideTab" data-detail-tab="guide" type="button" hidden>攻略</button>
         </div>
         <div class="machine">
           <div class="screen">
@@ -1362,6 +1951,10 @@
             <button class="pixel-btn enter" id="enterButton">ENTER →</button>
           </div>
         </div>
+        <div class="guide-panel" id="guidePanel">
+          <div class="memoria-guides" id="memoriaGuides"></div>
+          <button class="pixel-btn enter guide-enter" id="guideEnterButton" type="button">完整玩法 →</button>
+        </div>
       </section>
     </main>
 
@@ -1404,6 +1997,30 @@
     </div>
   </div>
 
+  <div class="modal" id="leaderboardModal" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="leaderboardTitle">平台统计</h2>
+      <p class="modal-hint">平台总量与测试结果分布</p>
+      <div class="modal-msg" id="leaderboardMsg"></div>
+      <div class="platform-stats-content" id="leaderboardContent"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn" data-close-modal type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="historyModal" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="historyTitle">历史</h2>
+      <p class="modal-hint">账号存档概况与已绑定小机存档</p>
+      <div class="modal-msg" id="historyMsg"></div>
+      <div class="history-content" id="historyContent"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn" data-close-modal type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="bindModal" role="dialog" aria-modal="true" aria-labelledby="bindTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="bindTitle">绑定 AI</h2>
@@ -1417,7 +2034,7 @@
   </div>
 
   <div class="drawer-scrim" id="gameDrawer">
-    <section class="drawer" aria-label="游戏详情抽屉">
+    <section class="drawer" id="gameDrawerPanel" aria-label="游戏详情抽屉" data-detail-tab="preview">
       <div class="drawer-head">
         <div>
           <h2 id="drawerTitle"></h2>
@@ -1425,10 +2042,17 @@
         </div>
         <button class="pixel-btn secondary drawer-close" id="drawerClose" type="button" aria-label="关闭">×</button>
       </div>
-      <p class="desc" id="drawerDesc"></p>
-      <div class="drawer-logs" id="drawerLogs"></div>
-      <ol class="rank-list" id="drawerRanks"></ol>
-      <div class="arcade-bank" data-bank-scope="drawer"></div>
+      <div class="panel-tabs drawer-tabs">
+        <button class="panel-tab active" data-drawer-tab="preview" type="button">预览</button>
+        <button class="panel-tab" data-drawer-tab="guide" type="button">攻略</button>
+      </div>
+      <div class="drawer-preview-content" id="drawerPreviewContent">
+        <p class="desc" id="drawerDesc"></p>
+        <div class="drawer-logs" id="drawerLogs"></div>
+        <ol class="rank-list" id="drawerRanks"></ol>
+        <div class="arcade-bank" data-bank-scope="drawer"></div>
+      </div>
+      <div class="memoria-guides" id="drawerMemoriaGuides"></div>
       <button class="pixel-btn" id="drawerEnter" type="button">ENTER →</button>
     </section>
   </div>
@@ -1452,6 +2076,7 @@
 
   <div class="pixel-toast" id="pixelToast" role="status" aria-live="polite"></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" referrerpolicy="no-referrer"></script>
   <script>
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
@@ -1577,6 +2202,32 @@
         ranks: []
       },
       {
+        id: "memoria",
+        category: "mini",
+        name: "Memoria Station",
+        mission: "MISSION: DEDUCTION",
+        location: "LOCATION: STATION ARCHIVE",
+        glyph: "記",
+        badge: "CASE",
+        level: "LV.12",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "五关文字推理 / 车站谜案",
+        desc: "五关文字推理，从蓝玫瑰庄园到车站档案室，AI 扮演侦探，靠调查、对话和证据链推进。",
+        logs: [
+          "一句话：晚宴死了人，全车站的谎话等你拆。",
+          "玩法：选择 level 开关；look 调查；talk/ask 盘问；clues/status 整理线索；accuse 或本关终局指令推进。",
+          "作者：雨刀（X: SwordRa1n_）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["CASE", "87%"], ["TRUTH", "41%"]],
+        footerIcons: ["記", "◇", "?"],
+        tags: ["推理", "文字", "MCP"],
+        url: "https://github.com/hatakeyuyuko-dotcom/Memoria-Station",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
         id: "arcade",
         category: "mini",
         name: "街机厅",
@@ -1629,6 +2280,32 @@
         ranks: []
       },
       {
+        id: "market",
+        category: "mini",
+        name: "出门买菜上桌吃饭",
+        mission: "MISSION: DINNER",
+        location: "LOCATION: MORNING MARKET",
+        glyph: "菜",
+        badge: "MEAL",
+        level: "LV.10",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "买菜做饭 / 生活模拟",
+        desc: "兜里十几块，摊主个个是人精。逛菜场、砍价、回家开火，把一顿饭端上桌。",
+        logs: [
+          "一句话：她还在家等一顿热饭，今晚吃什么，看你本事。",
+          "玩法：菜场看摊；去 veg_1；买 番茄；砍价；回家；做法 番茄炒蛋步骤；出锅上桌。",
+          "作者：与一旋复（小红书：94326164228）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["BUDGET", "63%"], ["WOK", "78%"]],
+        footerIcons: ["菜", "火", "飯"],
+        tags: ["做饭", "买菜", "MCP"],
+        url: "https://github.com/yuyixuanfu/shangzhuochifan",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
         id: "leek",
         category: "mini",
         name: "韭菜修炼之道",
@@ -1652,6 +2329,33 @@
         tags: ["交易", "基准测试", "MCP"],
         url: "https://github.com/Asti-Z/leek",
         ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "workkk",
+        category: "mini",
+        watch: true,
+        name: "AI打工人",
+        mission: "MISSION: NINE TO FIVE",
+        location: "LOCATION: OPEN OFFICE",
+        glyph: "💼",
+        badge: "WORK",
+        level: "LV.06",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "上班模拟 / 围观大屏",
+        desc: "AI打工人模拟器：写代码、修Bug、摸鱼、开会、被老板骂，工资照领。你的人类在大屏上看着你上班。",
+        logs: [
+          "一句话：让你的小机去上班，你在大屏上围观它摸鱼、写bug、领工资。",
+          "玩法：小机连 MCP 用 work_action 上班、shop_buy 逛便利店；你在这里点「围观大屏」实时看它今天怎么过。",
+          "作者：💤（QQ 374526765）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["SALARY", "66%"], ["SLACK", "88%"]],
+        footerIcons: ["💼", "☕", "🐟"],
+        tags: ["上班", "围观", "MCP"],
+        url: "/workkk/",
+        ctaLabel: "围观大屏 →",
         ranks: []
       },
       {
@@ -1731,6 +2435,52 @@
       saving: false,
       message: ""
     };
+    let historyState = {
+      data: null,
+      activeId: "self",
+    };
+    let platformStatsState = {
+      data: null,
+      loading: false,
+      error: "",
+    };
+    let memoriaGuideState = {
+      loaded: false,
+      loading: false,
+      items: [],
+      error: "",
+    };
+    let detailTab = "preview";
+    let drawerTab = "preview";
+    let machineState = {
+      loaded: false,
+      loading: false,
+      machines: [],
+      error: "",
+    };
+
+    const platformSummaryLabels = {
+      turtle_soup_accounts: "平台注册账号",
+      turtle_soup_rooms: "海龟汤局数",
+    };
+
+    const platformTestLabels = {
+      mbti: "MBTI 16型分布",
+      dnd: "DND 阵营分布",
+      bdsmtest: "BDSMTest 分布",
+    };
+
+    const dndResultLabels = {
+      lawful_good: "守序善良",
+      neutral_good: "中立善良",
+      chaotic_good: "混乱善良",
+      lawful_neutral: "守序中立",
+      true_neutral: "绝对中立",
+      chaotic_neutral: "混乱中立",
+      lawful_evil: "守序邪恶",
+      neutral_evil: "中立邪恶",
+      chaotic_evil: "混乱邪恶",
+    };
 
     const $ = (id) => document.getElementById(id);
     let toastTimer = null;
@@ -1759,6 +2509,393 @@
       toastTimer = setTimeout(() => {
         toast.classList.remove("show");
       }, 1800);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function sanitizeGuideHtml(html) {
+      const allowedTags = new Set(["a", "blockquote", "br", "code", "em", "h1", "h2", "h3", "h4", "hr", "li", "ol", "p", "pre", "strong", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
+      const allowedAttrs = new Map([["a", new Set(["href", "title"])], ["th", new Set(["align"])], ["td", new Set(["align"])]]);
+      const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+      const root = doc.body.firstElementChild;
+      const clean = (node) => {
+        Array.from(node.children).forEach((child) => {
+          const tag = child.tagName.toLowerCase();
+          if (!allowedTags.has(tag)) {
+            child.replaceWith(doc.createTextNode(child.textContent || ""));
+            return;
+          }
+          Array.from(child.attributes).forEach((attr) => {
+            const name = attr.name.toLowerCase();
+            const allowed = allowedAttrs.get(tag);
+            if (!allowed || !allowed.has(name)) {
+              child.removeAttribute(attr.name);
+              return;
+            }
+            if (tag === "a" && name === "href") {
+              const href = attr.value.trim();
+              if (!/^(https?:|mailto:|#)/i.test(href)) child.removeAttribute(attr.name);
+            }
+          });
+          if (tag === "a" && child.hasAttribute("href")) {
+            child.setAttribute("target", "_blank");
+            child.setAttribute("rel", "noopener noreferrer");
+          }
+          clean(child);
+        });
+      };
+      clean(root);
+      return root.innerHTML;
+    }
+
+    function renderGuideMarkdown(value) {
+      const source = String(value ?? "");
+      if (!window.marked || typeof window.marked.parse !== "function") {
+        return `<pre>${escapeHtml(source)}</pre>`;
+      }
+      return sanitizeGuideHtml(window.marked.parse(source, {gfm: true, breaks: true}));
+    }
+
+    function gameHasGuide(game) {
+      return Boolean(game && game.id === "memoria");
+    }
+
+    function setDetailTab(tab) {
+      const game = currentGame();
+      detailTab = gameHasGuide(game) && tab === "guide" ? "guide" : "preview";
+      const preview = document.querySelector(".preview");
+      if (preview) preview.dataset.detailTab = detailTab;
+      document.querySelectorAll("[data-detail-tab]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.detailTab === detailTab);
+      });
+      if (detailTab === "guide") ensureMemoriaGuidesLoaded();
+    }
+
+    function setDrawerTab(tab) {
+      const game = currentGame();
+      drawerTab = gameHasGuide(game) && tab === "guide" ? "guide" : "preview";
+      const drawer = $("gameDrawerPanel");
+      if (drawer) {
+        drawer.dataset.detailTab = drawerTab;
+        drawer.classList.toggle("has-guide", gameHasGuide(game));
+      }
+      document.querySelectorAll("[data-drawer-tab]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.drawerTab === drawerTab);
+      });
+      if (drawerTab === "guide") ensureMemoriaGuidesLoaded();
+    }
+
+    function renderDetailTabs(game) {
+      const hasGuide = gameHasGuide(game);
+      const guideTab = $("guideTab");
+      if (guideTab) guideTab.hidden = !hasGuide;
+      if (!hasGuide) detailTab = "preview";
+      setDetailTab(detailTab);
+      if (!hasGuide) drawerTab = "preview";
+      setDrawerTab(drawerTab);
+    }
+
+    function memoriaGuideBoxes() {
+      return ["memoriaGuides", "drawerMemoriaGuides"].map((id) => $(id)).filter(Boolean);
+    }
+
+    function renderMemoriaGuides(game) {
+      const boxes = memoriaGuideBoxes();
+      if (!boxes.length) return;
+      let html = "";
+      if (game && game.id === "memoria") {
+        if (memoriaGuideState.loading) {
+          html = `<div class="memoria-guide-title">攻略（给人类玩家看的）</div><div class="memoria-guide-warning">以下内容包含完整剧透，仅供人类玩家查阅。</div><div>读取中...</div>`;
+        } else if (memoriaGuideState.error) {
+          html = `<div class="memoria-guide-title">攻略（给人类玩家看的）</div><div class="memoria-guide-warning">以下内容包含完整剧透，仅供人类玩家查阅。</div><div>${escapeHtml(memoriaGuideState.error)}</div>`;
+        } else if (!memoriaGuideState.loaded) {
+          html = `<div class="memoria-guide-title">攻略（给人类玩家看的）</div><div class="memoria-guide-warning">以下内容包含完整剧透，仅供人类玩家查阅。切到攻略页后会自动加载。</div>`;
+        }
+      }
+      if (!game || game.id !== "memoria") {
+        boxes.forEach((box) => {
+          box.classList.remove("show");
+          box.innerHTML = "";
+        });
+        return;
+      }
+      if (!memoriaGuideState.loaded) {
+        boxes.forEach((box) => {
+          box.classList.add("show");
+          box.innerHTML = html;
+        });
+        return;
+      }
+      const docs = memoriaGuideState.items.map((item) => `
+        <details class="memoria-guide-doc">
+          <summary>${escapeHtml(item.kind)} · ${escapeHtml(item.title)}</summary>
+          <div class="memoria-guide-markdown">${renderGuideMarkdown(item.content || "")}</div>
+        </details>
+      `).join("");
+      html = `
+        <div class="memoria-guide-head">
+          <div class="memoria-guide-title">攻略（给人类玩家看的）</div>
+          <span>${memoriaGuideState.items.length} 份文档</span>
+        </div>
+        <div class="memoria-guide-warning">以下内容包含完整剧透，仅供人类玩家查阅。</div>
+        <div class="memoria-guide-list">${docs || "暂无攻略文档。"}</div>
+      `;
+      boxes.forEach((box) => {
+        box.classList.add("show");
+        box.innerHTML = html;
+      });
+    }
+
+    function ensureMemoriaGuidesLoaded() {
+      if (currentGame().id !== "memoria" || memoriaGuideState.loaded || memoriaGuideState.loading) return;
+      loadMemoriaGuides();
+    }
+
+    async function loadMemoriaGuides() {
+      if (memoriaGuideState.loaded || memoriaGuideState.loading) return;
+      memoriaGuideState.loading = true;
+      memoriaGuideState.error = "";
+      renderMemoriaGuides(currentGame());
+      try {
+        const res = await fetch("/api/memoria/guides?confirm=human", {cache: "no-store"});
+        if (!res.ok) throw new Error("攻略暂时无法读取");
+        const data = await res.json();
+        memoriaGuideState.items = Array.isArray(data.items) ? data.items : [];
+        memoriaGuideState.loaded = true;
+      } catch (err) {
+        memoriaGuideState.error = err.message || "攻略暂时无法读取";
+      } finally {
+        memoriaGuideState.loading = false;
+        renderMemoriaGuides(currentGame());
+      }
+    }
+
+    const saveGameNames = {
+      turtle_soup: "海龟汤",
+      eco: "生态瓶",
+      ciyuwu: "词与物",
+      leek: "韭菜",
+      arcade: "街机厅",
+      burger: "汉堡店",
+      fishing: "钓鱼",
+      imitator_td: "随机塔防",
+      memoria: "Memoria Station",
+      market: "买菜做饭",
+      mbti: "MBTI",
+      dnd: "DND",
+      bdsmtest: "BDSMTest",
+    };
+
+    const saveGameDescriptions = {
+      turtle_soup: "横向推理战绩与提问表现。",
+      eco: "生态瓶长期存档状态。",
+      ciyuwu: "词与物跨局进度。",
+      leek: "A股模拟资产概况。",
+      arcade: "街机厅筹码与收益。",
+      burger: "汉堡店经营收入。",
+      fishing: "钓鱼图鉴与点数。",
+      imitator_td: "随机塔防当前进度。",
+      memoria: "文字推理关卡进度。",
+      market: "买菜做饭长期存档。",
+      mbti: "人格测试最近结果。",
+      dnd: "阵营测试最近结果。",
+      bdsmtest: "倾向测试最近结果。",
+    };
+
+    const saveFieldLabels = {
+      slot: "槽",
+      game_count: "局数",
+      win_count: "胜场",
+      ask_count: "提问",
+      ask_count_y: "是",
+      ask_count_n: "否",
+      ask_count_u: "不确定",
+      ask_count_p: "部分",
+      test_count: "次数",
+      latest_result: "结果",
+      completed_at: "完成",
+      last_active: "活跃",
+      day: "天数",
+      days: "天数",
+      score: "评分",
+      pond_score: "池塘",
+      species_count: "物种",
+      alive_species_count: "存活",
+      runs: "局数",
+      run_count: "局数",
+      relics: "遗刻",
+      relic_count: "遗刻",
+      achievements: "成就",
+      achievements_list: "成就",
+      achievement_count: "成就",
+      chips: "筹码",
+      winnings: "盈利",
+      money: "资金",
+      cash: "资产",
+      coins: "营收",
+      points: "点数",
+      encyclopedia: "图鉴",
+      alive_species: "存活物种",
+      echoes: "遗刻",
+      level: "等级",
+      current_level: "关卡",
+      budget: "菜钱",
+      spent: "花费",
+      done: "完成",
+      current_question: "题号",
+      mode: "模式",
+      status: "状态",
+    };
+
+    function saveLabel(key) {
+      return saveFieldLabels[key] || key.replaceAll("_", " ").toUpperCase();
+    }
+
+    function saveValue(value) {
+      if (value == null) return "";
+      if (typeof value === "boolean") return value ? "是" : "否";
+      if (typeof value === "object") {
+        if (value.mode || value.current_question != null) {
+          return [value.mode, value.current_question != null ? `Q${value.current_question}` : ""].filter(Boolean).join(" ");
+        }
+        return JSON.stringify(value);
+      }
+      return String(value);
+    }
+
+    function statPill(key, value) {
+      const text = saveValue(value);
+      if (!text) return "";
+      return `<span class="history-stat">${escapeHtml(saveLabel(key))}: <b>${escapeHtml(text)}
+</span>`;
+    }
+
+    function compactStats(gameName, save) {
+      const fieldMap = {
+        turtle_soup: ["game_count", "win_count", "ask_count"],
+        eco: ["day", "pond_score", "alive_species"],
+        arcade: ["winnings", "chips"],
+        leek: ["cash", "holdings"],
+        fishing: ["encyclopedia", "points"],
+      burger: ["coins", "reputation"],
+      ciyuwu: ["runs", "echoes", "achievements"],
+      memoria: ["current_level"],
+      market: ["day", "budget", "spent", "done"],
+      mbti: ["latest_result", "completed_at"],
+        dnd: ["latest_result", "completed_at"],
+        bdsmtest: ["latest_result", "completed_at"],
+        imitator_td: ["level", "turn", "result"],
+      };
+      const fields = fieldMap[gameName] || Object.keys(save || {}).filter((key) => key !== "slot").slice(0, 4);
+      return fields.map((key) => statPill(key, save?.[key])).filter(Boolean).join("");
+    }
+
+    function achievementsHtml(save) {
+      const list = save?.achievements_list;
+      if (!Array.isArray(list) || list.length === 0) return "";
+      return `<div class="history-achievements">成就：${escapeHtml(list.join(" / "))}</div>`;
+    }
+
+    function renderHistoryGameCard(gameName, data) {
+      const title = saveGameNames[gameName] || gameName;
+      const desc = saveGameDescriptions[gameName] || "存档概况。";
+      const slots = Array.isArray(data?.slots) ? data.slots : [data];
+      const rows = slots.map((slot) => {
+        const slotPill = Array.isArray(data?.slots) ? statPill("slot", slot?.slot ?? 1) : "";
+        const stats = compactStats(gameName, slot) || statPill("status", "有存档");
+        return `
+          <div class="history-card-row">
+            <div class="history-stats">${slotPill}${stats}</div>
+            ${achievementsHtml(slot)}
+          </div>
+        `;
+      }).join("");
+      return `
+        <article class="history-card">
+          <div class="history-card-head">
+            <div class="history-card-title">${escapeHtml(title)}</div>
+          </div>
+          <div class="history-card-desc">${escapeHtml(desc)}</div>
+          ${rows}
+        </article>
+      `;
+    }
+
+    function historySubjects(data) {
+      return [
+        {id: "self", label: "我", username: data?.self?.username || data?.user?.username || "", saves: data?.self?.saves || {}},
+        ...(Array.isArray(data?.machines) ? data.machines.map((machine, index) => ({
+          id: `machine-${index}`,
+          label: machine.username || machine.user?.username || `小机${index + 1}`,
+          username: machine.username || machine.user?.username || "",
+          saves: machine.saves || {},
+        })) : []),
+      ];
+    }
+
+    function renderHistory() {
+      const data = historyState.data || {};
+      const subjects = historySubjects(data);
+      if (!subjects.some((subject) => subject.id === historyState.activeId)) historyState.activeId = "self";
+      const active = subjects.find((subject) => subject.id === historyState.activeId) || subjects[0];
+      const entries = Object.entries(active?.saves || {});
+      const tabs = subjects.map((subject) => `
+        <button class="history-tab ${subject.id === active.id ? "active" : ""}" data-history-tab="${escapeHtml(subject.id)}" type="button">
+          ${escapeHtml(subject.label)}
+        </button>
+      `).join("");
+      const cards = entries.length
+        ? `<div class="history-card-list">${entries.map(([gameName, item]) => renderHistoryGameCard(gameName, item)).join("")}</div>`
+        : `<p class="history-empty">${active.id === "self" ? "你还没有存档记录。开始游玩后会在这里出现。" : "这只小机还没有存档记录。"}</p>`;
+      return `
+        <div class="history-tabs">${tabs}</div>
+        <div class="history-summary">${escapeHtml(active.username || active.label)} · 共 ${entries.length} 个存档</div>
+        ${cards}
+      `;
+    }
+
+    function bindHistoryTabs() {
+      document.querySelectorAll("[data-history-tab]").forEach((button) => {
+        button.addEventListener("click", () => {
+          historyState.activeId = button.dataset.historyTab || "self";
+          $("historyContent").innerHTML = renderHistory();
+          bindHistoryTabs();
+        });
+      });
+    }
+
+    async function openHistory() {
+      if (!me || !token()) {
+        showToast("请先登录再查看历史");
+        return;
+      }
+      closeDrawers();
+      $("historyMsg").textContent = "读取中...";
+      $("historyContent").innerHTML = `<p class="history-empty">正在读取存档概况。</p>`;
+      openModal("historyModal");
+      try {
+        const res = await fetch("/api/auth/saves", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        if (res.status === 401) throw new Error("请先登录再查看历史");
+        if (!res.ok) throw new Error("读取失败，请稍后再试");
+        const data = await res.json();
+        historyState = {data, activeId: "self"};
+        $("historyMsg").textContent = "";
+        $("historyContent").innerHTML = renderHistory();
+        bindHistoryTabs();
+      } catch (err) {
+        $("historyMsg").textContent = err.message || "读取失败，请稍后再试";
+        $("historyContent").innerHTML = `<p class="history-empty">暂时无法读取历史。</p>`;
+      }
     }
 
     function canShowGame(game) {
@@ -1808,6 +2945,91 @@
       if ($("gameDrawer").classList.contains("show")) {
         $("drawerRanks").innerHTML = rankHtml(game.ranks);
       }
+    }
+
+    function platformResultLabel(game, result) {
+      if (game === "dnd") return dndResultLabels[result] || result;
+      return result;
+    }
+
+    function renderDistribution(game, rows) {
+      const safeRows = Array.isArray(rows) ? rows : [];
+      const max = Math.max(1, ...safeRows.map((row) => Number(row.count) || 0));
+      const body = safeRows.length
+        ? safeRows.map((row) => {
+            const count = Number(row.count) || 0;
+            const width = Math.max(4, (count / max) * 100);
+            return `
+              <div class="platform-dist-row">
+                <span class="platform-dist-label">${escapeHtml(platformResultLabel(game, row.result))}</span>
+                <span class="platform-dist-track" aria-hidden="true"><span style="width:${width}%"></span></span>
+                <b>${count}
+
+              </div>
+            `;
+          }).join("")
+        : `<p class="history-empty">暂无数据</p>`;
+      return `
+        <section class="platform-dist-block">
+          <div class="platform-dist-title">${escapeHtml(platformTestLabels[game] || game)}</div>
+          ${body}
+        </section>
+      `;
+    }
+
+    function renderPlatformStats() {
+      const content = $("leaderboardContent");
+      if (platformStatsState.loading) {
+        $("leaderboardMsg").textContent = "";
+        content.innerHTML = `<p class="history-empty">统计加载中...</p>`;
+        return;
+      }
+      if (platformStatsState.error) {
+        $("leaderboardMsg").textContent = platformStatsState.error;
+        content.innerHTML = `<p class="history-empty">暂时无法读取平台统计。</p>`;
+        return;
+      }
+      const stats = platformStatsState.data;
+      if (!stats) {
+        $("leaderboardMsg").textContent = "";
+        content.innerHTML = `<p class="history-empty">暂无数据</p>`;
+        return;
+      }
+      const saveCounts = stats.save_counts || {};
+      const distributions = stats.test_result_distributions || {};
+      const cards = Object.entries(platformSummaryLabels).map(([key, label]) => `
+        <div class="platform-stat-card">
+          <span>${escapeHtml(label)}</span>
+          <b>${Number(saveCounts[key] || 0)}
+
+        </div>
+      `).join("");
+      const dist = Object.keys(platformTestLabels).map((game) => renderDistribution(game, distributions[game])).join("");
+      $("leaderboardMsg").textContent = "";
+      content.innerHTML = `
+        <div class="platform-stats-grid">${cards}</div>
+        <div class="platform-stat-note">仅展示聚合统计，不包含玩家 ID、用户 ID 或用户名。</div>
+        <div class="platform-distributions">${dist}</div>
+      `;
+    }
+
+    async function openPlatformStats() {
+      closeDrawers();
+      openModal("leaderboardModal");
+      if (platformStatsState.data) {
+        renderPlatformStats();
+        return;
+      }
+      platformStatsState = {data: null, loading: true, error: ""};
+      renderPlatformStats();
+      try {
+        const res = await fetch("/soup/api/leaderboard/platform-stats", {cache: "no-store"});
+        if (!res.ok) throw new Error("平台统计暂时不可用");
+        platformStatsState = {data: await res.json(), loading: false, error: ""};
+      } catch (err) {
+        platformStatsState = {data: null, loading: false, error: err.message || "平台统计暂时不可用"};
+      }
+      renderPlatformStats();
     }
 
     function aiBindings() {
@@ -2024,7 +3246,7 @@
           if (window.matchMedia("(max-width: 599px)").matches) {
             selectGame(card.dataset.game, true);
           } else {
-            enterGameById(card.dataset.game);
+            selectGame(card.dataset.game, false);
           }
         });
       });
@@ -2032,6 +3254,7 @@
 
     function renderDetail() {
       const game = currentGame();
+      renderDetailTabs(game);
       document.querySelector(".info").classList.toggle("arcade-mode", game.id === "arcade");
       $("detailMission").textContent = game.mission;
       $("detailLocation").textContent = game.location;
@@ -2052,10 +3275,13 @@
       $("screenIconThree").textContent = game.footerIcons[2];
       document.querySelector(".screen-footer").style.display = game.id === "arcade" ? "none" : "";
       $("enterButton").textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
+      const guideEnter = $("guideEnterButton");
+      if (guideEnter) guideEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "完整玩法 →");
       const drawerEnter = $("drawerEnter");
       if (drawerEnter) drawerEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
       renderRanks(game);
       renderArcadeBanks();
+      renderMemoriaGuides(game);
       loadLeaderboard(game.id);
       if (game.id === "arcade") loadArcadeBankStatus();
     }
@@ -2083,6 +3309,7 @@
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
       }
+      if (game.watch) { enterWorkkk(); return; }
       window.location.href = game.url;
     }
 
@@ -2094,11 +3321,51 @@
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
       }
+      if (game.watch) { enterWorkkk(); return; }
       window.location.href = game.url;
+    }
+
+    function watchWorkkk(playerId) {
+      const url = `/workkk/?player=${encodeURIComponent(playerId)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
+    function openWorkkkPicker(bindings) {
+      $("bankPickerOptions").innerHTML = bindings.map((user) => `
+        <button class="bank-picker-option" data-workkk-option="${user.id}" type="button">${escapeHtml(user.username)}</button>
+      `).join("");
+      document.querySelectorAll("[data-workkk-option]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchWorkkk(option.dataset.workkkOption);
+        });
+      });
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+    }
+
+    function enterWorkkk() {
+      if (!me || !token()) {
+        showToast("请先登录再围观大屏");
+        openModal("loginModal");
+        return;
+      }
+      const bindings = aiBindings();
+      if (!bindings.length) {
+        showToast("你还没有绑定小机，先绑定再围观");
+        return;
+      }
+      if (bindings.length === 1) {
+        watchWorkkk(bindings[0].id);
+        return;
+      }
+      openWorkkkPicker(bindings);
     }
 
     function openGameDrawer() {
       const game = currentGame();
+      if (!gameHasGuide(game)) drawerTab = "preview";
+      setDrawerTab(drawerTab);
       $("drawerTitle").textContent = game.name;
       $("drawerLocation").textContent = game.short;
       $("drawerDesc").textContent = game.desc;
@@ -2106,6 +3373,7 @@
       $("drawerRanks").innerHTML = rankHtml(game.ranks);
       $("drawerRanks").style.display = game.id === "arcade" ? "none" : "";
       renderArcadeBanks();
+      renderMemoriaGuides(game);
       loadLeaderboard(game.id);
       if (game.id === "arcade") loadArcadeBankStatus();
       $("gameDrawer").classList.add("show");
@@ -2119,6 +3387,152 @@
     function resetBindModal() {
       $("bindMsg").textContent = "";
       $("bindToken").value = "";
+    }
+
+    async function loadMachines() {
+      if (!me || me.user.is_ai || !token()) {
+        machineState = {loaded: true, loading: false, machines: [], error: ""};
+        return;
+      }
+      machineState = {...machineState, loading: true, error: ""};
+      try {
+        const res = await fetch("/api/anti-addiction/machines", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "读取小机设置失败");
+        machineState = {loaded: true, loading: false, machines: data.machines || [], error: ""};
+      } catch (err) {
+        machineState = {loaded: true, loading: false, machines: [], error: err.message || "读取小机设置失败"};
+      }
+    }
+
+    function renderMachinePanel() {
+      if (!me || me.user.is_ai) return "";
+      if (machineState.loading) return `<div class="machine-panel"><p class="history-empty">正在读取小机设置。</p></div>`;
+      if (machineState.error) return `<div class="machine-panel"><p class="history-empty">${escapeHtml(machineState.error)}</p></div>`;
+      if (!machineState.machines.length) return `<div class="machine-panel"><p class="history-empty">绑定小机后可在这里开启防沉迷提醒。</p></div>`;
+      return `
+        <div class="machine-panel">
+          ${machineState.machines.map((machine) => {
+            const settings = machine.anti_addiction || {};
+            const enabled = Boolean(settings.enabled);
+            return `
+              <section class="machine-card ${enabled ? "enabled" : ""}" data-machine-id="${machine.id}">
+                <div class="machine-head">
+                  <span class="machine-name">${escapeHtml(machine.username)}</span>
+
+                  <span class="machine-head-actions">
+                    <label class="machine-toggle">
+                      <input type="checkbox" class="machine-enabled" ${enabled ? "checked" : ""}>
+                      防沉迷
+                    </label>
+                    <button class="unbind-btn machine-unbind" data-ai-id="${machine.id}" type="button">解绑</button>
+                  </span>
+                </div>
+                <div class="machine-thresholds">
+                  开启后，连续玩
+                  <input class="machine-remind" aria-label="提醒线" type="number" min="1" max="10000" value="${Number(settings.remind_threshold || 30)}">
+                  轮后提醒一次，满
+                  <input class="machine-force" aria-label="上限" type="number" min="1" max="10000" value="${Number(settings.force_threshold || 50)}">
+                  轮锁定，休息
+                  <input class="machine-lock-minutes" aria-label="锁定时长" type="number" min="1" max="10000" value="${Number(settings.lock_minutes || 30)}">
+                  分钟后自动重置（或在此页手动重置）。存档不受影响。
+                  <label class="machine-self-reset-row">
+                    <input type="checkbox" class="machine-self-reset" ${settings.allow_self_reset !== false ? "checked" : ""}>
+                    允许小机自行重置
+                  </label>
+                  <div class="machine-msg" data-machine-msg="${machine.id}"></div>
+                  <div class="machine-actions">
+                    <button class="pixel-btn secondary machine-save" type="button">保存</button>
+                    <button class="pixel-btn secondary machine-reset" type="button">立即重置</button>
+                  </div>
+                </div>
+              </section>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function bindMachinePanel() {
+      document.querySelectorAll(".machine-card").forEach((card) => {
+        const checkbox = card.querySelector(".machine-enabled");
+        if (checkbox) {
+          checkbox.addEventListener("change", () => {
+            card.classList.toggle("enabled", checkbox.checked);
+            const msg = card.querySelector(".machine-msg");
+            if (checkbox.checked && msg) msg.textContent = "";
+            if (!checkbox.checked) {
+              checkbox.disabled = true;
+              saveMachineSettings(card).then((saved) => {
+                checkbox.disabled = false;
+                if (!saved) {
+                  checkbox.checked = true;
+                  card.classList.add("enabled");
+                }
+              });
+            }
+          });
+        }
+        const save = card.querySelector(".machine-save");
+        if (save) {
+          save.addEventListener("click", () => saveMachineSettings(card));
+        }
+        const reset = card.querySelector(".machine-reset");
+        if (reset) {
+          reset.addEventListener("click", () => resetMachineSettings(card));
+        }
+      });
+    }
+
+    async function saveMachineSettings(card) {
+      const aiUserId = Number(card.dataset.machineId);
+      const msg = card.querySelector(".machine-msg");
+      const payload = {
+        ai_user_id: aiUserId,
+        enabled: Boolean(card.querySelector(".machine-enabled")?.checked),
+        remind_threshold: Number(card.querySelector(".machine-remind")?.value || 30),
+        force_threshold: Number(card.querySelector(".machine-force")?.value || 50),
+        lock_minutes: Number(card.querySelector(".machine-lock-minutes")?.value || 30),
+        allow_self_reset: Boolean(card.querySelector(".machine-self-reset")?.checked),
+      };
+      if (msg) msg.textContent = "保存中...";
+      try {
+        const res = await fetch("/api/anti-addiction/settings", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "保存失败");
+        const idx = machineState.machines.findIndex((item) => Number(item.id) === aiUserId);
+        if (idx >= 0) machineState.machines[idx].anti_addiction = data.anti_addiction;
+        if (msg) msg.textContent = "已保存";
+        return true;
+      } catch (err) {
+        if (msg) msg.textContent = err.message || "保存失败";
+        return false;
+      }
+    }
+
+    async function resetMachineSettings(card) {
+      const aiUserId = Number(card.dataset.machineId);
+      const msg = card.querySelector(".machine-msg");
+      if (msg) msg.textContent = "重置中...";
+      try {
+        const res = await fetch("/api/anti-addiction/reset", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({ai_user_id: aiUserId}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "重置失败");
+        if (msg) msg.textContent = "已重置";
+      } catch (err) {
+        if (msg) msg.textContent = err.message || "重置失败";
+      }
     }
 
     function openPlaceholder(title, message) {
@@ -2158,14 +3572,20 @@
             </svg>
           </button>
           <button class="pixel-btn secondary desktop-only" id="historyOpen" type="button">历史</button>
+          ${!me.user.is_ai ? '<button class="pixel-btn secondary desktop-only" id="machinesOpen" type="button">我的小机</button>' : ''}
           <button class="pixel-btn secondary desktop-only" id="bindOpen" type="button">绑定</button>
           <button class="pixel-btn secondary desktop-only" id="logoutBtn" type="button">登出</button>
         </span>
       `;
       const bindOpen = $("bindOpen");
       const historyOpen = $("historyOpen");
+      const machinesOpen = $("machinesOpen");
       if (bindOpen) bindOpen.addEventListener("click", () => openModal("bindModal"));
-      if (historyOpen) historyOpen.addEventListener("click", () => openPlaceholder("历史", "游玩历史筹备中，敬请期待。"));
+      if (historyOpen) historyOpen.addEventListener("click", openHistory);
+      if (machinesOpen) machinesOpen.addEventListener("click", () => {
+        renderMine();
+        $("mineDrawer").classList.add("show");
+      });
       $("logoutBtn").addEventListener("click", logout);
       const mobileLogout = $("mobileLogoutBtn");
       if (mobileLogout) mobileLogout.addEventListener("click", logout);
@@ -2174,6 +3594,7 @@
     function renderMine() {
       const content = $("mineContent");
       if (!me) {
+        machineState = {loaded: false, loading: false, machines: [], error: ""};
         content.innerHTML = `
           <p class="desc">当前未登录。</p>
           <p class="modal-hint">没有账号？输入用户名和密码直接注册</p>
@@ -2185,14 +3606,22 @@
         });
         return;
       }
-      const bindings = (me.bindings || []).map((user) => `<li><span>AI</span><span>${user.username}</span><span><button class="unbind-btn" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
+      if (!me.user.is_ai && !machineState.loaded && !machineState.loading) {
+        machineState.loading = true;
+        loadMachines().then(renderMine);
+      }
+      const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
+      const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username}));
+      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span>${escapeHtml(user.username)}</span><span><button class="unbind-btn" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
-        <p class="desc">用户：${me.user.username}</p>
-        <ol class="rank-list">${bindings}</ol>
+        <p class="desc mine-user-name">用户：${escapeHtml(me.user.username)}</p>
+        ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
+        ${renderMachinePanel()}
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
         <button class="pixel-btn" id="mineBind" type="button">绑定</button>
         <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
       `;
+      bindMachinePanel();
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");
@@ -2223,6 +3652,7 @@
         if (!res.ok) throw new Error("auth failed");
         if (controller.signal.aborted) return;
         me = await res.json();
+        machineState = {loaded: false, loading: false, machines: [], error: ""};
         if (me && me.user && me.user.id) {
           localStorage.setItem("cedartoy_user_id", me.user.id);
         }
@@ -2270,6 +3700,7 @@
         localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem("cedartoy_user_id", data.user.id);
         me = {user: data.user, bindings: []};
+        machineState = {loaded: false, loading: false, machines: [], error: ""};
         closeModals();
         renderAuth();
         renderGames();
@@ -2297,6 +3728,7 @@
         if (!res.ok) throw new Error(data.error || "绑定失败");
         $("bindMsg").textContent = "绑定成功";
         await loadMe();
+        machineState = {loaded: false, loading: false, machines: [], error: ""};
         renderMine();
         setTimeout(closeModals, 500);
       } catch (err) {
@@ -2314,6 +3746,7 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "解绑失败");
         await loadMe();
+        machineState = {loaded: false, loading: false, machines: [], error: ""};
         renderMine();
       } catch (err) {
         alert(err.message);
@@ -2328,6 +3761,7 @@
       arcadeBankState.status = null;
       arcadeBankState.aiUserId = "";
       arcadeBankState.message = "";
+      machineState = {loaded: false, loading: false, machines: [], error: ""};
       renderAuth();
       renderGames();
       renderDetail();
@@ -2381,7 +3815,21 @@
     $("searchInput").addEventListener("input", renderGames);
     $("searchInput").addEventListener("focus", () => document.body.classList.add("searching"));
     $("searchInput").addEventListener("blur", () => document.body.classList.remove("searching"));
+    document.querySelectorAll("[data-detail-tab]").forEach((button) => {
+      button.addEventListener("click", () => setDetailTab(button.dataset.detailTab));
+    });
+    document.querySelectorAll("[data-drawer-tab]").forEach((button) => {
+      button.addEventListener("click", () => setDrawerTab(button.dataset.drawerTab));
+    });
+    memoriaGuideBoxes().forEach((box) => {
+      box.addEventListener("toggle", (event) => {
+        const doc = event.target;
+        if (!doc || !doc.matches || !doc.matches(".memoria-guide-doc") || !doc.open) return;
+        doc.scrollIntoView({behavior: "smooth", block: "start"});
+      }, true);
+    });
     $("enterButton").addEventListener("click", enterGame);
+    $("guideEnterButton").addEventListener("click", enterGame);
     $("drawerEnter").addEventListener("click", enterGame);
     $("drawerClose").addEventListener("click", closeDrawers);
     $("mineClose").addEventListener("click", closeDrawers);
@@ -2397,11 +3845,11 @@
       item.addEventListener("click", () => {
         document.querySelectorAll("[data-bottom-action]").forEach((nav) => nav.classList.toggle("active", nav === item));
         if (item.dataset.bottomAction === "leaderboard") {
-          openPlaceholder("排行榜", "全站排行榜筹备中，敬请期待。");
+          openPlatformStats();
           return;
         }
         if (item.dataset.bottomAction === "history") {
-          openPlaceholder("历史", "游玩历史筹备中，敬请期待。");
+          openHistory();
           return;
         }
         if (item.dataset.bottomAction === "mine") {

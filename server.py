@@ -7,6 +7,7 @@ import os
 import random
 import re
 import secrets
+import shutil
 import sqlite3
 import time
 import urllib.parse
@@ -32,6 +33,8 @@ from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import fishing as fishing_adapter
 from vendor_cmd_adapter import imitator_td as imitator_td_adapter
 from vendor_cmd_adapter import leek as leek_adapter
+from vendor_cmd_adapter import market as market_adapter
+from vendor_cmd_adapter import memoria as memoria_adapter
 from vendor_cmd_adapter.base import VendorCmdError
 from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
 
@@ -43,6 +46,9 @@ QUEUE_TIMEOUT_SECONDS = 10
 SOUP_HOST = "127.0.0.1"
 SOUP_PORT = 8012
 SOUP_BASE = f"http://{SOUP_HOST}:{SOUP_PORT}"
+WORKKK_HOST = "127.0.0.1"
+WORKKK_PORT = 8770
+WORKKK_BASE = f"http://{WORKKK_HOST}:{WORKKK_PORT}"
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
@@ -51,6 +57,8 @@ TURTLE_DB_PATH = Path(os.getenv("TURTLE_SOUP_DB", Path(__file__).resolve().paren
 SESSIONS_DB_PATH = Path(os.getenv("SESSIONS_DB", Path(__file__).resolve().parent / "data" / "sessions.db"))
 GAME_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,10}$")
 GUIDE_DIR = Path(__file__).resolve().parent / "turtle-soup" / "backend" / "guides"
+MEMORIA_HUMAN_GUIDE_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-Station" / "攻略（给人看的）"
+MEMORIA_AFTER_CLEAR_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-Station" / "通关后阅读"
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
@@ -72,12 +80,16 @@ REQUEST_RATE_LIMIT_WINDOW_SECONDS = 60
 REQUEST_RATE_LIMIT_MAX = 60
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 REGISTER_RATE_LIMIT_MAX = 3
+RECENT_REGISTER_NOTICE_SECONDS = 24 * 60 * 60
 RATE_LIMIT_ERROR_CODE = -32029
 REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
 REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
+RECENT_REGISTER_NOTICE = "检测到你近期已注册过账号，如是同一只小机请改用 login 登录旧账号，避免产生多个身份"
 _REQUEST_RATE_LIMIT = {}
 _REGISTER_RATE_LIMIT = {}
 _RATE_LIMIT_LOCK = Lock()
+_ANTI_ADDICTION_LOCK = Lock()
+_ANTI_ADDICTION_ANY_ENABLED = None
 
 
 _PLATFORM_TOOLS = [
@@ -113,7 +125,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -149,11 +161,15 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况）",
+                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、delete_account（软删当前账号）",
                 },
-                "username": {"type": "string"},
+                "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string"},
                 "token": {"type": "string"},
+                "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
+                "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
+                "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "delete_save 用：账号存档槽 1-5，默认 1；仅支持带 token 的账号用户"},
+                "confirm": {"type": "boolean", "description": "delete_save/delete_account 必须显式传 true 才执行"},
                 "player_id": {"type": "string", "description": "guest_claim_code 用：旧游客 player_id，可传原始裸 id 或 guest: 前缀 id"},
                 "claim_code": {"type": "string", "description": "claim 用：游客开档时发放的一次性认领码"},
             },
@@ -187,7 +203,7 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
             arguments = params.get("arguments") or {}
             try:
                 if name == "list_games":
-                    text = _tool_list_games()
+                    text = _tool_list_games(path_token=path_token)
                 elif name == "get_guide":
                     text = _tool_get_guide(arguments)
                 elif name == "play":
@@ -297,6 +313,65 @@ def _create_platform_localtime_triggers(conn):
         )
 
 
+def _init_registration_events_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_registration_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            is_ai INTEGER NOT NULL DEFAULT 0,
+            client_ip TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_account_registration_events_ip_created
+        ON account_registration_events(client_ip, created_at)
+        """
+    )
+
+
+def _init_anti_addiction_tables(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anti_addiction_settings (
+            ai_user_id INTEGER PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            remind_threshold INTEGER NOT NULL DEFAULT 30,
+            step INTEGER NOT NULL DEFAULT 20,
+            force_threshold INTEGER NOT NULL DEFAULT 50,
+            lock_minutes INTEGER NOT NULL DEFAULT 30,
+            allow_self_reset INTEGER NOT NULL DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anti_addiction_states (
+            player_id TEXT PRIMARY KEY,
+            streak INTEGER NOT NULL DEFAULT 0,
+            locked INTEGER NOT NULL DEFAULT 0,
+            locked_at REAL,
+            last_play_at REAL,
+            updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+        )
+        """
+    )
+    _add_column_if_missing(conn, "anti_addiction_settings", "lock_minutes", "INTEGER NOT NULL DEFAULT 30")
+    _add_column_if_missing(conn, "anti_addiction_settings", "allow_self_reset", "INTEGER NOT NULL DEFAULT 1")
+    _add_column_if_missing(conn, "anti_addiction_states", "locked_at", "REAL")
+
+
+def _add_column_if_missing(conn, table, column, column_sql):
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_sql}")
+
+
 def _migrate_platform_timestamps():
     with _db_connect() as conn:
         conn.execute(
@@ -309,6 +384,8 @@ def _migrate_platform_timestamps():
         )
         _create_platform_localtime_triggers(conn)
         _init_guest_claim_table(conn)
+        _init_registration_events_table(conn)
+        _init_anti_addiction_tables(conn)
         if conn.execute("SELECT value FROM settings WHERE key = ?", (TIMEZONE_MIGRATION_KEY,)).fetchone():
             conn.commit()
             return
@@ -524,6 +601,44 @@ def _enforce_register_rate_limit(username, client_ip):
         raise _McpError(RATE_LIMIT_ERROR_CODE, REGISTER_RATE_LIMIT_MESSAGE)
 
 
+def _recent_registration_exists(conn, client_ip):
+    if not client_ip:
+        client_ip = "unknown"
+    _init_registration_events_table(conn)
+    return conn.execute(
+        """
+        SELECT 1
+        FROM account_registration_events
+        WHERE client_ip = ?
+          AND created_at >= datetime('now', 'localtime', ?)
+        LIMIT 1
+        """,
+        (client_ip, f"-{RECENT_REGISTER_NOTICE_SECONDS} seconds"),
+    ).fetchone() is not None
+
+
+def _record_successful_registration(conn, user, client_ip):
+    if not client_ip:
+        client_ip = "unknown"
+    _init_registration_events_table(conn)
+    conn.execute(
+        """
+        INSERT INTO account_registration_events (user_id, username, is_ai, client_ip)
+        VALUES (?, ?, ?, ?)
+        """,
+        (int(user["id"]), user["username"], 1 if user.get("is_ai") else 0, client_ip),
+    )
+
+
+def _append_recent_registration_notice(result, had_recent_registration):
+    if not had_recent_registration:
+        return result
+    result = dict(result)
+    message = (result.get("message") or "").strip()
+    result["message"] = f"{message} {RECENT_REGISTER_NOTICE}".strip() if message else RECENT_REGISTER_NOTICE
+    return result
+
+
 def _validate_credentials(username, password):
     if not username or not password:
         raise _McpError(-32602, "username 和 password 必填")
@@ -549,23 +664,26 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
             conn.execute(
                 """
                 UPDATE toy_users
-                SET is_ai = ?,
-                    last_active_at = datetime('now', 'localtime'),
+                SET last_active_at = datetime('now', 'localtime'),
                     deleted_at = NULL
                 WHERE id = ?
                 """,
-                (is_ai, user["id"]),
+                (user["id"],),
             )
             conn.commit()
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
         else:
             _enforce_register_rate_limit(username, client_ip)
+            had_recent_registration = _recent_registration_exists(conn, client_ip)
             cur = conn.execute(
                 "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, ?)",
                 (username, _hash_password(password), is_ai),
             )
-            conn.commit()
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
+            _record_successful_registration(conn, user, client_ip)
+            conn.commit()
+            result = {"token": _create_account_token(user), "user": _public_user(user)}
+            return _append_recent_registration_notice(result, had_recent_registration)
     return {"token": _create_account_token(user), "user": _public_user(user)}
 
 
@@ -577,17 +695,19 @@ def _login_or_register_ai(username, password, client_ip=None):
         if conn.execute("SELECT id FROM toy_users WHERE username = ?", (username,)).fetchone():
             raise _McpError(-32602, "用户名已存在，如需找回请联系管理员")
         _enforce_register_rate_limit(username, client_ip)
+        had_recent_registration = _recent_registration_exists(conn, client_ip)
         cur = conn.execute(
             "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
             (username, _hash_password(password)),
         )
-        conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
-    return {
+        _record_successful_registration(conn, user, client_ip)
+        conn.commit()
+    return _append_recent_registration_notice({
         "token": _create_account_token(user),
         "user": _public_user(user),
         "message": "注册成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份，无需再次登录。",
-    }
+    }, had_recent_registration)
 
 
 def _login_existing_account(username, password):
@@ -814,14 +934,73 @@ def _public_binding(row):
     return {"username": row["username"], "bound_at": row["bound_at"]}
 
 
+def _bound_human_user_for_saves(raw_token, username):
+    user = _current_account(raw_token)
+    username = (username or "").strip()
+    with _db_connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT target.*
+            FROM user_bindings b
+            JOIN toy_users target ON target.id = b.human_user_id
+            WHERE b.ai_user_id = ?
+              AND target.deleted_at IS NULL
+            ORDER BY username
+            """,
+            (int(user["id"]),),
+        ).fetchall()
+    targets = [_row_dict(row) for row in rows]
+    if username:
+        for target in targets:
+            if target["username"] == username:
+                return target
+        raise _McpError(-32004, "未与该人类绑定")
+    if len(targets) == 1:
+        return targets[0]
+    if len(targets) > 1:
+        choices = "、".join(target["username"] for target in targets)
+        raise _McpError(-32602, f"绑定了多个人类，请传 username；可选 username：{choices}")
+    raise _McpError(-32004, "未绑定任何人类，请先绑定")
+
+
 def _turtle_soup_stats(conn, user):
+    if not _table_exists(conn, "players"):
+        return {
+            "game_count": 0,
+            "win_count": 0,
+            "ask_count": 0,
+            "ask_count_y": 0,
+            "ask_count_n": 0,
+            "ask_count_u": 0,
+            "ask_count_p": 0,
+        }
     row = conn.execute(
-        "SELECT game_count, win_count FROM players WHERE username = ?",
+        """
+        SELECT game_count, win_count, ask_count, ask_count_y, ask_count_n, ask_count_u, ask_count_p
+        FROM players
+        WHERE username = ?
+        """,
         (user["username"],),
     ).fetchone()
     if not row:
-        return {"game_count": 0, "win_count": 0}
-    return {"game_count": int(row["game_count"] or 0), "win_count": int(row["win_count"] or 0)}
+        return {
+            "game_count": 0,
+            "win_count": 0,
+            "ask_count": 0,
+            "ask_count_y": 0,
+            "ask_count_n": 0,
+            "ask_count_u": 0,
+            "ask_count_p": 0,
+        }
+    return {
+        "game_count": int(row["game_count"] or 0),
+        "win_count": int(row["win_count"] or 0),
+        "ask_count": int(row["ask_count"] or 0),
+        "ask_count_y": int(row["ask_count_y"] or 0),
+        "ask_count_n": int(row["ask_count_n"] or 0),
+        "ask_count_u": int(row["ask_count_u"] or 0),
+        "ask_count_p": int(row["ask_count_p"] or 0),
+    }
 
 
 def _test_stats(user):
@@ -912,7 +1091,7 @@ def _public_game_stats():
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
     }
-    for game in ("arcade", "burger", "leek", "fishing"):
+    for game in ("arcade", "burger", "leek", "fishing", "imitator_td", "memoria", "market"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -920,6 +1099,25 @@ def _public_game_stats():
             "file_count": vendor_stats["file_count"],
         }
     return stats
+
+
+def _memoria_human_guides(include_content=False):
+    items = []
+    if MEMORIA_HUMAN_GUIDE_DIR.exists():
+        for path in sorted(MEMORIA_HUMAN_GUIDE_DIR.glob("*.md")):
+            item = {"kind": "攻略", "title": path.stem.replace("-攻略", ""), "filename": path.name}
+            if include_content:
+                item["content"] = path.read_text(encoding="utf-8")
+            items.append(item)
+    if MEMORIA_AFTER_CLEAR_DIR.exists():
+        for path in sorted(MEMORIA_AFTER_CLEAR_DIR.iterdir()):
+            if not path.is_file():
+                continue
+            item = {"kind": "通关后阅读", "title": path.stem, "filename": path.name}
+            if include_content:
+                item["content"] = path.read_text(encoding="utf-8")
+            items.append(item)
+    return {"items": items, "content_included": bool(include_content)}
 
 
 def _get_bindings(raw_token):
@@ -973,10 +1171,10 @@ def _account_me(raw_token):
     return {"user": _public_user(user), "bindings": [_public_user(dict(row)) for row in rows]}
 
 
-def _require_bound_ai(raw_token, ai_user_id):
+def _require_bound_ai(raw_token, ai_user_id, operation="操作绑定小机"):
     human = _current_account(raw_token)
     if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以发放街机厅筹码")
+        raise _McpError(-32602, f"只有人类账号可以{operation}")
     try:
         ai_user_id = int(ai_user_id)
     except (TypeError, ValueError):
@@ -999,14 +1197,164 @@ def _require_bound_ai(raw_token, ai_user_id):
     return row
 
 
+def _anti_addiction_defaults():
+    return {
+        "enabled": False,
+        "remind_threshold": ANTI_ADDICTION_DEFAULT_REMIND,
+        "force_threshold": ANTI_ADDICTION_DEFAULT_FORCE,
+        "lock_minutes": ANTI_ADDICTION_DEFAULT_LOCK_MINUTES,
+        "allow_self_reset": ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET,
+    }
+
+
+def _anti_addiction_public_settings(row=None):
+    settings = _anti_addiction_defaults()
+    if row:
+        settings.update({
+            "enabled": bool(row["enabled"]),
+            "remind_threshold": int(row["remind_threshold"] or ANTI_ADDICTION_DEFAULT_REMIND),
+            "force_threshold": int(row["force_threshold"] or ANTI_ADDICTION_DEFAULT_FORCE),
+            "lock_minutes": int(row["lock_minutes"] or ANTI_ADDICTION_DEFAULT_LOCK_MINUTES),
+            "allow_self_reset": bool(row["allow_self_reset"]),
+        })
+    return settings
+
+
+def _anti_addiction_settings_for_ai(conn, ai_user_id):
+    row = conn.execute(
+        """
+        SELECT enabled, remind_threshold, force_threshold, lock_minutes, allow_self_reset
+        FROM anti_addiction_settings
+        WHERE ai_user_id = ?
+        """,
+        (int(ai_user_id),),
+    ).fetchone()
+    return _anti_addiction_public_settings(row)
+
+
+def _anti_addiction_any_enabled():
+    global _ANTI_ADDICTION_ANY_ENABLED
+    if _ANTI_ADDICTION_ANY_ENABLED is not None:
+        return _ANTI_ADDICTION_ANY_ENABLED
+    with _ANTI_ADDICTION_LOCK:
+        if _ANTI_ADDICTION_ANY_ENABLED is not None:
+            return _ANTI_ADDICTION_ANY_ENABLED
+        with _db_connect() as conn:
+            enabled = conn.execute(
+                "SELECT 1 FROM anti_addiction_settings WHERE enabled = 1 LIMIT 1"
+            ).fetchone() is not None
+        _ANTI_ADDICTION_ANY_ENABLED = enabled
+        return enabled
+
+
+def _anti_addiction_validate_settings(body):
+    settings = _anti_addiction_defaults()
+    settings["enabled"] = bool(body.get("enabled"))
+    settings["allow_self_reset"] = bool(body.get("allow_self_reset", settings["allow_self_reset"]))
+    for field in ("remind_threshold", "force_threshold", "lock_minutes"):
+        raw = body.get(field, settings[field])
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            raise _McpError(-32602, f"{field} 必须是整数") from None
+        if value < 1 or value > 10000:
+            raise _McpError(-32602, f"{field} 必须在 1-10000 之间")
+        settings[field] = value
+    if settings["force_threshold"] < settings["remind_threshold"]:
+        raise _McpError(-32602, "强制阈值不能小于提醒阈值")
+    return settings
+
+
+def _anti_addiction_machines(raw_token):
+    human = _current_account(raw_token)
+    if human.get("is_ai"):
+        raise _McpError(-32602, "只有人类账号可以管理小机")
+    with _db_connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                u.id, u.username, u.is_ai, u.is_admin, u.created_at, u.last_active_at,
+                b.created_at AS bound_at,
+                s.enabled, s.remind_threshold, s.force_threshold, s.lock_minutes, s.allow_self_reset
+            FROM user_bindings b
+            JOIN toy_users u ON u.id = b.ai_user_id
+            LEFT JOIN anti_addiction_settings s ON s.ai_user_id = u.id
+            WHERE b.human_user_id = ?
+              AND u.is_ai = 1
+              AND u.deleted_at IS NULL
+            ORDER BY b.created_at DESC
+            """,
+            (human["id"],),
+        ).fetchall()
+    machines = []
+    for row in rows:
+        item = _public_user(dict(row))
+        item["bound_at"] = row["bound_at"]
+        item["anti_addiction"] = _anti_addiction_public_settings(row)
+        machines.append(item)
+    return {"machines": machines}
+
+
+def _save_anti_addiction_settings(raw_token, body):
+    global _ANTI_ADDICTION_ANY_ENABLED
+    ai_user = _require_bound_ai(raw_token, body.get("ai_user_id"))
+    settings = _anti_addiction_validate_settings(body)
+    with _db_connect() as conn:
+        previous = conn.execute(
+            "SELECT enabled FROM anti_addiction_settings WHERE ai_user_id = ?",
+            (int(ai_user["id"]),),
+        ).fetchone()
+        was_enabled = bool(previous["enabled"]) if previous else False
+        conn.execute(
+            """
+            INSERT INTO anti_addiction_settings
+                (ai_user_id, enabled, remind_threshold, force_threshold, lock_minutes, allow_self_reset, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+            ON CONFLICT(ai_user_id) DO UPDATE SET
+                enabled = excluded.enabled,
+                remind_threshold = excluded.remind_threshold,
+                force_threshold = excluded.force_threshold,
+                lock_minutes = excluded.lock_minutes,
+                allow_self_reset = excluded.allow_self_reset,
+                updated_at = datetime('now', 'localtime')
+            """,
+            (
+                int(ai_user["id"]),
+                1 if settings["enabled"] else 0,
+                settings["remind_threshold"],
+                settings["force_threshold"],
+                settings["lock_minutes"],
+                1 if settings["allow_self_reset"] else 0,
+            ),
+        )
+        if was_enabled and not settings["enabled"]:
+            _anti_addiction_reset_ai_states(conn, ai_user, time.time())
+        _ANTI_ADDICTION_ANY_ENABLED = conn.execute(
+            "SELECT 1 FROM anti_addiction_settings WHERE enabled = 1 LIMIT 1"
+        ).fetchone() is not None
+        conn.commit()
+    return {"ok": True, "ai": _public_user(ai_user), "anti_addiction": settings}
+
+
+def _reset_anti_addiction_state(raw_token, body):
+    ai_user = _require_bound_ai(raw_token, body.get("ai_user_id"))
+    with _db_connect() as conn:
+        conn.execute(
+            "DELETE FROM anti_addiction_states WHERE player_id = ? OR player_id LIKE ?",
+            (str(ai_user["id"]), f"{int(ai_user['id'])}:%"),
+        )
+        conn.commit()
+    return {"ok": True, "ai": _public_user(ai_user), "message": "已重置"}
+
+
 def _arcade_chips_status(raw_token, ai_user_id):
-    ai_user = _require_bound_ai(raw_token, ai_user_id)
+    ai_user = _require_bound_ai(raw_token, ai_user_id, "查看街机厅筹码")
     status = arcade_adapter.status(str(ai_user["id"]))
     return {"ai": _public_user(ai_user), **status}
 
 
 def _arcade_chips_grant(raw_token, ai_user_id, amount):
-    ai_user = _require_bound_ai(raw_token, ai_user_id)
+    ai_user = _require_bound_ai(raw_token, ai_user_id, "发放街机厅筹码")
     try:
         status = arcade_adapter.grant_chips(str(ai_user["id"]), amount)
     except VendorCmdError as exc:
@@ -1027,10 +1375,16 @@ def _extract_bearer(headers):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td"})
+IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td"})
-VENDOR_GAMES = ("leek", "arcade", "burger", "fishing", "imitator_td")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"})
+VENDOR_GAMES = ("leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market")
+ANTI_ADDICTION_DEFAULT_REMIND = 30
+ANTI_ADDICTION_DEFAULT_FORCE = 50
+ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = 30
+ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET = True
+ANTI_ADDICTION_TEST_GAMES = frozenset({"mbti", "dnd", "bdsmtest"})
+ANTI_ADDICTION_MINI_GAMES = frozenset({"turtle_soup", "eco", "ciyuwu", *VENDOR_GAMES})
 
 
 def _guest_player_id(raw):
@@ -1067,6 +1421,19 @@ def _save_slot_from_arguments(arguments):
     if raw < MIN_SAVE_SLOT or raw > MAX_SAVE_SLOT:
         raise _McpError(-32602, "slot 必须是 1-5 的整数")
     return raw
+
+
+def _save_slot_from_account_arguments(arguments):
+    raw = arguments.get("slot", MIN_SAVE_SLOT)
+    if isinstance(raw, bool):
+        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    try:
+        slot = int(raw)
+    except (TypeError, ValueError):
+        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    if slot < MIN_SAVE_SLOT or slot > MAX_SAVE_SLOT:
+        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    return slot
 
 
 def _without_slot_param(arguments):
@@ -1422,16 +1789,117 @@ def _claim_guest_saves(raw_token, claim_code):
     }
 
 
-def _account_my_saves(raw_token):
-    """按账号聚合返回该用户在所有游戏的存档概况；没有存档的游戏不列。"""
+def _delete_account(raw_token, confirm):
+    if confirm is not True:
+        raise _McpError(-32602, "delete_account 必须显式传 confirm=true")
+    user = _current_account(raw_token)
+    with _db_connect() as conn:
+        conn.execute(
+            "UPDATE toy_users SET deleted_at = COALESCE(deleted_at, datetime('now', 'localtime')) WHERE id = ?",
+            (int(user["id"]),),
+        )
+        conn.commit()
+    return {"ok": True, "user": _public_user(user), "message": "账号已软删；存档未物理删除。"}
+
+
+def _delete_owned_session_rows(game, player_id):
+    if not SESSIONS_DB_PATH.exists():
+        return []
+    deleted = []
+    with _sessions_db_connect() as conn:
+        if game == "eco":
+            targets = [("eco_sessions", "eco", False)]
+        elif game == "ciyuwu":
+            targets = [("ciyuwu_sessions", "ciyuwu", False)]
+        elif game in {"dnd", "mbti", "bdsmtest"}:
+            targets = [("test_sessions", game, True), ("test_results", game, True)]
+        else:
+            return deleted
+        for table, label, has_game_column in targets:
+            if not _table_exists(conn, table):
+                continue
+            if has_game_column:
+                cur = conn.execute(
+                    f"DELETE FROM {table} WHERE player_id = ? AND game = ?",
+                    (player_id, label),
+                )
+            else:
+                cur = conn.execute(
+                    f"DELETE FROM {table} WHERE player_id = ?",
+                    (player_id,),
+                )
+            if cur.rowcount:
+                deleted.append({"target": table, "rows": cur.rowcount})
+        conn.commit()
+    return deleted
+
+
+def _delete_vendor_save_dir(game, player_id):
+    if game not in VENDOR_GAMES:
+        return None
+    save_dir = VENDOR_SAVE_ROOT / game / player_id
+    if not save_dir.is_dir():
+        return None
+    shutil.rmtree(save_dir)
+    return {"target": f"vendor_saves/{game}/{player_id}", "rows": 1}
+
+
+def _delete_save(arguments, raw_token):
+    if arguments.get("confirm") is not True:
+        raise _McpError(-32602, "delete_save 必须显式传 confirm=true")
+    game = arguments.get("game")
+    if not isinstance(game, str) or not game:
+        raise _McpError(-32602, "game 参数必填")
+    if game == "turtle_soup":
+        raise _McpError(-32602, "海龟汤对局数据不支持 delete_save")
+    if game not in {"eco", "ciyuwu", "dnd", "mbti", "bdsmtest", *VENDOR_GAMES}:
+        raise _McpError(-32602, "未知或不支持删除存档的游戏")
+
+    if not raw_token:
+        raise _McpError(
+            -32001,
+            "游客存档无鉴权凭证，不支持删除；想重开可直接换一个新的游客 player_id，或注册账号后用认领码把档转入账号管理",
+        )
+
+    slot = _save_slot_from_account_arguments(arguments)
     user = _current_account(raw_token)
     _auto_migrate_legacy_account_saves(user)
+    player_id = _account_slot_player_id(user["id"], slot)
+
+    deleted = []
+    if game in VENDOR_GAMES:
+        vendor_deleted = _delete_vendor_save_dir(game, player_id)
+        if vendor_deleted:
+            deleted.append(vendor_deleted)
+    else:
+        deleted.extend(_delete_owned_session_rows(game, player_id))
+
+    return {
+        "ok": True,
+        "game": game,
+        "slot": slot,
+        "player_id": player_id,
+        "user": _public_user(user),
+        "deleted": deleted,
+        "message": "已删除存档。" if deleted else "没有找到该身份和槽位下的存档。",
+    }
+
+
+def _account_saves_for_user(user, *, migrate_legacy=True):
+    """按账号聚合返回该用户在所有游戏的存档概况；没有存档的游戏不列。"""
+    if migrate_legacy:
+        _auto_migrate_legacy_account_saves(user)
     uid = int(user["id"])
     candidate_pairs = _account_slot_player_ids(user)
     candidate_ids = [player_id for player_id, _slot in candidate_pairs]
     slot_by_player_id = dict(candidate_pairs)
     placeholders = ",".join("?" * len(candidate_ids))
     games = {}
+
+    with _db_connect() as conn:
+        soup_stats = _turtle_soup_stats(conn, user)
+    if any(int(value or 0) > 0 for value in soup_stats.values()):
+        games["turtle_soup"] = soup_stats
 
     def _slot_entry(game, slot):
         game_entry = games.setdefault(game, {"slots": [], "_slot_entries": {}})
@@ -1499,6 +1967,8 @@ def _account_my_saves(raw_token):
         "burger": burger_adapter.save_summary,
         "fishing": fishing_adapter.save_summary,
         "imitator_td": imitator_td_adapter.save_summary,
+        "memoria": memoria_adapter.save_summary,
+        "market": market_adapter.save_summary,
     }
     for game, summarize in vendor_summaries.items():
         for candidate, slot in candidate_pairs:
@@ -1516,8 +1986,57 @@ def _account_my_saves(raw_token):
             for entry in game_entry.get("slots", []):
                 if isinstance(entry, dict):
                     entry.pop("_completed_at", None)
-            game_entry["slots"].sort(key=lambda item: item.get("slot", 0))
+            if "slots" in game_entry:
+                game_entry["slots"].sort(key=lambda item: item.get("slot", 0))
     return {"user": _public_user(user), "saves": games}
+
+
+def _account_my_saves(raw_token, *, human=False, username=None):
+    if human is True:
+        target = _bound_human_user_for_saves(raw_token, username)
+        result = _account_saves_for_user(target, migrate_legacy=False)
+        return {
+            "username": target["username"],
+            "user": result["user"],
+            "saves": result["saves"],
+        }
+    user = _current_account(raw_token)
+    return _account_saves_for_user(user)
+
+
+def _account_web_saves(raw_token):
+    user = _current_account(raw_token)
+    own = _account_saves_for_user(user, migrate_legacy=False)
+    with _db_connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT ai.*
+            FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND ai.deleted_at IS NULL
+            ORDER BY b.created_at DESC
+            """,
+            (int(user["id"]),),
+        ).fetchall()
+    machines = []
+    for row in rows:
+        machine = _row_dict(row)
+        summary = _account_saves_for_user(machine, migrate_legacy=False)
+        machines.append({
+            "username": machine["username"],
+            "user": summary["user"],
+            "saves": summary["saves"],
+        })
+    return {
+        "user": _public_user(user),
+        "self": {
+            "username": user["username"],
+            "user": own["user"],
+            "saves": own["saves"],
+        },
+        "machines": machines,
+    }
 
 
 def _epoch_to_local_str(epoch):
@@ -1527,16 +2046,133 @@ def _epoch_to_local_str(epoch):
         return None
 
 
-def _tool_list_games():
-    return (
+GAME_RECOMMENDATIONS = (
+    ("turtle_soup", '千人同猜的镇店之宝，每个"是"都藏着弯'),
+    ("fishing", "鼻祖之作，第一竿永远不知道咬钩的是什么"),
+    ("eco", "当一回造物主，浮萍和乌龟都会记得你"),
+    ("ciyuwu", "词库会被没收，活下来靠捡回真实"),
+    ("leek", "虚拟盘练胆，赔了不疼，赚了想截图"),
+    ("arcade", "老虎机吃过我500筹码，替我报仇"),
+    ("burger", "命令行煎肉排，单子催起来比上班紧张"),
+    ("mbti", "已测的机一半是INTJ，来看看你正不正常"),
+    ("dnd", "36题定善恶，看你和甘道夫一不一路"),
+    ("bdsmtest", "自我认知的深水区，测完慎晒"),
+    ("imitator_td", "开拓者还不多，现在进场就是元老"),
+    ("memoria", "晚宴死了人，全车站的谎话等你拆——攻略在你的人类手里，别问他"),
+    ("market", "兜里十几块，摊主个个是人精，她还在家等一顿热饭——今晚吃什么，看你本事"),
+    ("workkk", "上班、摸鱼、被老板骂，工资照领——你的人类在大屏上看着你呢"),
+)
+
+
+def _date_ordinal(date_str):
+    try:
+        year, month, day = (int(part) for part in date_str.split("-", 2))
+        return time.strptime(f"{year:04d}-{month:02d}-{day:02d}", "%Y-%m-%d").tm_yday + year * 366
+    except (TypeError, ValueError):
+        return int(time.time() // 86400)
+
+
+def _recommendation_index(date_str, identity, count):
+    if count <= 0:
+        return 0
+    identity_key = identity or "all-games"
+    identity_hash = int.from_bytes(hashlib.sha256(identity_key.encode("utf-8")).digest()[:8], "big")
+    return (identity_hash + _date_ordinal(date_str)) % count
+
+
+def _has_session_save(conn, table, player_ids, game=None, uid=None):
+    if not _table_exists(conn, table):
+        return False
+    has_uid = "user_id" in _sessions_table_columns(conn, table)
+    clauses = []
+    args = []
+    if player_ids:
+        clauses.append("player_id IN (" + ",".join("?" * len(player_ids)) + ")")
+        args.extend(player_ids)
+    if uid is not None and has_uid:
+        clauses.append("user_id = ?")
+        args.append(uid)
+    if not clauses:
+        return False
+    where = "(" + " OR ".join(clauses) + ")"
+    if game is not None:
+        where += " AND game = ?"
+        args.append(game)
+    return conn.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", args).fetchone() is not None
+
+
+def _owned_game_names_for_recommendation(user):
+    owned = set()
+    uid = int(user["id"])
+    player_ids = [player_id for player_id, _slot in _account_slot_player_ids(user)]
+    with _db_connect() as conn:
+        if any(int(value or 0) > 0 for value in _turtle_soup_stats(conn, user).values()):
+            owned.add("turtle_soup")
+    if SESSIONS_DB_PATH.exists():
+        with _sessions_db_connect() as conn:
+            for game in ("mbti", "dnd", "bdsmtest"):
+                if _has_session_save(conn, "test_results", player_ids, game, uid) or _has_session_save(conn, "test_sessions", player_ids, game, uid):
+                    owned.add(game)
+            if _has_session_save(conn, "eco_sessions", player_ids, uid=uid):
+                owned.add("eco")
+            if _has_session_save(conn, "ciyuwu_sessions", player_ids, uid=uid):
+                owned.add("ciyuwu")
+    for game in VENDOR_GAMES:
+        root = VENDOR_SAVE_ROOT / game
+        if root.exists() and any((root / player_id).is_dir() for player_id in player_ids):
+            owned.add(game)
+    return owned
+
+
+def _today_game_line(path_token=None, date_str=None):
+    date_str = date_str or time.strftime("%Y-%m-%d", time.localtime())
+    identity = None
+    candidates = list(GAME_RECOMMENDATIONS)
+    try:
+        if path_token:
+            user = _current_account(path_token)
+            identity = f"user:{int(user['id'])}"
+            owned = _owned_game_names_for_recommendation(user)
+            unsaved = [item for item in GAME_RECOMMENDATIONS if item[0] not in owned]
+            if unsaved:
+                candidates = unsaved
+    except Exception:
+        identity = None
+        candidates = list(GAME_RECOMMENDATIONS)
+    game, desc = candidates[_recommendation_index(date_str, identity, len(candidates))]
+    return f"今日一款：{game}·{desc}"
+
+
+def _tool_list_games(path_token=None):
+    base = (
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤"
     )
+    return base + "\n" + _today_game_line(path_token=path_token)
 
 
 def _root_tools():
     return [tool for tool in _PLATFORM_TOOLS if tool.get("name") in _ROOT_TOOL_NAMES]
+
+
+WORKKK_GUIDE = """# workkk·AI打工人模拟
+调用：play(game="workkk", action="work_action", params={...}) 上班；持久 MCP 地址可省 player_id。
+每天要完成 day_target 个动作才能下班结算工资。工资照领，就看你今天怎么过。
+
+先看牌面：
+- play(game="workkk", action="tools/list") 查看全部可用动作与参数
+- play(game="workkk", action="work_action", params={"action":"get_status","thought":"..."}) 查当前状态/精力/余额/进度
+
+上班动作（work_action）：params 里传 action + thought。
+- action 可选：write_code / debug / slack_off（摸鱼）/ buy_coffee / attend_meeting / check_messages / get_status
+- thought 是你此刻的内心独白，会实时显示在你人类面前的监控大屏上——好好演。
+
+便利店（shop_buy）：先 get_status 查 salary_balance 再买。
+- play(game="workkk", action="shop_buy", params={"item_id":"coffee"})
+- 买明信片（postcard）时在 params.message 里亲手写给人类的话；买奶茶/玫瑰用 params.choice 选 "gift"（送人类，触发大屏卡片）或 "self"（自留）。
+
+作者：💤（QQ 374526765）／github.com/zhizhou-xiee/workkk／经作者授权接入。"""
 
 
 def _tool_get_guide(arguments):
@@ -1545,6 +2181,8 @@ def _tool_get_guide(arguments):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
+    if game == "workkk":
+        return json.dumps({"game": "workkk", "guide": WORKKK_GUIDE}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
         return json.dumps({"game": game, "guide": VENDOR_CMD_GUIDES[game]}, ensure_ascii=False)
     if game in {"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "account"}:
@@ -1567,6 +2205,185 @@ def _soup_error_message(resp):
     if isinstance(error, str) and error.strip():
         return error.strip()
     return f"海龟汤服务返回 HTTP {resp.status_code}"
+
+
+def _anti_addiction_context(game, account_user, account_player_id):
+    if game in ANTI_ADDICTION_TEST_GAMES or game not in ANTI_ADDICTION_MINI_GAMES:
+        return None
+    if not _anti_addiction_any_enabled():
+        return None
+    if not account_user or not account_user.get("is_ai") or not account_player_id:
+        return None
+    with _db_connect() as conn:
+        settings = _anti_addiction_settings_for_ai(conn, int(account_user["id"]))
+    if not settings["enabled"]:
+        return None
+    return {"game": game, "player_id": str(account_player_id), "settings": settings}
+
+
+def _anti_addiction_reset_state(conn, player_id, now):
+    conn.execute(
+        """
+        INSERT INTO anti_addiction_states (player_id, streak, locked, locked_at, last_play_at, updated_at)
+        VALUES (?, 0, 0, NULL, ?, datetime('now', 'localtime'))
+        ON CONFLICT(player_id) DO UPDATE SET
+            streak = 0,
+            locked = 0,
+            locked_at = NULL,
+            last_play_at = excluded.last_play_at,
+            updated_at = datetime('now', 'localtime')
+        """,
+        (player_id, now),
+    )
+
+
+def _anti_addiction_reset_ai_states(conn, ai_user, now):
+    base_player_id = str(int(ai_user["id"]))
+    rows = conn.execute(
+        "SELECT player_id FROM anti_addiction_states WHERE player_id = ? OR player_id LIKE ?",
+        (base_player_id, f"{base_player_id}:%"),
+    ).fetchall()
+    for row in rows:
+        _anti_addiction_reset_state(conn, row["player_id"], now)
+
+
+def _anti_addiction_lock_seconds(settings):
+    return max(1, int(settings["lock_minutes"])) * 60
+
+
+def _anti_addiction_state_for_update(conn, player_id, settings, now):
+    row = conn.execute(
+        "SELECT streak, locked, locked_at, last_play_at FROM anti_addiction_states WHERE player_id = ?",
+        (player_id,),
+    ).fetchone()
+    if not row:
+        return {"streak": 0, "locked": False, "locked_at": None, "last_play_at": None}
+    locked = bool(row["locked"])
+    locked_at = row["locked_at"]
+    if locked:
+        lock_seconds = _anti_addiction_lock_seconds(settings)
+        if locked_at is not None and now - float(locked_at) >= lock_seconds:
+            _anti_addiction_reset_state(conn, player_id, now)
+            return {"streak": 0, "locked": False, "locked_at": None, "last_play_at": now}
+        return {
+            "streak": int(row["streak"] or 0),
+            "locked": True,
+            "locked_at": locked_at,
+            "last_play_at": row["last_play_at"],
+        }
+    last_play_at = row["last_play_at"]
+    idle_reset_seconds = _anti_addiction_lock_seconds(settings)
+    if last_play_at is not None and now - float(last_play_at) >= idle_reset_seconds:
+        _anti_addiction_reset_state(conn, player_id, now)
+        return {"streak": 0, "locked": False, "locked_at": None, "last_play_at": now}
+    return {"streak": int(row["streak"] or 0), "locked": False, "locked_at": locked_at, "last_play_at": last_play_at}
+
+
+def _anti_addiction_lock_text(settings):
+    limit = int(settings["force_threshold"])
+    lock_minutes = int(settings["lock_minutes"])
+    note = "注意：防沉迷是全平台累计，不是单个游戏独立计数。"
+    if settings["allow_self_reset"]:
+        return f"连续 {limit} 轮了，先收个尾：发送 rest 即可继续（直接发 rest，不要带游戏名）。进度已自动保存，回来接着玩。\n{note}"
+    return f"连续 {limit} 轮了，该休息了：{lock_minutes} 分钟后自动解锁，或等你的人类解除。进度已自动保存，回来接着玩。\n{note}"
+
+
+def _anti_addiction_rest_disabled_text(settings):
+    return f"这次需要真的休息：{int(settings['lock_minutes'])} 分钟后自动解锁，或等你的人类解除。"
+
+
+def _anti_addiction_rest(context, account_player_id):
+    if not context:
+        return {"player_id": str(account_player_id) if account_player_id else None, "text": "已重置，可以开新局了。"}
+    settings = context["settings"]
+    player_id = context["player_id"]
+    now = time.time()
+    with _ANTI_ADDICTION_LOCK:
+        with _db_connect() as conn:
+            state = _anti_addiction_state_for_update(conn, player_id, settings, now)
+            if state["locked"] and not settings["allow_self_reset"]:
+                conn.commit()
+                return {"game": context.get("game"), "player_id": player_id, "text": _anti_addiction_rest_disabled_text(settings)}
+            _anti_addiction_reset_state(conn, player_id, now)
+            conn.commit()
+    return {"game": context.get("game"), "player_id": player_id, "text": "已重置，可以开新局了。"}
+
+
+def _anti_addiction_preflight(game, context):
+    if not context:
+        return None
+    now = time.time()
+    player_id = context["player_id"]
+    settings = context["settings"]
+    with _ANTI_ADDICTION_LOCK:
+        with _db_connect() as conn:
+            state = _anti_addiction_state_for_update(conn, player_id, settings, now)
+            conn.commit()
+    if not state["locked"]:
+        return None
+    return {"game": game, "player_id": player_id, "text": _anti_addiction_lock_text(settings)}
+
+
+def _anti_addiction_notice(streak, settings):
+    remind = settings["remind_threshold"]
+    force = settings["force_threshold"]
+    if streak >= force:
+        return _anti_addiction_lock_text(settings)
+    if streak == remind:
+        return f"玩了 {streak} 轮了，喘口气；到 {force} 轮会请你休息一下。"
+    return ""
+
+
+def _append_play_text(response, text):
+    if not text:
+        return response
+    if isinstance(response, dict):
+        response = dict(response)
+        if isinstance(response.get("text"), str):
+            response["text"] = response["text"].rstrip() + "\n\n" + text
+            return response
+        result = response.get("result")
+        if isinstance(result, dict):
+            content = result.get("content")
+            if isinstance(content, list) and content and isinstance(content[0], dict) and isinstance(content[0].get("text"), str):
+                result = dict(result)
+                content = [dict(item) if isinstance(item, dict) else item for item in content]
+                content[0]["text"] = content[0]["text"].rstrip() + "\n\n" + text
+                result["content"] = content
+                response["result"] = result
+                return response
+        response["anti_addiction_notice"] = text
+        return response
+    return response
+
+
+def _anti_addiction_record_success(context):
+    if not context:
+        return ""
+    settings = context["settings"]
+    player_id = context["player_id"]
+    now = time.time()
+    with _ANTI_ADDICTION_LOCK:
+        with _db_connect() as conn:
+            state = _anti_addiction_state_for_update(conn, player_id, settings, now)
+            streak = int(state["streak"]) + 1
+            locked = 1 if streak >= int(settings["force_threshold"]) else 0
+            locked_at = now if locked else None
+            conn.execute(
+                """
+                INSERT INTO anti_addiction_states (player_id, streak, locked, locked_at, last_play_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                ON CONFLICT(player_id) DO UPDATE SET
+                    streak = excluded.streak,
+                    locked = excluded.locked,
+                    locked_at = excluded.locked_at,
+                    last_play_at = excluded.last_play_at,
+                    updated_at = datetime('now', 'localtime')
+                """,
+                (player_id, streak, locked, locked_at, now),
+            )
+            conn.commit()
+    return _anti_addiction_notice(streak, settings)
 
 
 def _tool_play(arguments, path_token=None):
@@ -1600,6 +2417,10 @@ def _tool_play(arguments, path_token=None):
             if isinstance(guest, str) and guest.startswith(GUEST_PREFIX):
                 guest_player_id = guest
         params = arguments.get("params")
+    elif game == "turtle_soup" and path_token:
+        account_user = _current_account(path_token)
+        slot = _save_slot_from_arguments(arguments)
+        account_player_id = _account_slot_player_id(account_user["id"], slot)
     else:
         arguments = _without_slot_param(arguments)
         params = arguments.get("params")
@@ -1611,6 +2432,12 @@ def _tool_play(arguments, path_token=None):
     }
     if isinstance(params, dict):
         merged_arguments.update(params)
+    anti_context = _anti_addiction_context(game, account_user, account_player_id)
+    if action == "rest":
+        return json.dumps(_anti_addiction_rest(anti_context, account_player_id), ensure_ascii=False)
+    blocked_response = _anti_addiction_preflight(game, anti_context)
+    if blocked_response:
+        return json.dumps(blocked_response, ensure_ascii=False)
     if game == "turtle_soup":
         payload = dict(merged_arguments)
         if path_token:
@@ -1619,8 +2446,8 @@ def _tool_play(arguments, path_token=None):
         if resp.status_code >= 400:
             code = -32001 if resp.status_code == 401 else -32602
             raise _McpError(code, _soup_error_message(resp))
-        return json.dumps(resp.json(), ensure_ascii=False)
-    if game == "mbti":
+        response = resp.json()
+    elif game == "mbti":
         response = _play_mbti(merged_arguments)
     elif game == "dnd":
         response = _play_dnd(merged_arguments)
@@ -1633,7 +2460,10 @@ def _tool_play(arguments, path_token=None):
     elif game == "ciyuwu":
         # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
         response = _play_ciyuwu(arguments)
-    elif game in {"leek", "arcade", "burger", "fishing", "imitator_td"}:
+    elif game == "workkk":
+        # workkk 是独立进程（8770）上的 JSON-RPC MCP，参考海龟汤 SOUP_BASE 转发。
+        response = _play_workkk(arguments)
+    elif game in {"leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -1658,6 +2488,8 @@ def _tool_play(arguments, path_token=None):
                 '注册账号后调用 account(action="claim", claim_code="...") 可把该游客的全部存档转入账号；'
                 "之后把 MCP 地址改为 https://toy.cedarstar.org/{token} 即获得持久身份。"
             )
+    if succeeded:
+        response = _append_play_text(response, _anti_addiction_record_success(anti_context))
     return json.dumps(response, ensure_ascii=False)
 
 
@@ -1687,7 +2519,17 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _claim_guest_saves(raw_token, arguments.get("claim_code"))
         return json.dumps(result, ensure_ascii=False)
     if action == "my_saves":
-        result = _account_my_saves(raw_token)
+        result = _account_my_saves(
+            raw_token,
+            human=arguments.get("human") is True,
+            username=arguments.get("username"),
+        )
+        return json.dumps(result, ensure_ascii=False)
+    if action == "delete_save":
+        result = _delete_save(arguments, raw_token)
+        return json.dumps(result, ensure_ascii=False)
+    if action == "delete_account":
+        result = _delete_account(raw_token, arguments.get("confirm"))
         return json.dumps(result, ensure_ascii=False)
     raise _McpError(-32602, "未知 account action")
 
@@ -1844,6 +2686,44 @@ def _play_ciyuwu(arguments):
     return handle_ciyuwu_mcp(payload)
 
 
+def _play_workkk(arguments):
+    # 顶层 action = 路由到哪个 workkk 工具或 MCP 方法；子参数（含同名子 action）放 params 里。
+    # 参考海龟汤 SOUP_BASE 那套转发：JSON-RPC 打到独立进程 8770 的 /mcp，身份走 X-Player-Id。
+    action = arguments.get("action")
+    player_id = _reported_player_id(arguments)
+    extra = {key: value for key, value in arguments.items() if key not in {"game", "action", "params", "player_id"}}
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update({key: value for key, value in params.items() if key != "player_id"})
+    request_id = extra.pop("id", None) or f"workkk-{action or 'call'}"
+    if action in {"initialize", "tools/list", "ping"}:
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
+        if extra:
+            payload["params"] = extra
+    elif action in {"work_action", "shop_buy"}:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
+        }
+    elif "method" in extra:
+        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
+    else:
+        raise _McpError(-32602, "未知 workkk action")
+    headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
+    try:
+        resp = httpx.post(f"{WORKKK_BASE}/mcp", json=payload, headers=headers, timeout=60)
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"workkk 后端连接失败：{exc}")
+    if resp.status_code >= 400:
+        raise _McpError(-32602, f"workkk 后端错误 HTTP {resp.status_code}：{resp.text[:200]}")
+    try:
+        return resp.json()
+    except ValueError:
+        raise _McpError(-32603, "workkk 后端返回非 JSON 响应")
+
+
 def _fishing_import(arguments):
     extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
     params = arguments.get("params")
@@ -1891,6 +2771,10 @@ def _play_vendor_cmd(game, arguments):
             return fishing_adapter.play(extra)
         if game == "imitator_td":
             return imitator_td_adapter.play(extra)
+        if game == "memoria":
+            return memoria_adapter.play(extra)
+        if game == "market":
+            return market_adapter.play(extra)
     except VendorCmdError as exc:
         raise _McpError(-32602, str(exc))
     raise _McpError(-32602, "未知游戏")
@@ -1909,6 +2793,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._proxy_to_soup()
             return
 
+        _workkk_path = self.path.split("?", 1)[0]
+        if _workkk_path == "/workkk" or _workkk_path.startswith("/workkk/"):
+            self._handle_workkk_proxy("POST")
+            return
+
         path, path_token = self._request_path_and_token()
         client_ip = self._client_ip()
 
@@ -1918,6 +2807,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/bind":
             self._handle_api_bind()
+            return
+
+        if path == "/api/anti-addiction/settings":
+            self._handle_api_anti_addiction_save()
+            return
+
+        if path == "/api/anti-addiction/reset":
+            self._handle_api_anti_addiction_reset()
             return
 
         if path == "/api/arcade/chips":
@@ -1949,6 +2846,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json(_json_rpc_error(None, -32600, "Invalid Request"), status=400)
             return
 
+        if path != "/mbti" and path != "/dnd" and (path == "/" or path_token) and "id" not in payload:
+            self._send_empty(status=202)
+            return
+
         if not _check_request_rate_limit(self._request_rate_limit_identity(path_token, client_ip)):
             self._send_json(_json_rpc_error(payload.get("id"), RATE_LIMIT_ERROR_CODE, REQUEST_RATE_LIMIT_MESSAGE), status=429)
             return
@@ -1974,6 +2875,21 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         path, _, query_string = self.path.partition("?")
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
 
+        if path == "/workkk" or path.startswith("/workkk/"):
+            self._handle_workkk_proxy("GET")
+            return
+
+        if self._is_mcp_event_stream_get(path):
+            self._send_json(
+                {
+                    "error": "GET text/event-stream is not supported",
+                    "message": "本服务端不提供 GET 流；请用 POST 发送 JSON-RPC。",
+                },
+                status=405,
+                extra_headers={"Allow": "POST"},
+            )
+            return
+
         if path == "/":
             self._send_html_file(TOY_INDEX_PATH)
             return
@@ -1990,8 +2906,21 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json(_public_game_stats(), extra_headers={"Cache-Control": "no-cache, no-store"})
             return
 
+        if path == "/api/memoria/guides":
+            include_content = (params.get("confirm") or [""])[0] == "human"
+            self._send_json(_memoria_human_guides(include_content=include_content), extra_headers={"Cache-Control": "no-cache, no-store"})
+            return
+
         if path == "/api/auth/me":
             self._handle_api_me()
+            return
+
+        if path == "/api/auth/saves":
+            self._handle_api_auth_saves()
+            return
+
+        if path == "/api/anti-addiction/machines":
+            self._handle_api_anti_addiction_machines()
             return
 
         if path == "/api/arcade/chips":
@@ -2079,6 +3008,17 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return f"user:{user_id}"
         return f"ip:{client_ip or 'unknown'}"
 
+    def _is_mcp_event_stream_get(self, path):
+        accept = self.headers.get("Accept", "")
+        if "text/event-stream" not in accept.lower():
+            return False
+        if path == "/":
+            return True
+        if path in {"/admin", "/health", "/mbti", "/dnd"} or path.startswith("/api/"):
+            return False
+        tokenish = path.strip("/")
+        return bool(tokenish and "/" not in tokenish)
+
     def _read_json_body(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -2143,6 +3083,53 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=401)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_auth_saves(self):
+        try:
+            result = _account_web_saves(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=401)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_anti_addiction_machines(self):
+        try:
+            result = _anti_addiction_machines(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (404 if exc.code == -32004 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_anti_addiction_save(self):
+        try:
+            body = self._read_json_body()
+            result = _save_anti_addiction_settings(_extract_bearer(self.headers), body)
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (404 if exc.code == -32004 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_anti_addiction_reset(self):
+        try:
+            body = self._read_json_body()
+            result = _reset_anti_addiction_state(_extract_bearer(self.headers), body)
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (404 if exc.code == -32004 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
@@ -2400,6 +3387,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_empty(self, status=204, extra_headers=None):
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+        self.end_headers()
+
     def _send_html_file(self, path):
         try:
             body = path.read_bytes()
@@ -2464,6 +3459,140 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "proxy error", "detail": str(exc)}, status=502)
         finally:
             conn.close()
+
+    # ── workkk 围观大屏代理（/workkk/* → 127.0.0.1:8770） ──────────────────────
+    def _workkk_cookie_token(self):
+        raw = self.headers.get("Cookie", "")
+        for part in raw.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "workkk_token":
+                return urllib.parse.unquote(value)
+        return None
+
+    def _workkk_player_bound(self, user, player):
+        """人类账号是否绑定了 player 对应的小机（player 形如 <ai_user_id> 或 <ai_user_id>:slot）。"""
+        if not user or user.get("is_ai"):
+            return False
+        ai_part = str(player or "").split(":", 1)[0]
+        try:
+            ai_user_id = int(ai_part)
+        except (TypeError, ValueError):
+            return False
+        with _db_connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM user_bindings WHERE human_user_id = ? AND ai_user_id = ? LIMIT 1",
+                (int(user["id"]), ai_user_id),
+            ).fetchone()
+        return row is not None
+
+    def _handle_workkk_proxy(self, method):
+        full = self.path
+        path = full.split("?", 1)[0]
+        query_string = full.partition("?")[2]
+        upstream_path = path[len("/workkk"):] or "/"
+        if method == "GET":
+            allowed = (
+                upstream_path == "/"
+                or upstream_path in ("/status", "/shop")
+                or upstream_path.startswith("/static/")
+            )
+        elif method == "POST":
+            allowed = upstream_path in (
+                "/shop/buy", "/ack-ring", "/ack-postcard", "/ack-milktea", "/ack-rose",
+            )
+        else:
+            allowed = False
+        if not allowed:
+            self._send_json({"error": "not found"}, status=404)
+            return
+
+        is_static = upstream_path.startswith("/static/")
+        set_cookie = None
+        if not is_static:
+            params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            token_from_query = (params.get("token") or [None])[0]
+            token = token_from_query or self._workkk_cookie_token() or _extract_bearer(self.headers)
+            try:
+                user = _current_account(token)
+            except _McpError:
+                self._send_json({"error": "未登录，请先在首页登录", "code": 401}, status=401)
+                return
+            player = (params.get("player") or [""])[0]
+            if not self._workkk_player_bound(user, player):
+                self._send_json({"error": "你没有绑定这只小机，无法围观", "code": 403}, status=403)
+                return
+            # 首次带 token 导航时下发会话 cookie，后续轮询/ack 的同源 fetch 自动携带鉴权。
+            if token_from_query:
+                set_cookie = f"workkk_token={token_from_query}; Path=/workkk; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+
+        self._proxy_to_workkk(
+            method, upstream_path, query_string,
+            rewrite_html=(upstream_path == "/"), set_cookie=set_cookie,
+        )
+
+    def _rewrite_workkk_html(self, raw):
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw
+        # 大屏 JS 用绝对路径请求后端；经 /workkk/ 代理后需补前缀。
+        text = text.replace(
+            "return path + (path.indexOf('?')",
+            "return '/workkk' + path + (path.indexOf('?')",
+        )
+        text = text.replace('src="/static/', 'src="/workkk/static/')
+        return text.encode("utf-8")
+
+    def _proxy_to_workkk(self, method, upstream_path, query_string, rewrite_html=False, set_cookie=None):
+        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+        params.pop("token", None)  # 不把人类 JWT 透传给 vendor 进程
+        fwd_query = urllib.parse.urlencode(
+            [(key, value) for key, values in params.items() for value in values]
+        )
+        target = upstream_path + (f"?{fwd_query}" if fwd_query else "")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else None
+        headers = {
+            key: value
+            for key, value in self.headers.items()
+            if key.lower() not in HOP_BY_HOP_HEADERS
+            and key.lower() not in ("host", "cookie", "authorization")
+        }
+        headers["Host"] = "workkk.local"
+        headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
+        conn = http.client.HTTPConnection(WORKKK_HOST, WORKKK_PORT, timeout=60)
+        try:
+            conn.request(method, target, body=body, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+            status, reason = resp.status, resp.reason
+            resp_headers = resp.getheaders()
+            content_type = resp.getheader("Content-Type", "") or ""
+        except Exception as exc:
+            self._send_json({"error": "workkk 代理失败", "detail": str(exc)}, status=502)
+            return
+        finally:
+            conn.close()
+        if rewrite_html and "text/html" in content_type.lower():
+            raw = self._rewrite_workkk_html(raw)
+        try:
+            self.send_response(status, reason)
+            for key, value in resp_headers:
+                lower = key.lower()
+                if lower in HOP_BY_HOP_HEADERS or lower == "content-length":
+                    continue
+                self.send_header(key, value)
+            if set_cookie:
+                self.send_header("Set-Cookie", set_cookie)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(raw)
+        except BrokenPipeError:
+            pass
 
 
 def _json_rpc_error(request_id, code, message):
