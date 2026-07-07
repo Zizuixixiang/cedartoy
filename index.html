@@ -789,6 +789,35 @@
       text-transform: uppercase;
     }
 
+    .console-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .console-actions .enter {
+      margin-left: 0;
+    }
+
+    .watch-btn {
+      background: var(--purple);
+      border-right-color: var(--purple-darker);
+      border-bottom-color: var(--purple-darker);
+      font-size: 11px;
+      padding: 10px 24px;
+      text-transform: uppercase;
+    }
+
+    .drawer-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .drawer-actions .pixel-btn {
+      flex: 1;
+    }
+
     .bottom-nav {
       height: 82px;
       border-top: 4px solid var(--purple);
@@ -1864,10 +1893,8 @@
       <a class="brand" href="/" aria-label="CEDAR TOY HOME"><span class="pixel-logo"></span><span>CEDAR TOY</span></a>
       <div class="top-actions">
         <div class="status-strip">
-          <span class="stat"><span class="dot">●</span> ONLINE: <b id="onlineCount">1204
-</span>
-          <span class="stat">ROOMS: <b id="roomCount">--
-</span>
+          <span class="stat"><span class="dot">●</span> ONLINE: <b id="onlineCount">1204</b></span>
+          <span class="stat">ROOMS: <b id="roomCount">--</b></span>
         </div>
         <div class="auth-area" id="authArea">
           <button class="pixel-btn" id="loginOpen">登录</button>
@@ -1948,12 +1975,16 @@
             <div class="round"></div>
             <div class="round alt"></div>
             <div class="slot"></div>
-            <button class="pixel-btn enter" id="enterButton">ENTER →</button>
+            <div class="console-actions">
+              <button class="pixel-btn watch-btn" id="watchButton" type="button" style="display:none">围观大屏 →</button>
+              <button class="pixel-btn enter" id="enterButton">ENTER →</button>
+            </div>
           </div>
         </div>
         <div class="guide-panel" id="guidePanel">
           <div class="memoria-guides" id="memoriaGuides"></div>
           <button class="pixel-btn enter guide-enter" id="guideEnterButton" type="button">完整玩法 →</button>
+          <button class="pixel-btn guide-enter watch-btn" id="guideWatchButton" type="button" style="display:none">围观大屏 →</button>
         </div>
       </section>
     </main>
@@ -2053,7 +2084,10 @@
         <div class="arcade-bank" data-bank-scope="drawer"></div>
       </div>
       <div class="memoria-guides" id="drawerMemoriaGuides"></div>
-      <button class="pixel-btn" id="drawerEnter" type="button">ENTER →</button>
+      <div class="drawer-actions">
+        <button class="pixel-btn watch-btn" id="drawerWatchButton" type="button" style="display:none">围观大屏 →</button>
+        <button class="pixel-btn" id="drawerEnter" type="button">ENTER →</button>
+      </div>
     </section>
   </div>
 
@@ -2354,8 +2388,9 @@
         stats: [["SALARY", "66%"], ["SLACK", "88%"]],
         footerIcons: ["💼", "☕", "🐟"],
         tags: ["上班", "围观", "MCP"],
-        url: "/workkk/",
-        ctaLabel: "围观大屏 →",
+        url: "https://github.com/zhizhou-xiee/workkk",
+        watchLabel: "围观大屏 →",
+        ctaLabel: "完整玩法 →",
         ranks: []
       },
       {
@@ -3246,7 +3281,7 @@
           if (window.matchMedia("(max-width: 599px)").matches) {
             selectGame(card.dataset.game, true);
           } else {
-            selectGame(card.dataset.game, false);
+            enterGameById(card.dataset.game);
           }
         });
       });
@@ -3279,6 +3314,13 @@
       if (guideEnter) guideEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "完整玩法 →");
       const drawerEnter = $("drawerEnter");
       if (drawerEnter) drawerEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
+      const watchLabel = game.watchLabel || "围观大屏 →";
+      ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
+        const btn = $(id);
+        if (!btn) return;
+        btn.style.display = game.watch ? "" : "none";
+        btn.textContent = watchLabel;
+      });
       renderRanks(game);
       renderArcadeBanks();
       renderMemoriaGuides(game);
@@ -3309,7 +3351,6 @@
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
       }
-      if (game.watch) { enterWorkkk(); return; }
       window.location.href = game.url;
     }
 
@@ -3321,7 +3362,6 @@
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
       }
-      if (game.watch) { enterWorkkk(); return; }
       window.location.href = game.url;
     }
 
@@ -3831,6 +3871,10 @@
     $("enterButton").addEventListener("click", enterGame);
     $("guideEnterButton").addEventListener("click", enterGame);
     $("drawerEnter").addEventListener("click", enterGame);
+    ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
+      const btn = $(id);
+      if (btn) btn.addEventListener("click", enterWorkkk);
+    });
     $("drawerClose").addEventListener("click", closeDrawers);
     $("mineClose").addEventListener("click", closeDrawers);
     $("gameDrawer").addEventListener("click", (event) => { if (event.target.id === "gameDrawer") closeDrawers(); });
