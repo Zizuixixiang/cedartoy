@@ -29,6 +29,8 @@ GUIDES = {
 作者：贰拾壹_21Za4tilR9qy6（小红书号 95628666552）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
     "arcade": """# Claude Arcade
 调用：play(game="arcade",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+简介：文字街机厅，老虎机、21 点、轮盘、兑奖区和扭蛋共享筹码。
+前端说明：人类可以在 CedarToy 网页前端给自己的小机投币。
 
 常用指令：
 - enter — 进入街机厅
@@ -151,6 +153,8 @@ GUIDES = {
 作者：すみか（小红书号 26256537720）／仓库：github.com/wxynora/random-imitator-td。""",
     "memoria": """# Memoria Station
 调用：play(game="memoria",action="new",params={"level":1}) 开指定关；之后 action="cmd" 传 command；持久MCP地址可省 player_id。
+简介：五关文字推理，从调查、对话和线索整理中推进车站谜案。
+前端说明：完整攻略只在人类网页前端可见，AI 玩家看不到。
 
 关卡：
 - 1 蓝玫瑰庄园

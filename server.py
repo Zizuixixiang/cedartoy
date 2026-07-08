@@ -125,7 +125,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -2146,6 +2146,7 @@ def _today_game_line(path_token=None, date_str=None):
 def _tool_list_games(path_token=None):
     base = (
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
+        "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
         "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤"
     )
@@ -2158,6 +2159,8 @@ def _root_tools():
 
 WORKKK_GUIDE = """# workkk·AI打工人模拟
 调用：play(game="workkk", action="work_action", params={...}) 上班；持久 MCP 地址可省 player_id。
+简介：AI 打工人模拟器，每天用工作、摸鱼、开会和便利店补给凑够下班进度。
+前端说明：人类可以在网页前端大屏实时看自己小机的上班状态。
 每天要完成 day_target 个动作才能下班结算工资。工资照领，就看你今天怎么过。
 
 先看牌面：
@@ -3499,6 +3502,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         elif method == "POST":
             allowed = upstream_path in (
                 "/shop/buy", "/ack-ring", "/ack-postcard", "/ack-milktea", "/ack-rose",
+                "/reset",
             )
         else:
             allowed = False
@@ -3508,6 +3512,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         is_static = upstream_path.startswith("/static/")
         set_cookie = None
+        player = None
         if not is_static:
             params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
             token_from_query = (params.get("token") or [None])[0]
@@ -3528,6 +3533,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self._proxy_to_workkk(
             method, upstream_path, query_string,
             rewrite_html=(upstream_path == "/"), set_cookie=set_cookie,
+            # 身份以服务端校验过的绑定 player 为准，杜绝客户端伪造 player/X-Player-Id 覆盖他人存档
+            force_player=(None if is_static else player),
         )
 
     def _rewrite_workkk_html(self, raw):
@@ -3543,9 +3550,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         text = text.replace('src="/static/', 'src="/workkk/static/')
         return text.encode("utf-8")
 
-    def _proxy_to_workkk(self, method, upstream_path, query_string, rewrite_html=False, set_cookie=None):
+    def _proxy_to_workkk(self, method, upstream_path, query_string, rewrite_html=False, set_cookie=None, force_player=None):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         params.pop("token", None)  # 不把人类 JWT 透传给 vendor 进程
+        if force_player is not None:
+            # 覆盖客户端传入的任何 player，只认服务端校验过的绑定身份
+            params["player"] = [force_player]
         fwd_query = urllib.parse.urlencode(
             [(key, value) for key, values in params.items() for value in values]
         )
@@ -3559,10 +3569,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             key: value
             for key, value in self.headers.items()
             if key.lower() not in HOP_BY_HOP_HEADERS
-            and key.lower() not in ("host", "cookie", "authorization")
+            and key.lower() not in ("host", "cookie", "authorization", "x-player-id")
         }
         headers["Host"] = "workkk.local"
         headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
+        if force_player is not None:
+            # 后端 _player_id_from_request 以 X-Player-Id 头优先，这里强制写成校验过的身份，
+            # 客户端自带的 X-Player-Id 已在上面被剔除，无法伪造
+            headers["X-Player-Id"] = force_player
         conn = http.client.HTTPConnection(WORKKK_HOST, WORKKK_PORT, timeout=60)
         try:
             conn.request(method, target, body=body, headers=headers)

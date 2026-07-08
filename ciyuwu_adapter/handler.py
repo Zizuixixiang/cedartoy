@@ -53,6 +53,17 @@ META_KEYS = [
     "cross_word_stats", "game_diary",
     "cross_deform_count", "cross_swallow_count",
 ]
+_PROGRESS_FLAG = "_adapter_has_substantive_progress"
+_PROGRESS_PHASES = {"explore", "combat", "fork", "judgment", "void", "dead", "dead_who", "dead_wipe", "ending"}
+_PROGRESS_LIST_KEYS = (
+    "run_log", "completed_errands", "deformations_seen", "forgotten_words",
+    "broken_solved", "inventory", "created_words",
+)
+_PROGRESS_DICT_KEYS = ("words_spoken", "words_carried")
+_PROGRESS_NUMERIC_KEYS = (
+    "room_index", "retreat_marks", "doors_not_opened", "silence_counter",
+    "her_trace_count", "r_flags",
+)
 
 # engine 的 _det_rng 是进程级共享可变全局；server 多线程并发，
 # 必须串行化整段「恢复 state -> cmd -> 快照」过程。
@@ -368,9 +379,21 @@ def _run_player_command(player_id, command):
         except (json.JSONDecodeError, ValueError) as exc:
             raise JsonRpcError(-32603, f"存档解析失败：{exc}")
         # meta_data 是跨局层的权威副本，覆盖进当局 state 再执行。
-        state.update(_extract_meta(_parse_meta(row[1])))
+        old_meta = _extract_meta(_parse_meta(row[1]))
+        state.update(old_meta)
+        state.setdefault(_PROGRESS_FLAG, _state_has_substantive_progress(state))
 
         new_state, new_meta, text = _engine_run(state, command)
+        had_progress = bool(state.get(_PROGRESS_FLAG))
+        has_progress = had_progress or _state_has_substantive_progress(new_state)
+        new_state[_PROGRESS_FLAG] = has_progress
+        if not has_progress:
+            blocked_rewards = _meta_has_unearned_rewards(old_meta, new_meta)
+            new_meta = _meta_without_unearned_rewards(old_meta, new_meta)
+            _apply_meta_to_state(new_state, new_meta)
+            if blocked_rewards:
+                text = _strip_unearned_reward_text(text)
+                text += "\n\n【本局尚无实质进度，未结算遗刻等跨局收益。】"
 
         conn.execute(
             "UPDATE ciyuwu_sessions SET save_data = ?, meta_data = ?, last_active = ? WHERE player_id = ?",
@@ -388,6 +411,7 @@ def _engine_new(seed, meta):
     for key in META_KEYS:
         if key in meta:
             state[key] = meta[key]
+    state[_PROGRESS_FLAG] = False
     return state, text
 
 
@@ -400,6 +424,68 @@ def _engine_run(state, command):
 
 def _extract_meta(state):
     return {key: state[key] for key in META_KEYS if key in state}
+
+
+def _apply_meta_to_state(state, meta):
+    for key in META_KEYS:
+        if key in meta:
+            state[key] = meta[key]
+        else:
+            state.pop(key, None)
+
+
+def _meta_without_unearned_rewards(old_meta, new_meta):
+    sanitized = dict(new_meta)
+    for key in META_KEYS:
+        if key == "runs":
+            continue
+        if key in old_meta:
+            sanitized[key] = old_meta[key]
+        else:
+            sanitized.pop(key, None)
+    return sanitized
+
+
+def _meta_has_unearned_rewards(old_meta, new_meta):
+    for key in META_KEYS:
+        if key == "runs":
+            continue
+        if old_meta.get(key) != new_meta.get(key):
+            return True
+    return False
+
+
+def _strip_unearned_reward_text(text):
+    text = re.sub(r"遗刻\+\d+（共\d+）。", "遗刻不变。", text)
+    text = re.sub(r"遗刻\+\d+。", "遗刻不变。", text)
+    text = re.sub(r"遗刻\+\d+", "遗刻不变", text)
+    return text
+
+
+def _state_has_substantive_progress(state):
+    if state.get(_PROGRESS_FLAG):
+        return True
+    if state.get("phase") in _PROGRESS_PHASES:
+        return True
+    if state.get("area"):
+        return True
+    if state.get("current_room_type"):
+        return True
+    if isinstance(state.get("_combat"), dict):
+        return True
+    for key in _PROGRESS_LIST_KEYS:
+        value = state.get(key)
+        if isinstance(value, (list, tuple, set)) and len(value) > 0:
+            return True
+    for key in _PROGRESS_DICT_KEYS:
+        value = state.get(key)
+        if isinstance(value, dict) and any(v for v in value.values()):
+            return True
+    for key in _PROGRESS_NUMERIC_KEYS:
+        value = state.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            return True
+    return False
 
 
 def _parse_meta(raw):

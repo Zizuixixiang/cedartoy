@@ -99,10 +99,26 @@ def main():
         assert json.loads(row[0])["echoes"] == 7, "meta 未注入新局 state"
         print("[6] 新局保留跨局 meta OK（echoes=7 存活）")
 
-        # 7. 上游文件存档已屏蔽：vendor 目录不应新增存档文件
+        # 7. 空跑一局不得结算跨局收益：新角 -> 确认 -> 脱出
+        _call("ciyuwu_new", {"player_id": "empty1", "seed": 7})
+        _call("ciyuwu_cmd", {"player_id": "empty1", "command": "新角"})
+        _call("ciyuwu_cmd", {"player_id": "empty1", "command": "确认"})
+        text = _call("ciyuwu_cmd", {"player_id": "empty1", "command": "脱出"})
+        assert "尚无实质进度" in text and "遗刻+1" not in text, text
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT save_data, meta_data FROM ciyuwu_sessions WHERE player_id='empty1'"
+            ).fetchone()
+        state = json.loads(row[0])
+        meta = json.loads(row[1])
+        assert state["runs"] == 1 and meta["runs"] == 1, "空跑应保留局数统计"
+        assert state["echoes"] == 0 and meta["echoes"] == 0, "空跑不应结算遗刻"
+        print("[7] 空跑脱出不结算遗刻 OK")
+
+        # 8. 上游文件存档已屏蔽：vendor 目录不应新增存档文件
         for p, existed in pre_existing.items():
             assert os.path.exists(p) == existed, f"vendor 存档文件被写入：{p}"
-        print("[7] vendor 无文件写入 OK")
+        print("[8] vendor 无文件写入 OK")
 
         print("\n全部通过 ✓")
     finally:
