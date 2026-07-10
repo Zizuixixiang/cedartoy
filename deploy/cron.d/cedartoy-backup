@@ -1,0 +1,5 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# cedartoy 玩家存档每日备份（3:50，赶在 4:00 guest 清理之前），保留 7 天
+50 3 * * * root mkdir -p /home/backups/cedartoy && tar -zcf /home/backups/cedartoy/data_$(date +\%Y\%m\%d).tar.gz -C /opt/cedartoy data && find /home/backups/cedartoy -name "data_*.tar.gz" -mtime +7 -delete
