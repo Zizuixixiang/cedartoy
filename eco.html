@@ -92,11 +92,11 @@
       grid-template-columns: minmax(0, 1fr) minmax(350px, 0.9fr);
       grid-template-areas:
         "summary summary"
-        "disaster observe"
-        "choice observe"
-        "settlers observe"
-        "environment observe"
-        "populations observe";
+        "disaster disaster"
+        "choice choice"
+        "observe observe"
+        "settlers environment"
+        "populations populations";
       gap: 18px;
       align-items: start;
     }
@@ -112,7 +112,7 @@
     .settlers-zone { grid-area: settlers; padding: 16px; overflow: visible; }
     .environment-zone { grid-area: environment; padding: 14px 16px 16px; }
     .populations-zone { grid-area: populations; padding: 0; }
-    .observe-zone { grid-area: observe; position: sticky; top: 18px; }
+    .observe-zone { grid-area: observe; }
     .notice-list, .choice-options { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
     .notice-list li { border-left: 4px solid var(--pink); padding: 7px 10px; background: rgba(230,168,177,0.1); font-size: 13px; line-height: 1.5; }
     .choice-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
@@ -133,7 +133,8 @@
     .settler-stack-card { height: 136px; padding: 17px 18px; overflow: hidden; background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.46); }
     .settler-stack-card::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); pointer-events: none; }
     .settler-card-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding-right: 45px; }
-    .settler-card-art { width: 46px; height: 46px; object-fit: contain; flex: none; }
+    .settler-card-art { width: 44px; height: 44px; object-fit: contain; flex: none; image-rendering: pixelated; }
+    .settler-card-top > div:last-child { min-width: 0; flex: 1; }
     .settler-name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
     .settler-name { margin: 0; color: var(--purple-darker); font-size: 20px; overflow-wrap: anywhere; }
     .settler-species { color: var(--muted); font-size: 11px; white-space: nowrap; }
@@ -142,26 +143,15 @@
     .settler-card-returns { color: var(--pink-dark); }
     .stack-page { position: absolute; z-index: 2; top: 12px; right: 13px; color: var(--pink-dark); font-size: 11px; }
 
-    .crt {
-      min-height: 440px;
-      color: #e9e4ec;
-      background-color: var(--screen-bg);
-      background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px);
-      border: 4px solid var(--purple-dark);
-      box-shadow: inset 0 0 30px rgba(0,0,0,0.42), 5px 5px 0 rgba(190,177,209,0.42);
-      padding: 20px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: 13px;
-      line-height: 1.75;
-      overflow-wrap: anywhere;
-    }
-    .crt-text { margin: 0; white-space: pre-wrap; font: inherit; color: inherit; }
-    .crt-data { margin: 9px 0; border-top: 1px dashed rgba(230,168,177,0.5); border-bottom: 1px dashed rgba(230,168,177,0.5); }
-    .crt-data summary { list-style: none; cursor: pointer; color: var(--pink); padding: 7px 0; }
-    .crt-data summary::-webkit-details-marker { display: none; }
-    .crt-data summary::before { content: "▸ "; }
-    .crt-data[open] summary::before { content: "▾ "; }
-    .crt-data pre { margin: 0 0 8px; padding: 8px; max-height: 280px; overflow: auto; color: #d8d2dc; background: rgba(0,0,0,0.22); white-space: pre-wrap; font: inherit; }
+    .pond-diary { min-height: 260px; padding: 24px 27px 24px 31px; color: var(--text); background: #FFFAF0; border-left-color: var(--pink); }
+    .pond-diary::before { content: ""; position: absolute; z-index: 1; left: 14px; top: 18px; bottom: 18px; width: 3px; background: var(--pink); }
+    .diary-text { margin: 0; color: var(--text); white-space: pre-wrap; font: inherit; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+    .raw-data-fold { margin: 12px 0; border-top: 1px dashed var(--pink); border-bottom: 1px dashed var(--pink); }
+    .raw-data-fold summary { list-style: none; cursor: pointer; color: var(--pink-dark); padding: 8px 0; font-size: 12px; font-weight: 700; }
+    .raw-data-fold summary::-webkit-details-marker { display: none; }
+    .raw-data-fold summary::before { content: "▸ "; }
+    .raw-data-fold[open] summary::before { content: "▾ "; }
+    .raw-data-code { margin: 0 0 10px; padding: 10px; max-height: 280px; overflow: auto; color: #e9e4ec; background: var(--screen-bg); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 11px; line-height: 1.6; }
 
     details.population-fold > summary { list-style: none; cursor: pointer; padding: 14px 17px; color: var(--purple-darker); font-weight: 700; }
     details.population-fold > summary::-webkit-details-marker { display: none; }
@@ -169,8 +159,10 @@
     details.population-fold[open] > summary::after { content: "−"; }
     .population-groups { display: grid; gap: 12px; border-top: 3px solid var(--purple-light); padding: 12px 16px 15px; }
     .population-group h3 { margin: 0 0 5px; color: var(--pink-dark); font-size: 12px; }
-    .species-row { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; padding: 6px 1px; color: var(--text); background: transparent; border: 0; border-bottom: 1px dashed var(--purple); text-align: left; }
+    .species-row { width: 100%; display: grid; grid-template-columns: auto minmax(18px,1fr) auto; align-items: center; gap: 7px; padding: 6px 1px; color: var(--text); background: transparent; border: 0; text-align: left; }
     .species-row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .population-leader { align-self: center; height: 0.65em; border-bottom: 2px dotted var(--purple); opacity: 0.72; }
+    .species-row-value { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
     .population-image { width: 30px; height: 30px; object-fit: contain; }
     .species-row.locked { color: var(--muted); cursor: default; }
     .delta-up { color: #3f8d63; }
@@ -197,6 +189,9 @@
     .badge-flow { display: flex; flex-wrap: wrap; gap: 7px; }
     .visitor-badge, .folio-count-badge { display: inline-flex; align-items: center; color: var(--purple-darker); background: var(--purple-light); border: 2px solid var(--purple); padding: 5px 9px; font-size: 12px; font-weight: 700; }
     .rumor-list { display: grid; gap: 8px; }
+    .codex-visitor-list { display: grid; gap: 10px; }
+    .codex-visitor-item { display: grid; justify-items: start; }
+    .codex-visitor-notes { margin: 8px 0 0; padding-left: 10px; color: var(--muted); font-size: 10px; line-height: 1.45; }
     .rumor-quote { margin: 0; padding: 7px 10px; border-left: 4px solid var(--pink); color: var(--text); font-size: 12px; line-height: 1.55; font-style: italic; background: rgba(230,168,177,0.07); }
     .achievement-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
     .achievement-card { padding: 10px 11px; border: 2px solid #d8d4da; background: #f5f3f5; color: var(--muted); }
@@ -204,8 +199,14 @@
     .achievement-card h3 { margin: 0 0 3px; font-size: 13px; }
     .achievement-card p { margin: 0; font-size: 10px; line-height: 1.4; }
 
-    .folio-section { display: grid; gap: 9px; }
-    .folio-title { margin: 0; padding-bottom: 7px; color: var(--pink-dark); border-bottom: 3px solid var(--purple-light); font-size: 17px; }
+    .folio-section { border-bottom: 2px solid var(--purple-light); }
+    .folio-title { list-style: none; cursor: pointer; margin: 0; padding: 9px 4px; color: var(--pink-dark); border-bottom: 3px solid transparent; font-size: 17px; font-weight: 700; }
+    .folio-title::-webkit-details-marker { display: none; }
+    .folio-title::after { content: "+"; float: right; color: var(--purple-darker); font-family: "Silkscreen", monospace; }
+    .folio-section[open] > .folio-title { border-bottom-color: var(--purple-light); }
+    .folio-section[open] > .folio-title::after { content: "−"; }
+    .folio-section:not([open]) > .folio-body { display: none; }
+    .folio-section[open] > .folio-body { display: grid; gap: 9px; padding: 9px 4px 12px; }
     .folio-species-list { display: grid; border-top: 1px solid var(--purple-light); }
     .folio-species-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 9px 5px; border-bottom: 1px solid var(--purple-light); }
     .folio-species-row strong { color: var(--purple-darker); }
@@ -223,16 +224,22 @@
     .mini-timeline { position: relative; margin: 0; padding: 0 0 0 17px; list-style: none; display: grid; gap: 6px; }
     .mini-timeline::before { content: ""; position: absolute; left: 4px; top: 5px; bottom: 5px; width: 2px; background: var(--purple-light); }
     .mini-timeline li { position: relative; font-size: 11px; line-height: 1.4; }
-    .mini-timeline li::before { content: ""; position: absolute; left: -17px; top: 4px; width: 9px; height: 9px; background: var(--pink); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--pink-dark); }
+    .mini-timeline li::before { content: ""; position: absolute; left: -16px; top: 4px; width: 8px; height: 8px; background: var(--pink); border: 1px solid #fff; box-shadow: 0 0 0 1px var(--pink-dark); }
     .folio-badge-list { display: grid; gap: 7px; }
     .folio-badge-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 7px; }
     .folio-note { align-self: center; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .folio-visitor-list { display: grid; gap: 12px; }
+    .folio-visitor-entry { min-width: 0; }
+    .folio-visitor-line { display: flex; align-items: baseline; gap: 6px; }
+    .folio-visitor-line strong { color: var(--purple-darker); }
+    .folio-visitor-count { color: var(--muted); font-size: 10px; }
+    .folio-visitor-notes { margin: 3px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 
-    .annals-timeline { position: relative; margin: 0; padding: 0 0 0 72px; list-style: none; display: grid; gap: 17px; }
-    .annals-timeline::before { content: ""; position: absolute; left: 52px; top: 9px; bottom: 9px; width: 2px; background: var(--purple); }
+    .annals-timeline { position: relative; margin: 0; padding: 0 0 0 104px; list-style: none; display: grid; gap: 17px; }
+    .annals-timeline::before { content: ""; position: absolute; left: 82px; top: 9px; bottom: 9px; width: 2px; background: var(--purple); }
     .annals-day { position: relative; min-height: 34px; }
-    .annals-day::before { content: ""; position: absolute; left: -24px; top: 9px; width: 10px; height: 10px; background: #fff; border: 3px solid var(--purple-dark); border-radius: 50%; }
-    .date-badge { position: absolute; right: calc(100% + 34px); top: 0; min-width: 58px; padding: 4px 6px; color: #fff; text-align: center; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .annals-day::before { content: ""; position: absolute; left: -26px; top: 9px; width: 10px; height: 10px; background: #fff; border: 3px solid var(--purple-dark); border-radius: 50%; }
+    .date-badge { position: absolute; right: calc(100% + 40px); top: 0; min-width: 58px; padding: 4px 6px; color: #fff; border: 2px solid transparent; text-align: center; font-size: 10px; font-weight: 700; white-space: nowrap; }
     .season-spring { background: #A8C8A0; }
     .season-summer { background: #E6A8B1; }
     .season-autumn { background: #D4B483; }
@@ -240,6 +247,9 @@
     .season-unknown { background: var(--muted); }
     .annals-events { display: grid; gap: 6px; }
     .annals-event { margin: 0; padding: 7px 10px; background: rgba(255,255,255,0.78); line-height: 1.55; font-size: 13px; }
+    .annals-event.important { font-weight: 700; }
+    .annals-day.important::before { border-color: var(--pink); }
+    .annals-day.important .date-badge { border-color: var(--pink); box-shadow: 0 0 0 1px #fff inset; }
 
     .sheet-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; align-items: end; justify-content: center; padding: 14px 14px 0; background: rgba(45,45,45,0.45); }
     .sheet { width: min(680px,100%); max-height: 78vh; overflow: auto; background: var(--bg); border: 4px solid var(--purple-dark); border-bottom: 0; padding: 14px 17px calc(22px + var(--safe-bottom)); }
@@ -267,7 +277,7 @@
       main { width: min(100% - 16px,620px); padding: 10px 0 calc(var(--mobile-nav-height) + var(--safe-bottom) + 14px); }
       .page-stack { gap: 13px; }
       .page-heading h2 { font-size: 20px; }
-      .state-grid { grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "settlers" "environment" "observe" "populations"; gap: 10px; }
+      .state-grid { grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "observe" "settlers" "environment" "populations"; gap: 10px; }
       .status-banner { grid-template-columns: 78px 1fr; min-height: 82px; padding: 10px 12px; border-width: 3px; }
       .status-banner .score { font-size: 45px; border-right-width: 2px; }
       .status-copy { padding-left: 11px; }
@@ -284,15 +294,16 @@
       .settler-stack.single { min-height: 124px; }
       .settler-stack-card { height: 118px; padding: 12px 13px; border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
       .settler-card-top { gap: 7px; padding-right: 40px; }
-      .settler-card-art { width: 34px; height: 34px; }
+      .settler-card-art { width: 44px; height: 44px; }
       .settler-name-line { gap: 6px; }
       .settler-name { font-size: 15px; }
       .settler-species { font-size: 9px; }
       .settler-card-status { font-size: 8px; }
       .settler-card-meta { margin-top: 8px; padding-top: 6px; font-size: 10px; line-height: 1.45; }
       .stack-page { top: 9px; right: 10px; font-size: 10px; }
-      .observe-zone { position: static; }
-      .crt { min-height: 260px; padding: 12px; font-size: 11px; line-height: 1.6; }
+      .pond-diary { min-height: 220px; padding: 16px 16px 16px 25px; }
+      .pond-diary::before { left: 11px; top: 13px; bottom: 13px; }
+      .diary-text { font-size: 11px; line-height: 1.8; }
       .population-groups { padding: 8px 10px 10px; gap: 8px; }
       .species-row { padding: 4px 1px; font-size: 11px; }
       .population-image { width: 25px; height: 25px; }
@@ -309,7 +320,8 @@
       .achievement-card { padding: 7px; }
       .achievement-card h3 { font-size: 11px; }
       .achievement-card p { font-size: 9px; }
-      .folio-title { font-size: 14px; padding-bottom: 5px; }
+      .folio-title { font-size: 14px; padding: 7px 3px; }
+      .folio-section[open] > .folio-body { padding: 7px 3px 9px; }
       .folio-species-row { padding: 7px 3px; gap: 8px; }
       .folio-species-row strong { font-size: 12px; }
       .folio-species-meta { font-size: 9px; }
@@ -318,10 +330,10 @@
       .settler-folio-head { font-size: 12px; }
       .life-record { grid-template-columns: 68px 1fr; gap: 6px; margin-top: 7px; }
       .mini-timeline { gap: 4px; }
-      .annals-timeline { padding-left: 66px; gap: 10px; }
-      .annals-timeline::before { left: 47px; }
-      .annals-day::before { left: -23px; }
-      .date-badge { right: calc(100% + 31px); min-width: 52px; padding: 3px 5px; font-size: 9px; }
+      .annals-timeline { padding-left: 96px; gap: 10px; }
+      .annals-timeline::before { left: 74px; }
+      .annals-day::before { left: -26px; }
+      .date-badge { right: calc(100% + 36px); min-width: 52px; padding: 3px 5px; font-size: 9px; }
       .annals-events { gap: 4px; }
       .annals-event { padding: 6px 8px; font-size: 11px; line-height: 1.4; }
       .bottom-nav {
@@ -543,11 +555,6 @@
       return messages;
     }
 
-    function prefixCrtLines(text) {
-      if (!text) return "";
-      return text.replace(/^/gm, "> ");
-    }
-
     function splitObserveJson(text) {
       const start = text.indexOf('{"day"');
       if (start < 0) return { before: text, raw: null, after: "" };
@@ -576,15 +583,20 @@
 
     function renderObserve(text) {
       const parts = splitObserveJson(String(text || ""));
-      const screen = el("div", { className: "crt" });
-      if (parts.before) screen.append(el("pre", { className: "crt-text", text: prefixCrtLines(parts.before) }));
+      const paper = el("div", { className: "pixel-card pond-diary" });
+      if (parts.before) paper.append(el("pre", { className: "diary-text", text: parts.before }));
       if (parts.raw) {
-        const dataFold = el("details", { className: "crt-data" });
-        dataFold.append(el("summary", { text: "📊 原始数据" }), el("pre", { text: parts.raw }));
-        screen.append(dataFold);
+        const dataFold = el("details", { className: "raw-data-fold" });
+        const storageKey = `cedartoy_eco_raw_data_${aiUserId || "self"}`;
+        try { dataFold.open = sessionStorage.getItem(storageKey) === "open"; } catch (_) { dataFold.open = false; }
+        dataFold.addEventListener("toggle", () => {
+          try { sessionStorage.setItem(storageKey, dataFold.open ? "open" : "closed"); } catch (_) { /* 会话存储不可用时保留原生状态。 */ }
+        });
+        dataFold.append(el("summary", { text: "📊 原始数据" }), el("pre", { className: "raw-data-code", text: parts.raw }));
+        paper.append(dataFold);
       }
-      if (parts.after) screen.append(el("pre", { className: "crt-text", text: prefixCrtLines(parts.after) }));
-      return screen;
+      if (parts.after) paper.append(el("pre", { className: "diary-text", text: parts.after }));
+      return paper;
     }
 
     function stackPose(offset) {
@@ -831,6 +843,9 @@
         grid.append(zone);
       }
 
+      const observe = el("section", { className: "observe-zone", attrs: { "aria-label": "观察记录" } }, renderObserve(data.observe_text));
+      grid.append(observe);
+
       const settlers = card("定居者", "settlers-zone");
       settlers.append(createSettlerStack(data.settlers || []));
       grid.append(settlers);
@@ -853,9 +868,6 @@
       environment.append(environmentGrid);
       grid.append(environment);
 
-      const observe = el("section", { className: "observe-zone", attrs: { "aria-label": "观察记录" } }, renderObserve(data.observe_text));
-      grid.append(observe);
-
       const populations = el("details", { className: "pixel-card population-fold populations-zone" });
       populations.append(el("summary", { text: "种群" }));
       const groups = el("div", { className: "population-groups" });
@@ -865,10 +877,11 @@
           const unlocked = species.name !== "???";
           const row = el(unlocked ? "button" : "div", { className: `species-row${unlocked ? "" : " locked"}`, attrs: unlocked ? { type: "button" } : {} });
           row.append(el("span", { className: "species-row-main" }, [unlocked ? speciesImage(species.name, "population-image") : null, el("strong", { text: species.name })]));
-          row.append(el("span", { text: species.count === null ? "" : species.count }));
-          if (species.delta > 0) row.append(el("span", { className: "delta-up", text: `↑${species.delta}` }));
-          else if (species.delta < 0) row.append(el("span", { className: "delta-down", text: `↓${species.delta}` }));
-          else row.append(el("span"));
+          row.append(el("span", { className: "population-leader", attrs: { "aria-hidden": "true" } }));
+          const value = el("span", { className: "species-row-value" }, el("span", { text: species.count === null ? "" : species.count }));
+          if (species.delta > 0) value.append(el("span", { className: "delta-up", text: `↑${species.delta}` }));
+          else if (species.delta < 0) value.append(el("span", { className: "delta-down", text: `↓${species.delta}` }));
+          row.append(value);
           if (unlocked) row.addEventListener("click", () => openSpecies(species.name));
           groupNode.append(row);
         });
@@ -913,7 +926,18 @@
       const lower = el("div", { className: "codex-lower" });
       const visitors = el("section", { className: "soft-section" }, el("h2", { className: "section-title", text: "访客" }));
       const visitorData = data.visitors || {};
-      visitors.append(el("div", { className: "badge-flow" }, (visitorData.recorded || []).map(name => el("span", { className: "visitor-badge", text: name }))));
+      const visitorList = el("div", { className: "codex-visitor-list" });
+      (visitorData.recorded || []).forEach(visitor => {
+        const isRecord = visitor && typeof visitor === "object";
+        const name = isRecord ? visitor.name : visitor;
+        const count = isRecord ? visitor.count : null;
+        const notes = isRecord ? (visitor.notes || []) : [];
+        const item = el("div", { className: "codex-visitor-item" });
+        item.append(el("span", { className: "visitor-badge", text: count === null || count === undefined ? name : `${name} ×${count}` }));
+        if (notes.length) item.append(el("p", { className: "codex-visitor-notes", text: notes.join(" · ") }));
+        visitorList.append(item);
+      });
+      visitors.append(visitorList.childElementCount ? visitorList : emptyNode());
       const rumors = el("div", { className: "rumor-list" });
       (visitorData.rumors || []).forEach(text => rumors.append(el("blockquote", { className: "rumor-quote", text })));
       visitors.append(rumors.childElementCount ? rumors : emptyNode());
@@ -953,8 +977,17 @@
       return entries.sort((left, right) => left.day - right.day || left.sequence - right.sequence);
     }
 
+    function createFolioSection(title, openByDefault) {
+      const section = el("details", { className: "folio-section" });
+      section.open = openByDefault;
+      section.append(el("summary", { className: "folio-title", text: title }));
+      const body = el("div", { className: "folio-body" });
+      section.append(body);
+      return { section, body };
+    }
+
     function folioCountSection(title, items) {
-      const section = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: title }));
+      const { section, body } = createFolioSection(title, false);
       const list = el("div", { className: "folio-badge-list" });
       (items || []).forEach(item => {
         const row = el("div", { className: "folio-badge-row" });
@@ -962,7 +995,22 @@
         (item.notes || []).forEach(note => row.append(el("span", { className: "folio-note", text: note })));
         list.append(row);
       });
-      section.append(list.childElementCount ? list : emptyNode());
+      body.append(list.childElementCount ? list : emptyNode());
+      return section;
+    }
+
+    function folioVisitorSection(items) {
+      const { section, body } = createFolioSection("访客志", false);
+      const list = el("div", { className: "folio-visitor-list" });
+      (items || []).forEach(item => {
+        const entry = el("article", { className: "folio-visitor-entry" });
+        entry.append(el("div", { className: "folio-visitor-line" }, [
+          el("strong", { text: item.name }), el("span", { className: "folio-visitor-count", text: `×${item.count}` })
+        ]));
+        if ((item.notes || []).length) entry.append(el("p", { className: "folio-visitor-notes", text: item.notes.join(" · ") }));
+        list.append(entry);
+      });
+      body.append(list.childElementCount ? list : emptyNode());
       return section;
     }
 
@@ -970,25 +1018,25 @@
       const stack = el("div", { className: "page-stack" });
       stack.append(el("div", { className: "page-heading" }, el("h2", { text: "万物志" })));
 
-      const speciesSection = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: "物种志" }));
+      const { section: speciesSection, body: speciesBody } = createFolioSection("物种志", true);
       const speciesList = el("div", { className: "folio-species-list" });
       (data.species || []).forEach(item => speciesList.append(el("div", { className: "folio-species-row" }, [
         el("strong", { text: item.name }),
         el("span", { className: "folio-species-meta", text: `${item.unlock_text} · 最高${item.historical_peak} · 归零${item.extinct_count}次` })
       ])));
-      speciesSection.append(speciesList.childElementCount ? speciesList : emptyNode());
+      speciesBody.append(speciesList.childElementCount ? speciesList : emptyNode());
       stack.append(speciesSection);
 
-      const rosterSection = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: "造物名册" }));
+      const { section: rosterSection, body: rosterBody } = createFolioSection("造物名册", false);
       const roster = el("div", { className: "roster-flow" });
       (data.creation_roster || []).forEach(name => roster.append(el("span", { className: "visitor-badge", text: name })));
-      rosterSection.append(roster.childElementCount ? roster : emptyNode());
+      rosterBody.append(roster.childElementCount ? roster : emptyNode());
       const clues = el("div", { className: "clue-list" });
       (data.undiscovered_clues || []).forEach(item => clues.append(el("p", { text: `${item.name} · ${item.clue}` })));
-      if (clues.childElementCount) rosterSection.append(clues);
+      if (clues.childElementCount) rosterBody.append(clues);
       stack.append(rosterSection);
 
-      const settlersSection = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: "定居者志" }));
+      const { section: settlersSection, body: settlersBody } = createFolioSection("定居者志", true);
       const settlerGroups = el("div", { className: "settler-folio-list" });
       (data.settlers || []).forEach(group => {
         const residents = group.residents || [];
@@ -1010,10 +1058,10 @@
         });
         settlerGroups.append(groupNode);
       });
-      settlersSection.append(settlerGroups.childElementCount ? settlerGroups : emptyNode());
+      settlersBody.append(settlerGroups.childElementCount ? settlerGroups : emptyNode());
       stack.append(settlersSection);
 
-      stack.append(folioCountSection("访客志", data.visitors));
+      stack.append(folioVisitorSection(data.visitors));
       stack.append(folioCountSection("事件志", data.events));
       stack.append(folioCountSection("灾害志", data.disasters));
       container.replaceChildren(stack);
@@ -1043,12 +1091,14 @@
         }
       });
       const seasonClasses = { 春: "season-spring", 夏: "season-summer", 秋: "season-autumn", 冬: "season-winter" };
+      const importantPattern = /定居|归来|回来|离开|离去|解锁成就|后代|死/;
       const timeline = el("ol", { className: "annals-timeline" });
       groups.forEach(group => {
-        const item = el("li", { className: "annals-day" });
+        const hasImportantEvent = group.events.some(text => importantPattern.test(text));
+        const item = el("li", { className: `annals-day${hasImportantEvent ? " important" : ""}` });
         const badgeText = group.season ? `${group.season}·${group.day}` : group.day;
         item.append(el("span", { className: `date-badge ${seasonClasses[group.season] || "season-unknown"}`, text: badgeText }));
-        item.append(el("div", { className: "annals-events" }, group.events.map(text => el("p", { className: "annals-event", text }))));
+        item.append(el("div", { className: "annals-events" }, group.events.map(text => el("p", { className: `annals-event${importantPattern.test(text) ? " important" : ""}`, text }))));
         timeline.append(item);
       });
       stack.append(timeline.childElementCount ? timeline : emptyNode());
