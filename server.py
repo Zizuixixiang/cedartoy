@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import http.client
+import mimetypes
 import os
 import random
 import re
@@ -64,6 +65,7 @@ MEMORIA_AFTER_CLEAR_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
+ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -3069,6 +3071,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_html_file(ECO_INDEX_PATH)
             return
 
+        if path.startswith("/eco/assets/"):
+            self._send_eco_asset(path)
+            return
+
         if path == "/health":
             self._send_json({"ok": True, "service": "cedartoy", "endpoints": ["https://toy.cedarstar.org/mbti", "https://toy.cedarstar.org/dnd", "https://toy.cedarstar.org/"]})
             return
@@ -3613,6 +3619,31 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "index not found"}, status=404)
             return
         self._send_html_bytes(body)
+
+    def _send_eco_asset(self, request_path):
+        relative_path = urllib.parse.unquote(request_path.removeprefix("/eco/assets/"))
+        try:
+            asset_path = (ECO_ASSET_ROOT / relative_path).resolve()
+            asset_path.relative_to(ECO_ASSET_ROOT)
+        except (OSError, RuntimeError, ValueError):
+            self._send_json({"error": "not found"}, status=404)
+            return
+        if not asset_path.is_file():
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            body = asset_path.read_bytes()
+        except OSError:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        content_type = mimetypes.guess_type(asset_path.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_html_bytes(self, body):
         self.send_response(200)
