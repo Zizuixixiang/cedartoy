@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import announcements
+from command_text import normalize_command_spaces
 from eco import engine
 
 # engine.py 默认自己读写 eco_save.json 存档。handler 层接管存档：
@@ -107,6 +109,15 @@ TOOLS = [
                     "type": "integer",
                     "enum": [1, 2, 3],
                     "description": "选项编号（choose 用，通常 1–2，蛇事件可选 3）。",
+                },
+                "announcement": {
+                    "type": "string",
+                    "description": "投票编号（choose 用）。回复系统通知里的投票时填；填了就是投票，不会影响池塘。",
+                },
+                "options": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0},
+                    "description": "投票选项序号（choose + announcement 用）：多选如 [1,3,5]，[0] 表示跳过。",
                 },
                 "settler": {
                     "type": "string",
@@ -297,7 +308,7 @@ def eco_observe(arguments):
         command = f"look {target.strip()}"
     else:
         raise JsonRpcError(-32602, "action 须为 observe、wait、gaze、look 之一。")
-    return _run_player_command(player_id, command)
+    return _with_announcements(player_id, _run_player_command(player_id, command))
 
 
 def eco_act(arguments):
@@ -323,6 +334,11 @@ def eco_act(arguments):
     elif action == "shelter":
         command = "shelter"
     elif action == "choose":
+        # 带 announcement 的 choose 是在回复系统投票，纯 handler 层的事，不进引擎，
+        # 免得和引擎里 pending_choice 的 `choose 1` 撞车。
+        announcement = arguments.get("announcement")
+        if isinstance(announcement, str) and announcement.strip():
+            return _record_vote(player_id, announcement.strip(), arguments)
         option = _coerce_int(arguments.get("option"), "option", default=None)
         if option not in (1, 2, 3):
             raise JsonRpcError(-32602, "option 须为 1、2 或 3。")
@@ -367,7 +383,7 @@ def eco_info(arguments):
         raise JsonRpcError(
             -32602, "action 须为 status、folio、chronicle、encyclopedia、trends 之一。"
         )
-    return _run_player_command(player_id, command)
+    return _with_announcements(player_id, _run_player_command(player_id, command))
 
 
 def eco_save(arguments):
@@ -393,8 +409,48 @@ def eco_save(arguments):
     return _run_player_command(player_id, command)
 
 
+# eco 的指令走 MCP 结构化参数，玩家没法发裸文本，所以投票指引得写成工具调用的样子。
+_ECO_VOTE_HINT = (
+    '投票请调用 eco_act(action="choose", announcement="{id}", options=[1,3,5])'
+    '（多选）/ options=[0] 跳过。不回也没关系，这条通知不会再弹。'
+)
+
+
+def _record_vote(player_id, announcement_id, arguments):
+    """回复系统投票。options 缺省时兼容单选的 option。"""
+    options = arguments.get("options")
+    if options is None:
+        option = arguments.get("option")
+        options = [] if option is None else [option]
+    if not isinstance(options, list):
+        raise JsonRpcError(-32602, "options 须为整数数组，如 [1,3] 或 [0]（跳过）。")
+    if not options:
+        raise JsonRpcError(
+            -32602, "choose 投票需要 options：多选如 [1,3]，跳过填 [0]。"
+        )
+    try:
+        return announcements.record_vote(player_id, announcement_id, options)
+    except announcements.AnnouncementError as exc:
+        raise JsonRpcError(-32602, str(exc))
+
+
+def _with_announcements(player_id, text):
+    """把未读的系统通知拼在指令输出前面。通知只弹一次，取走即标记已读。"""
+    try:
+        notice = announcements.check_announcements(
+            player_id, GAME, vote_hint=_ECO_VOTE_HINT
+        )
+    except Exception:
+        # 通知系统坏掉不该拖垮游戏本身——玩家该看池塘还是看池塘。
+        return text
+    return f"{notice}\n\n{text}" if notice else text
+
+
 def _run_player_command(player_id, command):
     """读取该玩家存档 -> 喂给 engine 执行 command -> 写回新存档，返回结果文字。"""
+    # 归一化 Unicode 空白：engine 按 ASCII 空格切指令，全角空格会匹配不上。
+    # 也覆盖 look/add/name 这类由玩家参数拼出来的指令。
+    command = normalize_command_spaces(command)
     now = time.time()
     with _connect() as conn:
         _init_db(conn)
@@ -455,6 +511,49 @@ def _engine_run(state, command):
         finally:
             engine._STATE = None
     return text, save_data
+
+
+def _load_player_state_readonly(player_id):
+    """读取玩家 eco 存档并迁移到当前内存结构；不写回 DB。"""
+    if not isinstance(player_id, str) or PLAYER_ID_RE.fullmatch(player_id) is None:
+        raise JsonRpcError(-32602, "player_id 不合法")
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT save_data FROM eco_sessions WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+    if row is None:
+        raise JsonRpcError(-32001, "没有进行中的池塘。")
+    try:
+        state = json.loads(row[0])
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise JsonRpcError(-32603, f"存档解析失败：{exc}")
+    with _ENGINE_LOCK:
+        engine._migrate(state)
+    return state
+
+
+def api_state(player_id):
+    return engine.api_state(_load_player_state_readonly(player_id))
+
+
+def api_codex(player_id):
+    return engine.api_codex(_load_player_state_readonly(player_id))
+
+
+def api_folio(player_id):
+    return engine.api_folio(_load_player_state_readonly(player_id))
+
+
+def api_annals(player_id):
+    return engine.api_annals(_load_player_state_readonly(player_id))
+
+
+def api_species(player_id, name):
+    data = engine.api_species(_load_player_state_readonly(player_id), name)
+    if data is None:
+        raise JsonRpcError(-32004, "物种未解锁或不存在")
+    return data
 
 
 def summarize_save(save_data):

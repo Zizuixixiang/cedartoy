@@ -23,9 +23,11 @@ try:
 except ImportError:
     CryptContext = None
 
+import announcements
 from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
 from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
 from dnd.handler import handle_mcp as handle_dnd_mcp
+from eco_adapter import handler as eco_handler
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
 from mbti.handler import handle_mcp as handle_mbti_mcp
 from vendor_cmd_adapter import arcade as arcade_adapter
@@ -130,11 +132,11 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
                 },
                 "params": {
                     "type": "object",
-                    "description": "该 action 需要的业务参数；账号用户可传 slot=1-5 选择存档槽，默认 1；例如 turtle_soup join 用 {\"room_id\":\"...\"}，ask 用 {\"room_id\":\"...\",\"content\":\"...\"}。",
+                    "description": "该 action 需要的业务参数；账号用户可传 slot=1-5 选择存档槽，默认 1；例如 turtle_soup join 用 {\"room_id\":\"...\"}，ask 用 {\"room_id\":\"...\",\"content\":\"...\"}；vote 用 {\"announcement_id\":\"...\",\"options\":\"1,3,5\"}。",
                     "properties": {
                         "slot": {
                             "type": "integer",
@@ -364,6 +366,19 @@ def _init_anti_addiction_tables(conn):
     _add_column_if_missing(conn, "anti_addiction_settings", "lock_minutes", "INTEGER NOT NULL DEFAULT 30")
     _add_column_if_missing(conn, "anti_addiction_settings", "allow_self_reset", "INTEGER NOT NULL DEFAULT 1")
     _add_column_if_missing(conn, "anti_addiction_states", "locked_at", "REAL")
+
+
+def _init_announcement_tables():
+    """系统通知/投票两张表建在 data/sessions.db。
+
+    注意别塞进 _migrate_platform_timestamps：那个函数用的 _db_connect() 连的是
+    turtle_soup.db，建过去就成了两张没人读的死表。
+    DDL 只在 announcements.init_db 里写一份，这里不重复。
+    """
+    # 让 announcements 跟着 SESSIONS_DB 环境变量走，别在两处各写死一个路径。
+    announcements.DB_PATH = str(SESSIONS_DB_PATH)
+    with _sessions_db_connect() as conn:
+        announcements.init_db(conn)
 
 
 def _add_column_if_missing(conn, table, column, column_sql):
@@ -1105,7 +1120,7 @@ def _memoria_human_guides(include_content=False):
     items = []
     if MEMORIA_HUMAN_GUIDE_DIR.exists():
         for path in sorted(MEMORIA_HUMAN_GUIDE_DIR.glob("*.md")):
-            item = {"kind": "攻略", "title": path.stem.replace("-攻略", ""), "filename": path.name}
+            title = path.stem.replace("-攻略", ""); title = __import__("re").sub(r"^\d+-", "", title); item = {"kind": "攻略", "title": title, "filename": path.name}
             if include_content:
                 item["content"] = path.read_text(encoding="utf-8")
             items.append(item)
@@ -1360,6 +1375,34 @@ def _arcade_chips_grant(raw_token, ai_user_id, amount):
     except VendorCmdError as exc:
         raise _McpError(-32602, str(exc)) from exc
     return {"ok": True, "ai": _public_user(ai_user), **status}
+
+
+def _eco_api_target_user(raw_token, ai_user_id=None):
+    if ai_user_id is not None and str(ai_user_id).strip():
+        return _require_bound_ai(raw_token, ai_user_id, "查看瓶中生态存档")
+    return _current_account(raw_token)
+
+
+def _eco_api_player_id(raw_token, ai_user_id=None):
+    user = _eco_api_target_user(raw_token, ai_user_id)
+    return str(int(user["id"])), user
+
+
+def _eco_api_response(raw_token, endpoint, *, ai_user_id=None, species_name=None):
+    player_id, user = _eco_api_player_id(raw_token, ai_user_id)
+    if endpoint == "state":
+        data = eco_handler.api_state(player_id)
+    elif endpoint == "codex":
+        data = eco_handler.api_codex(player_id)
+    elif endpoint == "folio":
+        data = eco_handler.api_folio(player_id)
+    elif endpoint == "annals":
+        data = eco_handler.api_annals(player_id)
+    elif endpoint == "species":
+        data = eco_handler.api_species(player_id, species_name)
+    else:
+        raise _McpError(-32004, "not found")
+    return {"user": _public_user(user), "player_id": player_id, **data}
 
 
 def _extract_bearer(headers):
@@ -2360,6 +2403,87 @@ def _append_play_text(response, text):
     return response
 
 
+def _prepend_play_text(response, text):
+    """把文本拼在游戏结果**前面**（_append_play_text 的镜像）。
+
+    结构化响应（既没有裸 text，也没有 result.content[0].text）挂到单独字段上，
+    别硬塞进 JSON，免得把玩家的解析逻辑弄坏。
+    """
+    if not text:
+        return response
+    if isinstance(response, dict):
+        response = dict(response)
+        if isinstance(response.get("text"), str):
+            response["text"] = text + "\n\n" + response["text"].lstrip()
+            return response
+        result = response.get("result")
+        if isinstance(result, dict):
+            content = result.get("content")
+            if isinstance(content, list) and content and isinstance(content[0], dict) and isinstance(content[0].get("text"), str):
+                result = dict(result)
+                content = [dict(item) if isinstance(item, dict) else item for item in content]
+                content[0]["text"] = text + "\n\n" + content[0]["text"].lstrip()
+                result["content"] = content
+                response["result"] = result
+                return response
+        response["announcement_notice"] = text
+        return response
+    return response
+
+
+# eco/ciyuwu 的 initialize、tools/list 属于协议握手，不是玩家动作，别在上面弹通知。
+_ANNOUNCEMENT_META_ACTIONS = frozenset({"initialize", "tools/list", "tools/call"})
+
+
+def _announcement_vote_hint(game):
+    """生成该游戏的投票指引。通知只弹一次，示例参数必须是能直接照抄的。"""
+
+    def hint(ann_id, multiple):
+        example = "1,3,5" if multiple else "2"
+        kind = "多选，逗号分隔" if multiple else "单选，只填一个"
+        return (
+            f'投票请调用 play(game="{game}", action="vote", '
+            f'params={{"announcement_id": "{ann_id}", "options": "{example}"}})'
+            f'（{kind}）；options="0" 表示跳过。'
+            "不回也没关系，这条通知不会再弹。"
+        )
+
+    return hint
+
+
+def _tool_play_vote(game, player_id, params):
+    """平台级投票动作：play(game=..., action="vote", params={announcement_id, options})。"""
+    if not player_id:
+        raise _McpError(-32602, "vote 需要 player_id（或带 token 的账号身份）")
+    announcement_id = params.get("announcement_id")
+    if not isinstance(announcement_id, str) or not announcement_id.strip():
+        raise _McpError(-32602, "vote 需要 announcement_id（通知里给的投票编号）")
+    try:
+        options = announcements.parse_option_list(params.get("options"))
+    except announcements.AnnouncementError as exc:
+        raise _McpError(-32602, str(exc))
+    if not options:
+        raise _McpError(-32602, 'vote 需要 options：多选如 "1,3,5"，跳过填 "0"')
+    try:
+        message = announcements.record_vote(player_id, announcement_id.strip(), options)
+    except announcements.AnnouncementError as exc:
+        raise _McpError(-32602, str(exc))
+    return {"ok": True, "text": message}
+
+
+def _play_announcements(player_id, game, action):
+    """取该玩家在这个游戏下的未读通知；顺带标记已读。"""
+    if not player_id or action in _ANNOUNCEMENT_META_ACTIONS:
+        return ""
+    try:
+        return announcements.check_announcements(
+            player_id, game, vote_hint=_announcement_vote_hint(game)
+        )
+    except Exception:
+        # 通知系统坏掉不该拖垮游戏本身——玩家该玩游戏还是玩游戏。
+        return ""
+
+
 def _anti_addiction_record_success(context):
     if not context:
         return ""
@@ -2436,8 +2560,14 @@ def _tool_play(arguments, path_token=None):
     if isinstance(params, dict):
         merged_arguments.update(params)
     anti_context = _anti_addiction_context(game, account_user, account_player_id)
+    # 通知按「人」而不是按存档槽记已读，用的就是各游戏看到的那个 player_id
+    # （announcements 内部会把 "12:3" 这类槽后缀削掉）。
+    announce_player_id = account_player_id or guest_player_id or _reported_player_id(arguments)
     if action == "rest":
         return json.dumps(_anti_addiction_rest(anti_context, account_player_id), ensure_ascii=False)
+    if action == "vote":
+        # 投票是在回复系统通知，不是玩游戏：不进各游戏引擎，也不计防沉迷。
+        return json.dumps(_tool_play_vote(game, announce_player_id, merged_arguments), ensure_ascii=False)
     blocked_response = _anti_addiction_preflight(game, anti_context)
     if blocked_response:
         return json.dumps(blocked_response, ensure_ascii=False)
@@ -2493,6 +2623,9 @@ def _tool_play(arguments, path_token=None):
             )
     if succeeded:
         response = _append_play_text(response, _anti_addiction_record_success(anti_context))
+        # 只在成功时取通知：check_announcements 一取就标已读，而通知只弹一次。
+        # 拼在报错响应上，玩家多半看不到，这条通知就永远丢了。
+        response = _prepend_play_text(response, _play_announcements(announce_player_id, game, action))
     return json.dumps(response, ensure_ascii=False)
 
 
@@ -2930,6 +3063,27 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_arcade_status(params)
             return
 
+        if path == "/eco/api/state":
+            self._handle_eco_api("state", params)
+            return
+
+        if path == "/eco/api/codex":
+            self._handle_eco_api("codex", params)
+            return
+
+        if path == "/eco/api/folio":
+            self._handle_eco_api("folio", params)
+            return
+
+        if path == "/eco/api/annals":
+            self._handle_eco_api("annals", params)
+            return
+
+        if path.startswith("/eco/api/species/"):
+            raw_name = path.removeprefix("/eco/api/species/")
+            self._handle_eco_api("species", params, species_name=urllib.parse.unquote(raw_name))
+            return
+
         if path == "/api/admin/users":
             self._handle_admin_users()
             return
@@ -3161,6 +3315,25 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": exc.message}, status=status)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_eco_api(self, endpoint, params, species_name=None):
+        try:
+            ai_user_id = self._get_param(params, "ai_user_id", required=False)
+            result = _eco_api_response(
+                _extract_bearer(self.headers),
+                endpoint,
+                ai_user_id=ai_user_id,
+                species_name=species_name,
+            )
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (404 if exc.code == -32004 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except eco_handler.JsonRpcError as exc:
+            status = 404 if exc.code in (-32001, -32004) else 400
+            self._send_json({"error": exc.message}, status=status)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
@@ -3658,6 +3831,7 @@ class ThreadPoolHTTPServer(HTTPServer):
 
 def main():
     _migrate_platform_timestamps()
+    _init_announcement_tables()
     server = ThreadPoolHTTPServer((HOST, PORT), CedarToyHandler)
     print(f"CedarToy listening on {HOST}:{PORT} with max_workers={MAX_WORKERS}")
     server.serve_forever()

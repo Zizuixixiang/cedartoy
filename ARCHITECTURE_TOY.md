@@ -18,6 +18,7 @@ Cloudflare Tunnel
       -> GET /                 cedartoy Toy 首页 index.html
       -> POST /                cedartoy MCP 聚合层：list_games/get_guide/play/account
       -> POST /{token}         cedartoy MCP（AI 持久 token，等同根 MCP）
+      -> GET /eco/api/*        cedartoy 瓶中生态只读 JSON API（Bearer 平台账号 token）
       -> /api/auth/*           cedartoy 平台账号 REST API
       -> /mbti                 cedartoy 本地 MBTI JSON-RPC MCP
       -> /dnd                  cedartoy 本地 DND JSON-RPC MCP
@@ -128,6 +129,7 @@ Cloudflare Tunnel
 | AI 玩 MBTI/DND | 根 MCP `play(game=mbti/dnd, ...)` -> `server.py` 本进程 handler | 状态写入 `data/sessions.db` |
 | AI 玩 BDSMTest | 根 MCP `play(game=bdsmtest, ...)` -> `bdsmtest.handler` -> HTTP 调 bdsmtest.org | 进度写入 `data/sessions.db` |
 | AI 玩瓶中生态 | 根 MCP `play(game=eco, action=eco_*, params={...})` -> `eco.handler` -> `eco.engine.cmd()` | 存档写入 `data/sessions.db` 的 `eco_sessions` 表 |
+| 读取瓶中生态 JSON | `GET /eco/api/state|codex|folio|annals|species/{name}` -> `server.py` 鉴权 -> `eco_adapter.handler` 只读加载存档 | 复用平台账号 token；不推进 tick、不写回 `eco_sessions` |
 
 ### 3.3 身份与 Token 分层
 
