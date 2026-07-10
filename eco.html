@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>瓶中生态 · ECO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --bg: #FDF6F7;
+      --purple: #BEB1D1;
+      --purple-dark: #9B8DB5;
+      --purple-darker: #8678A0;
+      --purple-light: #E6DFF0;
+      --pink: #E6A8B1;
+      --pink-dark: #C28B93;
+      --text: #5C5463;
+      --muted: #9ca3af;
+      --screen-bg: #2D2D2D;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --browser-bottom: 0px;
+      --mobile-nav-height: 62px;
+      --mobile-nav-total: calc(var(--mobile-nav-height) + var(--safe-bottom) + var(--browser-bottom));
+    }
+
+    html { min-height: 100%; background: var(--bg); image-rendering: pixelated; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(rgba(190, 177, 209, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(190, 177, 209, 0.1) 1px, transparent 1px);
+      background-size: 20px 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      image-rendering: pixelated;
+    }
+    button, summary { font: inherit; }
+    button { cursor: pointer; touch-action: manipulation; }
+    .pixel-font, h1, h2, h3, .score, .nav-button, .eyebrow, .badge, .progress-number {
+      font-family: "Silkscreen", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+    }
+    .app { min-height: 100vh; }
+
+    .site-header {
+      color: #fff;
+      background: var(--purple);
+      border-bottom: 4px solid var(--purple-dark);
+      padding: 14px max(18px, calc((100vw - 1180px) / 2));
+    }
+    .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .pixel-logo { width: 24px; height: 18px; border: 4px solid #fff; box-shadow: 8px 8px 0 -4px #fff; flex: none; }
+    .brand h1 { margin: 0; font-size: clamp(18px, 3vw, 25px); letter-spacing: 1px; }
+    .brand small { display: block; margin-top: 3px; font-size: 11px; opacity: 0.85; letter-spacing: 0.08em; }
+
+    .desktop-nav { display: flex; gap: 8px; }
+    .nav-button {
+      min-width: 80px;
+      border: 3px solid rgba(255, 255, 255, 0.7);
+      color: #fff;
+      background: transparent;
+      padding: 9px 13px;
+      font-size: 12px;
+    }
+    .nav-button[aria-selected="true"] { color: var(--purple-darker); background: #fff; border-color: #fff; box-shadow: 3px 3px 0 var(--purple-darker); }
+
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 56px; }
+    .view[hidden] { display: none; }
+    .loading, .empty, .error-state {
+      width: 100%;
+      min-height: 150px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 28px;
+      color: var(--muted);
+    }
+    .loading::after { content: "..."; animation: dots 1s steps(4, end) infinite; }
+    @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; } }
+    .error-state { color: var(--pink-dark); }
+
+    .pixel-card {
+      position: relative;
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 5px 5px 0 rgba(190, 177, 209, 0.42);
+      padding: 18px;
+    }
+    .pixel-card::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .pixel-card > * { position: relative; z-index: 1; }
+    .section-title { margin: 0 0 14px; color: var(--purple-darker); font-size: 16px; letter-spacing: 0.04em; }
+    .eyebrow { color: var(--pink-dark); font-size: 10px; letter-spacing: 0.08em; }
+    .muted { color: var(--muted); }
+
+    .state-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 0.9fr); grid-template-areas:
+      "summary summary"
+      "disaster observe"
+      "choice observe"
+      "settlers observe"
+      "environment observe"
+      "populations observe"; gap: 20px; align-items: start; }
+    .status-summary { grid-area: summary; display: grid; grid-template-columns: 1fr minmax(260px, 0.8fr); gap: 22px; align-items: stretch; }
+    .dayline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 100%; padding: 20px 24px; }
+    .dayline-main { font-size: clamp(18px, 4vw, 27px); color: var(--purple-darker); }
+    .score-block { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 17px 20px; }
+    .score { color: var(--pink-dark); font-size: clamp(42px, 8vw, 72px); line-height: 0.9; }
+    .comment { line-height: 1.75; }
+
+    .disaster-zone { grid-area: disaster; border-color: var(--pink); box-shadow: 5px 5px 0 rgba(230, 168, 177, 0.35); background: #fff9fa; }
+    .disaster-zone::after { border-color: rgba(230, 168, 177, 0.35); }
+    .choice-zone { grid-area: choice; }
+    .settlers-zone { grid-area: settlers; }
+    .observe-zone { grid-area: observe; position: sticky; top: 20px; }
+    .environment-zone { grid-area: environment; }
+    .populations-zone { grid-area: populations; }
+
+    .notice-list, .option-list, .plain-list, .timeline, .annotation-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+    .notice-item, .option-item { border-left: 4px solid var(--pink); background: rgba(230, 168, 177, 0.1); padding: 10px 12px; line-height: 1.55; }
+    .choice-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 12px; }
+    .readonly-mark, .badge { display: inline-flex; flex: none; color: var(--pink-dark); border: 2px solid var(--pink); background: #fff9fa; padding: 4px 7px; font-size: 10px; }
+    .choice-description { margin: 0 0 14px; line-height: 1.7; }
+    .option-item { display: flex; gap: 10px; color: var(--text); opacity: 0.84; }
+
+    .settler-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .settler-card { border: 3px solid var(--purple-light); background: #fdfbff; padding: 14px; }
+    .settler-title { margin: 0; color: var(--purple-darker); font-size: 20px; overflow-wrap: anywhere; }
+    .settler-species { margin: 3px 0 11px; color: var(--muted); font-size: 12px; }
+    .settler-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .meta-cell { padding-top: 8px; border-top: 2px solid var(--purple-light); }
+    .meta-cell span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+    .settler-badges { display: flex; gap: 6px; margin-top: 10px; }
+
+    .crt {
+      min-height: 440px;
+      color: #e9e4ec;
+      background-color: var(--screen-bg);
+      background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px);
+      border: 4px solid var(--purple-dark);
+      box-shadow: inset 0 0 30px rgba(0,0,0,0.42), 5px 5px 0 rgba(190, 177, 209, 0.42);
+      padding: 24px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 14px;
+      line-height: 1.85;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .crt-line::before { content: "> "; color: var(--pink); }
+
+    details.pixel-card { padding: 0; }
+    details > summary { position: relative; z-index: 2; list-style: none; cursor: pointer; padding: 17px 20px; color: var(--purple-darker); font-weight: 700; touch-action: manipulation; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::after { content: "+"; float: right; color: var(--pink-dark); font-family: "Silkscreen", monospace; }
+    details[open] > summary::after { content: "−"; }
+    .details-body { position: relative; z-index: 1; border-top: 3px solid var(--purple-light); padding: 16px 18px 19px; }
+    .parameter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .parameter { background: #f9f6fb; border: 2px solid var(--purple-light); padding: 10px; }
+    .parameter span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+    .trend { color: var(--pink-dark); margin-left: 5px; }
+
+    .population-groups { display: grid; gap: 14px; }
+    .population-group h3 { margin: 0 0 7px; color: var(--pink-dark); font-size: 13px; }
+    .species-row { width: 100%; display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; border: 0; border-bottom: 1px dashed var(--purple); color: var(--text); background: transparent; padding: 9px 2px; text-align: left; }
+    button.species-row:active { color: var(--pink-dark); background: rgba(230,168,177,0.08); }
+    .species-row.locked { color: var(--muted); cursor: default; }
+    .delta-up { color: #3f8d63; }
+    .delta-down { color: #bd5262; }
+
+    .page-stack { display: grid; gap: 22px; }
+    .page-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+    .page-heading h2 { margin: 0; color: var(--purple-darker); font-size: clamp(21px, 4vw, 30px); }
+    .progress-number { color: var(--pink-dark); font-size: 17px; white-space: nowrap; }
+    .species-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+    .species-tile { min-height: 80px; display: grid; place-items: center; text-align: center; border: 3px solid var(--purple-light); color: var(--purple-darker); background: #fff; padding: 12px; }
+    button.species-tile:active { border-color: var(--pink); color: var(--pink-dark); }
+    .species-tile.locked, .locked-card { color: var(--muted); background: #f3f2f4; opacity: 0.65; }
+    .split-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .achievement-grid, .record-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 13px; }
+    .record-card { border: 3px solid var(--purple-light); background: #fff; padding: 14px; overflow-wrap: anywhere; }
+    .record-card h3 { margin: 0 0 9px; color: var(--purple-darker); font-size: 15px; }
+    .record-card p { margin: 5px 0; line-height: 1.6; }
+    .condition { color: var(--muted); font-size: 13px; }
+    .rumor { font-style: italic; line-height: 1.7; color: var(--text); }
+    .subsection { display: grid; gap: 12px; }
+    .subsection-title { margin: 0; padding-bottom: 9px; color: var(--pink-dark); border-bottom: 3px solid var(--purple-light); font-size: 17px; }
+    .resident-list { display: grid; gap: 9px; margin-top: 12px; }
+    .resident-record { border-left: 4px solid var(--purple); background: #faf8fc; padding: 10px 12px; }
+    .resident-record strong { color: var(--purple-darker); }
+    .raw-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .annotation-list { margin-top: 7px; font-size: 12px; color: var(--muted); }
+
+    .timeline { counter-reset: event; }
+    .timeline li { position: relative; border-left: 4px solid var(--purple); background: #fff; box-shadow: 4px 4px 0 rgba(190,177,209,0.3); padding: 15px 18px 15px 22px; line-height: 1.7; }
+    .timeline li::before { content: ""; position: absolute; left: -9px; top: 19px; width: 14px; height: 14px; background: var(--pink); border: 3px solid #fff; }
+
+    .bottom-nav { display: none; }
+    .sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: end; justify-content: center; background: rgba(45,45,45,0.45); padding: 18px 18px 0; }
+    .sheet-backdrop[hidden] { display: none; }
+    .sheet { width: min(680px, 100%); max-height: min(78vh, 720px); overflow: auto; background: var(--bg); border: 4px solid var(--purple-dark); border-bottom: 0; box-shadow: 8px -8px 0 rgba(190,177,209,0.38); padding: 16px 18px calc(24px + var(--safe-bottom)); }
+    .sheet-handle { width: 56px; height: 5px; background: var(--purple); margin: 0 auto 14px; }
+    .sheet-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 3px solid var(--purple-light); padding-bottom: 12px; }
+    .sheet-header h2 { margin: 0; color: var(--purple-darker); font-size: 20px; }
+    .sheet-close { width: 40px; height: 40px; border: 3px solid var(--purple); color: var(--purple-darker); background: #fff; font-size: 20px; }
+    .sheet-content { padding-top: 14px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+    @media (max-width: 768px) {
+      .site-header { padding: 12px 17px; }
+      .brand small, .desktop-nav { display: none; }
+      main { width: min(100% - 24px, 620px); padding: 18px 0 calc(var(--mobile-nav-total) + 24px); }
+      .state-grid { display: grid; grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "settlers" "observe" "environment" "populations"; gap: 16px; }
+      .status-summary { grid-template-columns: 1fr; gap: 12px; }
+      .observe-zone { position: static; }
+      .crt { min-height: 320px; padding: 18px; font-size: 13px; }
+      .settler-grid, .split-grid { grid-template-columns: 1fr; }
+      .parameter-grid { grid-template-columns: repeat(2, 1fr); }
+      .settler-meta { gap: 5px; }
+      .pixel-card { padding: 15px; }
+      .bottom-nav {
+        position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr);
+        height: var(--mobile-nav-total); padding-bottom: calc(var(--safe-bottom) + var(--browser-bottom));
+        background: var(--purple); border-top: 4px solid var(--purple-dark);
+      }
+      .bottom-nav .nav-button { min-width: 0; height: var(--mobile-nav-height); border: 0; border-right: 1px solid rgba(255,255,255,0.22); padding: 8px 2px; font-size: 11px; box-shadow: none; }
+      .bottom-nav .nav-button[aria-selected="true"] { color: #fff; background: var(--purple-darker); border-top: 4px solid var(--pink); }
+      .sheet-backdrop { padding: 12px 8px 0; }
+    }
+    @media (max-width: 420px) {
+      .parameter-grid, .detail-grid { grid-template-columns: 1fr; }
+      .dayline-main { font-size: 18px; }
+      .score-block { grid-template-columns: 86px 1fr; }
+      .settler-meta { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="site-header">
+      <div class="header-inner">
+        <div class="brand">
+          <span class="pixel-logo" aria-hidden="true"></span>
+          <div><h1>瓶中生态</h1><small>ECO · READ ONLY</small></div>
+        </div>
+        <nav class="desktop-nav" aria-label="页面导航"></nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section id="view-state" class="view" aria-labelledby="desktop-tab-state"></section>
+      <section id="view-codex" class="view" aria-labelledby="desktop-tab-codex" hidden></section>
+      <section id="view-folio" class="view" aria-labelledby="desktop-tab-folio" hidden></section>
+      <section id="view-annals" class="view" aria-labelledby="desktop-tab-annals" hidden></section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="页面导航"></nav>
+  </div>
+
+  <div id="species-sheet" class="sheet-backdrop" hidden>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-header">
+        <h2 id="sheet-title">物种详情</h2>
+        <button id="sheet-close" class="sheet-close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div id="sheet-content" class="sheet-content"></div>
+    </section>
+  </div>
+
+  <script>
+    "use strict";
+
+    const tabs = [
+      { id: "state", label: "状态" },
+      { id: "codex", label: "图鉴" },
+      { id: "folio", label: "万物志" },
+      { id: "annals", label: "年鉴" }
+    ];
+    const loaded = new Set();
+    const views = Object.fromEntries(tabs.map(tab => [tab.id, document.getElementById(`view-${tab.id}`)]));
+    const apiPaths = {
+      state: "/eco/api/state",
+      codex: "/eco/api/codex",
+      folio: "/eco/api/folio",
+      annals: "/eco/api/annals"
+    };
+    const aiUserId = new URLSearchParams(window.location.search).get("ai_user_id");
+    const apiSuffix = aiUserId === null ? "" : `?ai_user_id=${encodeURIComponent(aiUserId)}`;
+    const sheetBackdrop = document.getElementById("species-sheet");
+    const sheetContent = document.getElementById("sheet-content");
+    const sheetTitle = document.getElementById("sheet-title");
+
+    function el(tag, options = {}, children = []) {
+      const node = document.createElement(tag);
+      if (options.className) node.className = options.className;
+      if (options.text !== undefined && options.text !== null) node.textContent = String(options.text);
+      if (options.attrs) Object.entries(options.attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+      const list = Array.isArray(children) ? children : [children];
+      list.filter(child => child !== null && child !== undefined).forEach(child => node.append(child));
+      return node;
+    }
+
+    function valueText(value) {
+      if (value === null) return "null";
+      if (typeof value === "object") return JSON.stringify(value, null, 2);
+      return String(value);
+    }
+
+    function card(title, className = "") {
+      const node = el("section", { className: `pixel-card ${className}`.trim() });
+      if (title) node.append(el("h2", { className: "section-title", text: title }));
+      return node;
+    }
+
+    function emptyNode(text = "—") { return el("div", { className: "empty", text }); }
+
+    function errorMessage(error) {
+      if (error.status === 401) return "请先在主站登录";
+      if (error.status === 404) return "还没有池塘存档";
+      if (error.network) return "网络连接失败，请稍后重试";
+      return error.message || "读取失败，请稍后重试";
+    }
+
+    function showError(container, error) {
+      container.replaceChildren(el("div", { className: "pixel-card error-state", text: errorMessage(error) }));
+    }
+
+    async function apiGet(path) {
+      const token = localStorage.getItem("cedartoy_token") || "";
+      let response;
+      try {
+        response = await fetch(`${path}${apiSuffix}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (cause) {
+        const error = new Error("network error", { cause });
+        error.network = true;
+        throw error;
+      }
+      let payload = null;
+      try { payload = await response.json(); } catch (_) { /* 非 JSON 错误仍按状态码显示 */ }
+      if (!response.ok) {
+        const error = new Error(payload && payload.error ? payload.error : `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return payload;
+    }
+
+    function buildNav(target) {
+      const prefix = target.classList.contains("desktop-nav") ? "desktop" : "mobile";
+      tabs.forEach(tab => {
+        const button = el("button", {
+          className: "nav-button",
+          text: tab.label,
+          attrs: { type: "button", role: "tab", id: `${prefix}-tab-${tab.id}`, "data-tab": tab.id, "aria-selected": tab.id === "state" }
+        });
+        button.addEventListener("click", () => activateTab(tab.id));
+        target.append(button);
+      });
+    }
+
+    async function activateTab(id) {
+      tabs.forEach(tab => {
+        views[tab.id].hidden = tab.id !== id;
+        document.querySelectorAll(`[data-tab="${tab.id}"]`).forEach(button => button.setAttribute("aria-selected", String(tab.id === id)));
+      });
+      if (!loaded.has(id)) await loadView(id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function loadView(id) {
+      const container = views[id];
+      container.replaceChildren(el("div", { className: "loading", text: "读取中" }));
+      try {
+        const data = await apiGet(apiPaths[id]);
+        ({ state: renderState, codex: renderCodex, folio: renderFolio, annals: renderAnnals })[id](data, container);
+        loaded.add(id);
+      } catch (error) { showError(container, error); }
+    }
+
+    function renderState(data, container) {
+      const grid = el("div", { className: "state-grid" });
+      const summary = el("div", { className: "status-summary" });
+      const dayCard = card(null, "dayline");
+      dayCard.append(el("div", { className: "dayline-main pixel-font", text: `第${data.day}天 · ${data.season} · 第${data.year}年` }));
+      // TODO: weather 展示待定
+      const scoreCard = card(null, "score-block");
+      scoreCard.append(el("div", { className: "score", text: data.score }), el("div", { className: "comment", text: data.comment }));
+      summary.append(dayCard, scoreCard);
+      grid.append(summary);
+
+      const disasterEntries = Object.entries(data.disasters || {}).filter(([, value]) => value !== null && value !== undefined && (!Array.isArray(value) || value.length > 0));
+      if (disasterEntries.length) {
+        const labels = { active_weather: "持续天气", invasion: "入侵灾害", water_hyacinth_cover: "水葫芦覆盖率", biological: "生物灾害" };
+        const zone = card("灾害警示", "disaster-zone");
+        const list = el("ul", { className: "notice-list" });
+        disasterEntries.forEach(([key, value]) => list.append(el("li", { className: "notice-item raw-value", text: `${labels[key] || key}：${valueText(value)}` })));
+        zone.append(list);
+        grid.append(zone);
+      }
+
+      if (data.pending_choice !== null) {
+        const zone = card(null, "choice-zone");
+        const head = el("div", { className: "choice-head" }, [
+          el("h2", { className: "section-title", text: "待决策" }),
+          el("span", { className: "readonly-mark", text: "由小机决定" })
+        ]);
+        zone.append(head, el("p", { className: "choice-description", text: data.pending_choice.description }));
+        const list = el("ol", { className: "option-list" });
+        (data.pending_choice.options || []).forEach(option => list.append(el("li", { className: "option-item" }, [
+          el("span", { text: option.index }), el("span", { text: option.label })
+        ])));
+        zone.append(list);
+        grid.append(zone);
+      }
+
+      const settlers = card("定居者", "settlers-zone");
+      const settlerGrid = el("div", { className: "settler-grid" });
+      (data.settlers || []).forEach(settler => {
+        const resident = el("article", { className: "settler-card" });
+        resident.append(el("h3", { className: "settler-title", text: settler.nickname || settler.species }));
+        if (settler.nickname) resident.append(el("p", { className: "settler-species", text: settler.species }));
+        const meta = el("div", { className: "settler-meta" });
+        [["到达日", settler.arrive_day], ["存活天数", settler.days_alive], ["健康程度", settler.health]].forEach(([label, value]) => {
+          meta.append(el("div", { className: "meta-cell" }, [el("span", { text: label }), el("strong", { text: value })]));
+        });
+        resident.append(meta);
+        if (settler.status === "幼体" || settler.status === "冬眠中") resident.append(el("div", { className: "settler-badges" }, el("span", { className: "badge", text: settler.status })));
+        settlerGrid.append(resident);
+      });
+      settlers.append((data.settlers || []).length ? settlerGrid : emptyNode());
+      grid.append(settlers);
+
+      const observe = el("section", { className: "observe-zone", attrs: { "aria-label": "观察记录" } });
+      const observeText = String(data.observe_text ?? "");
+      const crt = el("div", { className: "crt", text: observeText.replace(/^/gm, "> ") });
+      observe.append(crt);
+      grid.append(observe);
+
+      const environment = el("details", { className: "pixel-card environment-zone" });
+      environment.append(el("summary", { text: "环境参数" }));
+      const parameterGrid = el("div", { className: "details-body parameter-grid" });
+      const env = data.environment || {};
+      const parameters = [
+        ["水温", env.water_temp], ["溶氧", env.dissolved_oxygen], ["光照", env.light],
+        ["营养盐", env.nutrients], ["有机碎屑", env.detritus], ["浑浊度", env.turbidity]
+      ];
+      parameters.forEach(([label, value]) => {
+        const box = el("div", { className: "parameter" }, el("span", { text: label }));
+        if (value && typeof value === "object" && "value" in value) {
+          box.append(el("strong", { text: value.value }), el("b", { className: "trend", text: value.trend }));
+        } else box.append(el("strong", { text: value }));
+        parameterGrid.append(box);
+      });
+      environment.append(parameterGrid);
+      grid.append(environment);
+
+      const populations = el("details", { className: "pixel-card populations-zone" });
+      populations.append(el("summary", { text: "种群" }));
+      const groups = el("div", { className: "details-body population-groups" });
+      (data.populations || []).forEach(group => {
+        const groupNode = el("section", { className: "population-group" }, el("h3", { text: group.label }));
+        (group.species || []).forEach(species => {
+          const unlocked = species.name !== "???";
+          const row = el(unlocked ? "button" : "div", { className: `species-row${unlocked ? "" : " locked"}`, attrs: unlocked ? { type: "button" } : {} });
+          row.append(el("strong", { text: species.name }), el("span", { text: species.count === null ? "" : species.count }));
+          if (species.delta > 0) row.append(el("span", { className: "delta-up", text: `↑${species.delta}` }));
+          else if (species.delta < 0) row.append(el("span", { className: "delta-down", text: `↓${species.delta}` }));
+          else row.append(el("span"));
+          if (unlocked) row.addEventListener("click", () => openSpecies(species.name));
+          groupNode.append(row);
+        });
+        groups.append(groupNode);
+      });
+      populations.append(groups);
+      grid.append(populations);
+      container.replaceChildren(grid);
+    }
+
+    function renderCodex(data, container) {
+      const stack = el("div", { className: "page-stack" });
+      const heading = el("div", { className: "page-heading" }, [
+        el("h2", { text: "图鉴" }),
+        el("div", { className: "progress-number", text: `${data.species_count.appeared} / ${data.species_count.total}` })
+      ]);
+      stack.append(heading);
+
+      const speciesSection = card("物种");
+      const speciesGrid = el("div", { className: "species-grid" });
+      (data.species || []).forEach(species => {
+        const unlocked = species.name !== "???" && species.unlocked;
+        const tile = el(unlocked ? "button" : "div", { className: `species-tile${unlocked ? "" : " locked"}`, text: species.name, attrs: unlocked ? { type: "button" } : {} });
+        if (unlocked) tile.addEventListener("click", () => openSpecies(species.name));
+        speciesGrid.append(tile);
+      });
+      speciesSection.append(speciesGrid);
+      stack.append(speciesSection);
+
+      const split = el("div", { className: "split-grid" });
+      const visitorCard = card("访客");
+      const visitorCount = data.visitors || {};
+      visitorCard.append(el("p", { className: "progress-number", text: `${visitorCount.recorded_count} / ${visitorCount.total}` }));
+      const recorded = el("ul", { className: "plain-list" });
+      (visitorCount.recorded || []).forEach(name => recorded.append(el("li", { className: "record-card", text: name })));
+      visitorCard.append(recorded.childElementCount ? recorded : emptyNode());
+      const rumorCard = card("传闻线索");
+      const rumors = el("ul", { className: "plain-list" });
+      (visitorCount.rumors || []).forEach(rumor => rumors.append(el("li", { className: "record-card rumor", text: rumor })));
+      rumorCard.append(rumors.childElementCount ? rumors : emptyNode());
+      split.append(visitorCard, rumorCard);
+      stack.append(split);
+
+      const achievements = card("成就");
+      const achievementGrid = el("div", { className: "achievement-grid" });
+      (data.achievements || []).forEach(item => {
+        const itemCard = el("article", { className: `record-card${item.unlocked ? "" : " locked-card"}` });
+        itemCard.append(el("h3", { text: item.name }), el("p", { className: "condition", text: item.condition }));
+        achievementGrid.append(itemCard);
+      });
+      achievements.append(achievementGrid);
+      stack.append(achievements);
+      container.replaceChildren(stack);
+    }
+
+    function renderSimpleRecords(items, title, fields) {
+      const section = el("section", { className: "subsection" }, el("h2", { className: "subsection-title", text: title }));
+      const grid = el("div", { className: "record-grid" });
+      (items || []).forEach(item => {
+        const entry = el("article", { className: "record-card" });
+        if (typeof item !== "object") entry.append(el("h3", { text: item }));
+        else {
+          if (item.name !== undefined) entry.append(el("h3", { text: item.name }));
+          fields.forEach(([key, label]) => {
+            if (Object.prototype.hasOwnProperty.call(item, key)) entry.append(el("p", { className: "raw-value", text: `${label}：${valueText(item[key])}` }));
+          });
+        }
+        grid.append(entry);
+      });
+      section.append(grid.childElementCount ? grid : emptyNode());
+      return section;
+    }
+
+    function renderFolio(data, container) {
+      const stack = el("div", { className: "page-stack" }, el("div", { className: "page-heading" }, el("h2", { text: "万物志" })));
+      stack.append(renderSimpleRecords(data.species, "物种志", [
+        ["unlock_day", "解锁日"], ["unlock_text", "解锁记录"], ["historical_peak", "历史最高"], ["extinct_count", "归零次数"]
+      ]));
+
+      const rosterSection = el("section", { className: "subsection" }, el("h2", { className: "subsection-title", text: "造物名册" }));
+      const rosterGrid = el("div", { className: "record-grid" });
+      (data.creation_roster || []).forEach(name => rosterGrid.append(el("article", { className: "record-card" }, el("h3", { text: name }))));
+      (data.undiscovered_clues || []).forEach(item => rosterGrid.append(el("article", { className: "record-card locked-card" }, [
+        el("h3", { text: item.name }), el("p", { className: "rumor", text: item.clue })
+      ])));
+      rosterSection.append(rosterGrid.childElementCount ? rosterGrid : emptyNode());
+      stack.append(rosterSection);
+
+      const settlersSection = el("section", { className: "subsection" }, el("h2", { className: "subsection-title", text: "定居者志" }));
+      const settlersGrid = el("div", { className: "record-grid" });
+      (data.settlers || []).forEach(group => {
+        const groupCard = el("article", { className: "record-card" });
+        groupCard.append(el("h3", { text: group.species }));
+        groupCard.append(el("p", { text: `定居次数：${group.settle_count}` }), el("p", { text: `最长存活：${group.longest_survival}` }));
+        if ((group.current || []).length) {
+          const currentList = el("ul", { className: "annotation-list" });
+          group.current.forEach(current => currentList.append(el("li", { className: "raw-value", text: `当前住户：${valueText(current)}` })));
+          groupCard.append(currentList);
+        }
+        const residents = el("div", { className: "resident-list" });
+        (group.residents || []).forEach(resident => {
+          const title = resident.nickname || resident.name || resident.species;
+          const record = el("div", { className: "resident-record" });
+          record.append(el("strong", { text: title }));
+          if (resident.nickname && (resident.species || resident.name)) record.append(el("span", { className: "muted", text: ` · ${resident.species || resident.name}` }));
+          record.append(el("p", { text: `到达日：${resident.arrive_day}` }), el("p", { text: `离开日：${resident.leave_day === null ? "在塘" : resident.leave_day}` }));
+          const annotations = el("ul", { className: "annotation-list" });
+          const excluded = new Set(["name", "species", "nickname", "arrive_day", "leave_day"]);
+          Object.entries(resident).forEach(([key, value]) => {
+            if (!excluded.has(key) && value !== null && value !== undefined && (!Array.isArray(value) || value.length)) {
+              annotations.append(el("li", { className: "raw-value", text: `${key}：${valueText(value)}` }));
+            }
+          });
+          if (annotations.childElementCount) record.append(annotations);
+          residents.append(record);
+        });
+        groupCard.append(residents.childElementCount ? residents : emptyNode());
+        settlersGrid.append(groupCard);
+      });
+      settlersSection.append(settlersGrid.childElementCount ? settlersGrid : emptyNode());
+      stack.append(settlersSection);
+
+      stack.append(renderSimpleRecords(data.visitors, "访客志", [["count", "记录次数"], ["notes", "记录"]]));
+      stack.append(renderSimpleRecords(data.events, "事件志", [["count", "记录次数"]]));
+      stack.append(renderSimpleRecords(data.disasters, "灾害志", [["count", "记录次数"], ["first_day", "首次发生日"], ["days", "发生日"], ["notes", "记录"]]));
+      container.replaceChildren(stack);
+    }
+
+    function renderAnnals(data, container) {
+      const stack = el("div", { className: "page-stack" });
+      stack.append(el("div", { className: "page-heading" }, [
+        el("h2", { text: "年鉴" }), el("div", { className: "progress-number", text: data.total })
+      ]));
+      const timeline = el("ol", { className: "timeline" });
+      [...(data.timeline || [])].reverse().forEach(entry => timeline.append(el("li", { text: entry })));
+      stack.append(timeline.childElementCount ? timeline : emptyNode());
+      container.replaceChildren(stack);
+    }
+
+    async function openSpecies(name) {
+      sheetBackdrop.hidden = false;
+      document.body.style.overflow = "hidden";
+      sheetTitle.textContent = name;
+      sheetContent.replaceChildren(el("div", { className: "loading", text: "读取中" }));
+      try {
+        const data = await apiGet(`/eco/api/species/${encodeURIComponent(name)}`);
+        sheetTitle.textContent = data.name;
+        const detail = el("div", { className: "detail-grid" });
+        const labels = {
+          trophic: "营养级", trophic_label: "营养级名称", food_sources: "食物来源", birth_rate: "出生率",
+          death_rate: "死亡率", max_capacity: "最大容量", lifecycle: "生命周期", current_count: "当前数量"
+        };
+        Object.entries(labels).forEach(([key, label]) => {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            detail.append(el("div", { className: "parameter" }, [
+              el("span", { text: label }), el("strong", { className: "raw-value", text: valueText(data[key]) })
+            ]));
+          }
+        });
+        sheetContent.replaceChildren(detail);
+      } catch (error) {
+        sheetContent.replaceChildren(el("div", { className: "error-state", text: errorMessage(error) }));
+      }
+    }
+
+    function closeSheet() {
+      sheetBackdrop.hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    buildNav(document.querySelector(".desktop-nav"));
+    buildNav(document.querySelector(".bottom-nav"));
+    document.getElementById("sheet-close").addEventListener("click", closeSheet);
+    sheetBackdrop.addEventListener("click", event => { if (event.target === sheetBackdrop) closeSheet(); });
+    document.addEventListener("keydown", event => { if (event.key === "Escape" && !sheetBackdrop.hidden) closeSheet(); });
+    activateTab("state");
+  </script>
+</body>
+</html>

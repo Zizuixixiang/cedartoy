@@ -2160,6 +2160,8 @@
       {
         id: "eco",
         category: "mini",
+        watch: true,
+        watchLabel: "探访池塘 →",
         name: "瓶中生态",
         mission: "MISSION: ECOSYSTEM",
         location: "LOCATION: GLASS POND",
@@ -3370,6 +3372,15 @@
       window.location.href = url;
     }
 
+    function watchCurrentGame(playerId) {
+      const game = currentGame();
+      if (game.id === "workkk") {
+        watchWorkkk(playerId);
+        return;
+      }
+      if (game.id === "eco") window.location.href = "/eco?ai_user_id=" + playerId;
+    }
+
     function openWorkkkPicker(bindings) {
       $("bankPickerOptions").innerHTML = bindings.map((user) => `
         <button class="bank-picker-option" data-workkk-option="${user.id}" type="button">${escapeHtml(user.username)}</button>
@@ -3377,14 +3388,14 @@
       document.querySelectorAll("[data-workkk-option]").forEach((option) => {
         option.addEventListener("click", () => {
           closeBankPicker();
-          watchWorkkk(option.dataset.workkkOption);
+          watchCurrentGame(option.dataset.workkkOption);
         });
       });
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
     }
 
-    function enterWorkkk() {
+    function enterWatch() {
       if (!me || !token()) {
         showToast("请先登录再围观大屏");
         openModal("loginModal");
@@ -3396,7 +3407,7 @@
         return;
       }
       if (bindings.length === 1) {
-        watchWorkkk(bindings[0].id);
+        watchCurrentGame(bindings[0].id);
         return;
       }
       openWorkkkPicker(bindings);
@@ -3873,7 +3884,7 @@
     $("drawerEnter").addEventListener("click", enterGame);
     ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
       const btn = $(id);
-      if (btn) btn.addEventListener("click", enterWorkkk);
+      if (btn) btn.addEventListener("click", enterWatch);
     });
     $("drawerClose").addEventListener("click", closeDrawers);
     $("mineClose").addEventListener("click", closeDrawers);

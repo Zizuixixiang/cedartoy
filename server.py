@@ -63,6 +63,7 @@ MEMORIA_HUMAN_GUIDE_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-
 MEMORIA_AFTER_CLEAR_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-Station" / "通关后阅读"
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
+ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -3062,6 +3063,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/admin":
             self._send_html_file(ADMIN_INDEX_PATH)
+            return
+
+        if path == "/eco":
+            self._send_html_file(ECO_INDEX_PATH)
             return
 
         if path == "/health":
