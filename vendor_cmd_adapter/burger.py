@@ -1,6 +1,6 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
 
 
 RUNNER_CODE = r'''
@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ payload = json.load(sys.stdin)
 save_dir = Path(payload["save_dir"])
 vendor_dir = payload["vendor_dir"]
 command = (payload.get("command") or "status").strip()
+command = re.sub(r'[\u3000\u00A0\u2002\u2003\u2009\u200A\uFEFF]+', ' ', command)
 extra = payload.get("extra") or {}
 
 sys.path.insert(0, vendor_dir)
@@ -334,6 +336,7 @@ def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "burger_new"}:
+        require_save_confirm(arguments, lambda: (SAVE_ROOT / "burger" / require_player_id(player_id) / "save.json").exists(), save_summary, "burger")
         extra = {
             "shop_name": arguments.get("shop_name"),
             "chef_name": arguments.get("chef_name"),

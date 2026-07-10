@@ -1,6 +1,6 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
 
 
 RUNNER_CODE = r'''
@@ -52,6 +52,7 @@ def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "leek_new"}:
+        require_save_confirm(arguments, lambda: (SAVE_ROOT / "leek" / require_player_id(player_id) / "leek_save.json").exists(), save_summary, "leek")
         seed = arguments.get("seed")
         career = str(arguments.get("career") or "").strip().lower()
         parts = ["new_game"]

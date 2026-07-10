@@ -1,6 +1,6 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
 
 
 LEVELS = {
@@ -51,6 +51,7 @@ RUNNER_CODE = r'''
 import importlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -58,6 +59,7 @@ payload = json.load(sys.stdin)
 save_dir = Path(payload["save_dir"])
 vendor_dir = Path(payload["vendor_dir"])
 command = (payload.get("command") or "status").strip()
+command = re.sub(r'[\u3000\u00A0\u2002\u2003\u2009\u200A\uFEFF]+', ' ', command)
 extra = payload.get("extra") or {}
 
 levels = {
@@ -211,6 +213,10 @@ def play(arguments):
     level = _normalize_level(arguments.get("level") or arguments.get("chapter"))
     extra = {"level": level}
     if action in {"new", "memoria_new"}:
+        def _memoria_has_save():
+            root = SAVE_ROOT / "memoria" / require_player_id(player_id)
+            return (root / f"level{level}" / LEVELS[level]["save"]).exists()
+        require_save_confirm(arguments, _memoria_has_save, save_summary, "memoria")
         difficulty = str(arguments.get("difficulty") or "normal").strip().lower()
         if difficulty not in {"normal", "hard", "hell"}:
             raise VendorCmdError("difficulty 支持 normal/hard/hell")

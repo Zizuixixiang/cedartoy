@@ -1,17 +1,19 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
 
 
 RUNNER_CODE = r'''
 import json
 import os
+import re
 import sys
 
 payload = json.load(sys.stdin)
 save_dir = payload["save_dir"]
 vendor_dir = payload["vendor_dir"]
 command = (payload.get("command") or "look").strip()
+command = re.sub(r'[\u3000\u00A0\u2002\u2003\u2009\u200A\uFEFF]+', ' ', command)
 
 sys.path.insert(0, vendor_dir)
 os.environ["RANDOM_IMITATOR_TD_SAVE"] = os.path.join(save_dir, "random_imitator_td_save.json")
@@ -57,6 +59,10 @@ def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "imitator_td_new"}:
+        def _imitator_has_save():
+            d = SAVE_ROOT / "imitator_td" / require_player_id(player_id)
+            return any((d / f).exists() for f in ("random_imitator_td_save.json", "random_imitator_td_records.json"))
+        require_save_confirm(arguments, _imitator_has_save, save_summary, "imitator_td")
         level = arguments.get("level")
         mode = str(arguments.get("mode") or "").strip()
         chaos = str(arguments.get("chaos") or "").strip()

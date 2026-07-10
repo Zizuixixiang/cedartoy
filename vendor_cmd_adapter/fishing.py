@@ -1,17 +1,19 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
 
 
 RUNNER_CODE = r'''
 import json
 import os
+import re
 import sys
 
 payload = json.load(sys.stdin)
 save_dir = payload["save_dir"]
 vendor_dir = payload["vendor_dir"]
 command = (payload.get("command") or "status").strip()
+command = re.sub(r'[\u3000\u00A0\u2002\u2003\u2009\u200A\uFEFF]+', ' ', command)
 
 sys.path.insert(0, vendor_dir)
 os.chdir(save_dir)
@@ -67,10 +69,15 @@ def save_summary(player_id):
     }
 
 
+def _has_save(player_id):
+    return (SAVE_ROOT / "fishing" / require_player_id(player_id) / "fishing_save.json").exists()
+
+
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "fishing_new"}:
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "fishing")
         seed = arguments.get("seed")
         parts = ["new_game"]
         if seed is not None:
@@ -82,6 +89,7 @@ def play(arguments):
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
     elif action == "import":
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "fishing")
         save_data = arguments.get("save_data")
         if save_data is None:
             raise VendorCmdError("save_data 必填")

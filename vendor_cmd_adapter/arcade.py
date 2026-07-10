@@ -2,7 +2,9 @@ import fcntl
 import json
 import re
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id
+from command_text import normalize_command_spaces
+
+from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
 
 
 MAX_BUY_AMOUNT = 500
@@ -125,7 +127,9 @@ def grant_chips(player_id, amount):
 
 
 def _guard_command(command):
-    text = str(command or "").strip()
+    # 先归一化再匹配：BOM(U+FEFF) 不属于 `\s`，`buy﻿500` 能绕过这道 guard，
+    # 但下游 GAME.run 又会把它折叠成合法的 `buy 500` —— 等于白送筹码。
+    text = normalize_command_spaces(str(command or ""))
     match = re.match(r"^buy\s+(\d+)\b", text, re.IGNORECASE)
     if match:
         raise VendorCmdError("街机厅筹码只能由人类在网页端发放；让你的人类打开街机厅卡片，输入金额后发放。")
@@ -136,6 +140,10 @@ def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "arcade_new"}:
+        def _arcade_has_save():
+            d = _save_dir(player_id, create=False)
+            return any((d / f).exists() for f in ("arcade_save.json", "slots_save.json", "blackjack_save.json", "roulette_save.json"))
+        require_save_confirm(arguments, _arcade_has_save, save_summary, "arcade")
         command = _guard_command(arguments.get("command") or "enter")
         text = GAME.run(player_id, command, reset=True)
     elif action in {"cmd", "arcade_cmd"}:
