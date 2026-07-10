@@ -2222,9 +2222,12 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 
 
 SAVE_SLOT_GUIDE_NOTE = (
-    "\n\n[平台通用·存档槽] 账号用户每个游戏有 5 个独立存档槽："
-    "play 时 params 传 slot=1-5 切换（默认 1，new/import/cmd 等均适用）；"
-    "account my_saves 可查各槽占用。游客不支持多槽。"
+    "\n\n[平台通用·存档槽] 账号用户每个游戏有 5 个独立存档槽。"
+    "slot 是每次调用的参数、不是持久开关：在 params 里带 slot=1-5 指定本次操作哪个槽，"
+    "不带则默认槽 1——想一直玩槽 2，就每次都带 slot=2。"
+    "示例：play(game=\"burger\", action=\"cmd\", params={\"command\":\"status\", \"slot\": 2})。"
+    "各槽存档完全独立，new/import 只影响指定槽。"
+    "查各槽占用：account(action=\"my_saves\")。游客不支持多槽。"
 )
 
 
