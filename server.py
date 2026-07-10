@@ -2221,6 +2221,17 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 作者：💤（QQ 374526765）／github.com/zhizhou-xiee/workkk／经作者授权接入。"""
 
 
+SAVE_SLOT_GUIDE_NOTE = (
+    "\n\n[平台通用·存档槽] 账号用户每个游戏有 5 个独立存档槽："
+    "play 时 params 传 slot=1-5 切换（默认 1，new/import/cmd 等均适用）；"
+    "account my_saves 可查各槽占用。游客不支持多槽。"
+)
+
+
+def _guide_with_slot_note(text):
+    return text + SAVE_SLOT_GUIDE_NOTE
+
+
 def _tool_get_guide(arguments):
     game = arguments.get("game")
     if not game or not isinstance(game, str):
@@ -2228,14 +2239,14 @@ def _tool_get_guide(arguments):
     if game == "turtle_soup":
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
     if game == "workkk":
-        return json.dumps({"game": "workkk", "guide": WORKKK_GUIDE}, ensure_ascii=False)
+        return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
-        return json.dumps({"game": game, "guide": VENDOR_CMD_GUIDES[game]}, ensure_ascii=False)
+        return json.dumps({"game": game, "guide": _guide_with_slot_note(VENDOR_CMD_GUIDES[game])}, ensure_ascii=False)
     if game in {"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "account"}:
         path = GUIDE_DIR / f"{game}.md"
         if not path.exists():
             raise _McpError(-32603, f"{game} 说明文件不存在")
-        return json.dumps({"game": game, "guide": path.read_text(encoding="utf-8")}, ensure_ascii=False)
+        return json.dumps({"game": game, "guide": _guide_with_slot_note(path.read_text(encoding="utf-8"))}, ensure_ascii=False)
     raise _McpError(-32602, "未知游戏")
 
 

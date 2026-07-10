@@ -120,7 +120,6 @@ GUIDES = {
 批量：分号串联，最多8条，如 buy basic_worm 10; cast 10
 末尾有紧凑状态栏JSON，省token优先读它。
 导入存档：play(game="fishing", action="import", params={"player_id":"p1","save_data":{...}})
-存档槽：账号用户每个游戏有 5 个独立存档槽，params 传 slot=1-5 切换（默认 1，new/import/cmd 均适用）；account my_saves 可查各槽占用。
 完整文档见 toy.cedarstar.org
 
 原作信息：
