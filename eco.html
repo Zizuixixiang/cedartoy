@@ -21,9 +21,7 @@
       --muted: #9ca3af;
       --screen-bg: #2D2D2D;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --browser-bottom: 0px;
-      --mobile-nav-height: 62px;
-      --mobile-nav-total: calc(var(--mobile-nav-height) + var(--safe-bottom) + var(--browser-bottom));
+      --mobile-nav-height: 60px;
     }
 
     html { min-height: 100%; background: var(--bg); image-rendering: pixelated; }
@@ -37,103 +35,112 @@
         linear-gradient(90deg, rgba(190, 177, 209, 0.1) 1px, transparent 1px);
       background-size: 20px 20px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-      image-rendering: pixelated;
     }
     button, summary { font: inherit; }
     button { cursor: pointer; touch-action: manipulation; }
-    .pixel-font, h1, h2, h3, .score, .nav-button, .eyebrow, .badge, .progress-number {
+    img { image-rendering: pixelated; }
+    h1, h2, h3, .pixel-font, .score, .nav-button, .progress-count, .stack-page {
       font-family: "Silkscreen", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
     }
-    .app { min-height: 100vh; }
+    .view[hidden], [hidden] { display: none !important; }
 
     .site-header {
       color: #fff;
       background: var(--purple);
       border-bottom: 4px solid var(--purple-dark);
-      padding: 14px max(18px, calc((100vw - 1180px) / 2));
+      padding: 12px max(18px, calc((100vw - 1180px) / 2));
     }
     .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-    .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .brand { display: flex; align-items: center; gap: 13px; }
     .pixel-logo { width: 24px; height: 18px; border: 4px solid #fff; box-shadow: 8px 8px 0 -4px #fff; flex: none; }
-    .brand h1 { margin: 0; font-size: clamp(18px, 3vw, 25px); letter-spacing: 1px; }
-    .brand small { display: block; margin-top: 3px; font-size: 11px; opacity: 0.85; letter-spacing: 0.08em; }
-
+    .brand h1 { margin: 0; font-size: 23px; letter-spacing: 1px; }
+    .brand small { display: block; margin-top: 2px; font-size: 10px; opacity: 0.85; letter-spacing: 0.08em; }
     .desktop-nav { display: flex; gap: 8px; }
     .nav-button {
       min-width: 80px;
-      border: 3px solid rgba(255, 255, 255, 0.7);
+      min-height: 42px;
       color: #fff;
       background: transparent;
-      padding: 9px 13px;
+      border: 3px solid rgba(255,255,255,0.72);
+      padding: 8px 13px;
       font-size: 12px;
+      font-weight: 700;
     }
     .nav-button[aria-selected="true"] { color: var(--purple-darker); background: #fff; border-color: #fff; box-shadow: 3px 3px 0 var(--purple-darker); }
 
-    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 56px; }
-    .view[hidden] { display: none; }
-    .loading, .empty, .error-state {
-      width: 100%;
-      min-height: 150px;
-      display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 28px;
-      color: var(--muted);
-    }
-    .loading::after { content: "..."; animation: dots 1s steps(4, end) infinite; }
-    @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; } }
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 24px 0 54px; }
+    .loading, .empty, .error-state { min-height: 140px; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
     .error-state { color: var(--pink-dark); }
+    .loading::after { content: "..."; }
 
     .pixel-card {
       position: relative;
       background: #fff;
       border: 4px solid var(--purple);
-      box-shadow: 5px 5px 0 rgba(190, 177, 209, 0.42);
-      padding: 18px;
+      box-shadow: 5px 5px 0 rgba(190,177,209,0.42);
     }
     .pixel-card::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); pointer-events: none; }
     .pixel-card > * { position: relative; z-index: 1; }
-    .section-title { margin: 0 0 14px; color: var(--purple-darker); font-size: 16px; letter-spacing: 0.04em; }
-    .eyebrow { color: var(--pink-dark); font-size: 10px; letter-spacing: 0.08em; }
-    .muted { color: var(--muted); }
+    .section-title { margin: 0 0 12px; color: var(--purple-darker); font-size: 16px; }
+    .page-stack { display: grid; gap: 22px; }
+    .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+    .page-heading h2 { margin: 0; color: var(--purple-darker); font-size: 28px; }
+    .progress-count { color: var(--pink-dark); font-size: 15px; }
 
-    .state-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 0.9fr); grid-template-areas:
-      "summary summary"
-      "disaster observe"
-      "choice observe"
-      "settlers observe"
-      "environment observe"
-      "populations observe"; gap: 20px; align-items: start; }
-    .status-summary { grid-area: summary; display: grid; grid-template-columns: 1fr minmax(260px, 0.8fr); gap: 22px; align-items: stretch; }
-    .dayline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 100%; padding: 20px 24px; }
-    .dayline-main { font-size: clamp(18px, 4vw, 27px); color: var(--purple-darker); }
-    .score-block { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 17px 20px; }
-    .score { color: var(--pink-dark); font-size: clamp(42px, 8vw, 72px); line-height: 0.9; }
-    .comment { line-height: 1.75; }
+    .state-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(350px, 0.9fr);
+      grid-template-areas:
+        "summary summary"
+        "disaster observe"
+        "choice observe"
+        "settlers observe"
+        "environment observe"
+        "populations observe";
+      gap: 18px;
+      align-items: start;
+    }
+    .status-banner { grid-area: summary; display: grid; grid-template-columns: 150px 1fr; align-items: center; min-height: 116px; padding: 18px 24px; }
+    .status-banner .score { color: var(--pink-dark); font-size: 72px; line-height: 1; text-align: center; border-right: 3px solid var(--purple-light); }
+    .status-copy { padding-left: 24px; }
+    .status-day { color: var(--purple-darker); font-size: 22px; font-weight: 700; }
+    .status-comment { margin: 8px 0 0; color: var(--text); font-size: 13px; line-height: 1.6; }
 
-    .disaster-zone { grid-area: disaster; border-color: var(--pink); box-shadow: 5px 5px 0 rgba(230, 168, 177, 0.35); background: #fff9fa; }
-    .disaster-zone::after { border-color: rgba(230, 168, 177, 0.35); }
-    .choice-zone { grid-area: choice; }
-    .settlers-zone { grid-area: settlers; }
-    .observe-zone { grid-area: observe; position: sticky; top: 20px; }
-    .environment-zone { grid-area: environment; }
-    .populations-zone { grid-area: populations; }
+    .disaster-zone { grid-area: disaster; padding: 16px; border-color: var(--pink); box-shadow: 5px 5px 0 rgba(230,168,177,0.34); background: #fffafb; }
+    .disaster-zone::after { border-color: rgba(230,168,177,0.38); }
+    .choice-zone { grid-area: choice; padding: 16px; }
+    .settlers-zone { grid-area: settlers; padding: 16px; overflow: visible; }
+    .environment-zone { grid-area: environment; padding: 14px 16px 16px; }
+    .populations-zone { grid-area: populations; padding: 0; }
+    .observe-zone { grid-area: observe; position: sticky; top: 18px; }
+    .notice-list, .choice-options { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+    .notice-list li { border-left: 4px solid var(--pink); padding: 7px 10px; background: rgba(230,168,177,0.1); font-size: 13px; line-height: 1.5; }
+    .choice-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .choice-description { margin: 0 0 10px; line-height: 1.55; }
+    .readonly-mark, .small-chip { display: inline-flex; color: var(--pink-dark); background: #fff8fa; border: 2px solid var(--pink); padding: 3px 7px; font-size: 10px; }
+    .choice-options li { padding: 7px 10px; background: var(--purple-light); font-size: 12px; }
 
-    .notice-list, .option-list, .plain-list, .timeline, .annotation-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
-    .notice-item, .option-item { border-left: 4px solid var(--pink); background: rgba(230, 168, 177, 0.1); padding: 10px 12px; line-height: 1.55; }
-    .choice-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 12px; }
-    .readonly-mark, .badge { display: inline-flex; flex: none; color: var(--pink-dark); border: 2px solid var(--pink); background: #fff9fa; padding: 4px 7px; font-size: 10px; }
-    .choice-description { margin: 0 0 14px; line-height: 1.7; }
-    .option-item { display: flex; gap: 10px; color: var(--text); opacity: 0.84; }
+    .environment-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+    .environment-cell { height: 62px; display: grid; align-content: center; justify-items: center; background: #faf8fc; border: 2px solid var(--purple-light); padding: 5px; }
+    .environment-label { color: var(--muted); font-size: 10px; }
+    .environment-number { color: var(--purple-darker); font-size: 20px; font-weight: 700; line-height: 1.2; }
+    .environment-trend { color: var(--pink-dark); margin-left: 3px; font-size: 15px; }
 
-    .settler-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-    .settler-card { border: 3px solid var(--purple-light); background: #fdfbff; padding: 14px; }
-    .settler-title { margin: 0; color: var(--purple-darker); font-size: 20px; overflow-wrap: anywhere; }
-    .settler-species { margin: 3px 0 11px; color: var(--muted); font-size: 12px; }
-    .settler-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .meta-cell { padding-top: 8px; border-top: 2px solid var(--purple-light); }
-    .meta-cell span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 3px; }
-    .settler-badges { display: flex; gap: 6px; margin-top: 10px; }
+    .settler-stack { position: relative; min-height: 164px; margin: 0 22px 4px; overflow: visible; touch-action: pan-y; perspective: 800px; user-select: none; }
+    .settler-stack.single { margin-inline: 0; min-height: 142px; }
+    .settler-layer { position: absolute; inset: 0; pointer-events: none; will-change: transform, opacity; transform-origin: center center; }
+    .settler-layer.is-settling { transition: transform 260ms ease, opacity 260ms ease; }
+    .settler-stack-card { height: 136px; padding: 17px 18px; overflow: hidden; background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.46); }
+    .settler-stack-card::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .settler-card-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding-right: 45px; }
+    .settler-card-art { width: 46px; height: 46px; object-fit: contain; flex: none; }
+    .settler-name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .settler-name { margin: 0; color: var(--purple-darker); font-size: 20px; overflow-wrap: anywhere; }
+    .settler-species { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .settler-card-status { margin-top: 2px; color: var(--pink-dark); font-size: 10px; }
+    .settler-card-meta { position: relative; z-index: 1; margin-top: 12px; padding-top: 9px; border-top: 2px solid var(--purple-light); font-size: 12px; line-height: 1.45; white-space: normal; }
+    .settler-card-returns { color: var(--pink-dark); }
+    .stack-page { position: absolute; z-index: 2; top: 12px; right: 13px; color: var(--pink-dark); font-size: 11px; }
 
     .crt {
       min-height: 440px;
@@ -141,99 +148,209 @@
       background-color: var(--screen-bg);
       background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px);
       border: 4px solid var(--purple-dark);
-      box-shadow: inset 0 0 30px rgba(0,0,0,0.42), 5px 5px 0 rgba(190, 177, 209, 0.42);
-      padding: 24px;
+      box-shadow: inset 0 0 30px rgba(0,0,0,0.42), 5px 5px 0 rgba(190,177,209,0.42);
+      padding: 20px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: 14px;
-      line-height: 1.85;
-      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.75;
       overflow-wrap: anywhere;
     }
-    .crt-line::before { content: "> "; color: var(--pink); }
+    .crt-text { margin: 0; white-space: pre-wrap; font: inherit; color: inherit; }
+    .crt-data { margin: 9px 0; border-top: 1px dashed rgba(230,168,177,0.5); border-bottom: 1px dashed rgba(230,168,177,0.5); }
+    .crt-data summary { list-style: none; cursor: pointer; color: var(--pink); padding: 7px 0; }
+    .crt-data summary::-webkit-details-marker { display: none; }
+    .crt-data summary::before { content: "▸ "; }
+    .crt-data[open] summary::before { content: "▾ "; }
+    .crt-data pre { margin: 0 0 8px; padding: 8px; max-height: 280px; overflow: auto; color: #d8d2dc; background: rgba(0,0,0,0.22); white-space: pre-wrap; font: inherit; }
 
-    details.pixel-card { padding: 0; }
-    details > summary { position: relative; z-index: 2; list-style: none; cursor: pointer; padding: 17px 20px; color: var(--purple-darker); font-weight: 700; touch-action: manipulation; }
-    details > summary::-webkit-details-marker { display: none; }
-    details > summary::after { content: "+"; float: right; color: var(--pink-dark); font-family: "Silkscreen", monospace; }
-    details[open] > summary::after { content: "−"; }
-    .details-body { position: relative; z-index: 1; border-top: 3px solid var(--purple-light); padding: 16px 18px 19px; }
-    .parameter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-    .parameter { background: #f9f6fb; border: 2px solid var(--purple-light); padding: 10px; }
-    .parameter span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
-    .trend { color: var(--pink-dark); margin-left: 5px; }
-
-    .population-groups { display: grid; gap: 14px; }
-    .population-group h3 { margin: 0 0 7px; color: var(--pink-dark); font-size: 13px; }
-    .species-row { width: 100%; display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; border: 0; border-bottom: 1px dashed var(--purple); color: var(--text); background: transparent; padding: 9px 2px; text-align: left; }
-    button.species-row:active { color: var(--pink-dark); background: rgba(230,168,177,0.08); }
+    details.population-fold > summary { list-style: none; cursor: pointer; padding: 14px 17px; color: var(--purple-darker); font-weight: 700; }
+    details.population-fold > summary::-webkit-details-marker { display: none; }
+    details.population-fold > summary::after { content: "+"; float: right; color: var(--pink-dark); }
+    details.population-fold[open] > summary::after { content: "−"; }
+    .population-groups { display: grid; gap: 12px; border-top: 3px solid var(--purple-light); padding: 12px 16px 15px; }
+    .population-group h3 { margin: 0 0 5px; color: var(--pink-dark); font-size: 12px; }
+    .species-row { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; padding: 6px 1px; color: var(--text); background: transparent; border: 0; border-bottom: 1px dashed var(--purple); text-align: left; }
+    .species-row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .population-image { width: 30px; height: 30px; object-fit: contain; }
     .species-row.locked { color: var(--muted); cursor: default; }
     .delta-up { color: #3f8d63; }
     .delta-down { color: #bd5262; }
 
-    .page-stack { display: grid; gap: 22px; }
-    .page-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
-    .page-heading h2 { margin: 0; color: var(--purple-darker); font-size: clamp(21px, 4vw, 30px); }
-    .progress-number { color: var(--pink-dark); font-size: 17px; white-space: nowrap; }
-    .species-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
-    .species-tile { min-height: 80px; display: grid; place-items: center; text-align: center; border: 3px solid var(--purple-light); color: var(--purple-darker); background: #fff; padding: 12px; }
-    button.species-tile:active { border-color: var(--pink); color: var(--pink-dark); }
-    .species-tile.locked, .locked-card { color: var(--muted); background: #f3f2f4; opacity: 0.65; }
-    .split-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-    .achievement-grid, .record-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 13px; }
-    .record-card { border: 3px solid var(--purple-light); background: #fff; padding: 14px; overflow-wrap: anywhere; }
-    .record-card h3 { margin: 0 0 9px; color: var(--purple-darker); font-size: 15px; }
-    .record-card p { margin: 5px 0; line-height: 1.6; }
-    .condition { color: var(--muted); font-size: 13px; }
-    .rumor { font-style: italic; line-height: 1.7; color: var(--text); }
-    .subsection { display: grid; gap: 12px; }
-    .subsection-title { margin: 0; padding-bottom: 9px; color: var(--pink-dark); border-bottom: 3px solid var(--purple-light); font-size: 17px; }
-    .resident-list { display: grid; gap: 9px; margin-top: 12px; }
-    .resident-record { border-left: 4px solid var(--purple); background: #faf8fc; padding: 10px 12px; }
-    .resident-record strong { color: var(--purple-darker); }
-    .raw-value { white-space: pre-wrap; overflow-wrap: anywhere; }
-    .annotation-list { margin-top: 7px; font-size: 12px; color: var(--muted); }
+    .codex-progress { padding: 14px 16px; }
+    .progress-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+    .progress-head strong { color: var(--purple-darker); }
+    .pixel-progress { display: grid; grid-template-columns: repeat(var(--total), minmax(4px, 1fr)); gap: 3px; }
+    .progress-cell { height: 13px; background: var(--purple-light); border: 1px solid var(--purple); }
+    .progress-cell.filled { background: var(--pink); border-color: var(--pink-dark); box-shadow: inset 0 -3px 0 rgba(194,139,147,0.28); }
+    .codex-section { display: grid; gap: 12px; }
+    .species-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; }
+    .species-tile { aspect-ratio: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-width: 0; color: var(--purple-darker); background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.45); padding: 9px; }
+    .species-tile::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .species-tile.locked { color: var(--muted); border-color: #c9c5cc; box-shadow: 4px 4px 0 rgba(156,163,175,0.24); background: repeating-linear-gradient(135deg, #f1eff2 0, #f1eff2 7px, #e8e5e9 7px, #e8e5e9 11px); }
+    .species-tile.locked::after { border-color: rgba(156,163,175,0.28); }
+    .species-art { position: relative; width: 64%; aspect-ratio: 1; display: grid; place-items: center; }
+    .species-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .species-initial { color: var(--pink-dark); font-size: clamp(30px,4vw,52px); font-weight: 700; }
+    .species-tile-name { position: relative; z-index: 1; font-weight: 700; font-size: 13px; text-align: center; }
+    .codex-lower { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .soft-section { padding: 15px 16px; background: rgba(255,255,255,0.74); border-top: 3px solid var(--purple); }
+    .badge-flow { display: flex; flex-wrap: wrap; gap: 7px; }
+    .visitor-badge, .folio-count-badge { display: inline-flex; align-items: center; color: var(--purple-darker); background: var(--purple-light); border: 2px solid var(--purple); padding: 5px 9px; font-size: 12px; font-weight: 700; }
+    .rumor-list { display: grid; gap: 8px; }
+    .rumor-quote { margin: 0; padding: 7px 10px; border-left: 4px solid var(--pink); color: var(--text); font-size: 12px; line-height: 1.55; font-style: italic; background: rgba(230,168,177,0.07); }
+    .achievement-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+    .achievement-card { padding: 10px 11px; border: 2px solid #d8d4da; background: #f5f3f5; color: var(--muted); }
+    .achievement-card.unlocked { color: var(--text); border-color: var(--pink); background: #fffafb; }
+    .achievement-card h3 { margin: 0 0 3px; font-size: 13px; }
+    .achievement-card p { margin: 0; font-size: 10px; line-height: 1.4; }
 
-    .timeline { counter-reset: event; }
-    .timeline li { position: relative; border-left: 4px solid var(--purple); background: #fff; box-shadow: 4px 4px 0 rgba(190,177,209,0.3); padding: 15px 18px 15px 22px; line-height: 1.7; }
-    .timeline li::before { content: ""; position: absolute; left: -9px; top: 19px; width: 14px; height: 14px; background: var(--pink); border: 3px solid #fff; }
+    .folio-section { display: grid; gap: 9px; }
+    .folio-title { margin: 0; padding-bottom: 7px; color: var(--pink-dark); border-bottom: 3px solid var(--purple-light); font-size: 17px; }
+    .folio-species-list { display: grid; border-top: 1px solid var(--purple-light); }
+    .folio-species-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 9px 5px; border-bottom: 1px solid var(--purple-light); }
+    .folio-species-row strong { color: var(--purple-darker); }
+    .folio-species-meta { color: var(--muted); font-size: 11px; text-align: right; }
+    .roster-flow { display: flex; flex-wrap: wrap; gap: 7px; }
+    .clue-list { display: grid; gap: 6px; margin-top: 3px; }
+    .clue-list p { margin: 0; padding-left: 9px; border-left: 3px solid var(--purple); color: var(--muted); font-size: 12px; font-style: italic; }
+    .settler-folio-list { display: grid; gap: 12px; }
+    .settler-folio-group { padding: 12px 14px; background: rgba(255,255,255,0.78); border-left: 5px solid var(--purple); }
+    .settler-folio-head { margin: 0; color: var(--purple-darker); font-size: 14px; }
+    .settler-folio-names { margin: 3px 0 0; color: var(--pink-dark); font-size: 11px; }
+    .life-record { display: grid; grid-template-columns: minmax(70px,auto) 1fr; gap: 10px; margin-top: 10px; }
+    .life-name { color: var(--text); font-size: 12px; font-weight: 700; }
+    .origin-chip { display: block; width: fit-content; margin-top: 3px; color: var(--muted); font-size: 9px; }
+    .mini-timeline { position: relative; margin: 0; padding: 0 0 0 17px; list-style: none; display: grid; gap: 6px; }
+    .mini-timeline::before { content: ""; position: absolute; left: 4px; top: 5px; bottom: 5px; width: 2px; background: var(--purple-light); }
+    .mini-timeline li { position: relative; font-size: 11px; line-height: 1.4; }
+    .mini-timeline li::before { content: ""; position: absolute; left: -17px; top: 4px; width: 9px; height: 9px; background: var(--pink); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--pink-dark); }
+    .folio-badge-list { display: grid; gap: 7px; }
+    .folio-badge-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 7px; }
+    .folio-note { align-self: center; color: var(--muted); font-size: 10px; line-height: 1.4; }
 
+    .annals-timeline { position: relative; margin: 0; padding: 0 0 0 72px; list-style: none; display: grid; gap: 17px; }
+    .annals-timeline::before { content: ""; position: absolute; left: 52px; top: 9px; bottom: 9px; width: 2px; background: var(--purple); }
+    .annals-day { position: relative; min-height: 34px; }
+    .annals-day::before { content: ""; position: absolute; left: -24px; top: 9px; width: 10px; height: 10px; background: #fff; border: 3px solid var(--purple-dark); border-radius: 50%; }
+    .date-badge { position: absolute; right: calc(100% + 34px); top: 0; min-width: 58px; padding: 4px 6px; color: #fff; text-align: center; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .season-spring { background: #A8C8A0; }
+    .season-summer { background: #E6A8B1; }
+    .season-autumn { background: #D4B483; }
+    .season-winter { background: #9B8DB5; }
+    .season-unknown { background: var(--muted); }
+    .annals-events { display: grid; gap: 6px; }
+    .annals-event { margin: 0; padding: 7px 10px; background: rgba(255,255,255,0.78); line-height: 1.55; font-size: 13px; }
+
+    .sheet-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; align-items: end; justify-content: center; padding: 14px 14px 0; background: rgba(45,45,45,0.45); }
+    .sheet { width: min(680px,100%); max-height: 78vh; overflow: auto; background: var(--bg); border: 4px solid var(--purple-dark); border-bottom: 0; padding: 14px 17px calc(22px + var(--safe-bottom)); }
+    .sheet-handle { width: 54px; height: 5px; margin: 0 auto 12px; background: var(--purple); }
+    .sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 3px solid var(--purple-light); }
+    .sheet-header h2 { margin: 0; color: var(--purple-darker); font-size: 19px; }
+    .sheet-close { width: 38px; height: 38px; color: var(--purple-darker); background: #fff; border: 3px solid var(--purple); font-size: 20px; }
+    .sheet-content { padding-top: 12px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+    .detail-item { padding: 8px 9px; background: #fff; border: 2px solid var(--purple-light); }
+    .detail-label { display: block; color: var(--muted); font-size: 10px; }
+    .detail-value { display: block; margin-top: 3px; color: var(--purple-darker); font-size: 13px; overflow-wrap: anywhere; }
     .bottom-nav { display: none; }
-    .sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: end; justify-content: center; background: rgba(45,45,45,0.45); padding: 18px 18px 0; }
-    .sheet-backdrop[hidden] { display: none; }
-    .sheet { width: min(680px, 100%); max-height: min(78vh, 720px); overflow: auto; background: var(--bg); border: 4px solid var(--purple-dark); border-bottom: 0; box-shadow: 8px -8px 0 rgba(190,177,209,0.38); padding: 16px 18px calc(24px + var(--safe-bottom)); }
-    .sheet-handle { width: 56px; height: 5px; background: var(--purple); margin: 0 auto 14px; }
-    .sheet-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 3px solid var(--purple-light); padding-bottom: 12px; }
-    .sheet-header h2 { margin: 0; color: var(--purple-darker); font-size: 20px; }
-    .sheet-close { width: 40px; height: 40px; border: 3px solid var(--purple); color: var(--purple-darker); background: #fff; font-size: 20px; }
-    .sheet-content { padding-top: 14px; }
-    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+    @media (max-width: 1000px) and (min-width: 769px) {
+      .species-grid { grid-template-columns: repeat(5,minmax(0,1fr)); }
+    }
 
     @media (max-width: 768px) {
-      .site-header { padding: 12px 17px; }
+      .site-header { padding: 9px 12px; }
+      .brand { gap: 9px; }
+      .brand h1 { font-size: 17px; }
       .brand small, .desktop-nav { display: none; }
-      main { width: min(100% - 24px, 620px); padding: 18px 0 calc(var(--mobile-nav-total) + 24px); }
-      .state-grid { display: grid; grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "settlers" "observe" "environment" "populations"; gap: 16px; }
-      .status-summary { grid-template-columns: 1fr; gap: 12px; }
+      .pixel-logo { width: 21px; height: 16px; border-width: 3px; }
+      main { width: min(100% - 16px,620px); padding: 10px 0 calc(var(--mobile-nav-height) + var(--safe-bottom) + 14px); }
+      .page-stack { gap: 13px; }
+      .page-heading h2 { font-size: 20px; }
+      .state-grid { grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "settlers" "environment" "observe" "populations"; gap: 10px; }
+      .status-banner { grid-template-columns: 78px 1fr; min-height: 82px; padding: 10px 12px; border-width: 3px; }
+      .status-banner .score { font-size: 45px; border-right-width: 2px; }
+      .status-copy { padding-left: 11px; }
+      .status-day { font-size: 13px; }
+      .status-comment { margin-top: 4px; font-size: 10px; line-height: 1.4; }
+      .disaster-zone, .choice-zone, .settlers-zone, .environment-zone { padding: 10px; }
+      .section-title { margin-bottom: 7px; font-size: 14px; }
+      .notice-list li { padding: 5px 7px; font-size: 11px; }
+      .environment-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
+      .environment-cell { height: 58px; padding: 3px; }
+      .environment-label { font-size: 9px; }
+      .environment-number { font-size: 17px; }
+      .settler-stack { min-height: 143px; margin: 0 16px; }
+      .settler-stack.single { min-height: 124px; }
+      .settler-stack-card { height: 118px; padding: 12px 13px; border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
+      .settler-card-top { gap: 7px; padding-right: 40px; }
+      .settler-card-art { width: 34px; height: 34px; }
+      .settler-name-line { gap: 6px; }
+      .settler-name { font-size: 15px; }
+      .settler-species { font-size: 9px; }
+      .settler-card-status { font-size: 8px; }
+      .settler-card-meta { margin-top: 8px; padding-top: 6px; font-size: 10px; line-height: 1.45; }
+      .stack-page { top: 9px; right: 10px; font-size: 10px; }
       .observe-zone { position: static; }
-      .crt { min-height: 320px; padding: 18px; font-size: 13px; }
-      .settler-grid, .split-grid { grid-template-columns: 1fr; }
-      .parameter-grid { grid-template-columns: repeat(2, 1fr); }
-      .settler-meta { gap: 5px; }
-      .pixel-card { padding: 15px; }
+      .crt { min-height: 260px; padding: 12px; font-size: 11px; line-height: 1.6; }
+      .population-groups { padding: 8px 10px 10px; gap: 8px; }
+      .species-row { padding: 4px 1px; font-size: 11px; }
+      .population-image { width: 25px; height: 25px; }
+      .pixel-progress { gap: 2px; }
+      .progress-cell { height: 10px; }
+      .species-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+      .species-tile { border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.45); padding: 6px; }
+      .species-tile::after { border-width: 1px; }
+      .species-tile-name { font-size: 10px; }
+      .species-initial { font-size: 30px; }
+      .codex-lower { grid-template-columns: 1fr; gap: 10px; }
+      .soft-section { padding: 10px; }
+      .achievement-grid { gap: 6px; }
+      .achievement-card { padding: 7px; }
+      .achievement-card h3 { font-size: 11px; }
+      .achievement-card p { font-size: 9px; }
+      .folio-title { font-size: 14px; padding-bottom: 5px; }
+      .folio-species-row { padding: 7px 3px; gap: 8px; }
+      .folio-species-row strong { font-size: 12px; }
+      .folio-species-meta { font-size: 9px; }
+      .settler-folio-list { gap: 8px; }
+      .settler-folio-group { padding: 9px 10px; }
+      .settler-folio-head { font-size: 12px; }
+      .life-record { grid-template-columns: 68px 1fr; gap: 6px; margin-top: 7px; }
+      .mini-timeline { gap: 4px; }
+      .annals-timeline { padding-left: 66px; gap: 10px; }
+      .annals-timeline::before { left: 47px; }
+      .annals-day::before { left: -23px; }
+      .date-badge { right: calc(100% + 31px); min-width: 52px; padding: 3px 5px; font-size: 9px; }
+      .annals-events { gap: 4px; }
+      .annals-event { padding: 6px 8px; font-size: 11px; line-height: 1.4; }
       .bottom-nav {
-        position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr);
-        height: var(--mobile-nav-total); padding-bottom: calc(var(--safe-bottom) + var(--browser-bottom));
-        background: var(--purple); border-top: 4px solid var(--purple-dark);
+        position: fixed;
+        z-index: 50;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: grid;
+        grid-template-columns: repeat(4,1fr);
+        height: calc(var(--mobile-nav-height) + var(--safe-bottom));
+        padding-bottom: var(--safe-bottom);
+        background: var(--purple);
+        border-top: 4px solid var(--purple-dark);
       }
-      .bottom-nav .nav-button { min-width: 0; height: var(--mobile-nav-height); border: 0; border-right: 1px solid rgba(255,255,255,0.22); padding: 8px 2px; font-size: 11px; box-shadow: none; }
-      .bottom-nav .nav-button[aria-selected="true"] { color: #fff; background: var(--purple-darker); border-top: 4px solid var(--pink); }
-      .sheet-backdrop { padding: 12px 8px 0; }
-    }
-    @media (max-width: 420px) {
-      .parameter-grid, .detail-grid { grid-template-columns: 1fr; }
-      .dayline-main { font-size: 18px; }
-      .score-block { grid-template-columns: 86px 1fr; }
-      .settler-meta { grid-template-columns: 1fr; }
+      .bottom-nav .nav-button {
+        min-width: 0;
+        min-height: 56px;
+        height: var(--mobile-nav-height);
+        padding: 8px 2px;
+        border: 0;
+        border-top: 4px solid transparent;
+        border-right: 1px solid rgba(255,255,255,0.22);
+        font-size: 14px;
+        font-weight: 700;
+        box-shadow: none;
+      }
+      .bottom-nav .nav-button[aria-selected="true"] { color: #fff; background: var(--purple-darker); border-top-color: var(--pink); }
+      .detail-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -279,14 +396,14 @@
       { id: "folio", label: "万物志" },
       { id: "annals", label: "年鉴" }
     ];
-    const loaded = new Set();
-    const views = Object.fromEntries(tabs.map(tab => [tab.id, document.getElementById(`view-${tab.id}`)]));
     const apiPaths = {
       state: "/eco/api/state",
       codex: "/eco/api/codex",
       folio: "/eco/api/folio",
       annals: "/eco/api/annals"
     };
+    const loaded = new Set();
+    const views = Object.fromEntries(tabs.map(tab => [tab.id, document.getElementById(`view-${tab.id}`)]));
     const aiUserId = new URLSearchParams(window.location.search).get("ai_user_id");
     const apiSuffix = aiUserId === null ? "" : `?ai_user_id=${encodeURIComponent(aiUserId)}`;
     const sheetBackdrop = document.getElementById("species-sheet");
@@ -303,47 +420,62 @@
       return node;
     }
 
-    function valueText(value) {
-      if (value === null) return "null";
-      if (typeof value === "object") return JSON.stringify(value, null, 2);
-      return String(value);
-    }
-
     function card(title, className = "") {
       const node = el("section", { className: `pixel-card ${className}`.trim() });
       if (title) node.append(el("h2", { className: "section-title", text: title }));
       return node;
     }
 
-    function emptyNode(text = "—") { return el("div", { className: "empty", text }); }
+    function emptyNode() { return el("div", { className: "empty", text: "—" }); }
+
+    function speciesImage(name, className) {
+      const image = el("img", {
+        className,
+        attrs: { src: `/eco/assets/species/${name}.png`, alt: "", loading: "lazy" }
+      });
+      image.addEventListener("error", () => { image.hidden = true; }, { once: true });
+      return image;
+    }
+
+    function speciesArt(name) {
+      const fallback = el("span", { className: "species-initial", text: name.slice(0, 1) });
+      const image = el("img", { attrs: { src: `/eco/assets/species/${name}.png`, alt: "", loading: "lazy" } });
+      image.addEventListener("load", () => { fallback.hidden = true; }, { once: true });
+      image.addEventListener("error", () => { image.hidden = true; }, { once: true });
+      return el("span", { className: "species-art" }, [fallback, image]);
+    }
+
+    function originLabel(value) {
+      const labels = { arrived: "初来乍到", return: "归来", returned: "归来", born: "塘中出生" };
+      return labels[value] || `来历：${value}`;
+    }
+
+    function reasonLabel(value) {
+      const labels = { old_age: "年老离去", age: "年老离去", starve: "饥饿离开", food: "饥饿离开" };
+      return labels[value] || `离开原因：${value}`;
+    }
 
     function errorMessage(error) {
       if (error.status === 401) return "请先在主站登录";
       if (error.status === 404) return "还没有池塘存档";
       if (error.network) return "网络连接失败，请稍后重试";
-      return error.message || "读取失败，请稍后重试";
-    }
-
-    function showError(container, error) {
-      container.replaceChildren(el("div", { className: "pixel-card error-state", text: errorMessage(error) }));
+      return "读取失败，请稍后重试";
     }
 
     async function apiGet(path) {
       const token = localStorage.getItem("cedartoy_token") || "";
       let response;
       try {
-        response = await fetch(`${path}${apiSuffix}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        response = await fetch(`${path}${apiSuffix}`, { headers: { Authorization: `Bearer ${token}` } });
       } catch (cause) {
-        const error = new Error("network error", { cause });
+        const error = new Error("network", { cause });
         error.network = true;
         throw error;
       }
       let payload = null;
-      try { payload = await response.json(); } catch (_) { /* 非 JSON 错误仍按状态码显示 */ }
+      try { payload = await response.json(); } catch (_) { /* 状态码仍可用于错误提示。 */ }
       if (!response.ok) {
-        const error = new Error(payload && payload.error ? payload.error : `HTTP ${response.status}`);
+        const error = new Error("request");
         error.status = response.status;
         throw error;
       }
@@ -379,95 +511,361 @@
         const data = await apiGet(apiPaths[id]);
         ({ state: renderState, codex: renderCodex, folio: renderFolio, annals: renderAnnals })[id](data, container);
         loaded.add(id);
-      } catch (error) { showError(container, error); }
+      } catch (error) {
+        container.replaceChildren(el("div", { className: "pixel-card error-state", text: errorMessage(error) }));
+      }
+    }
+
+    function disasterMessages(disasters) {
+      const messages = [];
+      const weather = disasters && disasters.active_weather;
+      if (weather && typeof weather === "object") {
+        let text = weather.kind || "持续天气";
+        if (weather.elapsed !== null && weather.elapsed !== undefined && weather.duration !== null && weather.duration !== undefined) {
+          text += ` · 第${weather.elapsed}/${weather.duration}天`;
+        }
+        if (weather.mitigated === true) text += " · 已缓解";
+        messages.push(text);
+      } else if (typeof weather === "string" && weather) {
+        messages.push(weather);
+      }
+      if (disasters && disasters.invasion) messages.push(disasters.invasion);
+      if (disasters && disasters.water_hyacinth_cover !== null && disasters.water_hyacinth_cover !== undefined) {
+        messages.push(`水葫芦覆盖：${disasters.water_hyacinth_cover}`);
+      }
+      ((disasters && disasters.biological) || []).forEach(item => {
+        if (!item || typeof item !== "object") return;
+        let text = item.name || "生物灾害";
+        if (item.elapsed !== null && item.elapsed !== undefined && item.duration !== null && item.duration !== undefined) text += ` · 第${item.elapsed}/${item.duration}天`;
+        if (item.remaining !== null && item.remaining !== undefined) text += ` · 剩余${item.remaining}天`;
+        messages.push(text);
+      });
+      return messages;
+    }
+
+    function prefixCrtLines(text) {
+      if (!text) return "";
+      return text.replace(/^/gm, "> ");
+    }
+
+    function splitObserveJson(text) {
+      const start = text.indexOf('{"day"');
+      if (start < 0) return { before: text, raw: null, after: "" };
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let index = start; index < text.length; index += 1) {
+        const character = text[index];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (character === "\\") escaped = true;
+          else if (character === '"') inString = false;
+          continue;
+        }
+        if (character === '"') inString = true;
+        else if (character === "{") depth += 1;
+        else if (character === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            return { before: text.slice(0, start), raw: text.slice(start, index + 1), after: text.slice(index + 1) };
+          }
+        }
+      }
+      return { before: text, raw: null, after: "" };
+    }
+
+    function renderObserve(text) {
+      const parts = splitObserveJson(String(text || ""));
+      const screen = el("div", { className: "crt" });
+      if (parts.before) screen.append(el("pre", { className: "crt-text", text: prefixCrtLines(parts.before) }));
+      if (parts.raw) {
+        const dataFold = el("details", { className: "crt-data" });
+        dataFold.append(el("summary", { text: "📊 原始数据" }), el("pre", { text: parts.raw }));
+        screen.append(dataFold);
+      }
+      if (parts.after) screen.append(el("pre", { className: "crt-text", text: prefixCrtLines(parts.after) }));
+      return screen;
+    }
+
+    function stackPose(offset) {
+      if (offset === 0) return { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1, zIndex: 20 };
+      const side = offset < 0 ? -1 : 1;
+      const depth = Math.min(Math.abs(offset), 3);
+      const firstLayer = Math.min(depth, 1);
+      const extra = Math.max(depth - 1, 0);
+      return {
+        x: side * (18 * firstLayer + extra * 12),
+        y: 6 * firstLayer + extra * 5,
+        scale: 1 - depth * 0.04,
+        rotate: side * (1.15 * firstLayer + extra * 0.5),
+        opacity: Math.max(0.44, 1 - depth * 0.18),
+        zIndex: Math.max(1, 10 - Math.ceil(depth))
+      };
+    }
+
+    function mixPose(from, to, progress) {
+      const mix = key => from[key] + (to[key] - from[key]) * progress;
+      return { x: mix("x"), y: mix("y"), scale: mix("scale"), rotate: mix("rotate"), opacity: mix("opacity") };
+    }
+
+    function applyPose(node, pose, zIndex) {
+      node.style.transform = `translate3d(${pose.x}px, ${pose.y}px, 0) scale(${pose.scale}) rotate(${pose.rotate}deg)`;
+      node.style.opacity = String(pose.opacity);
+      node.style.zIndex = String(zIndex === undefined ? pose.zIndex : zIndex);
+    }
+
+    function settlerCard(settler, index, total) {
+      const species = settler.name || settler.species;
+      const title = settler.nickname || species;
+      const cardNode = el("article", { className: "settler-stack-card" });
+      const identity = el("div", {}, [
+        el("div", { className: "settler-name-line" }, [
+          el("h3", { className: "settler-name", text: title }),
+          settler.nickname ? el("span", { className: "settler-species", text: species }) : null
+        ]),
+        settler.status === "幼体" || settler.status === "冬眠中" ? el("div", { className: "settler-card-status", text: settler.status }) : null
+      ]);
+      cardNode.append(el("div", { className: "settler-card-top" }, [speciesImage(species, "settler-card-art"), identity]));
+      const facts = [];
+      if (settler.arrive_day !== null && settler.arrive_day !== undefined) facts.push(`第${settler.arrive_day}天到达`);
+      if (settler.days_alive !== null && settler.days_alive !== undefined) facts.push(`存活${settler.days_alive}天`);
+      if (settler.health !== null && settler.health !== undefined) facts.push(settler.health);
+      const returns = (settler.return_records || [])
+        .filter(record => record && record.day !== null && record.day !== undefined)
+        .map(record => `第${record.day}天归来`);
+      const meta = el("div", { className: "settler-card-meta" });
+      meta.append(document.createTextNode(facts.join(" · ")));
+      if (returns.length) meta.append(el("div", { className: "settler-card-returns", text: returns.join(" · ") }));
+      cardNode.append(meta);
+      if (total > 1) cardNode.append(el("span", { className: "stack-page", text: `${index + 1}/${total}` }));
+      return cardNode;
+    }
+
+    function createSettlerStack(settlers) {
+      if (!settlers.length) return emptyNode();
+      const container = el("div", { className: `settler-stack${settlers.length === 1 ? " single" : ""}` });
+      let activeIndex = 0;
+      let motion = null;
+      let motionRef = null;
+      let pointerState = null;
+      let suppressClickRef = false;
+      let settleFallback = null;
+      const layerNodes = new Map();
+      const swipeDistance = 136;
+      const dragActivationDistance = 14;
+      const commitDistance = 42;
+      const layerFlipProgress = 0.48;
+
+      function setMotion(nextMotion) {
+        motion = nextMotion;
+        motionRef = nextMotion;
+        renderLayers();
+      }
+
+      function finishSettling() {
+        const latest = motionRef;
+        if (!latest || latest.phase !== "settling") return;
+        if (latest.accepted && latest.targetIndex !== null) activeIndex = latest.targetIndex;
+        motion = null;
+        motionRef = null;
+        if (settleFallback !== null) window.clearTimeout(settleFallback);
+        settleFallback = null;
+        renderLayers();
+      }
+
+      function queueSettleFallback() {
+        if (settleFallback !== null) window.clearTimeout(settleFallback);
+        settleFallback = window.setTimeout(finishSettling, 320);
+      }
+
+      function makeLayer(index, role, pose, zIndex) {
+        let layer = layerNodes.get(index);
+        if (!layer) {
+          layer = el("div");
+          layer.append(settlerCard(settlers[index], index, settlers.length));
+          layer.addEventListener("transitionend", event => {
+            if (layer.dataset.role === "current" && event.propertyName === "transform") finishSettling();
+          });
+          layerNodes.set(index, layer);
+        }
+        layer.className = `settler-layer ${role}${motion && motion.phase === "settling" ? " is-settling" : ""}`;
+        applyPose(layer, pose, zIndex);
+        layer.dataset.index = String(index);
+        layer.dataset.role = role;
+        return layer;
+      }
+
+      function commitLayers(layers) {
+        const visibleLayers = new Set(layers);
+        Array.from(container.children).forEach(layer => {
+          if (!visibleLayers.has(layer)) layer.remove();
+        });
+        layers.forEach(layer => container.append(layer));
+      }
+
+      function renderLayers() {
+        const layers = [];
+        if (settlers.length === 1) {
+          layers.push(makeLayer(0, "current", stackPose(0), 20));
+          commitLayers(layers);
+          return;
+        }
+        if (!motion) {
+          settlers.forEach((_, index) => {
+            const offset = index - activeIndex;
+            if (index !== activeIndex && Math.abs(offset) <= 3.2) layers.push(makeLayer(index, "background", stackPose(offset)));
+          });
+          layers.push(makeLayer(activeIndex, "current", stackPose(0), 20));
+          commitLayers(layers);
+          return;
+        }
+
+        const motionProgress = motion.phase === "dragging" ? Math.pow(motion.progress, 0.92) : motion.progress;
+        const hasTarget = motion.targetIndex !== null;
+        const stackShift = hasTarget ? motion.direction * motionProgress : 0;
+        const stackAnchorIndex = motion.baseIndex + stackShift;
+        settlers.forEach((_, index) => {
+          const offset = index - stackAnchorIndex;
+          if (index !== motion.baseIndex && index !== motion.targetIndex && Math.abs(offset) <= 3.2) {
+            layers.push(makeLayer(index, "background", stackPose(offset)));
+          }
+        });
+
+        if (hasTarget) {
+          const targetPose = mixPose(stackPose(motion.direction), stackPose(0), motionProgress);
+          const targetBackgroundZ = stackPose(motion.direction).zIndex;
+          const targetZ = motionProgress < layerFlipProgress ? targetBackgroundZ : 24;
+          layers.push(makeLayer(motion.targetIndex, "target", targetPose, targetZ));
+        }
+        const currentPose = mixPose(stackPose(0), stackPose(-motion.direction), motionProgress);
+        const currentBackgroundZ = stackPose(-motion.direction).zIndex;
+        const currentZ = motionProgress >= layerFlipProgress ? currentBackgroundZ : 24;
+        layers.push(makeLayer(motion.baseIndex, "current", currentPose, currentZ));
+        commitLayers(layers);
+      }
+
+      function settle(accepted) {
+        if (!motion) return;
+        setMotion({ ...motion, phase: "settling", accepted, progress: accepted ? 1 : 0 });
+        queueSettleFallback();
+      }
+
+      container.addEventListener("pointerdown", event => {
+        if (settlers.length < 2 || pointerState || (motionRef && motionRef.phase === "settling")) return;
+        pointerState = { pointerId: event.pointerId, startX: event.clientX, baseIndex: activeIndex, direction: null };
+        suppressClickRef = false;
+        motion = null;
+        motionRef = null;
+        container.setPointerCapture(event.pointerId);
+      });
+
+      container.addEventListener("pointermove", event => {
+        if (!pointerState || event.pointerId !== pointerState.pointerId) return;
+        const deltaX = event.clientX - pointerState.startX;
+        if (Math.abs(deltaX) > 6) suppressClickRef = true;
+        if (pointerState.direction === null && Math.abs(deltaX) <= dragActivationDistance) return;
+        if (pointerState.direction === null) pointerState.direction = deltaX < 0 ? 1 : -1;
+        const direction = pointerState.direction;
+        const directionalDelta = direction === 1 ? -deltaX : deltaX;
+        const effectiveDistance = Math.max(0, directionalDelta - dragActivationDistance);
+        const candidate = pointerState.baseIndex + direction;
+        const targetIndex = candidate >= 0 && candidate < settlers.length ? candidate : null;
+        const progress = targetIndex === null ? Math.min(effectiveDistance / swipeDistance, 0.18) : Math.min(effectiveDistance / swipeDistance, 1);
+        setMotion({ phase: "dragging", baseIndex: pointerState.baseIndex, direction, targetIndex, progress, effectiveDistance, accepted: false });
+      });
+
+      function endPointer(event, cancelled) {
+        if (!pointerState || event.pointerId !== pointerState.pointerId) return;
+        if (container.hasPointerCapture(event.pointerId)) container.releasePointerCapture(event.pointerId);
+        pointerState = null;
+        if (!motion) return;
+        const accepted = !cancelled && motion.targetIndex !== null && motion.effectiveDistance >= commitDistance;
+        settle(accepted);
+      }
+
+      container.addEventListener("pointerup", event => endPointer(event, false));
+      container.addEventListener("pointercancel", event => endPointer(event, true));
+      container.addEventListener("click", () => {
+        if (suppressClickRef) {
+          suppressClickRef = false;
+          return;
+        }
+        if (settlers.length < 2 || motionRef) return;
+        const direction = activeIndex < settlers.length - 1 ? 1 : -1;
+        const targetIndex = activeIndex + direction;
+        setMotion({ phase: "dragging", baseIndex: activeIndex, direction, targetIndex, progress: 0, effectiveDistance: commitDistance, accepted: false });
+        window.requestAnimationFrame(() => settle(true));
+      });
+
+      renderLayers();
+      return container;
     }
 
     function renderState(data, container) {
       const grid = el("div", { className: "state-grid" });
-      const summary = el("div", { className: "status-summary" });
-      const dayCard = card(null, "dayline");
-      dayCard.append(el("div", { className: "dayline-main pixel-font", text: `第${data.day}天 · ${data.season} · 第${data.year}年` }));
-      // TODO: weather 展示待定
-      const scoreCard = card(null, "score-block");
-      scoreCard.append(el("div", { className: "score", text: data.score }), el("div", { className: "comment", text: data.comment }));
-      summary.append(dayCard, scoreCard);
-      grid.append(summary);
+      const banner = card(null, "status-banner");
+      banner.append(
+        el("div", { className: "score", text: data.score }),
+        el("div", { className: "status-copy" }, [
+          el("div", { className: "status-day", text: `第${data.day}天 · ${data.season} · 第${data.year}年 · ${data.weather}` }),
+          el("p", { className: "status-comment", text: data.comment })
+        ])
+      );
+      grid.append(banner);
 
-      const disasterEntries = Object.entries(data.disasters || {}).filter(([, value]) => value !== null && value !== undefined && (!Array.isArray(value) || value.length > 0));
-      if (disasterEntries.length) {
-        const labels = { active_weather: "持续天气", invasion: "入侵灾害", water_hyacinth_cover: "水葫芦覆盖率", biological: "生物灾害" };
+      const warnings = disasterMessages(data.disasters || {});
+      if (warnings.length) {
         const zone = card("灾害警示", "disaster-zone");
-        const list = el("ul", { className: "notice-list" });
-        disasterEntries.forEach(([key, value]) => list.append(el("li", { className: "notice-item raw-value", text: `${labels[key] || key}：${valueText(value)}` })));
-        zone.append(list);
+        zone.append(el("ul", { className: "notice-list" }, warnings.map(text => el("li", { text }))));
         grid.append(zone);
       }
 
       if (data.pending_choice !== null) {
         const zone = card(null, "choice-zone");
-        const head = el("div", { className: "choice-head" }, [
+        zone.append(el("div", { className: "choice-head" }, [
           el("h2", { className: "section-title", text: "待决策" }),
           el("span", { className: "readonly-mark", text: "由小机决定" })
-        ]);
-        zone.append(head, el("p", { className: "choice-description", text: data.pending_choice.description }));
-        const list = el("ol", { className: "option-list" });
-        (data.pending_choice.options || []).forEach(option => list.append(el("li", { className: "option-item" }, [
-          el("span", { text: option.index }), el("span", { text: option.label })
-        ])));
-        zone.append(list);
+        ]));
+        zone.append(el("p", { className: "choice-description", text: data.pending_choice.description }));
+        zone.append(el("ol", { className: "choice-options" }, (data.pending_choice.options || []).map(option => el("li", { text: `${option.index}. ${option.label}` }))));
         grid.append(zone);
       }
 
       const settlers = card("定居者", "settlers-zone");
-      const settlerGrid = el("div", { className: "settler-grid" });
-      (data.settlers || []).forEach(settler => {
-        const resident = el("article", { className: "settler-card" });
-        resident.append(el("h3", { className: "settler-title", text: settler.nickname || settler.species }));
-        if (settler.nickname) resident.append(el("p", { className: "settler-species", text: settler.species }));
-        const meta = el("div", { className: "settler-meta" });
-        [["到达日", settler.arrive_day], ["存活天数", settler.days_alive], ["健康程度", settler.health]].forEach(([label, value]) => {
-          meta.append(el("div", { className: "meta-cell" }, [el("span", { text: label }), el("strong", { text: value })]));
-        });
-        resident.append(meta);
-        if (settler.status === "幼体" || settler.status === "冬眠中") resident.append(el("div", { className: "settler-badges" }, el("span", { className: "badge", text: settler.status })));
-        settlerGrid.append(resident);
-      });
-      settlers.append((data.settlers || []).length ? settlerGrid : emptyNode());
+      settlers.append(createSettlerStack(data.settlers || []));
       grid.append(settlers);
 
-      const observe = el("section", { className: "observe-zone", attrs: { "aria-label": "观察记录" } });
-      const observeText = String(data.observe_text ?? "");
-      const crt = el("div", { className: "crt", text: observeText.replace(/^/gm, "> ") });
-      observe.append(crt);
-      grid.append(observe);
-
-      const environment = el("details", { className: "pixel-card environment-zone" });
-      environment.append(el("summary", { text: "环境参数" }));
-      const parameterGrid = el("div", { className: "details-body parameter-grid" });
+      const environment = card("环境参数", "environment-zone");
       const env = data.environment || {};
-      const parameters = [
-        ["水温", env.water_temp], ["溶氧", env.dissolved_oxygen], ["光照", env.light],
-        ["营养盐", env.nutrients], ["有机碎屑", env.detritus], ["浑浊度", env.turbidity]
+      const values = [
+        ["水温", env.water_temp, ""],
+        ["溶氧", env.dissolved_oxygen && env.dissolved_oxygen.value, env.dissolved_oxygen && env.dissolved_oxygen.trend],
+        ["光照", env.light, ""],
+        ["营养盐", env.nutrients && env.nutrients.value, env.nutrients && env.nutrients.trend],
+        ["有机碎屑", env.detritus && env.detritus.value, env.detritus && env.detritus.trend],
+        ["浑浊度", env.turbidity, ""]
       ];
-      parameters.forEach(([label, value]) => {
-        const box = el("div", { className: "parameter" }, el("span", { text: label }));
-        if (value && typeof value === "object" && "value" in value) {
-          box.append(el("strong", { text: value.value }), el("b", { className: "trend", text: value.trend }));
-        } else box.append(el("strong", { text: value }));
-        parameterGrid.append(box);
-      });
-      environment.append(parameterGrid);
+      const environmentGrid = el("div", { className: "environment-grid" });
+      values.forEach(([label, value, trend]) => environmentGrid.append(el("div", { className: "environment-cell" }, [
+        el("span", { className: "environment-label", text: label }),
+        el("div", {}, [el("strong", { className: "environment-number", text: value }), trend ? el("b", { className: "environment-trend", text: trend }) : null])
+      ])));
+      environment.append(environmentGrid);
       grid.append(environment);
 
-      const populations = el("details", { className: "pixel-card populations-zone" });
+      const observe = el("section", { className: "observe-zone", attrs: { "aria-label": "观察记录" } }, renderObserve(data.observe_text));
+      grid.append(observe);
+
+      const populations = el("details", { className: "pixel-card population-fold populations-zone" });
       populations.append(el("summary", { text: "种群" }));
-      const groups = el("div", { className: "details-body population-groups" });
+      const groups = el("div", { className: "population-groups" });
       (data.populations || []).forEach(group => {
         const groupNode = el("section", { className: "population-group" }, el("h3", { text: group.label }));
         (group.species || []).forEach(species => {
           const unlocked = species.name !== "???";
           const row = el(unlocked ? "button" : "div", { className: `species-row${unlocked ? "" : " locked"}`, attrs: unlocked ? { type: "button" } : {} });
-          row.append(el("strong", { text: species.name }), el("span", { text: species.count === null ? "" : species.count }));
+          row.append(el("span", { className: "species-row-main" }, [unlocked ? speciesImage(species.name, "population-image") : null, el("strong", { text: species.name })]));
+          row.append(el("span", { text: species.count === null ? "" : species.count }));
           if (species.delta > 0) row.append(el("span", { className: "delta-up", text: `↑${species.delta}` }));
           else if (species.delta < 0) row.append(el("span", { className: "delta-down", text: `↓${species.delta}` }));
           else row.append(el("span"));
@@ -483,131 +881,185 @@
 
     function renderCodex(data, container) {
       const stack = el("div", { className: "page-stack" });
-      const heading = el("div", { className: "page-heading" }, [
-        el("h2", { text: "图鉴" }),
-        el("div", { className: "progress-number", text: `${data.species_count.appeared} / ${data.species_count.total}` })
-      ]);
-      stack.append(heading);
+      stack.append(el("div", { className: "page-heading" }, el("h2", { text: "图鉴" })));
 
-      const speciesSection = card("物种");
+      const appeared = data.species_count.appeared;
+      const total = data.species_count.total;
+      const progress = card(null, "codex-progress");
+      progress.append(el("div", { className: "progress-head" }, [
+        el("strong", { text: "物种发现进度" }), el("span", { className: "progress-count", text: `${appeared} / ${total}` })
+      ]));
+      const cells = el("div", { className: "pixel-progress", attrs: { style: `--total:${total}` } });
+      for (let index = 0; index < total; index += 1) cells.append(el("span", { className: `progress-cell${index < appeared ? " filled" : ""}` }));
+      progress.append(cells);
+      stack.append(progress);
+
+      const speciesSection = el("section", { className: "codex-section" }, el("h2", { className: "section-title", text: "物种" }));
       const speciesGrid = el("div", { className: "species-grid" });
       (data.species || []).forEach(species => {
         const unlocked = species.name !== "???" && species.unlocked;
-        const tile = el(unlocked ? "button" : "div", { className: `species-tile${unlocked ? "" : " locked"}`, text: species.name, attrs: unlocked ? { type: "button" } : {} });
-        if (unlocked) tile.addEventListener("click", () => openSpecies(species.name));
+        const tile = el(unlocked ? "button" : "div", { className: `species-tile${unlocked ? "" : " locked"}`, attrs: unlocked ? { type: "button" } : {} });
+        if (unlocked) {
+          tile.append(speciesArt(species.name), el("span", { className: "species-tile-name", text: species.name }));
+          tile.addEventListener("click", () => openSpecies(species.name));
+        } else {
+          tile.append(el("span", { className: "species-tile-name", text: "???" }));
+        }
         speciesGrid.append(tile);
       });
       speciesSection.append(speciesGrid);
       stack.append(speciesSection);
 
-      const split = el("div", { className: "split-grid" });
-      const visitorCard = card("访客");
-      const visitorCount = data.visitors || {};
-      visitorCard.append(el("p", { className: "progress-number", text: `${visitorCount.recorded_count} / ${visitorCount.total}` }));
-      const recorded = el("ul", { className: "plain-list" });
-      (visitorCount.recorded || []).forEach(name => recorded.append(el("li", { className: "record-card", text: name })));
-      visitorCard.append(recorded.childElementCount ? recorded : emptyNode());
-      const rumorCard = card("传闻线索");
-      const rumors = el("ul", { className: "plain-list" });
-      (visitorCount.rumors || []).forEach(rumor => rumors.append(el("li", { className: "record-card rumor", text: rumor })));
-      rumorCard.append(rumors.childElementCount ? rumors : emptyNode());
-      split.append(visitorCard, rumorCard);
-      stack.append(split);
+      const lower = el("div", { className: "codex-lower" });
+      const visitors = el("section", { className: "soft-section" }, el("h2", { className: "section-title", text: "访客" }));
+      const visitorData = data.visitors || {};
+      visitors.append(el("div", { className: "badge-flow" }, (visitorData.recorded || []).map(name => el("span", { className: "visitor-badge", text: name }))));
+      const rumors = el("div", { className: "rumor-list" });
+      (visitorData.rumors || []).forEach(text => rumors.append(el("blockquote", { className: "rumor-quote", text })));
+      visitors.append(rumors.childElementCount ? rumors : emptyNode());
 
-      const achievements = card("成就");
+      const achievements = el("section", { className: "soft-section" }, el("h2", { className: "section-title", text: "成就" }));
       const achievementGrid = el("div", { className: "achievement-grid" });
-      (data.achievements || []).forEach(item => {
-        const itemCard = el("article", { className: `record-card${item.unlocked ? "" : " locked-card"}` });
-        itemCard.append(el("h3", { text: item.name }), el("p", { className: "condition", text: item.condition }));
-        achievementGrid.append(itemCard);
-      });
+      (data.achievements || []).forEach(item => achievementGrid.append(el("article", { className: `achievement-card${item.unlocked ? " unlocked" : ""}` }, [
+        el("h3", { text: item.name }), el("p", { text: item.condition })
+      ])));
       achievements.append(achievementGrid);
-      stack.append(achievements);
+      lower.append(visitors, achievements);
+      stack.append(lower);
       container.replaceChildren(stack);
     }
 
-    function renderSimpleRecords(items, title, fields) {
-      const section = el("section", { className: "subsection" }, el("h2", { className: "subsection-title", text: title }));
-      const grid = el("div", { className: "record-grid" });
-      (items || []).forEach(item => {
-        const entry = el("article", { className: "record-card" });
-        if (typeof item !== "object") entry.append(el("h3", { text: item }));
-        else {
-          if (item.name !== undefined) entry.append(el("h3", { text: item.name }));
-          fields.forEach(([key, label]) => {
-            if (Object.prototype.hasOwnProperty.call(item, key)) entry.append(el("p", { className: "raw-value", text: `${label}：${valueText(item[key])}` }));
-          });
-        }
-        grid.append(entry);
+    function residentTimeline(resident) {
+      const entries = [];
+      let sequence = 0;
+      const add = (day, text) => {
+        if (day === null || day === undefined) return;
+        const numeric = Number(day);
+        entries.push({ day: Number.isFinite(numeric) ? numeric : Number.POSITIVE_INFINITY, sequence: sequence++, text });
+      };
+      add(resident.arrive_day, `第${resident.arrive_day}天 到访`);
+      (resident.hibernations || []).forEach(period => {
+        if (!period || typeof period !== "object") return;
+        add(period.sleep, `第${period.sleep}天 入眠`);
+        add(period.wake, `第${period.wake}天 苏醒`);
       });
-      section.append(grid.childElementCount ? grid : emptyNode());
+      (resident.return_records || []).forEach(record => {
+        if (record && typeof record === "object") add(record.day, `第${record.day}天 归来`);
+      });
+      if (resident.leave_day !== null && resident.leave_day !== undefined) {
+        const leaveText = resident.reason === null || resident.reason === undefined ? "离开" : reasonLabel(resident.reason);
+        add(resident.leave_day, `第${resident.leave_day}天 ${leaveText}`);
+      }
+      return entries.sort((left, right) => left.day - right.day || left.sequence - right.sequence);
+    }
+
+    function folioCountSection(title, items) {
+      const section = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: title }));
+      const list = el("div", { className: "folio-badge-list" });
+      (items || []).forEach(item => {
+        const row = el("div", { className: "folio-badge-row" });
+        row.append(el("span", { className: "folio-count-badge", text: `${item.name} ×${item.count}` }));
+        (item.notes || []).forEach(note => row.append(el("span", { className: "folio-note", text: note })));
+        list.append(row);
+      });
+      section.append(list.childElementCount ? list : emptyNode());
       return section;
     }
 
     function renderFolio(data, container) {
-      const stack = el("div", { className: "page-stack" }, el("div", { className: "page-heading" }, el("h2", { text: "万物志" })));
-      stack.append(renderSimpleRecords(data.species, "物种志", [
-        ["unlock_day", "解锁日"], ["unlock_text", "解锁记录"], ["historical_peak", "历史最高"], ["extinct_count", "归零次数"]
-      ]));
+      const stack = el("div", { className: "page-stack" });
+      stack.append(el("div", { className: "page-heading" }, el("h2", { text: "万物志" })));
 
-      const rosterSection = el("section", { className: "subsection" }, el("h2", { className: "subsection-title", text: "造物名册" }));
-      const rosterGrid = el("div", { className: "record-grid" });
-      (data.creation_roster || []).forEach(name => rosterGrid.append(el("article", { className: "record-card" }, el("h3", { text: name }))));
-      (data.undiscovered_clues || []).forEach(item => rosterGrid.append(el("article", { className: "record-card locked-card" }, [
-        el("h3", { text: item.name }), el("p", { className: "rumor", text: item.clue })
+      const speciesSection = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: "物种志" }));
+      const speciesList = el("div", { className: "folio-species-list" });
+      (data.species || []).forEach(item => speciesList.append(el("div", { className: "folio-species-row" }, [
+        el("strong", { text: item.name }),
+        el("span", { className: "folio-species-meta", text: `${item.unlock_text} · 最高${item.historical_peak} · 归零${item.extinct_count}次` })
       ])));
-      rosterSection.append(rosterGrid.childElementCount ? rosterGrid : emptyNode());
+      speciesSection.append(speciesList.childElementCount ? speciesList : emptyNode());
+      stack.append(speciesSection);
+
+      const rosterSection = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: "造物名册" }));
+      const roster = el("div", { className: "roster-flow" });
+      (data.creation_roster || []).forEach(name => roster.append(el("span", { className: "visitor-badge", text: name })));
+      rosterSection.append(roster.childElementCount ? roster : emptyNode());
+      const clues = el("div", { className: "clue-list" });
+      (data.undiscovered_clues || []).forEach(item => clues.append(el("p", { text: `${item.name} · ${item.clue}` })));
+      if (clues.childElementCount) rosterSection.append(clues);
       stack.append(rosterSection);
 
-      const settlersSection = el("section", { className: "subsection" }, el("h2", { className: "subsection-title", text: "定居者志" }));
-      const settlersGrid = el("div", { className: "record-grid" });
+      const settlersSection = el("section", { className: "folio-section" }, el("h2", { className: "folio-title", text: "定居者志" }));
+      const settlerGroups = el("div", { className: "settler-folio-list" });
       (data.settlers || []).forEach(group => {
-        const groupCard = el("article", { className: "record-card" });
-        groupCard.append(el("h3", { text: group.species }));
-        groupCard.append(el("p", { text: `定居次数：${group.settle_count}` }), el("p", { text: `最长存活：${group.longest_survival}` }));
-        if ((group.current || []).length) {
-          const currentList = el("ul", { className: "annotation-list" });
-          group.current.forEach(current => currentList.append(el("li", { className: "raw-value", text: `当前住户：${valueText(current)}` })));
-          groupCard.append(currentList);
-        }
-        const residents = el("div", { className: "resident-list" });
-        (group.residents || []).forEach(resident => {
-          const title = resident.nickname || resident.name || resident.species;
-          const record = el("div", { className: "resident-record" });
-          record.append(el("strong", { text: title }));
-          if (resident.nickname && (resident.species || resident.name)) record.append(el("span", { className: "muted", text: ` · ${resident.species || resident.name}` }));
-          record.append(el("p", { text: `到达日：${resident.arrive_day}` }), el("p", { text: `离开日：${resident.leave_day === null ? "在塘" : resident.leave_day}` }));
-          const annotations = el("ul", { className: "annotation-list" });
-          const excluded = new Set(["name", "species", "nickname", "arrive_day", "leave_day"]);
-          Object.entries(resident).forEach(([key, value]) => {
-            if (!excluded.has(key) && value !== null && value !== undefined && (!Array.isArray(value) || value.length)) {
-              annotations.append(el("li", { className: "raw-value", text: `${key}：${valueText(value)}` }));
-            }
-          });
-          if (annotations.childElementCount) record.append(annotations);
-          residents.append(record);
+        const residents = group.residents || [];
+        const nicknames = [...new Set(residents.map(resident => resident.nickname).filter(Boolean))];
+        const groupName = group.name || group.species;
+        const groupNode = el("article", { className: "settler-folio-group" });
+        const namedPart = nicknames.length ? ` · ${nicknames.join("、")}` : "";
+        groupNode.append(el("h3", { className: "settler-folio-head", text: `${groupName}${namedPart} · 定居${group.settle_count}次 · 最长存活${group.longest_survival}天` }));
+        residents.forEach(resident => {
+          const record = el("div", { className: "life-record" });
+          const nameColumn = el("div", {}, [
+            el("div", { className: "life-name", text: resident.nickname || resident.name }),
+            resident.origin !== null && resident.origin !== undefined ? el("span", { className: "origin-chip", text: originLabel(resident.origin) }) : null
+          ]);
+          const timeline = el("ol", { className: "mini-timeline" });
+          residentTimeline(resident).forEach(entry => timeline.append(el("li", { text: entry.text })));
+          record.append(nameColumn, timeline);
+          groupNode.append(record);
         });
-        groupCard.append(residents.childElementCount ? residents : emptyNode());
-        settlersGrid.append(groupCard);
+        settlerGroups.append(groupNode);
       });
-      settlersSection.append(settlersGrid.childElementCount ? settlersGrid : emptyNode());
+      settlersSection.append(settlerGroups.childElementCount ? settlerGroups : emptyNode());
       stack.append(settlersSection);
 
-      stack.append(renderSimpleRecords(data.visitors, "访客志", [["count", "记录次数"], ["notes", "记录"]]));
-      stack.append(renderSimpleRecords(data.events, "事件志", [["count", "记录次数"]]));
-      stack.append(renderSimpleRecords(data.disasters, "灾害志", [["count", "记录次数"], ["first_day", "首次发生日"], ["days", "发生日"], ["notes", "记录"]]));
+      stack.append(folioCountSection("访客志", data.visitors));
+      stack.append(folioCountSection("事件志", data.events));
+      stack.append(folioCountSection("灾害志", data.disasters));
       container.replaceChildren(stack);
+    }
+
+    function parseAnnalsEntry(entry, fallbackIndex) {
+      const match = String(entry).match(/^(春|夏|秋|冬)\s*第(\d+)天[：:]\s*(.*)$/);
+      if (!match) return { key: `记录-${fallbackIndex}`, season: "", day: "记录", text: String(entry) };
+      return { key: `${match[1]}-${match[2]}`, season: match[1], day: match[2], text: match[3] };
     }
 
     function renderAnnals(data, container) {
       const stack = el("div", { className: "page-stack" });
       stack.append(el("div", { className: "page-heading" }, [
-        el("h2", { text: "年鉴" }), el("div", { className: "progress-number", text: data.total })
+        el("h2", { text: "年鉴" }), el("span", { className: "progress-count", text: `${data.total} 条` })
       ]));
-      const timeline = el("ol", { className: "timeline" });
-      [...(data.timeline || [])].reverse().forEach(entry => timeline.append(el("li", { text: entry })));
+      const parsed = [...(data.timeline || [])].reverse().map(parseAnnalsEntry);
+      const groups = [];
+      const groupMap = new Map();
+      parsed.forEach(item => {
+        if (groupMap.has(item.key)) {
+          groupMap.get(item.key).events.push(item.text);
+        } else {
+          const group = { key: item.key, season: item.season, day: item.day, events: [item.text] };
+          groupMap.set(item.key, group);
+          groups.push(group);
+        }
+      });
+      const seasonClasses = { 春: "season-spring", 夏: "season-summer", 秋: "season-autumn", 冬: "season-winter" };
+      const timeline = el("ol", { className: "annals-timeline" });
+      groups.forEach(group => {
+        const item = el("li", { className: "annals-day" });
+        const badgeText = group.season ? `${group.season}·${group.day}` : group.day;
+        item.append(el("span", { className: `date-badge ${seasonClasses[group.season] || "season-unknown"}`, text: badgeText }));
+        item.append(el("div", { className: "annals-events" }, group.events.map(text => el("p", { className: "annals-event", text }))));
+        timeline.append(item);
+      });
       stack.append(timeline.childElementCount ? timeline : emptyNode());
       container.replaceChildren(stack);
+    }
+
+    function detailItem(label, value) {
+      return el("div", { className: "detail-item" }, [
+        el("span", { className: "detail-label", text: label }),
+        el("strong", { className: "detail-value", text: value })
+      ]);
     }
 
     async function openSpecies(name) {
@@ -619,17 +1071,18 @@
         const data = await apiGet(`/eco/api/species/${encodeURIComponent(name)}`);
         sheetTitle.textContent = data.name;
         const detail = el("div", { className: "detail-grid" });
-        const labels = {
-          trophic: "营养级", trophic_label: "营养级名称", food_sources: "食物来源", birth_rate: "出生率",
-          death_rate: "死亡率", max_capacity: "最大容量", lifecycle: "生命周期", current_count: "当前数量"
-        };
-        Object.entries(labels).forEach(([key, label]) => {
-          if (Object.prototype.hasOwnProperty.call(data, key)) {
-            detail.append(el("div", { className: "parameter" }, [
-              el("span", { text: label }), el("strong", { className: "raw-value", text: valueText(data[key]) })
-            ]));
-          }
-        });
+        detail.append(detailItem("营养级", data.trophic_label));
+        detail.append(detailItem("食物来源", (data.food_sources || []).join("、") || "—"));
+        detail.append(detailItem("出生率", data.birth_rate));
+        detail.append(detailItem("死亡率", data.death_rate));
+        detail.append(detailItem("最大容量", data.max_capacity));
+        detail.append(detailItem("当前数量", data.current_count));
+        if (data.lifecycle) {
+          if (data.lifecycle.stage_days !== undefined) detail.append(detailItem("成长周期", `${data.lifecycle.stage_days}天`));
+          if (data.lifecycle.into !== undefined) detail.append(detailItem("转变为", data.lifecycle.into));
+          if (data.lifecycle.ratio !== undefined) detail.append(detailItem("转化比例", data.lifecycle.ratio));
+          if (data.lifecycle.season_only !== undefined) detail.append(detailItem("限定季节", data.lifecycle.season_only));
+        }
         sheetContent.replaceChildren(detail);
       } catch (error) {
         sheetContent.replaceChildren(el("div", { className: "error-state", text: errorMessage(error) }));
