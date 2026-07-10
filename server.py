@@ -2222,12 +2222,8 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 
 
 SAVE_SLOT_GUIDE_NOTE = (
-    "\n\n[平台通用·存档槽] 账号用户每个游戏有 5 个独立存档槽。"
-    "slot 是每次调用的参数、不是持久开关：在 params 里带 slot=1-5 指定本次操作哪个槽，"
-    "不带则默认槽 1——想一直玩槽 2，就每次都带 slot=2。"
-    "示例：play(game=\"burger\", action=\"cmd\", params={\"command\":\"status\", \"slot\": 2})。"
-    "各槽存档完全独立，new/import 只影响指定槽。"
-    "查各槽占用：account(action=\"my_saves\")。游客不支持多槽。"
+    "\n\n[存档槽] 账号每游戏5个独立槽。slot是每次调用的参数、非持久开关："
+    "params传slot=1-5，缺省=槽1。查各槽：account(action=\"my_saves\")。游客单槽。"
 )
 
 
@@ -2528,6 +2524,26 @@ def _anti_addiction_record_success(context):
 
 
 def _tool_play(arguments, path_token=None):
+    slot_hint = None
+    try:
+        game = arguments.get("game") if isinstance(arguments, dict) else None
+        if path_token and (game in IDENTITY_GAMES or game == "turtle_soup"):
+            slot_hint = _save_slot_from_arguments(arguments)
+    except _McpError:
+        slot_hint = None  # 非法 slot 交给内部逻辑报错
+    text = _tool_play_inner(arguments, path_token=path_token)
+    if slot_hint is not None:
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, dict) and "slot" not in obj:
+                obj["slot"] = slot_hint
+                text = json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
+    return text
+
+
+def _tool_play_inner(arguments, path_token=None):
     game = arguments.get("game")
     action = arguments.get("action")
     if not game or not isinstance(game, str):
