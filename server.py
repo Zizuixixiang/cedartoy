@@ -95,6 +95,9 @@ _REGISTER_RATE_LIMIT = {}
 _RATE_LIMIT_LOCK = Lock()
 _ANTI_ADDICTION_LOCK = Lock()
 _ANTI_ADDICTION_ANY_ENABLED = None
+_ECO_HUMAN_ACTION_RATE_LIMIT = {}
+_ECO_HUMAN_ACTION_RATE_LIMIT_LOCK = Lock()
+ECO_HUMAN_ACTION_MIN_INTERVAL_SECONDS = 1.0
 
 
 _PLATFORM_TOOLS = [
@@ -1406,6 +1409,52 @@ def _eco_api_response(raw_token, endpoint, *, ai_user_id=None, species_name=None
     else:
         raise _McpError(-32004, "not found")
     return {"user": _public_user(user), "player_id": player_id, **data}
+
+
+def _eco_human_action(raw_token, ai_user_id, action, payload=None):
+    """Authorize a human-bound AI target, throttle, then atomically mutate its eco save."""
+    human = _current_account(raw_token)
+    if human.get("is_ai"):
+        raise _McpError(-32003, "只有人类账号可以操作小机池塘")
+    try:
+        ai_user_id = int(ai_user_id)
+    except (TypeError, ValueError):
+        raise _McpError(-32003, "未绑定该小机") from None
+
+    with _db_connect() as conn:
+        bound = conn.execute(
+            """
+            SELECT 1
+            FROM user_bindings b
+            JOIN toy_users u ON u.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND b.ai_user_id = ?
+              AND u.is_ai = 1
+              AND u.deleted_at IS NULL
+            LIMIT 1
+            """,
+            (int(human["id"]), ai_user_id),
+        ).fetchone()
+    if bound is None:
+        raise _McpError(-32003, "未绑定该小机")
+
+    rate_key = (int(human["id"]), ai_user_id)
+    now = time.monotonic()
+    with _ECO_HUMAN_ACTION_RATE_LIMIT_LOCK:
+        previous = _ECO_HUMAN_ACTION_RATE_LIMIT.get(rate_key)
+        if previous is not None and now - previous < ECO_HUMAN_ACTION_MIN_INTERVAL_SECONDS:
+            raise _McpError(-32029, "操作太快了，请稍等 1 秒再试")
+        _ECO_HUMAN_ACTION_RATE_LIMIT[rate_key] = now
+
+    try:
+        return eco_handler.human_action(str(ai_user_id), action, payload)
+    except eco_handler.JsonRpcError:
+        # A missing/corrupt save did not reach the engine and should not consume
+        # the user's one-second action allowance.
+        with _ECO_HUMAN_ACTION_RATE_LIMIT_LOCK:
+            if _ECO_HUMAN_ACTION_RATE_LIMIT.get(rate_key) == now:
+                _ECO_HUMAN_ACTION_RATE_LIMIT.pop(rate_key, None)
+        raise
 
 
 def _extract_bearer(headers):
@@ -2967,6 +3016,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_workkk_proxy("POST")
             return
 
+        if _workkk_path == "/eco/api/human_action":
+            self._handle_eco_human_action()
+            return
+
         path, path_token = self._request_path_and_token()
         client_ip = self._client_ip()
 
@@ -3377,6 +3430,37 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": exc.message}, status=status)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_eco_human_action(self):
+        try:
+            _, _, query_string = self.path.partition("?")
+            params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            ai_user_id = self._get_param(params, "ai_user_id", required=False)
+            body = self._read_json_body()
+            result = _eco_human_action(
+                _extract_bearer(self.headers),
+                ai_user_id,
+                body.get("action"),
+                body.get("payload"),
+            )
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            if exc.code == -32001:
+                status = 401
+            elif exc.code == -32003:
+                status = 403
+            elif exc.code == -32029:
+                status = 429
+            else:
+                status = 400
+            self._send_json({"ok": False, "error": exc.message}, status=status)
+        except eco_handler.JsonRpcError as exc:
+            status = 404 if exc.code == -32001 else 400
+            self._send_json({"ok": False, "error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"ok": False, "error": "server error", "detail": str(exc)}, status=500)
 
     def _admin_error_status(self, exc):
         if exc.code == -32001:

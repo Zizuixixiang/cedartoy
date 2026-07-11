@@ -243,6 +243,10 @@ def eco_new(arguments):
 
     with _connect() as conn:
         _init_db(conn)
+        conn.commit()
+        # Take SQLite's write reservation before inspecting the current row so a
+        # concurrent read-modify-write request cannot later overwrite this reset.
+        conn.execute("BEGIN IMMEDIATE")
         _cleanup_expired(conn, now)
         existing = conn.execute(
             "SELECT 1 FROM eco_sessions WHERE player_id = ?",
@@ -454,6 +458,10 @@ def _run_player_command(player_id, command):
     now = time.time()
     with _connect() as conn:
         _init_db(conn)
+        conn.commit()
+        # Acquire the write transaction before loading.  Waiting until UPDATE
+        # would allow two writers to run the engine from the same stale save.
+        conn.execute("BEGIN IMMEDIATE")
         _cleanup_expired(conn, now)
         row = conn.execute(
             "SELECT save_data FROM eco_sessions WHERE player_id = ?",
@@ -480,6 +488,44 @@ def _run_player_command(player_id, command):
         )
 
     return text
+
+
+def human_action(player_id, action, payload=None):
+    """Atomically load a player's save, apply engine.human_action, and persist on success."""
+    if not isinstance(player_id, str) or PLAYER_ID_RE.fullmatch(player_id) is None:
+        raise JsonRpcError(-32602, "player_id 不合法")
+
+    now = time.time()
+    with _connect() as conn:
+        _init_db(conn)
+        conn.commit()
+        # MCP commands use the same early write reservation, serializing the
+        # complete load -> mutate -> save interval across both entry points.
+        conn.execute("BEGIN IMMEDIATE")
+        _cleanup_expired(conn, now)
+        row = conn.execute(
+            "SELECT save_data FROM eco_sessions WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+        if row is None:
+            raise JsonRpcError(-32001, "没有进行中的池塘。")
+        try:
+            state = json.loads(row[0])
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise JsonRpcError(-32603, f"存档解析失败：{exc}")
+
+        with _ENGINE_LOCK:
+            engine._migrate(state)
+            result = engine.human_action(state, action, payload)
+            if result.get("ok"):
+                save_data = json.dumps(state, ensure_ascii=False)
+
+        if result.get("ok"):
+            conn.execute(
+                "UPDATE eco_sessions SET save_data = ?, last_active = ? WHERE player_id = ?",
+                (save_data, _now_iso(now), player_id),
+            )
+    return result
 
 
 def _engine_new(seed):
