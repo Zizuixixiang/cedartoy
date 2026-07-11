@@ -22,6 +22,54 @@
       --screen-bg: #2D2D2D;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --mobile-nav-height: 60px;
+      --space: 1;
+      --space-main-top: 24px;
+      --space-main-bottom: 54px;
+      --space-page-gap: 22px;
+      --space-state-gap: 18px;
+      --space-environment-gap: 7px;
+      --space-species-gap: 12px;
+      --space-codex-gap: 18px;
+      --space-achievement-gap: 8px;
+      --space-folio-gap: 12px;
+      --space-folio-pad-top: 14px;
+      --space-folio-pad-side: 16px;
+      --space-folio-pad-bottom: 17px;
+      --space-mobile-main-top: 10px;
+      --space-mobile-page-gap: 13px;
+      --space-mobile-state-gap: 10px;
+      --space-mobile-environment-gap: 5px;
+      --space-mobile-species-gap: 7px;
+      --space-mobile-achievement-gap: 6px;
+      --space-mobile-folio-pad-top: 10px;
+      --space-mobile-folio-pad-side: 11px;
+      --space-mobile-folio-pad-bottom: 13px;
+      --body-font-size: 16px;
+      --bottom-nav-font-size: 14px;
+      --card-radius: 0px;
+      --mobile-codex-columns: 3;
+      --settler-density: 1;
+      --settler-stack-height: 196px;
+      --settler-single-height: 174px;
+      --settler-card-height: 168px;
+      --settler-card-padding: 18px;
+      --settler-mobile-stack-height: 186px;
+      --settler-mobile-single-height: 166px;
+      --settler-mobile-card-height: 160px;
+      --settler-mobile-pad-y: 13px;
+      --settler-mobile-pad-x: 12px;
+      --annals-gap: 17px;
+      --annals-mobile-gap: 10px;
+      --season-spring: #A8C8A0;
+      --season-summer: #E6A8B1;
+      --season-autumn: #D4B483;
+      --season-winter: #9B8DB5;
+      --weather-sun: #D4B483;
+      --weather-cloud: #9CA3AF;
+      --weather-rain: #9B8DB5;
+      --weather-snow: #FFFFFF;
+      --weather-frost-blue: #B9D9EA;
+      --weather-frost-gold: #D4B483;
     }
 
     html { min-height: 100%; background: var(--bg); image-rendering: pixelated; }
@@ -35,6 +83,7 @@
         linear-gradient(90deg, rgba(190, 177, 209, 0.1) 1px, transparent 1px);
       background-size: 20px 20px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: var(--body-font-size);
     }
     button, summary { font: inherit; }
     button { cursor: pointer; touch-action: manipulation; }
@@ -68,7 +117,7 @@
     }
     .nav-button[aria-selected="true"] { color: var(--purple-darker); background: #fff; border-color: #fff; box-shadow: 3px 3px 0 var(--purple-darker); }
 
-    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 24px 0 54px; }
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: var(--space-main-top) 0 var(--space-main-bottom); }
     .loading, .empty, .error-state { min-height: 140px; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
     .error-state { color: var(--pink-dark); }
     .loading::after { content: "..."; }
@@ -78,11 +127,12 @@
       background: #fff;
       border: 4px solid var(--purple);
       box-shadow: 5px 5px 0 rgba(190,177,209,0.42);
+      border-radius: var(--card-radius);
     }
-    .pixel-card::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .pixel-card::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); border-radius: max(0px, calc(var(--card-radius) - 3px)); pointer-events: none; }
     .pixel-card > * { position: relative; z-index: 1; }
     .section-title { margin: 0 0 12px; color: var(--purple-darker); font-size: 16px; }
-    .page-stack { display: grid; gap: 22px; }
+    .page-stack { display: grid; gap: var(--space-page-gap); }
     .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
     .page-heading h2 { margin: 0; color: var(--purple-darker); font-size: 28px; }
     .progress-count { color: var(--pink-dark); font-size: 15px; }
@@ -97,14 +147,70 @@
         "observe observe"
         "settlers environment"
         "populations populations";
-      gap: 18px;
+      gap: var(--space-state-gap);
       align-items: start;
     }
-    .status-banner { grid-area: summary; display: grid; grid-template-columns: 150px 1fr; align-items: center; min-height: 116px; padding: 18px 24px; }
+    .status-banner { grid-area: summary; display: grid; grid-template-columns: 150px 1fr; align-items: center; min-height: 116px; padding: 18px 24px; overflow: hidden; }
     .status-banner .score { color: var(--pink-dark); font-size: 72px; line-height: 1; text-align: center; border-right: 3px solid var(--purple-light); }
-    .status-copy { padding-left: 24px; }
+    .status-copy { padding: 0 58px 0 24px; }
     .status-day { color: var(--purple-darker); font-size: 22px; font-weight: 700; }
     .status-comment { margin: 8px 0 0; color: var(--text); font-size: 13px; line-height: 1.6; }
+
+    .weather-corner { position: absolute; z-index: 3; top: 9px; right: 10px; width: 48px; height: 48px; overflow: hidden; pointer-events: none; }
+    .weather-sun-disc, .weather-cloud, .weather-lightning, .weather-fog-bands, .weather-frost-ring, .weather-particles { display: none; }
+    .weather-clear .weather-sun-disc { position: absolute; left: 14px; top: 14px; display: block; width: 20px; height: 20px; border: 4px dotted var(--weather-sun); border-radius: 50%; animation: weather-spin 18s linear infinite; }
+    .weather-clear .weather-sun-disc::before { content: ""; position: absolute; inset: 3px; background: var(--weather-sun); border-radius: 50%; }
+    .weather-clear .weather-sun-disc::after { content: ""; position: absolute; inset: -9px; border-radius: 50%; box-shadow: 0 0 12px rgba(212,180,131,0.55); animation: weather-glow 3.6s ease-in-out infinite; }
+    .weather-cloud { position: absolute; width: 25px; height: 9px; border-radius: 8px; background: var(--weather-cloud); opacity: 0.75; }
+    .weather-cloud::before, .weather-cloud::after { content: ""; position: absolute; bottom: 3px; border-radius: 50%; background: inherit; }
+    .weather-cloud::before { left: 5px; width: 10px; height: 10px; }
+    .weather-cloud::after { right: 4px; width: 13px; height: 13px; }
+    .weather-cloud-one { left: 5px; top: 16px; }
+    .weather-cloud-two { right: 3px; top: 25px; width: 21px; height: 7px; opacity: 0.52; }
+    .weather-overcast .weather-cloud { display: block; animation: weather-cloud-drift 6.5s ease-in-out infinite alternate; }
+    .weather-overcast .weather-cloud-two { animation-delay: -2.8s; animation-direction: alternate-reverse; }
+    .weather-rain .weather-cloud-one, .weather-light-rain .weather-cloud-one, .weather-heavy-rain .weather-cloud-one, .weather-plum-rain .weather-cloud-one, .weather-thunderstorm .weather-cloud-one { display: block; }
+    .weather-particles { position: absolute; inset: 0; }
+    .weather-rain .weather-particles, .weather-light-rain .weather-particles, .weather-heavy-rain .weather-particles, .weather-plum-rain .weather-particles, .weather-thunderstorm .weather-particles, .weather-snow .weather-particles, .weather-hail .weather-particles { display: block; }
+    .weather-particles i { position: absolute; display: block; left: calc(5px + var(--particle-x)); top: 25px; width: 2px; height: 10px; background: var(--weather-rain); opacity: 0; animation: weather-rain-fall 1s linear infinite; animation-delay: var(--particle-delay); }
+    .weather-particles i:nth-child(1) { --particle-x: 0px; --particle-delay: -0.1s; }
+    .weather-particles i:nth-child(2) { --particle-x: 6px; --particle-delay: -0.7s; }
+    .weather-particles i:nth-child(3) { --particle-x: 12px; --particle-delay: -0.35s; }
+    .weather-particles i:nth-child(4) { --particle-x: 18px; --particle-delay: -0.9s; }
+    .weather-particles i:nth-child(5) { --particle-x: 24px; --particle-delay: -0.5s; }
+    .weather-particles i:nth-child(6) { --particle-x: 30px; --particle-delay: -0.15s; }
+    .weather-particles i:nth-child(7) { --particle-x: 35px; --particle-delay: -0.8s; }
+    .weather-particles i:nth-child(8) { --particle-x: 39px; --particle-delay: -0.42s; }
+    .weather-light-rain .weather-particles i:nth-child(n+5) { display: none; }
+    .weather-light-rain .weather-particles i { width: 1px; height: 8px; animation-duration: 1.35s; opacity: 0.55; }
+    .weather-rain .weather-particles i:nth-child(n+7) { display: none; }
+    .weather-rain .weather-particles i { animation-duration: 0.95s; }
+    .weather-heavy-rain .weather-particles i, .weather-thunderstorm .weather-particles i { height: 13px; animation-duration: 0.62s; }
+    .weather-plum-rain .weather-particles i { width: 1px; height: 9px; animation-duration: 1.18s; opacity: 0.62; }
+    .weather-thunderstorm { animation: weather-flash-bg 5s linear infinite; }
+    .weather-thunderstorm .weather-lightning { position: absolute; z-index: 2; left: 25px; top: 19px; display: block; width: 9px; height: 17px; background: #F3D36B; clip-path: polygon(45% 0,100% 0,62% 42%,100% 42%,18% 100%,38% 55%,0 55%); opacity: 0; animation: weather-lightning-flash 5s linear infinite; }
+    .weather-fog .weather-fog-bands { position: absolute; inset: 7px 0; display: block; overflow: hidden; }
+    .weather-fog-bands i { position: absolute; left: -16px; width: 64px; height: 7px; border-radius: 10px; background: rgba(255,255,255,0.62); animation: weather-fog-drift 7s ease-in-out infinite alternate; }
+    .weather-fog-bands i:nth-child(1) { top: 6px; }
+    .weather-fog-bands i:nth-child(2) { top: 18px; animation-delay: -2.4s; }
+    .weather-fog-bands i:nth-child(3) { top: 30px; animation-delay: -4.1s; }
+    .weather-snow .weather-particles i { width: 5px; height: 5px; border-radius: 50%; background: var(--weather-snow); box-shadow: 0 0 0 1px rgba(155,141,181,0.25); animation: weather-snow-fall 3.4s ease-in infinite; }
+    .weather-snow .weather-particles i:nth-child(n+6) { display: none; }
+    .weather-hail .weather-particles i { width: 5px; height: 5px; border-radius: 50%; background: var(--weather-snow); box-shadow: 0 0 0 1px var(--purple-light); animation: weather-hail-fall 0.72s linear infinite; }
+    .weather-hail .weather-particles i:nth-child(n+7) { display: none; }
+    .weather-spring-chill .weather-frost-ring, .weather-autumn-frost .weather-frost-ring { position: absolute; inset: 2px; display: block; border-radius: 8px; animation: weather-frost-pulse 3.2s ease-in-out infinite; }
+    .weather-spring-chill .weather-frost-ring { background: radial-gradient(circle, transparent 58%, color-mix(in srgb, var(--weather-frost-blue) 72%, transparent) 74%, transparent 78%); box-shadow: inset 0 0 0 2px var(--weather-frost-blue); }
+    .weather-autumn-frost .weather-frost-ring { background: radial-gradient(circle, transparent 58%, color-mix(in srgb, var(--weather-frost-gold) 68%, transparent) 74%, transparent 78%); box-shadow: inset 0 0 0 2px var(--weather-frost-gold); }
+    @keyframes weather-spin { to { transform: rotate(360deg); } }
+    @keyframes weather-glow { 0%,100% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.08); } }
+    @keyframes weather-cloud-drift { from { transform: translateX(-3px); } to { transform: translateX(4px); } }
+    @keyframes weather-rain-fall { 0% { transform: translateY(-3px); opacity: 0; } 20% { opacity: 0.8; } 100% { transform: translateY(20px); opacity: 0; } }
+    @keyframes weather-lightning-flash { 0%,87%,91%,100% { opacity: 0; } 88%,90% { opacity: 1; } }
+    @keyframes weather-flash-bg { 0%,87%,91%,100% { background: transparent; } 88%,90% { background: rgba(255,255,255,0.42); } }
+    @keyframes weather-fog-drift { from { transform: translateX(-7px); opacity: 0.38; } to { transform: translateX(9px); opacity: 0.75; } }
+    @keyframes weather-snow-fall { 0% { transform: translate(-2px,-6px); opacity: 0; } 20% { opacity: 0.9; } 55% { transform: translate(4px,10px); } 100% { transform: translate(-3px,25px); opacity: 0; } }
+    @keyframes weather-hail-fall { from { transform: translateY(-5px); opacity: 0.2; } to { transform: translateY(24px); opacity: 0.95; } }
+    @keyframes weather-frost-pulse { 0%,100% { opacity: 0.42; transform: scale(0.96); } 50% { opacity: 0.82; transform: scale(1); } }
 
     .disaster-zone { grid-area: disaster; padding: 16px; border-color: var(--pink); box-shadow: 5px 5px 0 rgba(230,168,177,0.34); background: #fffafb; }
     .disaster-zone::after { border-color: rgba(230,168,177,0.38); }
@@ -120,18 +226,18 @@
     .readonly-mark, .small-chip { display: inline-flex; color: var(--pink-dark); background: #fff8fa; border: 2px solid var(--pink); padding: 3px 7px; font-size: 10px; }
     .choice-options li { padding: 7px 10px; background: var(--purple-light); font-size: 12px; }
 
-    .environment-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+    .environment-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-environment-gap); }
     .environment-cell { height: 62px; display: grid; align-content: center; justify-items: center; background: #faf8fc; border: 2px solid var(--purple-light); padding: 5px; }
     .environment-label { color: var(--muted); font-size: 10px; }
     .environment-number { color: var(--purple-darker); font-size: 20px; font-weight: 700; line-height: 1.2; }
     .environment-trend { color: var(--pink-dark); margin-left: 3px; font-size: 15px; }
 
-    .settler-stack { position: relative; min-height: 196px; margin: 0 22px 4px; overflow: visible; touch-action: pan-y; perspective: 800px; user-select: none; }
-    .settler-stack.single { margin-inline: 0; min-height: 174px; }
+    .settler-stack { position: relative; min-height: var(--settler-stack-height); margin: 0 22px 4px; overflow: visible; touch-action: pan-y; perspective: 800px; user-select: none; }
+    .settler-stack.single { margin-inline: 0; min-height: var(--settler-single-height); }
     .settler-layer { position: absolute; inset: 0; pointer-events: none; will-change: transform, opacity; transform-origin: center center; }
     .settler-layer.is-settling { transition: transform 260ms ease, opacity 260ms ease; }
-    .settler-stack-card { height: 168px; padding: 18px; overflow: hidden; background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.46); }
-    .settler-stack-card::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .settler-stack-card { height: var(--settler-card-height); padding: var(--settler-card-padding); overflow: hidden; background: #fff; border: 4px solid var(--purple); border-radius: var(--card-radius); box-shadow: 5px 5px 0 rgba(190,177,209,0.46); }
+    .settler-stack-card::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); border-radius: max(0px, calc(var(--card-radius) - 4px)); pointer-events: none; }
     .settler-card-layout { position: relative; z-index: 1; display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 14px; height: 100%; align-items: start; }
     .settler-card-art-slot { position: relative; width: 44px; height: 44px; display: grid; place-items: center; flex: none; }
     .settler-card-art { position: absolute; inset: 0; width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
@@ -176,16 +282,16 @@
     .progress-cell { height: 13px; background: var(--purple-light); border: 1px solid var(--purple); }
     .progress-cell.filled { background: var(--pink); border-color: var(--pink-dark); box-shadow: inset 0 -3px 0 rgba(194,139,147,0.28); }
     .codex-section { display: grid; gap: 12px; }
-    .species-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; }
-    .species-tile { aspect-ratio: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-width: 0; color: var(--purple-darker); background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.45); padding: 9px; }
-    .species-tile::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .species-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: var(--space-species-gap); }
+    .species-tile { aspect-ratio: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-width: 0; color: var(--purple-darker); background: #fff; border: 4px solid var(--purple); border-radius: var(--card-radius); box-shadow: 5px 5px 0 rgba(190,177,209,0.45); padding: 9px; }
+    .species-tile::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); border-radius: max(0px, calc(var(--card-radius) - 4px)); pointer-events: none; }
     .species-tile.locked { color: var(--muted); border-color: #c9c5cc; box-shadow: 4px 4px 0 rgba(156,163,175,0.24); background: repeating-linear-gradient(135deg, #f1eff2 0, #f1eff2 7px, #e8e5e9 7px, #e8e5e9 11px); }
     .species-tile.locked::after { border-color: rgba(156,163,175,0.28); }
     .species-art { position: relative; width: 64%; aspect-ratio: 1; display: grid; place-items: center; }
     .species-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
     .species-initial { color: var(--pink-dark); font-size: clamp(30px,4vw,52px); font-weight: 700; }
     .species-tile-name { position: relative; z-index: 1; font-weight: 700; font-size: 13px; text-align: center; }
-    .codex-lower { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .codex-lower { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-codex-gap); }
     .soft-section { padding: 15px 16px; background: rgba(255,255,255,0.74); border-top: 3px solid var(--purple); }
     .badge-flow { display: flex; flex-wrap: wrap; gap: 7px; }
     .visitor-badge, .folio-count-badge { display: inline-flex; align-items: center; color: var(--purple-darker); background: var(--purple-light); border: 2px solid var(--purple); padding: 5px 9px; font-size: 12px; font-weight: 700; }
@@ -194,23 +300,23 @@
     .codex-visitor-notes { display: grid; gap: 4px; margin-top: 8px; padding-left: 10px; color: var(--muted); font-size: 10px; line-height: 1.45; }
     .codex-visitor-notes p { margin: 0; }
     .rumor-quote { margin: 0; padding: 7px 10px; border-left: 4px solid var(--pink); color: var(--text); font-size: 12px; line-height: 1.55; font-style: italic; background: rgba(230,168,177,0.07); }
-    .achievement-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-    .achievement-card { padding: 10px 11px; border: 2px solid #d8d4da; background: #f5f3f5; color: var(--muted); }
+    .achievement-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-achievement-gap); }
+    .achievement-card { padding: 10px 11px; border: 2px solid #d8d4da; border-radius: var(--card-radius); background: #f5f3f5; color: var(--muted); }
     .achievement-card.unlocked { color: var(--text); border-color: var(--pink); background: #fffafb; }
     .achievement-card h3 { margin: 0 0 3px; font-size: 13px; }
     .achievement-card p { margin: 0; font-size: 10px; line-height: 1.4; }
 
-    .folio-section { position: relative; background: #fff; border: 4px solid var(--purple); box-shadow: 4px 4px 0 rgba(190,177,209,0.36); }
-    .folio-section::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .folio-section { position: relative; background: #fff; border: 4px solid var(--purple); border-radius: var(--card-radius); box-shadow: 4px 4px 0 rgba(190,177,209,0.36); }
+    .folio-section::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); border-radius: max(0px, calc(var(--card-radius) - 3px)); pointer-events: none; }
     .folio-title { position: relative; z-index: 2; list-style: none; cursor: pointer; margin: 0; padding: 13px 16px; color: var(--pink-dark); border-bottom: 3px solid transparent; font-size: 17px; font-weight: 700; }
     .folio-title::-webkit-details-marker { display: none; }
     .folio-title::after { content: "+"; float: right; color: var(--purple-darker); font-family: "Silkscreen", monospace; }
     .folio-section[open] > .folio-title { border-bottom-color: var(--purple-light); }
     .folio-section[open] > .folio-title::after { content: "−"; }
     .folio-section:not([open]) > .folio-body { display: none; }
-    .folio-section[open] > .folio-body { position: relative; z-index: 1; display: grid; gap: 12px; padding: 14px 16px 17px; }
+    .folio-section[open] > .folio-body { position: relative; z-index: 1; display: grid; gap: var(--space-folio-gap); padding: var(--space-folio-pad-top) var(--space-folio-pad-side) var(--space-folio-pad-bottom); }
     .folio-species-list { display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap: 9px; }
-    .folio-species-row { display: grid; gap: 5px; min-width: 0; padding: 11px 12px; background: #faf8fc; border: 2px solid var(--purple-light); }
+    .folio-species-row { display: grid; gap: 5px; min-width: 0; padding: 11px 12px; background: #faf8fc; border: 2px solid var(--purple-light); border-radius: var(--card-radius); }
     .folio-species-row strong { color: var(--purple-darker); text-align: center; }
     .folio-species-meta { color: var(--muted); font-size: 10px; line-height: 1.4; text-align: center; }
     .roster-flow { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -228,18 +334,18 @@
     .mini-timeline li { position: relative; font-size: 11px; line-height: 1.4; }
     .mini-timeline li::before { content: ""; position: absolute; left: -16px; top: 4px; width: 8px; height: 8px; background: var(--pink); border: 1px solid #fff; box-shadow: 0 0 0 1px var(--pink-dark); }
     .folio-record-flow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
-    .folio-record-item { display: grid; gap: 5px; min-width: 120px; max-width: 260px; padding: 8px 9px; background: #faf8fc; border-bottom: 2px solid var(--purple-light); }
+    .folio-record-item { display: grid; gap: 5px; min-width: 120px; max-width: 260px; padding: 8px 9px; background: #faf8fc; border-bottom: 2px solid var(--purple-light); border-radius: var(--card-radius); }
     .folio-record-notes { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 
-    .annals-timeline { position: relative; margin: 0; padding: 0 0 0 104px; list-style: none; display: grid; gap: 17px; }
+    .annals-timeline { position: relative; margin: 0; padding: 0 0 0 104px; list-style: none; display: grid; gap: var(--annals-gap); }
     .annals-timeline::before { content: ""; position: absolute; left: 82px; top: 9px; bottom: 9px; width: 2px; background: var(--purple); }
     .annals-day { position: relative; min-height: 34px; }
     .annals-day::before { content: ""; position: absolute; left: -26px; top: 9px; width: 10px; height: 10px; background: #fff; border: 3px solid var(--purple-dark); border-radius: 50%; }
     .date-badge { position: absolute; right: calc(100% + 40px); top: 0; min-width: 58px; padding: 4px 6px; color: #fff; border: 2px solid transparent; text-align: center; font-size: 10px; font-weight: 700; white-space: nowrap; }
-    .season-spring { background: #A8C8A0; }
-    .season-summer { background: #E6A8B1; }
-    .season-autumn { background: #D4B483; }
-    .season-winter { background: #9B8DB5; }
+    .season-spring { background: var(--season-spring); }
+    .season-summer { background: var(--season-summer); }
+    .season-autumn { background: var(--season-autumn); }
+    .season-winter { background: var(--season-winter); }
     .season-unknown { background: var(--muted); }
     .annals-events { display: grid; gap: 6px; }
     .annals-event { position: relative; margin: 0; padding: 8px 10px 8px 14px; color: var(--text); background: rgba(255,255,255,0.78); border-left: 3px solid var(--muted); line-height: 1.55; font-size: 13px; }
@@ -269,6 +375,24 @@
     .detail-value { display: block; margin-top: 3px; color: var(--purple-darker); font-size: 13px; overflow-wrap: anywhere; }
     .bottom-nav { display: none; }
 
+    .tuner-panel { position: fixed; z-index: 90; right: 10px; bottom: 10px; width: min(310px,calc(100vw - 20px)); max-height: calc(100vh - 20px); overflow: auto; color: #222; background: #fff; border: 1px solid #777; border-radius: 4px; box-shadow: 0 3px 14px rgba(0,0,0,0.2); font: 12px/1.35 sans-serif; }
+    .tuner-panel > summary { cursor: pointer; padding: 8px 10px; font-weight: 700; }
+    .tuner-controls { display: grid; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid #ddd; }
+    .tuner-control { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+    .tuner-control input[type="range"] { grid-column: 1 / -1; width: 100%; }
+    .tuner-control select { min-width: 92px; }
+    .tuner-colors { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+    .tuner-color { display: grid; justify-items: center; gap: 3px; font-size: 10px; }
+    .tuner-color input { width: 36px; height: 26px; padding: 0; border: 0; }
+    .tuner-export { min-height: 34px; cursor: pointer; }
+    .tuner-output { width: 100%; min-height: 128px; resize: vertical; font: 11px/1.4 ui-monospace,monospace; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .weather-corner, .weather-corner *, .weather-corner *::before, .weather-corner *::after { animation: none !important; }
+      .weather-particles i { opacity: 0.65; }
+      .weather-lightning { opacity: 0.55 !important; }
+    }
+
     @media (max-width: 1000px) and (min-width: 769px) {
       .species-grid { grid-template-columns: repeat(5,minmax(0,1fr)); }
     }
@@ -279,25 +403,25 @@
       .brand h1 { font-size: 17px; }
       .brand small, .desktop-nav { display: none; }
       .pixel-logo { width: 21px; height: 16px; border-width: 3px; }
-      main { width: min(100% - 16px,620px); padding: 10px 0 calc(var(--mobile-nav-height) + var(--safe-bottom) + 14px); }
-      .page-stack { gap: 13px; }
+      main { width: min(100% - 16px,620px); padding: var(--space-mobile-main-top) 0 calc(var(--mobile-nav-height) + var(--safe-bottom) + 14px); }
+      .page-stack { gap: var(--space-mobile-page-gap); }
       .page-heading h2 { font-size: 20px; }
-      .state-grid { grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "observe" "settlers" "environment" "populations"; gap: 10px; }
+      .state-grid { grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "observe" "settlers" "environment" "populations"; gap: var(--space-mobile-state-gap); }
       .status-banner { grid-template-columns: 78px 1fr; min-height: 82px; padding: 10px 12px; border-width: 3px; }
       .status-banner .score { font-size: 45px; border-right-width: 2px; }
-      .status-copy { padding-left: 11px; }
+      .status-copy { padding: 0 54px 0 11px; }
       .status-day { font-size: 13px; }
       .status-comment { margin-top: 4px; font-size: 10px; line-height: 1.4; }
       .disaster-zone, .choice-zone, .settlers-zone, .environment-zone { padding: 10px; }
       .section-title { margin-bottom: 7px; font-size: 14px; }
       .notice-list li { padding: 5px 7px; font-size: 11px; }
-      .environment-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
+      .environment-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--space-mobile-environment-gap); }
       .environment-cell { height: 58px; padding: 3px; }
       .environment-label { font-size: 9px; }
       .environment-number { font-size: 17px; }
-      .settler-stack { min-height: 186px; margin: 0 16px; }
-      .settler-stack.single { min-height: 166px; }
-      .settler-stack-card { height: 160px; padding: 13px 12px; border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
+      .settler-stack { min-height: var(--settler-mobile-stack-height); margin: 0 16px; }
+      .settler-stack.single { min-height: var(--settler-mobile-single-height); }
+      .settler-stack-card { height: var(--settler-mobile-card-height); padding: var(--settler-mobile-pad-y) var(--settler-mobile-pad-x); border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
       .settler-card-layout { gap: 10px; }
       .settler-card-info { gap: 8px; padding-right: 32px; }
       .settler-name-line { gap: 6px; }
@@ -314,20 +438,20 @@
       .population-image { width: 25px; height: 25px; }
       .pixel-progress { gap: 2px; }
       .progress-cell { height: 10px; }
-      .species-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+      .species-grid { grid-template-columns: repeat(var(--mobile-codex-columns),minmax(0,1fr)); gap: var(--space-mobile-species-gap); }
       .species-tile { border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.45); padding: 6px; }
       .species-tile::after { border-width: 1px; }
       .species-tile-name { font-size: 10px; }
       .species-initial { font-size: 30px; }
       .codex-lower { grid-template-columns: 1fr; gap: 10px; }
       .soft-section { padding: 10px; }
-      .achievement-grid { gap: 6px; }
+      .achievement-grid { gap: var(--space-mobile-achievement-gap); }
       .achievement-card { padding: 7px; }
       .achievement-card h3 { font-size: 11px; }
       .achievement-card p { font-size: 9px; }
       .folio-section { border-width: 3px; }
       .folio-title { font-size: 14px; padding: 10px 12px; }
-      .folio-section[open] > .folio-body { padding: 10px 11px 13px; }
+      .folio-section[open] > .folio-body { padding: var(--space-mobile-folio-pad-top) var(--space-mobile-folio-pad-side) var(--space-mobile-folio-pad-bottom); }
       .folio-species-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
       .folio-species-row { padding: 8px 7px; gap: 4px; }
       .folio-species-row strong { font-size: 12px; }
@@ -337,7 +461,7 @@
       .settler-folio-head { font-size: 12px; }
       .life-record { grid-template-columns: 68px 1fr; gap: 6px; margin-top: 7px; }
       .mini-timeline { gap: 4px; }
-      .annals-timeline { padding-left: 96px; gap: 10px; }
+      .annals-timeline { padding-left: 96px; gap: var(--annals-mobile-gap); }
       .annals-timeline::before { left: 74px; }
       .annals-day::before { left: -26px; }
       .date-badge { right: calc(100% + 36px); min-width: 52px; padding: 3px 5px; font-size: 9px; }
@@ -364,12 +488,14 @@
         border: 0;
         border-top: 4px solid transparent;
         border-right: 1px solid rgba(255,255,255,0.22);
-        font-size: 14px;
+        font-size: var(--bottom-nav-font-size);
         font-weight: 700;
         box-shadow: none;
       }
       .bottom-nav .nav-button[aria-selected="true"] { color: #fff; background: var(--purple-darker); border-top-color: var(--pink); }
       .detail-grid { grid-template-columns: 1fr; }
+      .weather-corner { top: 5px; right: 6px; }
+      .tuner-panel { bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 8px); }
     }
   </style>
 </head>
@@ -473,6 +599,39 @@
       image.addEventListener("load", () => { fallback.hidden = true; }, { once: true });
       image.addEventListener("error", () => { image.hidden = true; }, { once: true });
       return el("span", { className: "settler-card-art-slot" }, [fallback, image]);
+    }
+
+    const weatherAnimationClasses = {
+      "晴": "weather-clear",
+      "阴": "weather-overcast",
+      "多云": "weather-overcast",
+      "小雨": "weather-light-rain",
+      "雨": "weather-rain",
+      "大雨": "weather-heavy-rain",
+      "梅雨": "weather-plum-rain",
+      "雷阵雨": "weather-thunderstorm",
+      "雾": "weather-fog",
+      "雪": "weather-snow",
+      "大雪": "weather-snow",
+      "冰雹": "weather-hail",
+      "春寒": "weather-spring-chill",
+      "秋霜": "weather-autumn-frost"
+    };
+
+    function createWeatherCorner(weather) {
+      const weatherClass = weatherAnimationClasses[weather];
+      if (!weatherClass) return null;
+      const corner = el("span", { className: `weather-corner ${weatherClass}`, attrs: { "aria-hidden": "true" } });
+      corner.append(
+        el("span", { className: "weather-sun-disc" }),
+        el("span", { className: "weather-cloud weather-cloud-one" }),
+        el("span", { className: "weather-cloud weather-cloud-two" }),
+        el("span", { className: "weather-lightning" }),
+        el("span", { className: "weather-frost-ring" }),
+        el("span", { className: "weather-fog-bands" }, Array.from({ length: 3 }, () => el("i"))),
+        el("span", { className: "weather-particles" }, Array.from({ length: 8 }, () => el("i")))
+      );
+      return corner;
     }
 
     function originLabel(value) {
@@ -826,6 +985,8 @@
           el("p", { className: "status-comment", text: data.comment })
         ])
       );
+      const weatherCorner = createWeatherCorner(data.weather);
+      if (weatherCorner) banner.append(weatherCorner);
       grid.append(banner);
 
       const warnings = disasterMessages(data.disasters || {});
@@ -1165,11 +1326,140 @@
       document.body.style.overflow = "";
     }
 
+    function initTuner() {
+      if (new URLSearchParams(window.location.search).get("tune") !== "1") return;
+      const rootStyle = document.documentElement.style;
+      const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      const config = {
+        spaceScale: 1,
+        bodyFontPx: 16,
+        bottomNavFontPx: 14,
+        cardRadiusPx: 0,
+        mobileCodexColumns: 3,
+        settlerDensity: "regular",
+        annalsGapPx: isMobile ? 10 : 17,
+        seasonBadgeColors: {
+          spring: "#A8C8A0",
+          summer: "#E6A8B1",
+          autumn: "#D4B483",
+          winter: "#9B8DB5"
+        }
+      };
+      const panel = el("details", { className: "tuner-panel" });
+      panel.append(el("summary", { text: "调参面板" }));
+      const controls = el("div", { className: "tuner-controls" });
+      const spaceBases = {
+        "--space-main-top": 24, "--space-main-bottom": 54, "--space-page-gap": 22, "--space-state-gap": 18,
+        "--space-environment-gap": 7, "--space-species-gap": 12, "--space-codex-gap": 18, "--space-achievement-gap": 8,
+        "--space-folio-gap": 12, "--space-folio-pad-top": 14, "--space-folio-pad-side": 16, "--space-folio-pad-bottom": 17,
+        "--space-mobile-main-top": 10, "--space-mobile-page-gap": 13, "--space-mobile-state-gap": 10,
+        "--space-mobile-environment-gap": 5, "--space-mobile-species-gap": 7, "--space-mobile-achievement-gap": 6,
+        "--space-mobile-folio-pad-top": 10, "--space-mobile-folio-pad-side": 11, "--space-mobile-folio-pad-bottom": 13
+      };
+      const densityBases = {
+        "--settler-stack-height": 196, "--settler-single-height": 174, "--settler-card-height": 168, "--settler-card-padding": 18,
+        "--settler-mobile-stack-height": 186, "--settler-mobile-single-height": 166, "--settler-mobile-card-height": 160,
+        "--settler-mobile-pad-y": 13, "--settler-mobile-pad-x": 12
+      };
+
+      function setScaledProperties(properties, scale) {
+        Object.entries(properties).forEach(([property, base]) => {
+          rootStyle.setProperty(property, `${Number((base * scale).toFixed(2))}px`);
+        });
+      }
+
+      function addRange(label, value, min, max, step, apply) {
+        const output = el("output", { text: value });
+        const input = el("input", { attrs: { type: "range", min, max, step, value } });
+        input.addEventListener("input", () => {
+          const next = Number(input.value);
+          output.textContent = String(next);
+          apply(next);
+        });
+        controls.append(el("label", { className: "tuner-control" }, [el("span", { text: label }), output, input]));
+      }
+
+      function addSelect(label, value, options, apply) {
+        const select = el("select");
+        options.forEach(option => select.append(el("option", { text: option.label, attrs: { value: option.value } })));
+        select.value = value;
+        select.addEventListener("change", () => apply(select.value));
+        controls.append(el("label", { className: "tuner-control" }, [el("span", { text: label }), select]));
+      }
+
+      addRange("全局间距档", config.spaceScale, 0.7, 1.3, 0.05, value => {
+        config.spaceScale = value;
+        rootStyle.setProperty("--space", String(value));
+        setScaledProperties(spaceBases, value);
+      });
+      addRange("正文字号", config.bodyFontPx, 12, 18, 1, value => {
+        config.bodyFontPx = value;
+        rootStyle.setProperty("--body-font-size", `${value}px`);
+      });
+      addRange("底部导航字号", config.bottomNavFontPx, 12, 18, 1, value => {
+        config.bottomNavFontPx = value;
+        rootStyle.setProperty("--bottom-nav-font-size", `${value}px`);
+      });
+      addRange("卡片圆角", config.cardRadiusPx, 0, 16, 1, value => {
+        config.cardRadiusPx = value;
+        rootStyle.setProperty("--card-radius", `${value}px`);
+      });
+      addSelect("图鉴列数（手机）", String(config.mobileCodexColumns), [2,3,4].map(value => ({ value: String(value), label: `${value} 列` })), value => {
+        config.mobileCodexColumns = Number(value);
+        rootStyle.setProperty("--mobile-codex-columns", value);
+      });
+      addSelect("定居者卡密度", config.settlerDensity, [
+        { value: "compact", label: "紧凑" },
+        { value: "regular", label: "常规" }
+      ], value => {
+        config.settlerDensity = value;
+        const density = value === "compact" ? 0.86 : 1;
+        rootStyle.setProperty("--settler-density", String(density));
+        setScaledProperties(densityBases, density);
+      });
+      addRange("年鉴节点间距", config.annalsGapPx, 8, 24, 1, value => {
+        config.annalsGapPx = value;
+        rootStyle.setProperty("--annals-gap", `${value}px`);
+        rootStyle.setProperty("--annals-mobile-gap", `${value}px`);
+      });
+
+      controls.append(el("strong", { text: "四季徽章颜色" }));
+      const colors = el("div", { className: "tuner-colors" });
+      [
+        ["春", "spring", "--season-spring"],
+        ["夏", "summer", "--season-summer"],
+        ["秋", "autumn", "--season-autumn"],
+        ["冬", "winter", "--season-winter"]
+      ].forEach(([label, key, property]) => {
+        const input = el("input", { attrs: { type: "color", value: config.seasonBadgeColors[key] } });
+        input.addEventListener("input", () => {
+          config.seasonBadgeColors[key] = input.value.toUpperCase();
+          rootStyle.setProperty(property, input.value);
+        });
+        colors.append(el("label", { className: "tuner-color" }, [el("span", { text: label }), input]));
+      });
+      controls.append(colors);
+
+      const output = el("textarea", { className: "tuner-output", attrs: { readonly: "readonly", "aria-label": "导出的调参配置" } });
+      output.hidden = true;
+      const exportButton = el("button", { className: "tuner-export", text: "导出配置", attrs: { type: "button" } });
+      exportButton.addEventListener("click", () => {
+        output.value = JSON.stringify(config, null, 2);
+        output.hidden = false;
+        output.focus();
+        output.select();
+      });
+      controls.append(exportButton, output);
+      panel.append(controls);
+      document.body.append(panel);
+    }
+
     buildNav(document.querySelector(".desktop-nav"));
     buildNav(document.querySelector(".bottom-nav"));
     document.getElementById("sheet-close").addEventListener("click", closeSheet);
     sheetBackdrop.addEventListener("click", event => { if (event.target === sheetBackdrop) closeSheet(); });
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !sheetBackdrop.hidden) closeSheet(); });
+    initTuner();
     activateTab("state");
   </script>
 </body>
