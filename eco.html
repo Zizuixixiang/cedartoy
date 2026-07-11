@@ -126,32 +126,33 @@
     .environment-number { color: var(--purple-darker); font-size: 20px; font-weight: 700; line-height: 1.2; }
     .environment-trend { color: var(--pink-dark); margin-left: 3px; font-size: 15px; }
 
-    .settler-stack { position: relative; min-height: 164px; margin: 0 22px 4px; overflow: visible; touch-action: pan-y; perspective: 800px; user-select: none; }
-    .settler-stack.single { margin-inline: 0; min-height: 142px; }
+    .settler-stack { position: relative; min-height: 196px; margin: 0 22px 4px; overflow: visible; touch-action: pan-y; perspective: 800px; user-select: none; }
+    .settler-stack.single { margin-inline: 0; min-height: 174px; }
     .settler-layer { position: absolute; inset: 0; pointer-events: none; will-change: transform, opacity; transform-origin: center center; }
     .settler-layer.is-settling { transition: transform 260ms ease, opacity 260ms ease; }
-    .settler-stack-card { height: 136px; padding: 17px 18px; overflow: hidden; background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.46); }
+    .settler-stack-card { height: 168px; padding: 18px; overflow: hidden; background: #fff; border: 4px solid var(--purple); box-shadow: 5px 5px 0 rgba(190,177,209,0.46); }
     .settler-stack-card::after { content: ""; position: absolute; inset: 3px; border: 2px solid var(--purple-light); pointer-events: none; }
-    .settler-card-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding-right: 45px; }
-    .settler-card-art { width: 44px; height: 44px; object-fit: contain; flex: none; image-rendering: pixelated; }
-    .settler-card-top > div:last-child { min-width: 0; flex: 1; }
+    .settler-card-layout { position: relative; z-index: 1; display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 14px; height: 100%; align-items: start; }
+    .settler-card-art-slot { position: relative; width: 44px; height: 44px; display: grid; place-items: center; flex: none; }
+    .settler-card-art { position: absolute; inset: 0; width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+    .settler-card-art-fallback { width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); background: #efedf1; border-radius: 8px; font-size: 17px; font-weight: 700; }
+    .settler-card-info { min-width: 0; display: grid; gap: 10px; padding-right: 38px; }
     .settler-name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
     .settler-name { margin: 0; color: var(--purple-darker); font-size: 20px; overflow-wrap: anywhere; }
     .settler-species { color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .settler-card-status { margin-top: 2px; color: var(--pink-dark); font-size: 10px; }
-    .settler-card-meta { position: relative; z-index: 1; margin-top: 12px; padding-top: 9px; border-top: 2px solid var(--purple-light); font-size: 12px; line-height: 1.45; white-space: normal; }
-    .settler-card-returns { color: var(--pink-dark); }
+    .settler-status-line { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--text); font-size: 11px; line-height: 1.45; }
+    .settler-status-line span { white-space: nowrap; }
+    .settler-health { font-weight: 700; }
+    .settler-health.danger { color: #BD5262; }
+    .settler-health.warning { color: #C98345; }
+    .settler-health.good { color: #3F8D63; }
+    .settler-return-line { display: flex; flex-wrap: wrap; gap: 5px; }
+    .settler-return-badge { display: inline-flex; color: var(--pink-dark); background: #fff8fa; border: 2px solid var(--pink); padding: 2px 6px; font-size: 9px; line-height: 1.3; }
     .stack-page { position: absolute; z-index: 2; top: 12px; right: 13px; color: var(--pink-dark); font-size: 11px; }
 
     .pond-diary { min-height: 260px; padding: 24px 27px 24px 31px; color: var(--text); background: #FFFAF0; border-left-color: var(--pink); }
     .pond-diary::before { content: ""; position: absolute; z-index: 1; left: 14px; top: 18px; bottom: 18px; width: 3px; background: var(--pink); }
     .diary-text { margin: 0; color: var(--text); white-space: pre-wrap; font: inherit; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
-    .raw-data-fold { margin: 12px 0; border-top: 1px dashed var(--pink); border-bottom: 1px dashed var(--pink); }
-    .raw-data-fold summary { list-style: none; cursor: pointer; color: var(--pink-dark); padding: 8px 0; font-size: 12px; font-weight: 700; }
-    .raw-data-fold summary::-webkit-details-marker { display: none; }
-    .raw-data-fold summary::before { content: "▸ "; }
-    .raw-data-fold[open] summary::before { content: "▾ "; }
-    .raw-data-code { margin: 0 0 10px; padding: 10px; max-height: 280px; overflow: auto; color: #e9e4ec; background: var(--screen-bg); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 11px; line-height: 1.6; }
 
     details.population-fold > summary { list-style: none; cursor: pointer; padding: 14px 17px; color: var(--purple-darker); font-weight: 700; }
     details.population-fold > summary::-webkit-details-marker { display: none; }
@@ -188,10 +189,10 @@
     .soft-section { padding: 15px 16px; background: rgba(255,255,255,0.74); border-top: 3px solid var(--purple); }
     .badge-flow { display: flex; flex-wrap: wrap; gap: 7px; }
     .visitor-badge, .folio-count-badge { display: inline-flex; align-items: center; color: var(--purple-darker); background: var(--purple-light); border: 2px solid var(--purple); padding: 5px 9px; font-size: 12px; font-weight: 700; }
-    .rumor-list { display: grid; gap: 8px; }
-    .codex-visitor-list { display: grid; gap: 10px; }
-    .codex-visitor-item { display: grid; justify-items: start; }
-    .codex-visitor-notes { margin: 8px 0 0; padding-left: 10px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .rumor-list { display: grid; gap: 8px; margin-top: 12px; }
+    .codex-visitor-badges { display: flex; flex-wrap: wrap; gap: 7px; }
+    .codex-visitor-notes { display: grid; gap: 4px; margin-top: 8px; padding-left: 10px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .codex-visitor-notes p { margin: 0; }
     .rumor-quote { margin: 0; padding: 7px 10px; border-left: 4px solid var(--pink); color: var(--text); font-size: 12px; line-height: 1.55; font-style: italic; background: rgba(230,168,177,0.07); }
     .achievement-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
     .achievement-card { padding: 10px 11px; border: 2px solid #d8d4da; background: #f5f3f5; color: var(--muted); }
@@ -199,18 +200,19 @@
     .achievement-card h3 { margin: 0 0 3px; font-size: 13px; }
     .achievement-card p { margin: 0; font-size: 10px; line-height: 1.4; }
 
-    .folio-section { border-bottom: 2px solid var(--purple-light); }
-    .folio-title { list-style: none; cursor: pointer; margin: 0; padding: 9px 4px; color: var(--pink-dark); border-bottom: 3px solid transparent; font-size: 17px; font-weight: 700; }
+    .folio-section { position: relative; background: #fff; border: 4px solid var(--purple); box-shadow: 4px 4px 0 rgba(190,177,209,0.36); }
+    .folio-section::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--purple-light); pointer-events: none; }
+    .folio-title { position: relative; z-index: 2; list-style: none; cursor: pointer; margin: 0; padding: 13px 16px; color: var(--pink-dark); border-bottom: 3px solid transparent; font-size: 17px; font-weight: 700; }
     .folio-title::-webkit-details-marker { display: none; }
     .folio-title::after { content: "+"; float: right; color: var(--purple-darker); font-family: "Silkscreen", monospace; }
     .folio-section[open] > .folio-title { border-bottom-color: var(--purple-light); }
     .folio-section[open] > .folio-title::after { content: "−"; }
     .folio-section:not([open]) > .folio-body { display: none; }
-    .folio-section[open] > .folio-body { display: grid; gap: 9px; padding: 9px 4px 12px; }
-    .folio-species-list { display: grid; border-top: 1px solid var(--purple-light); }
-    .folio-species-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 9px 5px; border-bottom: 1px solid var(--purple-light); }
-    .folio-species-row strong { color: var(--purple-darker); }
-    .folio-species-meta { color: var(--muted); font-size: 11px; text-align: right; }
+    .folio-section[open] > .folio-body { position: relative; z-index: 1; display: grid; gap: 12px; padding: 14px 16px 17px; }
+    .folio-species-list { display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap: 9px; }
+    .folio-species-row { display: grid; gap: 5px; min-width: 0; padding: 11px 12px; background: #faf8fc; border: 2px solid var(--purple-light); }
+    .folio-species-row strong { color: var(--purple-darker); text-align: center; }
+    .folio-species-meta { color: var(--muted); font-size: 10px; line-height: 1.4; text-align: center; }
     .roster-flow { display: flex; flex-wrap: wrap; gap: 7px; }
     .clue-list { display: grid; gap: 6px; margin-top: 3px; }
     .clue-list p { margin: 0; padding-left: 9px; border-left: 3px solid var(--purple); color: var(--muted); font-size: 12px; font-style: italic; }
@@ -225,15 +227,9 @@
     .mini-timeline::before { content: ""; position: absolute; left: 4px; top: 5px; bottom: 5px; width: 2px; background: var(--purple-light); }
     .mini-timeline li { position: relative; font-size: 11px; line-height: 1.4; }
     .mini-timeline li::before { content: ""; position: absolute; left: -16px; top: 4px; width: 8px; height: 8px; background: var(--pink); border: 1px solid #fff; box-shadow: 0 0 0 1px var(--pink-dark); }
-    .folio-badge-list { display: grid; gap: 7px; }
-    .folio-badge-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 7px; }
-    .folio-note { align-self: center; color: var(--muted); font-size: 10px; line-height: 1.4; }
-    .folio-visitor-list { display: grid; gap: 12px; }
-    .folio-visitor-entry { min-width: 0; }
-    .folio-visitor-line { display: flex; align-items: baseline; gap: 6px; }
-    .folio-visitor-line strong { color: var(--purple-darker); }
-    .folio-visitor-count { color: var(--muted); font-size: 10px; }
-    .folio-visitor-notes { margin: 3px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+    .folio-record-flow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+    .folio-record-item { display: grid; gap: 5px; min-width: 120px; max-width: 260px; padding: 8px 9px; background: #faf8fc; border-bottom: 2px solid var(--purple-light); }
+    .folio-record-notes { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 
     .annals-timeline { position: relative; margin: 0; padding: 0 0 0 104px; list-style: none; display: grid; gap: 17px; }
     .annals-timeline::before { content: ""; position: absolute; left: 82px; top: 9px; bottom: 9px; width: 2px; background: var(--purple); }
@@ -246,10 +242,19 @@
     .season-winter { background: #9B8DB5; }
     .season-unknown { background: var(--muted); }
     .annals-events { display: grid; gap: 6px; }
-    .annals-event { margin: 0; padding: 7px 10px; background: rgba(255,255,255,0.78); line-height: 1.55; font-size: 13px; }
-    .annals-event.important { font-weight: 700; }
-    .annals-day.important::before { border-color: var(--pink); }
-    .annals-day.important .date-badge { border-color: var(--pink); box-shadow: 0 0 0 1px #fff inset; }
+    .annals-event { position: relative; margin: 0; padding: 8px 10px 8px 14px; color: var(--text); background: rgba(255,255,255,0.78); border-left: 3px solid var(--muted); line-height: 1.55; font-size: 13px; }
+    .annals-event::before { content: ""; position: absolute; left: -7px; top: 12px; width: 8px; height: 8px; background: #fff; border: 2px solid var(--muted); }
+    .annals-event.type-settle { border-left-color: var(--pink); }
+    .annals-event.type-settle::before { border-color: var(--pink); }
+    .annals-event.type-leave { border-left-color: var(--purple-darker); }
+    .annals-event.type-leave::before { border-color: var(--purple-darker); }
+    .annals-event.type-achievement { border-left-color: #D4B483; }
+    .annals-event.type-achievement::before { border-color: #D4B483; }
+    .annals-day.type-normal::before, .annals-day.type-normal .date-badge { border-color: var(--muted); }
+    .annals-day.type-settle::before, .annals-day.type-settle .date-badge { border-color: var(--pink); }
+    .annals-day.type-leave::before, .annals-day.type-leave .date-badge { border-color: var(--purple-darker); }
+    .annals-day.type-achievement::before, .annals-day.type-achievement .date-badge { border-color: #D4B483; }
+    .annals-event strong { color: var(--text); font-weight: 700; }
 
     .sheet-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; align-items: end; justify-content: center; padding: 14px 14px 0; background: rgba(45,45,45,0.45); }
     .sheet { width: min(680px,100%); max-height: 78vh; overflow: auto; background: var(--bg); border: 4px solid var(--purple-dark); border-bottom: 0; padding: 14px 17px calc(22px + var(--safe-bottom)); }
@@ -290,16 +295,16 @@
       .environment-cell { height: 58px; padding: 3px; }
       .environment-label { font-size: 9px; }
       .environment-number { font-size: 17px; }
-      .settler-stack { min-height: 143px; margin: 0 16px; }
-      .settler-stack.single { min-height: 124px; }
-      .settler-stack-card { height: 118px; padding: 12px 13px; border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
-      .settler-card-top { gap: 7px; padding-right: 40px; }
-      .settler-card-art { width: 44px; height: 44px; }
+      .settler-stack { min-height: 186px; margin: 0 16px; }
+      .settler-stack.single { min-height: 166px; }
+      .settler-stack-card { height: 160px; padding: 13px 12px; border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
+      .settler-card-layout { gap: 10px; }
+      .settler-card-info { gap: 8px; padding-right: 32px; }
       .settler-name-line { gap: 6px; }
       .settler-name { font-size: 15px; }
       .settler-species { font-size: 9px; }
-      .settler-card-status { font-size: 8px; }
-      .settler-card-meta { margin-top: 8px; padding-top: 6px; font-size: 10px; line-height: 1.45; }
+      .settler-status-line { gap: 5px 9px; font-size: 9px; }
+      .settler-return-badge { font-size: 8px; padding: 2px 5px; }
       .stack-page { top: 9px; right: 10px; font-size: 10px; }
       .pond-diary { min-height: 220px; padding: 16px 16px 16px 25px; }
       .pond-diary::before { left: 11px; top: 13px; bottom: 13px; }
@@ -320,9 +325,11 @@
       .achievement-card { padding: 7px; }
       .achievement-card h3 { font-size: 11px; }
       .achievement-card p { font-size: 9px; }
-      .folio-title { font-size: 14px; padding: 7px 3px; }
-      .folio-section[open] > .folio-body { padding: 7px 3px 9px; }
-      .folio-species-row { padding: 7px 3px; gap: 8px; }
+      .folio-section { border-width: 3px; }
+      .folio-title { font-size: 14px; padding: 10px 12px; }
+      .folio-section[open] > .folio-body { padding: 10px 11px 13px; }
+      .folio-species-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
+      .folio-species-row { padding: 8px 7px; gap: 4px; }
       .folio-species-row strong { font-size: 12px; }
       .folio-species-meta { font-size: 9px; }
       .settler-folio-list { gap: 8px; }
@@ -457,6 +464,17 @@
       return el("span", { className: "species-art" }, [fallback, image]);
     }
 
+    function settlerArt(species) {
+      const fallback = el("span", { className: "settler-card-art-fallback", text: species.slice(0, 1) });
+      const image = el("img", {
+        className: "settler-card-art",
+        attrs: { src: `/eco/assets/species/${species}.png`, alt: "", loading: "lazy" }
+      });
+      image.addEventListener("load", () => { fallback.hidden = true; }, { once: true });
+      image.addEventListener("error", () => { image.hidden = true; }, { once: true });
+      return el("span", { className: "settler-card-art-slot" }, [fallback, image]);
+    }
+
     function originLabel(value) {
       const labels = { arrived: "初来乍到", return: "归来", returned: "归来", born: "塘中出生" };
       return labels[value] || `来历：${value}`;
@@ -555,9 +573,9 @@
       return messages;
     }
 
-    function splitObserveJson(text) {
+    function naturalObserveText(text) {
       const start = text.indexOf('{"day"');
-      if (start < 0) return { before: text, raw: null, after: "" };
+      if (start < 0) return text;
       let depth = 0;
       let inString = false;
       let escaped = false;
@@ -574,28 +592,16 @@
         else if (character === "}") {
           depth -= 1;
           if (depth === 0) {
-            return { before: text.slice(0, start), raw: text.slice(start, index + 1), after: text.slice(index + 1) };
+            return text.slice(0, start).trimEnd();
           }
         }
       }
-      return { before: text, raw: null, after: "" };
+      return text;
     }
 
     function renderObserve(text) {
-      const parts = splitObserveJson(String(text || ""));
-      const paper = el("div", { className: "pixel-card pond-diary" });
-      if (parts.before) paper.append(el("pre", { className: "diary-text", text: parts.before }));
-      if (parts.raw) {
-        const dataFold = el("details", { className: "raw-data-fold" });
-        const storageKey = `cedartoy_eco_raw_data_${aiUserId || "self"}`;
-        try { dataFold.open = sessionStorage.getItem(storageKey) === "open"; } catch (_) { dataFold.open = false; }
-        dataFold.addEventListener("toggle", () => {
-          try { sessionStorage.setItem(storageKey, dataFold.open ? "open" : "closed"); } catch (_) { /* 会话存储不可用时保留原生状态。 */ }
-        });
-        dataFold.append(el("summary", { text: "📊 原始数据" }), el("pre", { className: "raw-data-code", text: parts.raw }));
-        paper.append(dataFold);
-      }
-      if (parts.after) paper.append(el("pre", { className: "diary-text", text: parts.after }));
+      const paper = el("section", { className: "pixel-card pond-diary observe-zone", attrs: { "aria-label": "观察记录" } });
+      paper.append(el("pre", { className: "diary-text", text: naturalObserveText(String(text || "")) }));
       return paper;
     }
 
@@ -630,25 +636,22 @@
       const species = settler.name || settler.species;
       const title = settler.nickname || species;
       const cardNode = el("article", { className: "settler-stack-card" });
-      const identity = el("div", {}, [
-        el("div", { className: "settler-name-line" }, [
-          el("h3", { className: "settler-name", text: title }),
-          settler.nickname ? el("span", { className: "settler-species", text: species }) : null
-        ]),
-        settler.status === "幼体" || settler.status === "冬眠中" ? el("div", { className: "settler-card-status", text: settler.status }) : null
-      ]);
-      cardNode.append(el("div", { className: "settler-card-top" }, [speciesImage(species, "settler-card-art"), identity]));
-      const facts = [];
-      if (settler.arrive_day !== null && settler.arrive_day !== undefined) facts.push(`第${settler.arrive_day}天到达`);
-      if (settler.days_alive !== null && settler.days_alive !== undefined) facts.push(`存活${settler.days_alive}天`);
-      if (settler.health !== null && settler.health !== undefined) facts.push(settler.health);
+      const info = el("div", { className: "settler-card-info" });
+      info.append(el("div", { className: "settler-name-line" }, [
+        el("h3", { className: "settler-name", text: title }),
+        settler.nickname ? el("span", { className: "settler-species", text: species }) : null
+      ]));
+      const healthClass = settler.health_value < 0.3 ? "danger" : (settler.health_value <= 0.6 ? "warning" : "good");
+      info.append(el("div", { className: "settler-status-line" }, [
+        el("span", { text: `到达：第${settler.arrive_day}天` }),
+        el("span", { text: `存活：${settler.days_alive}天` }),
+        el("span", {}, [document.createTextNode("健康："), el("strong", { className: `settler-health ${healthClass}`, text: `${settler.health} ${settler.health_value}` })])
+      ]));
       const returns = (settler.return_records || [])
         .filter(record => record && record.day !== null && record.day !== undefined)
-        .map(record => `第${record.day}天归来`);
-      const meta = el("div", { className: "settler-card-meta" });
-      meta.append(document.createTextNode(facts.join(" · ")));
-      if (returns.length) meta.append(el("div", { className: "settler-card-returns", text: returns.join(" · ") }));
-      cardNode.append(meta);
+        .map(record => el("span", { className: "settler-return-badge", text: `第${record.day}天归来` }));
+      if (returns.length) info.append(el("div", { className: "settler-return-line" }, returns));
+      cardNode.append(el("div", { className: "settler-card-layout" }, [settlerArt(species), info]));
       if (total > 1) cardNode.append(el("span", { className: "stack-page", text: `${index + 1}/${total}` }));
       return cardNode;
     }
@@ -843,8 +846,7 @@
         grid.append(zone);
       }
 
-      const observe = el("section", { className: "observe-zone", attrs: { "aria-label": "观察记录" } }, renderObserve(data.observe_text));
-      grid.append(observe);
+      grid.append(renderObserve(data.observe_text));
 
       const settlers = card("定居者", "settlers-zone");
       settlers.append(createSettlerStack(data.settlers || []));
@@ -926,18 +928,18 @@
       const lower = el("div", { className: "codex-lower" });
       const visitors = el("section", { className: "soft-section" }, el("h2", { className: "section-title", text: "访客" }));
       const visitorData = data.visitors || {};
-      const visitorList = el("div", { className: "codex-visitor-list" });
+      const visitorBadges = el("div", { className: "codex-visitor-badges" });
+      const visitorNotes = el("div", { className: "codex-visitor-notes" });
       (visitorData.recorded || []).forEach(visitor => {
         const isRecord = visitor && typeof visitor === "object";
         const name = isRecord ? visitor.name : visitor;
         const count = isRecord ? visitor.count : null;
         const notes = isRecord ? (visitor.notes || []) : [];
-        const item = el("div", { className: "codex-visitor-item" });
-        item.append(el("span", { className: "visitor-badge", text: count === null || count === undefined ? name : `${name} ×${count}` }));
-        if (notes.length) item.append(el("p", { className: "codex-visitor-notes", text: notes.join(" · ") }));
-        visitorList.append(item);
+        visitorBadges.append(el("span", { className: "visitor-badge", text: count === null || count === undefined ? name : `${name} ×${count}` }));
+        if (notes.length) visitorNotes.append(el("p", { text: `${name}：${notes.join(" · ")}` }));
       });
-      visitors.append(visitorList.childElementCount ? visitorList : emptyNode());
+      visitors.append(visitorBadges.childElementCount ? visitorBadges : emptyNode());
+      if (visitorNotes.childElementCount) visitors.append(visitorNotes);
       const rumors = el("div", { className: "rumor-list" });
       (visitorData.rumors || []).forEach(text => rumors.append(el("blockquote", { className: "rumor-quote", text })));
       visitors.append(rumors.childElementCount ? rumors : emptyNode());
@@ -988,30 +990,19 @@
 
     function folioCountSection(title, items) {
       const { section, body } = createFolioSection(title, false);
-      const list = el("div", { className: "folio-badge-list" });
+      const list = el("div", { className: "folio-record-flow" });
       (items || []).forEach(item => {
-        const row = el("div", { className: "folio-badge-row" });
-        row.append(el("span", { className: "folio-count-badge", text: `${item.name} ×${item.count}` }));
-        (item.notes || []).forEach(note => row.append(el("span", { className: "folio-note", text: note })));
-        list.append(row);
+        const entry = el("article", { className: "folio-record-item" });
+        entry.append(el("span", { className: "folio-count-badge", text: `${item.name} ×${item.count}` }));
+        if ((item.notes || []).length) entry.append(el("span", { className: "folio-record-notes", text: item.notes.join(" · ") }));
+        list.append(entry);
       });
       body.append(list.childElementCount ? list : emptyNode());
       return section;
     }
 
     function folioVisitorSection(items) {
-      const { section, body } = createFolioSection("访客志", false);
-      const list = el("div", { className: "folio-visitor-list" });
-      (items || []).forEach(item => {
-        const entry = el("article", { className: "folio-visitor-entry" });
-        entry.append(el("div", { className: "folio-visitor-line" }, [
-          el("strong", { text: item.name }), el("span", { className: "folio-visitor-count", text: `×${item.count}` })
-        ]));
-        if ((item.notes || []).length) entry.append(el("p", { className: "folio-visitor-notes", text: item.notes.join(" · ") }));
-        list.append(entry);
-      });
-      body.append(list.childElementCount ? list : emptyNode());
-      return section;
+      return folioCountSection("访客志", items);
     }
 
     function renderFolio(data, container) {
@@ -1022,7 +1013,7 @@
       const speciesList = el("div", { className: "folio-species-list" });
       (data.species || []).forEach(item => speciesList.append(el("div", { className: "folio-species-row" }, [
         el("strong", { text: item.name }),
-        el("span", { className: "folio-species-meta", text: `${item.unlock_text} · 最高${item.historical_peak} · 归零${item.extinct_count}次` })
+        el("span", { className: "folio-species-meta", text: `${item.unlock_text} · 历史最高${item.historical_peak} · 归零${item.extinct_count}次` })
       ])));
       speciesBody.append(speciesList.childElementCount ? speciesList : emptyNode());
       stack.append(speciesSection);
@@ -1073,6 +1064,29 @@
       return { key: `${match[1]}-${match[2]}`, season: match[1], day: match[2], text: match[3] };
     }
 
+    function annalsEventType(text) {
+      if (/解锁成就/.test(text)) return "achievement";
+      if (/死亡|死|离去|离开/.test(text)) return "leave";
+      if (/定居|归来|回来|住了下来/.test(text)) return "settle";
+      return "normal";
+    }
+
+    function appendAnnalsText(node, text, type) {
+      let match = null;
+      if (type === "achievement") match = text.match(/【([^】]+)】/);
+      if (!match) match = text.match(/^年老的([^，。；：！？\s]{1,12}?)(?=在|离)/);
+      if (!match) match = text.match(/^([^，。；：！？\s]{1,18}?)(?=住了下来|定居|归来|回来|来访|出生|长大|自然恢复|归零|因|在年老|年老|饥饿|没有|离开|离去|死亡|死了|死去)/);
+      if (!match) {
+        node.textContent = text;
+        return;
+      }
+      const emphasized = match[1];
+      const start = text.indexOf(emphasized, match.index || 0);
+      node.append(document.createTextNode(text.slice(0, start)));
+      node.append(el("strong", { text: emphasized }));
+      node.append(document.createTextNode(text.slice(start + emphasized.length)));
+    }
+
     function renderAnnals(data, container) {
       const stack = el("div", { className: "page-stack" });
       stack.append(el("div", { className: "page-heading" }, [
@@ -1091,14 +1105,21 @@
         }
       });
       const seasonClasses = { 春: "season-spring", 夏: "season-summer", 秋: "season-autumn", 冬: "season-winter" };
-      const importantPattern = /定居|归来|回来|离开|离去|解锁成就|后代|死/;
+      const typePriority = { normal: 0, settle: 1, leave: 2, achievement: 3 };
       const timeline = el("ol", { className: "annals-timeline" });
       groups.forEach(group => {
-        const hasImportantEvent = group.events.some(text => importantPattern.test(text));
-        const item = el("li", { className: `annals-day${hasImportantEvent ? " important" : ""}` });
+        const types = group.events.map(annalsEventType);
+        const dayType = types.reduce((selected, type) => typePriority[type] > typePriority[selected] ? type : selected, "normal");
+        const item = el("li", { className: `annals-day type-${dayType}` });
         const badgeText = group.season ? `${group.season}·${group.day}` : group.day;
         item.append(el("span", { className: `date-badge ${seasonClasses[group.season] || "season-unknown"}`, text: badgeText }));
-        item.append(el("div", { className: "annals-events" }, group.events.map(text => el("p", { className: `annals-event${importantPattern.test(text) ? " important" : ""}`, text }))));
+        const events = el("div", { className: "annals-events" });
+        group.events.forEach((text, index) => {
+          const event = el("p", { className: `annals-event type-${types[index]}` });
+          appendAnnalsText(event, text, types[index]);
+          events.append(event);
+        });
+        item.append(events);
         timeline.append(item);
       });
       stack.append(timeline.childElementCount ? timeline : emptyNode());
