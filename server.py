@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import http.client
+import logging
 import mimetypes
 import os
 import random
@@ -40,6 +41,9 @@ from vendor_cmd_adapter import market as market_adapter
 from vendor_cmd_adapter import memoria as memoria_adapter
 from vendor_cmd_adapter.base import VendorCmdError
 from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
+
+
+logger = logging.getLogger(__name__)
 
 
 HOST = "127.0.0.1"
@@ -2595,6 +2599,19 @@ def _tool_play(arguments, path_token=None):
     return text
 
 
+def _deserialize_object_param(value, param_name):
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return value
+    if not isinstance(parsed, dict):
+        return value
+    logger.info("MCP 工具调用自动反序列化了字符串 %s 参数", param_name)
+    return parsed
+
+
 def _tool_play_inner(arguments, path_token=None):
     game = arguments.get("game")
     action = arguments.get("action")
@@ -2602,9 +2619,13 @@ def _tool_play_inner(arguments, path_token=None):
         raise _McpError(-32602, "game 参数必填")
     if not action or not isinstance(action, str):
         raise _McpError(-32602, "action 参数必填")
-    params = arguments.get("params")
+    raw_params = arguments.get("params")
+    params = _deserialize_object_param(raw_params, "params")
     if params is not None and not isinstance(params, dict):
         raise _McpError(-32602, "params 必须是对象")
+    if params is not raw_params:
+        arguments = dict(arguments)
+        arguments["params"] = params
 
     # 统一身份：带 token 强制 player_id=账号 id；游客自报 id 落到 guest: 命名空间。
     account_user = None
