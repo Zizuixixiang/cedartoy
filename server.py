@@ -2602,10 +2602,14 @@ def _tool_play(arguments, path_token=None):
 def _deserialize_object_param(value, param_name):
     if not isinstance(value, str):
         return value
-    try:
-        parsed = json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return value
+    parsed = value
+    for _ in range(3):
+        if not isinstance(parsed, str):
+            break
+        try:
+            parsed = json.loads(parsed)
+        except (TypeError, json.JSONDecodeError):
+            return value
     if not isinstance(parsed, dict):
         return value
     logger.info("MCP 工具调用自动反序列化了字符串 %s 参数", param_name)
