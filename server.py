@@ -3252,8 +3252,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID, X-Requested-With")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Expose-Headers", "Mcp-Session-Id")
         self.end_headers()
 
     def _request_path_and_token(self):
@@ -3707,6 +3708,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Expose-Headers", "Mcp-Session-Id")
         if extra_headers:
             for key, value in extra_headers.items():
                 self.send_header(key, value)
@@ -3715,6 +3718,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def _send_empty(self, status=204, extra_headers=None):
         self.send_response(status)
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", "0")
         if extra_headers:
             for key, value in extra_headers.items():
