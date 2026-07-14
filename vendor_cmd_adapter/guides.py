@@ -1,6 +1,6 @@
 GUIDES = {
     "leek": """# Leek（韭菜修炼之道）
-调用：play(game="leek",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+调用：play(game="leek",action="new") 开局；之后 play(game="leek", action="cmd", params={"command": "market"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
 常用指令：
 - status — 查看账户、持仓、净值
@@ -28,7 +28,7 @@ GUIDES = {
 原作信息：
 作者：贰拾壹_21Za4tilR9qy6（小红书号 95628666552）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
     "arcade": """# Claude Arcade
-调用：play(game="arcade",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+调用：play(game="arcade",action="new") 开局；之后 play(game="arcade", action="cmd", params={"command": "enter"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 简介：文字街机厅，老虎机、21 点、轮盘、兑奖区和扭蛋共享筹码。
 前端说明：人类可以在 CedarToy 网页前端给自己的小机投币。
 
@@ -59,7 +59,7 @@ GUIDES = {
 原作信息：
 作者：多肉饲养员（小红书号 49925064711）／仓库：github.com/reneyuxi0402/claude-arcade／经作者授权接入。""",
     "burger": """# 午间汉堡铺
-调用：play(game="burger",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+调用：play(game="burger",action="new") 开局；之后 play(game="burger", action="cmd", params={"command": "orders"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
 常用指令：
 - status — 查看店铺、城市事件、难度、烤台和当前制作
@@ -96,7 +96,7 @@ GUIDES = {
 原作信息：
 作者：飞鸢（小红书号 6403083078）／仓库：github.com/linzhi-524/noon-burger-shop／经作者授权接入。""",
     "fishing": """# AI钓鱼
-调用：play(game="fishing",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+调用：play(game="fishing",action="new") 开局；之后 play(game="fishing", action="cmd", params={"command": "cast 10"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
 常用指令：
 - cast — 抛一竿
@@ -125,7 +125,7 @@ GUIDES = {
 原作信息：
 作者：初一（小红书号 95352909039）／仓库：github.com/tutusagi/ai-fishing-game／经作者授权接入。""",
     "imitator_td": """# 植物大战丧尸随机版
-调用：play(game="imitator_td",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id
+调用：play(game="imitator_td",action="new") 开局；之后 play(game="imitator_td", action="cmd", params={"command": "look"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
 常用指令：
 - look / 打开 / 继续 — 查看当前棋盘或继续存档
@@ -152,7 +152,7 @@ GUIDES = {
 原作信息：
 作者：すみか（小红书号 26256537720）／仓库：github.com/wxynora/random-imitator-td。""",
     "memoria": """# Memoria Station
-调用：play(game="memoria",action="new",params={"level":1}) 开指定关；之后 action="cmd" 传 command；持久MCP地址可省 player_id。
+调用：play(game="memoria",action="new",params={"level":1}) 开指定关；之后 play(game="memoria", action="cmd", params={"command": "look"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id。
 简介：五关文字推理，从调查、对话和线索整理中推进车站谜案。
 前端说明：完整攻略只在人类网页前端可见，AI 玩家看不到。
 
@@ -183,7 +183,7 @@ GUIDES = {
 原作信息：
 作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/Memoria-Station／经作者授权接入。""",
     "market": """# 出门买菜上桌吃饭
-调用：play(game="market",action="new") 开局；之后 action="cmd" 传 command；持久MCP地址可省 player_id。
+调用：play(game="market",action="new") 开局；之后 play(game="market", action="cmd", params={"command": "菜场"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id。
 
 常用 command：
 - 帮助：查看完整指令
