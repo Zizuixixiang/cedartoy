@@ -1271,6 +1271,7 @@
 
     function snailRemainingCount(state) {
       const direct = statePathValue(state, [
+        ["flags", "apple_snail", "count"],
         ["flags", "apple_snail", "remaining_count"],
         ["flags", "apple_snail", "remaining_snails"],
         ["flags", "apple_snail", "remaining"],
@@ -1297,6 +1298,7 @@
         ["suffocation_days"],
         ["ice_suffocation_days"],
         ["flags", "winter_suffocation_days"],
+        ["flags", "ice_suffocation"],
         ["flags", "ice_suffocation_days"],
         ["flags", "ice_breathless_days"],
         ["flags", "winter_hypoxia_days"],
@@ -1512,8 +1514,8 @@
       if (!result.ok) return "";
       if (gameId === "rat") {
         const removed = finiteResultNumber(result, ["removed", "removed_count", "removed_this_action", "hit", "hits", "hit_count", "rats_removed", "rats_hit", "count"]);
-        const remaining = finiteResultNumber(result, ["remaining", "remaining_count", "rats_remaining", "remaining_rats", "mouse_count"]);
-        let resolved = resultBoolean(result, ["resolved", "ended", "cleared", "calmed", "suppressed", "target_met", "rat_problem_resolved"]);
+        const remaining = finiteResultNumber(result, ["remaining", "remaining_count", "rats_left", "rats_remaining", "remaining_rats", "mouse_count"]);
+        let resolved = resultBoolean(result, ["resolved", "plague_over", "ended", "cleared", "calmed", "suppressed", "target_met", "rat_problem_resolved"]);
         const removedValue = Number.isFinite(removed) ? removed : Math.min(Number(score) || 0, GAME_TUNING.submitLimits.rat);
         if (resolved === undefined && Number.isFinite(remaining)) resolved = remaining <= 3;
         const lines = [`打掉 ${tidyNumber(removedValue, 0)} 只`];
@@ -1540,8 +1542,8 @@
         return `拔 ${tidyNumber(stalkValue, 0)} 株 · 削减 ${tidyNumber(reductionValue)}`;
       }
       if (gameId === "algae") {
-        const amount = finiteResultNumber(result, ["amount", "skimmed", "skim_amount", "algae_amount", "score"]);
-        const mitigation = finiteResultNumber(result, ["mitigation", "mitigation_rate", "reduction", "reduction_rate", "hypoxia_reduction", "oxygen_deficit_reduction", "daily_hypoxia_reduction", "relief"]);
+        const amount = finiteResultNumber(result, ["amount", "applied", "skimmed", "skim_amount", "algae_amount", "score"]);
+        const mitigation = finiteResultNumber(result, ["mitigation", "mitigation_rate", "reduction", "reduction_rate", "hypoxia_reduction", "daily_do_relief", "oxygen_deficit_reduction", "daily_hypoxia_reduction", "relief"]);
         let shortened = resultBoolean(result, ["shortened", "shortened_one_day", "ended_early", "early_dispersal", "target_met", "shortened_by_day"]);
         const amountValue = Number.isFinite(amount) ? amount : Math.min(Number(score) || 0, GAME_TUNING.algae.submitMax);
         const mitigationValue = Number.isFinite(mitigation) ? mitigation : amountValue / 50 * 0.3;
@@ -1552,9 +1554,9 @@
       }
       if (gameId === "ice") {
         const success = resultBoolean(result, ["success", "succeeded", "ice_hole_opened", "opened"]);
-        const dualAttempt = resultBoolean(result, ["both_attempted", "both_tried_today", "dual", "dual_attempt", "human_ai_both_attempted", "human_and_ai_attempted", "human_and_ai", "combined", "combined_today", "combined_attempt", "both_tried"]);
-        const suffocationDays = finiteResultNumber(result, ["suffocation_days", "winter_suffocation_days", "breathless_days", "hypoxia_days"]);
-        const frozenDays = finiteResultNumber(result, ["frozen_days", "ice_days", "winter_frozen_days"]);
+        const dualAttempt = resultBoolean(result, ["both_attempted", "joint_attempt", "both_tried_today", "dual", "dual_attempt", "human_ai_both_attempted", "human_and_ai_attempted", "human_and_ai", "combined", "combined_today", "combined_attempt", "both_tried"]);
+        const suffocationDays = finiteResultNumber(result, ["suffocation_days", "ice_suffocation", "winter_suffocation_days", "breathless_days", "hypoxia_days"]);
+        const frozenDays = finiteResultNumber(result, ["frozen_days", "ice_total_days", "ice_days", "winter_frozen_days"]);
         let suffocationRatio = finiteResultNumber(result, ["suffocation_ratio", "suffocation_share", "winter_suffocation_ratio", "breathless_ratio", "hypoxia_ratio"]);
         if (!Number.isFinite(suffocationRatio) && Number.isFinite(suffocationDays) && Number.isFinite(frozenDays) && frozenDays > 0) suffocationRatio = suffocationDays / frozenDays;
         const lines = [];
@@ -1669,17 +1671,21 @@
       }
     }
 
-    async function settleLiveGame(gameId, score) {
-      showSubmitting(gameId);
-      const info = miniGameInfo[gameId];
-      const scopeKey = helpScopeKey(gameId);
-      const payload = gameId === "rat"
+    function gameSubmissionPayload(gameId, score) {
+      return gameId === "rat"
         ? { count: Math.min(score, GAME_TUNING.submitLimits.rat) }
         : (gameId === "snail"
           ? { count: score }
           : (gameId === "hyacinth"
           ? { stalks: Math.min(score, GAME_TUNING.hyacinth.submitMax) }
           : (gameId === "algae" ? { amount: Math.min(score, GAME_TUNING.algae.submitMax) } : null)));
+    }
+
+    async function settleLiveGame(gameId, score) {
+      showSubmitting(gameId);
+      const info = miniGameInfo[gameId];
+      const scopeKey = helpScopeKey(gameId);
+      const payload = gameSubmissionPayload(gameId, score);
       try {
         const result = await postPondHelp(info.action, payload);
         const alreadyHelped = !result.ok && isAlreadyHelped(result);
@@ -1738,6 +1744,7 @@
       const state = latestStateRender && latestStateRender.data;
       const winterStatus = winterBreathingStatus(state) || { suffocationDays: 2, frozenDays: 10 };
       const rawAiAttempted = statePathValue(state, [
+        ["flags", "ice_ai_attempted"],
         ["flags", "ice_ai_attempted_today"],
         ["flags", "ice", "ai_attempted_today"],
         ["ice", "ai_attempted_today"]

@@ -25,13 +25,13 @@ function mockResponse(status, payload) {
   };
 }
 
-async function loadPage() {
+async function loadPage({ playtest = true } = {}) {
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", error => {
     if (!/Could not load (?:link|img)/.test(error.message)) console.error(`[jsdom] ${error.message}`);
   });
   const dom = await JSDOM.fromFile(ECO_HTML, {
-    url: "https://cedartoy.test/eco.html?playtest=1&tune=1&ai_user_id=regression-user",
+    url: `https://cedartoy.test/eco.html?tune=1&ai_user_id=regression-user${playtest ? "&playtest=1" : ""}`,
     runScripts: "dangerously",
     pretendToBeVisual: true,
     virtualConsole,
@@ -141,6 +141,42 @@ async function run() {
     assert.match(footerBuild || "", /^build-\d{8}-\d{4}$/u, "页脚缺少 build 版本号");
     assert.ok(tunerBuild && tunerBuild.includes(footerBuild), "tune=1 面板未显示同一 build 版本号");
   }, "const BUILD_VERSION");
+
+  await check("正式模式/六灾入口识别", async () => {
+    const normalDom = await loadPage({ playtest: false });
+    const normalWindow = normalDom.window;
+    try {
+      const quietDisasters = { invasion: null, water_hyacinth_cover: null, biological: [] };
+      assert.deepEqual([...normalWindow.playableDisasterGames(quietDisasters, { ice_on: false, apple_snail: null })], [], "无灾害时正式页面仍出现小游戏入口");
+      const cases = [
+        ["turtle", { invasion: "巴西龟入侵", water_hyacinth_cover: null, biological: [] }, {}],
+        ["snail", { invasion: "福寿螺入侵", water_hyacinth_cover: null, biological: [] }, { apple_snail: { status: "active", count: 7 } }],
+        ["hyacinth", { invasion: null, water_hyacinth_cover: 0.12, biological: [] }, {}],
+        ["rat", { invasion: null, water_hyacinth_cover: null, biological: [{ name: "鼠患" }] }, {}],
+        ["algae", { invasion: null, water_hyacinth_cover: null, biological: [{ name: "绿潮" }] }, {}],
+        ["ice", { invasion: null, water_hyacinth_cover: null, biological: [] }, { ice_on: true }]
+      ];
+      cases.forEach(([expected, disasters, flags]) => {
+        assert.deepEqual([...normalWindow.playableDisasterGames(disasters, flags)], [expected], `${expected} 正式状态未触发对应入口`);
+        assert.deepEqual([...normalWindow.playableDisasterGames(quietDisasters, { ice_on: false, apple_snail: null })], [], `${expected} 灾害结束后入口没有消失`);
+      });
+      assert.equal(normalWindow.snailRemainingCount({ flags: { apple_snail: { status: "active", count: 7 } } }), 7, "正式福寿螺剩余数没有传入小游戏");
+    } finally {
+      normalDom.window.close();
+    }
+  }, "function playableDisasterGames(disasters, flags)");
+
+  await check("正式模式/六灾上报映射", () => {
+    const actual = Object.fromEntries(GAME_IDS.map(gameId => [gameId, window.gameSubmissionPayload(gameId, SCORE_BY_GAME[gameId])]));
+    assert.deepEqual(JSON.parse(JSON.stringify(actual)), {
+      rat: { count: 5 },
+      turtle: null,
+      snail: { count: 4 },
+      hyacinth: { stalks: 3 },
+      algae: { amount: 28 },
+      ice: null
+    });
+  }, "function gameSubmissionPayload(gameId, score)");
 
   await check("打地鼠命中/+1 DOM", async () => {
     window.launchMiniGame("rat", () => {}, null, { playtest: true });
