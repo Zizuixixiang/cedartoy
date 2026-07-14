@@ -6,6 +6,7 @@ turtle-soup/backend/static/
 turtle-soup/backend/*.db
 turtle-soup/backend/*.db.bak*
 turtle-soup/frontend/node_modules/
+/node_modules/
 package-lock.json
 
 # 设计导出实验文件

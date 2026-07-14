@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "check:eco-result": "node scripts/eco_result_null_check.js"
+  },
+  "dependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

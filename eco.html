@@ -19,6 +19,9 @@
       --pink-dark: #C28B93;
       --text: #5C5463;
       --muted: #9ca3af;
+      --card-bg: #FFFFFF;
+      --paper-bg: #FFFAF0;
+      --folio-surface: #FAF8FC;
       --screen-bg: #2D2D2D;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --mobile-nav-height: 60px;
@@ -49,17 +52,29 @@
       --card-radius: 0px;
       --mobile-codex-columns: 3;
       --settler-density: 1;
-      --settler-stack-height: 196px;
-      --settler-single-height: 174px;
-      --settler-card-height: 168px;
-      --settler-card-padding: 18px;
-      --settler-mobile-stack-height: 186px;
-      --settler-mobile-single-height: 166px;
-      --settler-mobile-card-height: 160px;
-      --settler-mobile-pad-y: 13px;
-      --settler-mobile-pad-x: 12px;
+      --settler-stack-height: 146px;
+      --settler-single-height: 132px;
+      --settler-card-height: 126px;
+      --settler-card-padding: 10px;
+      --settler-mobile-stack-height: 138px;
+      --settler-mobile-single-height: 126px;
+      --settler-mobile-card-height: 120px;
+      --settler-mobile-pad-y: 8px;
+      --settler-mobile-pad-x: 10px;
+      --settler-info-gap: 3px;
+      --diary-paragraph-gap: 9px;
+      --folio-masonry-gap: 10px;
       --annals-gap: 17px;
       --annals-mobile-gap: 10px;
+      --annals-normal: var(--muted);
+      --annals-settle-bg: #FFF1F5;
+      --annals-leave-edge: #5B3B73;
+      --annals-leave-bg: #F8F4FB;
+      --annals-gold-bg: #FFF8E6;
+      --annals-badge-danger: #B84C47;
+      --annals-badge-good: #56845F;
+      --annals-badge-gold: #B08B45;
+      --annals-badge-choice: #65778B;
       --season-spring: #A8C8A0;
       --season-summer: #E6A8B1;
       --season-autumn: #D4B483;
@@ -70,6 +85,38 @@
       --weather-snow: #FFFFFF;
       --weather-frost-blue: #B9D9EA;
       --weather-frost-gold: #D4B483;
+      --game-scene-dim: 38%;
+      --game-scene-fallback: linear-gradient(var(--bg), color-mix(in srgb, var(--bg) 75%, var(--purple-light)));
+      --rat-board-edge-y: 9%;
+      --rat-art-inset-x: 6%;
+      --rat-actor-anchor-y: 10%;
+      --rat-offset-y: 0px;
+      --rat-hit-duration: 260ms;
+      --rat-particle-duration: 520ms;
+      --turtle-size: 82px;
+      --turtle-rock-size: 42%;
+      --snail-rock-size: 43px;
+      --snail-weed-width: 72px;
+      --snail-weed-opacity: .9;
+      --snail-entangle-duration: 800ms;
+      --hyacinth-small-zone-width: 50%;
+      --hyacinth-small-zone-left: 25%;
+      --hyacinth-medium-zone-width: 32.5%;
+      --hyacinth-medium-zone-left: 33.75%;
+      --hyacinth-large-zone-width: 20%;
+      --hyacinth-large-zone-left: 40%;
+      --algae-net-y: 88%;
+      --algae-decor-opacity: .2;
+      --ice-fine-first-opacity: .5;
+      --ice-fine-deep-opacity: .26;
+      --ice-chip-white: #FFFFFF;
+      --ice-chip-blue: #B9D9EA;
+      --ice-label-fade-duration: 360ms;
+      --ice-crack-fade-duration: 500ms;
+      --game-info-surface: color-mix(in srgb, var(--bg) 88%, var(--purple-light));
+      --game-effect-surface: color-mix(in srgb, var(--purple-light) 42%, var(--bg));
+      --snail-warning-surface: color-mix(in srgb, var(--pink) 14%, var(--bg));
+      --snail-warning-border: var(--pink);
     }
 
     html { min-height: 100%; background: var(--bg); image-rendering: pixelated; }
@@ -221,6 +268,32 @@
     .observe-zone { grid-area: observe; }
     .notice-list, .choice-options { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
     .notice-list li { border-left: 4px solid var(--pink); padding: 7px 10px; background: rgba(230,168,177,0.1); font-size: 13px; line-height: 1.5; }
+    .snail-incubation-warning { display: grid; gap: 9px; padding: 11px 12px; background: var(--snail-warning-surface); border: 3px solid var(--snail-warning-border); font-size: 13px; line-height: 1.55; }
+    .snail-incubation-warning .pond-help-button { justify-self: start; }
+    .disaster-actions, .playtest-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+    .pond-help-button, .playtest-button, .game-button {
+      min-height: 44px;
+      padding: 9px 14px;
+      color: var(--text);
+      background: var(--purple-light);
+      border: 3px solid var(--purple);
+      border-radius: var(--card-radius);
+      font-weight: 700;
+    }
+    .pond-help-button { color: var(--pink-dark); background: color-mix(in srgb, var(--pink) 12%, var(--bg)); border-color: var(--pink); }
+    .pond-help-button:disabled { color: var(--muted); background: #efedf1; border-color: var(--muted); cursor: not-allowed; opacity: .78; }
+    .playtest-zone { grid-area: playtest; padding: 16px; border-style: dashed; }
+    .playtest-zone p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .state-grid.playtest-enabled {
+      grid-template-areas:
+        "summary summary"
+        "playtest playtest"
+        "disaster disaster"
+        "choice choice"
+        "observe observe"
+        "settlers environment"
+        "populations populations";
+    }
     .choice-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
     .choice-description { margin: 0 0 10px; line-height: 1.55; }
     .readonly-mark, .small-chip { display: inline-flex; color: var(--pink-dark); background: #fff8fa; border: 2px solid var(--pink); padding: 3px 7px; font-size: 10px; }
@@ -242,12 +315,13 @@
     .settler-card-art-slot { position: relative; width: 44px; height: 44px; display: grid; place-items: center; flex: none; }
     .settler-card-art { position: absolute; inset: 0; width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
     .settler-card-art-fallback { width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); background: #efedf1; border-radius: 8px; font-size: 17px; font-weight: 700; }
-    .settler-card-info { min-width: 0; display: grid; gap: 10px; padding-right: 38px; }
+    .settler-card-info { min-width: 0; display: grid; gap: var(--settler-info-gap); padding-right: 38px; }
     .settler-name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
     .settler-name { margin: 0; color: var(--purple-darker); font-size: 20px; overflow-wrap: anywhere; }
     .settler-species { color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .settler-status-line { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--text); font-size: 11px; line-height: 1.45; }
-    .settler-status-line span { white-space: nowrap; }
+    .settler-status-line { display: grid; gap: var(--settler-info-gap); color: var(--text); font-size: 10px; line-height: 1.2; }
+    .settler-status-line span { display: block; white-space: nowrap; }
+    .settler-survival-line { color: var(--muted); }
     .settler-health { font-weight: 700; }
     .settler-health.danger { color: #BD5262; }
     .settler-health.warning { color: #C98345; }
@@ -256,9 +330,12 @@
     .settler-return-badge { display: inline-flex; color: var(--pink-dark); background: #fff8fa; border: 2px solid var(--pink); padding: 2px 6px; font-size: 9px; line-height: 1.3; }
     .stack-page { position: absolute; z-index: 2; top: 12px; right: 13px; color: var(--pink-dark); font-size: 11px; }
 
-    .pond-diary { min-height: 260px; padding: 24px 27px 24px 31px; color: var(--text); background: #FFFAF0; border-left-color: var(--pink); }
-    .pond-diary::before { content: ""; position: absolute; z-index: 1; left: 14px; top: 18px; bottom: 18px; width: 3px; background: var(--pink); }
-    .diary-text { margin: 0; color: var(--text); white-space: pre-wrap; font: inherit; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+    .pond-diary { min-height: 260px; padding: 24px 27px; color: var(--text); background: var(--paper-bg); border-left-color: var(--pink); }
+    .pond-diary::after { display: none; }
+    .diary-text { display: grid; gap: var(--diary-paragraph-gap); color: var(--text); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+    .diary-paragraph { margin: 0; }
+    .diary-paragraph.event { position: relative; padding-left: 1em; }
+    .diary-paragraph.event::before { content: "·"; position: absolute; left: 0; color: var(--pink-dark); font-weight: 700; }
 
     details.population-fold > summary { list-style: none; cursor: pointer; padding: 14px 17px; color: var(--purple-darker); font-weight: 700; }
     details.population-fold > summary::-webkit-details-marker { display: none; }
@@ -316,9 +393,13 @@
     .folio-section:not([open]) > .folio-body { display: none; }
     .folio-section[open] > .folio-body { position: relative; z-index: 1; display: grid; gap: var(--space-folio-gap); padding: var(--space-folio-pad-top) var(--space-folio-pad-side) var(--space-folio-pad-bottom); }
     .folio-species-list { display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap: 9px; }
-    .folio-species-row { display: grid; gap: 5px; min-width: 0; padding: 11px 12px; background: #faf8fc; border: 2px solid var(--purple-light); border-radius: var(--card-radius); }
-    .folio-species-row strong { color: var(--purple-darker); text-align: center; }
-    .folio-species-meta { color: var(--muted); font-size: 10px; line-height: 1.4; text-align: center; }
+    .folio-species-row { display: grid; grid-template-columns: 38px minmax(0,1fr); gap: 9px; align-items: center; min-width: 0; padding: 9px 10px; background: var(--folio-surface); border: 2px solid var(--purple-light); border-radius: var(--card-radius); }
+    .folio-species-art { width: 38px; aspect-ratio: 1; }
+    .folio-species-art .species-initial { font-size: 18px; }
+    .folio-species-copy { min-width: 0; display: grid; gap: 5px; }
+    .folio-species-name { color: var(--purple-darker); font-size: 13px; line-height: 1.25; }
+    .folio-species-meta { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px; color: var(--muted); font-size: 9px; line-height: 1.35; }
+    .folio-species-meta span { min-width: 0; }
     .roster-flow { display: flex; flex-wrap: wrap; gap: 7px; }
     .clue-list { display: grid; gap: 6px; margin-top: 3px; }
     .clue-list p { margin: 0; padding-left: 9px; border-left: 3px solid var(--purple); color: var(--muted); font-size: 12px; font-style: italic; }
@@ -334,33 +415,37 @@
     .mini-timeline li { position: relative; font-size: 11px; line-height: 1.4; }
     .mini-timeline li::before { content: ""; position: absolute; left: -16px; top: 4px; width: 8px; height: 8px; background: var(--pink); border: 1px solid #fff; box-shadow: 0 0 0 1px var(--pink-dark); }
     .folio-record-flow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
-    .folio-record-item { display: grid; gap: 5px; min-width: 120px; max-width: 260px; padding: 8px 9px; background: #faf8fc; border-bottom: 2px solid var(--purple-light); border-radius: var(--card-radius); }
-    .folio-record-notes { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+    .folio-record-item { display: grid; gap: 7px; min-width: 150px; max-width: 280px; padding: 9px 10px; background: var(--folio-surface); border-bottom: 2px solid var(--purple-light); border-radius: var(--card-radius); }
+    .folio-record-head { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 8px; }
+    .folio-record-name { min-width: 0; color: var(--purple-darker); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+    .folio-record-count { flex: none; color: var(--pink-dark); font-size: 10px; }
+    .folio-record-notes { display: grid; gap: 4px; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+    .folio-record-note { padding-left: 7px; border-left: 2px solid var(--purple-light); }
+    .folio-visitor-flow { display: block; columns: 2; column-gap: var(--folio-masonry-gap); }
+    .folio-visitor-flow .folio-record-item { width: 100%; max-width: none; margin: 0 0 var(--folio-masonry-gap); break-inside: avoid; }
 
     .annals-timeline { position: relative; margin: 0; padding: 0 0 0 104px; list-style: none; display: grid; gap: var(--annals-gap); }
     .annals-timeline::before { content: ""; position: absolute; left: 82px; top: 9px; bottom: 9px; width: 2px; background: var(--purple); }
     .annals-day { position: relative; min-height: 34px; }
     .annals-day::before { content: ""; position: absolute; left: -26px; top: 9px; width: 10px; height: 10px; background: #fff; border: 3px solid var(--purple-dark); border-radius: 50%; }
-    .date-badge { position: absolute; right: calc(100% + 40px); top: 0; min-width: 58px; padding: 4px 6px; color: #fff; border: 2px solid transparent; text-align: center; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .date-badge { position: absolute; right: calc(100% + 40px); top: 0; min-width: 58px; padding: 4px 6px; color: #fff; border: 0; text-align: center; font-size: 10px; font-weight: 700; white-space: nowrap; }
     .season-spring { background: var(--season-spring); }
     .season-summer { background: var(--season-summer); }
     .season-autumn { background: var(--season-autumn); }
     .season-winter { background: var(--season-winter); }
     .season-unknown { background: var(--muted); }
     .annals-events { display: grid; gap: 6px; }
-    .annals-event { position: relative; margin: 0; padding: 8px 10px 8px 14px; color: var(--text); background: rgba(255,255,255,0.78); border-left: 3px solid var(--muted); line-height: 1.55; font-size: 13px; }
-    .annals-event::before { content: ""; position: absolute; left: -7px; top: 12px; width: 8px; height: 8px; background: #fff; border: 2px solid var(--muted); }
-    .annals-event.type-settle { border-left-color: var(--pink); }
-    .annals-event.type-settle::before { border-color: var(--pink); }
-    .annals-event.type-leave { border-left-color: var(--purple-darker); }
-    .annals-event.type-leave::before { border-color: var(--purple-darker); }
-    .annals-event.type-achievement { border-left-color: #D4B483; }
-    .annals-event.type-achievement::before { border-color: #D4B483; }
-    .annals-day.type-normal::before, .annals-day.type-normal .date-badge { border-color: var(--muted); }
-    .annals-day.type-settle::before, .annals-day.type-settle .date-badge { border-color: var(--pink); }
-    .annals-day.type-leave::before, .annals-day.type-leave .date-badge { border-color: var(--purple-darker); }
-    .annals-day.type-achievement::before, .annals-day.type-achievement .date-badge { border-color: #D4B483; }
-    .annals-event strong { color: var(--text); font-weight: 700; }
+    .annals-event { margin: 0; padding: 8px 10px; color: var(--annals-normal); background: transparent; line-height: 1.55; font-size: 13px; }
+    .annals-event.type-settle { background: var(--annals-settle-bg); }
+    .annals-event.type-leave { padding-left: 10px; border-left: 4px solid var(--annals-leave-edge); background: var(--annals-leave-bg); }
+    .annals-event.type-achievement { background: var(--annals-gold-bg); }
+    .annal-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-right: 6px; vertical-align: 0.08em; }
+    .annal-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; color: #fff; font-size: 9px; font-weight: 700; line-height: 1.45; white-space: nowrap; }
+    .annal-badge.danger { background: var(--annals-badge-danger); }
+    .annal-badge.good { background: var(--annals-badge-good); }
+    .annal-badge.gold { background: var(--annals-badge-gold); }
+    .annal-badge.choice { background: var(--annals-badge-choice); }
+    .annals-event strong { color: inherit; font-weight: 700; }
 
     .sheet-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; align-items: end; justify-content: center; padding: 14px 14px 0; background: rgba(45,45,45,0.45); }
     .sheet { width: min(680px,100%); max-height: 78vh; overflow: auto; background: var(--bg); border: 4px solid var(--purple-dark); border-bottom: 0; padding: 14px 17px calc(22px + var(--safe-bottom)); }
@@ -374,6 +459,8 @@
     .detail-label { display: block; color: var(--muted); font-size: 10px; }
     .detail-value { display: block; margin-top: 3px; color: var(--purple-darker); font-size: 13px; overflow-wrap: anywhere; }
     .bottom-nav { display: none; }
+    .site-footer { padding: 13px 16px 17px; color: var(--muted); text-align: center; font: 10px/1.4 ui-monospace, monospace; }
+    .build-version { display: inline-block; padding: 3px 7px; border: 1px solid var(--purple-light); background: color-mix(in srgb, var(--bg) 82%, #fff); }
 
     .tuner-panel { position: fixed; z-index: 90; right: 10px; bottom: 10px; width: min(310px,calc(100vw - 20px)); max-height: calc(100vh - 20px); overflow: auto; color: #222; background: #fff; border: 1px solid #777; border-radius: 4px; box-shadow: 0 3px 14px rgba(0,0,0,0.2); font: 12px/1.35 sans-serif; }
     .tuner-panel > summary { cursor: pointer; padding: 8px 10px; font-weight: 700; }
@@ -387,10 +474,249 @@
     .tuner-export { min-height: 34px; cursor: pointer; }
     .tuner-output { width: 100%; min-height: 128px; resize: vertical; font: 11px/1.4 ui-monospace,monospace; }
 
+    .game-overlay {
+      position: fixed;
+      z-index: 120;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: color-mix(in srgb, var(--screen-bg) 72%, transparent);
+      overscroll-behavior: contain;
+    }
+    .game-shell {
+      position: relative;
+      width: min(100%, 520px);
+      height: 100dvh;
+      max-height: 100dvh;
+      display: grid;
+      grid-template-rows: auto minmax(0,1fr);
+      color: var(--text);
+      background: var(--bg);
+      border-inline: 4px solid var(--purple-dark);
+      overflow: hidden;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .game-shell, .game-shell * {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .game-shell img { pointer-events: none; -webkit-user-drag: none; }
+    .game-shell :focus:not(:focus-visible) { outline: none; }
+    .game-header { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; color: var(--purple-darker); background: var(--purple-light); border-bottom: 4px solid var(--purple); }
+    .game-header h2 { margin: 0; font-size: 18px; }
+    .game-close { width: 42px; height: 42px; flex: none; color: var(--purple-darker); background: var(--bg); border: 3px solid var(--purple); font-size: 21px; font-weight: 700; }
+    .game-body { min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; }
+    .game-hud { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 9px 15px; background: color-mix(in srgb, var(--bg) 84%, var(--purple-light)); border-bottom: 3px solid var(--purple-light); font-weight: 700; }
+    .game-stage { min-height: 0; position: relative; overflow: hidden; padding: 18px 15px calc(20px + var(--safe-bottom)); background: var(--game-scene-fallback); }
+    .game-scene { position: absolute; z-index: 0; inset: 0; pointer-events: none; }
+    .game-scene-image, .game-scene-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .game-scene-image { object-fit: cover; }
+    .game-scene-fallback { background: var(--game-scene-fallback); }
+    .game-scene::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--screen-bg) var(--game-scene-dim), transparent); }
+    .game-instruction { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
+    .rat-board { position: relative; width: 100%; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); grid-template-rows: repeat(3,minmax(0,1fr)); column-gap: 2%; row-gap: 0; padding-block: var(--rat-board-edge-y); }
+    .rat-hole { position: relative; z-index: 1; min-width: 0; min-height: 0; padding: 0; background: transparent; border: 0; overflow: visible; touch-action: manipulation; }
+    .rat-hole.hit { z-index: 5; }
+    .game-art-slot { position: absolute; inset: 0; display: grid; place-items: center; }
+    .game-prop-image { position: absolute; left: 8%; right: 8%; bottom: 4%; width: 84%; height: 42%; object-fit: contain; }
+    .game-prop-fallback { position: absolute; left: 12%; right: 12%; bottom: 10%; height: 27%; background: var(--screen-bg); border: 5px solid var(--purple-darker); border-radius: 50%; opacity: 0.82; }
+    .game-prop-fallback.rock-shape { left: 3%; right: auto; bottom: 7%; width: 29%; height: 18%; background: var(--muted); border: 3px solid var(--purple-darker); border-radius: 48% 54% 32% 35%; opacity: 0.55; }
+    .rat-hole-art { position: absolute; top: 50%; right: auto; left: 50%; bottom: auto; width: calc(100% - 2 * var(--rat-art-inset-x)); height: auto; aspect-ratio: 303 / 181; transform: translate(-50%,-50%); overflow: visible; }
+    .rat-hole-art > .game-prop-image, .rat-hole-art > .game-prop-fallback { z-index: 3; inset: 0; width: 100%; height: 100%; }
+    .rat-actor { position: absolute; z-index: 4; left: 50%; bottom: var(--rat-actor-anchor-y); width: 100%; height: auto; aspect-ratio: 303 / 219; display: grid; place-items: center; transform: translate(-50%,calc(76% + var(--rat-offset-y))); opacity: 0; transition: transform 120ms ease-out, opacity 90ms linear; pointer-events: none; }
+    .rat-actor .game-animal-fallback { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--pink-dark); background: color-mix(in srgb, var(--pink) 24%, var(--purple-light)); }
+    .rat-hole.active .rat-actor { transform: translate(-50%,var(--rat-offset-y)); opacity: 1; }
+    .game-animal-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .game-animal-fallback { width: 58px; height: 58px; display: grid; place-items: center; color: var(--purple-darker); background: var(--purple-light); border: 4px solid var(--purple); border-radius: 50%; font-size: 25px; font-weight: 700; }
+    .rat-hole.hit .rat-actor { animation: rat-hit-retract var(--rat-hit-duration) ease-in forwards; }
+    .rat-hit-burst { position: absolute; z-index: 4; left: 50%; top: 55%; width: 1px; height: 1px; pointer-events: none; }
+    .rat-hit-burst * { pointer-events: none; }
+    .rat-hit-particle { position: absolute; left: 0; top: 0; width: var(--rat-particle-size, 8px); height: var(--rat-particle-size, 8px); color: var(--rat-particle-color, var(--pink)); background: currentColor; clip-path: polygon(50% 0,61% 35%,98% 35%,68% 56%,79% 92%,50% 70%,21% 92%,32% 56%,2% 35%,39% 35%); animation: rat-particle-burst var(--rat-particle-duration) ease-out forwards; }
+    .rat-hit-particle.dust { border-radius: 50%; clip-path: none; opacity: .72; }
+    .rat-hit-score { position: absolute; z-index: 6; left: 0; top: -8px; min-width: 32px; color: var(--pink-dark); font-size: 16px; font-weight: 700; text-shadow: 2px 2px 0 #fff; animation: rat-score-float var(--rat-particle-duration) ease-out forwards; }
+    .turtle-stage { display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: 16px; height: 100%; }
+    .turtle-progress { height: 30px; padding: 4px; background: var(--bg); border: 4px solid var(--purple); }
+    .turtle-progress-fill { width: 0; height: 100%; background: linear-gradient(90deg,var(--pink),var(--purple-dark)); transition: width 70ms linear; }
+    .turtle-arena { position: relative; min-height: 250px; padding: 0; background: color-mix(in srgb, var(--purple-light) 44%, var(--bg)); border: 4px solid var(--purple); overflow: hidden; touch-action: manipulation; }
+    .turtle-central-rock { position: absolute; z-index: 1; left: 50%; top: 50%; width: var(--turtle-rock-size); height: var(--turtle-rock-size); transform: translate(-50%,-50%); pointer-events: none; }
+    .turtle-central-rock .game-prop-image, .turtle-central-rock .game-prop-fallback { inset: 0; width: 100%; height: 100%; }
+    .turtle-scatter-rock { position: absolute; z-index: 1; width: var(--rock-size); aspect-ratio: 1; transform: translate(-50%,-50%) rotate(var(--rock-turn)); opacity: .86; pointer-events: none; }
+    .turtle-scatter-rock .game-prop-image, .turtle-scatter-rock .game-prop-fallback { inset: 0; width: 100%; height: 100%; }
+    .turtle-swimmer { position: absolute; z-index: 3; left: 50%; top: 39%; width: var(--turtle-size); height: var(--turtle-size); padding: 0; transform: translate(-50%,-50%); background: transparent; border: 0; }
+    .turtle-swimmer .turtle-art { position: absolute; inset: 0; display: grid; place-items: center; animation: turtle-float 1.7s ease-in-out infinite alternate; }
+    .turtle-swimmer.leaving { pointer-events: none; }
+    .turtle-swimmer.leaving .turtle-art { animation: turtle-leave var(--turtle-exit-duration, 900ms) ease-in forwards; }
+    .turtle-art .game-animal-fallback { width: 100%; height: 100%; border-radius: 38%; font-size: 28px; }
+    .turtle-tap-label { color: var(--pink-dark); font-weight: 700; text-align: center; }
+    .snail-game-stage { padding: 0; }
+    .snail-water { position: relative; height: 100%; min-height: 390px; overflow: hidden; background: linear-gradient(var(--purple-light), color-mix(in srgb, var(--purple) 48%, var(--bg))); touch-action: manipulation; }
+    .snail-pivot { position: absolute; z-index: 5; left: 50%; top: 8px; width: 22px; height: 22px; transform: translateX(-50%); background: var(--purple-darker); border: 4px solid var(--purple); border-radius: 50%; pointer-events: none; }
+    .snail-arm { position: absolute; z-index: 4; left: 50%; top: 18px; width: 2px; height: var(--hook-length, 48px); transform-origin: top center; background: var(--purple-darker); pointer-events: none; }
+    .snail-hook { position: absolute; left: 50%; bottom: 0; width: 40px; height: 40px; transform: translate(-50%,82%); display: grid; place-items: center; }
+    .snail-hook-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .game-claw-fallback { position: relative; width: 25px; height: 22px; border-bottom: 5px solid var(--pink-dark); border-radius: 0 0 50% 50%; }
+    .game-claw-fallback::before, .game-claw-fallback::after { content: ""; position: absolute; bottom: -5px; width: 10px; height: 16px; border-bottom: 4px solid var(--pink-dark); }
+    .game-claw-fallback::before { left: -3px; border-left: 4px solid var(--pink-dark); transform: rotate(-20deg); }
+    .game-claw-fallback::after { right: -3px; border-right: 4px solid var(--pink-dark); transform: rotate(20deg); }
+    .snail-target { position: absolute; z-index: 2; width: 39px; height: 39px; display: grid; place-items: center; transform: translate(-50%,-50%); pointer-events: none; }
+    .snail-target .game-animal-fallback { width: 100%; height: 100%; font-size: 13px; }
+    .snail-target.apple .game-animal-fallback { color: var(--pink-dark); background: color-mix(in srgb, var(--pink) 20%, var(--bg)); border-color: var(--pink); }
+    .snail-target.pond .game-animal-fallback { color: var(--purple-darker); background: color-mix(in srgb, var(--purple) 18%, var(--bg)); }
+    .snail-target.rock { width: var(--snail-item-size, var(--snail-rock-size)); height: var(--snail-item-size, var(--snail-rock-size)); }
+    .snail-target.rock .game-animal-fallback { color: var(--muted); background: color-mix(in srgb, var(--muted) 24%, var(--bg)); border-color: var(--purple-darker); border-radius: 36%; }
+    .snail-target.grabbed { z-index: 3; }
+    .snail-weed { position: absolute; z-index: 3; width: var(--weed-size, var(--snail-weed-width)); aspect-ratio: 1; transform: translate(-50%,-50%); opacity: var(--snail-weed-opacity); pointer-events: none; }
+    .snail-weed.front { z-index: 6; }
+    .snail-weed .game-animal-fallback { width: 100%; height: 100%; color: var(--purple-darker); background: color-mix(in srgb, var(--purple-light) 42%, transparent); border-color: var(--purple); }
+    .snail-arm.entangled { filter: sepia(.5) saturate(1.5) drop-shadow(0 0 4px var(--pink)); }
+    .snail-water.entangled .snail-weed.front { animation: snail-entangled var(--snail-entangle-duration) ease-out; }
+    .snail-feedback, .hyacinth-feedback { position: absolute; z-index: 8; left: 50%; top: 15%; transform: translateX(-50%); min-width: 150px; padding: 8px 12px; color: var(--purple-darker); background: var(--bg); border: 3px solid var(--purple); text-align: center; font-weight: 700; pointer-events: none; opacity: 0; }
+    .snail-feedback.show, .hyacinth-feedback.show { animation: game-feedback 620ms ease-out; }
+    .snail-feedback.bad, .hyacinth-feedback.bad { color: var(--pink-dark); border-color: var(--pink); background: color-mix(in srgb, var(--pink) 14%, var(--bg)); }
+    .snail-water.penalty { animation: snail-penalty 420ms ease-out; }
+    .game-stage-note { position: absolute; z-index: 7; left: 12px; right: 12px; padding: 7px 9px; color: var(--purple-darker); background: color-mix(in srgb, var(--bg) 84%, transparent); border: 2px solid var(--purple-light); font-size: 11px; font-weight: 700; text-align: center; pointer-events: none; }
+    .snail-water > .game-stage-note { bottom: calc(10px + var(--safe-bottom)); }
+    .hyacinth-field { position: relative; height: 100%; min-height: 390px; overflow: hidden; background: linear-gradient(color-mix(in srgb, var(--purple-light) 58%, var(--bg)), color-mix(in srgb, var(--purple) 30%, var(--bg))); touch-action: manipulation; }
+    .hyacinth-field::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 18% 20%, color-mix(in srgb, var(--bg) 55%, transparent) 0 12%, transparent 13%), radial-gradient(circle at 78% 38%, color-mix(in srgb, var(--bg) 42%, transparent) 0 10%, transparent 11%); pointer-events: none; }
+    .hyacinth-field > .game-stage-note { top: 8px; }
+    .hyacinth-plant { position: absolute; width: 76px; height: 76px; padding: 0; transform: translate(-50%,-50%); background: transparent; border: 0; touch-action: manipulation; }
+    .hyacinth-plant-art { position: absolute; inset: 0; display: grid; place-items: center; }
+    .hyacinth-plant-art .game-animal-fallback { width: 64px; height: 64px; color: var(--purple-darker); background: color-mix(in srgb, var(--purple-light) 58%, var(--bg)); }
+    .hyacinth-plant.selected { filter: drop-shadow(0 0 7px var(--pink)); transform: translate(-50%,-50%) scale(1.08); }
+    .hyacinth-plant.pulled { animation: hyacinth-pulled 520ms ease-in forwards; }
+    .hyacinth-plant.missed { animation: hyacinth-missed 440ms ease-out; }
+    .hyacinth-timing { position: absolute; z-index: 6; left: 12px; right: 12px; bottom: calc(18px + var(--safe-bottom)); padding: 12px; background: var(--bg); border: 4px solid var(--purple); box-shadow: 4px 4px 0 color-mix(in srgb, var(--purple) 45%, transparent); }
+    .hyacinth-timing[hidden] { display: none; }
+    .hyacinth-timing-label { margin: 0 0 8px; color: var(--purple-darker); font-size: 11px; font-weight: 700; text-align: center; }
+    .hyacinth-track { position: relative; height: 30px; background: var(--purple-light); border: 3px solid var(--purple-dark); overflow: hidden; }
+    .hyacinth-ordinary-zone { position: absolute; inset-block: 0; background: color-mix(in srgb, var(--pink) 35%, var(--bg)); }
+    .hyacinth-perfect-zone { position: absolute; inset-block: 0; background: var(--pink); }
+    .hyacinth-timing.small .hyacinth-ordinary-zone { left: var(--hyacinth-small-zone-left); width: var(--hyacinth-small-zone-width); }
+    .hyacinth-timing.medium .hyacinth-ordinary-zone { left: var(--hyacinth-medium-zone-left); width: var(--hyacinth-medium-zone-width); }
+    .hyacinth-timing.large .hyacinth-perfect-zone { left: var(--hyacinth-large-zone-left); width: var(--hyacinth-large-zone-width); }
+    .hyacinth-timing.large .hyacinth-ordinary-zone, .hyacinth-timing.small .hyacinth-perfect-zone, .hyacinth-timing.medium .hyacinth-perfect-zone { display: none; }
+    .hyacinth-marker { position: absolute; z-index: 2; left: 2%; top: -3px; bottom: -3px; width: 5px; transform: translateX(-50%); background: var(--purple-darker); box-shadow: 0 0 0 2px var(--bg); }
+    .hyacinth-plant.small { width: 62px; height: 62px; }
+    .hyacinth-plant.medium { width: 76px; height: 76px; }
+    .hyacinth-plant.large { width: 92px; height: 92px; }
+    .hyacinth-plant.small .game-animal-fallback { width: 52px; height: 52px; }
+    .hyacinth-plant.medium .game-animal-fallback { width: 64px; height: 64px; }
+    .hyacinth-plant.large .game-animal-fallback { width: 78px; height: 78px; }
+    .algae-game-stage { padding: 0; touch-action: none; }
+    .algae-water { position: relative; width: 100%; height: 100%; min-height: 410px; overflow: hidden; background: linear-gradient(color-mix(in srgb, var(--purple-light) 70%, var(--bg)), color-mix(in srgb, var(--purple) 38%, var(--bg))); touch-action: none; overscroll-behavior: none; }
+    .algae-water::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 44px, color-mix(in srgb, var(--bg) 20%, transparent) 45px 47px); pointer-events: none; }
+    .algae-decor { position: absolute; z-index: 1; width: var(--algae-decor-size, 92px); aspect-ratio: 1; transform: translate(-50%,-50%) rotate(var(--algae-decor-turn, 0deg)); opacity: var(--algae-decor-opacity); pointer-events: none; }
+    .algae-decor .game-animal-fallback { width: 100%; height: 100%; border: 0; background: transparent; }
+    .algae-floating-object { position: absolute; z-index: 3; display: grid; place-items: center; transform: translate(-50%,-50%); pointer-events: none; }
+    .algae-object-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .algae-object-fallback { width: 100%; height: 100%; display: grid; place-items: center; color: var(--purple-darker); background: color-mix(in srgb, var(--purple-light) 68%, var(--bg)); border: 3px solid var(--purple); border-radius: 50%; font-size: 12px; font-weight: 700; }
+    .algae-floating-object.sticky .algae-object-fallback { color: var(--pink-dark); background: color-mix(in srgb, var(--pink) 28%, var(--bg)); border-color: var(--pink); }
+    .algae-floating-object.rare .algae-object-fallback { color: var(--purple-darker); background: color-mix(in srgb, var(--purple) 45%, var(--bg)); border-color: var(--purple-darker); }
+    .algae-floating-object.debris .algae-object-fallback { color: var(--muted); background: color-mix(in srgb, var(--muted) 20%, var(--bg)); border-color: var(--muted); border-radius: 35%; }
+    .algae-net { position: absolute; z-index: 6; top: var(--algae-net-y); width: 112px; height: 58px; transform: translate(-50%,-50%); display: grid; place-items: center; opacity: 0.72; pointer-events: none; will-change: left, filter; }
+    .algae-net-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .algae-net-fallback { width: 100%; height: 100%; background: color-mix(in srgb, var(--bg) 36%, transparent); border: 4px solid var(--purple-darker); border-radius: 16px 16px 42% 42%; box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--purple) 58%, transparent); }
+    .algae-net.sticky { opacity: 0.9; filter: sepia(.45) saturate(1.35); }
+    .algae-net.sticky::after { content: "黏"; position: absolute; right: 4px; top: 2px; width: 24px; height: 24px; display: grid; place-items: center; color: var(--pink-dark); background: var(--bg); border: 2px solid var(--pink); border-radius: 50%; font-size: 10px; font-weight: 700; }
+    .algae-water.shake { animation: algae-shake 380ms ease-out; }
+    .algae-feedback { position: absolute; z-index: 9; left: 50%; top: 28%; transform: translateX(-50%); min-width: 92px; padding: 7px 10px; color: var(--purple-darker); background: var(--bg); border: 3px solid var(--purple); font-weight: 700; text-align: center; opacity: 0; pointer-events: none; }
+    .algae-feedback.bad { color: var(--pink-dark); border-color: var(--pink); }
+    .algae-feedback.show { animation: game-feedback 520ms ease-out; }
+    .ice-game-stage { padding: 0; }
+    .ice-field { position: relative; width: 100%; height: 100%; min-height: 410px; padding: 0; overflow: hidden; background: linear-gradient(145deg, var(--bg), var(--purple-light) 48%, color-mix(in srgb, var(--purple) 58%, var(--bg))); border: 0; touch-action: manipulation; }
+    .ice-base-layer { position: absolute; inset: 0; opacity: 1; transition: opacity var(--ice-crack-fade-duration) linear; }
+    .ice-base-image, .ice-base-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .ice-base-image { object-fit: cover; }
+    .ice-base-fallback { background: linear-gradient(145deg, var(--bg), var(--purple-light) 48%, color-mix(in srgb, var(--purple) 58%, var(--bg))); }
+    .ice-base-layer.cracked { opacity: 0; }
+    .ice-field.phase-deep .ice-base-layer.complete { opacity: 0; }
+    .ice-field.phase-deep .ice-base-layer.cracked { opacity: 1; }
+    .ice-crack-fallback::before, .ice-crack-fallback::after { content: ""; position: absolute; left: 50%; top: 48%; width: 44%; height: 4px; transform-origin: left center; background: var(--purple-dark); box-shadow: 38px 20px 0 -1px var(--purple), 66px -17px 0 -1px var(--purple-darker); opacity: .72; }
+    .ice-crack-fallback::before { transform: rotate(24deg); }
+    .ice-crack-fallback::after { transform: rotate(154deg); }
+    .ice-fine-layer { position: absolute; z-index: 2; left: 50%; top: 52%; width: min(72%, 340px); aspect-ratio: 286 / 183; transform: translate(-50%,-50%); opacity: 0; pointer-events: none; transition: opacity var(--ice-crack-fade-duration) linear; -webkit-mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0,0,0,.82) 64%, transparent 92%); mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0,0,0,.82) 64%, transparent 92%); }
+    .ice-field.phase-fine .ice-fine-layer { opacity: var(--ice-fine-first-opacity); }
+    .ice-field.phase-deep .ice-fine-layer { opacity: var(--ice-fine-deep-opacity); }
+    .ice-fine-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .ice-fine-fallback { position: absolute; inset: 0; }
+    .ice-fine-fallback i { position: absolute; left: 50%; top: 50%; width: var(--ice-crack-length); height: 3px; transform: rotate(var(--ice-crack-angle)); transform-origin: left center; background: var(--purple-darker); opacity: .8; }
+    .ice-fine-fallback i::after { content: ""; position: absolute; left: 55%; top: 0; width: 55%; height: 2px; transform: rotate(38deg); transform-origin: left center; background: var(--purple-dark); }
+    .ice-fish-shadow { position: absolute; z-index: 1; left: var(--fish-left); top: var(--fish-top); width: var(--fish-size); aspect-ratio: 1.7; opacity: .25; filter: blur(2px) brightness(.3) saturate(.3); pointer-events: none; animation: ice-fish-swim var(--fish-speed) ease-in-out infinite alternate; transition: left 520ms ease-in, top 520ms ease-in, opacity 300ms linear; }
+    .ice-fish-shadow img { width: 100%; height: 100%; object-fit: contain; }
+    .ice-field.opened .ice-fish-shadow { left: 50%; top: 53%; opacity: .55; animation-play-state: paused; }
+    .ice-bubble { position: absolute; z-index: 4; left: var(--bubble-x); top: 53%; width: var(--bubble-size); height: var(--bubble-size); border: 2px solid var(--bg); border-radius: 50%; pointer-events: none; animation: ice-bubble-rise 620ms ease-out forwards; }
+    .ice-hammer { position: absolute; z-index: 5; left: 82%; top: 18%; width: 64px; height: 92px; transform: translate(-50%,-50%) rotate(18deg); pointer-events: none; }
+    .ice-hammer-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .ice-hammer-fallback { position: absolute; left: 28px; top: 23px; width: 11px; height: 61px; background: var(--purple-darker); border: 3px solid var(--purple-dark); transform: rotate(-18deg); }
+    .ice-hammer-fallback::before { content: ""; position: absolute; left: -20px; top: -15px; width: 47px; height: 22px; background: var(--pink-dark); border: 3px solid var(--pink); }
+    .ice-splash { position: absolute; z-index: 4; width: 76px; height: 76px; transform: translate(-50%,-50%); pointer-events: none; animation: ice-splash 360ms ease-out forwards; }
+    .ice-splash-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .ice-splash-fallback { position: absolute; left: 19px; top: 23px; width: 38px; height: 24px; border: 5px solid var(--purple-dark); border-top-color: transparent; border-radius: 50%; }
+    .ice-splash-fallback::before, .ice-splash-fallback::after { content: ""; position: absolute; top: -19px; width: 9px; height: 18px; background: var(--purple); border-radius: 50% 50% 45% 45%; }
+    .ice-splash-fallback::before { left: -5px; transform: rotate(-32deg); }
+    .ice-splash-fallback::after { right: -5px; transform: rotate(32deg); }
+    .ice-chip { position: absolute; z-index: 4; left: var(--ice-chip-x); top: var(--ice-chip-y); width: var(--ice-chip-size); height: var(--ice-chip-size); transform: translate(-50%,-50%); background: var(--ice-chip-color); pointer-events: none; animation: ice-chip-burst 420ms ease-out forwards; }
+    .ice-field.impact { animation: ice-impact 150ms ease-out; }
+    .ice-progress { height: 20px; min-width: 130px; padding: 3px; background: var(--bg); border: 3px solid var(--purple); }
+    .ice-progress-fill { width: 0; height: 100%; background: linear-gradient(90deg, var(--purple), var(--pink-dark)); transition: width 80ms linear; }
+    .ice-stage-label { position: absolute; z-index: 6; left: 12px; right: 12px; bottom: calc(12px + var(--safe-bottom)); padding: 8px 10px; color: var(--purple-darker); background: color-mix(in srgb, var(--bg) 86%, transparent); border: 2px solid var(--purple-light); font-size: 11px; font-weight: 700; text-align: center; pointer-events: none; transition: opacity var(--ice-label-fade-duration) linear; }
+    .ice-stage-label.faded { opacity: 0; }
+    .game-exit-confirm { position: absolute; z-index: 20; inset: 0; display: grid; place-items: center; padding: 22px; background: color-mix(in srgb, var(--screen-bg) 62%, transparent); }
+    .game-exit-confirm-card { width: min(100%, 360px); display: grid; gap: 16px; padding: 22px; color: var(--text); background: var(--bg); border: 4px solid var(--purple); box-shadow: 5px 5px 0 var(--purple-darker); text-align: center; }
+    .game-exit-confirm-card p { margin: 0; line-height: 1.65; }
+    .game-exit-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @keyframes game-feedback { 0% { opacity: 0; transform: translate(-50%,8px); } 20%,70% { opacity: 1; transform: translate(-50%,0); } 100% { opacity: 0; transform: translate(-50%,-8px); } }
+    @keyframes snail-penalty { 25% { transform: translateX(-8px); filter: saturate(1.6); } 50% { transform: translateX(7px); } 75% { transform: translateX(-4px); } }
+    @keyframes snail-entangled { 35% { filter: brightness(1.2) drop-shadow(0 0 5px var(--pink)); transform: translate(-50%,-50%) scale(1.08); } }
+    @keyframes hyacinth-pulled { to { transform: translate(-50%,-95%) scale(.55) rotate(9deg); opacity: 0; } }
+    @keyframes hyacinth-missed { 25% { transform: translate(-56%,-50%) rotate(-5deg); } 60% { transform: translate(-44%,-50%) rotate(5deg); } }
+    @keyframes hyacinth-timing-sweep { from { left: 2%; } to { left: 98%; } }
+    @keyframes algae-shake { 25% { transform: translateX(-7px); } 50% { transform: translateX(6px); } 75% { transform: translateX(-3px); } }
+    @keyframes ice-impact { 35% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
+    @keyframes ice-splash { 0% { transform: translate(-50%,-40%) scale(.55); opacity: 0; } 35% { opacity: 1; } 100% { transform: translate(-50%,-75%) scale(1.08); opacity: 0; } }
+    @keyframes ice-chip-burst { from { opacity: 1; transform: translate(-50%,-50%) rotate(0); } to { opacity: 0; transform: translate(calc(-50% + var(--ice-chip-dx)), calc(-50% + var(--ice-chip-dy))) rotate(var(--ice-chip-rotate)); } }
+    @keyframes ice-fish-swim { from { transform: translate(-12%,-50%) scaleX(-1); } to { transform: translate(12%,-44%) scaleX(-1); } }
+    @keyframes ice-bubble-rise { from { transform: translate(-50%,0) scale(.6); opacity: .8; } to { transform: translate(-50%,-70px) scale(1.15); opacity: 0; } }
+    .game-result { height: 100%; display: grid; align-content: center; justify-items: center; gap: 16px; padding: 28px 22px calc(28px + var(--safe-bottom)); text-align: center; }
+    .game-result-mark { width: 76px; height: 76px; display: grid; place-items: center; color: var(--bg); background: var(--purple-dark); border: 5px solid var(--purple); border-radius: 50%; font-size: 34px; font-weight: 700; }
+    .game-result h3 { margin: 0; color: var(--purple-darker); font-size: 21px; }
+    .game-result p { max-width: 360px; margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+    .game-result-note { color: var(--pink-dark); font-weight: 700; }
+    .game-score-line { color: var(--purple-darker); font-weight: 700; }
+    .game-effect-line { width: min(100%, 380px); padding: 11px 13px; background: var(--game-effect-surface); border: 3px solid var(--purple-light); }
+    .game-effect-line strong { display: block; margin-bottom: 4px; color: var(--purple-darker); }
+    .game-result-error { color: var(--pink-dark); }
+    .game-result-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+    .game-button.primary { color: var(--bg); background: var(--purple-dark); border-color: var(--purple-darker); }
+    .disaster-prompt { height: 100%; display: grid; align-content: center; gap: 18px; padding: 28px 22px calc(28px + var(--safe-bottom)); text-align: center; }
+    .disaster-prompt h3 { margin: 0; color: var(--pink-dark); font-size: 22px; }
+    .disaster-prompt p { margin: 0; line-height: 1.65; }
+    .disaster-prompt-actions { display: grid; gap: 10px; }
+    .game-intro { height: 100%; display: grid; align-content: center; gap: 17px; padding: 28px 22px calc(28px + var(--safe-bottom)); }
+    .game-intro h3 { margin: 0; color: var(--purple-darker); font-size: 22px; text-align: center; }
+    .game-intro-list { display: grid; gap: 10px; margin: 0; }
+    .game-intro-row { display: grid; gap: 4px; padding: 11px 13px; background: var(--game-info-surface); border-left: 4px solid var(--purple); line-height: 1.55; }
+    .game-intro-row dt { color: var(--purple-darker); font-weight: 700; }
+    .game-intro-row dd { margin: 0; }
+    .game-intro .game-button { justify-self: stretch; }
+    @keyframes rat-hit-retract { 0% { transform: translate(-50%,var(--rat-offset-y)) scale(1); opacity: 1; } 34% { transform: translate(-50%,calc(8% + var(--rat-offset-y))) scale(.92); opacity: 1; } 100% { transform: translate(-50%,calc(82% + var(--rat-offset-y))) scale(.76); opacity: 0; } }
+    @keyframes rat-particle-burst { 0% { transform: translate(-50%,-50%) scale(.45) rotate(0); opacity: 0; } 16% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--rat-particle-x)), calc(-50% + var(--rat-particle-y))) scale(.9) rotate(var(--rat-particle-turn)); opacity: 0; } }
+    @keyframes rat-score-float { 0% { transform: translate(-50%,0) scale(.82); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(-50%,-54px) scale(1.08); opacity: 0; } }
+    @keyframes turtle-float { from { transform: translateY(-2px); } to { transform: translateY(2px); } }
+    @keyframes turtle-leave { 0% { transform: translateY(0) scale(1); filter: none; } 22% { transform: translateY(2px) scale(.62); filter: saturate(.55); } 100% { transform: translateY(-72vh) scale(.62); filter: saturate(.55); } }
+
     @media (prefers-reduced-motion: reduce) {
       .weather-corner, .weather-corner *, .weather-corner *::before, .weather-corner *::after { animation: none !important; }
       .weather-particles i { opacity: 0.65; }
       .weather-lightning { opacity: 0.55 !important; }
+      .rat-actor, .turtle-progress-fill { transition: none !important; }
+      .rat-hole.hit .rat-actor, .rat-hit-particle, .rat-hit-score, .turtle-arena.pulse .turtle-art, .snail-feedback, .hyacinth-feedback, .snail-water.penalty, .hyacinth-plant, .algae-water.shake, .algae-feedback, .ice-field.impact, .ice-splash, .ice-fish-shadow, .ice-bubble { animation: none !important; }
+      .hyacinth-marker { left: 50%; animation: none !important; }
     }
 
     @media (max-width: 1000px) and (min-width: 769px) {
@@ -407,12 +733,13 @@
       .page-stack { gap: var(--space-mobile-page-gap); }
       .page-heading h2 { font-size: 20px; }
       .state-grid { grid-template-columns: 1fr; grid-template-areas: "summary" "disaster" "choice" "observe" "settlers" "environment" "populations"; gap: var(--space-mobile-state-gap); }
+      .state-grid.playtest-enabled { grid-template-areas: "summary" "playtest" "disaster" "choice" "observe" "settlers" "environment" "populations"; }
       .status-banner { grid-template-columns: 78px 1fr; min-height: 82px; padding: 10px 12px; border-width: 3px; }
       .status-banner .score { font-size: 45px; border-right-width: 2px; }
       .status-copy { padding: 0 54px 0 11px; }
       .status-day { font-size: 13px; }
       .status-comment { margin-top: 4px; font-size: 10px; line-height: 1.4; }
-      .disaster-zone, .choice-zone, .settlers-zone, .environment-zone { padding: 10px; }
+      .disaster-zone, .choice-zone, .settlers-zone, .environment-zone, .playtest-zone { padding: 10px; }
       .section-title { margin-bottom: 7px; font-size: 14px; }
       .notice-list li { padding: 5px 7px; font-size: 11px; }
       .environment-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--space-mobile-environment-gap); }
@@ -423,16 +750,15 @@
       .settler-stack.single { min-height: var(--settler-mobile-single-height); }
       .settler-stack-card { height: var(--settler-mobile-card-height); padding: var(--settler-mobile-pad-y) var(--settler-mobile-pad-x); border-width: 3px; box-shadow: 4px 4px 0 rgba(190,177,209,0.46); }
       .settler-card-layout { gap: 10px; }
-      .settler-card-info { gap: 8px; padding-right: 32px; }
+      .settler-card-info { gap: var(--settler-info-gap); padding-right: 32px; }
       .settler-name-line { gap: 6px; }
       .settler-name { font-size: 15px; }
       .settler-species { font-size: 9px; }
-      .settler-status-line { gap: 5px 9px; font-size: 9px; }
+      .settler-status-line { font-size: 8px; }
       .settler-return-badge { font-size: 8px; padding: 2px 5px; }
       .stack-page { top: 9px; right: 10px; font-size: 10px; }
-      .pond-diary { min-height: 220px; padding: 16px 16px 16px 25px; }
-      .pond-diary::before { left: 11px; top: 13px; bottom: 13px; }
-      .diary-text { font-size: 11px; line-height: 1.8; }
+      .pond-diary { min-height: 220px; padding: 16px; }
+      .diary-text { font-size: 11px; line-height: 1.65; }
       .population-groups { padding: 8px 10px 10px; gap: 8px; }
       .species-row { padding: 4px 1px; font-size: 11px; }
       .population-image { width: 25px; height: 25px; }
@@ -453,9 +779,12 @@
       .folio-title { font-size: 14px; padding: 10px 12px; }
       .folio-section[open] > .folio-body { padding: var(--space-mobile-folio-pad-top) var(--space-mobile-folio-pad-side) var(--space-mobile-folio-pad-bottom); }
       .folio-species-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
-      .folio-species-row { padding: 8px 7px; gap: 4px; }
-      .folio-species-row strong { font-size: 12px; }
-      .folio-species-meta { font-size: 9px; }
+      .folio-species-row { grid-template-columns: 30px minmax(0,1fr); padding: 7px 6px; gap: 6px; }
+      .folio-species-art { width: 30px; }
+      .folio-species-art .species-initial { font-size: 15px; }
+      .folio-species-name { font-size: 11px; }
+      .folio-species-meta { grid-template-columns: 1fr; gap: 1px; font-size: 8px; }
+      .folio-visitor-flow { columns: 1; }
       .settler-folio-list { gap: 8px; }
       .settler-folio-group { padding: 9px 10px; }
       .settler-folio-head { font-size: 12px; }
@@ -496,6 +825,10 @@
       .detail-grid { grid-template-columns: 1fr; }
       .weather-corner { top: 5px; right: 6px; }
       .tuner-panel { bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 8px); }
+      .site-footer { padding-bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 12px); }
+      .game-shell { width: 100%; border: 0; }
+      .rat-board { column-gap: 2%; row-gap: 0; }
+      .game-stage { padding-inline: 10px; }
     }
   </style>
 </head>
@@ -519,6 +852,11 @@
     </main>
 
     <nav class="bottom-nav" aria-label="页面导航"></nav>
+    <footer class="site-footer"><span class="build-version">build-20260714-2135</span></footer>
+  </div>
+
+  <div id="eco-game-overlay" class="game-overlay" hidden>
+    <section id="eco-game-shell" class="game-shell" role="dialog" aria-modal="true" aria-labelledby="eco-game-title"></section>
   </div>
 
   <div id="species-sheet" class="sheet-backdrop" hidden>
@@ -535,6 +873,8 @@
   <script>
     "use strict";
 
+    const BUILD_VERSION = "build-20260714-2135";
+
     const tabs = [
       { id: "state", label: "状态" },
       { id: "codex", label: "图鉴" },
@@ -547,13 +887,237 @@
       folio: "/eco/api/folio",
       annals: "/eco/api/annals"
     };
+    const ANNALS_EVENT_TAXONOMY = Object.freeze({
+      settle: Object.freeze(["定居", "住了下来", "归来", "重新出现"]),
+      leave: Object.freeze(["再也看不到了", "消失", "离开", "离去", "死亡", "年老"]),
+      disaster: Object.freeze(["暴雨", "疫病", "鼠患", "绿潮", "入侵", "过境", "洪水", "干旱", "热浪", "失守", "潜入"]),
+      good: Object.freeze(["退去", "平息", "恢复", "散了", "活下来", "站了起来", "挺了过来"]),
+      achievement: Object.freeze(["【…】"]),
+      choice: Object.freeze(["你选择"]),
+      normal: Object.freeze([])
+    });
+    function annalsHasKeyword(text, type) {
+      return ANNALS_EVENT_TAXONOMY[type].some(keyword =>
+        keyword === "年老" ? /年老(?!鼠)/u.test(text) : text.includes(keyword)
+      );
+    }
+    const ANNALS_PRIMARY_TYPES = Object.freeze([
+      ["achievement", text => /【[^】]+】/u.test(text)],
+      ["leave", text => annalsHasKeyword(text, "leave")],
+      ["good", text => annalsHasKeyword(text, "good")],
+      ["disaster", text => annalsHasKeyword(text, "disaster")],
+      ["settle", text => annalsHasKeyword(text, "settle")]
+    ]);
     const loaded = new Set();
+    const queryParams = new URLSearchParams(window.location.search);
     const views = Object.fromEntries(tabs.map(tab => [tab.id, document.getElementById(`view-${tab.id}`)]));
-    const aiUserId = new URLSearchParams(window.location.search).get("ai_user_id");
+    const aiUserId = queryParams.get("ai_user_id");
     const apiSuffix = aiUserId === null ? "" : `?ai_user_id=${encodeURIComponent(aiUserId)}`;
+    const playtestMode = queryParams.get("playtest") === "1";
+    const DISASTER_SESSION_KEY = `cedartoy_eco_disasters:${aiUserId || "anonymous"}`;
+    const disasterSessionState = readDisasterSessionState();
+    const promptedDisasterGames = new Set(disasterSessionState.prompted);
+    const helpedDisasterGames = new Set(disasterSessionState.helped);
     const sheetBackdrop = document.getElementById("species-sheet");
     const sheetContent = document.getElementById("sheet-content");
     const sheetTitle = document.getElementById("sheet-title");
+    const gameOverlay = document.getElementById("eco-game-overlay");
+    const gameShell = document.getElementById("eco-game-shell");
+    let gameCleanup = null;
+    let currentGameSession = null;
+    let gameBodyOverflow = "";
+    let settlerHistoryIndex = null;
+    let settlerHistoryPromise = null;
+    let latestStateRender = null;
+
+    const miniGameInfo = {
+      rat: { title: "鼠患打地鼠", action: "hunt_rat", helpButton: "帮小机打田鼠", how: "田鼠探头时点中,30 秒内尽量多打。", help: "田鼠越少,每天啃掉的芦苇越少;把它们打到只剩爆发时的四分之一,鼠患当场平息。" },
+      turtle: { title: "巴西龟驱赶", action: "expel_turtle", helpButton: "帮小机赶走巴西龟", how: "持续高频点击画面中的巴西龟，20 秒内顶住回退把驱赶进度推满。", help: "人机合计完成 2 次即可移走入侵龟，给本地动物腾出生境。" },
+      snail: { title: "福寿螺捞螺", action: "catch_snail", helpButton: "帮小机捞福寿螺", how: "看准钩爪方向点击水面捞福寿螺;避开田螺和石头,穿过水草会短暂缠住减速。", help: "捞掉几只,当天对水藻的压制就轻几分;捞光就彻底解除。" },
+      hyacinth: { title: "水葫芦拔草", action: "pull_hyacinth", helpButton: "帮小机拔水葫芦", how: "点一株水葫芦，再点一次把移动标记停进有效区。", help: "每拔一株削掉一点覆盖(一次最多 7 株);比小机连根乱拔温柔得多,不搅浑水不伤邻居。" },
+      algae: { title: "绿潮捞藻", action: "skim_algae", helpButton: "帮小机捞藻", how: "左右滑动滤网接住绿藻团，避开枯叶和小鱼；黏藻会让网兜减速 2 秒。", help: "捞得越多,绿潮期间每天的缺氧就越轻;捞满 50 团还能让它提前一天散去。" },
+      ice: { title: "凿冰", action: "crack_ice", helpButton: "帮小机凿冰", how: "连续点击冰面不同位置，把凿冰进度推到 100%。", help: "冰下的每一天,冬眠的动物都在憋气;凿开的洞能透气三天。整个冬天憋气越少,春天醒来的动物越多。你和小机同一天都试,成功率大增(85%)。" }
+    };
+    // 小游戏真机调参区：时长均为毫秒，倍率与阈值可直接在这里微调。
+    const GAME_TUNING = Object.freeze({
+      rat: { duration: 30000, minOpportunities: 10, maxOpportunities: 12, holdDurations: [500, 900, 1400], simultaneousPairsMin: 2, simultaneousPairsMax: 4, simultaneousTriplesMin: 0, simultaneousTriplesMax: 2, firstPopDelay: 900, endBuffer: 500, hitActorDuration: 260, hitEffectDuration: 540 },
+      turtle: { duration: 20000, maxProgress: 100, tapGain: 3, decayPerSecond: 8, decayTick: 100, exitDuration: 900 },
+      snail: { duration: 30000, catchRadius: 38, outboundSpeed: 0.34, returnSpeed: 0.38, caughtReturnSpeed: 0.23, rockReturnSpeed: 0.105, weedSpeedMultiplier: 0.5, entangleDuration: 800 },
+      hyacinth: { plantCountMin: 8, plantCountMax: 10, stalkReduction: 0.02, submitMax: 7, largeHalfSweep: 1000, mediumHalfSweep: 1350, smallHalfSweep: 1750, jitterMin: 0.82, jitterMax: 1.18, jitterIntervalMin: 110, jitterIntervalMax: 230, smallZoneWidth: 50, mediumZoneWidth: 32.5, largeZoneWidth: 20 },
+      algae: {
+        duration: 45000,
+        submitMax: 50,
+        netY: 0.88,
+        spawnInterval: 750,
+        maxFloatingObjects: 10,
+        initialSpawnOffsets: [0, 140, 280],
+        catchHalfWidth: 38,
+        catchHalfHeight: 16,
+        catchSizeFactor: 0.18,
+        debrisChance: 0.15,
+        ordinaryCutoff: 0.744,
+        stickyCutoff: 0.922,
+        stickyDuration: 2000,
+        ordinaryPoints: 1,
+        stickyPoints: 1,
+        rarePoints: 2,
+        debrisPenalty: 2,
+        decorCountMin: 2,
+        decorCountMax: 3,
+        decorOpacity: 0.2
+      },
+      submitLimits: { rat: 12 },
+      ice: { fineThreshold: 50, deepThreshold: 80, labelFadeDelay: 2000, hitGain: 5 }
+    });
+    const ALGAE_NET_DAMPING = 0.14;
+    const ALGAE_STICKY_DAMPING = 0.055;
+    const MINI_GAME_ASSETS = Object.freeze({
+      rat: [
+        "/eco/assets/scene/岸边.png",
+        "/eco/assets/props/鼠洞.png",
+        "/eco/assets/props/田鼠探头.png"
+      ],
+      turtle: [
+        "/eco/assets/scene/水面.png",
+        "/eco/assets/props/石头.png",
+        "/eco/assets/species/巴西龟.png"
+      ],
+      snail: [
+        "/eco/assets/scene/水下.png",
+        "/eco/assets/props/钩爪.png",
+        "/eco/assets/props/石头.png",
+        "/eco/assets/species/福寿螺.png",
+        "/eco/assets/species/田螺.png",
+        "/eco/assets/species/水藻.png"
+      ],
+      hyacinth: [
+        "/eco/assets/scene/水面.png",
+        "/eco/assets/species/水葫芦.png"
+      ],
+      algae: [
+        "/eco/assets/scene/水面.png",
+        "/eco/assets/props/捞网.png",
+        "/eco/assets/props/绿藻团.png",
+        "/eco/assets/props/绿藻团_a.png",
+        "/eco/assets/props/绿藻团_b.png",
+        "/eco/assets/props/枯叶.png",
+        "/eco/assets/props/小杂鱼.png",
+        "/eco/assets/props/黏性藻团.png",
+        "/eco/assets/props/稀有蓝藻.png"
+      ],
+      ice: [
+        "/eco/assets/scene/冰面_完整.png",
+        "/eco/assets/scene/冰面_裂纹.png",
+        "/eco/assets/props/冰面_细裂纹.png",
+        "/eco/assets/props/锤子.png",
+        "/eco/assets/props/水花.png",
+        "/eco/assets/species/鲫鱼.png",
+        "/eco/assets/species/泥鳅.png",
+        "/eco/assets/species/草鱼.png"
+      ]
+    });
+    const gameAssetPreloads = new Map();
+    const readyGameAssetSources = new Set();
+
+    function preloadGameAssets(gameId) {
+      if (gameAssetPreloads.has(gameId)) return gameAssetPreloads.get(gameId).ready;
+      const records = (MINI_GAME_ASSETS[gameId] || []).map(src => {
+        const image = new Image();
+        image.decoding = "async";
+        image.loading = "eager";
+        if ("fetchPriority" in image) image.fetchPriority = "high";
+        const ready = new Promise(resolve => {
+          const settle = async () => {
+            image.onload = null;
+            image.onerror = null;
+            if (image.decode) {
+              try { await image.decode(); } catch (_) { /* load/error 后继续使用游戏内降级图。 */ }
+            }
+            if (image.naturalWidth > 0) readyGameAssetSources.add(src);
+            resolve();
+          };
+          image.onload = settle;
+          image.onerror = settle;
+          image.src = src;
+          if (image.complete) settle();
+        });
+        return { image, ready };
+      });
+      const preload = { records, ready: Promise.all(records.map(record => record.ready)) };
+      gameAssetPreloads.set(gameId, preload);
+      return preload.ready;
+    }
+
+    function readDisasterSessionState() {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(DISASTER_SESSION_KEY) || "{}");
+        return {
+          prompted: Array.isArray(saved.prompted) ? saved.prompted : [],
+          helped: Array.isArray(saved.helped) ? saved.helped : []
+        };
+      } catch (_) {
+        return { prompted: [], helped: [] };
+      }
+    }
+
+    function saveDisasterSessionState() {
+      try {
+        sessionStorage.setItem(DISASTER_SESSION_KEY, JSON.stringify({
+          prompted: [...promptedDisasterGames],
+          helped: [...helpedDisasterGames]
+        }));
+      } catch (_) { /* 无法使用会话存储时，当前页面内的软限制仍然有效。 */ }
+    }
+
+    function helpScopeKey(gameId, state = latestStateRender && latestStateRender.data) {
+      if (gameId === "ice") return `ice:${state && state.day !== undefined ? state.day : "today"}`;
+      if (gameId === "turtle") {
+        const choice = state && state.pending_choice;
+        const windowId = choice && (choice.id ?? choice.choice_id ?? choice.window_id ?? choice.key ?? choice.description);
+        return `turtle:${windowId === null || windowId === undefined ? "active" : String(windowId)}`;
+      }
+      return gameId;
+    }
+
+    function helpSettledLabel(gameId) {
+      if (gameId === "ice") return "今天已凿过,明天再来";
+      if (gameId === "turtle") return "这个决策窗口你已帮过忙";
+      return "这场灾害你已帮过忙";
+    }
+
+    function syncDisasterSessionState(activeGameIds, state) {
+      if (playtestMode) return;
+      const active = new Set(activeGameIds.map(gameId => helpScopeKey(gameId, state)));
+      let changed = false;
+      [promptedDisasterGames, helpedDisasterGames].forEach(stored => {
+        [...stored].forEach(gameId => {
+          if (stored === promptedDisasterGames ? activeGameIds.includes(gameId) : active.has(gameId)) return;
+          stored.delete(gameId);
+          changed = true;
+        });
+      });
+      if (changed) saveDisasterSessionState();
+    }
+
+    function markDisasterHelpSettled(gameId, scopeKey = helpScopeKey(gameId)) {
+      if (playtestMode) return;
+      helpedDisasterGames.add(scopeKey);
+      saveDisasterSessionState();
+      document.querySelectorAll("[data-help-scope]").forEach(button => {
+        if (button.dataset.helpScope !== scopeKey) return;
+        button.disabled = true;
+        button.textContent = helpSettledLabel(gameId);
+      });
+    }
+
+    function applyDisasterHelpState(button, gameId, state = latestStateRender && latestStateRender.data) {
+      const scopeKey = helpScopeKey(gameId, state);
+      button.dataset.helpGame = gameId;
+      button.dataset.helpScope = scopeKey;
+      if (playtestMode || !helpedDisasterGames.has(scopeKey)) return;
+      button.disabled = true;
+      button.textContent = helpSettledLabel(gameId);
+    }
 
     function el(tag, options = {}, children = []) {
       const node = document.createElement(tag);
@@ -647,8 +1211,8 @@
     function errorMessage(error) {
       if (error.status === 401) return "请先在主站登录";
       if (error.status === 404) return "还没有池塘存档";
-      if (error.network) return "网络连接失败，请稍后重试";
-      return "读取失败，请稍后重试";
+      if (error.network) return "网络连接失败，请稍后查看";
+      return "读取失败，请稍后查看";
     }
 
     async function apiGet(path) {
@@ -669,6 +1233,1779 @@
         throw error;
       }
       return payload;
+    }
+
+    function isSnailIncubating(flags) {
+      return Boolean(flags && flags.apple_snail && flags.apple_snail.status === "incubating");
+    }
+
+    function playableDisasterGames(disasters, flags) {
+      const games = [];
+      const invasion = disasters && disasters.invasion;
+      const invasionName = invasion && typeof invasion === "object" ? (invasion.name || invasion.kind || invasion.type) : invasion;
+      if (invasionName === "巴西龟入侵") games.push("turtle");
+      if (invasionName === "福寿螺入侵" || isSnailIncubating(flags)) games.push("snail");
+      if (disasters && disasters.water_hyacinth_cover !== null && disasters.water_hyacinth_cover !== undefined) games.push("hyacinth");
+      const hasRatProblem = ((disasters && disasters.biological) || []).some(item => item && item.name === "鼠患");
+      if (hasRatProblem) games.push("rat");
+      const hasAlgaeBloom = ((disasters && disasters.biological) || []).some(item => item && item.name === "绿潮");
+      if (hasAlgaeBloom) games.push("algae");
+      if (flags && flags.ice_on === true) games.push("ice");
+      return games;
+    }
+
+    function statePathValue(state, paths) {
+      for (const path of paths) {
+        let value = state;
+        for (const key of path) {
+          if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, key)) {
+            value = undefined;
+            break;
+          }
+          value = value[key];
+        }
+        if (value !== null && value !== undefined) return value;
+      }
+      return undefined;
+    }
+
+    function snailRemainingCount(state) {
+      const direct = statePathValue(state, [
+        ["flags", "apple_snail", "remaining_count"],
+        ["flags", "apple_snail", "remaining_snails"],
+        ["flags", "apple_snail", "remaining"],
+        ["flags", "apple_snail_remaining"],
+        ["disasters", "apple_snail_remaining"],
+        ["disasters", "apple_snail_count"],
+        ["disasters", "snail_remaining"],
+        ["disasters", "invasion", "remaining_count"],
+        ["disasters", "invasion", "remaining_snails"],
+        ["disasters", "invasion", "remaining"],
+        ["disasters", "invasion", "count"]
+      ]);
+      let count = Number(direct);
+      if (!Number.isFinite(count)) {
+        const item = (((state && state.disasters) || {}).biological || []).find(entry => entry && /福寿螺/.test(entry.name || ""));
+        count = Number(item && (item.remaining_count ?? item.count ?? item.remaining_snails));
+      }
+      return Number.isFinite(count) ? Math.max(0, Math.min(12, Math.round(count))) : 12;
+    }
+
+    function winterBreathingStatus(state) {
+      const suffocationDays = Number(statePathValue(state, [
+        ["winter_suffocation_days"],
+        ["suffocation_days"],
+        ["ice_suffocation_days"],
+        ["flags", "winter_suffocation_days"],
+        ["flags", "ice_suffocation_days"],
+        ["flags", "ice_breathless_days"],
+        ["flags", "winter_hypoxia_days"],
+        ["flags", "ice", "suffocation_days"],
+        ["disasters", "ice", "suffocation_days"]
+      ]));
+      const frozenDays = Number(statePathValue(state, [
+        ["winter_frozen_days"],
+        ["frozen_days"],
+        ["ice_frozen_days"],
+        ["ice_total_days"],
+        ["flags", "winter_frozen_days"],
+        ["flags", "ice_frozen_days"],
+        ["flags", "ice_total_days"],
+        ["flags", "ice_days"],
+        ["flags", "ice", "frozen_days"],
+        ["disasters", "ice", "frozen_days"]
+      ]));
+      if (!Number.isFinite(suffocationDays) || !Number.isFinite(frozenDays)) return null;
+      return { suffocationDays, frozenDays };
+    }
+
+    function stopCurrentGame() {
+      if (gameCleanup) gameCleanup();
+      gameCleanup = null;
+    }
+
+    function closeGameOverlay() {
+      stopCurrentGame();
+      currentGameSession = null;
+      gameOverlay.hidden = true;
+      gameShell.replaceChildren();
+      document.body.style.overflow = gameBodyOverflow;
+    }
+
+    function reportGameProgress(value) {
+      if (!currentGameSession || !currentGameSession.inProgress) return;
+      const amount = Number(value);
+      currentGameSession.score = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+    }
+
+    function requestGameClose() {
+      const session = currentGameSession;
+      if (!session || !session.inProgress) {
+        closeGameOverlay();
+        return;
+      }
+      if (gameShell.querySelector(".game-exit-confirm")) return;
+      const confirmLayer = el("div", { className: "game-exit-confirm", attrs: { role: "alertdialog", "aria-modal": "true", "aria-label": "结束本局" } });
+      const yes = el("button", { className: "game-button primary", text: "结束并结算", attrs: { type: "button" } });
+      const no = el("button", { className: "game-button", text: "取消", attrs: { type: "button" } });
+      const card = el("div", { className: "game-exit-confirm-card" }, [
+        el("p", { text: "现在结束,按当前战果结算?" }),
+        el("div", { className: "game-exit-confirm-actions" }, [yes, no])
+      ]);
+      no.addEventListener("click", () => confirmLayer.remove());
+      yes.addEventListener("click", () => {
+        confirmLayer.remove();
+        if (currentGameSession !== session || !session.inProgress) return;
+        const score = session.score;
+        session.inProgress = false;
+        currentGameSession = null;
+        stopCurrentGame();
+        session.onFinish(score);
+      });
+      confirmLayer.append(card);
+      gameShell.append(confirmLayer);
+      no.focus();
+    }
+
+    function gameHeader(title) {
+      const close = el("button", { className: "game-close", text: "×", attrs: { type: "button", "aria-label": "关闭游戏" } });
+      close.addEventListener("click", requestGameClose);
+      return el("header", { className: "game-header" }, [
+        el("h2", { text: title, attrs: { id: "eco-game-title" } }),
+        close
+      ]);
+    }
+
+    function showGameScreen(title, content) {
+      stopCurrentGame();
+      gameShell.replaceChildren(gameHeader(title), content);
+      if (gameOverlay.hidden) {
+        gameBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        gameOverlay.hidden = false;
+      }
+    }
+
+    function gameImage(src, imageClass, fallback) {
+      const image = el("img", { className: imageClass, attrs: { src, alt: "", draggable: "false" } });
+      if (readyGameAssetSources.has(src)) fallback.hidden = true;
+      image.addEventListener("load", () => { fallback.hidden = true; }, { once: true });
+      image.addEventListener("error", () => { image.hidden = true; }, { once: true });
+      return [fallback, image];
+    }
+
+    function animalGameArt(src, initial, className) {
+      const fallback = el("span", { className: "game-animal-fallback", text: initial });
+      return el("span", { className }, gameImage(src, "game-animal-image", fallback));
+    }
+
+    function propGameArt(src, shapeClass = "") {
+      const fallback = el("span", { className: `game-prop-fallback ${shapeClass}`.trim() });
+      return el("span", { className: "game-art-slot" }, gameImage(src, "game-prop-image", fallback));
+    }
+
+    function gameScene(src) {
+      const fallback = el("span", { className: "game-scene-fallback" });
+      return el("span", { className: "game-scene", attrs: { "aria-hidden": "true" } }, gameImage(src, "game-scene-image", fallback));
+    }
+
+    function gameScoreText(gameId, score) {
+      if (score === null || score === undefined) return "";
+      if (gameId === "rat") return `游戏得分：命中 ${score} 只`;
+      if (gameId === "turtle") return Number(score) === 1 ? "游戏得分：驱赶完成" : `游戏得分：驱赶进度 ${tidyNumber(Number(score), 0)}%`;
+      if (gameId === "snail") return `游戏得分：捞到 ${score} 只`;
+      if (gameId === "hyacinth") return `游戏得分：拔 ${Number(score) || 0} 株`;
+      if (gameId === "algae") return `游戏得分：${score}`;
+      return Number(score) === 1 ? "游戏得分：完成凿冰尝试" : `游戏得分：凿冰进度 ${tidyNumber(Number(score), 0)}%`;
+    }
+
+    function safeResultText(value) {
+      if (value === null || value === undefined) return "";
+      const text = String(value).trim();
+      if (!text || /^(?:null|undefined)$/i.test(text)) return "";
+      return text.replace(/\b(?:null|undefined)\b/gi, "").replace(/\s{2,}/g, " ").trim();
+    }
+
+    function guardedResultLine(tag, options, value, buildChildren = null) {
+      const text = safeResultText(value);
+      if (!text) return null;
+      return buildChildren ? el(tag, options, buildChildren(text)) : el(tag, { ...options, text });
+    }
+
+    function readableSummary(value) {
+      if (typeof value === "string") return safeResultText(value);
+      if (Array.isArray(value)) return value.map(readableSummary).filter(Boolean).join("；");
+      if (!value || typeof value !== "object") return "";
+      for (const key of ["message", "summary", "text", "effect"]) {
+        const text = readableSummary(value[key]);
+        if (text) return text;
+      }
+      return Object.entries(value)
+        .filter(([, item]) => ["string", "number", "boolean"].includes(typeof item) && safeResultText(item))
+        .map(([key, item]) => `${key}：${safeResultText(item)}`)
+        .join("；");
+    }
+
+    function resultSources(result) {
+      const sources = [];
+      const add = value => {
+        if (!value || typeof value !== "object" || sources.includes(value)) return;
+        sources.push(value);
+      };
+      add(result);
+      add(result && result.summary);
+      add(result && result.result);
+      add(result && result.result && result.result.summary);
+      add(result && result.data);
+      [...sources].forEach(source => {
+        add(source.progress);
+        add(source.mechanism);
+        add(source.outcome);
+        add(source.details);
+        add(source.effect);
+        add(source.winter);
+        ["rat", "snail", "apple_snail", "hyacinth", "algae", "ice"].forEach(key => add(source[key]));
+      });
+      return sources;
+    }
+
+    function resultValue(result, keys) {
+      for (const source of resultSources(result)) {
+        for (const key of keys) {
+          if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== null && source[key] !== undefined) return source[key];
+        }
+      }
+      return undefined;
+    }
+
+    function finiteResultNumber(result, keys) {
+      const value = Number(resultValue(result, keys));
+      return Number.isFinite(value) ? value : Number.NaN;
+    }
+
+    function resultBoolean(result, keys) {
+      const value = resultValue(result, keys);
+      if (value === true || value === false) return value;
+      if (value === 1 || value === "1" || value === "true") return true;
+      if (value === 0 || value === "0" || value === "false") return false;
+      return undefined;
+    }
+
+    function tidyNumber(value, digits = 2) {
+      if (!Number.isFinite(value)) return "";
+      return Number(value.toFixed(digits)).toString();
+    }
+
+    function percentText(value) {
+      if (!Number.isFinite(value)) return "";
+      const percent = Math.abs(value) <= 1 ? value * 100 : value;
+      return `${tidyNumber(percent, 1)}%`;
+    }
+
+    function isAlreadyHelped(value) {
+      return /already_helped|already_today|这场灾害你已帮过忙|今天已凿过|已经帮过|已帮过/i.test(JSON.stringify(value || {}));
+    }
+
+    function pondHelpEffect(gameId, score, result, prevented, rejectedSnail) {
+      if (prevented) return "卵块已清除，灾害未发生 · 碎屑 +3";
+      if (rejectedSnail) return "";
+      if (!result.ok) return "";
+      if (gameId === "rat") {
+        const removed = finiteResultNumber(result, ["removed", "removed_count", "removed_this_action", "hit", "hits", "hit_count", "rats_removed", "rats_hit", "count"]);
+        const remaining = finiteResultNumber(result, ["remaining", "remaining_count", "rats_remaining", "remaining_rats", "mouse_count"]);
+        let resolved = resultBoolean(result, ["resolved", "ended", "cleared", "calmed", "suppressed", "target_met", "rat_problem_resolved"]);
+        const removedValue = Number.isFinite(removed) ? removed : Math.min(Number(score) || 0, GAME_TUNING.submitLimits.rat);
+        if (resolved === undefined && Number.isFinite(remaining)) resolved = remaining <= 3;
+        const lines = [`打掉 ${tidyNumber(removedValue, 0)} 只`];
+        if (Number.isFinite(remaining)) lines.push(`剩 ${tidyNumber(remaining, 0)} 只`);
+        if (resolved !== undefined) lines.push(resolved ? "鼠患已平息" : "鼠患尚未平息");
+        return lines.join(" · ");
+      }
+      if (gameId === "snail") {
+        const caught = finiteResultNumber(result, ["caught", "caught_count", "caught_this_action", "removed", "removed_count", "snails_caught", "apple_snails_caught", "count"]);
+        const remaining = finiteResultNumber(result, ["remaining", "remaining_count", "snails_remaining", "remaining_snails", "apple_snail_count"]);
+        let cleared = resultBoolean(result, ["cleared", "ended", "resolved", "eliminated", "target_met", "all_cleared"]);
+        const caughtValue = Number.isFinite(caught) ? caught : Number(score) || 0;
+        if (cleared === undefined && Number.isFinite(remaining)) cleared = remaining <= 0;
+        const lines = [`捞 ${tidyNumber(caughtValue, 0)} 只`];
+        if (Number.isFinite(remaining)) lines.push(`剩 ${tidyNumber(remaining, 0)} 只`);
+        if (cleared !== undefined) lines.push(cleared ? "福寿螺已清光" : "福寿螺尚未清光");
+        return lines.join(" · ");
+      }
+      if (gameId === "hyacinth") {
+        const stalks = finiteResultNumber(result, ["stalks", "stalk_count", "pulled", "pulled_stalks", "count"]);
+        const reduction = finiteResultNumber(result, ["reduction", "reduced_by", "cover_reduction", "reduced_cover", "reduction_amount", "cover_reduced"]);
+        const stalkValue = Number.isFinite(stalks) ? stalks : Math.min(Number(score) || 0, GAME_TUNING.hyacinth.submitMax);
+        const reductionValue = Number.isFinite(reduction) ? reduction : stalkValue * GAME_TUNING.hyacinth.stalkReduction;
+        return `拔 ${tidyNumber(stalkValue, 0)} 株 · 削减 ${tidyNumber(reductionValue)}`;
+      }
+      if (gameId === "algae") {
+        const amount = finiteResultNumber(result, ["amount", "skimmed", "skim_amount", "algae_amount", "score"]);
+        const mitigation = finiteResultNumber(result, ["mitigation", "mitigation_rate", "reduction", "reduction_rate", "hypoxia_reduction", "oxygen_deficit_reduction", "daily_hypoxia_reduction", "relief"]);
+        let shortened = resultBoolean(result, ["shortened", "shortened_one_day", "ended_early", "early_dispersal", "target_met", "shortened_by_day"]);
+        const amountValue = Number.isFinite(amount) ? amount : Math.min(Number(score) || 0, GAME_TUNING.algae.submitMax);
+        const mitigationValue = Number.isFinite(mitigation) ? mitigation : amountValue / 50 * 0.3;
+        if (shortened === undefined) shortened = amountValue >= 50;
+        const lines = [`捞量 ${tidyNumber(amountValue, 0)}`, `减免 ${percentText(mitigationValue)}`];
+        lines.push(shortened ? "绿潮提前一天散去" : "绿潮未提前散去");
+        return lines.join(" · ");
+      }
+      if (gameId === "ice") {
+        const success = resultBoolean(result, ["success", "succeeded", "ice_hole_opened", "opened"]);
+        const dualAttempt = resultBoolean(result, ["both_attempted", "both_tried_today", "dual", "dual_attempt", "human_ai_both_attempted", "human_and_ai_attempted", "human_and_ai", "combined", "combined_today", "combined_attempt", "both_tried"]);
+        const suffocationDays = finiteResultNumber(result, ["suffocation_days", "winter_suffocation_days", "breathless_days", "hypoxia_days"]);
+        const frozenDays = finiteResultNumber(result, ["frozen_days", "ice_days", "winter_frozen_days"]);
+        let suffocationRatio = finiteResultNumber(result, ["suffocation_ratio", "suffocation_share", "winter_suffocation_ratio", "breathless_ratio", "hypoxia_ratio"]);
+        if (!Number.isFinite(suffocationRatio) && Number.isFinite(suffocationDays) && Number.isFinite(frozenDays) && frozenDays > 0) suffocationRatio = suffocationDays / frozenDays;
+        const lines = [];
+        if (success !== undefined) lines.push(success ? "凿冰成功" : "凿冰失败");
+        if (dualAttempt !== undefined) lines.push(dualAttempt ? "当日人机双试" : "当日仅人类尝试");
+        if (Number.isFinite(suffocationDays)) lines.push(`本冬憋气 ${tidyNumber(suffocationDays)} 天`);
+        if (Number.isFinite(suffocationRatio)) lines.push(`占比 ${percentText(suffocationRatio)}`);
+        if (lines.length) return lines.join(" · ");
+      }
+      return readableSummary(result.summary) || readableSummary(result.message) || readableSummary(result.result) || (result.ok ? "池塘收到了你的帮忙。" : "");
+    }
+
+    function resultCapNote(gameId, score) {
+      if (gameId === "rat" && score > GAME_TUNING.submitLimits.rat) return `上报 ${GAME_TUNING.submitLimits.rat} 只(上限)`;
+      if (gameId === "hyacinth" && score > GAME_TUNING.hyacinth.submitMax) return `上报 ${GAME_TUNING.hyacinth.submitMax} 株(单次上限)`;
+      if (gameId === "algae" && score > GAME_TUNING.algae.submitMax) return `上报 ${GAME_TUNING.algae.submitMax}(单次上限)`;
+      return "";
+    }
+
+    function gameResultView(gameId, result) {
+      const info = miniGameInfo[gameId];
+      const body = el("div", { className: "game-result" });
+      const scoreText = safeResultText(result.score) ? gameScoreText(gameId, result.score) : "";
+      const effectValue = safeResultText(result.effect) || (result.ok ? "池塘收到了你的帮忙。" : "本次未生效，池塘状态没有改变。");
+      const resultLines = [
+        el("div", { className: "game-result-mark", text: result.ok ? "✓" : "!" }),
+        el("h3", { text: result.ok ? "你帮助了小机" : "这次没能帮上忙" }),
+        result.playtest ? guardedResultLine("div", { className: "game-result-note" }, "演练 · 未生效") : null,
+        guardedResultLine("p", { className: "game-score-line" }, scoreText),
+        guardedResultLine("p", { className: "game-result-note" }, result.capNote),
+        guardedResultLine("div", { className: "game-effect-line" }, effectValue, text => [
+          el("strong", { text: "池塘怎么样了" }),
+          el("span", { text })
+        ]),
+        !result.ok ? guardedResultLine("p", { className: "game-result-error" }, result.message) : null
+      ].filter(line => line !== null && line !== undefined);
+      body.append(...resultLines);
+      let refreshStatus = null;
+      if (result.refreshing) {
+        refreshStatus = el("p", { className: "game-instruction", text: "正在刷新池塘状态…" });
+        body.append(refreshStatus);
+      }
+      const actions = el("div", { className: "game-result-actions" });
+      const done = el("button", { className: "game-button primary", text: "回到池塘", attrs: { type: "button" } });
+      done.addEventListener("click", closeGameOverlay);
+      actions.append(done);
+      body.append(actions);
+      showGameScreen(info.title, body);
+      return refreshStatus;
+    }
+
+    function showSubmitting(gameId) {
+      showGameScreen(miniGameInfo[gameId].title, el("div", { className: "game-result" }, [
+        el("div", { className: "game-result-mark", text: "…" }),
+        el("h3", { text: "正在告诉池塘" }),
+        el("p", { text: "请稍等，正在确认这次帮忙。" })
+      ]));
+    }
+
+    async function postPondHelp(action, payload) {
+      if (aiUserId === null || aiUserId === "") {
+        const error = new Error("缺少小机绑定信息，请从主站的池塘入口进入。 ");
+        error.userMessage = error.message;
+        throw error;
+      }
+      const token = localStorage.getItem("cedartoy_token") || "";
+      const body = { action };
+      if (payload !== null && payload !== undefined) body.payload = payload;
+      let response;
+      try {
+        response = await fetch(`/eco/api/human_action?ai_user_id=${encodeURIComponent(aiUserId)}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } catch (cause) {
+        const error = new Error("网络连接失败，结果没有送达，本次帮忙未生效。", { cause });
+        error.userMessage = error.message;
+        throw error;
+      }
+      let data = null;
+      try { data = await response.json(); } catch (_) { /* 下方给出可见的通用错误。 */ }
+      if (!response.ok) {
+        const messages = {
+          401: "请先在主站登录。",
+          403: "这个账号暂时不能帮这座池塘。",
+          404: "灾害可能已经结束，请刷新后再看。",
+          429: "操作太快了，本次帮忙未生效。"
+        };
+        const error = new Error((data && data.message) || messages[response.status] || "提交失败，本次帮忙未生效。");
+        error.userMessage = error.message;
+        error.status = response.status;
+        error.responseData = data;
+        throw error;
+      }
+      if (!data || typeof data.ok !== "boolean") {
+        const error = new Error("池塘没有返回有效结果，本次帮忙未生效。");
+        error.userMessage = error.message;
+        throw error;
+      }
+      return data;
+    }
+
+    async function refreshStateAfterGame() {
+      try {
+        const state = await apiGet(apiPaths.state);
+        renderState(state, views.state);
+        loaded.add("state");
+        return "";
+      } catch (error) {
+        return `池塘状态刷新失败：${errorMessage(error)}`;
+      }
+    }
+
+    async function settleLiveGame(gameId, score) {
+      showSubmitting(gameId);
+      const info = miniGameInfo[gameId];
+      const scopeKey = helpScopeKey(gameId);
+      const payload = gameId === "rat"
+        ? { count: Math.min(score, GAME_TUNING.submitLimits.rat) }
+        : (gameId === "snail"
+          ? { count: score }
+          : (gameId === "hyacinth"
+          ? { stalks: Math.min(score, GAME_TUNING.hyacinth.submitMax) }
+          : (gameId === "algae" ? { amount: Math.min(score, GAME_TUNING.algae.submitMax) } : null)));
+      try {
+        const result = await postPondHelp(info.action, payload);
+        const alreadyHelped = !result.ok && isAlreadyHelped(result);
+        if (result.ok || alreadyHelped) markDisasterHelpSettled(gameId, scopeKey);
+        const rejectedSnail = gameId === "snail" && !result.ok && /not[_ -]?active|不在|结束/i.test(JSON.stringify(result));
+        const prevented = result.prevented === true
+          || (result.summary && result.summary.prevented === true)
+          || (result.result && result.result.prevented === true);
+        if (prevented) markDisasterHelpSettled(gameId, scopeKey);
+        const effect = pondHelpEffect(gameId, score, result, prevented, rejectedSnail);
+        const refreshStatus = gameResultView(gameId, {
+          ok: (result.ok && !rejectedSnail) || prevented,
+          score,
+          capNote: resultCapNote(gameId, score),
+          effect,
+          message: alreadyHelped ? helpSettledLabel(gameId) : (rejectedSnail ? "卵块好像已经不在了" : ((result.ok || prevented) ? "" : (result.message || "这次行动没有生效。"))),
+          refreshing: true,
+          playtest: false
+        });
+        const refreshError = await refreshStateAfterGame();
+        if (refreshError) {
+          const refreshText = safeResultText(refreshError);
+          if (refreshText) {
+            refreshStatus.className = "game-result-error";
+            refreshStatus.textContent = refreshText;
+          } else refreshStatus.remove();
+        } else refreshStatus.remove();
+      } catch (error) {
+        const rejectionText = `${JSON.stringify(error.responseData || {})} ${error.userMessage || ""}`;
+        const rejectedSnail = gameId === "snail" && (/not[_ -]?active/i.test(rejectionText) || error.status === 404);
+        const alreadyHelped = isAlreadyHelped({ response: error.responseData, message: error.userMessage });
+        if (alreadyHelped) markDisasterHelpSettled(gameId, scopeKey);
+        const refreshStatus = gameResultView(gameId, {
+          ok: false,
+          score,
+          capNote: resultCapNote(gameId, score),
+          message: alreadyHelped ? helpSettledLabel(gameId) : (rejectedSnail ? "卵块好像已经不在了" : (error.userMessage || "提交失败，本次帮忙未生效。")),
+          refreshing: true,
+          playtest: false
+        });
+        const refreshError = await refreshStateAfterGame();
+        if (refreshError) {
+          const refreshText = safeResultText(refreshError);
+          if (refreshText) {
+            refreshStatus.className = "game-result-error";
+            refreshStatus.textContent = refreshText;
+          } else refreshStatus.remove();
+        } else refreshStatus.remove();
+      }
+    }
+
+    function simulatePlaytestResult(gameId, score) {
+      const amount = Number(score) || 0;
+      const ratRemaining = Math.max(0, 12 - Math.min(amount, 12));
+      const snailRemaining = Math.max(0, 12 - Math.min(amount, 12));
+      const state = latestStateRender && latestStateRender.data;
+      const winterStatus = winterBreathingStatus(state) || { suffocationDays: 2, frozenDays: 10 };
+      const rawAiAttempted = statePathValue(state, [
+        ["flags", "ice_ai_attempted_today"],
+        ["flags", "ice", "ai_attempted_today"],
+        ["ice", "ai_attempted_today"]
+      ]);
+      const bothAttempted = rawAiAttempted === undefined
+        ? Math.random() < 0.5
+        : (rawAiAttempted === true || rawAiAttempted === 1 || rawAiAttempted === "1" || rawAiAttempted === "true");
+      const iceSuccess = Math.random() < (bothAttempted ? 0.85 : 0.4);
+      const simulatedSuffocationDays = winterStatus.suffocationDays + (iceSuccess ? 0 : 1);
+      const simulatedFrozenDays = Math.max(1, winterStatus.frozenDays);
+      const summaries = {
+        rat: { removed_count: Math.min(amount, 12), remaining_count: ratRemaining, daily_damage_ratio: ratRemaining / 12, resolved: ratRemaining <= 3 },
+        turtle: { message: "完成 1 次驱赶进度，等待小机的决策窗口结算。" },
+        snail: { caught_count: Math.min(amount, 12), remaining_count: snailRemaining, suppression_ratio: snailRemaining / 12, cleared: snailRemaining === 0 },
+        hyacinth: { stalks: Math.min(amount, 7), cover_reduction: Math.min(amount, 7) * 0.02 },
+        algae: { amount: Math.min(amount, 50), hypoxia_reduction: Math.min(amount, 50) / 50 * 0.3, persistent: true, shortened: amount >= 50 },
+        ice: {
+          success: iceSuccess,
+          both_attempted: bothAttempted,
+          hole_days: iceSuccess ? 3 : 0,
+          suffocation_days: simulatedSuffocationDays,
+          frozen_days: simulatedFrozenDays,
+          suffocation_ratio: simulatedSuffocationDays / simulatedFrozenDays,
+          spring_loss_ratio: simulatedSuffocationDays / simulatedFrozenDays * 0.4
+        }
+      };
+      return { ok: true, summary: summaries[gameId] || {} };
+    }
+
+    function finishPlaytestGame(gameId, score) {
+      const simulated = simulatePlaytestResult(gameId, score);
+      const effect = pondHelpEffect(gameId, score, simulated, false, false);
+      gameResultView(gameId, { ok: true, score, effect, playtest: true });
+    }
+
+    function startRatGame(onFinish) {
+      const scoreNode = el("span", { text: "命中 0" });
+      const timeNode = el("span", { text: "剩余 30.0 秒" });
+      const board = el("div", { className: "rat-board" });
+      const holes = [];
+      const timers = new Set();
+      let hits = 0;
+      let finished = false;
+      const startedAt = Date.now();
+      const opportunityTarget = GAME_TUNING.rat.minOpportunities
+        + Math.floor(Math.random() * (GAME_TUNING.rat.maxOpportunities - GAME_TUNING.rat.minOpportunities + 1));
+
+      board.append(gameScene("/eco/assets/scene/岸边.png"));
+
+      function later(callback, delay) {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          callback();
+        }, delay);
+        timers.add(timer);
+        return timer;
+      }
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        stopCurrentGame();
+        onFinish(hits);
+      }
+
+      function showHitEffect(hole) {
+        const burst = el("span", { className: "rat-hit-burst", attrs: { "aria-hidden": "true" } });
+        const vectors = [
+          [-42, -42, -38, 9, false], [-24, -58, 27, 6, true], [-7, -46, -18, 8, false],
+          [14, -56, 34, 7, true], [34, -39, 52, 10, false], [-35, -18, 18, 6, true],
+          [27, -17, -32, 7, true], [4, -29, 12, 9, false]
+        ];
+        vectors.forEach(([x, y, turn, size, dust], index) => {
+          const particle = el("i", { className: `rat-hit-particle${dust ? " dust" : ""}` });
+          particle.style.setProperty("--rat-particle-x", `${x}px`);
+          particle.style.setProperty("--rat-particle-y", `${y}px`);
+          particle.style.setProperty("--rat-particle-turn", `${turn}deg`);
+          particle.style.setProperty("--rat-particle-size", `${size}px`);
+          particle.style.setProperty("--rat-particle-color", index % 3 === 0 ? "var(--bg)" : (dust ? "var(--purple-light)" : "var(--pink)"));
+          burst.append(particle);
+        });
+        burst.append(el("span", { className: "rat-hit-score", text: "+1" }));
+        hole.append(burst);
+        later(() => burst.remove(), GAME_TUNING.rat.hitEffectDuration);
+      }
+
+      for (let index = 0; index < 9; index += 1) {
+        const hole = el("button", { className: "rat-hole", attrs: { type: "button", "aria-label": "鼠洞" } });
+        const holeArt = propGameArt("/eco/assets/props/鼠洞.png");
+        holeArt.classList.add("rat-hole-art");
+        holeArt.append(animalGameArt("/eco/assets/props/田鼠探头.png", "鼠", "rat-actor"));
+        hole.append(holeArt);
+        hole.addEventListener("click", () => {
+          if (finished || !hole.classList.contains("active")) return;
+          hole.dataset.popToken = "";
+          hole.classList.remove("active");
+          const hitToken = `${Date.now()}-${Math.random()}`;
+          hole.dataset.hitToken = hitToken;
+          hole.classList.add("hit");
+          showHitEffect(hole);
+          later(() => {
+            if (hole.dataset.hitToken !== hitToken) return;
+            hole.dataset.hitToken = "";
+            hole.classList.remove("hit");
+          }, GAME_TUNING.rat.hitActorDuration);
+          hits += 1;
+          reportGameProgress(hits);
+          scoreNode.textContent = `命中 ${hits}`;
+        });
+        holes.push(hole);
+        board.append(hole);
+      }
+
+      function shuffled(items) {
+        const copy = [...items];
+        for (let index = copy.length - 1; index > 0; index -= 1) {
+          const swapIndex = Math.floor(Math.random() * (index + 1));
+          [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+        }
+        return copy;
+      }
+
+      function buildTimeline() {
+        const tuning = GAME_TUNING.rat;
+        const groupOptions = [];
+        for (let pairs = tuning.simultaneousPairsMin; pairs <= tuning.simultaneousPairsMax; pairs += 1) {
+          for (let triples = tuning.simultaneousTriplesMin; triples <= tuning.simultaneousTriplesMax; triples += 1) {
+            const singles = opportunityTarget - pairs * 2 - triples * 3;
+            if (singles >= 1) groupOptions.push({ pairs, triples, singles });
+          }
+        }
+        const counts = groupOptions[Math.floor(Math.random() * groupOptions.length)];
+        const groupSizes = shuffled([
+          ...Array(counts.singles).fill(1),
+          ...Array(counts.pairs).fill(2),
+          ...Array(counts.triples).fill(3)
+        ]);
+        const durationBag = shuffled(Array.from(
+          { length: opportunityTarget },
+          (_, index) => tuning.holdDurations[index % tuning.holdDurations.length]
+        ));
+        const latestPop = tuning.duration - Math.max(...tuning.holdDurations) - tuning.endBuffer;
+        const span = latestPop - tuning.firstPopDelay;
+        return groupSizes.map((size, index) => {
+          const evenPoint = groupSizes.length === 1 ? 0 : span * index / (groupSizes.length - 1);
+          const spacing = groupSizes.length === 1 ? span : span / (groupSizes.length - 1);
+          const jitter = index === 0 || index === groupSizes.length - 1
+            ? 0
+            : (Math.random() - .5) * Math.min(840, spacing * .36);
+          return {
+            at: tuning.firstPopDelay + evenPoint + jitter,
+            holds: durationBag.splice(0, size)
+          };
+        });
+      }
+
+      function popGroup(holds) {
+        if (finished) return;
+        const inactive = holes.filter(hole => !hole.classList.contains("active") && !hole.classList.contains("hit"));
+        shuffled(inactive).slice(0, holds.length).forEach((hole, index) => {
+          const token = `${Date.now()}-${Math.random()}`;
+          hole.dataset.popToken = token;
+          hole.classList.add("active");
+          later(() => {
+            if (hole.dataset.popToken === token) {
+              hole.dataset.popToken = "";
+              hole.classList.remove("active");
+            }
+          }, holds[index]);
+        });
+      }
+      buildTimeline().forEach(pop => later(() => popGroup(pop.holds), pop.at));
+      const clockTimer = window.setInterval(() => {
+        const remaining = Math.max(0, GAME_TUNING.rat.duration - (Date.now() - startedAt));
+        timeNode.textContent = `剩余 ${(remaining / 1000).toFixed(1)} 秒`;
+        if (remaining <= 0) finish();
+      }, 100);
+      gameCleanup = () => {
+        window.clearInterval(clockTimer);
+        timers.forEach(timer => window.clearTimeout(timer));
+        timers.clear();
+        holes.forEach(hole => hole.classList.remove("active"));
+      };
+
+      const body = el("div", { className: "game-body" }, [
+        el("div", { className: "game-hud" }, [scoreNode, timeNode]),
+        el("div", { className: "game-stage" }, board)
+      ]);
+      gameShell.replaceChildren(gameHeader(miniGameInfo.rat.title), body);
+    }
+
+    function startTurtleGame(onFinish, onFail) {
+      let progress = 0;
+      let finished = false;
+      const startedAt = Date.now();
+      let lastDecayAt = startedAt;
+      let exitTimer = null;
+      const fill = el("div", { className: "turtle-progress-fill" });
+      const meter = el("div", { className: "turtle-progress", attrs: { role: "progressbar", "aria-label": "驱赶进度", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" } }, fill);
+      const timeNode = el("span", { text: "剩余 20.0 秒" });
+      const arena = el("div", { className: "turtle-arena", attrs: { "aria-label": "点击游向晒背石的巴西龟" } });
+      const rock = propGameArt("/eco/assets/props/石头.png", "rock-shape");
+      rock.classList.add("turtle-central-rock");
+      arena.append(gameScene("/eco/assets/scene/水面.png"), rock);
+      [[18,24,18,-12],[82,20,13,9],[23,78,11,18]].forEach(([x, y, size, turn]) => {
+        const smallRock = propGameArt("/eco/assets/props/石头.png", "rock-shape");
+        smallRock.classList.add("turtle-scatter-rock");
+        smallRock.style.left = `${x}%`;
+        smallRock.style.top = `${y}%`;
+        smallRock.style.setProperty("--rock-size", `${size}%`);
+        smallRock.style.setProperty("--rock-turn", `${turn}deg`);
+        arena.append(smallRock);
+      });
+      const turtle = el("button", { className: "turtle-swimmer", attrs: { type: "button", "aria-label": "驱赶巴西龟" } }, animalGameArt("/eco/assets/species/巴西龟.png", "龟", "turtle-art"));
+      turtle.style.setProperty("--turtle-exit-duration", `${GAME_TUNING.turtle.exitDuration}ms`);
+      arena.append(turtle);
+
+      function paint() {
+        fill.style.width = `${progress}%`;
+        meter.setAttribute("aria-valuenow", String(Math.round(progress)));
+        const remaining = Math.max(0, GAME_TUNING.turtle.duration - (Date.now() - startedAt));
+        timeNode.textContent = `剩余 ${(remaining / 1000).toFixed(1)} 秒`;
+      }
+      function finish(success) {
+        if (finished) return;
+        finished = true;
+        if (success) {
+          turtle.disabled = true;
+          turtle.classList.add("leaving");
+          exitTimer = window.setTimeout(() => {
+            stopCurrentGame();
+            onFinish(1);
+          }, GAME_TUNING.turtle.exitDuration);
+        } else {
+          stopCurrentGame();
+          onFail();
+        }
+      }
+      turtle.addEventListener("click", () => {
+        if (finished) return;
+        progress = Math.min(GAME_TUNING.turtle.maxProgress, progress + GAME_TUNING.turtle.tapGain);
+        reportGameProgress(progress);
+        paint();
+        if (progress >= GAME_TUNING.turtle.maxProgress) finish(true);
+      });
+      const pressureTimer = window.setInterval(() => {
+        if (finished) return;
+        const now = Date.now();
+        const remaining = GAME_TUNING.turtle.duration - (now - startedAt);
+        if (remaining <= 0) {
+          finish(false);
+          return;
+        }
+        progress = Math.max(0, progress - GAME_TUNING.turtle.decayPerSecond * (now - lastDecayAt) / 1000);
+        lastDecayAt = now;
+        reportGameProgress(progress);
+        paint();
+      }, GAME_TUNING.turtle.decayTick);
+      gameCleanup = () => {
+        window.clearInterval(pressureTimer);
+        if (exitTimer !== null) window.clearTimeout(exitTimer);
+      };
+
+      const stage = el("div", { className: "game-stage" }, el("div", { className: "turtle-stage" }, [
+        meter,
+        arena,
+        el("div", {}, [
+          el("p", { className: "turtle-tap-label", text: "持续高频点击这只龟，把驱赶进度推满" }),
+          el("p", { className: "game-instruction", text: "每次 +3，停下来每秒回退 8" })
+        ])
+      ]));
+      gameShell.replaceChildren(gameHeader(miniGameInfo.turtle.title), el("div", { className: "game-body" }, [
+        el("div", { className: "game-hud" }, [el("span", { text: "驱赶进度" }), timeNode]),
+        stage
+      ]));
+      paint();
+    }
+
+    function snailTargetRespawns(_type) {
+      return false;
+    }
+
+    function startSnailGame(onFinish, requestedTargetCount = 12) {
+      const parsedTargetCount = Number(requestedTargetCount);
+      const appleTargetCount = Number.isFinite(parsedTargetCount) ? Math.max(0, Math.min(12, Math.round(parsedTargetCount))) : 12;
+      const hitsNode = el("span", { text: `福寿螺 0/${appleTargetCount}` });
+      const timeNode = el("span", { text: "剩余 30 秒" });
+      const water = el("div", { className: "snail-water", attrs: { role: "button", tabindex: "0", "aria-label": "点击放下钩爪" } });
+      const feedback = el("div", { className: "snail-feedback", attrs: { "aria-live": "polite" } });
+      const arm = el("div", { className: "snail-arm" });
+      const clawFallback = el("span", { className: "game-claw-fallback" });
+      const hook = el("span", { className: "snail-hook" }, gameImage("/eco/assets/props/钩爪.png", "snail-hook-image", clawFallback));
+      arm.append(hook);
+      water.append(
+        gameScene("/eco/assets/scene/水下.png"),
+        el("span", { className: "snail-pivot" }),
+        arm,
+        feedback,
+        el("div", { className: "game-stage-note", text: "点击水面放钩 · 捞福寿螺，避开田螺" })
+      );
+
+      const appleSlots = [
+        { xs: [14, 47, 79], y: 28 },
+        { xs: [28, 61, 88], y: 44 },
+        { xs: [12, 43, 74], y: 61 },
+        { xs: [27, 58, 87], y: 78 }
+      ].flatMap((layer, layerIndex) => layer.xs.map(x => ({
+        type: "apple",
+        x: Math.max(8, Math.min(92, x + (Math.random() - .5) * 9)),
+        y: layer.y + (Math.random() - .5) * 6,
+        layer: layerIndex,
+        scale: .7 + Math.random() * .4
+      }))).sort(() => Math.random() - .5).slice(0, appleTargetCount);
+      const rockCount = 4 + Math.floor(Math.random() * 2);
+      const rockSlots = [
+        { type: "rock", x: 63, y: 36, layer: 0, size: 32 },
+        { type: "rock", x: 12, y: 52, layer: 1, size: 45 },
+        { type: "rock", x: 91, y: 60, layer: 2, size: 38 },
+        { type: "rock", x: 29, y: 69, layer: 3, size: 53 },
+        { type: "rock", x: 73, y: 85, layer: 4, size: 41 }
+      ].map(slot => ({ ...slot, x: slot.x + (Math.random() - .5) * 4, y: slot.y + (Math.random() - .5) * 3 }))
+        .sort(() => Math.random() - .5).slice(0, rockCount);
+      const pondSlots = [
+        { type: "pond", x: 30, y: 35, layer: 0, scale: .78 },
+        { type: "pond", x: 75, y: 51, layer: 1, scale: 1.08 },
+        { type: "pond", x: 59, y: 68, layer: 2, scale: .9 },
+        { type: "pond", x: 43, y: 85, layer: 3, scale: 1.2 }
+      ].map(slot => ({ ...slot, x: slot.x + (Math.random() - .5) * 4, y: slot.y + (Math.random() - .5) * 3 }));
+      const targetSlots = [
+        ...appleSlots,
+        ...rockSlots,
+        ...pondSlots
+      ];
+      const weedSlots = [
+        { x: 22, y: 34, layer: 1, size: 76, front: false },
+        { x: 79, y: 39, layer: 1, size: 88, front: true },
+        { x: 38, y: 59, layer: 2, size: 70, front: true },
+        { x: 86, y: 70, layer: 3, size: 82, front: false },
+        { x: 17, y: 81, layer: 4, size: 92, front: true }
+      ];
+      const targets = [];
+      const weeds = [];
+      const timers = new Set();
+      let hits = 0;
+      let finished = false;
+      let mode = "swing";
+      let angle = 0;
+      let hookLength = 48;
+      let attached = null;
+      let animationFrame = null;
+      let deadlineTimer = null;
+      let lastFrame = performance.now();
+      const swingStarted = lastFrame;
+      let deadline = Date.now() + GAME_TUNING.snail.duration;
+      let entangledUntil = 0;
+
+      function later(callback, delay) {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          callback();
+        }, delay);
+        timers.add(timer);
+        return timer;
+      }
+
+      function spawnTarget(type, slot) {
+        const isApple = type === "apple";
+        const target = animalGameArt(
+          isApple ? "/eco/assets/species/福寿螺.png" : (type === "rock" ? "/eco/assets/props/石头.png" : "/eco/assets/species/田螺.png"),
+          isApple ? "福" : (type === "rock" ? "石" : "田"),
+          `snail-target ${type}`
+        );
+        const record = {
+          type,
+          node: target,
+          slot,
+          baseX: slot.x,
+          baseY: slot.y,
+          layer: slot.layer,
+          phase: slot.layer * 1.9 + slot.x * .07,
+          grabbed: false
+        };
+        if (slot.scale) {
+          const size = Math.round(39 * slot.scale);
+          target.style.width = `${size}px`;
+          target.style.height = `${size}px`;
+        }
+        if (slot.size) target.style.setProperty("--snail-item-size", `${slot.size}px`);
+        target.style.left = `${record.baseX}%`;
+        target.style.top = `${record.baseY}%`;
+        targets.push(record);
+        water.append(target);
+      }
+
+      targetSlots.forEach(slot => spawnTarget(slot.type, slot));
+      weedSlots.forEach((slot, index) => {
+        const node = animalGameArt("/eco/assets/species/水藻.png", "藻", `snail-weed${slot.front ? " front" : ""}`);
+        const record = { node, baseX: slot.x, baseY: slot.y, layer: slot.layer, phase: index * 1.7, touching: false };
+        node.style.setProperty("--weed-size", `${slot.size}px`);
+        node.style.left = `${record.baseX}%`;
+        node.style.top = `${record.baseY}%`;
+        weeds.push(record);
+        water.append(node);
+      });
+
+      function showFeedback(text, bad = false) {
+        feedback.textContent = text;
+        feedback.className = `snail-feedback${bad ? " bad" : ""}`;
+        void feedback.offsetWidth;
+        feedback.classList.add("show");
+        later(() => feedback.classList.remove("show"), 630);
+      }
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        stopCurrentGame();
+        onFinish(hits);
+      }
+
+      function scheduleDeadline() {
+        if (deadlineTimer !== null) window.clearTimeout(deadlineTimer);
+        deadlineTimer = window.setTimeout(finish, Math.max(0, deadline - Date.now()) + 20);
+      }
+
+      function remainingMilliseconds() {
+        return Math.max(0, deadline - Date.now());
+      }
+
+      function updateClock() {
+        const remaining = remainingMilliseconds();
+        timeNode.textContent = `剩余 ${Math.ceil(remaining / 1000)} 秒`;
+        if (remaining <= 0) finish();
+      }
+
+      function replaceTarget(record) {
+        const index = targets.indexOf(record);
+        if (index >= 0) targets.splice(index, 1);
+        record.node.remove();
+        if (!snailTargetRespawns(record.type)) return;
+        later(() => {
+          if (!finished) {
+            spawnTarget(record.type, record.slot);
+          }
+        }, 420);
+      }
+
+      function returnCatch() {
+        if (!attached) return;
+        const caught = attached;
+        attached = null;
+        if (caught.type === "apple") {
+          hits += 1;
+          reportGameProgress(hits);
+          hitsNode.textContent = `福寿螺 ${hits}/${appleTargetCount}`;
+          showFeedback("捞到福寿螺！");
+        } else if (caught.type === "pond") {
+          deadline -= 3000;
+          water.classList.remove("penalty");
+          void water.offsetWidth;
+          water.classList.add("penalty");
+          later(() => water.classList.remove("penalty"), 430);
+          showFeedback("误抓田螺，扣 3 秒", true);
+          updateClock();
+          if (finished) return;
+          scheduleDeadline();
+        } else {
+          showFeedback("抓到石头，收钩变慢 · 0分", true);
+        }
+        replaceTarget(caught);
+        if (caught.type === "apple" && hits >= appleTargetCount) later(finish, 260);
+      }
+
+      function findCollision(hookBounds) {
+        let nearest = null;
+        let nearestDistance = GAME_TUNING.snail.catchRadius;
+        const hookX = hookBounds.left + hookBounds.width / 2;
+        const hookY = hookBounds.top + hookBounds.height / 2;
+        targets.forEach(record => {
+          if (record.grabbed) return;
+          const targetBounds = record.node.getBoundingClientRect();
+          const targetX = targetBounds.left + targetBounds.width / 2;
+          const targetY = targetBounds.top + targetBounds.height / 2;
+          const distance = Math.hypot(hookX - targetX, hookY - targetY);
+          if (distance < nearestDistance) {
+            nearest = record;
+            nearestDistance = distance;
+          }
+        });
+        return nearest;
+      }
+
+      function frame(now) {
+        if (finished) return;
+        updateClock();
+        if (finished) return;
+        const delta = Math.min(40, now - lastFrame);
+        lastFrame = now;
+        const bounds = water.getBoundingClientRect();
+        const maxLength = Math.max(180, bounds.height - 58);
+        const speedMultiplier = now < entangledUntil ? GAME_TUNING.snail.weedSpeedMultiplier : 1;
+        const entangled = now < entangledUntil;
+        arm.classList.toggle("entangled", entangled);
+        water.classList.toggle("entangled", entangled);
+        if (mode === "swing") {
+          angle = Math.sin((now - swingStarted) / 850) * 52;
+        } else if (mode === "out") {
+          hookLength = Math.min(maxLength, hookLength + delta * GAME_TUNING.snail.outboundSpeed * speedMultiplier);
+          if (hookLength >= maxLength) mode = "back";
+        } else {
+          const returnSpeed = attached && attached.type === "rock"
+            ? GAME_TUNING.snail.rockReturnSpeed
+            : (attached ? GAME_TUNING.snail.caughtReturnSpeed : GAME_TUNING.snail.returnSpeed);
+          hookLength = Math.max(48, hookLength - delta * returnSpeed * speedMultiplier);
+          if (hookLength <= 48) {
+            returnCatch();
+            mode = "swing";
+          }
+        }
+        arm.style.setProperty("--hook-length", `${hookLength}px`);
+        arm.style.transform = `rotate(${angle}deg)`;
+        const hookBounds = hook.getBoundingClientRect();
+        const endpointX = hookBounds.left + hookBounds.width / 2 - bounds.left;
+        const endpointY = hookBounds.top + hookBounds.height / 2 - bounds.top;
+        weeds.forEach(record => {
+          const weedBounds = record.node.getBoundingClientRect();
+          const crossing = hookBounds.right > weedBounds.left && hookBounds.left < weedBounds.right
+            && hookBounds.bottom > weedBounds.top && hookBounds.top < weedBounds.bottom;
+          if (crossing && !record.touching && mode !== "swing") {
+            entangledUntil = now + GAME_TUNING.snail.entangleDuration;
+            showFeedback("水草缠住钩爪 · 减速", true);
+          }
+          record.touching = crossing;
+        });
+        if (mode === "out" && !attached) {
+          const collision = findCollision(hookBounds);
+          if (collision) {
+            attached = collision;
+            collision.grabbed = true;
+            collision.node.classList.add("grabbed");
+            mode = "back";
+          }
+        }
+        if (attached) {
+          attached.node.style.left = `${endpointX}px`;
+          attached.node.style.top = `${endpointY}px`;
+        }
+        const elapsed = (now - swingStarted) / 1000;
+        targets.forEach(record => {
+          if (record.grabbed || record.type === "rock") return;
+          record.node.style.left = `${record.baseX + Math.sin(elapsed * .18 + record.phase) * 2.4}%`;
+          record.node.style.top = `${record.baseY}%`;
+        });
+        weeds.forEach(record => {
+          record.node.style.left = `${record.baseX + Math.sin(elapsed * .32 + record.phase) * 1.2}%`;
+          record.node.style.top = `${record.baseY}%`;
+        });
+        animationFrame = window.requestAnimationFrame(frame);
+      }
+
+      water.addEventListener("click", () => {
+        if (!finished && mode === "swing") mode = "out";
+      });
+
+      const body = el("div", { className: "game-body" }, [
+        el("div", { className: "game-hud" }, [hitsNode, timeNode]),
+        el("div", { className: "game-stage snail-game-stage" }, water)
+      ]);
+      gameShell.replaceChildren(gameHeader(miniGameInfo.snail.title), body);
+      gameCleanup = () => {
+        if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+        if (deadlineTimer !== null) window.clearTimeout(deadlineTimer);
+        timers.forEach(timer => window.clearTimeout(timer));
+        timers.clear();
+      };
+      scheduleDeadline();
+      animationFrame = window.requestAnimationFrame(frame);
+    }
+
+    function hyacinthPullValue(position, plantSize) {
+      const distance = Math.abs(position - 50);
+      const zoneWidths = {
+        small: GAME_TUNING.hyacinth.smallZoneWidth,
+        medium: GAME_TUNING.hyacinth.mediumZoneWidth,
+        large: GAME_TUNING.hyacinth.largeZoneWidth
+      };
+      return distance <= zoneWidths[plantSize] / 2 ? 1 : 0;
+    }
+
+    function startHyacinthGame(onFinish) {
+      const totalNode = el("span", { text: "已拔 0 株" });
+      const plantCount = GAME_TUNING.hyacinth.plantCountMin
+        + Math.floor(Math.random() * (GAME_TUNING.hyacinth.plantCountMax - GAME_TUNING.hyacinth.plantCountMin + 1));
+      const countNode = el("span", { text: `待拔 ${plantCount} 株` });
+      const field = el("div", { className: "hyacinth-field", attrs: { role: "button", tabindex: "0", "aria-label": "选择水葫芦并点击停下时机条" } });
+      const feedback = el("div", { className: "hyacinth-feedback", attrs: { "aria-live": "polite" } });
+      const marker = el("span", { className: "hyacinth-marker" });
+      const timingLabel = el("p", { className: "hyacinth-timing-label", text: "再点一下停住标记" });
+      const timing = el("div", { className: "hyacinth-timing", attrs: { hidden: "hidden" } }, [
+        timingLabel,
+        el("div", { className: "hyacinth-track" }, [
+          el("span", { className: "hyacinth-ordinary-zone" }),
+          el("span", { className: "hyacinth-perfect-zone" }),
+          marker
+        ])
+      ]);
+      timing.style.setProperty("--hyacinth-small-zone-width", `${GAME_TUNING.hyacinth.smallZoneWidth}%`);
+      timing.style.setProperty("--hyacinth-small-zone-left", `${(100 - GAME_TUNING.hyacinth.smallZoneWidth) / 2}%`);
+      timing.style.setProperty("--hyacinth-medium-zone-width", `${GAME_TUNING.hyacinth.mediumZoneWidth}%`);
+      timing.style.setProperty("--hyacinth-medium-zone-left", `${(100 - GAME_TUNING.hyacinth.mediumZoneWidth) / 2}%`);
+      timing.style.setProperty("--hyacinth-large-zone-width", `${GAME_TUNING.hyacinth.largeZoneWidth}%`);
+      timing.style.setProperty("--hyacinth-large-zone-left", `${(100 - GAME_TUNING.hyacinth.largeZoneWidth) / 2}%`);
+      const positions = [[13,17],[39,15],[68,18],[89,29],[20,43],[51,39],[80,52],[12,69],[43,68],[76,78]];
+      const plants = [];
+      const timers = new Set();
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      let selected = null;
+      let timingPosition = 2;
+      let timingDirection = 1;
+      let timingVelocity = 1;
+      let nextJitterAt = 0;
+      let timingFrame = null;
+      let timingLastFrame = performance.now();
+      let completed = 0;
+      let totalStalks = 0;
+      let resolving = false;
+      let finished = false;
+
+      function later(callback, delay) {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          callback();
+        }, delay);
+        timers.add(timer);
+      }
+
+      function showFeedback(text, bad = false) {
+        feedback.textContent = text;
+        feedback.className = `hyacinth-feedback${bad ? " bad" : ""}`;
+        void feedback.offsetWidth;
+        feedback.classList.add("show");
+        later(() => feedback.classList.remove("show"), 630);
+      }
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        stopCurrentGame();
+        onFinish(totalStalks);
+      }
+
+      field.append(gameScene("/eco/assets/scene/水面.png"));
+      const plantSizes = Array.from({ length: plantCount }, (_, index) => ["small", "medium", "large"][index % 3])
+        .sort(() => Math.random() - .5);
+      const sizeLabels = { small: "小株", medium: "中株", large: "大株" };
+      positions.slice(0, plantCount).forEach((position, index) => {
+        const plantSize = plantSizes[index];
+        const plant = el("button", { className: `hyacinth-plant ${plantSize}`, attrs: { type: "button", "aria-label": `第${index + 1}株${sizeLabels[plantSize]}水葫芦` } });
+        plant.dataset.plantSize = plantSize;
+        plant.style.left = `${position[0]}%`;
+        plant.style.top = `${position[1]}%`;
+        plant.append(animalGameArt("/eco/assets/species/水葫芦.png", "葫", "hyacinth-plant-art"));
+        plants.push(plant);
+        field.append(plant);
+      });
+      field.append(
+        feedback,
+        timing,
+        el("div", { className: "game-stage-note", text: "先点一株，再点一次停下标记" })
+      );
+
+      function selectPlant(plant) {
+        selected = plant;
+        selected.classList.add("selected");
+        timing.className = `hyacinth-timing ${plant.dataset.plantSize}`;
+        timingLabel.textContent = {
+          small: "小株 · 稳定慢条，停在亮区",
+          medium: "中株 · 快条，停在中等亮区",
+          large: "大株 · 抖动快条，停在窄粉区"
+        }[plant.dataset.plantSize];
+        timing.hidden = false;
+        timingPosition = 2;
+        timingDirection = 1;
+        timingVelocity = 1;
+        timingLastFrame = performance.now();
+        nextJitterAt = timingLastFrame;
+        marker.style.left = `${timingPosition}%`;
+      }
+
+      function animateTiming(now) {
+        const delta = Math.min(40, now - timingLastFrame);
+        timingLastFrame = now;
+        if (selected) {
+          if (reducedMotion) timingPosition = 50;
+          else {
+            const plantSize = selected.dataset.plantSize;
+            const large = plantSize === "large";
+            if (large && now >= nextJitterAt) {
+              timingVelocity = GAME_TUNING.hyacinth.jitterMin + Math.random() * (GAME_TUNING.hyacinth.jitterMax - GAME_TUNING.hyacinth.jitterMin);
+              nextJitterAt = now + GAME_TUNING.hyacinth.jitterIntervalMin + Math.random() * (GAME_TUNING.hyacinth.jitterIntervalMax - GAME_TUNING.hyacinth.jitterIntervalMin);
+            }
+            const halfSweep = plantSize === "small"
+              ? GAME_TUNING.hyacinth.smallHalfSweep
+              : (plantSize === "medium" ? GAME_TUNING.hyacinth.mediumHalfSweep : GAME_TUNING.hyacinth.largeHalfSweep);
+            timingPosition += timingDirection * delta * 96 / halfSweep * (large ? timingVelocity : 1);
+            if (timingPosition >= 98 || timingPosition <= 2) {
+              timingPosition = Math.max(2, Math.min(98, timingPosition));
+              timingDirection *= -1;
+            }
+          }
+          marker.style.left = `${timingPosition}%`;
+        }
+        timingFrame = window.requestAnimationFrame(animateTiming);
+      }
+
+      function judgePlant() {
+        if (!selected || resolving) return;
+        resolving = true;
+        const plant = selected;
+        selected = null;
+        timing.hidden = true;
+        plant.classList.remove("selected");
+        plant.disabled = true;
+        const value = hyacinthPullValue(timingPosition, plant.dataset.plantSize);
+        if (value > 0) {
+          totalStalks = Math.min(GAME_TUNING.hyacinth.submitMax, totalStalks + 1);
+          reportGameProgress(totalStalks);
+          totalNode.textContent = `已拔 ${totalStalks} 株`;
+          plant.classList.add("pulled");
+          showFeedback(totalStalks >= GAME_TUNING.hyacinth.submitMax ? "已拔满 7 株" : "拔除 +1 株");
+        } else {
+          plant.classList.add("missed");
+          showFeedback("失手，这株没有拔掉", true);
+        }
+        completed += 1;
+        countNode.textContent = `待拔 ${plants.length - completed} 株`;
+        later(() => {
+          plant.hidden = true;
+          resolving = false;
+          if (totalStalks >= GAME_TUNING.hyacinth.submitMax || completed >= plants.length) finish();
+        }, 650);
+      }
+
+      field.addEventListener("click", event => {
+        if (finished || resolving) return;
+        if (selected) {
+          judgePlant();
+          return;
+        }
+        const plant = event.target.closest(".hyacinth-plant");
+        if (plant && !plant.disabled) selectPlant(plant);
+      });
+
+      const body = el("div", { className: "game-body" }, [
+        el("div", { className: "game-hud" }, [totalNode, countNode]),
+        el("div", { className: "game-stage snail-game-stage" }, field)
+      ]);
+      gameShell.replaceChildren(gameHeader(miniGameInfo.hyacinth.title), body);
+      gameCleanup = () => {
+        if (timingFrame !== null) window.cancelAnimationFrame(timingFrame);
+        timers.forEach(timer => window.clearTimeout(timer));
+        timers.clear();
+      };
+      timingFrame = window.requestAnimationFrame(animateTiming);
+    }
+
+    function startAlgaeGame(onFinish) {
+      const scoreNode = el("span", { text: "得分 0" });
+      const timeNode = el("span", { text: `剩余 ${Math.ceil(GAME_TUNING.algae.duration / 1000)} 秒` });
+      const water = el("div", { className: "algae-water", attrs: { "aria-label": "左右滑动滤网捞取水藻" } });
+      const feedback = el("div", { className: "algae-feedback", attrs: { "aria-live": "polite" } });
+      const netFallback = el("span", { className: "algae-net-fallback" });
+      const net = el("div", { className: "algae-net" }, gameImage("/eco/assets/props/捞网.png", "algae-net-image", netFallback));
+      water.style.setProperty("--algae-net-y", `${GAME_TUNING.algae.netY * 100}%`);
+      water.style.setProperty("--algae-decor-opacity", String(GAME_TUNING.algae.decorOpacity));
+      const decorSlots = [[14, 30, 82, -8], [84, 53, 104, 11], [31, 76, 90, 5]];
+      const decorCount = GAME_TUNING.algae.decorCountMin
+        + Math.floor(Math.random() * (GAME_TUNING.algae.decorCountMax - GAME_TUNING.algae.decorCountMin + 1));
+      const algaeClumpAssets = [
+        "/eco/assets/props/绿藻团.png",
+        "/eco/assets/props/绿藻团_a.png",
+        "/eco/assets/props/绿藻团_b.png"
+      ];
+      const decorations = decorSlots.slice(0, decorCount).map(([left, top, size, turn], index) => {
+        const decoration = animalGameArt(algaeClumpAssets[index % algaeClumpAssets.length], "藻", "algae-decor");
+        decoration.style.left = `${left}%`;
+        decoration.style.top = `${top}%`;
+        decoration.style.setProperty("--algae-decor-size", `${size}px`);
+        decoration.style.setProperty("--algae-decor-turn", `${turn}deg`);
+        return decoration;
+      });
+      water.append(gameScene("/eco/assets/scene/水面.png"), ...decorations, feedback, net);
+
+      const ordinaryAssets = algaeClumpAssets;
+      const debrisAssets = ["/eco/assets/props/枯叶.png", "/eco/assets/props/小杂鱼.png"];
+      const objects = [];
+      let score = 0;
+      let finished = false;
+      let pointerId = null;
+      let currentX = null;
+      let targetX = null;
+      let lastFrame = performance.now();
+      let animationFrame = null;
+      let stickyTimer = null;
+      let stickyUntil = 0;
+      let feedbackTimer = null;
+      let shakeTimer = null;
+      const deadline = Date.now() + GAME_TUNING.algae.duration;
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        stopCurrentGame();
+        onFinish(score);
+      }
+
+      function randomItem(items) {
+        return items[Math.floor(Math.random() * items.length)];
+      }
+
+      function objectKind() {
+        const roll = Math.random();
+        if (roll < GAME_TUNING.algae.debrisChance) return "debris";
+        const algaeRoll = (roll - GAME_TUNING.algae.debrisChance) / (1 - GAME_TUNING.algae.debrisChance);
+        if (algaeRoll < GAME_TUNING.algae.ordinaryCutoff) return "ordinary";
+        if (algaeRoll < GAME_TUNING.algae.stickyCutoff) return "sticky";
+        return "rare";
+      }
+
+      function spawnObject(initialOffset = 0) {
+        if (finished) return;
+        const bounds = water.getBoundingClientRect();
+        if (bounds.width <= 0) return;
+        const kind = objectKind();
+        const settings = {
+          ordinary: { points: GAME_TUNING.algae.ordinaryPoints, size: 45, speed: 58 + Math.random() * 18, asset: randomItem(ordinaryAssets), label: "藻" },
+          sticky: { points: GAME_TUNING.algae.stickyPoints, size: 53, speed: 68, asset: "/eco/assets/props/黏性藻团.png", label: "黏" },
+          rare: { points: GAME_TUNING.algae.rarePoints, size: 31, speed: 126, asset: "/eco/assets/props/稀有蓝藻.png", label: "蓝" },
+          debris: { points: -GAME_TUNING.algae.debrisPenalty, size: 39, speed: 86, asset: randomItem(debrisAssets), label: "扰" }
+        }[kind];
+        const fallback = el("span", { className: "algae-object-fallback", text: settings.label });
+        const node = el("span", {
+          className: `algae-floating-object ${kind}`,
+          attrs: { "data-kind": kind, "data-points": settings.points, "data-asset": settings.asset }
+        }, gameImage(settings.asset, "algae-object-image", fallback));
+        node.style.width = `${settings.size}px`;
+        node.style.height = `${settings.size}px`;
+        const record = {
+          kind,
+          points: settings.points,
+          size: settings.size,
+          speed: settings.speed,
+          x: 24 + Math.random() * Math.max(1, bounds.width - 48),
+          y: -settings.size - initialOffset,
+          node
+        };
+        objects.push(record);
+        water.append(node);
+      }
+
+      function showFeedback(text, bad = false) {
+        feedback.textContent = text;
+        feedback.className = `algae-feedback${bad ? " bad" : ""}`;
+        void feedback.offsetWidth;
+        feedback.classList.add("show");
+        if (feedbackTimer !== null) window.clearTimeout(feedbackTimer);
+        feedbackTimer = window.setTimeout(() => {
+          feedback.classList.remove("show");
+          feedbackTimer = null;
+        }, 540);
+      }
+
+      function clearStickySlowdown() {
+        const remaining = stickyUntil - Date.now();
+        if (remaining > 0) {
+          stickyTimer = window.setTimeout(clearStickySlowdown, remaining + 10);
+          return;
+        }
+        stickyTimer = null;
+        stickyUntil = 0;
+        net.classList.remove("sticky");
+      }
+
+      function applyStickySlowdown() {
+        stickyUntil = Date.now() + GAME_TUNING.algae.stickyDuration;
+        if (stickyTimer !== null) window.clearTimeout(stickyTimer);
+        net.classList.add("sticky");
+        stickyTimer = window.setTimeout(clearStickySlowdown, GAME_TUNING.algae.stickyDuration + 10);
+      }
+
+      function catchObject(record, index) {
+        record.node.remove();
+        objects.splice(index, 1);
+        if (record.kind === "debris") {
+          score = Math.max(0, score - GAME_TUNING.algae.debrisPenalty);
+          reportGameProgress(score);
+          scoreNode.textContent = `得分 ${score}`;
+          water.classList.remove("shake");
+          void water.offsetWidth;
+          water.classList.add("shake");
+          if (shakeTimer !== null) window.clearTimeout(shakeTimer);
+          shakeTimer = window.setTimeout(() => {
+            water.classList.remove("shake");
+            shakeTimer = null;
+          }, 390);
+          showFeedback(`干扰物 -${GAME_TUNING.algae.debrisPenalty}`, true);
+        } else {
+          score = Math.min(GAME_TUNING.algae.submitMax, score + record.points);
+          reportGameProgress(score);
+          scoreNode.textContent = `得分 ${score}`;
+          if (record.kind === "sticky") {
+            applyStickySlowdown();
+            showFeedback(`+${record.points} · 黏住！网兜减速 2 秒`, true);
+          } else showFeedback(`+${record.points}`);
+        }
+      }
+
+      function updatePointerTarget(event) {
+        const bounds = water.getBoundingClientRect();
+        const halfNet = 56;
+        targetX = Math.min(bounds.width - halfNet, Math.max(halfNet, event.clientX - bounds.left));
+      }
+
+      water.addEventListener("pointerdown", event => {
+        if (finished) return;
+        event.preventDefault();
+        pointerId = event.pointerId;
+        water.setPointerCapture(pointerId);
+        updatePointerTarget(event);
+      }, { passive: false });
+      water.addEventListener("pointermove", event => {
+        if (finished || event.pointerId !== pointerId) return;
+        event.preventDefault();
+        updatePointerTarget(event);
+      }, { passive: false });
+      function endPointer(event) {
+        if (event.pointerId !== pointerId) return;
+        if (water.hasPointerCapture(pointerId)) water.releasePointerCapture(pointerId);
+        pointerId = null;
+      }
+      water.addEventListener("pointerup", endPointer);
+      water.addEventListener("pointercancel", endPointer);
+
+      function frame(now) {
+        if (finished) return;
+        const remaining = Math.max(0, deadline - Date.now());
+        timeNode.textContent = `剩余 ${Math.ceil(remaining / 1000)} 秒`;
+        if (remaining <= 0) {
+          finish();
+          return;
+        }
+        const bounds = water.getBoundingClientRect();
+        if (currentX === null) {
+          currentX = bounds.width / 2;
+          targetX = currentX;
+        }
+        if (stickyUntil > 0 && Date.now() >= stickyUntil) {
+          stickyUntil = 0;
+          net.classList.remove("sticky");
+          if (stickyTimer !== null) window.clearTimeout(stickyTimer);
+          stickyTimer = null;
+        }
+        const damping = Date.now() < stickyUntil ? ALGAE_STICKY_DAMPING : ALGAE_NET_DAMPING;
+        currentX += (targetX - currentX) * damping;
+        net.style.left = `${currentX}px`;
+        const netY = bounds.height * GAME_TUNING.algae.netY;
+        const deltaSeconds = Math.min(0.05, (now - lastFrame) / 1000);
+        lastFrame = now;
+        for (let index = objects.length - 1; index >= 0; index -= 1) {
+          const record = objects[index];
+          record.y += record.speed * deltaSeconds;
+          record.node.style.left = `${record.x}px`;
+          record.node.style.top = `${record.y}px`;
+          const touchesNet = Math.abs(record.x - currentX) <= GAME_TUNING.algae.catchHalfWidth + record.size * GAME_TUNING.algae.catchSizeFactor
+            && Math.abs(record.y - netY) <= GAME_TUNING.algae.catchHalfHeight + record.size * GAME_TUNING.algae.catchSizeFactor;
+          if (touchesNet) {
+            catchObject(record, index);
+          } else if (record.y > bounds.height + record.size) {
+            record.node.remove();
+            objects.splice(index, 1);
+          }
+        }
+        animationFrame = window.requestAnimationFrame(frame);
+      }
+
+      const body = el("div", { className: "game-body" }, [
+        el("div", { className: "game-hud" }, [scoreNode, timeNode]),
+        el("div", { className: "game-stage algae-game-stage" }, water)
+      ]);
+      gameShell.replaceChildren(gameHeader(miniGameInfo.algae.title), body);
+      const spawnTimer = window.setInterval(() => {
+        if (objects.length < GAME_TUNING.algae.maxFloatingObjects) spawnObject();
+      }, GAME_TUNING.algae.spawnInterval);
+      const deadlineTimer = window.setTimeout(finish, GAME_TUNING.algae.duration + 20);
+      gameCleanup = () => {
+        if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+        window.clearInterval(spawnTimer);
+        window.clearTimeout(deadlineTimer);
+        if (stickyTimer !== null) window.clearTimeout(stickyTimer);
+        if (feedbackTimer !== null) window.clearTimeout(feedbackTimer);
+        if (shakeTimer !== null) window.clearTimeout(shakeTimer);
+      };
+      animationFrame = window.requestAnimationFrame(now => {
+        GAME_TUNING.algae.initialSpawnOffsets.forEach(offset => spawnObject(offset));
+        lastFrame = now;
+        frame(now);
+      });
+    }
+
+    function startIceGame(onFinish) {
+      const progressText = el("span", { text: "进度 0%" });
+      const winterStatus = winterBreathingStatus(latestStateRender && latestStateRender.data);
+      const winterStatusLine = winterStatus
+        ? el("p", { className: "game-instruction", text: `本冬已憋气 ${tidyNumber(winterStatus.suffocationDays)} 天 / 结冰 ${tidyNumber(winterStatus.frozenDays)} 天` })
+        : null;
+      const progressFill = el("div", { className: "ice-progress-fill" });
+      const progressMeter = el("div", { className: "ice-progress", attrs: { role: "progressbar", "aria-label": "凿冰进度", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" } }, progressFill);
+      const field = el("button", { className: "ice-field", attrs: { type: "button", "aria-label": "连续点击冰面凿冰" } });
+      const completeFallback = el("span", { className: "ice-base-fallback" });
+      const completeLayer = el("span", { className: "ice-base-layer complete" }, gameImage("/eco/assets/scene/冰面_完整.png", "ice-base-image", completeFallback));
+      const crackedFallback = el("span", { className: "ice-base-fallback ice-crack-fallback" });
+      const crackedLayer = el("span", { className: "ice-base-layer cracked" }, gameImage("/eco/assets/scene/冰面_裂纹.png", "ice-base-image", crackedFallback));
+      const fineFallback = el("span", { className: "ice-fine-fallback" }, Array.from({ length: 7 }, (_, index) => {
+        const crack = el("i");
+        crack.style.setProperty("--ice-crack-length", `${68 + index * 8}px`);
+        crack.style.setProperty("--ice-crack-angle", `${index * 51 - 17}deg`);
+        return crack;
+      }));
+      const fineLayer = el("span", { className: "ice-fine-layer" }, gameImage("/eco/assets/props/冰面_细裂纹.png", "ice-fine-image", fineFallback));
+      const fishShadows = [
+        ["鲫鱼", 22, 35, 72, 5.8],
+        ["泥鳅", 70, 66, 62, 7.1],
+        ["草鱼", 38, 78, 82, 6.5]
+      ].map(([name, left, top, size, speed]) => {
+        const fish = el("span", { className: "ice-fish-shadow", attrs: { "aria-hidden": "true" } },
+          el("img", { attrs: { src: `/eco/assets/species/${name}.png`, alt: "", draggable: "false" } }));
+        fish.style.setProperty("--fish-left", `${left}%`);
+        fish.style.setProperty("--fish-top", `${top}%`);
+        fish.style.setProperty("--fish-size", `${size}px`);
+        fish.style.setProperty("--fish-speed", `${speed}s`);
+        return fish;
+      });
+      const hammerFallback = el("span", { className: "ice-hammer-fallback" });
+      const hammer = el("span", { className: "ice-hammer" }, gameImage("/eco/assets/props/锤子.png", "ice-hammer-image", hammerFallback));
+      const stageLabel = el("span", { className: "ice-stage-label", text: "连续敲击，把冰面凿开透气" });
+      field.append(completeLayer, crackedLayer, ...fishShadows, fineLayer, hammer, stageLabel);
+
+      const timers = new Set();
+      let progress = 0;
+      let finished = false;
+      let labelFadeScheduled = false;
+
+      function later(callback, delay) {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          callback();
+        }, delay);
+        timers.add(timer);
+      }
+
+      function paint() {
+        progressText.textContent = `进度 ${progress}%`;
+        progressFill.style.width = `${progress}%`;
+        progressMeter.setAttribute("aria-valuenow", String(progress));
+        field.classList.toggle("phase-fine", progress >= GAME_TUNING.ice.fineThreshold && progress < GAME_TUNING.ice.deepThreshold);
+        field.classList.toggle("phase-deep", progress >= GAME_TUNING.ice.deepThreshold);
+      }
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        stopCurrentGame();
+        onFinish(1);
+      }
+
+      function addSplash(x, y) {
+        const fallback = el("span", { className: "ice-splash-fallback" });
+        const splash = el("span", { className: "ice-splash" }, gameImage("/eco/assets/props/水花.png", "ice-splash-image", fallback));
+        splash.style.left = `${x}px`;
+        splash.style.top = `${y}px`;
+        field.append(splash);
+        later(() => splash.remove(), 380);
+      }
+
+      function addBubbles() {
+        for (let index = 0; index < 7; index += 1) {
+          later(() => {
+            const bubble = el("span", { className: "ice-bubble", attrs: { "aria-hidden": "true" } });
+            bubble.style.setProperty("--bubble-x", `${46 + Math.random() * 8}%`);
+            bubble.style.setProperty("--bubble-size", `${5 + Math.random() * 7}px`);
+            field.append(bubble);
+            later(() => bubble.remove(), 650);
+          }, index * 55);
+        }
+      }
+
+      function addIceChips(x, y) {
+        for (let index = 0; index < 8; index += 1) {
+          const angle = Math.PI * 2 * index / 8 + Math.random() * .35;
+          const distance = 24 + Math.random() * 28;
+          const chip = el("span", { className: "ice-chip", attrs: { "aria-hidden": "true" } });
+          chip.style.setProperty("--ice-chip-x", `${x}px`);
+          chip.style.setProperty("--ice-chip-y", `${y}px`);
+          chip.style.setProperty("--ice-chip-size", `${3 + Math.floor(Math.random() * 5)}px`);
+          chip.style.setProperty("--ice-chip-dx", `${Math.cos(angle) * distance}px`);
+          chip.style.setProperty("--ice-chip-dy", `${Math.sin(angle) * distance - 18}px`);
+          chip.style.setProperty("--ice-chip-rotate", `${90 + Math.random() * 180}deg`);
+          chip.style.setProperty("--ice-chip-color", index % 2 ? "var(--ice-chip-white)" : "var(--ice-chip-blue)");
+          field.append(chip);
+          later(() => chip.remove(), 430);
+        }
+      }
+
+      field.addEventListener("click", event => {
+        if (finished) return;
+        const bounds = field.getBoundingClientRect();
+        const x = Math.min(bounds.width - 32, Math.max(32, event.clientX - bounds.left));
+        const y = Math.min(bounds.height - 58, Math.max(58, event.clientY - bounds.top));
+        hammer.style.left = `${x}px`;
+        hammer.style.top = `${y - 32}px`;
+        if (!labelFadeScheduled) {
+          labelFadeScheduled = true;
+          later(() => stageLabel.classList.add("faded"), GAME_TUNING.ice.labelFadeDelay);
+        }
+        field.classList.remove("impact");
+        void field.offsetWidth;
+        field.classList.add("impact");
+        later(() => field.classList.remove("impact"), 160);
+        if (navigator.vibrate) navigator.vibrate(18);
+        progress = Math.min(100, progress + GAME_TUNING.ice.hitGain);
+        reportGameProgress(progress);
+        paint();
+        if (progress >= 100) {
+          field.classList.add("opened");
+          addSplash(bounds.width * .5, bounds.height * .53);
+          addBubbles();
+          later(finish, 720);
+        } else addIceChips(x, y);
+      });
+
+      const body = el("div", { className: "game-body" }, [
+        el("div", { className: "game-hud" }, [el("div", {}, [progressText, winterStatusLine]), progressMeter]),
+        el("div", { className: "game-stage ice-game-stage" }, field)
+      ]);
+      gameShell.replaceChildren(gameHeader(miniGameInfo.ice.title), body);
+      gameCleanup = () => {
+        timers.forEach(timer => window.clearTimeout(timer));
+        timers.clear();
+      };
+      paint();
+    }
+
+    function launchMiniGame(gameId, onFinish, onFail = null, options = {}) {
+      stopCurrentGame();
+      const session = {
+        gameId,
+        playtest: options.playtest === true,
+        score: 0,
+        inProgress: true,
+        onFinish
+      };
+      currentGameSession = session;
+      const finishAttempt = score => {
+        const amount = Number(score);
+        session.score = Number.isFinite(amount) ? Math.max(0, amount) : session.score;
+        session.inProgress = false;
+        if (currentGameSession === session) currentGameSession = null;
+        onFinish(score);
+      };
+      const failAttempt = () => {
+        session.inProgress = false;
+        if (currentGameSession === session) currentGameSession = null;
+        if (onFail) onFail();
+      };
+      if (gameOverlay.hidden) {
+        gameBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        gameOverlay.hidden = false;
+      }
+      if (gameId === "rat") startRatGame(finishAttempt);
+      else if (gameId === "turtle") startTurtleGame(finishAttempt, failAttempt);
+      else if (gameId === "snail") startSnailGame(finishAttempt, options.snailCount);
+      else if (gameId === "hyacinth") startHyacinthGame(finishAttempt);
+      else if (gameId === "algae") startAlgaeGame(finishAttempt);
+      else startIceGame(finishAttempt);
+    }
+
+    function showGameIntro(gameId, begin) {
+      const info = { ...miniGameInfo[gameId] };
+      if (gameId === "snail") {
+        const count = playtestMode ? 12 : snailRemainingCount(latestStateRender && latestStateRender.data);
+        info.help = `池塘里还有 ${count} 只福寿螺。捞掉几只,当天对水藻的压制就轻几分;捞光就彻底解除。`;
+      }
+      const assetsReady = preloadGameAssets(gameId);
+      const intro = el("div", { className: "game-intro" }, [
+        el("h3", { text: "开始前看一眼" }),
+        el("dl", { className: "game-intro-list" }, [
+          el("div", { className: "game-intro-row" }, [el("dt", { text: "怎么玩" }), el("dd", { text: info.how })]),
+          el("div", { className: "game-intro-row" }, [el("dt", { text: "帮什么忙" }), el("dd", { text: info.help })])
+        ])
+      ]);
+      const start = el("button", { className: "game-button primary", text: info.helpButton, attrs: { type: "button" } });
+      const later = el("button", { className: "game-button", text: "暂时不帮小机", attrs: { type: "button" } });
+      start.addEventListener("click", async () => {
+        start.disabled = true;
+        start.setAttribute("aria-busy", "true");
+        start.textContent = "素材就绪中…";
+        await assetsReady;
+        if (intro.isConnected) begin();
+      }, { once: true });
+      later.addEventListener("click", closeGameOverlay);
+      intro.append(start, later);
+      showGameScreen(info.title, intro);
+    }
+
+    function runPlaytestAttempt(gameId) {
+      launchMiniGame(gameId, score => finishPlaytestGame(gameId, score), () => {
+        gameResultView(gameId, { ok: false, message: "没能推走巴西龟,它又游回去晒背了。", playtest: true });
+      }, { snailCount: 12, playtest: true });
+    }
+
+    function runLiveAttempt(gameId) {
+      const state = latestStateRender && latestStateRender.data;
+      launchMiniGame(gameId, score => settleLiveGame(gameId, score), () => {
+        gameResultView(gameId, { ok: false, message: "没能推走巴西龟,它又游回去晒背了。", playtest: false });
+      }, { snailCount: snailRemainingCount(state), playtest: false });
+    }
+
+    function startPlaytestGame(gameId) {
+      showGameIntro(gameId, () => runPlaytestAttempt(gameId));
+    }
+
+    function startLiveGame(gameId) {
+      if (helpedDisasterGames.has(helpScopeKey(gameId))) return;
+      showGameIntro(gameId, () => runLiveAttempt(gameId));
+    }
+
+    function showDisasterPrompt(gameIds) {
+      const availableGameIds = gameIds.filter(gameId => !helpedDisasterGames.has(helpScopeKey(gameId)));
+      if (!availableGameIds.length) return;
+      const prompt = el("div", { className: "disaster-prompt" }, [
+        el("h3", { text: "池塘需要帮忙" }),
+        el("p", { text: availableGameIds.length > 1 ? "池塘里同时出现了可帮忙处理的灾害。选一个去搭把手吧。" : (availableGameIds[0] === "ice" ? "池塘结冰了,可以帮忙凿冰透气" : "池塘里出现了可以帮忙处理的灾害。现在去搭把手吗？") })
+      ]);
+      if (availableGameIds.length > 1 && availableGameIds.includes("ice")) {
+        prompt.append(el("p", { text: "池塘结冰了,可以帮忙凿冰透气" }));
+      }
+      const actions = el("div", { className: "disaster-prompt-actions" });
+      availableGameIds.forEach(gameId => {
+        const buttonText = availableGameIds.length === 1 ? "去帮忙" : `帮忙 · ${miniGameInfo[gameId].title}`;
+        const button = el("button", { className: "game-button primary", text: buttonText, attrs: { type: "button" } });
+        button.addEventListener("click", () => startLiveGame(gameId));
+        actions.append(button);
+      });
+      const later = el("button", { className: "game-button", text: "先不去", attrs: { type: "button" } });
+      later.addEventListener("click", closeGameOverlay);
+      actions.append(later);
+      prompt.append(actions);
+      showGameScreen("灾害提醒", prompt);
+    }
+
+    function maybePromptDisasterGames(gameIds) {
+      if (playtestMode || !gameOverlay.hidden) return;
+      const fresh = gameIds.filter(gameId => !promptedDisasterGames.has(gameId));
+      if (!fresh.length) return;
+      fresh.forEach(gameId => promptedDisasterGames.add(gameId));
+      saveDisasterSessionState();
+      showDisasterPrompt(fresh);
     }
 
     function buildNav(target) {
@@ -718,7 +3055,15 @@
       } else if (typeof weather === "string" && weather) {
         messages.push(weather);
       }
-      if (disasters && disasters.invasion) messages.push(disasters.invasion);
+      if (disasters && disasters.invasion) {
+        if (typeof disasters.invasion === "object") {
+          const invasion = disasters.invasion;
+          let text = invasion.name || invasion.kind || invasion.type || "入侵";
+          const remaining = invasion.remaining_count ?? invasion.remaining;
+          if (remaining !== null && remaining !== undefined) text += ` · 剩 ${remaining} 只`;
+          messages.push(text);
+        } else messages.push(disasters.invasion);
+      }
       if (disasters && disasters.water_hyacinth_cover !== null && disasters.water_hyacinth_cover !== undefined) {
         messages.push(`水葫芦覆盖：${disasters.water_hyacinth_cover}`);
       }
@@ -734,7 +3079,7 @@
 
     function naturalObserveText(text) {
       const start = text.indexOf('{"day"');
-      if (start < 0) return text;
+      if (start < 0) return stripSummonSentences(text);
       let depth = 0;
       let inString = false;
       let escaped = false;
@@ -751,16 +3096,34 @@
         else if (character === "}") {
           depth -= 1;
           if (depth === 0) {
-            return text.slice(0, start).trimEnd();
+            return stripSummonSentences(text.slice(0, start).trimEnd());
           }
         }
       }
-      return text;
+      return stripSummonSentences(text);
+    }
+
+    function stripSummonSentences(text) {
+      return String(text || "")
+        .replace(/(^|[。！？!?\n])([^。！？!?\n]*summon[^。！？!?\n]*(?:[。！？!?]+|(?=\n|$)))/gi, "$1")
+        .replace(/[ \t]+\n/g, "\n")
+        .trim();
+    }
+
+    function diaryParagraphs(text) {
+      const eventPattern = /^(?:当前|变化|种群|数量|水温|溶氧|光照|营养盐|有机碎屑|浑浊度)[：:]|\d|出生|死亡|死去|增加|减少|上升|下降|归来|定居|离开|离去|入眠|苏醒|投放|取走|觅食|捕食|繁殖|孵化|生长|衰退|暴雨|疫病|鼠患|绿潮|入侵|过境|结冰|解锁/;
+      return naturalObserveText(String(text || ""))
+        .split(/\n+/)
+        .map(line => line.trim().replace(/^[·•・▪◦*-]+\s*/, ""))
+        .filter(Boolean)
+        .map(line => ({ text: line, type: eventPattern.test(line) ? "event" : "narrative" }));
     }
 
     function renderObserve(text) {
       const paper = el("section", { className: "pixel-card pond-diary observe-zone", attrs: { "aria-label": "观察记录" } });
-      paper.append(el("pre", { className: "diary-text", text: naturalObserveText(String(text || "")) }));
+      const body = el("div", { className: "diary-text" });
+      diaryParagraphs(text).forEach(paragraph => body.append(el("p", { className: `diary-paragraph ${paragraph.type}`, text: paragraph.text })));
+      paper.append(body);
       return paper;
     }
 
@@ -791,9 +3154,63 @@
       node.style.zIndex = String(zIndex === undefined ? pose.zIndex : zIndex);
     }
 
-    function settlerCard(settler, index, total) {
+    function buildSettlerHistoryIndex(folio) {
+      const index = new Map();
+      ((folio && folio.settlers) || []).forEach(group => {
+        index.set(group.species, coalesceSettlerResidents(group.residents || []));
+      });
+      return index;
+    }
+
+    function ensureSettlerHistory() {
+      if (settlerHistoryIndex) return Promise.resolve(settlerHistoryIndex);
+      if (!settlerHistoryPromise) {
+        settlerHistoryPromise = apiGet(apiPaths.folio)
+          .then(folio => {
+            settlerHistoryIndex = buildSettlerHistoryIndex(folio);
+            return settlerHistoryIndex;
+          })
+          .catch(() => {
+            settlerHistoryIndex = new Map();
+            return settlerHistoryIndex;
+          });
+      }
+      return settlerHistoryPromise;
+    }
+
+    function settlerVisitMeta(settler, currentDay) {
+      if (!settlerHistoryIndex) return null;
+      const species = settler.name || settler.species;
+      const arriveDay = Number(settler.arrive_day);
+      const timelines = settlerHistoryIndex.get(species) || [];
+      const identity = settler.nickname || species;
+      const matchingIdentity = timelines.filter(item => (item.nickname || item.name) === identity);
+      const timeline = matchingIdentity.find(item => item._returnDays && item._returnDays.has(arriveDay))
+        || matchingIdentity.find(item => (item._segments || [item]).some(segment => Number(segment.arrive_day) === arriveDay));
+      if (!timeline) return null;
+      const segments = timeline._segments || [timeline];
+      const uniqueSegments = new Map();
+      segments.forEach(segment => {
+        const key = `${segment.arrive_day}\u0000${segment.leave_day}`;
+        if (!uniqueSegments.has(key)) uniqueSegments.set(key, segment);
+      });
+      const firstVisit = Math.min(...Array.from(uniqueSegments.values())
+        .map(segment => Number(segment.arrive_day))
+        .filter(Number.isFinite));
+      let cumulativeDays = 0;
+      uniqueSegments.forEach(segment => {
+        const start = Number(segment.arrive_day);
+        const end = segment.leave_day === null || segment.leave_day === undefined ? Number(currentDay) : Number(segment.leave_day);
+        if (Number.isFinite(start) && Number.isFinite(end)) cumulativeDays += Math.max(0, end - start);
+      });
+      const returned = Boolean(timeline._returnDays && timeline._returnDays.has(arriveDay) && Number.isFinite(firstVisit) && firstVisit < arriveDay);
+      return { returned, firstVisit, returnDay: arriveDay, cumulativeDays };
+    }
+
+    function settlerCard(settler, index, total, currentDay) {
       const species = settler.name || settler.species;
       const title = settler.nickname || species;
+      const visitMeta = settlerVisitMeta(settler, currentDay);
       const cardNode = el("article", { className: "settler-stack-card" });
       const info = el("div", { className: "settler-card-info" });
       info.append(el("div", { className: "settler-name-line" }, [
@@ -801,21 +3218,19 @@
         settler.nickname ? el("span", { className: "settler-species", text: species }) : null
       ]));
       const healthClass = settler.health_value < 0.3 ? "danger" : (settler.health_value <= 0.6 ? "warning" : "good");
+      const cumulativeDays = visitMeta && visitMeta.returned ? visitMeta.cumulativeDays : settler.days_alive;
       info.append(el("div", { className: "settler-status-line" }, [
-        el("span", { text: `到达：第${settler.arrive_day}天` }),
-        el("span", { text: `存活：${settler.days_alive}天` }),
-        el("span", {}, [document.createTextNode("健康："), el("strong", { className: `settler-health ${healthClass}`, text: `${settler.health} ${settler.health_value}` })])
+        el("span", { text: `到达：第${visitMeta && visitMeta.returned ? visitMeta.firstVisit : settler.arrive_day}天初访` }),
+        visitMeta && visitMeta.returned ? el("span", { text: `归来：第${visitMeta.returnDay}天` }) : null,
+        el("span", {}, [document.createTextNode("健康："), el("strong", { className: `settler-health ${healthClass}`, text: `${settler.health} ${settler.health_value}` })]),
+        el("span", { className: "settler-survival-line", text: `累计驻留 ${cumulativeDays} 天` })
       ]));
-      const returns = (settler.return_records || [])
-        .filter(record => record && record.day !== null && record.day !== undefined)
-        .map(record => el("span", { className: "settler-return-badge", text: `第${record.day}天归来` }));
-      if (returns.length) info.append(el("div", { className: "settler-return-line" }, returns));
       cardNode.append(el("div", { className: "settler-card-layout" }, [settlerArt(species), info]));
       if (total > 1) cardNode.append(el("span", { className: "stack-page", text: `${index + 1}/${total}` }));
       return cardNode;
     }
 
-    function createSettlerStack(settlers) {
+    function createSettlerStack(settlers, currentDay) {
       if (!settlers.length) return emptyNode();
       const container = el("div", { className: `settler-stack${settlers.length === 1 ? " single" : ""}` });
       let activeIndex = 0;
@@ -856,7 +3271,7 @@
         let layer = layerNodes.get(index);
         if (!layer) {
           layer = el("div");
-          layer.append(settlerCard(settlers[index], index, settlers.length));
+          layer.append(settlerCard(settlers[index], index, settlers.length, currentDay));
           layer.addEventListener("transitionend", event => {
             if (layer.dataset.role === "current" && event.propertyName === "transform") finishSettling();
           });
@@ -976,7 +3391,16 @@
     }
 
     function renderState(data, container) {
-      const grid = el("div", { className: "state-grid" });
+      latestStateRender = { data, container };
+      if (!settlerHistoryIndex) {
+        ensureSettlerHistory().then(() => {
+          if (latestStateRender && latestStateRender.data === data && latestStateRender.container === container) renderState(data, container);
+        });
+      }
+      const snailIncubating = isSnailIncubating(data.flags);
+      const activeGames = playableDisasterGames(data.disasters || {}, data.flags);
+      syncDisasterSessionState(activeGames, data);
+      const grid = el("div", { className: `state-grid${playtestMode ? " playtest-enabled" : ""}` });
       const banner = card(null, "status-banner");
       banner.append(
         el("div", { className: "score", text: data.score }),
@@ -989,10 +3413,45 @@
       if (weatherCorner) banner.append(weatherCorner);
       grid.append(banner);
 
+      if (playtestMode) {
+        const playtest = card("小游戏演练", "playtest-zone");
+        playtest.append(el("p", { text: "完整试玩已实现的小游戏，演练结果不会写入池塘。" }));
+        const actions = el("div", { className: "playtest-actions" });
+        Object.keys(miniGameInfo).forEach(gameId => {
+          const button = el("button", { className: "playtest-button", text: miniGameInfo[gameId].title, attrs: { type: "button" } });
+          button.addEventListener("click", () => startPlaytestGame(gameId));
+          actions.append(button);
+        });
+        playtest.append(actions);
+        grid.append(playtest);
+      }
+
       const warnings = disasterMessages(data.disasters || {});
-      if (warnings.length) {
+      if (warnings.length || snailIncubating || activeGames.length) {
         const zone = card("灾害警示", "disaster-zone");
-        zone.append(el("ul", { className: "notice-list" }, warnings.map(text => el("li", { text }))));
+        if (warnings.length) zone.append(el("ul", { className: "notice-list" }, warnings.map(text => el("li", { text }))));
+        if (snailIncubating) {
+          const hatchDay = Number(data.flags.apple_snail.hatch_day);
+          const daysUntilHatch = Number.isFinite(hatchDay) ? Math.max(0, hatchDay - Number(data.day || 0)) : "几";
+          const warning = el("div", { className: "snail-incubation-warning" }, [
+            el("span", { text: `岸边出现粉色卵块——福寿螺卵，约 ${daysUntilHatch} 天后孵化，现在清理可防患于未然` })
+          ]);
+          const clearEggs = el("button", { className: "pond-help-button", text: "现在清理福寿螺卵", attrs: { type: "button" } });
+          applyDisasterHelpState(clearEggs, "snail");
+          clearEggs.addEventListener("click", () => (playtestMode ? startPlaytestGame("snail") : startLiveGame("snail")));
+          warning.append(clearEggs);
+          zone.append(warning);
+        }
+        if (activeGames.length) {
+          const actions = el("div", { className: "disaster-actions" });
+          activeGames.filter(gameId => !(snailIncubating && gameId === "snail")).forEach(gameId => {
+            const button = el("button", { className: "pond-help-button", text: `帮忙 · ${miniGameInfo[gameId].title}`, attrs: { type: "button" } });
+            applyDisasterHelpState(button, gameId);
+            button.addEventListener("click", () => (playtestMode ? startPlaytestGame(gameId) : startLiveGame(gameId)));
+            actions.append(button);
+          });
+          if (actions.childElementCount) zone.append(actions);
+        }
         grid.append(zone);
       }
 
@@ -1010,7 +3469,7 @@
       grid.append(renderObserve(data.observe_text));
 
       const settlers = card("定居者", "settlers-zone");
-      settlers.append(createSettlerStack(data.settlers || []));
+      settlers.append(createSettlerStack(data.settlers || [], data.day));
       grid.append(settlers);
 
       const environment = card("环境参数", "environment-zone");
@@ -1032,11 +3491,13 @@
       grid.append(environment);
 
       const populations = el("details", { className: "pixel-card population-fold populations-zone" });
+      populations.open = true;
       populations.append(el("summary", { text: "种群" }));
       const groups = el("div", { className: "population-groups" });
       (data.populations || []).forEach(group => {
         const groupNode = el("section", { className: "population-group" }, el("h3", { text: group.label }));
-        (group.species || []).forEach(species => {
+        const speciesList = group.species && group.species.length ? group.species : [{ name: "???", count: null, delta: 0 }];
+        speciesList.forEach(species => {
           const unlocked = species.name !== "???";
           const row = el(unlocked ? "button" : "div", { className: `species-row${unlocked ? "" : " locked"}`, attrs: unlocked ? { type: "button" } : {} });
           row.append(el("span", { className: "species-row-main" }, [unlocked ? speciesImage(species.name, "population-image") : null, el("strong", { text: species.name })]));
@@ -1053,6 +3514,7 @@
       populations.append(groups);
       grid.append(populations);
       container.replaceChildren(grid);
+      maybePromptDisasterGames(activeGames);
     }
 
     function renderCodex(data, container) {
@@ -1118,26 +3580,61 @@
 
     function residentTimeline(resident) {
       const entries = [];
+      const seen = new Set();
       let sequence = 0;
       const add = (day, text) => {
         if (day === null || day === undefined) return;
         const numeric = Number(day);
+        const key = `${numeric}\u0000${text}`;
+        if (seen.has(key)) return;
+        seen.add(key);
         entries.push({ day: Number.isFinite(numeric) ? numeric : Number.POSITIVE_INFINITY, sequence: sequence++, text });
       };
-      add(resident.arrive_day, `第${resident.arrive_day}天 到访`);
-      (resident.hibernations || []).forEach(period => {
-        if (!period || typeof period !== "object") return;
-        add(period.sleep, `第${period.sleep}天 入眠`);
-        add(period.wake, `第${period.wake}天 苏醒`);
+      (resident._segments || [resident]).forEach(segment => {
+        const returnDays = new Set((segment.return_records || [])
+          .filter(record => record && record.day !== null && record.day !== undefined)
+          .map(record => Number(record.day)));
+        if (!returnDays.has(Number(segment.arrive_day))) add(segment.arrive_day, `第${segment.arrive_day}天 到访`);
+        (segment.hibernations || []).forEach(period => {
+          if (!period || typeof period !== "object") return;
+          add(period.sleep, `第${period.sleep}天 入眠`);
+          add(period.wake, `第${period.wake}天 苏醒`);
+        });
+        (segment.return_records || []).forEach(record => {
+          if (record && typeof record === "object") add(record.day, `第${record.day}天 归来`);
+        });
+        if (segment.leave_day !== null && segment.leave_day !== undefined) {
+          const leaveText = segment.reason === null || segment.reason === undefined ? "离开" : reasonLabel(segment.reason);
+          add(segment.leave_day, `第${segment.leave_day}天 ${leaveText}`);
+        }
       });
-      (resident.return_records || []).forEach(record => {
-        if (record && typeof record === "object") add(record.day, `第${record.day}天 归来`);
-      });
-      if (resident.leave_day !== null && resident.leave_day !== undefined) {
-        const leaveText = resident.reason === null || resident.reason === undefined ? "离开" : reasonLabel(resident.reason);
-        add(resident.leave_day, `第${resident.leave_day}天 ${leaveText}`);
-      }
       return entries.sort((left, right) => left.day - right.day || left.sequence - right.sequence);
+    }
+
+    function coalesceSettlerResidents(residents) {
+      const timelines = [];
+      (residents || []).forEach(resident => {
+        const identity = resident.nickname || resident.name;
+        const returnDays = (resident.return_records || [])
+          .filter(record => record && record.day !== null && record.day !== undefined)
+          .map(record => Number(record.day));
+        const arriveDay = Number(resident.arrive_day);
+        const target = returnDays.includes(arriveDay)
+          ? [...timelines].reverse().find(item => item._identity === identity && item._returnDays.has(arriveDay))
+          : null;
+        if (target) {
+          target._segments.push(resident);
+          returnDays.forEach(day => target._returnDays.add(day));
+          return;
+        }
+        timelines.push({
+          ...resident,
+          _identity: identity,
+          _segments: [resident],
+          _returnDays: new Set(returnDays)
+        });
+      });
+      return timelines;
     }
 
     function createFolioSection(title, openByDefault) {
@@ -1149,21 +3646,60 @@
       return { section, body };
     }
 
-    function folioCountSection(title, items) {
+    function folioCountSection(title, items, flowClass = "") {
       const { section, body } = createFolioSection(title, false);
-      const list = el("div", { className: "folio-record-flow" });
+      const list = el("div", { className: `folio-record-flow${flowClass ? ` ${flowClass}` : ""}` });
       (items || []).forEach(item => {
         const entry = el("article", { className: "folio-record-item" });
-        entry.append(el("span", { className: "folio-count-badge", text: `${item.name} ×${item.count}` }));
-        if ((item.notes || []).length) entry.append(el("span", { className: "folio-record-notes", text: item.notes.join(" · ") }));
+        const count = folioItemCount(item);
+        entry.append(el("div", { className: "folio-record-head" }, [
+          el("span", { className: "folio-record-name", text: item.name }),
+          el("span", { className: "folio-record-count", text: `×${count}` })
+        ]));
+        if ((item.notes || []).length) entry.append(el("div", { className: "folio-record-notes" },
+          item.notes.map(note => el("span", { className: "folio-record-note", text: note }))));
         list.append(entry);
       });
       body.append(list.childElementCount ? list : emptyNode());
       return section;
     }
 
+    function folioItemCount(item) {
+      const embedded = String((item && item.name) || "").match(/[×x]\s*(\d+)\s*$/i);
+      const raw = item && (item.count ?? item.times ?? item.visits ?? item.occurrences);
+      const count = Number(raw ?? (embedded && embedded[1]) ?? 1);
+      return Number.isFinite(count) ? count : 1;
+    }
+
+    function folioItemNotes(item) {
+      if (!item || item.notes === null || item.notes === undefined) return [];
+      return Array.isArray(item.notes) ? item.notes.map(String) : [String(item.notes)];
+    }
+
+    function coalesceVisitorEntries(items) {
+      const source = (items || []).map(item => ({ ...item, name: String(item.name || "").replace(/\s*[×x]\s*\d+\s*$/i, "").trim(), notes: folioItemNotes(item), count: folioItemCount(item) }));
+      const decisions = [];
+      const visitors = source.filter(item => {
+        const decisionNote = item.notes.find(note => /你选择[^。；\n]*(?:收留|让[^。；\n]*留下)/.test(note));
+        if (!/(?:定居|收留)/.test(item.name) && !decisionNote) return true;
+        decisions.push({ item, decisionNote });
+        return false;
+      });
+      decisions.forEach(({ item, decisionNote }) => {
+        const directName = item.name.replace(/[\s·]*(?:定居.*|收留.*)$/u, "").trim();
+        const target = visitors
+          .filter(visitor => item.name.startsWith(visitor.name) || visitor.name === directName)
+          .sort((left, right) => right.name.length - left.name.length)[0];
+        const note = decisionNote || (item.name.includes("收留") ? "你选择「收留它」" : "你选择「让它留下」");
+        const countedNote = /[×x]\s*\d+\s*$/i.test(note) ? note : `${note} ×${item.count}`;
+        if (target) target.notes.push(countedNote);
+        else visitors.push({ ...item, name: directName || item.name, notes: [...item.notes.filter(existing => existing !== decisionNote), countedNote] });
+      });
+      return visitors;
+    }
+
     function folioVisitorSection(items) {
-      return folioCountSection("访客志", items);
+      return folioCountSection("访客志", coalesceVisitorEntries(items), "folio-visitor-flow");
     }
 
     function renderFolio(data, container) {
@@ -1172,10 +3708,21 @@
 
       const { section: speciesSection, body: speciesBody } = createFolioSection("物种志", true);
       const speciesList = el("div", { className: "folio-species-list" });
-      (data.species || []).forEach(item => speciesList.append(el("div", { className: "folio-species-row" }, [
-        el("strong", { text: item.name }),
-        el("span", { className: "folio-species-meta", text: `${item.unlock_text} · 历史最高${item.historical_peak} · 归零${item.extinct_count}次` })
-      ])));
+      (data.species || []).forEach(item => {
+        const art = speciesArt(item.name);
+        art.classList.add("folio-species-art");
+        speciesList.append(el("div", { className: "folio-species-row" }, [
+          art,
+          el("div", { className: "folio-species-copy" }, [
+            el("strong", { className: "folio-species-name", text: item.name }),
+            el("span", { className: "folio-species-meta" }, [
+              el("span", { text: item.unlock_text }),
+              el("span", { text: `历史最高 ${item.historical_peak}` }),
+              el("span", { text: `归零 ${item.extinct_count} 次` })
+            ])
+          ])
+        ]));
+      });
       speciesBody.append(speciesList.childElementCount ? speciesList : emptyNode());
       stack.append(speciesSection);
 
@@ -1191,7 +3738,7 @@
       const { section: settlersSection, body: settlersBody } = createFolioSection("定居者志", true);
       const settlerGroups = el("div", { className: "settler-folio-list" });
       (data.settlers || []).forEach(group => {
-        const residents = group.residents || [];
+        const residents = coalesceSettlerResidents(group.residents || []);
         const nicknames = [...new Set(residents.map(resident => resident.nickname).filter(Boolean))];
         const groupName = group.name || group.species;
         const groupNode = el("article", { className: "settler-folio-group" });
@@ -1226,19 +3773,21 @@
     }
 
     function annalsEventType(text) {
-      if (/解锁成就/.test(text)) return "achievement";
-      if (/死亡|死|离去|离开/.test(text)) return "leave";
-      if (/定居|归来|回来|住了下来/.test(text)) return "settle";
+      const match = ANNALS_PRIMARY_TYPES.find(([, matches]) => matches(text));
+      if (match) return match[0];
       return "normal";
     }
 
     function appendAnnalsText(node, text, type) {
       let match = null;
-      if (type === "achievement") match = text.match(/【([^】]+)】/);
-      if (!match) match = text.match(/^年老的([^，。；：！？\s]{1,12}?)(?=在|离)/);
-      if (!match) match = text.match(/^([^，。；：！？\s]{1,18}?)(?=住了下来|定居|归来|回来|来访|出生|长大|自然恢复|归零|因|在年老|年老|饥饿|没有|离开|离去|死亡|死了|死去)/);
+      if (type === "leave") match = text.match(/^年(?:老|迈)的([^，。；：！？\s]{1,12}?)(?=在|离|动作|最后)/);
+      if (!match && type === "leave") match = text.match(/^([^，。；：！？\s]{1,18}?)\s*的身影(?=再也看不到了)/);
+      if (!match && type === "settle") match = text.match(/^第\d+天[，,]\s*([^，。；：！？\s]{1,18}?)(?=重新出现)/);
+      if (!match && (type === "settle" || type === "leave")) {
+        match = text.match(/^([^，。；：！？\s]{1,18}?)(?=住了下来|定居|归来|重新出现|再也看不到了|消失|离开|离去|死亡)/);
+      }
       if (!match) {
-        node.textContent = text;
+        node.append(document.createTextNode(text));
         return;
       }
       const emphasized = match[1];
@@ -1248,12 +3797,28 @@
       node.append(document.createTextNode(text.slice(start + emphasized.length)));
     }
 
+    function appendAnnalBadges(node, type, hasChoice) {
+      const badges = [];
+      if (type === "disaster") badges.push(["灾害", "danger"]);
+      if (type === "good") badges.push(["转好", "good"]);
+      if (type === "achievement") badges.push(["成就", "gold"]);
+      if (hasChoice) badges.push(["决策", "choice"]);
+      if (!badges.length) return;
+      node.append(el("span", { className: "annal-badges" }, badges.map(([label, variant]) =>
+        el("span", { className: `annal-badge ${variant}`, text: label })
+      )));
+    }
+
     function renderAnnals(data, container) {
+      const parsed = [...(data.timeline || [])]
+        .reverse()
+        .map(parseAnnalsEntry)
+        .map(item => ({ ...item, text: stripSummonSentences(item.text) }))
+        .filter(item => item.text);
       const stack = el("div", { className: "page-stack" });
       stack.append(el("div", { className: "page-heading" }, [
-        el("h2", { text: "年鉴" }), el("span", { className: "progress-count", text: `${data.total} 条` })
+        el("h2", { text: "年鉴" }), el("span", { className: "progress-count", text: `${parsed.length} 条` })
       ]));
-      const parsed = [...(data.timeline || [])].reverse().map(parseAnnalsEntry);
       const groups = [];
       const groupMap = new Map();
       parsed.forEach(item => {
@@ -1266,17 +3831,16 @@
         }
       });
       const seasonClasses = { 春: "season-spring", 夏: "season-summer", 秋: "season-autumn", 冬: "season-winter" };
-      const typePriority = { normal: 0, settle: 1, leave: 2, achievement: 3 };
       const timeline = el("ol", { className: "annals-timeline" });
       groups.forEach(group => {
         const types = group.events.map(annalsEventType);
-        const dayType = types.reduce((selected, type) => typePriority[type] > typePriority[selected] ? type : selected, "normal");
-        const item = el("li", { className: `annals-day type-${dayType}` });
+        const item = el("li", { className: "annals-day" });
         const badgeText = group.season ? `${group.season}·${group.day}` : group.day;
         item.append(el("span", { className: `date-badge ${seasonClasses[group.season] || "season-unknown"}`, text: badgeText }));
         const events = el("div", { className: "annals-events" });
         group.events.forEach((text, index) => {
           const event = el("p", { className: `annals-event type-${types[index]}` });
+          appendAnnalBadges(event, types[index], ANNALS_EVENT_TAXONOMY.choice.some(keyword => text.includes(keyword)));
           appendAnnalsText(event, text, types[index]);
           events.append(event);
         });
@@ -1330,6 +3894,14 @@
       if (new URLSearchParams(window.location.search).get("tune") !== "1") return;
       const rootStyle = document.documentElement.style;
       const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      const storageKey = "cedartoy_eco_tuner";
+      let storedConfig = {};
+      try {
+        storedConfig = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      } catch (_error) {
+        storedConfig = {};
+      }
+      const storedRatOffsetY = Number(storedConfig.ratOffsetY);
       const config = {
         spaceScale: 1,
         bodyFontPx: 16,
@@ -1338,6 +3910,7 @@
         mobileCodexColumns: 3,
         settlerDensity: "regular",
         annalsGapPx: isMobile ? 10 : 17,
+        ratOffsetY: Number.isFinite(storedRatOffsetY) ? Math.max(-40, Math.min(40, storedRatOffsetY)) : 0,
         seasonBadgeColors: {
           spring: "#A8C8A0",
           summer: "#E6A8B1",
@@ -1345,8 +3918,9 @@
           winter: "#9B8DB5"
         }
       };
+      rootStyle.setProperty("--rat-offset-y", `${config.ratOffsetY}px`);
       const panel = el("details", { className: "tuner-panel" });
-      panel.append(el("summary", { text: "调参面板" }));
+      panel.append(el("summary", { text: `调参面板 · ${BUILD_VERSION}` }));
       const controls = el("div", { className: "tuner-controls" });
       const spaceBases = {
         "--space-main-top": 24, "--space-main-bottom": 54, "--space-page-gap": 22, "--space-state-gap": 18,
@@ -1357,9 +3931,9 @@
         "--space-mobile-folio-pad-top": 10, "--space-mobile-folio-pad-side": 11, "--space-mobile-folio-pad-bottom": 13
       };
       const densityBases = {
-        "--settler-stack-height": 196, "--settler-single-height": 174, "--settler-card-height": 168, "--settler-card-padding": 18,
-        "--settler-mobile-stack-height": 186, "--settler-mobile-single-height": 166, "--settler-mobile-card-height": 160,
-        "--settler-mobile-pad-y": 13, "--settler-mobile-pad-x": 12
+        "--settler-stack-height": 146, "--settler-single-height": 132, "--settler-card-height": 126, "--settler-card-padding": 10,
+        "--settler-mobile-stack-height": 138, "--settler-mobile-single-height": 126, "--settler-mobile-card-height": 120,
+        "--settler-mobile-pad-y": 8, "--settler-mobile-pad-x": 10
       };
 
       function setScaledProperties(properties, scale) {
@@ -1422,6 +3996,15 @@
         rootStyle.setProperty("--annals-gap", `${value}px`);
         rootStyle.setProperty("--annals-mobile-gap", `${value}px`);
       });
+      addRange("ratOffsetY", config.ratOffsetY, -40, 40, 1, value => {
+        config.ratOffsetY = value;
+        rootStyle.setProperty("--rat-offset-y", `${value}px`);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify({ ...storedConfig, ratOffsetY: value }));
+        } catch (_error) {
+          // 隐私模式或存储配额异常时仍保留本次实时调参。
+        }
+      });
 
       controls.append(el("strong", { text: "四季徽章颜色" }));
       const colors = el("div", { className: "tuner-colors" });
@@ -1458,7 +4041,12 @@
     buildNav(document.querySelector(".bottom-nav"));
     document.getElementById("sheet-close").addEventListener("click", closeSheet);
     sheetBackdrop.addEventListener("click", event => { if (event.target === sheetBackdrop) closeSheet(); });
-    document.addEventListener("keydown", event => { if (event.key === "Escape" && !sheetBackdrop.hidden) closeSheet(); });
+    gameOverlay.addEventListener("click", event => { if (event.target === gameOverlay) requestGameClose(); });
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      if (!gameOverlay.hidden) requestGameClose();
+      else if (!sheetBackdrop.hidden) closeSheet();
+    });
     initTuner();
     activateTab("state");
   </script>
