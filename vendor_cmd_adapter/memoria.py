@@ -103,6 +103,23 @@ def configure_module(mod, level, cfg, level_save_dir):
         setattr(mod, "_HEARTBEAT_PATH", str(level_save_dir / cfg["heartbeat"]))
     if level == "5":
         setattr(mod, "_L4_SAVE_PATH", str(save_dir / "level4" / "detective_save_l4.json"))
+        if hasattr(mod, "_forgetting_label") and getattr(mod, "fg_label", None) is None:
+            class _ForgettingLabelProxy:
+                def __init__(self, module):
+                    self._module = module
+
+                def __format__(self, spec):
+                    try:
+                        state = getattr(self._module, "_STATE", None) or {}
+                        label = self._module._forgetting_label(state.get("forgetting_level", 0))
+                        return format(label, spec)
+                    except Exception:
+                        return ""
+
+                def __str__(self):
+                    return self.__format__("")
+
+            setattr(mod, "fg_label", _ForgettingLabelProxy(mod))
     if hasattr(mod, "_RNG"):
         setattr(mod, "_RNG", None)
     if hasattr(mod, "_HEARTBEAT_HINT"):
@@ -128,11 +145,22 @@ def load_existing_state(mod):
         mod._auto_load()
     elif hasattr(mod, "_load"):
         mod._load()
-    if getattr(mod, "_STATE", None) is None and hasattr(mod, "_init_state"):
-        try:
-            setattr(mod, "_STATE", mod._init_state())
-        except TypeError:
-            setattr(mod, "_STATE", mod._init_state("normal"))
+    if getattr(mod, "_STATE", None) is None:
+        if hasattr(mod, "new_game"):
+            try:
+                mod.new_game()
+            except TypeError:
+                mod.new_game("normal")
+            if hasattr(mod, "_save"):
+                try:
+                    mod._save()
+                except Exception:
+                    pass
+        elif hasattr(mod, "_init_state"):
+            try:
+                setattr(mod, "_STATE", mod._init_state())
+            except TypeError:
+                setattr(mod, "_STATE", mod._init_state("normal"))
 
 level = level_key(extra.get("level") or read_meta().get("current_level"))
 cfg, mod, save_path = import_level(level)
@@ -160,6 +188,11 @@ if payload.get("reset"):
         text = mod.new_game(difficulty)
     else:
         text = mod.new_game()
+    if hasattr(mod, "_save"):
+        try:
+            mod._save()
+        except Exception:
+            pass
 else:
     text = mod.cmd(command)
 
@@ -210,9 +243,12 @@ def save_summary(player_id):
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
-    level = _normalize_level(arguments.get("level") or arguments.get("chapter"))
-    extra = {"level": level}
+    requested_level = arguments.get("level") or arguments.get("chapter")
+    extra = {}
     if action in {"new", "memoria_new"}:
+        level = _normalize_level(requested_level)
+        extra["level"] = level
+
         def _memoria_has_save():
             root = SAVE_ROOT / "memoria" / require_player_id(player_id)
             return (root / f"level{level}" / LEVELS[level]["save"]).exists()
@@ -226,8 +262,22 @@ def play(arguments):
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
+        if requested_level:
+            level = _normalize_level(requested_level)
+            extra["level"] = level
+        else:
+            level = None
         text = GAME.run(player_id, command, extra=extra)
+        if level is None:
+            root = SAVE_ROOT / "memoria" / require_player_id(player_id)
+            try:
+                progress = json.loads((root / "progress.json").read_text(encoding="utf-8"))
+                if isinstance(progress, dict):
+                    level = progress.get("current_level")
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
     elif action in {"levels", "memoria_levels"}:
+        level = _normalize_level(requested_level)
         lines = ["Memoria Station 关卡："]
         for key, cfg in LEVELS.items():
             lines.append(f"{key}. {cfg['title']}")
