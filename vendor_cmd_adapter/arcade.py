@@ -49,6 +49,16 @@ if payload.get("reset"):
         except FileNotFoundError:
             pass
 
+    # Reset must always leave a complete save set, even when the requested
+    # command is read-only and would not save anything itself.
+    enter_text = arcade.cmd("enter")
+    for game in (slots, blackjack, roulette):
+        game._save(game._load())
+
+    if command.strip().lower() == "enter":
+        print(enter_text, end="")
+        raise SystemExit(0)
+
 print(arcade.cmd(command), end="")
 '''
 

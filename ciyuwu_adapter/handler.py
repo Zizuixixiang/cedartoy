@@ -234,6 +234,8 @@ def ciyuwu_new(arguments):
 
     with _connect() as conn:
         _init_db(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
         _cleanup_expired(conn, now)
         row = conn.execute(
             "SELECT meta_data FROM ciyuwu_sessions WHERE player_id = ?",
@@ -362,6 +364,10 @@ def _run_player_command(player_id, command):
     now = time.time()
     with _connect() as conn:
         _init_db(conn)
+        conn.commit()
+        # Reserve the write transaction before reading so concurrent requests
+        # cannot run the engine from the same stale player snapshot.
+        conn.execute("BEGIN IMMEDIATE")
         _cleanup_expired(conn, now)
         row = conn.execute(
             "SELECT save_data, meta_data FROM ciyuwu_sessions WHERE player_id = ?",

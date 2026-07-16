@@ -24,7 +24,33 @@ if payload.get("reset"):
         except FileNotFoundError:
             pass
 
-print(leek.cmd(command), end="")
+load_warning = ""
+save_path = os.path.join(save_dir, "leek_save.json")
+if not payload.get("reset") and os.path.exists(save_path):
+    try:
+        with open(save_path, "r", encoding="utf-8") as f:
+            saved_data = json.load(f)
+        if not isinstance(saved_data, dict):
+            raise ValueError("存档顶层不是 JSON 对象")
+        version = saved_data.get("version", 1)
+        try:
+            is_outdated = version < leek._SAVE_VERSION
+        except TypeError:
+            raise ValueError(f"存档版本字段无效：{version!r}")
+        if is_outdated:
+            raise ValueError(f"存档版本 {version} 低于当前版本 {leek._SAVE_VERSION}")
+    except (OSError, UnicodeError, ValueError) as exc:
+        backup_path = save_path + ".bak"
+        os.replace(save_path, backup_path)
+        load_warning = (
+            f"⚠️ 存档告警：已备份为 {os.path.basename(backup_path)}（原因：{exc}），"
+            "本次已重建新档。"
+        )
+
+result = leek.cmd(command)
+if load_warning:
+    print(load_warning)
+print(result, end="")
 '''
 
 

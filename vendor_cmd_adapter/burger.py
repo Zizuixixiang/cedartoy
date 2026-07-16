@@ -292,7 +292,18 @@ if payload.get("reset"):
         pass
 
 random.seed(str(game.SAVE_FILE) + ":" + command)
-state = game.fresh_state() if payload.get("reset") else game.load()
+load_warning = ""
+if not payload.get("reset") and game.SAVE_FILE.exists():
+    try:
+        saved_data = json.loads(game.SAVE_FILE.read_text(encoding="utf-8"))
+        if not isinstance(saved_data, dict):
+            raise ValueError("存档顶层不是 JSON 对象")
+    except (OSError, UnicodeError, ValueError) as exc:
+        corrupt_path = game.SAVE_FILE.with_name(game.SAVE_FILE.name + ".corrupt")
+        game.SAVE_FILE.replace(corrupt_path)
+        load_warning = f"⚠️ 检测到损坏存档，已备份为 {corrupt_path.name}，本次已重建新档。"
+
+state = game.fresh_state() if payload.get("reset") or load_warning else game.load()
 ensure_started(state)
 
 buf = io.StringIO()
@@ -307,6 +318,8 @@ with contextlib.redirect_stdout(buf):
             dispatch(state, raw)
             game.save(state)
 
+if load_warning:
+    print(load_warning)
 print(buf.getvalue(), end="")
 '''
 

@@ -27,14 +27,21 @@ try:
 except Exception:
     pass
 
-if payload.get("reset"):
+reset = payload.get("reset")
+if reset:
     try:
         os.remove(os.path.join(save_dir, "fishing_save.json"))
     except FileNotFoundError:
         pass
 
 extra = payload.get("extra") or {}
-if command == "__import__":
+if reset:
+    seed = extra.get("seed")
+    if seed is None:
+        print(fishing.new_game(), end="")
+    else:
+        print(fishing.new_game(seed), end="")
+elif command == "__import__":
     raw = extra.get("save_data")
     if isinstance(raw, str):
         data = json.loads(raw)
@@ -79,10 +86,7 @@ def play(arguments):
     if action in {"new", "fishing_new"}:
         require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "fishing")
         seed = arguments.get("seed")
-        parts = ["new_game"]
-        if seed is not None:
-            parts.append(str(seed))
-        text = GAME.run(player_id, " ".join(parts), reset=True)
+        text = GAME.run(player_id, "", reset=True, extra={"seed": seed})
     elif action in {"cmd", "fishing_cmd"}:
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
