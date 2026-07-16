@@ -423,6 +423,14 @@ _ECO_VOTE_HINT = (
 def _record_vote(player_id, announcement_id, arguments):
     """回复系统投票。options 缺省时兼容单选的 option。"""
     options = arguments.get("options")
+    if isinstance(options, str):
+        for _ in range(3):
+            if not isinstance(options, str):
+                break
+            try:
+                options = json.loads(options)
+            except (TypeError, json.JSONDecodeError):
+                break
     if options is None:
         option = arguments.get("option")
         options = [] if option is None else [option]
