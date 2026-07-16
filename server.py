@@ -191,6 +191,7 @@ _PLATFORM_TOOLS = [
     },
 ]
 _ROOT_TOOL_NAMES = frozenset({"list_games", "get_guide", "play", "account"})
+_ROOT_MCP_PATHS = frozenset({"/", "/mcp", "/mcp/"})
 
 
 def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
@@ -3072,7 +3073,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_admin_reset_password(path)
             return
 
-        if path not in ("/", "/mbti", "/dnd") and not path_token:
+        if path not in (*_ROOT_MCP_PATHS, "/mbti", "/dnd") and not path_token:
             self._send_json({"error": "not found"}, status=404)
             return
 
@@ -3093,7 +3094,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json(_json_rpc_error(None, -32600, "Invalid Request"), status=400)
             return
 
-        if path != "/mbti" and path != "/dnd" and (path == "/" or path_token) and "id" not in payload:
+        if path != "/mbti" and path != "/dnd" and (path in _ROOT_MCP_PATHS or path_token) and "id" not in payload:
             self._send_empty(status=202)
             return
 
@@ -3259,7 +3260,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def _request_path_and_token(self):
         path = self.path.split("?", 1)[0]
-        if path in ("/", "/mbti", "/dnd") or path.startswith("/api/"):
+        if path in (*_ROOT_MCP_PATHS, "/mbti", "/dnd") or path.startswith("/api/"):
             return path, None
         token = urllib.parse.unquote(path.strip("/"))
         if token and "/" not in token:
@@ -3289,7 +3290,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         accept = self.headers.get("Accept", "")
         if "text/event-stream" not in accept.lower():
             return False
-        if path == "/":
+        if path in _ROOT_MCP_PATHS:
             return True
         if path in {"/admin", "/health", "/mbti", "/dnd"} or path.startswith("/api/"):
             return False
@@ -3770,8 +3771,6 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         return (
             self.path == "/soup"
             or self.path.startswith("/soup/")
-            or self.path == "/mcp"
-            or self.path.startswith("/mcp/")
         )
 
     def _proxy_to_soup(self):
