@@ -101,6 +101,79 @@ def configure_module(mod, level, cfg, level_save_dir):
     setattr(mod, "_SAVE_PATH", str(save_path))
     if cfg.get("heartbeat"):
         setattr(mod, "_HEARTBEAT_PATH", str(level_save_dir / cfg["heartbeat"]))
+    if level in {"1", "4"} and hasattr(mod, "_dispatch"):
+        original_dispatch = mod._dispatch
+
+        def _dispatch_with_backtrack_count_fix(raw):
+            # L1 also supports semicolon-chained commands, so patch each dispatch
+            # segment instead of wrapping cmd(). All non-backtrack paths go
+            # straight to the vendor dispatcher without touching game state.
+            parts = raw.split(maxsplit=1) if isinstance(raw, str) else []
+            if not parts or parts[0].lower() != "backtrack":
+                return original_dispatch(raw)
+
+            state_before = getattr(mod, "_STATE", None)
+            if not isinstance(state_before, dict):
+                return original_dispatch(raw)
+            remaining_before = state_before.get("active_backtracks")
+            if not isinstance(remaining_before, int):
+                return original_dispatch(raw)
+            snapshots_before = state_before.get("_snapshots")
+            snapshot_count_before = (
+                len(snapshots_before) if isinstance(snapshots_before, list) else None
+            )
+
+            text = original_dispatch(raw)
+
+            state_after = getattr(mod, "_STATE", None)
+            if not isinstance(state_after, dict):
+                return text
+            snapshots_after = state_after.get("_snapshots")
+            snapshot_count_after = (
+                len(snapshots_after) if isinstance(snapshots_after, list) else None
+            )
+            result_text = text if isinstance(text, str) else ""
+            failed = (
+                "没有可用的存档点" in result_text
+                or "没有剩余的主动回溯次数" in result_text
+            )
+            snapshot_consumed = (
+                snapshot_count_before is not None
+                and snapshot_count_after is not None
+                and snapshot_count_after < snapshot_count_before
+            )
+            succeeded = not failed and (
+                ("已回溯" in result_text and "存档点" in result_text)
+                or snapshot_consumed
+            )
+            if not failed and not succeeded:
+                return text
+
+            expected_remaining = max(0, remaining_before - 1) if succeeded else remaining_before
+            if state_after.get("active_backtracks") != expected_remaining:
+                state_after["active_backtracks"] = expected_remaining
+                # Both engines save inside their dispatcher, before this platform
+                # correction runs. Persist the corrected value explicitly.
+                if hasattr(mod, "_save"):
+                    mod._save()
+                if isinstance(text, str):
+                    remaining_pattern = (
+                        r"(?m)^(剩余主动回溯：)\d+(次)$"
+                        if level == "1"
+                        else r"(?m)^(剩余回溯次数：)\d+$"
+                    )
+                    text = re.sub(
+                        remaining_pattern,
+                        lambda match: (
+                            f"{match.group(1)}{expected_remaining}"
+                            + (match.group(2) if level == "1" else "")
+                        ),
+                        text,
+                        count=1,
+                    )
+            return text
+
+        setattr(mod, "_dispatch", _dispatch_with_backtrack_count_fix)
     if level == "5":
         setattr(mod, "_L4_SAVE_PATH", str(save_dir / "level4" / "detective_save_l4.json"))
         if hasattr(mod, "_forgetting_label") and getattr(mod, "fg_label", None) is None:
