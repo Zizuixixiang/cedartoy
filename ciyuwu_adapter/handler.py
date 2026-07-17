@@ -71,6 +71,11 @@ _ENGINE_LOCK = threading.Lock()
 
 DB_PATH = "/opt/cedartoy/data/sessions.db"
 MAX_SESSIONS = 500
+# 长事务尾部防护：engine 计算在 BEGIN IMMEDIATE 写事务内执行，给指令长度和
+# 分号串联条数设上限，避免超长输入把写锁持到同库邻居偶发 busy。
+# （批量指令如「前进5」引擎侧已限 20 步；engine 只按 ASCII 分号切分。）
+MAX_COMMAND_CHARS = 500
+MAX_CHAIN_COMMANDS = 20
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 # 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id 或 id:slot，游客=guest:xxx。
 PLAYER_ID_RE = re.compile(r"^(?:guest:[a-zA-Z0-9]{1,64}|[a-zA-Z0-9]{1,64}(?::[1-5])?)$")
@@ -286,7 +291,15 @@ def ciyuwu_cmd(arguments):
     command = arguments.get("command")
     if not isinstance(command, str) or not command.strip():
         raise JsonRpcError(-32602, "command 须为非空字符串。")
-    return _run_player_command(player_id, command.strip())
+    command = command.strip()
+    if len(command) > MAX_COMMAND_CHARS:
+        raise JsonRpcError(-32602, f"command 过长（上限 {MAX_COMMAND_CHARS} 字符）。")
+    if len([p for p in command.split(";") if p.strip()]) > MAX_CHAIN_COMMANDS:
+        raise JsonRpcError(
+            -32602,
+            f"分号串联一次最多 {MAX_CHAIN_COMMANDS} 条指令，请分多次执行。",
+        )
+    return _run_player_command(player_id, command)
 
 
 def ciyuwu_info(arguments):
@@ -567,7 +580,12 @@ def _now_iso(now):
 
 
 def _connect():
-    return sqlite3.connect(DB_PATH)
+    # WAL：写事务期间不再阻塞同库读，邻居游戏 busy 窗口只剩写-写竞争。
+    # journal_mode 持久化在 db 文件上，已是 WAL 时重复执行为幂等 no-op。
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    return conn
 
 
 def _init_db(conn):
