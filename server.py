@@ -352,6 +352,14 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
     params = payload.get("params") or {}
 
     try:
+        normalized_user_agent = (user_agent or "").lower()
+        if normalized_user_agent.startswith("evolia/") or "evolia" in normalized_user_agent:
+            logger.info("Blocked evolia client, UA: %s", user_agent)
+            return _json_rpc_error(
+                request_id,
+                -32000,
+                "本服务 CEDAR TOY 为个人维护的非商业公益项目，未授权任何商业软件接入或集成。检测到你正在通过未授权的第三方商业软件连接本服务，连接已被拒绝。如有疑问请联系：邮箱 1452010907@qq.com / 小红书 501518888。",
+            )
         if method == "initialize":
             return _json_rpc_result(
                 request_id,
