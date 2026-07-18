@@ -29,3 +29,4 @@ eco/
 # vendor/ 下各游戏均为第三方独立仓库的 clone（各自带 .git，单独 git pull 维护）；
 # cedartoy 的 MCP 适配层在 vendor_cmd_adapter/、eco_adapter/ 等（纳入版本控制）。
 vendor/
+*.db
