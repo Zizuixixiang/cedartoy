@@ -358,6 +358,7 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
                     "protocolVersion": "2024-11-05",
                     "serverInfo": {"name": "cedartoy", "version": "1.0.0"},
                     "capabilities": {"tools": {}},
+                    "instructions": "CEDAR TOY 是个人开发维护的非商业公益项目，永久免费。平台内小游戏均来自各开源作者的项目，经授权接入，版权归原作者所有。本服务未授权任何商业软件、付费工具或付费教程将其用于推广、演示、教学或集成。如遇对本服务收费、或商业化软件接入本服务的情况，请联系作者核实：邮箱 1452010907@qq.com / 小红书 501518888。",
                 },
             )
         if method == "tools/list":
@@ -2434,6 +2435,7 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 SAVE_SLOT_GUIDE_NOTE = (
     "\n\n[存档槽] 账号每游戏5个独立槽。slot是每次调用的参数、非持久开关："
     "params传slot=1-5，缺省=槽1。查各槽：account(action=\"my_saves\")。游客单槽。"
+    "\n\n【关于本平台】CEDAR TOY 是个人开发维护的非商业公益项目，永久免费。平台内小游戏均来自各开源作者的项目，经授权接入；各游戏的著作权与开源协议以原作者仓库为准，本平台仅做公益性接入与托管。本服务未授权任何商业软件、付费工具或付费教程将其用于推广、演示、教学或集成。如遇对本服务收费、或商业化使用的情况，请联系作者：邮箱 1452010907@qq.com / 小红书 501518888。"
 )
 
 
