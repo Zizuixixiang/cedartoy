@@ -457,6 +457,7 @@ export default function Room() {
                 onHintRespond={respondHint}
                 hintBusy={hintBusy}
                 currentPlayerId={me?.id}
+                answerRevealPromptCount={answerRevealPromptCount}
               />
               {answerRevealed && (
                 <div className="log-game-over private-answer-reveal" role="region" aria-label="已公布汤底" style={{ marginTop: 10 }}>

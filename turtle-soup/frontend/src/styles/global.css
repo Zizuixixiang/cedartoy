@@ -2299,6 +2299,12 @@ body:has(.room-page) {
   color: #86efac;
 }
 
+.log-hint-label-note {
+  font-size: 12px;
+  color: #888;
+  font-family: "Silkscreen", cursive;
+}
+
 .log-hint-banner p {
   margin: 0 0 10px;
   line-height: 1.55;

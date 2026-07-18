@@ -3,31 +3,31 @@ import { Bot } from 'lucide-react'
 import JudgeBadge from './JudgeBadge.jsx'
 import { formatDbDateTime, formatDbLogClock, formatDbTime } from '../utils/display.js'
 
-function HintBanner({ log }) {
+function HintBanner({ log, answerRevealPromptCount = 100 }) {
   const hintText = log.hint_text || ''
   const requester = log.username || (log.player_id ? `游客${log.player_id}` : '')
 
   return (
     <div className="log-hint-banner hint-offer readonly" role="region" aria-label="请求提示">
-      <div className="log-hint-label">&gt; 【请求提示】</div>
+      <div className="log-hint-label">&gt; 【请求提示】<span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span></div>
       <p>{hintText || `${requester || '玩家'}请求了一条提示`}</p>
     </div>
   )
 }
 
-function AutoHintBanner({ log, special = false, accepted, onAccept, onReject }) {
+function AutoHintBanner({ log, special = false, accepted, onAccept, onReject, answerRevealPromptCount = 100 }) {
   const hintText = log.hint_text || log.content
   if (special || accepted) {
     return (
       <div className={`log-hint-banner readonly${special ? ' special-clue' : ' auto-prompt'}`} role="region" aria-label={special ? '特殊线索' : '提示'}>
-        <div className="log-hint-label">&gt; {special ? '【特殊线索】' : '【提示】'}</div>
+        <div className="log-hint-label">&gt; {special ? '【特殊线索】' : <>{'【提示】'}<span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span></>}</div>
         <p>{hintText}</p>
       </div>
     )
   }
   return (
     <div className="log-hint-banner auto-prompt auto-prompt-pending" role="region" aria-label="提示">
-      <div className="log-hint-label">&gt; 【提示】</div>
+      <div className="log-hint-label">&gt; 【提示】<span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span></div>
       <p>收到一条提示，是否查看？</p>
       <div className="hint-actions">
         <button type="button" onClick={() => onReject(log.id)}>拒绝</button>
@@ -127,7 +127,7 @@ function saveHintDecisions(roomId, obj) {
   localStorage.setItem(`hint_decisions_${roomId}`, JSON.stringify(obj))
 }
 
-export default function GameLog({ logs, roomId, roomStatus }) {
+export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCount = 100 }) {
   const ordered = sortLogs(logs)
   const [hintDecisions, setHintDecisions] = useState(() => loadHintDecisions(roomId))
   useEffect(() => {
@@ -175,6 +175,7 @@ export default function GameLog({ logs, roomId, roomStatus }) {
             <HintBanner
               key={`hint-${log.id}`}
               log={log}
+              answerRevealPromptCount={answerRevealPromptCount}
             />
           )
         }
@@ -186,6 +187,7 @@ export default function GameLog({ logs, roomId, roomStatus }) {
             <AutoHintBanner
               key={`auto-${log.id}`}
               log={log}
+              answerRevealPromptCount={answerRevealPromptCount}
               special={special}
               accepted={decision === 'accept'}
               onAccept={(id) => {

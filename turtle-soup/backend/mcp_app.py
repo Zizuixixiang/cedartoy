@@ -219,10 +219,16 @@ async def play(body: PlayBody):
     if body.action == "hint_request":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
-        return await game_hint_request(
+        payload = await game_hint_request(
             HintRequestBody(room_id=body.room_id, confirm_hint=bool(body.confirm_hint or body.confirm)),
             player,
         )
+        trigger = int(await get_setting("answer_reveal_prompt_count", "100"))
+        if trigger > 0:
+            row = await fetch_one("SELECT COUNT(*) AS c FROM game_logs WHERE room_id = ? AND type = 'ask'", (body.room_id,))
+            ask_count = int(row["c"] if row else 0)
+            payload["tip"] = f"本房间累计满 {trigger} 题后可选择查看汤底（当前已提问 {ask_count} 题）"
+        return payload
     if body.action == "reveal_answer":
         raise HTTPException(status_code=400, detail="查看汤底确认请在下一次 ask 中传 confirm_reveal=true 处理")
     if body.action == "note_add":

@@ -170,7 +170,10 @@ async def _chat(
                     )
                     resp.raise_for_status()
                     data = resp.json()
-                    text = data["choices"][0]["message"]["content"]
+                    choice = data["choices"][0]
+                    if choice.get("finish_reason") == "length":
+                        raise RuntimeError("response truncated due to max_tokens")
+                    text = choice["message"]["content"]
             fail_counts[pool][cid] = 0
             return str(text).strip()
         except Exception as exc:
@@ -744,7 +747,7 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
         max_retry=5,
         log_label="generate_hint",
         timeout=12,
-        max_tokens=256,
+        max_tokens=1024,
         pool="hint",
     )
     if text is None:
