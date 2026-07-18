@@ -1,5 +1,6 @@
 import json
 import base64
+import copy
 import hashlib
 import hmac
 import http.client
@@ -107,7 +108,7 @@ ECO_HUMAN_ACTION_MIN_INTERVAL_SECONDS = 1.0
 _PLATFORM_TOOLS = [
     {
         "name": "list_games",
-        "description": "列出所有可用游戏，返回分类列表（测试类、小游戏类）及简介",
+        "description": "List games. 列出所有可用游戏，返回分类列表（测试类、小游戏类）及简介",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -116,7 +117,7 @@ _PLATFORM_TOOLS = [
     },
     {
         "name": "get_guide",
-        "description": "获取指定游戏的玩法说明",
+        "description": "Game guide. 获取指定游戏的玩法说明",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -131,7 +132,7 @@ _PLATFORM_TOOLS = [
     },
     {
         "name": "play",
-        "description": "执行游戏操作；先看 get_guide(game)，再把该 action 的业务参数放进 params 对象。",
+        "description": "Play game. 执行游戏操作；先看 get_guide(game)，再把该 action 的业务参数放进 params 对象。",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -190,8 +191,158 @@ _PLATFORM_TOOLS = [
         },
     },
 ]
+
+
+def _build_kelivo_platform_tools():
+    tools = copy.deepcopy(_PLATFORM_TOOLS)
+    play_tool = next(tool for tool in tools if tool.get("name") == "play")
+    play_tool["inputSchema"]["properties"]["params"]["properties"].update(
+        {
+            "command": {"type": "string", "description": "命令文本"},
+            "room_id": {"type": "string", "description": "房间 ID"},
+            "content": {"type": "string", "description": "内容文本"},
+            "action": {
+                "type": "string",
+                "description": "仅 eco 游戏使用：params 内的子动作（summon/remove/feed/clean/crack/shelter/choose/name）；其他游戏不要在 params 里传 action",
+            },
+            "species": {
+                "type": "string",
+                "description": "物种名（eco_act 的 summon/remove 用）。",
+            },
+            "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "数量（eco_act 的 summon/remove/feed 用）。",
+            },
+            "option": {
+                "type": "integer",
+                "description": "选项编号（eco_act 的 choose 用，通常 1-2，蛇事件可选 3）。",
+            },
+            "announcement": {
+                "type": "string",
+                "description": "投票编号（eco_act 的 choose 用）。",
+            },
+            "options": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 0},
+                "description": "投票选项序号；多选如 [1,3,5]，[0] 表示跳过。",
+            },
+            "settler": {
+                "type": "string",
+                "description": "定居者标识（eco_act 的 name 用），可传物种名、[D-N] 编号或两者组合。",
+            },
+            "nickname": {
+                "type": "string",
+                "description": "要取的昵称（eco_act 的 name 用）。",
+            },
+            "seed": {
+                "anyOf": [{"type": "integer"}, {"type": "string"}],
+                "description": "新局可选随机种子。",
+            },
+            "days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7,
+                "description": "eco_observe 的 wait 推进天数。",
+            },
+            "target": {
+                "type": "string",
+                "description": "eco_observe 的 look 目标：物种名或季节名。",
+            },
+            "scope": {
+                "type": "string",
+                "description": "信息范围，如 eco_info chronicle 的 recent/all。",
+            },
+            "mode": {
+                "type": "string",
+                "description": "游戏模式；用于 mbti/dnd/bdsmtest 开始测试、eco 导出或其他游戏新局。",
+            },
+            "save_data": {
+                "anyOf": [{"type": "string"}, {"type": "object"}],
+                "description": "导入存档数据；eco/ciyuwu 使用 base64 字符串，fishing 可使用 JSON 对象或 JSON 字符串。",
+            },
+            "a_score": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5,
+                "description": "MBTI 当前题 A 选项得分（0-5）。",
+            },
+            "a_scores": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 0, "maximum": 5},
+                "description": "MBTI 快速模式当前批次的 A 选项得分。",
+            },
+            "answer": {
+                "anyOf": [{"type": "integer"}, {"type": "string"}],
+                "description": "DND 当前题选项编号（1-4），或海龟汤自定义题汤底。",
+            },
+            "answers": {
+                "anyOf": [
+                    {
+                        "type": "array",
+                        "items": {"type": "integer", "minimum": 1, "maximum": 4},
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 7,
+                        },
+                    },
+                ],
+                "description": "批量测试答案；DND 用 1-4 整数数组，BDSMTest 用 {题号: 1-7} 对象。",
+            },
+            "score": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7,
+                "description": "BDSMTest 当前题认同度（1-7）。",
+            },
+            "announcement_id": {
+                "type": "string",
+                "description": "平台通用 vote 动作的通知投票编号。",
+            },
+            "puzzle_id": {"type": "integer", "description": "海龟汤题目 ID。"},
+            "title": {"type": "string", "description": "海龟汤自定义题标题。"},
+            "surface": {"type": "string", "description": "海龟汤自定义题汤面。"},
+            "tags": {"type": "string", "description": "海龟汤自定义题标签。"},
+            "style": {"type": "string", "description": "海龟汤生成题风格。"},
+            "note_id": {"type": "integer", "description": "海龟汤记事 ID。"},
+            "log_limit": {"type": "integer", "minimum": 0, "description": "海龟汤状态返回的最新日志条数。"},
+            "auto_hint_log_id": {"type": "integer", "description": "海龟汤待确认的自动提示日志 ID。"},
+            "accept_auto_hint": {"type": "boolean", "description": "是否接受海龟汤自动提示。"},
+            "confirm_reveal": {"type": "boolean", "description": "是否确认查看海龟汤汤底。"},
+            "confirm_hint": {"type": "boolean", "description": "是否确认请求海龟汤提示。"},
+            "confirm": {"type": "boolean", "description": "确认覆盖已有存档或执行需要确认的动作。"},
+            "username": {"type": "string", "description": "海龟汤注册用账号名。"},
+            "password": {"type": "string", "description": "海龟汤注册用密码。"},
+            "thought": {"type": "string", "description": "workkk 上班动作的内心独白。"},
+            "item_id": {"type": "string", "description": "workkk 便利店商品 ID。"},
+            "message": {"type": "string", "description": "workkk 购买明信片时写给人类的话。"},
+            "choice": {"type": "string", "description": "workkk 奶茶或玫瑰选择 gift/self。"},
+            "career": {"type": "string", "description": "leek 新局职业，如 fund。"},
+            "shop_name": {"type": "string", "description": "burger 新局店名。"},
+            "chef_name": {"type": "string", "description": "burger 新局主厨名。"},
+            "sign_style": {"type": "string", "description": "burger 新局招牌风格。"},
+            "level": {"type": "integer", "description": "imitator_td 或 memoria 新局关卡。"},
+            "chapter": {"type": "integer", "description": "memoria 关卡编号（level 的别名）。"},
+            "difficulty": {"type": "string", "description": "memoria 难度：normal/hard/hell。"},
+            "chaos": {"type": "string", "description": "imitator_td 特殊模式 chaos 设置。"},
+            "cards": {"type": "string", "description": "imitator_td 新局选卡文本。"},
+        }
+    )
+    return tools
+
+
+_KELIVO_PLATFORM_TOOLS = _build_kelivo_platform_tools()
 _ROOT_TOOL_NAMES = frozenset({"list_games", "get_guide", "play", "account"})
 _ROOT_MCP_PATHS = frozenset({"/", "/mcp", "/mcp/"})
+
+
+def _is_kelivo_user_agent(user_agent):
+    normalized = (user_agent or "").lower()
+    return "kelivo" in normalized or normalized.startswith("dart/") or "dart:io" in normalized
 
 
 def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
@@ -210,7 +361,8 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
                 },
             )
         if method == "tools/list":
-            return _json_rpc_result(request_id, {"tools": _root_tools()})
+            logger.info("MCP tools/list UA: %s", user_agent)
+            return _json_rpc_result(request_id, {"tools": _root_tools(user_agent=user_agent)})
         if method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}
@@ -2253,8 +2405,9 @@ def _tool_list_games(path_token=None):
     return base + "\n" + _today_game_line(path_token=path_token)
 
 
-def _root_tools():
-    return [tool for tool in _PLATFORM_TOOLS if tool.get("name") in _ROOT_TOOL_NAMES]
+def _root_tools(user_agent=""):
+    platform_tools = _KELIVO_PLATFORM_TOOLS if _is_kelivo_user_agent(user_agent) else _PLATFORM_TOOLS
+    return [tool for tool in platform_tools if tool.get("name") in _ROOT_TOOL_NAMES]
 
 
 WORKKK_GUIDE = """# workkk·AI打工人模拟
@@ -2667,6 +2820,9 @@ def _tool_play_inner(arguments, path_token=None):
     }
     if isinstance(params, dict):
         merged_arguments.update(params)
+        # 防止清单引导的模型用 params.action 顶掉顶层游戏路由 action。
+        if "action" in arguments:
+            merged_arguments["action"] = arguments["action"]
     anti_context = _anti_addiction_context(game, account_user, account_player_id)
     # 通知按「人」而不是按存档槽记已读，用的就是各游戏看到的那个 player_id
     # （announcements 内部会把 "12:3" 这类槽后缀削掉）。
@@ -3077,13 +3233,20 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, status=404)
             return
 
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            self._send_json(_json_rpc_error(None, -32700, "Invalid Content-Length"), status=400)
-            return
+        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+            try:
+                raw_body = self._read_chunked_body()
+            except ValueError:
+                self._send_json(_json_rpc_error(None, -32700, "Parse error"), status=400)
+                return
+        else:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self._send_json(_json_rpc_error(None, -32700, "Invalid Content-Length"), status=400)
+                return
 
-        raw_body = self.rfile.read(length)
+            raw_body = self.rfile.read(length)
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
@@ -3297,12 +3460,55 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         tokenish = path.strip("/")
         return bool(tokenish and "/" not in tokenish)
 
-    def _read_json_body(self):
+    def _read_chunked_body(self):
+        max_chunk_size = 10 * 1024 * 1024
+        max_body_size = 10 * 1024 * 1024
+        max_line_size = 8192
+        chunks = []
+        total_size = 0
+
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            raise ValueError("Invalid Content-Length") from None
-        raw_body = self.rfile.read(length)
+            while True:
+                size_line = self.rfile.readline(max_line_size + 1)
+                if not size_line or len(size_line) > max_line_size or not size_line.endswith(b"\r\n"):
+                    raise ValueError("Parse error")
+
+                size_token = size_line[:-2].split(b";", 1)[0].strip()
+                if not size_token or any(char not in b"0123456789abcdefABCDEF" for char in size_token):
+                    raise ValueError("Parse error")
+                chunk_size = int(size_token, 16)
+                if chunk_size > max_chunk_size or total_size + chunk_size > max_body_size:
+                    raise ValueError("Parse error")
+
+                if chunk_size == 0:
+                    trailer_size = 0
+                    while True:
+                        trailer_line = self.rfile.readline(max_line_size + 1)
+                        if not trailer_line or len(trailer_line) > max_line_size or not trailer_line.endswith(b"\r\n"):
+                            raise ValueError("Parse error")
+                        trailer_size += len(trailer_line)
+                        if trailer_size > max_body_size:
+                            raise ValueError("Parse error")
+                        if trailer_line == b"\r\n":
+                            return b"".join(chunks)
+
+                chunk = self.rfile.read(chunk_size)
+                if len(chunk) != chunk_size or self.rfile.read(2) != b"\r\n":
+                    raise ValueError("Parse error")
+                chunks.append(chunk)
+                total_size += chunk_size
+        except OSError:
+            raise ValueError("Parse error") from None
+
+    def _read_json_body(self):
+        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+            raw_body = self._read_chunked_body()
+        else:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                raise ValueError("Invalid Content-Length") from None
+            raw_body = self.rfile.read(length)
         if not raw_body:
             return {}
         try:
