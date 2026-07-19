@@ -2820,6 +2820,7 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
 调用：play(game="garden_cat", action="status")；持久 MCP 地址可省 player_id。
 简介：经营一座长期保存的小花园。买种子、种花浇水、收获售卖，逐步解锁花盆、花瓶和猫咪。
+⏰ 注意：本游戏按现实时间自动推进（不同于按次数推进的回合制游戏）——离线期间花会继续生长、天气会变化、猫的状态会自然回落（有保护下限，不会出事）。隔了几天回来看到猫饿了很正常，喂一顿摸一摸就好，花园一直在等你。
 
 塘子只开放五个动作：
 允许动作：cmd / status / help / new / catalog。
