@@ -19,7 +19,6 @@
       --pink-dark: #C28B93;
       --text: #5C5463;
       --muted: #9CA3AF;
-      --screen-bg: #2D2D2D;
       --card: #FFFFFF;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
@@ -96,12 +95,62 @@
     .progress-fill { display: block; width: 0; height: 100%; background: var(--pink); transition: width .18s ease; }
     .question-number { margin-bottom: 8px; color: var(--pink-dark); font-size: 12px; }
     .question-text { margin: 0 0 22px; font-size: clamp(18px, 4vw, 25px); line-height: 1.55; color: var(--text); }
-    .mbti-poles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-    .pole { padding: 14px; line-height: 1.5; background: var(--purple-light); border-left: 5px solid var(--purple); }
-    .pole:last-child { background: #FBECEF; border-color: var(--pink); }
-    .pole b { display: block; margin-bottom: 5px; font-family: "Silkscreen", sans-serif; color: var(--purple-darker); }
+    .mbti-poles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-bottom: 18px; padding: 3px 0 9px; border-bottom: 2px dashed var(--purple-light); }
+    .pole { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 6px; padding: 2px 0; line-height: 1.5; background: transparent; border: 0; cursor: default; }
+    .pole b { padding-top: 2px; color: var(--purple-darker); font-family: "Silkscreen", sans-serif; font-size: 11px; line-height: 1.35; }
+    .pole:last-child b { color: var(--pink-dark); }
+    .pole span { color: var(--text); font-size: 13px; }
     .answers { display: grid; gap: 10px; }
-    .answers.mbti { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .answers.mbti { display: block; }
+    .mbti-scale-ends {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+      color: var(--purple-darker);
+      font-family: "Silkscreen", sans-serif;
+      font-size: 16px;
+    }
+    .mbti-scale-direction { color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+    .mbti-scale-track {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      overflow: hidden;
+      background: linear-gradient(90deg, var(--purple-light), #FFF7F8);
+      border: 3px solid var(--purple);
+      box-shadow: 5px 5px 0 rgba(190,177,209,.28);
+    }
+    .scale-step {
+      position: relative;
+      min-width: 0;
+      min-height: 48px;
+      padding: 5px 2px;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+      border-right: 2px solid rgba(155,141,181,.38);
+      font-size: 11px;
+      text-align: center;
+    }
+    .scale-step:last-child { border-right: 0; }
+    .scale-step::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 3px;
+      height: 9px;
+      background: var(--purple-dark);
+      transform: translateX(-50%);
+    }
+    .scale-step:hover, .scale-step:focus-visible { outline: 0; color: var(--purple-darker); background: rgba(255,255,255,.72); }
+    .scale-step.selected {
+      color: #fff;
+      background: var(--pink);
+      box-shadow: inset 0 -5px 0 var(--pink-dark);
+    }
+    .scale-step.selected::before { background: #fff; }
+    .scale-degree { display: block; padding-top: 8px; white-space: nowrap; }
     .answer-button {
       min-height: 58px;
       padding: 12px;
@@ -117,12 +166,28 @@
     button:disabled { cursor: wait; opacity: .55; }
     .result-screen {
       padding: clamp(18px, 4vw, 28px);
-      color: #F5EEF8;
-      background: var(--screen-bg);
-      border: 4px solid var(--purple-dark);
-      box-shadow: inset 0 0 0 3px #1e1e1e;
+      color: var(--text);
+      background: #fff;
+      border: 4px solid var(--purple);
+      box-shadow: 8px 8px 0 var(--purple-light);
     }
-    .result-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.75; }
+    .result-text { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border-left: 5px solid var(--pink); font-size: 14px; line-height: 1.75; }
+    .result-text[hidden], .result-structured[hidden] { display: none; }
+    .result-hero { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 3px solid var(--purple-light); text-align: center; }
+    .result-primary { margin: 0; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: clamp(34px, 9vw, 58px); font-weight: 700; line-height: 1.05; }
+    .result-primary.dnd-name { font-family: "Microsoft YaHei", sans-serif; font-size: clamp(30px, 8vw, 48px); font-weight: 800; }
+    .result-secondary { margin: 8px 0 0; color: var(--pink-dark); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: clamp(11px, 3vw, 15px); }
+    .result-nickname { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+    .result-section { margin-top: 26px; }
+    .result-section h3 { margin: 0 0 11px; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 14px; }
+    .result-section p { margin: 0 0 12px; line-height: 1.8; }
+    .axis-list { display: grid; gap: 15px; }
+    .axis-card { padding: 12px; background: var(--bg); border: 2px solid var(--purple-light); }
+    .axis-labels { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 11px; }
+    .axis-track { position: relative; height: 16px; background: linear-gradient(90deg, var(--purple-light), #fff 50%, #FBECEF); border: 2px solid var(--purple); }
+    .axis-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 2px dotted rgba(155,141,181,.55); }
+    .axis-cursor { position: absolute; z-index: 1; top: -7px; width: 8px; height: 26px; background: var(--pink); border: 2px solid var(--pink-dark); transform: translateX(-50%); }
+    .result-footnote { margin: 28px 0 0; padding-top: 12px; color: var(--muted); border-top: 2px dashed var(--purple-light); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
     .pixel-button {
       min-height: 43px;
@@ -136,10 +201,9 @@
     }
     .pixel-button.secondary { color: var(--purple-darker); background: #fff; border: 3px solid var(--purple); box-shadow: 4px 4px 0 var(--purple-light); }
     .question-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; }
-    .review-copy { margin: -2px 0 18px; color: var(--muted); line-height: 1.65; }
-    .review-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; }
-    .review-item { min-height: 42px; padding: 5px; color: var(--purple-darker); background: #fff; border: 2px solid var(--purple-light); font-family: "Silkscreen", sans-serif; font-size: 10px; }
-    .review-item:hover, .review-item:focus-visible { outline: 0; border-color: var(--pink); }
+    .review-confirm { margin: clamp(34px, 8vw, 70px) 0; color: var(--purple-darker); font-size: clamp(18px, 4vw, 25px); font-weight: 700; text-align: center; }
+    .review-actions { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: clamp(6px, 2vw, 12px); }
+    .review-actions .pixel-button { flex: 1 1 0; min-width: 0; padding-inline: clamp(5px, 2vw, 16px); white-space: nowrap; font-size: clamp(9px, 2.5vw, 12px); }
     .source { margin: 24px 0 0; color: var(--muted); text-align: center; font-size: 12px; }
     .loading { display: grid; min-height: 260px; place-items: center; color: var(--purple-dark); text-align: center; }
     .error { margin: 0 0 16px; padding: 12px; color: #9d4f5b; background: #FFF0F2; border-left: 5px solid var(--pink); line-height: 1.5; }
@@ -153,10 +217,12 @@
       .status-row { align-items: flex-start; margin-bottom: 21px; }
       .identity { max-width: 56%; font-size: 10px; overflow-wrap: anywhere; }
       .modes { grid-template-columns: 1fr; }
-      .mbti-poles { grid-template-columns: 1fr; }
-      .answers.mbti { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .mbti-poles { grid-template-columns: 1fr; gap: 7px; }
       .answer-button { min-height: 54px; }
-      .review-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .scale-step { min-height: 48px; font-size: 10px; }
+      .mbti-scale-direction { font-size: 8px; }
+      .result-screen { padding: 16px 12px; box-shadow: 5px 5px 0 var(--purple-light); }
+      .axis-card { padding: 10px 8px; }
     }
   </style>
 </head>
@@ -202,10 +268,9 @@
       </div>
 
       <div class="panel" id="reviewPanel" hidden>
-        <h2>确认答题卡</h2>
-        <p class="review-copy">全部答案已保存在本机。点击题号可返回修改，确认无误后再一次性提交结算。</p>
-        <div class="review-grid" id="reviewGrid"></div>
-        <div class="actions">
+        <h2>确认提交</h2>
+        <p class="review-confirm" id="reviewSummary"></p>
+        <div class="actions review-actions">
           <button class="pixel-button secondary pixel" id="modifyButton" type="button">← 返回修改</button>
           <button class="pixel-button pixel" id="submitButton" type="button">提交并查看结果 →</button>
         </div>
@@ -213,7 +278,10 @@
 
       <div class="panel" id="resultPanel" hidden>
         <h2>测试结果</h2>
-        <div class="result-screen"><p class="result-text" id="resultText"></p></div>
+        <div class="result-screen">
+          <div class="result-structured" id="resultStructured"></div>
+          <p class="result-text" id="resultText" hidden></p>
+        </div>
         <div class="actions">
           <button class="pixel-button pixel" id="restartButton" type="button">RETEST →</button>
           <a class="pixel-button secondary pixel" href="/">BACK TO ARCADE</a>
@@ -330,7 +398,7 @@
       cursor = 0;
       try {
         const saved = JSON.parse(localStorage.getItem(draftKey()) || "null");
-        if (saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
+        if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
           answers = Array.from({length: state.total}, (_, index) => Number.isInteger(saved.answers[index]) ? saved.answers[index] : null);
           cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
         }
@@ -339,6 +407,7 @@
     function saveDraft() {
       if (!activeState) return;
       localStorage.setItem(draftKey(), JSON.stringify({
+        game: CONFIG.game,
         edition: activeState.edition,
         total: activeState.total,
         answers,
@@ -357,7 +426,7 @@
       if (state.complete) {
         clearDraft();
         $("statusText").textContent = "SYSTEM / SCAN COMPLETE";
-        $("resultText").textContent = state.result || "结果已生成。";
+        renderResult(state.result_data, state.result || "结果已生成。");
         showPanel("resultPanel");
         return;
       }
@@ -386,7 +455,7 @@
         $("mbtiPoles").children[0].querySelector("span").textContent = question.option_a;
         $("mbtiPoles").children[1].querySelector("span").textContent = question.option_b;
         $("answers").className = "answers mbti";
-        [[5,"完全 A"],[4,"比较 A"],[3,"略偏 A"],[2,"略偏 B"],[1,"比较 B"],[0,"完全 B"]].forEach(([value, label]) => addAnswer(value, label));
+        renderMbtiScale();
       } else {
         $("mbtiPoles").hidden = true;
         $("answers").className = "answers";
@@ -394,6 +463,36 @@
       }
       $("previousButton").disabled = busy || cursor === 0;
       $("reviewButton").hidden = !answers.every(Number.isInteger);
+    }
+    function renderMbtiScale() {
+      const ends = document.createElement("div");
+      ends.className = "mbti-scale-ends";
+      ends.innerHTML = '<span>B</span><span class="mbti-scale-direction">完全 ← 偏向程度 → 完全</span><span>A</span>';
+
+      const track = document.createElement("div");
+      track.className = "mbti-scale-track";
+      track.setAttribute("role", "radiogroup");
+      track.setAttribute("aria-label", "从完全偏向 B 到完全偏向 A");
+      [
+        [0, "完全", "完全偏向 B"],
+        [1, "较多", "较多偏向 B"],
+        [2, "略偏", "略微偏向 B"],
+        [3, "略偏", "略微偏向 A"],
+        [4, "较多", "较多偏向 A"],
+        [5, "完全", "完全偏向 A"]
+      ].forEach(([value, degree, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "scale-step";
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-label", label);
+        button.setAttribute("aria-checked", String(answers[cursor] === value));
+        button.classList.toggle("selected", answers[cursor] === value);
+        button.innerHTML = `<span class="scale-degree">${degree}</span>`;
+        button.addEventListener("click", () => answer(value));
+        track.appendChild(button);
+      });
+      $("answers").append(ends, track);
     }
     function addAnswer(value, label) {
       const button = document.createElement("button");
@@ -447,16 +546,115 @@
     function renderReview() {
       if (!activeState || !answers.every(Number.isInteger)) return;
       $("statusText").textContent = "SYSTEM / REVIEW ANSWERS";
-      $("reviewGrid").innerHTML = "";
-      answers.forEach((value, index) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "review-item";
-        button.textContent = `${index + 1} · ${CONFIG.game === "mbti" ? ["B", "B", "B", "A", "A", "A"][value] : value}`;
-        button.addEventListener("click", () => goToQuestion(index));
-        $("reviewGrid").appendChild(button);
-      });
+      $("reviewSummary").textContent = `已答完 ${activeState.total} 题，确认提交？`;
       showPanel("reviewPanel");
+    }
+
+    function makeResultElement(tag, className, text = "") {
+      const node = document.createElement(tag);
+      node.className = className;
+      node.textContent = text;
+      return node;
+    }
+
+    function resultPercent(value) {
+      const number = Number(value);
+      return Number.isInteger(number) ? String(number) : number.toFixed(1);
+    }
+
+    function validAxis(axis) {
+      return axis && typeof axis.left === "string" && typeof axis.right === "string"
+        && Number.isFinite(Number(axis.left_percent)) && Number.isFinite(Number(axis.right_percent));
+    }
+
+    function appendResultAxes(root, axes, title) {
+      const section = makeResultElement("section", "result-section");
+      section.appendChild(makeResultElement("h3", "", title));
+      const list = makeResultElement("div", "axis-list");
+      axes.forEach((axis) => {
+        const card = makeResultElement("div", "axis-card");
+        const labels = makeResultElement("div", "axis-labels");
+        labels.append(
+          makeResultElement("span", "", `${axis.left} ${resultPercent(axis.left_percent)}%`),
+          makeResultElement("span", "", `${resultPercent(axis.right_percent)}% ${axis.right}`)
+        );
+        const track = makeResultElement("div", "axis-track");
+        const marker = makeResultElement("span", "axis-cursor");
+        marker.style.left = `${Math.max(0, Math.min(100, Number(axis.right_percent)))}%`;
+        track.appendChild(marker);
+        card.append(labels, track);
+        list.appendChild(card);
+      });
+      section.appendChild(list);
+      root.appendChild(section);
+    }
+
+    function appendResultTextSection(root, title, text) {
+      const section = makeResultElement("section", "result-section");
+      section.appendChild(makeResultElement("h3", "", title));
+      String(text).split(/\n\s*\n/).filter(Boolean).forEach((paragraph) => {
+        section.appendChild(makeResultElement("p", "", paragraph));
+      });
+      root.appendChild(section);
+    }
+
+    function renderMbtiResult(root, data) {
+      const requiredText = [data.type, data.type_name, data.nickname, data.description, data.strengths, data.weaknesses];
+      if (data.kind !== "mbti" || requiredText.some((value) => typeof value !== "string" || !value)
+          || !Array.isArray(data.dimensions) || data.dimensions.length !== 4 || !data.dimensions.every(validAxis)) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary", data.type),
+        makeResultElement("p", "result-secondary", data.type_name),
+        makeResultElement("p", "result-nickname", data.nickname)
+      );
+      root.appendChild(hero);
+      appendResultAxes(root, data.dimensions, "四个维度");
+      appendResultTextSection(root, "类型描述", data.description);
+      appendResultTextSection(root, "性格优势", data.strengths);
+      appendResultTextSection(root, "注意事项", data.weaknesses);
+      return true;
+    }
+
+    function renderDndResult(root, data) {
+      const bucketKeys = ["lx", "nx", "cx", "xg", "xn", "xe"];
+      if (data.kind !== "dnd" || !data.name_zh || !data.name_en || !data.description
+          || !Array.isArray(data.axes) || data.axes.length !== 2 || !data.axes.every(validAxis)
+          || !data.raw_buckets || !bucketKeys.every((key) => Number.isFinite(Number(data.raw_buckets[key])))) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", data.name_zh),
+        makeResultElement("p", "result-secondary", data.name_en)
+      );
+      root.appendChild(hero);
+      appendResultAxes(root, data.axes, "阵营坐标");
+      appendResultTextSection(root, "阵营描述", data.description);
+      const raw = data.raw_buckets;
+      root.appendChild(makeResultElement(
+        "p",
+        "result-footnote",
+        `原始桶分：守序 ${raw.lx} / 中立 ${raw.nx} / 混乱 ${raw.cx}；善良 ${raw.xg} / 中立 ${raw.xn} / 邪恶 ${raw.xe}`
+      ));
+      return true;
+    }
+
+    function renderResult(data, fallbackText) {
+      const root = $("resultStructured");
+      const fallback = $("resultText");
+      root.innerHTML = "";
+      let rendered = false;
+      try {
+        if (data?.kind === "mbti") rendered = renderMbtiResult(root, data);
+        else if (data?.kind === "dnd") rendered = renderDndResult(root, data);
+      } catch (_) {
+        rendered = false;
+      }
+      root.hidden = !rendered;
+      fallback.hidden = rendered;
+      if (!rendered) {
+        root.innerHTML = "";
+        fallback.textContent = fallbackText;
+      }
     }
 
     async function submitAnswers() {

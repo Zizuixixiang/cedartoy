@@ -31,11 +31,13 @@ from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
 from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
 from dnd import handler as dnd_handler
 from dnd import questions as dnd_questions
+from dnd import scoring as dnd_scoring
 from dnd import web_questions_zh as dnd_web_questions
 from eco_adapter import handler as eco_handler
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
 from mbti import handler as mbti_handler
 from mbti import questions as mbti_questions
+from mbti import scoring as mbti_scoring
 from vendor_cmd_adapter import arcade as arcade_adapter
 from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import fishing as fishing_adapter
@@ -1831,6 +1833,97 @@ def _human_test_public_result(game, text):
     return text
 
 
+def _human_test_result_data(game, player_id):
+    """Build the human-page result model from handler-owned stored scoring data."""
+    handler = HUMAN_TEST_GAMES[game]["handler"]
+    with sqlite3.connect(handler.DB_PATH) as conn:
+        try:
+            row = conn.execute(
+                "SELECT result_value, result_detail FROM test_results WHERE player_id = ? AND game = ?",
+                (player_id, game),
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc).lower():
+                raise
+            return None
+    if row is None:
+        return None
+
+    result_value, detail_json = row
+    try:
+        detail = json.loads(detail_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+    if game == "mbti":
+        info = mbti_scoring.TYPE_DESCRIPTIONS.get(result_value)
+        scores = detail.get("scores") or {}
+        if info is None or not isinstance(scores, dict):
+            return None
+        dimensions = []
+        for left, right in (("E", "I"), ("S", "N"), ("T", "F"), ("J", "P")):
+            try:
+                left_score = float(scores[left])
+                right_score = float(scores[right])
+            except (KeyError, TypeError, ValueError):
+                continue
+            total = left_score + right_score
+            if total <= 0:
+                continue
+            left_percent = round(left_score / total * 100, 1)
+            dimensions.append(
+                {
+                    "left": left,
+                    "right": right,
+                    "left_percent": left_percent,
+                    "right_percent": round(100 - left_percent, 1),
+                }
+            )
+        return {
+            "kind": "mbti",
+            "type": result_value,
+            "type_name": info["type_name"],
+            "nickname": info["type_nickname"],
+            "dimensions": dimensions,
+            "description": info["full_description"],
+            "strengths": info["strengths"],
+            "weaknesses": info["weaknesses"],
+        }
+
+    description = dnd_scoring.ALIGNMENT_DESCRIPTIONS.get(result_value)
+    scores = detail.get("scores") or {}
+    if description is None or not isinstance(scores, dict):
+        return None
+    axes = []
+    for key, left, right in (
+        ("law_chaos", "守序", "混乱"),
+        ("good_evil", "善良", "邪恶"),
+    ):
+        try:
+            left_percent = round(float(scores[key]), 1)
+        except (KeyError, TypeError, ValueError):
+            continue
+        left_percent = max(0.0, min(100.0, left_percent))
+        axes.append(
+            {
+                "key": key,
+                "left": left,
+                "right": right,
+                "left_percent": left_percent,
+                "right_percent": round(100 - left_percent, 1),
+            }
+        )
+    return {
+        "kind": "dnd",
+        "alignment": result_value,
+        "name_zh": description["name_zh"],
+        "name_en": description["name_en"],
+        "axes": axes,
+        "description": description["text"],
+        "raw_buckets": detail.get("raw_buckets") or {},
+    }
+
+
 def _human_test_action(game, action, raw_token, body):
     config = HUMAN_TEST_GAMES[game]
     handler = config["handler"]
@@ -1861,6 +1954,7 @@ def _human_test_action(game, action, raw_token, body):
                 "identity": identity,
                 "complete": True,
                 "result": _human_test_public_result(game, text),
+                "result_data": _human_test_result_data(game, player_id),
             }
         _human_test_public_edition(game, session["mode"])
         if len(answers) != session["total"]:
@@ -1896,6 +1990,7 @@ def _human_test_action(game, action, raw_token, body):
             "identity": identity,
             "complete": True,
             "result": _human_test_public_result(game, result_text),
+            "result_data": _human_test_result_data(game, player_id),
         }
     else:
         raise _McpError(-32004, "not found")
@@ -1907,6 +2002,7 @@ def _human_test_action(game, action, raw_token, body):
         "identity": identity,
         "complete": True,
         "result": _human_test_public_result(game, text),
+        "result_data": _human_test_result_data(game, player_id),
     }
 
 
