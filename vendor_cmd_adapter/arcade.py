@@ -8,6 +8,7 @@ from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, r
 
 
 MAX_BUY_AMOUNT = 500
+GUEST_TRIAL_CHIPS = 200
 ARCADE_SAVE_DEFAULT = {
     "chips": 0,
     "total_bought": 0,
@@ -30,6 +31,7 @@ payload = json.load(sys.stdin)
 save_dir = payload["save_dir"]
 vendor_dir = payload["vendor_dir"]
 command = payload.get("command") or "help"
+guest_trial_chips = int(payload.get("extra", {}).get("guest_trial_chips") or 0)
 
 sys.path.insert(0, vendor_dir)
 import arcade
@@ -49,6 +51,23 @@ if payload.get("reset"):
         except FileNotFoundError:
             pass
 
+if guest_trial_chips > 0 and not os.path.exists(arcade._SAVE):
+    trial_state = arcade._load()
+    trial_state["chips"] = guest_trial_chips
+    trial_state["trial_granted"] = True
+    arcade._save(trial_state)
+    trial_granted = True
+else:
+    trial_granted = False
+
+trial_hint = (
+    f"\n\n🎟️ 游客体验筹码 {guest_trial_chips}；输光后请注册账号并绑定人类，"
+    "之后可由人类发放筹码。"
+    if trial_granted else ""
+)
+
+if payload.get("reset"):
+
     # Reset must always leave a complete save set, even when the requested
     # command is read-only and would not save anything itself.
     enter_text = arcade.cmd("enter")
@@ -56,10 +75,10 @@ if payload.get("reset"):
         game._save(game._load())
 
     if command.strip().lower() == "enter":
-        print(enter_text, end="")
+        print(enter_text + trial_hint, end="")
         raise SystemExit(0)
 
-print(arcade.cmd(command), end="")
+print(arcade.cmd(command) + trial_hint, end="")
 '''
 
 
@@ -86,6 +105,18 @@ def _load_state(save_path):
     if isinstance(state, dict):
         merged.update(state)
     return merged
+
+
+def _has_save(player_id):
+    save_dir = _save_dir(player_id, create=False)
+    return any(
+        (save_dir / name).exists()
+        for name in ("arcade_save.json", "slots_save.json", "blackjack_save.json", "roulette_save.json")
+    )
+
+
+def _guest_trial_eligible(player_id, has_save):
+    return isinstance(player_id, str) and player_id.startswith("guest:") and not has_save
 
 
 def _status_from_state(state):
@@ -150,18 +181,34 @@ def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "arcade_new"}:
-        def _arcade_has_save():
-            d = _save_dir(player_id, create=False)
-            return any((d / f).exists() for f in ("arcade_save.json", "slots_save.json", "blackjack_save.json", "roulette_save.json"))
-        require_save_confirm(arguments, _arcade_has_save, save_summary, "arcade")
+        has_save = _has_save(player_id)
+        require_save_confirm(arguments, lambda: has_save, save_summary, "arcade")
         command = _guard_command(arguments.get("command") or "enter")
-        text = GAME.run(player_id, command, reset=True)
+        text = GAME.run(
+            player_id,
+            command,
+            reset=True,
+            extra={
+                "guest_trial_chips": GUEST_TRIAL_CHIPS
+                if _guest_trial_eligible(player_id, has_save)
+                else 0
+            },
+        )
     elif action in {"cmd", "arcade_cmd"}:
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         command = _guard_command(command)
-        text = GAME.run(player_id, command)
+        has_save = _has_save(player_id)
+        text = GAME.run(
+            player_id,
+            command,
+            extra={
+                "guest_trial_chips": GUEST_TRIAL_CHIPS
+                if _guest_trial_eligible(player_id, has_save)
+                else 0
+            },
+        )
     else:
         raise VendorCmdError("未知 arcade action")
     return {"game": "arcade", "player_id": player_id, "text": text}
