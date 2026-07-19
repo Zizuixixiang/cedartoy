@@ -30,3 +30,7 @@
 ```json
 {"game":"mbti","action":"mbti_get_result","player_id":"u123"}
 ```
+
+## 来源
+
+题库整理自网络公开题目。

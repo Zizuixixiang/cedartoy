@@ -30,3 +30,7 @@
 ```json
 {"game":"dnd","action":"dnd_get_result","player_id":"u123"}
 ```
+
+## 来源
+
+题库与阵营描述译自 easydamus.com（阵营测试）。

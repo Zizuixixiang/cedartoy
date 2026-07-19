@@ -92,6 +92,7 @@ server.py : 127.0.0.1:8002
 | `GET /` | 无 | 返回 `index.html` |
 | `GET /admin` | 页面无；API 需管理员 token | 返回 `admin.html` |
 | `GET /eco` | 页面无；数据 API 需平台 token | 返回 `eco.html` |
+| `GET /mbti`、`GET /dnd` | 无 | 从共享 `test_game.html` 注入游戏配置，返回人类测试页；带旧 `action` query 时仍走兼容 GET 调用 |
 | `GET /eco/assets/*` | 无 | 限定在 `eco/assets/` 内的静态文件读取 |
 | `GET /health` | 无 | cedartoy 健康信息 |
 | `GET /api/games/stats` | 无 | eco/ciyuwu/vendor 的公开存档或对局计数 |
@@ -104,6 +105,8 @@ server.py : 127.0.0.1:8002
 | `POST /api/anti-addiction/settings` | Bearer 人类账号 | 保存指定已绑定 AI 的设置 |
 | `POST /api/anti-addiction/reset` | Bearer 人类账号 | 重置指定 AI 全部槽位的连续计数 |
 | `GET/POST /api/arcade/chips` | Bearer 人类账号 | 查看/发放已绑定 AI 的街机筹码 |
+| `POST /api/{mbti,dnd}/{start,answer_batch,result}` | Bearer 人类账号或 `guest:web*` 游客 | 人类测试流程；登录时强制用账号 ID，游客仅能使用 web 命名空间；答题只在前端收齐后一次提交 |
+| `GET /api/{mbti,dnd}/result` | 同上 | 查询已完成结果或恢复 24 小时内进行中的网页题集；作答进度保存在浏览器本地 |
 | `GET /eco/api/{state,codex,folio,annals}` | Bearer | 只读 eco 存档；可用 `ai_user_id` 查看已绑定 AI |
 | `GET /eco/api/species/{name}` | Bearer | 已解锁物种详情 |
 | `POST /eco/api/human_action` | Bearer 人类账号 | 对已绑定 AI 池塘执行协作动作；同一人机组合 1 秒节流 |

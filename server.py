@@ -29,10 +29,13 @@ except ImportError:
 import announcements
 from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
 from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
-from dnd.handler import handle_mcp as handle_dnd_mcp
+from dnd import handler as dnd_handler
+from dnd import questions as dnd_questions
+from dnd import web_questions_zh as dnd_web_questions
 from eco_adapter import handler as eco_handler
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
-from mbti.handler import handle_mcp as handle_mbti_mcp
+from mbti import handler as mbti_handler
+from mbti import questions as mbti_questions
 from vendor_cmd_adapter import arcade as arcade_adapter
 from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import fishing as fishing_adapter
@@ -76,6 +79,7 @@ MEMORIA_AFTER_CLEAR_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
+TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
 HOP_BY_HOP_HEADERS = {
@@ -109,6 +113,9 @@ _ANTI_ADDICTION_ANY_ENABLED = None
 _ECO_HUMAN_ACTION_RATE_LIMIT = {}
 _ECO_HUMAN_ACTION_RATE_LIMIT_LOCK = Lock()
 ECO_HUMAN_ACTION_MIN_INTERVAL_SECONDS = 1.0
+
+handle_mbti_mcp = mbti_handler.handle_mcp
+handle_dnd_mcp = dnd_handler.handle_mcp
 
 
 _PLATFORM_TOOLS = [
@@ -1697,6 +1704,210 @@ def _extract_bearer(headers):
     if value.lower().startswith("bearer "):
         return value[7:].strip()
     return ""
+
+
+WEB_GUEST_PLAYER_ID_RE = re.compile(r"^guest:web[a-zA-Z0-9]{1,61}$")
+HUMAN_TEST_GAMES = {
+    "mbti": {
+        "handler": mbti_handler,
+        "questions": mbti_questions,
+        "title": "MBTI 人格测试",
+        "subtitle": "MIND SCAN / 16 TYPES",
+        "source": "题库整理自网络公开题目",
+    },
+    "dnd": {
+        "handler": dnd_handler,
+        "questions": dnd_questions,
+        "title": "九阵营测试",
+        "subtitle": "ALIGNMENT / ORDER & CHAOS",
+        "source": "题库与阵营描述译自 easydamus.com",
+    },
+}
+
+HUMAN_TEST_PUBLIC_EDITIONS = {
+    "mbti": {"quick": "short_fast", "complete": "full_fast"},
+    "dnd": {"standard": "full_fast"},
+}
+
+
+def _human_test_player_id(game, raw_token, reported_player_id):
+    """Resolve a web player's identity without allowing guest/account spoofing."""
+    config = HUMAN_TEST_GAMES[game]
+    if raw_token:
+        user = _current_account(raw_token)
+        if user.get("is_ai"):
+            raise _McpError(-32003, "只有人类账号可以使用网页测试")
+        return str(int(user["id"])), "account"
+
+    if not isinstance(reported_player_id, str):
+        raise _McpError(-32602, "游客请求缺少 player_id")
+    if WEB_GUEST_PLAYER_ID_RE.fullmatch(reported_player_id) is None:
+        raise _McpError(-32602, "游客 player_id 必须使用 guest:web 命名空间")
+    if config["handler"].PLAYER_ID_RE.fullmatch(reported_player_id) is None:
+        raise _McpError(-32602, "player_id 格式不合法")
+    return reported_player_id, "guest"
+
+
+def _human_test_public_questions(game, mode):
+    questions = HUMAN_TEST_GAMES[game]["questions"].get_questions(mode)
+    public = []
+    for index, question in enumerate(questions):
+        item = {"number": index + 1, "text": question["text"]}
+        if game == "mbti":
+            item["option_a"] = question["option_a"]
+            item["option_b"] = question["option_b"]
+        else:
+            translated_text, translated_options = dnd_web_questions.QUESTIONS[index]
+            item["text"] = translated_text
+            item["options"] = [
+                {"value": option["value"], "text": translated_options[option_index]}
+                for option_index, option in enumerate(question["options"])
+            ]
+        public.append(item)
+    return public
+
+
+def _human_test_active_session(game, player_id):
+    """Read handler-owned progress; all session writes still go through the handler."""
+    config = HUMAN_TEST_GAMES[game]
+    handler = config["handler"]
+    questions_module = config["questions"]
+    with sqlite3.connect(handler.DB_PATH) as conn:
+        try:
+            row = conn.execute(
+                "SELECT mode, current_question FROM test_sessions WHERE player_id = ? AND game = ?",
+                (player_id, game),
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc).lower():
+                raise
+            return None
+    if row is None:
+        return None
+
+    mode, current_question = row
+    total = len(questions_module.get_questions(mode))
+    current_question = max(0, min(int(current_question), total))
+    if current_question >= total:
+        return None
+    return {"mode": mode, "progress": current_question, "total": total}
+
+
+def _human_test_public_edition(game, mode):
+    for edition, internal_mode in HUMAN_TEST_PUBLIC_EDITIONS[game].items():
+        if internal_mode == mode:
+            return edition
+    raise _McpError(-32602, "当前测试不是网页版本，请重新开始")
+
+
+def _human_test_public_state(game, player_id, identity, session):
+    mode = session["mode"]
+    return {
+        "ok": True,
+        "game": game,
+        "player_id": player_id,
+        "identity": identity,
+        "complete": False,
+        "edition": _human_test_public_edition(game, mode),
+        "total": session["total"],
+        "questions": _human_test_public_questions(game, mode),
+    }
+
+
+def _human_test_public_result(game, text):
+    replacements = {
+        "short_fast模式": "快速版",
+        "full_fast模式": "完整版",
+        "short模式": "快速版",
+        "full模式": "完整版",
+        "DND阵营测试": "九阵营测试",
+        "DND历史结果": "九阵营历史结果",
+        "dnd_get_result": "结果页",
+        "mbti_get_result": "结果页",
+        "凭 player_id 查询": "在本页查询",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
+def _human_test_action(game, action, raw_token, body):
+    config = HUMAN_TEST_GAMES[game]
+    handler = config["handler"]
+    player_id, identity = _human_test_player_id(game, raw_token, body.get("player_id"))
+
+    if action == "start":
+        edition = body.get("edition") if game == "mbti" else "standard"
+        mode = HUMAN_TEST_PUBLIC_EDITIONS[game].get(edition)
+        if mode is None:
+            raise _McpError(-32602, "请选择快速版或完整版" if game == "mbti" else "测试版本不合法")
+        getattr(handler, f"{game}_start")({"player_id": player_id, "mode": mode})
+        session = _human_test_active_session(game, player_id)
+        if session is None:
+            raise RuntimeError("handler did not create a test session")
+        return _human_test_public_state(game, player_id, identity, session)
+    elif action == "answer_batch":
+        answers = body.get("answers")
+        if not isinstance(answers, list) or not answers:
+            raise _McpError(-32602, "answers 必须是非空数组")
+        session = _human_test_active_session(game, player_id)
+        if session is None:
+            # A completed request may be retried after the response was lost.
+            text = getattr(handler, f"{game}_get_result")({"player_id": player_id})
+            return {
+                "ok": True,
+                "game": game,
+                "player_id": player_id,
+                "identity": identity,
+                "complete": True,
+                "result": _human_test_public_result(game, text),
+            }
+        _human_test_public_edition(game, session["mode"])
+        if len(answers) != session["total"]:
+            raise _McpError(-32602, f"须一次提交全部 {session['total']} 题答案")
+
+        text = ""
+        progress = session["progress"]
+        while progress < session["total"]:
+            batch_size = min(
+                config["questions"].fast_batch_size(session["mode"]),
+                session["total"] - progress,
+            )
+            batch = answers[progress:progress + batch_size]
+            arguments = {"player_id": player_id, "answers" if game == "dnd" else "a_scores": batch}
+            text = getattr(handler, f"{game}_answer_batch")(arguments)
+            progress += batch_size
+    elif action == "result":
+        result_text = None
+        result_error = None
+        try:
+            result_text = getattr(handler, f"{game}_get_result")({"player_id": player_id})
+        except handler.JsonRpcError as exc:
+            result_error = exc
+        session = _human_test_active_session(game, player_id)
+        if session is not None:
+            return _human_test_public_state(game, player_id, identity, session)
+        if result_error is not None:
+            raise result_error
+        return {
+            "ok": True,
+            "game": game,
+            "player_id": player_id,
+            "identity": identity,
+            "complete": True,
+            "result": _human_test_public_result(game, result_text),
+        }
+    else:
+        raise _McpError(-32004, "not found")
+
+    return {
+        "ok": True,
+        "game": game,
+        "player_id": player_id,
+        "identity": identity,
+        "complete": True,
+        "result": _human_test_public_result(game, text),
+    }
 
 
 # ---- play 层统一身份 ----
@@ -3410,6 +3621,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_arcade_grant()
             return
 
+        human_test_match = re.fullmatch(r"/api/(mbti|dnd)/(start|answer_batch|result)", path)
+        if human_test_match:
+            self._handle_human_test_api(*human_test_match.groups())
+            return
+
         if path.startswith("/api/admin/users/") and path.endswith("/reset-password"):
             self._handle_admin_reset_password(path)
             return
@@ -3503,6 +3719,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_html_file(ECO_INDEX_PATH)
             return
 
+        if path in ("/mbti", "/dnd") and not params.get("action"):
+            self._send_human_test_page(path.removeprefix("/"))
+            return
+
         if path.startswith("/eco/assets/"):
             self._send_eco_asset(path)
             return
@@ -3538,6 +3758,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/arcade/chips":
             self._handle_api_arcade_status(params)
+            return
+
+        human_test_match = re.fullmatch(r"/api/(mbti|dnd)/result", path)
+        if human_test_match:
+            self._handle_human_test_api(human_test_match.group(1), "result", params=params)
             return
 
         if path == "/eco/api/state":
@@ -3849,6 +4074,26 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
+    def _handle_human_test_api(self, game, action, params=None):
+        try:
+            if params is None:
+                body = self._read_json_body()
+            else:
+                body = {"player_id": self._get_param(params, "player_id", required=False)}
+            result = _human_test_action(game, action, _extract_bearer(self.headers), body)
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else (404 if exc.code == -32004 else 400))
+            self._send_json({"ok": False, "error": exc.message}, status=status)
+        except (mbti_handler.JsonRpcError, dnd_handler.JsonRpcError) as exc:
+            status = 404 if exc.code in (-32001, -32003) else (503 if exc.code == -32000 else 400)
+            self._send_json({"ok": False, "error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("human test api failed: game=%s action=%s", game, action)
+            self._send_json({"ok": False, "error": "server error", "detail": str(exc)}, status=500)
+
     def _handle_eco_api(self, endpoint, params, species_name=None):
         try:
             ai_user_id = self._get_param(params, "ai_user_id", required=False)
@@ -4143,6 +4388,22 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "index not found"}, status=404)
             return
         self._send_html_bytes(body)
+
+    def _send_human_test_page(self, game):
+        config = HUMAN_TEST_GAMES[game]
+        try:
+            template = TEST_GAME_INDEX_PATH.read_text(encoding="utf-8")
+        except OSError:
+            self._send_json({"error": "index not found"}, status=404)
+            return
+        page_config = {
+            "game": game,
+            "title": config["title"],
+            "subtitle": config["subtitle"],
+            "source": config["source"],
+        }
+        html = template.replace("__TEST_GAME_CONFIG__", json.dumps(page_config, ensure_ascii=False))
+        self._send_html_bytes(html.encode("utf-8"))
 
     def _send_eco_asset(self, request_path):
         relative_path = urllib.parse.unquote(request_path.removeprefix("/eco/assets/"))

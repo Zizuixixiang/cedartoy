@@ -2039,6 +2039,17 @@
     </div>
   </div>
 
+  <div class="modal" id="adultModal" role="dialog" aria-modal="true" aria-labelledby="adultTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="adultTitle">成人内容确认</h2>
+      <p class="modal-hint">本测试含成人内容，请确认已满18岁</p>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="adultConfirmButton" type="button">确认并前往</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="leaderboardModal" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="leaderboardTitle">平台统计</h2>
@@ -2437,7 +2448,6 @@
       {
         id: "mbti",
         category: "test",
-        comingSoon: true,
         name: "MBTI 人格",
         mission: "MISSION: MIND SCAN",
         location: "LOCATION: PSYCHE TERMINAL",
@@ -2458,22 +2468,42 @@
       {
         id: "dnd",
         category: "test",
-        comingSoon: true,
-        name: "DND 阵营",
+        name: "九阵营",
         mission: "MISSION: ALIGNMENT",
         location: "LOCATION: CHAOS FRONTIER",
         glyph: "⚔",
-        badge: "DND",
+        badge: "ALIGN",
         level: "LV.02",
         metricLabel: "对局数",
         metric: "00036",
         short: "道德矩阵 / 阵营测试",
-        desc: "用守序与混乱、善良与邪恶两条轴线判断你的 DND 阵营归属。",
+        desc: "用守序与混乱、善良与邪恶两条轴线判断你的九阵营归属。",
         logs: ["阵营测试仪启动...", "守序 / 混乱 × 善良 / 邪恶矩阵。", "36道题决定你的阵营归属。", "作者：南山君（小红书：501518888）"],
         stats: [["ORDER", "60%"], ["CHAOS", "55%"]],
         footerIcons: ["⚔", "□", "⚖"],
         tags: ["守序/混乱", "善良/邪恶"],
         url: "/dnd",
+        ranks: []
+      },
+      {
+        id: "attribute",
+        category: "test",
+        name: "属性测试",
+        mission: "MISSION: INNER DEPTHS",
+        location: "LOCATION: PRIVATE MIRROR",
+        glyph: "◇",
+        badge: "ATTR",
+        level: "18+",
+        metricLabel: "入口",
+        metric: "18+",
+        short: "自我认知 / 深水区",
+        desc: "一面只适合成年人独自打开的镜子，照见那些不常被说出口的偏好轮廓。",
+        logs: ["一句话：自我认知的深水区，测完慎晒。", "有些倾向很难在日常里命名。", "答案留给自己，边界由你决定。"],
+        stats: [["DEPTH", "86%"], ["PRIVACY", "100%"]],
+        footerIcons: ["◇", "◌", "□"],
+        tags: ["成人", "自我认知"],
+        url: "https://bdsmtest.org/?lang=zh_CN",
+        adultConfirm: true,
         ranks: []
       },
       {
@@ -2542,7 +2572,7 @@
 
     const platformTestLabels = {
       mbti: "MBTI 16型分布",
-      dnd: "DND 阵营分布",
+      dnd: "九阵营分布",
       bdsmtest: "BDSMTest 分布",
     };
 
@@ -2765,7 +2795,7 @@
       memoria: "Memoria Station",
       market: "买菜做饭",
       mbti: "MBTI",
-      dnd: "DND",
+      dnd: "九阵营",
       bdsmtest: "BDSMTest",
     };
 
@@ -3388,24 +3418,31 @@
       renderDetail();
     }
 
-    function enterGame() {
-      const game = currentGame();
+    let pendingAdultUrl = "";
+
+    function openGame(game) {
       if (game.comingSoon) {
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
       }
+      if (game.adultConfirm) {
+        pendingAdultUrl = game.url;
+        closeDrawers();
+        openModal("adultModal");
+        return;
+      }
       window.location.href = game.url;
+    }
+
+    function enterGame() {
+      openGame(currentGame());
     }
 
     function enterGameById(id) {
       const game = games.find((item) => item.id === id);
       if (!game) return;
       selected = id;
-      if (game.comingSoon) {
-        openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
-        return;
-      }
-      window.location.href = game.url;
+      openGame(game);
     }
 
     function watchWorkkk(playerId) {
@@ -3739,6 +3776,7 @@
 
     function closeModals() {
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
+      pendingAdultUrl = "";
       resetBindModal();
     }
 
@@ -4031,6 +4069,11 @@
     $("mineDrawer").addEventListener("click", (event) => { if (event.target.id === "mineDrawer") closeDrawers(); });
     $("loginSubmit").addEventListener("click", login);
     $("bindSubmit").addEventListener("click", bindAccount);
+    $("adultConfirmButton").addEventListener("click", () => {
+      const url = pendingAdultUrl;
+      closeModals();
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    });
     document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModals));
     document.querySelectorAll(".modal").forEach((modal) => {
       modal.addEventListener("click", (event) => { if (event.target === modal) closeModals(); });

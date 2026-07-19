@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>CEDAR TOY · TEST</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --bg: #FDF6F7;
+      --purple: #BEB1D1;
+      --purple-dark: #9B8DB5;
+      --purple-darker: #8678A0;
+      --purple-light: #E6DFF0;
+      --pink: #E6A8B1;
+      --pink-dark: #C28B93;
+      --text: #5C5463;
+      --muted: #9CA3AF;
+      --screen-bg: #2D2D2D;
+      --card: #FFFFFF;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    html { min-height: 100%; background: var(--bg); image-rendering: pixelated; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(rgba(190, 177, 209, .1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(190, 177, 209, .1) 1px, transparent 1px);
+      background-size: 20px 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, a { font: inherit; }
+    button { cursor: pointer; touch-action: manipulation; }
+    .pixel, h1, h2, .eyebrow, .progress-label, .mode-code, .status-text {
+      font-family: "Silkscreen", "Microsoft YaHei", sans-serif;
+    }
+    .topbar {
+      min-height: 60px;
+      padding: 10px clamp(14px, 4vw, 30px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      color: #fff;
+      background: var(--purple);
+      border-bottom: 4px solid var(--purple-dark);
+    }
+    .brand, .back-link { color: #fff; text-decoration: none; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; font-size: clamp(17px, 4vw, 24px); }
+    .pixel-logo { width: 22px; height: 16px; border: 4px solid #fff; box-shadow: 8px 8px 0 -4px #fff; }
+    .back-link { font-size: 12px; padding: 8px; border: 2px solid rgba(255,255,255,.7); }
+    main { width: min(920px, calc(100% - 28px)); margin: 0 auto; padding: clamp(24px, 5vw, 48px) 0 calc(40px + var(--safe-bottom)); }
+    .hero { margin-bottom: 22px; }
+    .eyebrow { color: var(--pink-dark); font-size: 11px; letter-spacing: .08em; }
+    h1 { margin: 7px 0 6px; color: var(--purple-darker); font-size: clamp(26px, 7vw, 46px); line-height: 1.15; }
+    .hero p { margin: 0; color: var(--muted); font-size: 14px; }
+    .shell {
+      position: relative;
+      min-height: 430px;
+      padding: clamp(18px, 4vw, 34px);
+      background: var(--card);
+      border: 4px solid var(--purple);
+      box-shadow: 10px 10px 0 var(--purple-light);
+    }
+    .shell::before { content: ""; position: absolute; top: -4px; left: 26px; width: 54px; border-top: 4px solid var(--pink); }
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 26px; }
+    .status-text { color: var(--purple-dark); font-size: 11px; }
+    .identity { color: var(--muted); font-size: 12px; text-align: right; }
+    .panel[hidden] { display: none; }
+    .intro { max-width: 660px; }
+    h2 { margin: 0 0 10px; color: var(--purple-darker); font-size: clamp(18px, 4vw, 26px); }
+    .lead { margin: 0 0 24px; line-height: 1.8; color: #716978; }
+    .modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .mode-button {
+      min-height: 105px;
+      padding: 16px;
+      text-align: left;
+      color: var(--text);
+      background: #fff;
+      border: 3px solid var(--purple-light);
+      box-shadow: 5px 5px 0 rgba(190,177,209,.28);
+    }
+    .mode-button:hover, .mode-button:focus-visible { outline: 0; border-color: var(--pink); transform: translateY(-2px); }
+    .mode-code { display: block; margin-bottom: 9px; color: var(--purple-darker); font-size: 12px; }
+    .mode-desc { font-size: 13px; line-height: 1.5; color: var(--muted); }
+    .progress-wrap { margin-bottom: 28px; }
+    .progress-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+    .progress-label { font-size: 11px; color: var(--purple-dark); }
+    .progress-track { height: 12px; padding: 2px; border: 2px solid var(--purple); background: #fff; }
+    .progress-fill { display: block; width: 0; height: 100%; background: var(--pink); transition: width .18s ease; }
+    .question-number { margin-bottom: 8px; color: var(--pink-dark); font-size: 12px; }
+    .question-text { margin: 0 0 22px; font-size: clamp(18px, 4vw, 25px); line-height: 1.55; color: var(--text); }
+    .mbti-poles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .pole { padding: 14px; line-height: 1.5; background: var(--purple-light); border-left: 5px solid var(--purple); }
+    .pole:last-child { background: #FBECEF; border-color: var(--pink); }
+    .pole b { display: block; margin-bottom: 5px; font-family: "Silkscreen", sans-serif; color: var(--purple-darker); }
+    .answers { display: grid; gap: 10px; }
+    .answers.mbti { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .answer-button {
+      min-height: 58px;
+      padding: 12px;
+      color: var(--text);
+      background: #fff;
+      border: 3px solid var(--purple-light);
+      text-align: left;
+      line-height: 1.45;
+    }
+    .answers.mbti .answer-button { text-align: center; font-size: 12px; padding: 9px 4px; }
+    .answer-button:hover, .answer-button:focus-visible { outline: 0; border-color: var(--pink); background: #FFF7F8; }
+    .answer-button.selected { color: var(--purple-darker); border-color: var(--pink); background: #FFF0F2; box-shadow: inset 4px 0 0 var(--pink); }
+    button:disabled { cursor: wait; opacity: .55; }
+    .result-screen {
+      padding: clamp(18px, 4vw, 28px);
+      color: #F5EEF8;
+      background: var(--screen-bg);
+      border: 4px solid var(--purple-dark);
+      box-shadow: inset 0 0 0 3px #1e1e1e;
+    }
+    .result-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.75; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    .pixel-button {
+      min-height: 43px;
+      padding: 9px 16px;
+      color: #fff;
+      background: var(--pink);
+      border: 0;
+      border-right: 4px solid var(--pink-dark);
+      border-bottom: 4px solid var(--pink-dark);
+      text-decoration: none;
+    }
+    .pixel-button.secondary { color: var(--purple-darker); background: #fff; border: 3px solid var(--purple); box-shadow: 4px 4px 0 var(--purple-light); }
+    .question-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; }
+    .review-copy { margin: -2px 0 18px; color: var(--muted); line-height: 1.65; }
+    .review-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; }
+    .review-item { min-height: 42px; padding: 5px; color: var(--purple-darker); background: #fff; border: 2px solid var(--purple-light); font-family: "Silkscreen", sans-serif; font-size: 10px; }
+    .review-item:hover, .review-item:focus-visible { outline: 0; border-color: var(--pink); }
+    .source { margin: 24px 0 0; color: var(--muted); text-align: center; font-size: 12px; }
+    .loading { display: grid; min-height: 260px; place-items: center; color: var(--purple-dark); text-align: center; }
+    .error { margin: 0 0 16px; padding: 12px; color: #9d4f5b; background: #FFF0F2; border-left: 5px solid var(--pink); line-height: 1.5; }
+    .error[hidden] { display: none; }
+    @media (max-width: 680px) {
+      .topbar { min-height: 56px; }
+      .brand { font-size: 16px; }
+      .back-link { font-size: 10px; }
+      main { width: min(100% - 20px, 920px); padding-top: 22px; }
+      .shell { min-height: 470px; padding: 18px 14px; box-shadow: 6px 6px 0 var(--purple-light); }
+      .status-row { align-items: flex-start; margin-bottom: 21px; }
+      .identity { max-width: 56%; font-size: 10px; overflow-wrap: anywhere; }
+      .modes { grid-template-columns: 1fr; }
+      .mbti-poles { grid-template-columns: 1fr; }
+      .answers.mbti { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .answer-button { min-height: 54px; }
+      .review-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand pixel" href="/"><span class="pixel-logo" aria-hidden="true"></span>CEDAR TOY</a>
+    <a class="back-link pixel" href="/">← ARCADE</a>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow" id="subtitle"></div>
+      <h1 id="title"></h1>
+      <p>人类网页端 · 进度保留 24 小时</p>
+    </section>
+    <section class="shell" aria-live="polite">
+      <div class="status-row">
+        <span class="status-text" id="statusText">SYSTEM / CONNECTING</span>
+        <span class="identity" id="identity"></span>
+      </div>
+      <p class="error" id="error" hidden></p>
+
+      <div class="panel loading" id="loadingPanel"><span class="pixel">LOADING SAVE...</span></div>
+
+      <div class="panel intro" id="modePanel" hidden>
+        <h2>选择测试模式</h2>
+        <p class="lead">答案只保存在这台设备，全部答完并确认后才会一次提交。刷新页面可以继续，也可以随时返回修改。</p>
+        <div class="modes" id="modes"></div>
+      </div>
+
+      <div class="panel" id="questionPanel" hidden>
+        <div class="progress-wrap">
+          <div class="progress-head"><span class="progress-label" id="modeLabel"></span><span class="progress-label" id="progressLabel"></span></div>
+          <div class="progress-track"><span class="progress-fill" id="progressFill"></span></div>
+        </div>
+        <div class="question-number" id="questionNumber"></div>
+        <h2 class="question-text" id="questionText"></h2>
+        <div class="mbti-poles" id="mbtiPoles" hidden></div>
+        <div class="answers" id="answers"></div>
+        <div class="question-actions">
+          <button class="pixel-button secondary pixel" id="previousButton" type="button">← 上一题</button>
+          <button class="pixel-button secondary pixel" id="reviewButton" type="button" hidden>查看答题卡 →</button>
+        </div>
+      </div>
+
+      <div class="panel" id="reviewPanel" hidden>
+        <h2>确认答题卡</h2>
+        <p class="review-copy">全部答案已保存在本机。点击题号可返回修改，确认无误后再一次性提交结算。</p>
+        <div class="review-grid" id="reviewGrid"></div>
+        <div class="actions">
+          <button class="pixel-button secondary pixel" id="modifyButton" type="button">← 返回修改</button>
+          <button class="pixel-button pixel" id="submitButton" type="button">提交并查看结果 →</button>
+        </div>
+      </div>
+
+      <div class="panel" id="resultPanel" hidden>
+        <h2>测试结果</h2>
+        <div class="result-screen"><p class="result-text" id="resultText"></p></div>
+        <div class="actions">
+          <button class="pixel-button pixel" id="restartButton" type="button">RETEST →</button>
+          <a class="pixel-button secondary pixel" href="/">BACK TO ARCADE</a>
+        </div>
+      </div>
+    </section>
+    <p class="source" id="source"></p>
+  </main>
+  <script>
+    const CONFIG = __TEST_GAME_CONFIG__;
+    const TOKEN_KEY = "cedartoy_token";
+    const GUEST_KEY = "cedartoy_guest_web_player_id";
+    const panels = ["loadingPanel", "modePanel", "questionPanel", "reviewPanel", "resultPanel"];
+    let activeState = null;
+    let answers = [];
+    let cursor = 0;
+    let busy = false;
+
+    const $ = (id) => document.getElementById(id);
+    document.title = `${CONFIG.title} · CEDAR TOY`;
+    $("title").textContent = CONFIG.title;
+    $("subtitle").textContent = CONFIG.subtitle;
+    $("source").textContent = CONFIG.source;
+
+    function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
+    function guestPlayerId() {
+      let value = localStorage.getItem(GUEST_KEY) || "";
+      if (/^guest:web[a-zA-Z0-9]{1,61}$/.test(value)) return value;
+      let suffix = "";
+      if (globalThis.crypto?.getRandomValues) {
+        const bytes = new Uint8Array(12);
+        crypto.getRandomValues(bytes);
+        suffix = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      } else {
+        suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`.replace(/[^a-zA-Z0-9]/g, "");
+      }
+      value = `guest:web${suffix}`;
+      localStorage.setItem(GUEST_KEY, value);
+      return value;
+    }
+    function identityBody(extra = {}) { return {player_id: guestPlayerId(), ...extra}; }
+    function requestHeaders() {
+      const headers = {"Content-Type": "application/json"};
+      if (token()) headers.Authorization = `Bearer ${token()}`;
+      return headers;
+    }
+    function draftKey(playerId = activeState?.player_id || guestPlayerId()) {
+      return `cedartoy_${CONFIG.game}_web_draft_${playerId}`;
+    }
+
+    function showPanel(id) {
+      panels.forEach((panelId) => { $(panelId).hidden = panelId !== id; });
+    }
+    function showError(message = "") {
+      $("error").textContent = message;
+      $("error").hidden = !message;
+    }
+    function setIdentity(data) {
+      const label = data.identity === "account" ? `ACCOUNT #${data.player_id}` : "GUEST / LOCAL SAVE";
+      $("identity").textContent = label;
+    }
+    function setButtonsDisabled(disabled) {
+      document.querySelectorAll("button").forEach((button) => { button.disabled = disabled; });
+    }
+
+    async function api(action, payload = {}, retryGuest = true) {
+      const response = await fetch(`/api/${CONFIG.game}/${action}`, {
+        method: "POST",
+        headers: requestHeaders(),
+        body: JSON.stringify(identityBody(payload)),
+        cache: "no-store"
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401 && token() && retryGuest) {
+        localStorage.removeItem(TOKEN_KEY);
+        return api(action, payload, false);
+      }
+      if (!response.ok) {
+        const error = new Error(data.error || "请求失败，请稍后重试");
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    function renderModes() {
+      activeState = null;
+      answers = [];
+      cursor = 0;
+      $("statusText").textContent = "SYSTEM / SELECT MODE";
+      $("modes").innerHTML = "";
+      [
+        {edition: "quick", label: "快速版 · 16题", desc: "用较短时间完成一次人格偏好扫描"},
+        {edition: "complete", label: "完整版 · 93题", desc: "更细致地覆盖四组人格偏好维度"}
+      ].forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mode-button";
+        const code = document.createElement("span");
+        code.className = "mode-code";
+        code.textContent = item.label;
+        const desc = document.createElement("span");
+        desc.className = "mode-desc";
+        desc.textContent = item.desc;
+        button.append(code, desc);
+        button.addEventListener("click", () => start(item.edition, true));
+        $("modes").appendChild(button);
+      });
+      showPanel("modePanel");
+    }
+
+    function restoreDraft(state) {
+      answers = Array(state.total).fill(null);
+      cursor = 0;
+      try {
+        const saved = JSON.parse(localStorage.getItem(draftKey()) || "null");
+        if (saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
+          answers = Array.from({length: state.total}, (_, index) => Number.isInteger(saved.answers[index]) ? saved.answers[index] : null);
+          cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
+        }
+      } catch (_) {}
+    }
+    function saveDraft() {
+      if (!activeState) return;
+      localStorage.setItem(draftKey(), JSON.stringify({
+        edition: activeState.edition,
+        total: activeState.total,
+        answers,
+        cursor
+      }));
+    }
+    function clearDraft() {
+      if (activeState) localStorage.removeItem(draftKey());
+      answers = [];
+      cursor = 0;
+    }
+
+    function renderState(state) {
+      activeState = state;
+      setIdentity(state);
+      if (state.complete) {
+        clearDraft();
+        $("statusText").textContent = "SYSTEM / SCAN COMPLETE";
+        $("resultText").textContent = state.result || "结果已生成。";
+        showPanel("resultPanel");
+        return;
+      }
+      restoreDraft(state);
+      $("statusText").textContent = "SYSTEM / LOCAL SAVE";
+      renderQuestion();
+      showPanel("questionPanel");
+    }
+
+    function renderQuestion() {
+      const question = activeState.questions[cursor];
+      if (!question) return;
+      const answeredCount = answers.filter(Number.isInteger).length;
+      $("modeLabel").textContent = CONFIG.game === "mbti"
+        ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
+        : "九阵营 · 36题";
+      $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
+      $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
+      $("questionNumber").textContent = `QUESTION ${question.number}`;
+      $("questionText").textContent = question.text;
+      $("answers").innerHTML = "";
+
+      if (CONFIG.game === "mbti") {
+        $("mbtiPoles").hidden = false;
+        $("mbtiPoles").innerHTML = `<div class="pole"><b>A</b><span></span></div><div class="pole"><b>B</b><span></span></div>`;
+        $("mbtiPoles").children[0].querySelector("span").textContent = question.option_a;
+        $("mbtiPoles").children[1].querySelector("span").textContent = question.option_b;
+        $("answers").className = "answers mbti";
+        [[5,"完全 A"],[4,"比较 A"],[3,"略偏 A"],[2,"略偏 B"],[1,"比较 B"],[0,"完全 B"]].forEach(([value, label]) => addAnswer(value, label));
+      } else {
+        $("mbtiPoles").hidden = true;
+        $("answers").className = "answers";
+        question.options.forEach((option) => addAnswer(option.value, `${option.value}. ${option.text}`));
+      }
+      $("previousButton").disabled = busy || cursor === 0;
+      $("reviewButton").hidden = !answers.every(Number.isInteger);
+    }
+    function addAnswer(value, label) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "answer-button";
+      button.textContent = label;
+      button.classList.toggle("selected", answers[cursor] === value);
+      button.addEventListener("click", () => answer(value));
+      $("answers").appendChild(button);
+    }
+
+    async function start(edition, discardDraft = false) {
+      if (busy) return;
+      busy = true;
+      showError();
+      setButtonsDisabled(true);
+      $("statusText").textContent = "SYSTEM / INITIALIZING";
+      try {
+        if (discardDraft && activeState) localStorage.removeItem(draftKey());
+        renderState(await api("start", CONFIG.game === "mbti" ? {edition} : {}));
+      } catch (error) {
+        showError(error.message);
+        if (CONFIG.game === "mbti") {
+          renderModes();
+        } else {
+          $("loadingPanel").querySelector("span").textContent = "连接失败，请刷新重试";
+          showPanel("loadingPanel");
+        }
+      } finally {
+        busy = false;
+        setButtonsDisabled(false);
+      }
+    }
+    function answer(value) {
+      if (busy || !activeState) return;
+      answers[cursor] = value;
+      if (cursor < activeState.total - 1) cursor += 1;
+      saveDraft();
+      if (answers.every(Number.isInteger)) renderReview();
+      else renderQuestion();
+    }
+
+    function goToQuestion(index) {
+      if (!activeState) return;
+      cursor = Math.max(0, Math.min(index, activeState.total - 1));
+      saveDraft();
+      renderQuestion();
+      showPanel("questionPanel");
+    }
+
+    function renderReview() {
+      if (!activeState || !answers.every(Number.isInteger)) return;
+      $("statusText").textContent = "SYSTEM / REVIEW ANSWERS";
+      $("reviewGrid").innerHTML = "";
+      answers.forEach((value, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "review-item";
+        button.textContent = `${index + 1} · ${CONFIG.game === "mbti" ? ["B", "B", "B", "A", "A", "A"][value] : value}`;
+        button.addEventListener("click", () => goToQuestion(index));
+        $("reviewGrid").appendChild(button);
+      });
+      showPanel("reviewPanel");
+    }
+
+    async function submitAnswers() {
+      if (busy || !activeState || !answers.every(Number.isInteger)) return;
+      busy = true;
+      showError();
+      setButtonsDisabled(true);
+      $("statusText").textContent = "SYSTEM / CALCULATING";
+      try {
+        renderState(await api("answer_batch", {answers: [...answers]}));
+      } catch (error) {
+        showError(error.message);
+        $("statusText").textContent = "SYSTEM / RETRY";
+      } finally {
+        busy = false;
+        setButtonsDisabled(false);
+      }
+    }
+
+    async function resume() {
+      showError();
+      try {
+        renderState(await api("result"));
+      } catch (error) {
+        if (error.status === 404) {
+          $("identity").textContent = token() ? "ACCOUNT" : "GUEST / LOCAL SAVE";
+          if (CONFIG.game === "mbti") renderModes();
+          else await start("standard");
+        } else {
+          showError(error.message);
+          renderModes();
+        }
+      }
+    }
+    $("previousButton").addEventListener("click", () => goToQuestion(cursor - 1));
+    $("reviewButton").addEventListener("click", renderReview);
+    $("modifyButton").addEventListener("click", () => goToQuestion(cursor));
+    $("submitButton").addEventListener("click", submitAnswers);
+    $("restartButton").addEventListener("click", () => {
+      showError();
+      if (activeState) localStorage.removeItem(draftKey());
+      if (CONFIG.game === "mbti") renderModes();
+      else start("standard", true);
+    });
+    resume();
+  </script>
+</body>
+</html>
