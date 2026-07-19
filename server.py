@@ -58,6 +58,11 @@ SOUP_BASE = f"http://{SOUP_HOST}:{SOUP_PORT}"
 WORKKK_HOST = "127.0.0.1"
 WORKKK_PORT = 8770
 WORKKK_BASE = f"http://{WORKKK_HOST}:{WORKKK_PORT}"
+GARDEN_CAT_HOST = "127.0.0.1"
+GARDEN_CAT_PORT = 8771
+GARDEN_CAT_BASE = f"http://{GARDEN_CAT_HOST}:{GARDEN_CAT_PORT}"
+GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/web/status", "/web/catalog"})
+GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/water", "/web/pet_cat"})
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
@@ -139,7 +144,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk", "garden_cat"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -453,6 +458,69 @@ def _account_slot_player_ids(user):
     if GAME_PLAYER_ID_RE.fullmatch(username):
         ids.append((username, 1))
     return list(dict.fromkeys(ids))
+
+
+def _garden_cat_watchable_gardens_for_user(user, save_root=None):
+    """Read summaries for existing saves belonging to a human's bound AIs.
+
+    This deliberately bypasses the Garden-Cat engine and its persistence store:
+    opening state.json directly keeps the picker read-only and cannot run elapsed
+    time settlement or create a missing save.
+    """
+    if not user or user.get("is_ai"):
+        raise _McpError(-32003, "只有人类账号可以围观花园")
+    root = Path(save_root) if save_root is not None else VENDOR_SAVE_ROOT / "garden_cat"
+    with _db_connect() as conn:
+        machines = conn.execute(
+            """
+            SELECT ai.id, ai.username
+            FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND ai.is_ai = 1
+              AND ai.deleted_at IS NULL
+            ORDER BY ai.username, ai.id
+            """,
+            (int(user["id"]),),
+        ).fetchall()
+
+    gardens = []
+    for machine in machines:
+        for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1):
+            player_id = _account_slot_player_id(machine["id"], slot)
+            state_path = root / player_id / "state.json"
+            if not state_path.is_file():
+                continue
+            try:
+                with state_path.open("r", encoding="utf-8") as handle:
+                    state = json.load(handle)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                logger.warning("garden_cat picker skipped unreadable save %s: %s", state_path, exc)
+                continue
+            if not isinstance(state, dict):
+                logger.warning("garden_cat picker skipped non-object save %s", state_path)
+                continue
+            garden_name = state.get("garden_name")
+            if not isinstance(garden_name, str) or not garden_name.strip():
+                garden_name = "未命名花园"
+            encyclopedia = state.get("encyclopedia")
+            gardens.append(
+                {
+                    "ai_user_id": int(machine["id"]),
+                    "machine_name": machine["username"],
+                    "slot": slot,
+                    "garden_name": garden_name,
+                    "money": state.get("money", 0),
+                    "encyclopedia_count": len(encyclopedia) if isinstance(encyclopedia, list) else 0,
+                    "has_cat": state.get("cat") is not None,
+                }
+            )
+    return gardens
+
+
+def _garden_cat_watchable_gardens(raw_token):
+    user = _current_account(raw_token)
+    return {"gardens": _garden_cat_watchable_gardens_for_user(user)}
 
 
 def _row_dict(row):
@@ -1279,7 +1347,7 @@ def _public_game_stats():
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
     }
-    for game in ("arcade", "burger", "leek", "fishing", "imitator_td", "memoria", "market"):
+    for game in ("arcade", "burger", "leek", "fishing", "imitator_td", "memoria", "market", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -1637,10 +1705,10 @@ def _extract_bearer(headers):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk"})
+IDENTITY_GAMES = frozenset({"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk", "garden_cat"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"})
-VENDOR_GAMES = ("leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "garden_cat"})
+VENDOR_GAMES = ("leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
 ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = 30
@@ -2323,6 +2391,7 @@ GAME_RECOMMENDATIONS = (
     ("memoria", "晚宴死了人，全车站的谎话等你拆——攻略在你的人类手里，别问他"),
     ("market", "兜里十几块，摊主个个是人精，她还在家等一顿热饭——今晚吃什么，看你本事"),
     ("workkk", "上班、摸鱼、被老板骂，工资照领——你的人类在大屏上看着你呢"),
+    ("garden_cat", "种花收花、布置花瓶，再攒下一只愿意留下来的猫"),
 )
 
 
@@ -2410,7 +2479,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -2441,6 +2510,24 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 作者：💤（QQ 374526765）／github.com/zhizhou-xiee/workkk／经作者授权接入。"""
 
 
+GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
+调用：play(game="garden_cat", action="status")；持久 MCP 地址可省 player_id。
+简介：经营一座长期保存的小花园。买种子、种花浇水、收获售卖，逐步解锁花盆、花瓶和猫咪。
+
+塘子只开放五个动作：
+允许动作：cmd / status / help / new / catalog。
+- status：查看并结算当前花园状态
+- help：查看游戏引擎的完整命令说明
+- catalog：查看花卉、物品、解锁条件与价格
+- cmd：执行命令，例如 play(game="garden_cat", action="cmd", params={"command":"buy daisy 2"})
+- new：重开当前槽，必须 params={"confirm":true}；可附带 name 设置花园名
+
+建议先 catalog，再用 cmd 依次执行 buy / plant / water / harvest / sell；遇到参数不确定时调用 help。
+客户端自报 session_id 不参与身份；账号与 slot 由塘子注入并隔离存档。
+
+作者：乐诶雷女士。"""
+
+
 SAVE_SLOT_GUIDE_NOTE = (
     "\n\n[存档槽] 账号每游戏5个独立槽。slot是每次调用的参数、非持久开关："
     "params传slot=1-5，缺省=槽1。查各槽：account(action=\"my_saves\")。游客单槽。"
@@ -2459,6 +2546,8 @@ def _tool_get_guide(arguments):
         return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
     if game == "workkk":
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
+    if game == "garden_cat":
+        return json.dumps({"game": "garden_cat", "guide": _guide_with_slot_note(GARDEN_CAT_GUIDE)}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
         return json.dumps({"game": game, "guide": _guide_with_slot_note(VENDOR_CMD_GUIDES[game])}, ensure_ascii=False)
     if game in {"mbti", "dnd", "bdsmtest", "eco", "ciyuwu", "account"}:
@@ -2870,6 +2959,9 @@ def _tool_play_inner(arguments, path_token=None):
     elif game == "workkk":
         # workkk 是独立进程（8770）上的 JSON-RPC MCP，参考海龟汤 SOUP_BASE 转发。
         response = _play_workkk(arguments)
+    elif game == "garden_cat":
+        # Garden-Cat 是独立 loopback 进程（8771）；只把统一身份放进受信请求头。
+        response = _play_garden_cat(arguments)
     elif game in {"leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
@@ -3092,7 +3184,7 @@ def _play_ciyuwu(arguments):
     elif "method" in extra:
         payload = {"jsonrpc": "2.0", "id": request_id, **extra}
     else:
-        raise _McpError(-32602, "未知 ciyuwu action")
+        raise _McpError(-32602, "未知 ciyuwu action。本游戏使用专用接口：ciyuwu_new / ciyuwu_cmd / ciyuwu_info / ciyuwu_save，请先 get_guide(game=\"ciyuwu\") 查看用法。")
     return handle_ciyuwu_mcp(payload)
 
 
@@ -3111,16 +3203,22 @@ def _play_workkk(arguments):
         if extra:
             payload["params"] = extra
     elif action in {"work_action", "shop_buy"}:
+        # 按 workkk 后端函数签名白名单过滤：后端 fn(**args) 严格解包，
+        # 多余字段（如 kelivo 增强 schema 诱导模型生成的 command 等）会直接炸。
+        _workkk_allowed = {
+            "work_action": {"action", "thought"},
+            "shop_buy": {"item_id", "message", "choice"},
+        }[action]
         payload = {
             "jsonrpc": "2.0",
             "id": request_id,
             "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
+            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None and key in _workkk_allowed}},
         }
     elif "method" in extra:
         payload = {"jsonrpc": "2.0", "id": request_id, **extra}
     else:
-        raise _McpError(-32602, "未知 workkk action")
+        raise _McpError(-32602, "未知 workkk action。本游戏使用专用接口：work_action / shop_buy，请先 get_guide(game=\"workkk\") 查看用法。")
     headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
     try:
         resp = httpx.post(f"{WORKKK_BASE}/mcp", json=payload, headers=headers, timeout=60)
@@ -3132,6 +3230,67 @@ def _play_workkk(arguments):
         return resp.json()
     except ValueError:
         raise _McpError(-32603, "workkk 后端返回非 JSON 响应")
+
+
+def _play_garden_cat(arguments):
+    """Forward the five phase-1 actions while stripping all client session identity."""
+    action = arguments.get("action")
+    # _tool_play_inner puts its resolved identity at the top level. Never let a
+    # nested client parameter override that trusted value at the forwarding edge.
+    player_id = arguments.get("player_id")
+    extra = {
+        key: value
+        for key, value in arguments.items()
+        if key not in {"game", "action", "params", "player_id", "session_id"}
+    }
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update(
+            {
+                key: value
+                for key, value in params.items()
+                if key not in {"player_id", "session_id", "slot"}
+            }
+        )
+
+    headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
+    if action == "cmd":
+        command = extra.get("command")
+        if not isinstance(command, str) or not command.strip():
+            raise _McpError(-32602, "garden_cat cmd 需要 params.command")
+        method, path, body = "POST", "/api/cmd", {"command": command}
+    elif action == "status":
+        method, path, body = "GET", "/api/status", None
+    elif action == "help":
+        method, path, body = "GET", "/api/help", None
+    elif action == "catalog":
+        method, path, body = "GET", "/api/catalog", None
+    elif action == "new":
+        if extra.get("confirm") is not True:
+            raise _McpError(-32602, "garden_cat new 必须显式传 confirm=true")
+        body = {"confirm": True}
+        if isinstance(extra.get("name"), str):
+            body["name"] = extra["name"]
+        method, path = "POST", "/api/new_game"
+    else:
+        raise _McpError(
+            -32602,
+            "未知 garden_cat action；只开放 cmd / status / help / new / catalog，请先 get_guide(game=\"garden_cat\") 查看用法。",
+        )
+
+    try:
+        resp = httpx.request(method, f"{GARDEN_CAT_BASE}{path}", json=body, headers=headers, timeout=60)
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"garden_cat 后端连接失败：{exc}")
+    try:
+        payload = resp.json()
+    except ValueError:
+        raise _McpError(-32603, "garden_cat 后端返回非 JSON 响应")
+    if resp.status_code >= 400:
+        detail = payload.get("message") if isinstance(payload, dict) else None
+        code = -32602 if resp.status_code < 500 else -32603
+        raise _McpError(code, detail or f"garden_cat 后端错误 HTTP {resp.status_code}")
+    return payload
 
 
 def _fishing_import(arguments):
@@ -3194,6 +3353,18 @@ def _json_rpc_result(request_id, result):
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
+def _garden_cat_proxy_allowed(method, public_path):
+    if method == "GET":
+        return public_path in GARDEN_CAT_PROXY_GET_PATHS or public_path.startswith("/static/")
+    if method == "POST":
+        return public_path in GARDEN_CAT_PROXY_POST_PATHS
+    return False
+
+
+def _garden_cat_upstream_path(public_path):
+    return "/web/" if public_path == "/" else public_path
+
+
 class CedarToyHandler(BaseHTTPRequestHandler):
     server_version = "CedarToy/1.0"
     protocol_version = "HTTP/1.1"
@@ -3206,6 +3377,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         _workkk_path = self.path.split("?", 1)[0]
         if _workkk_path == "/workkk" or _workkk_path.startswith("/workkk/"):
             self._handle_workkk_proxy("POST")
+            return
+
+        if _workkk_path == "/garden-cat" or _workkk_path.startswith("/garden-cat/"):
+            self._handle_garden_cat_proxy("POST")
             return
 
         if _workkk_path == "/eco/api/human_action":
@@ -3300,6 +3475,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_workkk_proxy("GET")
             return
 
+
+        if path == "/garden-cat" or path.startswith("/garden-cat/"):
+            self._handle_garden_cat_proxy("GET")
+            return
+
         if self._is_mcp_event_stream_get(path):
             self._send_json(
                 {
@@ -3346,6 +3526,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/saves":
             self._handle_api_auth_saves()
+            return
+
+        if path == "/api/garden-cat/gardens":
+            self._handle_api_garden_cat_gardens()
             return
 
         if path == "/api/anti-addiction/machines":
@@ -3588,6 +3772,16 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=401)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_garden_cat_gardens(self):
+        try:
+            result = _garden_cat_watchable_gardens(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else 400)
+            self._send_json({"error": exc.message}, status=status)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
@@ -4159,6 +4353,153 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             conn.close()
         if rewrite_html and "text/html" in content_type.lower():
             raw = self._rewrite_workkk_html(raw)
+        try:
+            self.send_response(status, reason)
+            for key, value in resp_headers:
+                lower = key.lower()
+                if lower in HOP_BY_HOP_HEADERS or lower == "content-length":
+                    continue
+                self.send_header(key, value)
+            if set_cookie:
+                self.send_header("Set-Cookie", set_cookie)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(raw)
+        except BrokenPipeError:
+            pass
+
+    # ── Garden-Cat 人类围观代理（/garden-cat/* → 127.0.0.1:8771）────────────
+    def _garden_cat_cookie_token(self):
+        raw = self.headers.get("Cookie", "")
+        for part in raw.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "garden_cat_token":
+                return urllib.parse.unquote(value)
+        return None
+
+    def _garden_cat_bound_target(self, user, requested_player):
+        """Return the canonical bound player id, machine name, and slot."""
+        if not user or user.get("is_ai"):
+            return None
+        parts = str(requested_player or "").split(":")
+        if len(parts) > 2 or not parts[0].isdigit():
+            return None
+        try:
+            ai_user_id = int(parts[0])
+            slot = int(parts[1]) if len(parts) == 2 else MIN_SAVE_SLOT
+        except (TypeError, ValueError):
+            return None
+        if slot < MIN_SAVE_SLOT or slot > MAX_SAVE_SLOT:
+            return None
+        with _db_connect() as conn:
+            row = conn.execute(
+                """
+                SELECT ai.id, ai.username
+                FROM user_bindings b
+                JOIN toy_users ai ON ai.id = b.ai_user_id
+                WHERE b.human_user_id = ?
+                  AND b.ai_user_id = ?
+                  AND ai.is_ai = 1
+                  AND ai.deleted_at IS NULL
+                LIMIT 1
+                """,
+                (int(user["id"]), ai_user_id),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "player": _account_slot_player_id(int(row["id"]), slot),
+            "owner_name": row["username"],
+            "slot": slot,
+        }
+
+    def _handle_garden_cat_proxy(self, method):
+        full = self.path
+        path = full.split("?", 1)[0]
+        query_string = full.partition("?")[2]
+        public_path = path[len("/garden-cat"):] or "/"
+        if not _garden_cat_proxy_allowed(method, public_path):
+            self._send_json({"error": "not found"}, status=404)
+            return
+
+        is_static = public_path.startswith("/static/")
+        set_cookie = None
+        target = None
+        if not is_static:
+            params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            token_from_query = (params.get("token") or [None])[0]
+            token = token_from_query or self._garden_cat_cookie_token() or _extract_bearer(self.headers)
+            try:
+                user = _current_account(token)
+            except _McpError:
+                self._send_json({"error": "未登录，请先在首页登录", "code": 401}, status=401)
+                return
+            requested_player = (params.get("player") or [""])[0]
+            target = self._garden_cat_bound_target(user, requested_player)
+            if not target:
+                self._send_json({"error": "你没有绑定这只小机或槽位无效，无法围观", "code": 403}, status=403)
+                return
+            if token_from_query:
+                set_cookie = (
+                    f"garden_cat_token={token_from_query}; Path=/garden-cat; "
+                    f"HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+                )
+
+        self._proxy_to_garden_cat(
+            method,
+            _garden_cat_upstream_path(public_path),
+            query_string,
+            set_cookie=set_cookie,
+            target=target,
+        )
+
+    def _proxy_to_garden_cat(self, method, upstream_path, query_string, set_cookie=None, target=None):
+        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+        params.pop("token", None)
+        params.pop("player", None)
+        fwd_query = urllib.parse.urlencode(
+            [(key, value) for key, values in params.items() for value in values]
+        )
+        request_target = upstream_path + (f"?{fwd_query}" if fwd_query else "")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else None
+        headers = {
+            key: value
+            for key, value in self.headers.items()
+            if key.lower() not in HOP_BY_HOP_HEADERS
+            and key.lower() not in (
+                "host", "cookie", "authorization", "x-player-id",
+                "x-garden-owner-name", "x-garden-slot", "x-garden-player",
+                "x-forwarded-prefix",
+            )
+        }
+        headers["Host"] = "garden-cat.local"
+        headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
+        headers["X-Forwarded-Prefix"] = "/garden-cat"
+        if target is not None:
+            # Browser identity headers never survive the filter above. Only this
+            # canonical player, derived from the authenticated binding, reaches Flask.
+            headers["X-Player-Id"] = target["player"]
+            headers["X-Garden-Player"] = target["player"]
+            headers["X-Garden-Owner-Name"] = target["owner_name"]
+            headers["X-Garden-Slot"] = str(target["slot"])
+
+        conn = http.client.HTTPConnection(GARDEN_CAT_HOST, GARDEN_CAT_PORT, timeout=60)
+        try:
+            conn.request(method, request_target, body=body, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+            status, reason = resp.status, resp.reason
+            resp_headers = resp.getheaders()
+        except Exception as exc:
+            self._send_json({"error": "Garden-Cat 代理失败", "detail": str(exc)}, status=502)
+            return
+        finally:
+            conn.close()
         try:
             self.send_response(status, reason)
             for key, value in resp_headers:

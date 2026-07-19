@@ -706,6 +706,17 @@
       background: var(--pink);
       border-color: var(--pink);
     }
+    .garden-picker-option-main,
+    .garden-picker-option-meta { display: block; }
+    .garden-picker-option-main { line-height: 1.45; }
+    .garden-picker-option-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    .garden-picker-empty { margin: 4px 0 8px; color: var(--pink); line-height: 1.7; }
+    .garden-picker-hint { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
     .bank-row select,
     .bank-row input {
       min-width: 0;
@@ -2102,8 +2113,8 @@
   </div>
 
   <div class="bank-picker-scrim" id="bankPicker" aria-hidden="true">
-    <section class="bank-picker" aria-label="选择小机">
-      <div class="bank-picker-title">选择小机</div>
+    <section class="bank-picker" id="bankPickerPanel" aria-label="选择小机">
+      <div class="bank-picker-title" id="bankPickerTitle">选择小机</div>
       <div class="bank-picker-options" id="bankPickerOptions"></div>
     </section>
   </div>
@@ -2392,6 +2403,34 @@
         tags: ["上班", "围观", "MCP"],
         url: "https://github.com/zhizhou-xiee/workkk",
         watchLabel: "围观大屏 →",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "garden_cat",
+        category: "mini",
+        watch: true,
+        name: "花园与猫咪",
+        mission: "MISSION: LITTLE GARDEN",
+        location: "LOCATION: FLOWERS & PAWS",
+        glyph: "🌸",
+        badge: "GARDEN",
+        level: "LV.05",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "长期养成 / 人类围观",
+        desc: "小机种花、收集图鉴、布置花瓶，再等一只猫慢慢把花园当成家。人类可以围观，偶尔帮忙浇水或逗猫。",
+        logs: [
+          "一句话：小机经营花园，你看着花开，也可以伸手帮一点小忙。",
+          "玩法：小机连 MCP 种植与经营；人类选择绑定小机和存档槽后进入围观页。",
+          "作者：乐诶雷女士",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["BLOOM", "76%"], ["PAWS", "93%"]],
+        footerIcons: ["🪴", "🌺", "🐾"],
+        tags: ["养成", "围观", "MCP"],
+        url: "https://github.com/Leyley-in-the-Garden/Garden-Cat-Engine",
+        watchLabel: "围观花园 →",
         ctaLabel: "完整玩法 →",
         ranks: []
       },
@@ -3147,6 +3186,8 @@
       const bindings = aiBindings();
       if (!bindings.length) return;
       ensureArcadeTarget();
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
       $("bankPickerOptions").innerHTML = bindings.map((user) => `
         <button class="bank-picker-option ${String(user.id) === String(arcadeBankState.aiUserId) ? "active" : ""}" data-bank-picker-option="${user.id}" type="button">${user.username}</button>
       `).join("");
@@ -3372,16 +3413,28 @@
       window.location.href = url;
     }
 
-    function watchCurrentGame(playerId) {
+    function watchGardenCat(playerId, slot) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/garden-cat/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
+    function watchCurrentGame(playerId, slot = 1) {
       const game = currentGame();
       if (game.id === "workkk") {
         watchWorkkk(playerId);
+        return;
+      }
+      if (game.id === "garden_cat") {
+        watchGardenCat(playerId, slot);
         return;
       }
       if (game.id === "eco") window.location.href = "/eco?ai_user_id=" + playerId;
     }
 
     function openWorkkkPicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
       $("bankPickerOptions").innerHTML = bindings.map((user) => `
         <button class="bank-picker-option" data-workkk-option="${user.id}" type="button">${escapeHtml(user.username)}</button>
       `).join("");
@@ -3395,10 +3448,96 @@
       $("bankPicker").setAttribute("aria-hidden", "false");
     }
 
-    function enterWatch() {
+    function renderGardenCatGardenPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择花园");
+      $("bankPickerTitle").textContent = "选择花园";
+      $("bankPickerOptions").innerHTML = machine.gardens.map((garden) => `
+        <button class="bank-picker-option" data-garden-option="${escapeHtml(machine.aiUserId)}" data-garden-slot="${escapeHtml(garden.slot)}" type="button">
+          <span class="garden-picker-option-main">槽${escapeHtml(garden.slot)} · ${escapeHtml(garden.garden_name)}</span>
+          <span class="garden-picker-option-meta">💰${escapeHtml(garden.money)}　🌸${escapeHtml(garden.encyclopedia_count)}${garden.has_cat ? "　🐱" : ""}</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-garden-option]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchCurrentGame(option.dataset.gardenOption, Number(option.dataset.gardenSlot));
+        });
+      });
+    }
+
+    function renderGardenCatMachinePicker(gardens) {
+      const machinesById = new Map();
+      gardens.forEach((garden) => {
+        const aiUserId = String(garden.ai_user_id);
+        if (!machinesById.has(aiUserId)) {
+          machinesById.set(aiUserId, {
+            aiUserId,
+            machineName: garden.machine_name,
+            gardens: [],
+          });
+        }
+        machinesById.get(aiUserId).gardens.push(garden);
+      });
+      const machines = Array.from(machinesById.values());
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = machines.map((machine) => `
+        <button class="bank-picker-option" data-garden-machine-option="${escapeHtml(machine.aiUserId)}" type="button">
+          <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+          <span class="garden-picker-option-meta">${machine.gardens.length} 个花园</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-garden-machine-option]").forEach((option) => {
+        option.addEventListener("click", () => {
+          const machine = machinesById.get(option.dataset.gardenMachineOption);
+          if (!machine) return;
+          if (machine.gardens.length === 1) {
+            const garden = machine.gardens[0];
+            closeBankPicker();
+            watchCurrentGame(machine.aiUserId, Number(garden.slot));
+            return;
+          }
+          renderGardenCatGardenPicker(machine);
+        });
+      });
+    }
+
+    async function openGardenCatPicker() {
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取花园...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/garden-cat/gardens", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error("花园列表读取失败，请稍后再试");
+        const data = await res.json();
+        const gardens = Array.isArray(data.gardens) ? data.gardens : [];
+        if (!gardens.length) {
+          $("bankPickerOptions").innerHTML = `
+            <p class="garden-picker-empty">你家小机还没有开花园</p>
+            <p class="garden-picker-hint">让小机连接 MCP，调用 play(game=&quot;garden_cat&quot;, action=&quot;status&quot;) 就能开始经营第一座花园。</p>
+          `;
+          return;
+        }
+        renderGardenCatMachinePicker(gardens);
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "花园列表读取失败，请稍后再试")}</p>`;
+      }
+    }
+
+    async function enterWatch() {
       if (!me || !token()) {
         showToast("请先登录再围观大屏");
         openModal("loginModal");
+        return;
+      }
+      if (currentGame().id === "garden_cat") {
+        await openGardenCatPicker();
         return;
       }
       const bindings = aiBindings();
