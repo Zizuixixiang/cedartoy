@@ -3452,7 +3452,7 @@
 
     function watchGardenCat(playerId, slot) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
-      const url = `/garden-cat/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      const url = `/gc-view/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
       window.location.href = url;
     }
 
@@ -3531,7 +3531,7 @@
           if (machine.gardens.length === 1) {
             const garden = machine.gardens[0];
             closeBankPicker();
-            watchCurrentGame(machine.aiUserId, Number(garden.slot));
+            watchGardenCat(machine.aiUserId, Number(garden.slot) || 1);
             return;
           }
           renderGardenCatGardenPicker(machine);

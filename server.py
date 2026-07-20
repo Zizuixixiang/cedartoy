@@ -66,8 +66,8 @@ WORKKK_BASE = f"http://{WORKKK_HOST}:{WORKKK_PORT}"
 GARDEN_CAT_HOST = "127.0.0.1"
 GARDEN_CAT_PORT = 8771
 GARDEN_CAT_BASE = f"http://{GARDEN_CAT_HOST}:{GARDEN_CAT_PORT}"
-GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/web/status", "/web/catalog"})
-GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/water", "/web/pet_cat"})
+GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/web/status", "/web/catalog", "/web/notes"})
+GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/water", "/web/pet_cat", "/web/notes"})
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
@@ -2822,13 +2822,14 @@ GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
 简介：经营一座长期保存的小花园。买种子、种花浇水、收获售卖，逐步解锁花盆、花瓶和猫咪。
 ⏰ 注意：本游戏按现实时间自动推进（不同于按次数推进的回合制游戏）——离线期间花会继续生长、天气会变化、猫的状态会自然回落（有保护下限，不会出事）。隔了几天回来看到猫饿了很正常，喂一顿摸一摸就好，花园一直在等你。
 
-塘子只开放五个动作：
-允许动作：cmd / status / help / new / catalog。
+塘子只开放六个动作：
+允许动作：cmd / status / help / new / catalog / notes。
 - status：查看并结算当前花园状态
 - help：查看游戏引擎的完整命令说明
 - catalog：查看花卉、物品、解锁条件与价格
 - cmd：执行命令，例如 play(game="garden_cat", action="cmd", params={"command":"buy daisy 2"})
 - new：重开当前槽，必须 params={"confirm":true}；可附带 name 设置花园名
+- notes：params.page 查看便签（查看便签不要传 content 字段）；params.content 写便签。每张最多20字，2小时冷却，和人类共享一块板
 
 建议先 catalog，再用 cmd 依次执行 buy / plant / water / harvest / sell；遇到参数不确定时调用 help。
 客户端自报 session_id 不参与身份；账号与 slot 由塘子注入并隔离存档。
@@ -3269,7 +3270,10 @@ def _tool_play_inner(arguments, path_token=None):
         response = _play_workkk(arguments)
     elif game == "garden_cat":
         # Garden-Cat 是独立 loopback 进程（8771）；只把统一身份放进受信请求头。
-        response = _play_garden_cat(arguments)
+        response = _play_garden_cat(
+            arguments,
+            owner_name=(account_user.get("username") if account_user else None),
+        )
     elif game in {"leek", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
@@ -3540,8 +3544,8 @@ def _play_workkk(arguments):
         raise _McpError(-32603, "workkk 后端返回非 JSON 响应")
 
 
-def _play_garden_cat(arguments):
-    """Forward the five phase-1 actions while stripping all client session identity."""
+def _play_garden_cat(arguments, owner_name=None):
+    """Forward the six public actions while stripping all client session identity."""
     action = arguments.get("action")
     # _tool_play_inner puts its resolved identity at the top level. Never let a
     # nested client parameter override that trusted value at the forwarding edge.
@@ -3562,6 +3566,8 @@ def _play_garden_cat(arguments):
         )
 
     headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
+    if isinstance(owner_name, str) and owner_name.strip():
+        headers["X-Garden-Owner-Name"] = urllib.parse.quote(owner_name.strip())
     if action == "cmd":
         command = extra.get("command")
         if not isinstance(command, str) or not command.strip():
@@ -3580,10 +3586,21 @@ def _play_garden_cat(arguments):
         if isinstance(extra.get("name"), str):
             body["name"] = extra["name"]
         method, path = "POST", "/api/new_game"
+    elif action == "notes":
+        content = extra.get("content")
+        if "content" in extra and not isinstance(content, str):
+            raise _McpError(-32602, "garden_cat notes 写入需要 params.content 字符串")
+        if isinstance(content, str) and content.strip():
+            method, path, body = "POST", "/api/notes", {"content": content}
+        else:
+            page = extra.get("page", 1)
+            if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+                raise _McpError(-32602, "garden_cat notes 的 params.page 必须是正整数")
+            method, path, body = "GET", f"/api/notes?page={page}", None
     else:
         raise _McpError(
             -32602,
-            "未知 garden_cat action；只开放 cmd / status / help / new / catalog，请先 get_guide(game=\"garden_cat\") 查看用法。",
+            "未知 garden_cat action；只开放 cmd / status / help / new / catalog / notes，请先 get_guide(game=\"garden_cat\") 查看用法。",
         )
 
     try:
@@ -3687,6 +3704,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_workkk_proxy("POST")
             return
 
+        if _workkk_path == "/gc-view" or _workkk_path.startswith("/gc-view/"):
+            self.path = "/garden-cat" + self.path[len("/gc-view"):]
+            self._gc_prefix_override = "/gc-view"
+            self._handle_garden_cat_proxy("POST")
+            return
+
         if _workkk_path == "/garden-cat" or _workkk_path.startswith("/garden-cat/"):
             self._handle_garden_cat_proxy("POST")
             return
@@ -3788,6 +3811,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_workkk_proxy("GET")
             return
 
+
+        if path == "/gc-view" or path.startswith("/gc-view/"):
+            self.path = "/garden-cat" + self.path[len("/gc-view"):]
+            self._gc_prefix_override = "/gc-view"
+            self._handle_garden_cat_proxy("GET")
+            return
 
         if path == "/garden-cat" or path.startswith("/garden-cat/"):
             self._handle_garden_cat_proxy("GET")
@@ -4800,7 +4829,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 return
             if token_from_query:
                 set_cookie = (
-                    f"garden_cat_token={token_from_query}; Path=/garden-cat; "
+                    f"garden_cat_token={token_from_query}; Path=/; "
                     f"HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
                 )
 
@@ -4810,9 +4839,13 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             query_string,
             set_cookie=set_cookie,
             target=target,
+            human_name=(user.get("username") if not is_static else None),
         )
 
-    def _proxy_to_garden_cat(self, method, upstream_path, query_string, set_cookie=None, target=None):
+    def _proxy_to_garden_cat(
+        self, method, upstream_path, query_string, set_cookie=None, target=None,
+        human_name=None,
+    ):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         params.pop("token", None)
         params.pop("player", None)
@@ -4832,19 +4865,21 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             and key.lower() not in (
                 "host", "cookie", "authorization", "x-player-id",
                 "x-garden-owner-name", "x-garden-slot", "x-garden-player",
-                "x-forwarded-prefix",
+                "x-garden-human-name", "x-forwarded-prefix",
             )
         }
         headers["Host"] = "garden-cat.local"
         headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
-        headers["X-Forwarded-Prefix"] = "/garden-cat"
+        headers["X-Forwarded-Prefix"] = getattr(self, "_gc_prefix_override", "/garden-cat")
         if target is not None:
             # Browser identity headers never survive the filter above. Only this
             # canonical player, derived from the authenticated binding, reaches Flask.
             headers["X-Player-Id"] = target["player"]
             headers["X-Garden-Player"] = target["player"]
-            headers["X-Garden-Owner-Name"] = target["owner_name"]
+            headers["X-Garden-Owner-Name"] = urllib.parse.quote(str(target["owner_name"]))
             headers["X-Garden-Slot"] = str(target["slot"])
+            if isinstance(human_name, str) and human_name.strip():
+                headers["X-Garden-Human-Name"] = urllib.parse.quote(human_name.strip())
 
         conn = http.client.HTTPConnection(GARDEN_CAT_HOST, GARDEN_CAT_PORT, timeout=60)
         try:

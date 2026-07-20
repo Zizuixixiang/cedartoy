@@ -108,7 +108,7 @@ class GardenCatPhase2Tests(unittest.TestCase):
         self.assertEqual(
             summary["collectibles"],
             [
-                {"id": "shell", "name": "贝壳", "emoji": "🐚", "count": 2},
+                {"id": "shell", "name": "完整的贝壳", "emoji": "🐚", "count": 2},
                 {"id": "clover", "name": "四叶草", "emoji": "🍀", "count": 1},
             ],
         )
@@ -141,10 +141,13 @@ class GardenCatPhase2Tests(unittest.TestCase):
         self.assertNotIn("注册", html)
         self.assertIn('id="catCollectiblesPanel" class="panel hidden"', html)
         self.assertIn('id="catLettersPanel" class="panel hidden"', html)
+        self.assertIn('id="notesList"', html)
+        self.assertIn('id="notesComposer"', html)
 
         js = (ENGINE_ROOT / "static" / "human.js").read_text(encoding="utf-8")
         self.assertIn("`${BASE_PATH}/static/orange_cat.png`", js)
-        self.assertIn("`${BASE_PATH}${path}?${PLAYER_QUERY}`", js)
+        self.assertIn('requestJson(`/web/notes?page=${page}`)', js)
+        self.assertIn("window.setInterval(refresh, 3000)", js)
         self.assertIn("renderCatCollectionsAndLetters()", js)
         self.assertNotIn('fetch("/web/', js)
 

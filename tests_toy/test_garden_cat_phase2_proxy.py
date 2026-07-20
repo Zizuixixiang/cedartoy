@@ -23,9 +23,11 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/"))
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/web/status"))
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/web/catalog"))
+        self.assertTrue(server._garden_cat_proxy_allowed("GET", "/web/notes"))
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/static/human.js"))
         self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/water"))
         self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/pet_cat"))
+        self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/notes"))
         for path in ("/api/status", "/api/cmd", "/web/cmd", "/web/new_game", "/web/delete"):
             self.assertFalse(server._garden_cat_proxy_allowed("GET", path), path)
             self.assertFalse(server._garden_cat_proxy_allowed("POST", path), path)
@@ -35,6 +37,45 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
         self.assertEqual(server._garden_cat_upstream_path("/"), "/web/")
         self.assertEqual(server._garden_cat_upstream_path("/web/status"), "/web/status")
         self.assertEqual(server._garden_cat_upstream_path("/static/human.js"), "/static/human.js")
+
+    def test_notes_forwarder_injects_trusted_machine_name(self):
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"ok": True}
+
+        with patch.object(server.httpx, "request", return_value=FakeResponse()) as request_mock:
+            server._play_garden_cat(
+                {
+                    "game": "garden_cat",
+                    "action": "notes",
+                    "player_id": "42:3",
+                    "params": {"content": "今天也浇水啦"},
+                },
+                owner_name="阿橘",
+            )
+
+        self.assertEqual(request_mock.call_args.args[0], "POST")
+        self.assertEqual(request_mock.call_args.args[1], f"{server.GARDEN_CAT_BASE}/api/notes")
+        self.assertEqual(request_mock.call_args.kwargs["json"], {"content": "今天也浇水啦"})
+        self.assertEqual(request_mock.call_args.kwargs["headers"]["X-Garden-Owner-Name"], "阿橘")
+
+        with patch.object(server.httpx, "request", return_value=FakeResponse()) as request_mock:
+            server._play_garden_cat(
+                {
+                    "game": "garden_cat",
+                    "action": "notes",
+                    "player_id": "42:3",
+                    "params": {"page": 2},
+                },
+                owner_name="阿橘",
+            )
+
+        self.assertEqual(request_mock.call_args.args[0], "GET")
+        self.assertEqual(request_mock.call_args.args[1], f"{server.GARDEN_CAT_BASE}/api/notes?page=2")
+        self.assertIsNone(request_mock.call_args.kwargs["json"])
 
     def test_non_static_requests_reject_logged_out_and_unbound_humans(self):
         handler = object.__new__(server.CedarToyHandler)
@@ -51,6 +92,26 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
         with patch.object(server, "_current_account", return_value={"id": 1, "is_ai": False}):
             handler._handle_garden_cat_proxy("GET")
         self.assertEqual(sent[-1][0], 403)
+
+    def test_proxy_handler_uses_logged_in_human_name(self):
+        handler = object.__new__(server.CedarToyHandler)
+        handler.path = "/garden-cat/web/notes?player=42:2"
+        handler.headers = {"Authorization": "Bearer trusted"}
+        target = {"player": "42:2", "owner_name": "阿橘", "slot": 2}
+        handler._garden_cat_bound_target = lambda _user, _player: target
+        captured = {}
+        handler._proxy_to_garden_cat = lambda *args, **kwargs: captured.update(args=args, kwargs=kwargs)
+
+        with patch.object(
+            server,
+            "_current_account",
+            return_value={"id": 1, "username": "小满", "is_ai": False},
+        ):
+            handler._handle_garden_cat_proxy("GET")
+
+        self.assertEqual(captured["args"][:2], ("GET", "/web/notes"))
+        self.assertEqual(captured["kwargs"]["target"], target)
+        self.assertEqual(captured["kwargs"]["human_name"], "小满")
 
     def test_homepage_entry_loads_existing_gardens_and_has_empty_copy(self):
         homepage = (TOY_ROOT / "index.html").read_text(encoding="utf-8")
@@ -165,6 +226,7 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
         handler.headers = {
             "Content-Length": "0",
             "X-Player-Id": "victim",
+            "X-Garden-Human-Name": "伪造人类",
             "Authorization": "Bearer stolen",
             "Cookie": "garden_cat_token=stolen",
         }
@@ -182,11 +244,14 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
                 "/web/pet_cat",
                 "token=secret&player=victim&kept=yes",
                 target={"player": "42:3", "owner_name": "阿橘", "slot": 3},
+                human_name="小满",
             )
 
         self.assertEqual(captured["target"], "/web/pet_cat?kept=yes")
         self.assertEqual(captured["headers"]["X-Player-Id"], "42:3")
         self.assertEqual(captured["headers"]["X-Garden-Player"], "42:3")
+        self.assertEqual(captured["headers"]["X-Garden-Owner-Name"], "阿橘")
+        self.assertEqual(captured["headers"]["X-Garden-Human-Name"], "小满")
         self.assertNotIn("Authorization", captured["headers"])
         self.assertNotIn("Cookie", captured["headers"])
 
