@@ -294,12 +294,16 @@ def dnd_get_result(arguments):
             (player_id, GAME),
         ).fetchone()
     if row is None:
-        raise JsonRpcError(-32003, "未找到该 player_id 的已完成记录。请先 dnd_start 并完成测试。")
+        raise JsonRpcError(
+            -32003,
+            "未找到该 player_id 的已完成记录（游客结果完成超过 48 小时会清理，账号结果永久保留）。"
+            "请先 dnd_start 并完成测试。",
+        )
     result_value, detail_json, completed_at = row
     detail = json.loads(detail_json or "{}")
     mode = detail.get("mode") or "unknown"
     label = datetime.fromtimestamp(completed_at, tz=ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
-    return format_stored_result(mode, result_value, detail, label)
+    return format_stored_result(mode, result_value, detail, label) + f"\n存档身份：{player_id}"
 
 
 def _finish_test(conn, player_id, mode, questions, answers, now):
@@ -324,7 +328,12 @@ def _finish_test(conn, player_id, mode, questions, answers, now):
         (player_id, GAME, result["alignment"], json.dumps(detail, ensure_ascii=False), now),
     )
     conn.execute("DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME))
-    return format_result(mode, questions, answers) + "\n" + _platform_result_line(conn, result["alignment"])
+    return (
+        format_result(mode, questions, answers)
+        + f"\n存档身份：{player_id}"
+        + "\n"
+        + _platform_result_line(conn, result["alignment"])
+    )
 
 
 def _platform_result_line(conn, result_value):
@@ -452,7 +461,10 @@ def _init_db(conn):
 
 def _cleanup_expired(conn, now):
     conn.execute("DELETE FROM test_sessions WHERE last_active < ?", (now - SESSION_TTL_SECONDS,))
-    conn.execute("DELETE FROM test_results WHERE completed_at < ?", (now - RESULT_TTL_SECONDS,))
+    conn.execute(
+        "DELETE FROM test_results WHERE completed_at < ? AND player_id LIKE 'guest:%'",
+        (now - RESULT_TTL_SECONDS,),
+    )
 
 
 def _result(request_id, result):

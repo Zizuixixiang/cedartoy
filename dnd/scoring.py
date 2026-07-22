@@ -66,7 +66,7 @@ def format_result(mode, questions, answers):
             "━━━ 阵营描述 ━━━",
             desc["text"],
             "",
-            "（结果已存档 48 小时，可用 dnd_get_result 凭 player_id 查询。）",
+            "（账号结果永久保留；游客结果存档 48 小时，可用 dnd_get_result 凭 player_id 查询。）",
         ]
     )
 

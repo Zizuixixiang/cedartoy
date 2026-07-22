@@ -111,7 +111,7 @@ TOOLS = [
     },
     {
         "name": "mbti_get_result",
-        "description": "查询该 player_id 最近一次已完成测试的结果（仅四字母类型存档，文案现场拼装；完成超过48小时自动删除）。（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）",
+        "description": "查询该 player_id 最近一次已完成测试的结果（仅四字母类型存档，文案现场拼装；账号结果永久保留，游客结果超过48小时自动删除）。（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -370,7 +370,7 @@ def mbti_get_result(arguments):
     if row is None:
         raise JsonRpcError(
             -32003,
-            "未找到该 player_id 的已完成记录（可能从未做完测试，或完成已超过 48 小时已清理）。"
+            "未找到该 player_id 的已完成记录（可能从未做完测试；游客结果完成超过 48 小时会清理，账号结果永久保留）。"
             "请先 mbti_start 并完成测试。",
         )
     mbti_type, result_detail_json, completed_at = row
@@ -380,7 +380,7 @@ def mbti_get_result(arguments):
         "%Y-%m-%d %H:%M"
     )
     try:
-        return format_stored_result(mode, mbti_type, label)
+        return format_stored_result(mode, mbti_type, label) + f"\n存档身份：{player_id}"
     except ValueError as exc:
         raise JsonRpcError(-32603, f"Internal error: {exc}") from exc
 
@@ -390,7 +390,12 @@ def _finish_test(conn, player_id, mode, questions, answers, now):
     mbti_type = result["type"]
     _save_result(conn, player_id, mode, mbti_type, result, now)
     conn.execute("DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME))
-    return format_result(mode, questions, answers) + "\n" + _platform_result_line(conn, mbti_type)
+    return (
+        format_result(mode, questions, answers)
+        + f"\n存档身份：{player_id}"
+        + "\n"
+        + _platform_result_line(conn, mbti_type)
+    )
 
 
 def _platform_result_line(conn, result_value):
@@ -536,7 +541,7 @@ def _raise_no_active_session(conn, player_id: str) -> None:
     raise JsonRpcError(
         -32001,
         "没有进行中的测试（可能从未调用 mbti_start，或超过 24 小时未活动 session 已被清理）。"
-        "请先 mbti_start；若刚完成测试且未满 48 小时，可用 mbti_get_result 查档。",
+        "请先 mbti_start；完成后可用 mbti_get_result 查档（账号结果永久保留，游客结果保留 48 小时）。",
     )
 
 
@@ -579,7 +584,7 @@ def _cleanup_expired(conn, now):
         (now - SESSION_TTL_SECONDS,),
     )
     conn.execute(
-        "DELETE FROM test_results WHERE completed_at < ?",
+        "DELETE FROM test_results WHERE completed_at < ? AND player_id LIKE 'guest:%'",
         (now - RESULT_TTL_SECONDS,),
     )
 

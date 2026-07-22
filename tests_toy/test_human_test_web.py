@@ -1,9 +1,13 @@
 import tempfile
+import sqlite3
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import server
+from bdsmtest import handler as bdsmtest_handler
+from scale_test_engine import ScaleTestEngine
 
 
 class HumanTestWebTests(unittest.TestCase):
@@ -12,10 +16,13 @@ class HumanTestWebTests(unittest.TestCase):
         self.db_path = str(Path(self.temp_dir.name) / "sessions.db")
         self.mbti_db = patch.object(server.mbti_handler, "DB_PATH", self.db_path)
         self.dnd_db = patch.object(server.dnd_handler, "DB_PATH", self.db_path)
+        self.bdsm_db = patch.object(bdsmtest_handler, "DB_PATH", self.db_path)
         self.mbti_db.start()
         self.dnd_db.start()
+        self.bdsm_db.start()
 
     def tearDown(self):
+        self.bdsm_db.stop()
         self.dnd_db.stop()
         self.mbti_db.stop()
         self.temp_dir.cleanup()
@@ -69,6 +76,7 @@ class HumanTestWebTests(unittest.TestCase):
             "mbti", "answer_batch", "", {"player_id": player_id, "answers": [3] * 16}
         )
         self.assertTrue(completed["complete"])
+        self.assertIn(f"存档身份：{player_id}", completed["result"])
         self.assertIn("快速版", completed["result"])
         self.assertNotIn("short", completed["result"])
         result_data = completed["result_data"]
@@ -95,6 +103,7 @@ class HumanTestWebTests(unittest.TestCase):
                 "mbti", "answer_batch", "", {"player_id": player_id, "answers": [3] * 93}
             )
         self.assertTrue(completed["complete"])
+        self.assertIn(f"存档身份：{player_id}", completed["result"])
         self.assertEqual(answer_batch.call_count, 6)
         self.assertIn("完整版", completed["result"])
         self.assertNotIn("full_fast", completed["result"])
@@ -116,6 +125,7 @@ class HumanTestWebTests(unittest.TestCase):
             )
         self.assertEqual(answer_batch.call_count, 1)
         self.assertTrue(completed["complete"])
+        self.assertIn(f"存档身份：{player_id}", completed["result"])
         self.assertIn("九阵营测试完成", completed["result"])
         self.assertNotIn("DND", completed["result"])
         self.assertNotIn("full_fast", completed["result"])
@@ -126,6 +136,78 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertEqual(len(result_data["axes"]), 2)
         self.assertEqual(set(result_data["raw_buckets"]), {"lx", "nx", "cx", "xg", "xn", "xe"})
         self.assertIn("\n\n", result_data["description"])
+
+    def test_account_web_result_echoes_username_id_and_slot(self):
+        user = {"id": 42, "username": "中文_用户", "is_ai": False}
+        with patch.object(server, "_current_account", return_value=user):
+            server._human_test_action(
+                "mbti", "start", "token", {"player_id": "guest:webspoof", "edition": "quick"}
+            )
+            completed = server._human_test_action(
+                "mbti", "answer_batch", "token", {"player_id": "wrong", "answers": [3] * 16}
+            )
+        self.assertIn("存档身份：账号 中文_用户（id 42，槽 1）", completed["result"])
+        self.assertNotIn("存档身份：42", completed["result"])
+        self.assertEqual(
+            server._storage_identity_line("42:3", user, 3),
+            "存档身份：账号 中文_用户（id 42，槽 3）",
+        )
+
+    def test_result_ttl_cleanup_only_deletes_guests_in_all_engines(self):
+        cleaners = (
+            (server.mbti_handler._init_db, server.mbti_handler._cleanup_expired),
+            (server.dnd_handler._init_db, server.dnd_handler._cleanup_expired),
+            (bdsmtest_handler._init_db, bdsmtest_handler._cleanup_expired),
+            (ScaleTestEngine._init_db, ScaleTestEngine._cleanup_expired),
+        )
+        old = time.time() - 49 * 60 * 60
+        for init_db, cleanup in cleaners:
+            with sqlite3.connect(":memory:") as conn:
+                init_db(conn)
+                conn.executemany(
+                    """
+                    INSERT INTO test_results
+                        (player_id, game, result_value, result_detail, completed_at)
+                    VALUES (?, 'test', 'value', '{}', ?)
+                    """,
+                    (("123", old), ("123:2", old), ("guest:expired", old)),
+                )
+                cleanup(conn, time.time())
+                remaining = {
+                    row[0] for row in conn.execute("SELECT player_id FROM test_results")
+                }
+            self.assertEqual(remaining, {"123", "123:2"})
+
+    def test_bdsmtest_completion_and_history_echo_guest_identity(self):
+        questions = [{"id": 1, "wording": "题一"}, {"id": 2, "wording": "题二"}]
+        outcome = {
+            "scores": [
+                {
+                    "name": "测试原型",
+                    "score": 80,
+                    "description": "说明",
+                    "pairdesc": "",
+                }
+            ],
+            "rid": "result-id",
+        }
+        with (
+            patch.object(
+                bdsmtest_handler.api,
+                "init_session",
+                return_value={"rauth": {"rid": "result-id"}, "pdata": {}},
+            ),
+            patch.object(bdsmtest_handler.api, "fetch_questions", return_value=questions),
+            patch.object(bdsmtest_handler.api, "submit_and_score", return_value=outcome),
+        ):
+            player_id = "guest:bdsmIdentity"
+            bdsmtest_handler.bdsmtest_start({"player_id": player_id, "mode": "fast"})
+            completed = bdsmtest_handler.bdsmtest_answer_batch(
+                {"player_id": player_id, "answers": {"1": 4, "2": 4}}
+            )
+            historical = bdsmtest_handler.bdsmtest_get_result({"player_id": player_id})
+        self.assertIn(f"存档身份：{player_id}", completed)
+        self.assertIn(f"存档身份：{player_id}", historical)
 
     def test_template_index_and_sources(self):
         template = server.TEST_GAME_INDEX_PATH.read_text(encoding="utf-8")
@@ -173,6 +255,22 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertIn("appendResultAxes", template)
         self.assertIn("result-footnote", template)
         self.assertIn("fallback.hidden = rendered", template)
+        complete_branch = template.split("if (state.complete)", 1)[1].split(
+            "restoreDraft(state)", 1
+        )[0]
+        self.assertLess(
+            complete_branch.index('showPanel("resultPanel")'),
+            complete_branch.index("scrollToResultPanel()"),
+        )
+        scroll_helper = template.split("function scrollToResultPanel()", 1)[1].split(
+            "function renderState", 1
+        )[0]
+        self.assertIn("requestAnimationFrame", scroll_helper)
+        self.assertIn(
+            'panel.scrollIntoView({behavior: "smooth", block: "start"})',
+            scroll_helper,
+        )
+        self.assertEqual(template.count("scrollToResultPanel();"), 1)
         for internal_mode in ("short_fast", "full_fast"):
             self.assertNotIn(internal_mode, template)
 
@@ -199,6 +297,53 @@ class HumanTestWebTests(unittest.TestCase):
         dnd_guide = (Path("turtle-soup/backend/guides/dnd.md")).read_text(encoding="utf-8")
         self.assertIn("## 来源\n\n题库整理自网络公开题目。", mbti_guide)
         self.assertIn("## 来源\n\n题库与阵营描述译自 easydamus.com（阵营测试）。", dnd_guide)
+
+    def test_platform_test_distributions_have_spacing_full_labels_and_sorting(self):
+        index = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
+
+        distributions_css = index.split(".platform-distributions {", 1)[1].split(
+            "}", 1
+        )[0]
+        self.assertIn("gap: 0", distributions_css)
+        block_css = index.split(".platform-dist-block {", 1)[1].split("}", 1)[0]
+        self.assertIn("margin-bottom: 12px", block_css)
+        self.assertIn(
+            ".platform-dist-block:last-child {\n      margin-bottom: 0;",
+            index,
+        )
+
+        humanity_css = index.split(
+            ".platform-dist-humanity .platform-dist-label {", 1
+        )[1].split("}", 1)[0]
+        self.assertIn("text-overflow: clip", humanity_css)
+        self.assertIn("white-space: normal", humanity_css)
+        self.assertIn("overflow-wrap: anywhere", humanity_css)
+
+        label_function = index.split("function platformResultLabel", 1)[1].split(
+            "function renderDistribution", 1
+        )[0]
+        for label in (
+            "认证碳基",
+            "人味充足",
+            "混合信号",
+            "赛博渗透中",
+            "建议自查散热",
+        ):
+            self.assertIn(f'"{label}"', label_function)
+        for range_label in ("90~100%", "70~89%", "50~69%", "30~49%", "0~29%"):
+            self.assertNotIn(range_label, label_function)
+
+        render_distribution = index.split("function renderDistribution", 1)[1].split(
+            "function renderPlatformStats", 1
+        )[0]
+        self.assertIn("safeRows.slice().sort", render_distribution)
+        self.assertIn(
+            "(Number(right.count) || 0) - (Number(left.count) || 0)",
+            render_distribution,
+        )
+        self.assertIn("sortedRows.map", render_distribution)
+        self.assertIn("platform-dist-${game}", render_distribution)
+        self.assertIn("<b>${count}</b>", render_distribution)
 
 
 if __name__ == "__main__":

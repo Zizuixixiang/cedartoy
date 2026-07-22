@@ -14,7 +14,7 @@
 - `mbti_answer_batch`：快速模式提交一批答案。
   - 参数：`player_id`。
   - 参数：`a_scores`，按题目顺序填写 0-5 整数数组。
-- `mbti_get_result`：查询最近一次已完成测试结果。
+- `mbti_get_result`：查询最近一次已完成测试结果。账号结果永久保留，游客结果保留 48 小时。
   - 参数：`player_id`。
 
 ## 示例

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一键持久化回归脚本：vendor_cmd_adapter 全部子进程系游戏的三步双进程测试。
+"""一键持久化回归脚本：文件存档游戏与量表游戏的三步跨进程测试。
 
 对每个游戏执行：
   ① 独立子进程 new 开局
@@ -20,6 +20,7 @@
 
 import json
 import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +42,39 @@ STEP_TIMEOUT = 60
 #   save_files   每步之后必须存在且可 json.loads 的存档文件（相对玩家存档目录）
 # ---------------------------------------------------------------------------
 GAMES = [
+    {
+        "kind": "scale",
+        "game": "love",
+        "label": "love",
+        "new_args": {"action": "love_start", "mode": "full_fast"},
+        "mutate_args": {"action": "love_answer_batch", "answers": [1] * 30},
+        "mutate_expect": ["爱之语测试完成", "五维分数"],
+        "query_args": {"action": "love_get_result"},
+        "query_expect": ["爱之语历史结果", "主语言"],
+        "save_files": [],
+    },
+    {
+        "kind": "scale",
+        "game": "ecr",
+        "label": "ecr",
+        "new_args": {"action": "ecr_start", "mode": "full_fast"},
+        "mutate_args": {"action": "ecr_answer_batch", "answers": [4] * 36},
+        "mutate_expect": ["依恋类型测试完成", "回避均分 A：4.00", "焦虑均分 B：4.00"],
+        "query_args": {"action": "ecr_get_result"},
+        "query_expect": ["依恋类型历史结果", "Brennan, Clark & Shaver (1998)"],
+        "save_files": [],
+    },
+    {
+        "kind": "scale",
+        "game": "humanity",
+        "label": "humanity",
+        "new_args": {"action": "humanity_start", "mode": "full_fast"},
+        "mutate_args": {"action": "humanity_answer_batch", "answers": [1] * 20},
+        "mutate_expect": ["人类浓度检测完成", "人类浓度"],
+        "query_args": {"action": "humanity_get_result"},
+        "query_expect": ["人类浓度历史结果", "仅供娱乐"],
+        "save_files": [],
+    },
     {
         "game": "memoria",
         "label": "memoria-L1",
@@ -145,18 +179,39 @@ result = mod.play(payload["args"])
 print(json.dumps({"text": result.get("text", "")}, ensure_ascii=False))
 """
 
+SCALE_STEP_RUNNER = r"""
+import importlib
+import json
+import sys
+
+payload = json.load(sys.stdin)
+sys.path.insert(0, payload["root"])
+handler = importlib.import_module(payload["game"] + ".handler")
+args = dict(payload["args"])
+action = args.pop("action")
+args["player_id"] = payload["player_id"]
+text = getattr(handler, action)(args)
+print(json.dumps({"text": text}, ensure_ascii=False))
+"""
+
 
 class StepError(Exception):
     pass
 
 
-def run_step(game, args):
+def run_step(game, args, kind="vendor"):
     """在独立子进程里执行一次 play()，返回输出文本。"""
     full_args = dict(args)
     full_args["player_id"] = PLAYER_ID
-    payload = json.dumps({"root": str(ROOT), "game": game, "args": full_args}, ensure_ascii=False)
+    payload_data = {"root": str(ROOT), "game": game, "args": full_args}
+    runner = STEP_RUNNER
+    if kind == "scale":
+        payload_data["player_id"] = PLAYER_ID
+        payload_data["args"].pop("player_id", None)
+        runner = SCALE_STEP_RUNNER
+    payload = json.dumps(payload_data, ensure_ascii=False)
     proc = subprocess.run(
-        [sys.executable, "-c", STEP_RUNNER],
+        [sys.executable, "-c", runner],
         input=payload,
         text=True,
         capture_output=True,
@@ -184,6 +239,25 @@ def check_saves(game, save_files, step_name):
             raise StepError(f"[{step_name}] 存档不可解析: {path.relative_to(ROOT)}: {exc}")
 
 
+def check_scale_save(game, step_name):
+    db_path = ROOT / "data" / "sessions.db"
+    if not db_path.exists():
+        raise StepError(f"[{step_name}] SQLite 存档缺失: {db_path.relative_to(ROOT)}")
+    with sqlite3.connect(db_path) as conn:
+        session = conn.execute(
+            "SELECT 1 FROM test_sessions WHERE player_id = ? AND game = ?",
+            (PLAYER_ID, game),
+        ).fetchone()
+        result = conn.execute(
+            "SELECT 1 FROM test_results WHERE player_id = ? AND game = ?",
+            (PLAYER_ID, game),
+        ).fetchone()
+    expected = session if step_name == "new" else result
+    if expected is None:
+        table = "test_sessions" if step_name == "new" else "test_results"
+        raise StepError(f"[{step_name}] SQLite 未找到 {table} 中的 {game} 测试身份")
+
+
 def check_keywords(text, keywords, step_name):
     for kw in keywords:
         if kw not in text:
@@ -192,15 +266,19 @@ def check_keywords(text, keywords, step_name):
 
 def run_case(case):
     game = case["game"]
+    kind = case.get("kind", "vendor")
     for step_name, args_key, expect_key in (
         ("new", "new_args", None),
         ("mutate", "mutate_args", "mutate_expect"),
         ("query", "query_args", "query_expect"),
     ):
-        text = run_step(game, case[args_key])
+        text = run_step(game, case[args_key], kind)
         if expect_key:
             check_keywords(text, case[expect_key], step_name)
-        check_saves(game, case["save_files"], step_name)
+        if kind == "scale":
+            check_scale_save(game, step_name)
+        else:
+            check_saves(game, case["save_files"], step_name)
 
 
 def cleanup():
@@ -209,7 +287,31 @@ def cleanup():
         target = SAVE_ROOT / game / PLAYER_ID
         if target.exists():
             shutil.rmtree(target)
-    return [str(p.relative_to(ROOT)) for p in SAVE_ROOT.glob(f"*/{PLAYER_ID}")]
+    db_path = ROOT / "data" / "sessions.db"
+    scale_residue = []
+    if db_path.exists():
+        with sqlite3.connect(db_path) as conn:
+            for table in ("test_sessions", "test_results"):
+                try:
+                    conn.execute(
+                        f"DELETE FROM {table} WHERE player_id = ? AND game IN ('love', 'ecr', 'humanity')",
+                        (PLAYER_ID,),
+                    )
+                except sqlite3.OperationalError as exc:
+                    if "no such table" not in str(exc).lower():
+                        raise
+            conn.commit()
+            for table in ("test_sessions", "test_results"):
+                try:
+                    count = conn.execute(
+                        f"SELECT COUNT(*) FROM {table} WHERE player_id = ? AND game IN ('love', 'ecr', 'humanity')",
+                        (PLAYER_ID,),
+                    ).fetchone()[0]
+                except sqlite3.OperationalError:
+                    count = 0
+                if count:
+                    scale_residue.append(f"data/sessions.db:{table}×{count}")
+    return [str(p.relative_to(ROOT)) for p in SAVE_ROOT.glob(f"*/{PLAYER_ID}")] + scale_residue
 
 
 def main():

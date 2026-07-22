@@ -94,6 +94,8 @@
     .progress-track { height: 12px; padding: 2px; border: 2px solid var(--purple); background: #fff; }
     .progress-fill { display: block; width: 0; height: 100%; background: var(--pink); transition: width .18s ease; }
     .question-number { margin-bottom: 8px; color: var(--pink-dark); font-size: 12px; }
+    .question-intro { margin: 0 0 18px; padding: 12px; color: var(--muted); background: var(--bg); border-left: 4px solid var(--pink); line-height: 1.65; }
+    .question-intro[hidden] { display: none; }
     .question-text { margin: 0 0 22px; font-size: clamp(18px, 4vw, 25px); line-height: 1.55; color: var(--text); }
     .mbti-poles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-bottom: 18px; padding: 3px 0 9px; border-bottom: 2px dashed var(--purple-light); }
     .pole { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 6px; padding: 2px 0; line-height: 1.5; background: transparent; border: 0; cursor: default; }
@@ -120,6 +122,19 @@
       border: 3px solid var(--purple);
       box-shadow: 5px 5px 0 rgba(190,177,209,.28);
     }
+    .ecr-scale-ends {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+      font-family: inherit;
+      font-size: clamp(10px, 2.8vw, 13px);
+      white-space: nowrap;
+    }
+    .ecr-scale-ends span:nth-child(2) { text-align: center; }
+    .ecr-scale-ends span:last-child { text-align: right; }
+    .ecr-scale-track { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .ecr-scale-track .scale-step { padding-inline: 0; }
+    .ecr-neutral { display: block; margin-top: 1px; font-size: 9px; line-height: 1; white-space: nowrap; }
     .scale-step {
       position: relative;
       min-width: 0;
@@ -181,6 +196,7 @@
     .result-section { margin-top: 26px; }
     .result-section h3 { margin: 0 0 11px; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 14px; }
     .result-section p { margin: 0 0 12px; line-height: 1.8; }
+    .result-copy-paragraph { white-space: pre-line; }
     .axis-list { display: grid; gap: 15px; }
     .axis-card { padding: 12px; background: var(--bg); border: 2px solid var(--purple-light); }
     .axis-labels { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 11px; }
@@ -188,6 +204,33 @@
     .axis-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 2px dotted rgba(155,141,181,.55); }
     .axis-cursor { position: absolute; z-index: 1; top: -7px; width: 8px; height: 26px; background: var(--pink); border: 2px solid var(--pink-dark); transform: translateX(-50%); }
     .result-footnote { margin: 28px 0 0; padding-top: 12px; color: var(--muted); border-top: 2px dashed var(--purple-light); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+    .metric-bars { display: grid; gap: 14px; }
+    .metric-bar-row { min-width: 0; }
+    .metric-bar-labels { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+    .metric-bar-name { min-width: 0; color: var(--purple-darker); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+    .metric-bar-value { color: var(--pink-dark); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 12px; white-space: nowrap; }
+    .metric-bar-track { height: 16px; overflow: hidden; background: var(--bg); border: 2px solid var(--purple-light); }
+    .metric-bar-fill { height: 100%; min-width: 0; background: linear-gradient(90deg, var(--purple), var(--pink)); transition: width .45s ease; }
+    .metric-bars-large .metric-bar-track { height: 26px; border-color: var(--purple); }
+    .metric-bars-large .metric-bar-name, .metric-bars-large .metric-bar-value { font-size: 14px; }
+    .metric-bars-compact { gap: 8px; margin-top: 12px; }
+    .metric-bars-compact .metric-bar-labels { gap: 6px; margin-bottom: 4px; }
+    .metric-bars-compact .metric-bar-name, .metric-bars-compact .metric-bar-value { font-size: 9px; }
+    .metric-bars-compact .metric-bar-track { height: 10px; border-width: 1px; }
+    .metric-bar-fill.humanity-certified-carbon { background: linear-gradient(90deg, #BD82A7, var(--pink)); }
+    .metric-bar-fill.humanity-human-flavor { background: linear-gradient(90deg, var(--purple), #C78CAC); }
+    .metric-bar-fill.humanity-mixed-signal { background: linear-gradient(90deg, var(--purple-dark), var(--purple)); }
+    .metric-bar-fill.humanity-cyber-infiltration { background: linear-gradient(90deg, var(--purple-darker), var(--purple-dark)); }
+    .metric-bar-fill.humanity-check-cooling { background: linear-gradient(90deg, #4F4661, #80758F); }
+    .compare-box { margin-top: 24px; padding: 16px; background: var(--bg); border: 2px dashed var(--purple); }
+    .compare-box h3 { margin: 0 0 10px; color: var(--purple-darker); font-size: 14px; }
+    .compare-form { display: flex; flex-wrap: wrap; gap: 10px; }
+    .compare-form input { flex: 1 1 220px; min-width: 0; padding: 10px 12px; color: var(--text); background: #fff; border: 3px solid var(--purple-light); }
+    .compare-people { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .compare-person { padding: 14px; background: var(--bg); border: 2px solid var(--purple-light); overflow-wrap: anywhere; }
+    .compare-person h3 { margin: 0 0 9px; color: var(--purple-darker); font-size: 13px; }
+    .compare-score-line { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .compare-emphasis-line { margin: 7px 0 0; color: var(--purple-darker); font-size: 14px; font-weight: 700; line-height: 1.55; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
     .pixel-button {
       min-height: 43px;
@@ -205,6 +248,7 @@
     .review-actions { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: clamp(6px, 2vw, 12px); }
     .review-actions .pixel-button { flex: 1 1 0; min-width: 0; padding-inline: clamp(5px, 2vw, 16px); white-space: nowrap; font-size: clamp(9px, 2.5vw, 12px); }
     .source { margin: 24px 0 0; color: var(--muted); text-align: center; font-size: 12px; }
+    .entertainment-badge { width: fit-content; margin: 10px 0 0 auto; color: var(--purple-darker); border: 2px solid var(--purple); padding: 4px 8px; font-size: 9px; letter-spacing: .12em; }
     .loading { display: grid; min-height: 260px; place-items: center; color: var(--purple-dark); text-align: center; }
     .error { margin: 0 0 16px; padding: 12px; color: #9d4f5b; background: #FFF0F2; border-left: 5px solid var(--pink); line-height: 1.5; }
     .error[hidden] { display: none; }
@@ -221,8 +265,12 @@
       .answer-button { min-height: 54px; }
       .scale-step { min-height: 48px; font-size: 10px; }
       .mbti-scale-direction { font-size: 8px; }
+      .ecr-scale-ends { gap: 2px; font-size: 10px; }
+      .ecr-scale-track { overflow: hidden; }
+      .ecr-scale-track .scale-step { min-width: 0; border-right-width: 1px; }
       .result-screen { padding: 16px 12px; box-shadow: 5px 5px 0 var(--purple-light); }
       .axis-card { padding: 10px 8px; }
+      .compare-people { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -253,6 +301,7 @@
       </div>
 
       <div class="panel" id="questionPanel" hidden>
+        <p class="question-intro" id="questionIntro" hidden></p>
         <div class="progress-wrap">
           <div class="progress-head"><span class="progress-label" id="modeLabel"></span><span class="progress-label" id="progressLabel"></span></div>
           <div class="progress-track"><span class="progress-fill" id="progressFill"></span></div>
@@ -286,9 +335,18 @@
           <button class="pixel-button pixel" id="restartButton" type="button">RETEST →</button>
           <a class="pixel-button secondary pixel" href="/">BACK TO ARCADE</a>
         </div>
+        <div class="compare-box" id="compareBox" hidden>
+          <h3>双人对测</h3>
+          <p>输入对方用户名或账号 id；游客可输入 guest: 开头的 id。无需授权，游客与账号同权。</p>
+          <div class="compare-form">
+            <input id="comparePlayerId" type="text" maxlength="70" placeholder="对方用户名或账号 id" autocomplete="off">
+            <button class="pixel-button pixel" id="compareButton" type="button">COMPARE →</button>
+          </div>
+        </div>
       </div>
     </section>
     <p class="source" id="source"></p>
+    <p class="entertainment-badge">仅供娱乐</p>
   </main>
   <script>
     const CONFIG = __TEST_GAME_CONFIG__;
@@ -340,7 +398,10 @@
       $("error").hidden = !message;
     }
     function setIdentity(data) {
-      const label = data.identity === "account" ? `ACCOUNT #${data.player_id}` : "GUEST / LOCAL SAVE";
+      const shareable = CONFIG.game === "love" || CONFIG.game === "ecr";
+      const label = data.identity === "account"
+        ? `ACCOUNT #${data.player_id}`
+        : (shareable ? `GUEST / ${data.player_id}` : "GUEST / LOCAL SAVE");
       $("identity").textContent = label;
     }
     function setButtonsDisabled(disabled) {
@@ -420,6 +481,16 @@
       cursor = 0;
     }
 
+    function scrollToResultPanel() {
+      const panel = $("resultPanel");
+      if (!panel) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          panel.scrollIntoView({behavior: "smooth", block: "start"});
+        });
+      });
+    }
+
     function renderState(state) {
       activeState = state;
       setIdentity(state);
@@ -427,7 +498,9 @@
         clearDraft();
         $("statusText").textContent = "SYSTEM / SCAN COMPLETE";
         renderResult(state.result_data, state.result || "结果已生成。");
+        $("compareBox").hidden = !(CONFIG.game === "love" || CONFIG.game === "ecr");
         showPanel("resultPanel");
+        scrollToResultPanel();
         return;
       }
       restoreDraft(state);
@@ -442,11 +515,13 @@
       const answeredCount = answers.filter(Number.isInteger).length;
       $("modeLabel").textContent = CONFIG.game === "mbti"
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
-        : "九阵营 · 36题";
+        : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题"}[CONFIG.game] || "测试");
       $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
       $("questionNumber").textContent = `QUESTION ${question.number}`;
       $("questionText").textContent = question.text;
+      $("questionIntro").textContent = activeState.instructions || "";
+      $("questionIntro").hidden = cursor !== 0 || !activeState.instructions;
       $("answers").innerHTML = "";
 
       if (CONFIG.game === "mbti") {
@@ -456,6 +531,10 @@
         $("mbtiPoles").children[1].querySelector("span").textContent = question.option_b;
         $("answers").className = "answers mbti";
         renderMbtiScale();
+      } else if (CONFIG.game === "ecr") {
+        $("mbtiPoles").hidden = true;
+        $("answers").className = "answers mbti ecr";
+        renderEcrScale(question);
       } else {
         $("mbtiPoles").hidden = true;
         $("answers").className = "answers";
@@ -489,6 +568,31 @@
         button.setAttribute("aria-checked", String(answers[cursor] === value));
         button.classList.toggle("selected", answers[cursor] === value);
         button.innerHTML = `<span class="scale-degree">${degree}</span>`;
+        button.addEventListener("click", () => answer(value));
+        track.appendChild(button);
+      });
+      $("answers").append(ends, track);
+    }
+    function renderEcrScale(question) {
+      const optionLabels = new Map(question.options.map((option) => [option.value, option.text]));
+      const ends = document.createElement("div");
+      ends.className = "mbti-scale-ends ecr-scale-ends";
+      ends.innerHTML = `<span>${optionLabels.get(1) || "非常不同意"}</span><span>${optionLabels.get(4) || "中立"}</span><span>${optionLabels.get(7) || "非常同意"}</span>`;
+
+      const track = document.createElement("div");
+      track.className = "mbti-scale-track ecr-scale-track";
+      track.setAttribute("role", "radiogroup");
+      track.setAttribute("aria-label", "从非常不同意到非常同意");
+      [1, 2, 3, 4, 5, 6, 7].forEach((value) => {
+        const button = document.createElement("button");
+        const label = optionLabels.get(value) || String(value);
+        button.type = "button";
+        button.className = "scale-step";
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-label", `${value}，${label}`);
+        button.setAttribute("aria-checked", String(answers[cursor] === value));
+        button.classList.toggle("selected", answers[cursor] === value);
+        button.innerHTML = `<span class="scale-degree">${value}${value === 4 ? '<span class="ecr-neutral">中立</span>' : ""}</span>`;
         button.addEventListener("click", () => answer(value));
         track.appendChild(button);
       });
@@ -593,7 +697,7 @@
       const section = makeResultElement("section", "result-section");
       section.appendChild(makeResultElement("h3", "", title));
       String(text).split(/\n\s*\n/).filter(Boolean).forEach((paragraph) => {
-        section.appendChild(makeResultElement("p", "", paragraph));
+        section.appendChild(makeResultElement("p", "result-copy-paragraph", paragraph));
       });
       root.appendChild(section);
     }
@@ -638,6 +742,206 @@
       return true;
     }
 
+    function appendMetricBars(root, entries, title = "", modifier = "") {
+      const section = makeResultElement("section", "result-section");
+      if (title) section.appendChild(makeResultElement("h3", "", title));
+      const bars = makeResultElement("div", `metric-bars ${modifier}`.trim());
+      entries.forEach((entry) => {
+        const value = Number(entry.value);
+        const minimum = Number(entry.min ?? 0);
+        const maximum = Number(entry.max);
+        const ratio = maximum > minimum ? (value - minimum) / (maximum - minimum) : 0;
+        const percentage = Math.max(0, Math.min(100, ratio * 100));
+        const row = makeResultElement("div", "metric-bar-row");
+        const labels = makeResultElement("div", "metric-bar-labels");
+        labels.append(
+          makeResultElement("span", "metric-bar-name", entry.label),
+          makeResultElement("span", "metric-bar-value", entry.display ?? String(value))
+        );
+        const track = makeResultElement("div", "metric-bar-track");
+        track.setAttribute("role", "progressbar");
+        track.setAttribute("aria-label", entry.label);
+        track.setAttribute("aria-valuemin", String(minimum));
+        track.setAttribute("aria-valuemax", String(maximum));
+        track.setAttribute("aria-valuenow", String(value));
+        const fillClass = entry.fillClass ? `metric-bar-fill ${entry.fillClass}` : "metric-bar-fill";
+        const fill = makeResultElement("div", fillClass);
+        fill.style.width = `${percentage}%`;
+        track.appendChild(fill);
+        row.append(labels, track);
+        bars.appendChild(row);
+      });
+      section.appendChild(bars);
+      root.appendChild(section);
+    }
+
+    function renderLoveResult(root, data) {
+      const codes = ["A", "B", "C", "D", "E"];
+      if (data.kind !== "love" || !data.scores || !data.dimensions
+          || !codes.every((code) => Number.isFinite(Number(data.scores[code])) && data.dimensions[code])
+          || !Array.isArray(data.primary_names) || !data.primary_names.length) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", data.primary_names.join(" · ")),
+        makeResultElement("p", "result-secondary", "你的主语言")
+      );
+      if (Array.isArray(data.secondary_names) && data.secondary_names.length) {
+        hero.appendChild(makeResultElement("p", "result-nickname", `次语言：${data.secondary_names.join("、")}`));
+      }
+      root.appendChild(hero);
+      appendMetricBars(root, codes.map((code) => ({
+        label: `${code} · ${data.dimensions[code]}`,
+        value: data.scores[code],
+        max: 12,
+        display: `${data.scores[code]} / 12`
+      })), "五维分数");
+      (data.descriptions || []).forEach((description, index) => {
+        appendResultTextSection(root, data.primary_names[index] || "主语言描述", description);
+      });
+      (data.secondary_descriptions || []).forEach((description, index) => {
+        appendResultTextSection(
+          root,
+          (data.secondary_labels || [])[index] || "次语言描述",
+          description
+        );
+      });
+      root.appendChild(makeResultElement("p", "result-footnote", data.reminder));
+      return true;
+    }
+
+    function renderEcrResult(root, data) {
+      if (data.kind !== "ecr" || !data.type_name || !data.axis_interpretation || !data.description || !data.footnote || !data.source
+          || !Number.isFinite(Number(data.avoidance)) || !Number.isFinite(Number(data.anxiety))) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", data.type_name),
+        makeResultElement("p", "result-secondary", "ATTACHMENT STYLE")
+      );
+      root.appendChild(hero);
+      appendMetricBars(root, [
+        {label: "回避 A", value: data.avoidance, min: 1, max: 7, display: Number(data.avoidance).toFixed(2)},
+        {label: "焦虑 B", value: data.anxiety, min: 1, max: 7, display: Number(data.anxiety).toFixed(2)}
+      ], "二维均分（1—7）");
+      appendResultTextSection(root, "轴解读", data.axis_interpretation);
+      appendResultTextSection(root, "类型描述", data.description);
+      root.append(
+        makeResultElement("p", "result-footnote", data.footnote),
+        makeResultElement("p", "result-footnote", `来源：${data.source}`)
+      );
+      return true;
+    }
+
+    function renderHumanityResult(root, data) {
+      if (data.kind !== "humanity" || !data.band_name || !data.description || !data.footnote
+          || !Number.isFinite(Number(data.concentration))) return false;
+      const concentration = Math.max(0, Math.min(100, Number(data.concentration)));
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", `${concentration}%`),
+        makeResultElement("p", "result-secondary", data.band_name)
+      );
+      root.appendChild(hero);
+      const humanityFillClasses = {
+        certified_carbon: "humanity-certified-carbon",
+        human_flavor: "humanity-human-flavor",
+        mixed_signal: "humanity-mixed-signal",
+        cyber_infiltration: "humanity-cyber-infiltration",
+        check_cooling: "humanity-check-cooling"
+      };
+      appendMetricBars(root, [{
+        label: "人类浓度",
+        value: concentration,
+        max: 100,
+        display: `${concentration}%`,
+        fillClass: humanityFillClasses[data.band] || "humanity-mixed-signal"
+      }], "", "metric-bars-large");
+      appendResultTextSection(root, "浓度报告", data.description);
+      if (Array.isArray(data.human_highlights) && data.human_highlights.length) {
+        appendResultTextSection(
+          root,
+          "人味高光",
+          data.human_highlights.map((entry) => `${entry.option_text} → ${entry.comment}`).join("\n\n")
+        );
+      }
+      if (Array.isArray(data.cyber_evidence) && data.cyber_evidence.length) {
+        appendResultTextSection(
+          root,
+          "赛博铁证",
+          data.cyber_evidence.map((entry) => `${entry.option_text} → ${entry.comment}`).join("\n\n")
+        );
+      }
+      root.appendChild(makeResultElement("p", "result-footnote", data.footnote));
+      return true;
+    }
+
+    function appendComparePeople(root, people, detailsFor) {
+      const grid = makeResultElement("div", "compare-people");
+      people.forEach((person, index) => {
+        const card = makeResultElement("section", "compare-person");
+        const details = detailsFor(person);
+        card.append(
+          makeResultElement("h3", "", `${index ? "B" : "A"} · ${person.display_name || person.player_id}`),
+          makeResultElement("p", "compare-score-line", details.score),
+          makeResultElement("p", "compare-emphasis-line", details.emphasis)
+        );
+        if (Array.isArray(details.bars) && details.bars.length) {
+          const barsRoot = makeResultElement("div", "");
+          appendMetricBars(barsRoot, details.bars, "", "metric-bars-compact");
+          card.appendChild(barsRoot.firstElementChild.lastElementChild);
+        }
+        grid.appendChild(card);
+      });
+      root.appendChild(grid);
+    }
+
+    function renderLoveCompare(root, data) {
+      if (data.kind !== "love_compare" || !data.player_a || !data.player_b || !data.relation || !data.message) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", data.relation),
+        makeResultElement("p", "result-secondary", "LOVE LANGUAGE PAIR")
+      );
+      root.appendChild(hero);
+      appendResultTextSection(root, "关系提示", data.message);
+      appendComparePeople(root, [data.player_a, data.player_b], (person) => {
+        const scores = ["A", "B", "C", "D", "E"].map((code) => `${code}${person.scores[code]}`).join(" / ");
+        return {
+          score: scores,
+          emphasis: `主语言：${person.primary_names.join("、")}`,
+          bars: ["A", "B", "C", "D", "E"].map((code) => ({
+            label: code,
+            value: person.scores[code],
+            max: 12,
+            display: String(person.scores[code])
+          }))
+        };
+      });
+      appendResultTextSection(root, `给 ${data.player_a.display_name || data.player_a.player_id} 的实践建议`, (data.advice_for_a || []).join("\n\n"));
+      appendResultTextSection(root, `给 ${data.player_b.display_name || data.player_b.player_id} 的实践建议`, (data.advice_for_b || []).join("\n\n"));
+      return true;
+    }
+
+    function renderEcrCompare(root, data) {
+      if (data.kind !== "ecr_compare" || !data.player_a || !data.player_b || !data.combination || !data.message) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", data.combination),
+        makeResultElement("p", "result-secondary", "ATTACHMENT PAIR")
+      );
+      root.appendChild(hero);
+      appendComparePeople(root, [data.player_a, data.player_b], (person) => ({
+        score: `回避 ${Number(person.avoidance).toFixed(2)} / 焦虑 ${Number(person.anxiety).toFixed(2)}`,
+        emphasis: `类型：${person.type_name}`,
+        bars: [
+          {label: "回避", value: person.avoidance, min: 1, max: 7, display: Number(person.avoidance).toFixed(2)},
+          {label: "焦虑", value: person.anxiety, min: 1, max: 7, display: Number(person.anxiety).toFixed(2)}
+        ]
+      }));
+      appendResultTextSection(root, "组合提示", data.message);
+      root.appendChild(makeResultElement("p", "result-footnote", `来源：${data.source}`));
+      return true;
+    }
+
     function renderResult(data, fallbackText) {
       const root = $("resultStructured");
       const fallback = $("resultText");
@@ -646,6 +950,11 @@
       try {
         if (data?.kind === "mbti") rendered = renderMbtiResult(root, data);
         else if (data?.kind === "dnd") rendered = renderDndResult(root, data);
+        else if (data?.kind === "love") rendered = renderLoveResult(root, data);
+        else if (data?.kind === "ecr") rendered = renderEcrResult(root, data);
+        else if (data?.kind === "humanity") rendered = renderHumanityResult(root, data);
+        else if (data?.kind === "love_compare") rendered = renderLoveCompare(root, data);
+        else if (data?.kind === "ecr_compare") rendered = renderEcrCompare(root, data);
       } catch (_) {
         rendered = false;
       }
@@ -674,6 +983,28 @@
       }
     }
 
+    async function compareResults() {
+      if (busy) return;
+      const playerId = $("comparePlayerId").value.trim();
+      if (!playerId) {
+        showError("请输入对方用户名或账号 id；游客请输入 guest: 开头的 id");
+        return;
+      }
+      busy = true;
+      showError();
+      setButtonsDisabled(true);
+      $("statusText").textContent = "SYSTEM / COMPARING";
+      try {
+        renderState(await api("compare", {player_id_b: playerId}));
+      } catch (error) {
+        showError(error.message);
+        $("statusText").textContent = "SYSTEM / RETRY";
+      } finally {
+        busy = false;
+        setButtonsDisabled(false);
+      }
+    }
+
     async function resume() {
       showError();
       try {
@@ -693,6 +1024,7 @@
     $("reviewButton").addEventListener("click", renderReview);
     $("modifyButton").addEventListener("click", () => goToQuestion(cursor));
     $("submitButton").addEventListener("click", submitAnswers);
+    $("compareButton").addEventListener("click", compareResults);
     $("restartButton").addEventListener("click", () => {
       showError();
       if (activeState) localStorage.removeItem(draftKey());

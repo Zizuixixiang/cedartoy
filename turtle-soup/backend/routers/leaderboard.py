@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import time
@@ -36,8 +37,25 @@ def _table_count(db_path: Path, table: str, where: str = "") -> int:
 
 
 def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
-    games = {"mbti": [], "dnd": [], "bdsmtest": []}
+    games = {"mbti": [], "dnd": [], "love": [], "ecr": [], "humanity": [], "bdsmtest": []}
+    category_order = {
+        "love": ("A", "B", "C", "D", "E"),
+        "ecr": ("secure", "fearful", "preoccupied", "dismissive"),
+        "humanity": (
+            "certified_carbon",
+            "human_flavor",
+            "mixed_signal",
+            "cyber_infiltration",
+            "check_cooling",
+        ),
+    }
+    category_counts = {
+        game: {result: 0 for result in results}
+        for game, results in category_order.items()
+    }
     if not SESSIONS_DB_PATH.exists():
+        for game, results in category_order.items():
+            games[game] = [{"result": result, "count": 0} for result in results]
         return games
     try:
         with sqlite3.connect(SESSIONS_DB_PATH) as conn:
@@ -57,11 +75,36 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
                 ORDER BY game ASC, count DESC, result_value ASC
                 """
             ).fetchall()
+            scale_rows = conn.execute(
+                """
+                SELECT game, result_value, result_detail
+                FROM test_results
+                WHERE game IN ('love', 'ecr', 'humanity')
+                """
+            ).fetchall()
     except sqlite3.Error:
+        for game, results in category_order.items():
+            games[game] = [{"result": result, "count": 0} for result in results]
         return games
 
     for game, result_value, count in rows:
         games.setdefault(game, []).append({"result": result_value, "count": int(count)})
+    for game, result_value, detail_json in scale_rows:
+        if game == "love":
+            try:
+                primary = json.loads(detail_json or "{}").get("primary") or str(result_value).split("+")
+            except (TypeError, json.JSONDecodeError):
+                primary = str(result_value).split("+")
+            for code in dict.fromkeys(primary):
+                if code in category_counts["love"]:
+                    category_counts["love"][code] += 1
+        elif result_value in category_counts.get(game, {}):
+            category_counts[game][result_value] += 1
+    for game, results in category_order.items():
+        games[game] = [
+            {"result": result, "count": category_counts[game][result]}
+            for result in results
+        ]
     return games
 
 

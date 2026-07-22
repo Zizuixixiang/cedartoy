@@ -35,6 +35,7 @@ if _VENDOR_DIR not in sys.path:
 _spec = importlib.util.spec_from_file_location("ciyuwu_engine", os.path.join(_VENDOR_DIR, "engine.py"))
 engine = importlib.util.module_from_spec(_spec)
 sys.modules["ciyuwu_engine"] = engine
+sys.modules["engine"] = engine  # dark_engine 里 from engine import 需要这个名字
 _spec.loader.exec_module(engine)
 
 # 屏蔽上游文件存档（见模块 docstring）。

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:toy.cedarstar.org)",
+      "Skill(update-config)"
+    ]
+  }
+}

@@ -14,7 +14,7 @@
 - `dnd_answer_batch`：快速模式（full_fast）一次提交全部36题答案。
   - 参数：`player_id`。
   - 参数：`answers`，长度36的数组，每项为 1-4 整数。
-- `dnd_get_result`：查询最近一次已完成测试结果。
+- `dnd_get_result`：查询最近一次已完成测试结果。账号结果永久保留，游客结果保留 48 小时。
   - 参数：`player_id`。
 
 ## 示例

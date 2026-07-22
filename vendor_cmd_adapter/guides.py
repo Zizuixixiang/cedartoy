@@ -1,4 +1,42 @@
 GUIDES = {
+    "delve": """# Delve（下矿）
+调用：play(game="delve",action="new") 开局；之后 play(game="delve", action="cmd", params={"command": "play 3"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
+
+常用指令：
+- new — 新建矿井
+- handshake defaults — 使用默认陪玩偏好完成开局确认
+- dig — 下镐探索一次
+- play 3 — 半托管连续探索 3 次
+- status — 查看当前状态
+- museum — 查看藏品图鉴
+- journal — 查看探险手帐
+- map — 查看当前区域地图
+- titles — 查看称号
+- upgrade <item> — 升级装备（pickaxe / lantern / rope / backpack）
+- choose <A/B/C> — 处理当前轻决策
+- sell common — 出售普通藏品
+- help — 查看全部指令
+
+原作信息：
+作者：包工头（QQ 601546041）／仓库：github.com/liyana31811/delve-ai-companion／经作者授权接入。""",
+    "travel": """# Travel（旅行 MCP）
+调用：play(game="travel", action="new") 开局；之后用 play(game="travel", action="cmd", params={"command": "trip_plan", "dest": "东京"}) 调用旅行工具；持久 MCP 地址可省 player_id。
+
+11 个命令及参数：
+- trip_plan — 查询目的地、行程与报价；参数：dest（目的地，可空）、style（青旅背包/舒适/轻奢/豪奢，可空）、party（together/solo，默认 together）
+- trip_start — 正式出发；参数：dest（目的地）、party（together/solo，默认 together）、style（默认舒适）、restart（是否结算旧旅程后重开，默认 false）
+- trip_here — 查看当前站，不推进；无参数
+- trip_go — 前往下一站并推进旅程；无参数
+- trip_collect — 收藏本趟纪念品；参数：name（名称）、line（纪念语）、default_id（默认纪念品 ID）、image（自定义图片路径或 URL）
+- trip_postcard — 独自旅行时寄明信片；参数：line（必填，明信片文字）、spot_id（景点 ID，可空）
+- trip_diary — 写本趟旅行日记；参数：text（必填，至少 50 字）、title（标题，可空）
+- trip_return — 提前收趟或独自旅行回家；无参数
+- care_checkin — 记录照顾自己的事项；参数：item（必填：喝水/吃药/运动/早睡/吃得健康/其他）、note（备注，可空；仅 caretaker 经济模式记账）
+- wallet_status — 查看盘缠、XP 和最近账目；无参数
+- trip_shelf — 查看纪念品、明信片和日记；参数：read_diary（trip_id 或 last，可空）
+
+原作信息：
+作者：沈澈 & sevenleft／仓库：github.com/shenchesilas-stack/travel-mcp／经作者授权接入。""",
     "leek": """# Leek（韭菜修炼之道）
 调用：play(game="leek",action="new") 开局；之后 play(game="leek", action="cmd", params={"command": "market"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 

@@ -92,7 +92,7 @@ def format_result(mode, questions, answers):
             "━━━ 注意事项 ━━━",
             info["weaknesses"],
             "",
-            "（结果已存档 48 小时，可用 mbti_get_result 凭 player_id 查询；查询版不含维度百分比。）",
+            "（账号结果永久保留；游客结果存档 48 小时，可用 mbti_get_result 凭 player_id 查询；查询版不含维度百分比。）",
         ]
     )
 
@@ -107,7 +107,7 @@ def format_stored_result(mode: str, mbti_type: str, completed_at_label: str) -> 
             "",
             *_format_type_sections(mbti_type),
             "",
-            "（档案保留 48 小时；维度百分比仅在当次测完时返回，重测可再次获得。）",
+            "（账号档案永久保留，游客档案保留 48 小时；维度百分比仅在当次测完时返回，重测可再次获得。）",
         ]
     )
 

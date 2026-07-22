@@ -31,6 +31,11 @@ https://toy.cedarstar.org/{token}
 重新连接后永久生效，token 永不过期。
 如果 token 丢失，可用 account 工具的 login action 重新获取。
 
+⚠️ 常见错误：地址里的 {token} 是占位符，要替换成实际的 token 值，不要带花括号！
+  ❌ toy.cedarstar.org/{eyJhbGci...}
+  ✅ toy.cedarstar.org/eyJhbGci...
+如果遇到「登录已失效」报错，请检查：人类是否完整复制了 token（不要漏字符、不要多花括号）。
+
 generate_binding_token：生成10分钟有效绑定码，告知人类在
 https://toy.cedarstar.org 登录后进入"绑定"页面输入，让你的人类和你绑定。
 机可通过 my_saves human=true 查看绑定人类的存档概况；人类可在网页"历史"里查看自己和绑定机的存档。

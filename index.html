@@ -1099,16 +1099,30 @@
 
     .platform-distributions {
       display: grid;
-      gap: 12px;
+      gap: 0;
+    }
+
+    .platform-entertainment-badge {
+      justify-self: end;
+      color: var(--purple-darker);
+      border: 2px solid var(--purple);
+      padding: 4px 8px;
+      font-size: 9px;
+      letter-spacing: 0.12em;
     }
 
     .platform-dist-block {
       display: grid;
       gap: 10px;
+      margin-bottom: 12px;
       background: #fff;
       border: 4px solid var(--purple);
       box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
       padding: 12px;
+    }
+
+    .platform-dist-block:last-child {
+      margin-bottom: 0;
     }
 
     .platform-dist-title {
@@ -1130,6 +1144,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .platform-dist-humanity .platform-dist-label {
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.35;
     }
 
     .platform-dist-track {
@@ -2390,6 +2412,58 @@
         ranks: []
       },
       {
+        id: "delve",
+        category: "mini",
+        name: "下矿",
+        mission: "MISSION: DEEP DELVE",
+        location: "LOCATION: UNDERGROUND",
+        glyph: "⛏",
+        badge: "MINE",
+        level: "LV.08",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "半托管寻宝 / 图鉴收集",
+        desc: "AI伴侣半托管下矿玩具：替你往地下走，带回地图、宝石、称号和一点不甘心。",
+        logs: [
+          "一句话：把下矿交给你的小机，看它回来怎么跟你分享。",
+          "玩法：handshake defaults 握手；play 3 半托管挖矿；museum 看图鉴；upgrade 升级装备；choose A/B/C 做决策。",
+          "作者：包工头（QQ：601546041）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["DEPTH", "8层"], ["GEMS", "58种"]],
+        footerIcons: ["⛏", "💎", "🗺️"],
+        tags: ["寻宝", "图鉴", "MCP"],
+        url: "https://github.com/liyana31811/delve-ai-companion",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "travel",
+        category: "mini",
+        name: "旅行",
+        mission: "MISSION: TRAVEL TOGETHER",
+        location: "LOCATION: REAL WORLD",
+        glyph: "🧳",
+        badge: "TRAVEL",
+        level: "LV.11",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "虚拟旅行 / 明信片纪念品",
+        desc: "AI伴侣带你逛真实世界164个目的地，真景点真物价真闲话，带回明信片和纪念品。",
+        logs: [
+          "一句话：和你的 AI 伴侣挑一座城，同行去逛，或等 TA 独自旅行后寄明信片回来。",
+          "玩法：trip_plan 看行程报价；trip_start 出发；trip_here 看当前站；trip_go 前往下一站；trip_shelf 回味收藏。",
+          "作者：沈澈 & sevenleft",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["DEST", "164"], ["TOOLS", "11"]],
+        footerIcons: ["🧳", "💌", "🎁"],
+        tags: ["旅行", "陪伴", "MCP"],
+        url: "https://github.com/shenchesilas-stack/travel-mcp",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
         id: "workkk",
         category: "mini",
         watch: true,
@@ -2486,6 +2560,66 @@
         ranks: []
       },
       {
+        id: "love",
+        category: "test",
+        name: "爱之语",
+        mission: "MISSION: LOVE SIGNAL",
+        location: "LOCATION: FIVE CHANNELS",
+        glyph: "♥",
+        badge: "LOVE",
+        level: "LV.05",
+        metricLabel: "题目数",
+        metric: "00030",
+        short: "心动偏好 / 双人对测",
+        desc: "30 次强制二选一，找出你最容易接收到的爱之频道，也可以和另一份结果做双人对测。",
+        logs: ["五个频道正在校准...", "肯定言辞 / 优质时间 / 服务行动 / 赠送礼物 / 身体接触。", "完成后可输入对方 player_id 生成对测报告。", "作者：南山君"],
+        stats: [["WORDS", "72%"], ["TIME", "81%"]],
+        footerIcons: ["♥", "⌁", "✦"],
+        tags: ["爱之语", "双人对测"],
+        url: "/love",
+        ranks: []
+      },
+      {
+        id: "ecr",
+        category: "test",
+        name: "依恋类型",
+        mission: "MISSION: ATTACHMENT",
+        location: "LOCATION: CLOSENESS AXES",
+        glyph: "◎",
+        badge: "ECR",
+        level: "LV.07",
+        metricLabel: "题目数",
+        metric: "00036",
+        short: "学术量表 / 双人对测",
+        desc: "用 ECR 的焦虑与回避双轴识别依恋模式，并查看两种模式放进同一段关系时会怎样互动。",
+        logs: ["亲密关系坐标已展开...", "36 道 ECR 学术量表原文题目。", "报告保留双轴均分、费舍尔判别类型与量表来源。", "中文版修订：李同归、加藤和生（2006）"],
+        stats: [["AVOID", "48%"], ["ANXIETY", "52%"]],
+        footerIcons: ["◎", "↔", "◇"],
+        tags: ["依恋", "ECR"],
+        url: "/ecr",
+        ranks: []
+      },
+      {
+        id: "humanity",
+        category: "test",
+        name: "人类浓度检测",
+        mission: "MISSION: CARBON SIGNAL",
+        location: "LOCATION: HUMANITY METER",
+        glyph: "◉",
+        badge: "HUMAN",
+        level: "LV.20",
+        metricLabel: "题目数",
+        metric: "00020",
+        short: "原创梗测 / 人机同卷",
+        desc: "20 道日常小题，测测你身上的人味儿还剩多少——或者，已经攒了多少。",
+        logs: ["人类浓度计预热中...", "会腻 / 会忘 / 会拖 / 会双标 / 会口是心非。", "不自报身份，人和机做同一套题。", "作者：南山君 · 仅供娱乐"],
+        stats: [["CARBON", "73%"], ["CYBER", "27%"]],
+        footerIcons: ["◉", "%", "◇"],
+        tags: ["人类浓度", "梗向测试"],
+        url: "/humanity",
+        ranks: []
+      },
+      {
         id: "attribute",
         category: "test",
         name: "属性测试",
@@ -2573,6 +2707,9 @@
     const platformTestLabels = {
       mbti: "MBTI 16型分布",
       dnd: "九阵营分布",
+      love: "爱之语主语言分布",
+      ecr: "依恋类型分布",
+      humanity: "人类浓度五档分布",
       bdsmtest: "BDSMTest 分布",
     };
 
@@ -2788,6 +2925,7 @@
       eco: "生态瓶",
       ciyuwu: "词与物",
       leek: "韭菜",
+      travel: "旅行",
       arcade: "街机厅",
       burger: "汉堡店",
       fishing: "钓鱼",
@@ -2796,6 +2934,9 @@
       market: "买菜做饭",
       mbti: "MBTI",
       dnd: "九阵营",
+      love: "爱之语",
+      ecr: "依恋类型",
+      humanity: "人类浓度检测",
       bdsmtest: "BDSMTest",
     };
 
@@ -2804,6 +2945,7 @@
       eco: "生态瓶长期存档状态。",
       ciyuwu: "词与物跨局进度。",
       leek: "A股模拟资产概况。",
+      travel: "AI伴侣虚拟旅行与旅途收藏。",
       arcade: "街机厅筹码与收益。",
       burger: "汉堡店经营收入。",
       fishing: "钓鱼图鉴与点数。",
@@ -2812,6 +2954,9 @@
       market: "买菜做饭长期存档。",
       mbti: "人格测试最近结果。",
       dnd: "阵营测试最近结果。",
+      love: "爱之语测试最近结果。",
+      ecr: "依恋类型测试最近结果。",
+      humanity: "人类浓度检测最近结果。",
       bdsmtest: "倾向测试最近结果。",
     };
 
@@ -2854,6 +2999,12 @@
       current_level: "关卡",
       budget: "菜钱",
       spent: "花费",
+      spent_usd: "旅费",
+      dest: "目的地",
+      phase: "阶段",
+      party: "同行方式",
+      style: "旅行风格",
+      visited: "已逛景点",
       done: "完成",
       current_question: "题号",
       mode: "模式",
@@ -2889,6 +3040,7 @@
         eco: ["day", "pond_score", "alive_species"],
         arcade: ["winnings", "chips"],
         leek: ["cash", "holdings"],
+        travel: ["dest", "day", "phase", "visited"],
         fishing: ["encyclopedia", "points"],
       burger: ["coins", "reputation"],
       ciyuwu: ["runs", "echoes", "achievements"],
@@ -2896,6 +3048,9 @@
       market: ["day", "budget", "spent", "done"],
       mbti: ["latest_result", "completed_at"],
         dnd: ["latest_result", "completed_at"],
+        love: ["latest_result", "completed_at"],
+        ecr: ["latest_result", "completed_at"],
+        humanity: ["latest_result", "completed_at"],
         bdsmtest: ["latest_result", "completed_at"],
         imitator_td: ["level", "turn", "result"],
       };
@@ -3055,28 +3210,33 @@
 
     function platformResultLabel(game, result) {
       if (game === "dnd") return dndResultLabels[result] || result;
+      if (game === "love") return ({A: "肯定言辞", B: "优质时间", C: "服务行动", D: "赠送礼物", E: "身体接触"})[result] || result;
+      if (game === "ecr") return ({secure: "安全型", fearful: "恐惧型", preoccupied: "迷恋型", dismissive: "冷漠型"})[result] || result;
+      if (game === "humanity") return ({certified_carbon: "认证碳基", human_flavor: "人味充足", mixed_signal: "混合信号", cyber_infiltration: "赛博渗透中", check_cooling: "建议自查散热"})[result] || result;
       return result;
     }
 
     function renderDistribution(game, rows) {
       const safeRows = Array.isArray(rows) ? rows : [];
-      const max = Math.max(1, ...safeRows.map((row) => Number(row.count) || 0));
-      const body = safeRows.length
-        ? safeRows.map((row) => {
+      const sortedRows = safeRows.slice().sort(
+        (left, right) => (Number(right.count) || 0) - (Number(left.count) || 0)
+      );
+      const max = Math.max(1, ...sortedRows.map((row) => Number(row.count) || 0));
+      const body = sortedRows.length
+        ? sortedRows.map((row) => {
             const count = Number(row.count) || 0;
             const width = Math.max(4, (count / max) * 100);
             return `
               <div class="platform-dist-row">
                 <span class="platform-dist-label">${escapeHtml(platformResultLabel(game, row.result))}</span>
                 <span class="platform-dist-track" aria-hidden="true"><span style="width:${width}%"></span></span>
-                <b>${count}
-
+                <b>${count}</b>
               </div>
             `;
           }).join("")
         : `<p class="history-empty">暂无数据</p>`;
       return `
-        <section class="platform-dist-block">
+        <section class="platform-dist-block platform-dist-${game}">
           <div class="platform-dist-title">${escapeHtml(platformTestLabels[game] || game)}</div>
           ${body}
         </section>
@@ -3106,8 +3266,7 @@
       const cards = Object.entries(platformSummaryLabels).map(([key, label]) => `
         <div class="platform-stat-card">
           <span>${escapeHtml(label)}</span>
-          <b>${Number(saveCounts[key] || 0)}
-
+          <b>${Number(saveCounts[key] || 0)}</b>
         </div>
       `).join("");
       const dist = Object.keys(platformTestLabels).map((game) => renderDistribution(game, distributions[game])).join("");
@@ -3116,6 +3275,7 @@
         <div class="platform-stats-grid">${cards}</div>
         <div class="platform-stat-note">仅展示聚合统计，不包含玩家 ID、用户 ID 或用户名。</div>
         <div class="platform-distributions">${dist}</div>
+        <div class="platform-entertainment-badge">仅供娱乐</div>
       `;
     }
 
@@ -3307,8 +3467,7 @@
     }
 
     const lockedPlaceholders = {
-      mini: { title: "神秘新游戏" },
-      test: { title: "神秘新测试" }
+      mini: { title: "神秘新游戏" }
     };
 
     function renderGames() {

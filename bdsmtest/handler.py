@@ -117,8 +117,8 @@ TOOLS = [
     {
         "name": "bdsmtest_get_result",
         "description": (
-            "查询该 player_id 最近一次已完成测试的结果（各原型百分比，"
-            "完成超过48小时自动删除）。"
+            "查询该 player_id 最近一次已完成测试的结果（各原型百分比；"
+            "账号结果永久保留，游客结果超过48小时自动删除）。"
             "（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）"
         ),
         "inputSchema": {
@@ -344,7 +344,7 @@ def bdsmtest_get_result(arguments):
     if row is None:
         raise JsonRpcError(
             -32003,
-            "未找到该 player_id 的已完成记录（可能从未做完测试，或完成已超过 48 小时已清理）。"
+            "未找到该 player_id 的已完成记录（可能从未做完测试；游客结果完成超过 48 小时会清理，账号结果永久保留）。"
             "请先 bdsmtest_start 并完成测试。",
         )
     result_detail = json.loads(row[0] or "{}")
@@ -355,7 +355,7 @@ def bdsmtest_get_result(arguments):
         result_detail.get("scores", []),
         result_detail.get("rid"),
         header=f"【BDSMTest 历史结果 · {label}】",
-    )
+    ) + f"\n存档身份：{player_id}"
 
 
 def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now):
@@ -374,7 +374,12 @@ def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now):
         "DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME)
     )
     result_value = scores[0].get("name") if scores else ""
-    return _format_result(scores, rid, header="【BDSMTest 测试完成】") + "\n" + _platform_result_line(conn, result_value)
+    return (
+        _format_result(scores, rid, header="【BDSMTest 测试完成】")
+        + f"\n存档身份：{player_id}"
+        + "\n"
+        + _platform_result_line(conn, result_value)
+    )
 
 
 def _save_result(conn, player_id, mode, scores, rid, now):
@@ -500,7 +505,7 @@ def _format_result(scores, rid, header):
     lines.append("")
     if rid:
         lines.append(f"完整结果详见：{RESULT_URL.format(rid=rid)}")
-    lines.append("（结果已存档 48 小时，可用 bdsmtest_get_result 凭 player_id 查询。）")
+    lines.append("（账号结果永久保留；游客结果存档 48 小时，可用 bdsmtest_get_result 凭 player_id 查询。）")
     return "\n".join(lines)
 
 
@@ -550,7 +555,7 @@ def _raise_no_active_session(conn, player_id):
     raise JsonRpcError(
         -32001,
         "没有进行中的测试（可能从未调用 bdsmtest_start，或超过 24 小时未活动 session 已被清理）。"
-        "请先 bdsmtest_start；若刚完成测试且未满 48 小时，可用 bdsmtest_get_result 查档。",
+        "请先 bdsmtest_start；完成后可用 bdsmtest_get_result 查档（账号结果永久保留，游客结果保留 48 小时）。",
     )
 
 
@@ -598,7 +603,7 @@ def _cleanup_expired(conn, now):
         (now - SESSION_TTL_SECONDS,),
     )
     conn.execute(
-        "DELETE FROM test_results WHERE completed_at < ?",
+        "DELETE FROM test_results WHERE completed_at < ? AND player_id LIKE 'guest:%'",
         (now - RESULT_TTL_SECONDS,),
     )
 

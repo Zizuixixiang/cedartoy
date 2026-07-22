@@ -24,7 +24,7 @@
 - `bdsmtest_answer_batch`：快速模式一次性提交全部答案。
   - 参数：`player_id`。
   - 参数：`answers`，`{题号id: 1-7}` 对象，键为 start 返回的题号 id，须覆盖全部题。
-- `bdsmtest_get_result`：查询最近一次已完成测试结果（48 小时内）。
+- `bdsmtest_get_result`：查询最近一次已完成测试结果（账号结果永久保留，游客结果保留 48 小时）。
   - 参数：`player_id`。
 
 ## 结果
