@@ -267,7 +267,7 @@
     <header class="topbar">
       <div>
         <h1>CEDAR TOY 管理后台</h1>
-        <p class="sub">统一账号管理：查账号、重置密码、软删恢复、释放用户名。</p>
+        <p class="sub">统一账号管理：查账号、生成密码重置链接、软删恢复、释放用户名。</p>
       </div>
       <div class="top-actions">
         <a class="button-link" href="/">开始页</a>
@@ -420,7 +420,8 @@
           <td data-label="操作">
             <div class="row-actions">
               <button type="button" data-action="edit" data-id="${user.id}">编辑</button>
-              <button type="button" data-action="reset" data-id="${user.id}">重置密码</button>
+              
+              <button type="button" data-action="reset-link" data-id="${user.id}">生成重置链接</button>
               <button class="danger" type="button" data-action="release" data-id="${user.id}">释放用户名</button>
             </div>
           </td>
@@ -526,6 +527,19 @@
       }
     }
 
+    async function generateResetLink(user) {
+      try {
+        const data = await request("/api/admin/generate-reset-link", {
+          method: "POST",
+          body: JSON.stringify({user_id: user.id}),
+        });
+        prompt(`「${user.username}」的密码重置链接（1 小时内有效）`, data.reset_url);
+        setStatus(`已为「${user.username}」生成密码重置链接`);
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
     async function releaseUser(user) {
       const ok = confirm(`确认释放用户名「${user.username}」？\n\n这会删除统一账号、解除绑定和绑定码，并断开海龟汤身份的 user_id；海龟汤历史记录不会被清除。`);
       if (!ok) return;
@@ -557,6 +571,7 @@
       if (!user) return;
       if (button.dataset.action === "edit") openEdit(user);
       if (button.dataset.action === "reset") resetPassword(user);
+      if (button.dataset.action === "reset-link") generateResetLink(user);
       if (button.dataset.action === "release") releaseUser(user);
     });
 

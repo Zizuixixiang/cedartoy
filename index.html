@@ -922,6 +922,7 @@
     }
 
     .field input {
+      font-family: "Courier New", Courier, monospace;
       width: 100%;
       min-height: 44px;
       border: 4px solid var(--purple);
@@ -1607,7 +1608,7 @@
       border-top: 5px solid var(--purple-dark);
       box-shadow: 0 -8px 0 rgba(90,75,104,0.16);
       padding: 18px;
-      max-height: calc(78vh - var(--safe-bottom) - var(--browser-bottom));
+      max-height: calc(92vh - var(--safe-bottom) - var(--browser-bottom));
       overflow: auto;
       transform: translateY(100%);
       transition: transform 0.16s ease;
@@ -1624,6 +1625,11 @@
     #mineDrawer .drawer {
       width: min(420px, calc(100vw - 32px));
       max-width: 420px;
+      overflow: auto;
+    }
+
+    #mineContent {
+      padding: 0 4px 18px 0;
     }
 
     .drawer-head {
@@ -1860,7 +1866,7 @@
         padding-bottom: calc(14px + var(--safe-bottom) + var(--browser-bottom));
       }
       .drawer {
-        max-height: calc(68dvh - var(--safe-bottom) - var(--browser-bottom));
+        max-height: calc(92dvh - var(--safe-bottom) - var(--browser-bottom));
         padding: 14px;
         border-top-width: 4px;
       }
@@ -1870,6 +1876,9 @@
       #mineDrawer .drawer {
         width: 100%;
         max-width: none;
+      }
+      #mineContent {
+        padding-bottom: 20px;
       }
       .drawer-head { margin-bottom: 8px; }
       .drawer h2 { font-size: 18px; }
@@ -1914,7 +1923,8 @@
       .field-hint { font-size: 11px; font-weight: 400; }
       #loginModal .field-label { font-size: 16px; font-weight: 700; }
       #loginModal .field input { min-height: 38px; border: 4px solid #BEB1D1; font-size: 14px; }
-      .field input { min-height: 38px; border-width: 3px; }
+      .field input {
+      font-family: "Courier New", Courier, monospace; min-height: 38px; border-width: 3px; }
       .drawer .pixel-btn:not(.drawer-close) { width: 100%; }
       .drawer .bank-row .pixel-btn { width: auto; }
     }
@@ -2047,6 +2057,49 @@
       <div class="modal-actions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="loginSubmit" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="changePasswordModal" role="dialog" aria-modal="true" aria-labelledby="changePasswordTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="changePasswordTitle">修改密码</h2>
+      <label class="field">
+        <span class="field-label">旧密码</span>
+        <input id="oldPassword" type="password" autocomplete="current-password">
+      </label>
+      <label class="field">
+        <span class="field-label">新密码</span>
+        <input id="newPassword" type="password" autocomplete="new-password">
+        <span class="field-hint">至少 6 位</span>
+      </label>
+      <label class="field">
+        <span class="field-label">确认新密码</span>
+        <input id="confirmNewPassword" type="password" autocomplete="new-password">
+      </label>
+      <div class="modal-msg" id="changePasswordMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="changePasswordSubmit" type="button">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="resetPasswordModal" role="dialog" aria-modal="true" aria-labelledby="resetPasswordTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="resetPasswordTitle">重置密码</h2>
+      <label class="field">
+        <span class="field-label">新密码</span>
+        <input id="resetNewPassword" type="password" autocomplete="new-password">
+        <span class="field-hint">至少 6 位</span>
+      </label>
+      <label class="field">
+        <span class="field-label">确认密码</span>
+        <input id="resetConfirmPassword" type="password" autocomplete="new-password">
+      </label>
+      <div class="modal-msg" id="resetPasswordMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn" id="resetPasswordSubmit" type="button">确认</button>
       </div>
     </div>
   </div>
@@ -3956,6 +4009,8 @@
 
     function openModal(id) {
       if (id === "bindModal") resetBindModal();
+      if (id === "changePasswordModal") resetChangePasswordModal();
+      if (id === "resetPasswordModal") clearResetPasswordModal();
       $(id).classList.add("show");
     }
 
@@ -3963,6 +4018,8 @@
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
       resetBindModal();
+      resetChangePasswordModal();
+      clearResetPasswordModal();
     }
 
     function renderAuth() {
@@ -3987,14 +4044,17 @@
           <button class="pixel-btn secondary desktop-only" id="historyOpen" type="button">历史</button>
           ${!me.user.is_ai ? '<button class="pixel-btn secondary desktop-only" id="machinesOpen" type="button">我的小机</button>' : ''}
           <button class="pixel-btn secondary desktop-only" id="bindOpen" type="button">绑定</button>
+          ${!me.user.is_ai ? '<button class="pixel-btn secondary desktop-only" id="changePasswordOpen" type="button">修改密码</button>' : ''}
           <button class="pixel-btn secondary desktop-only" id="logoutBtn" type="button">登出</button>
         </span>
       `;
       const bindOpen = $("bindOpen");
       const historyOpen = $("historyOpen");
       const machinesOpen = $("machinesOpen");
+      const changePasswordOpen = $("changePasswordOpen");
       if (bindOpen) bindOpen.addEventListener("click", () => openModal("bindModal"));
       if (historyOpen) historyOpen.addEventListener("click", openHistory);
+      if (changePasswordOpen) changePasswordOpen.addEventListener("click", () => openModal("changePasswordModal"));
       if (machinesOpen) machinesOpen.addEventListener("click", () => {
         renderMine();
         $("mineDrawer").classList.add("show");
@@ -4032,6 +4092,7 @@
         ${renderMachinePanel()}
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
         <button class="pixel-btn" id="mineBind" type="button">绑定</button>
+        ${!me.user.is_ai ? '<button class="pixel-btn secondary" id="mineChangePassword" type="button" style="margin-top:10px">修改密码</button>' : ''}
         <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
       `;
       bindMachinePanel();
@@ -4039,6 +4100,13 @@
         closeDrawers();
         openModal("bindModal");
       });
+      const mineChangePassword = $("mineChangePassword");
+      if (mineChangePassword) {
+        mineChangePassword.addEventListener("click", () => {
+          closeDrawers();
+          openModal("changePasswordModal");
+        });
+      }
       $("mineLogout").addEventListener("click", logout);
       document.querySelectorAll(".unbind-btn").forEach((btn) => {
         btn.addEventListener("click", async () => {
@@ -4149,6 +4217,114 @@
       }
     }
 
+    function resetChangePasswordModal() {
+      $("oldPassword").value = "";
+      $("newPassword").value = "";
+      $("confirmNewPassword").value = "";
+      $("changePasswordMsg").textContent = "";
+      $("changePasswordSubmit").disabled = false;
+    }
+
+    async function changePassword() {
+      const old_password = $("oldPassword").value;
+      const new_password = $("newPassword").value;
+      const confirmPassword = $("confirmNewPassword").value;
+      const message = $("changePasswordMsg");
+      const submit = $("changePasswordSubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      if (!old_password || !new_password || !confirmPassword) {
+        message.textContent = "请填写全部密码字段";
+        return;
+      }
+      if (new_password.length < 6) {
+        message.textContent = "新密码至少 6 位";
+        return;
+      }
+      if (new_password !== confirmPassword) {
+        message.textContent = "两次输入的新密码不一致";
+        return;
+      }
+      submit.disabled = true;
+      try {
+        const res = await fetch("/api/auth/change-password", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({old_password, new_password})
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "密码修改失败");
+        closeModals();
+        showToast(data.message || "密码已修改");
+      } catch (err) {
+        message.textContent = err.message || "密码修改失败";
+        submit.disabled = false;
+      }
+    }
+
+    function clearResetPasswordModal() {
+      $("resetNewPassword").value = "";
+      $("resetConfirmPassword").value = "";
+      $("resetPasswordMsg").textContent = "";
+      $("resetPasswordSubmit").disabled = false;
+    }
+
+    function resetTokenFromUrl() {
+      return new URL(window.location.href).searchParams.get("reset_token") || "";
+    }
+
+    function removeResetTokenFromUrl() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("reset_token");
+      history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    async function resetPasswordByToken() {
+      const reset_token = resetTokenFromUrl();
+      const new_password = $("resetNewPassword").value;
+      const confirmPassword = $("resetConfirmPassword").value;
+      const message = $("resetPasswordMsg");
+      const submit = $("resetPasswordSubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      if (!reset_token) {
+        message.textContent = "无效的重置链接";
+        return;
+      }
+      if (!new_password || !confirmPassword) {
+        message.textContent = "请填写并确认新密码";
+        return;
+      }
+      if (new_password.length < 6) {
+        message.textContent = "新密码至少 6 位";
+        return;
+      }
+      if (new_password !== confirmPassword) {
+        message.textContent = "两次输入的新密码不一致";
+        return;
+      }
+      submit.disabled = true;
+      try {
+        const res = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({reset_token, new_password})
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "密码重置失败");
+        removeResetTokenFromUrl();
+        closeModals();
+        showToast("密码已重置");
+      } catch (err) {
+        message.textContent = err.message || "密码重置失败";
+        submit.disabled = false;
+      }
+    }
+
+    function openResetPasswordFromUrl() {
+      if (resetTokenFromUrl()) openModal("resetPasswordModal");
+    }
+
     async function unbindAccount(aiUserId) {
       try {
         const res = await fetch("/api/auth/bind", {
@@ -4254,6 +4430,8 @@
     $("mineDrawer").addEventListener("click", (event) => { if (event.target.id === "mineDrawer") closeDrawers(); });
     $("loginSubmit").addEventListener("click", login);
     $("bindSubmit").addEventListener("click", bindAccount);
+    $("changePasswordSubmit").addEventListener("click", changePassword);
+    $("resetPasswordSubmit").addEventListener("click", resetPasswordByToken);
     $("adultConfirmButton").addEventListener("click", () => {
       const url = pendingAdultUrl;
       closeModals();
@@ -4292,6 +4470,8 @@
         closeDrawers();
       }
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
+      if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
+      if (event.key === "Enter" && $("resetPasswordModal").classList.contains("show")) resetPasswordByToken();
     });
     $("bankPicker").addEventListener("click", (event) => { if (event.target.id === "bankPicker") closeBankPicker(); });
 
@@ -4312,6 +4492,7 @@
     renderGames();
     renderDetail();
     renderAuth();
+    openResetPasswordFromUrl();
     loadMe();
     loadRoomCount();
     loadGameStats();

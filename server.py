@@ -196,10 +196,12 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、delete_account（软删当前账号）",
+                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
                 },
                 "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string"},
+                "old_password": {"type": "string"},
+                "new_password": {"type": "string"},
                 "token": {"type": "string"},
                 "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
                 "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
@@ -593,6 +595,21 @@ def _init_registration_events_table(conn):
     )
 
 
+def _init_password_reset_tokens_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+
 def _init_anti_addiction_tables(conn):
     conn.execute(
         """
@@ -657,6 +674,7 @@ def _migrate_platform_timestamps():
         _create_platform_localtime_triggers(conn)
         _init_guest_claim_table(conn)
         _init_registration_events_table(conn)
+        _init_password_reset_tokens_table(conn)
         _init_anti_addiction_tables(conn)
         if conn.execute("SELECT value FROM settings WHERE key = ?", (TIMEZONE_MIGRATION_KEY,)).fetchone():
             conn.commit()
@@ -1099,6 +1117,61 @@ def _admin_reset_user_password(user_id, body):
         )
         conn.commit()
     return {"ok": True}
+
+
+def _generate_reset_link(user_id):
+    with _db_connect() as conn:
+        existing = conn.execute("SELECT id FROM toy_users WHERE id = ?", (user_id,)).fetchone()
+        if not existing:
+            raise _McpError(-32004, "账号不存在")
+        token = secrets.token_urlsafe(32)
+        expires_at = int(time.time()) + 60 * 60
+        conn.execute(
+            """
+            INSERT INTO password_reset_tokens (user_id, token, expires_at)
+            VALUES (?, ?, datetime(?, 'unixepoch'))
+            """,
+            (user_id, token, expires_at),
+        )
+        conn.commit()
+    return {
+        "ok": True,
+        "reset_url": f"https://toy.cedarstar.org/?reset_token={token}",
+        "expires_in": "1小时",
+    }
+
+
+def _reset_password_by_token(reset_token, new_password):
+    reset_token = reset_token or ""
+    new_password = new_password or ""
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        reset = _row_dict(conn.execute(
+            """
+            SELECT *, expires_at < datetime('now') AS expired
+            FROM password_reset_tokens
+            WHERE token = ?
+            """,
+            (reset_token,),
+        ).fetchone())
+        if not reset:
+            raise _McpError(-32602, "无效的重置链接")
+        if int(reset["used"]) == 1:
+            raise _McpError(-32602, "该链接已使用")
+        if bool(reset["expired"]):
+            raise _McpError(-32602, "链接已过期")
+        if len(new_password) < 6:
+            raise _McpError(-32602, "新密码至少 6 位")
+        conn.execute(
+            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
+            (_hash_password(new_password), int(reset["user_id"])),
+        )
+        conn.execute(
+            "UPDATE password_reset_tokens SET used = 1 WHERE id = ?",
+            (int(reset["id"]),),
+        )
+        conn.commit()
+    return {"ok": True, "message": "密码已重置，请用新密码登录"}
 
 
 def _admin_release_user(user_id, admin_user):
@@ -2596,6 +2669,23 @@ def _claim_guest_saves(raw_token, claim_code):
     }
 
 
+def _change_password(raw_token, old_password, new_password):
+    user = _current_account(raw_token)
+    old_password = old_password or ""
+    new_password = new_password or ""
+    if not _verify_password(old_password, user["password_hash"]):
+        raise _McpError(-32602, "旧密码错误")
+    if len(new_password) < 6:
+        raise _McpError(-32602, "新密码至少 6 位")
+    with _db_connect() as conn:
+        conn.execute(
+            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
+            (_hash_password(new_password), int(user["id"])),
+        )
+        conn.commit()
+    return {"ok": True, "message": "密码已修改"}
+
+
 def _delete_account(raw_token, confirm):
     if confirm is not True:
         raise _McpError(-32602, "delete_account 必须显式传 confirm=true")
@@ -3558,6 +3648,10 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
     if action == "delete_save":
         result = _delete_save(arguments, raw_token)
         return json.dumps(result, ensure_ascii=False)
+    if action == "change_password":
+        raw_token = arguments.get("token") or path_token
+        result = _change_password(raw_token, arguments.get("old_password"), arguments.get("new_password"))
+        return json.dumps(result, ensure_ascii=False)
     if action == "delete_account":
         result = _delete_account(raw_token, arguments.get("confirm"))
         return json.dumps(result, ensure_ascii=False)
@@ -3982,6 +4076,18 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_bind()
             return
 
+        if path == "/api/auth/change-password":
+            self._handle_api_change_password()
+            return
+
+        if path == "/api/auth/reset-password":
+            self._handle_api_reset_password()
+            return
+
+        if path == "/api/admin/generate-reset-link":
+            self._handle_admin_generate_reset_link()
+            return
+
         if path == "/api/anti-addiction/settings":
             self._handle_api_anti_addiction_save()
             return
@@ -4354,6 +4460,37 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
+    def _handle_api_change_password(self):
+        try:
+            body = self._read_json_body()
+            result = _change_password(
+                _extract_bearer(self.headers),
+                body.get("old_password"),
+                body.get("new_password"),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_reset_password(self):
+        try:
+            body = self._read_json_body()
+            result = _reset_password_by_token(
+                body.get("reset_token"),
+                body.get("new_password"),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=400)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
     def _handle_api_unbind(self):
         try:
             body = self._read_json_body()
@@ -4576,6 +4713,18 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             user_id = self._path_int_tail(path, "/reset-password")
             body = self._read_json_body()
             self._send_json(_admin_reset_user_password(user_id, body))
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._admin_error_status(exc))
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_admin_generate_reset_link(self):
+        try:
+            _require_admin_account(_extract_bearer(self.headers))
+            body = self._read_json_body()
+            self._send_json(_generate_reset_link(body.get("user_id")))
         except _McpError as exc:
             self._send_json({"error": exc.message}, status=self._admin_error_status(exc))
         except ValueError as exc:
