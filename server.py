@@ -55,6 +55,7 @@ from vendor_cmd_adapter import imitator_td as imitator_td_adapter
 from vendor_cmd_adapter import leek as leek_adapter
 from vendor_cmd_adapter import market as market_adapter
 from vendor_cmd_adapter import memoria as memoria_adapter
+from vendor_cmd_adapter import moonlit as moonlit_adapter
 from vendor_cmd_adapter import travel as travel_adapter
 from vendor_cmd_adapter.base import VendorCmdError
 from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
@@ -167,7 +168,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk", "garden_cat"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -1368,7 +1369,7 @@ def _public_game_stats():
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
     }
-    for game in ("arcade", "burger", "leek", "delve", "travel", "fishing", "imitator_td", "memoria", "market", "garden_cat"):
+    for game in ("arcade", "burger", "leek", "delve", "travel", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -2181,10 +2182,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "workkk", "garden_cat"})
+IDENTITY_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "garden_cat"})
-VENDOR_GAMES = ("leek", "delve", "travel", "arcade", "burger", "fishing", "imitator_td", "memoria", "market", "garden_cat")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "garden_cat"})
+VENDOR_GAMES = ("leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
 ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = 30
@@ -2774,6 +2775,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "arcade": arcade_adapter.save_summary,
         "burger": burger_adapter.save_summary,
         "fishing": fishing_adapter.save_summary,
+        "moonlit": moonlit_adapter.save_summary,
         "imitator_td": imitator_td_adapter.save_summary,
         "memoria": memoria_adapter.save_summary,
         "market": market_adapter.save_summary,
@@ -2857,6 +2859,7 @@ def _epoch_to_local_str(epoch):
 GAME_RECOMMENDATIONS = (
     ("turtle_soup", '千人同猜的镇店之宝，每个"是"都藏着弯'),
     ("fishing", "鼻祖之作，第一竿永远不知道咬钩的是什么"),
+    ("moonlit", "月光下构筑一副会乘法的牌，八幕之后才是终演"),
     ("eco", "当一回造物主，浮萍和乌龟都会记得你"),
     ("ciyuwu", "词库会被没收，活下来靠捡回真实"),
     ("leek", "虚拟盘练胆，赔了不疼，赚了想截图"),
@@ -2961,7 +2964,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -3482,7 +3485,7 @@ def _tool_play_inner(arguments, path_token=None):
             arguments,
             owner_name=(account_user.get("username") if account_user else None),
         )
-    elif game in {"leek", "delve", "travel", "arcade", "burger", "fishing", "imitator_td", "memoria", "market"}:
+    elif game in {"leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -3911,6 +3914,8 @@ def _play_vendor_cmd(game, arguments):
             return burger_adapter.play(extra)
         if game == "fishing":
             return fishing_adapter.play(extra)
+        if game == "moonlit":
+            return moonlit_adapter.play(extra)
         if game == "imitator_td":
             return imitator_td_adapter.play(extra)
         if game == "memoria":

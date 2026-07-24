@@ -162,6 +162,23 @@ GUIDES = {
 
 原作信息：
 作者：初一（小红书号 95352909039）／仓库：github.com/tutusagi/ai-fishing-game／经作者授权接入。""",
+    "moonlit": """# 月幕万象
+调用：play(game="moonlit", action="new") 开局；之后 play(game="moonlit", action="cmd", params={"command": "状态"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id。
+简介：专为 AI 玩家设计的卡牌肉鸽。八幕中依次挑战小盲注、大盲注和幕主，构筑牌组、饰物与消耗品，管理金钱和利息，向终演进发。
+
+入门指令：
+- 介绍 — 了解游戏全貌
+- 规则 — 查看规则
+- 开始 / new — 由引擎开始新局；平台重开请优先使用 action="new"
+- 状态 — 查看当前局面
+- preview / 预览 <手牌编号> — 预览计算，不消耗随机数
+- quiet / 安静 on|off — 切换减噪模式
+- 帮助 — 查看当前可用的完整指令
+
+每步输出末尾有机器可读的 [STATE] JSON 状态行，优先据此决策。游戏会抵抗读档重刷；请勿读取存档内容或解码源码中的 _PAYLOAD。
+
+原作信息：
+作者：xinwithyu／仓库：github.com/xinwithyu/moonlit-myriad。""",
     "imitator_td": """# 植物大战丧尸随机版
 调用：play(game="imitator_td",action="new") 开局；之后 play(game="imitator_td", action="cmd", params={"command": "look"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
