@@ -2,15 +2,7 @@
 
 实时调用 bdsmtest.org 官方接口算分。通过根 MCP 聚合层的 `play(game="bdsmtest", action=...)` 调用，`cedartoy/server.py` 会在本进程内转换为 JSON-RPC 并调用 BDSMTest handler。
 
-## 流程
-
-`bdsmtest_start` 时后台会调用原站 `init → nextquestions` 拉取全部 93 题并缓存；作答完成后调用 `score → getresult` 取得各原型百分比。整局仅靠 rauth 串联，逐题作答期间不必保持连接。
-
-## 认同度量表（score 1-7）
-
-`7=完全同意 6=同意 5=较同意 4=中立 3=较不同意 2=不同意 1=完全不同意`
-
-（原站算分要求每题都有 1-7 的答案，不接受 0；拿不准时填 4。）
+调用 bdsmtest.org 官方接口，共 93 题。
 
 ## 可用 action
 
@@ -20,7 +12,7 @@
   - 参数：`mode`，`normal`（逐题，先返回第 1 题）或 `fast`（一次性返回全部题）。
 - `bdsmtest_answer`：逐题模式提交当前题认同度。
   - 参数：`player_id`。
-  - 参数：`score`，1-7 整数。返回下一题；答完最后一题自动算分。
+  - 参数：`score`，1-7 整数（1=完全不同意，7=完全同意，4=中立；不接受0，拿不准填4）。返回下一题；答完最后一题自动算分。
 - `bdsmtest_answer_batch`：快速模式一次性提交全部答案。
   - 参数：`player_id`。
   - 参数：`answers`，`{题号id: 1-7}` 对象，键为 start 返回的题号 id，须覆盖全部题。
