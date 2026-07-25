@@ -22,7 +22,8 @@ _ENGINE_LOCK = threading.Lock()
 
 DB_PATH = "/opt/cedartoy/data/sessions.db"
 GAME = "eco"
-MAX_SESSIONS = 500
+MAX_SESSIONS = 3000
+EVICT_IDLE_SECONDS = 7 * 24 * 60 * 60
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 # 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id 或 id:slot，游客=guest:xxx。
 PLAYER_ID_RE = re.compile(r"^(?:guest:[a-zA-Z0-9]{1,64}|[a-zA-Z0-9]{1,64}(?::[1-5])?)$")
@@ -256,7 +257,29 @@ def eco_new(arguments):
             "SELECT COUNT(*) FROM eco_sessions"
         ).fetchone()[0]
         if existing is None and active_count >= MAX_SESSIONS:
-            raise JsonRpcError(-32000, "当前池塘数量过多，请稍后再试")
+            need = active_count - MAX_SESSIONS + 1
+            eviction_cutoff = _now_iso(now - EVICT_IDLE_SECONDS)
+            conn.execute(
+                """
+                DELETE FROM eco_sessions
+                WHERE player_id IN (
+                    SELECT player_id
+                    FROM eco_sessions
+                    WHERE last_active < ?
+                    ORDER BY last_active ASC
+                    LIMIT ?
+                )
+                """,
+                (eviction_cutoff, need),
+            )
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM eco_sessions"
+            ).fetchone()[0]
+            if active_count >= MAX_SESSIONS:
+                raise JsonRpcError(
+                    -32000,
+                    "当前池塘已达上限且暂无可回收的旧池塘，请稍后再试",
+                )
 
         ts = _now_iso(now)
         conn.execute(
@@ -638,7 +661,7 @@ def _require_player_id(arguments):
     if not isinstance(player_id, str) or PLAYER_ID_RE.fullmatch(player_id) is None:
         raise JsonRpcError(
             -32602,
-            "player_id 须为 1–10 位英文字母或数字（正则 ^[a-zA-Z0-9]{1,10}$）。",
+            "player_id 须为 1–10 位英文字母或数字（正则 ^[a-zA-Z0-9]{1,10}$）。注意：params 必须传 object，不要 JSON.stringify 成字符串。",
         )
     return player_id
 
