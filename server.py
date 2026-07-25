@@ -889,7 +889,7 @@ def _public_user(user):
 
 def _current_account(raw_token):
     if not raw_token:
-        raise _McpError(-32001, "当前连接没有账号身份，正处于游客模式。若已注册账号，请将 MCP 地址改为 toy.cedarstar.org/你的token 后重新连接；若尚未注册，请先用 login_or_register 注册。")
+        raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
     try:
         payload = _jwt_decode(raw_token)
         user_id = int(payload["user_id"])
