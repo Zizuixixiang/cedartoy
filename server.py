@@ -97,6 +97,8 @@ TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
+_HTML_ETAG_CACHE = {}
+_HTML_ETAG_CACHE_LOCK = Lock()
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -5056,11 +5058,33 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def _send_html_file(self, path):
         try:
-            body = path.read_bytes()
+            with path.open("rb") as html_file:
+                stat = os.fstat(html_file.fileno())
+                cache_key = (stat.st_mtime_ns, stat.st_size)
+                with _HTML_ETAG_CACHE_LOCK:
+                    cached = _HTML_ETAG_CACHE.get(path)
+                body = None
+                if cached is not None and cached[0] == cache_key:
+                    etag = cached[1]
+                else:
+                    body = html_file.read()
+                    etag = f'"{hashlib.sha256(body).hexdigest()[:16]}"'
+                    with _HTML_ETAG_CACHE_LOCK:
+                        _HTML_ETAG_CACHE[path] = (cache_key, etag)
+
+                if self.headers.get("If-None-Match") == etag:
+                    self.send_response(304)
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    return
+
+                if body is None:
+                    body = html_file.read()
         except OSError:
             self._send_json({"error": "index not found"}, status=404)
             return
-        self._send_html_bytes(body)
+        self._send_html_bytes(body, etag=etag)
 
     def _send_human_test_page(self, game):
         config = HUMAN_TEST_GAMES[game]
@@ -5128,11 +5152,13 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_html_bytes(self, body):
+    def _send_html_bytes(self, body, etag=None):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        if etag is not None:
+            self.send_header("ETag", etag)
         self.end_headers()
         self.wfile.write(body)
 
