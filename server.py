@@ -837,6 +837,26 @@ def _b64url_decode(value):
     return base64.urlsafe_b64decode((value + padding).encode("ascii"))
 
 
+def _jwt_unverified_payload(token):
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError("not a three-part JWT")
+        payload_part = parts[1]
+        padding = "=" * (-len(payload_part) % 4)
+        payload_raw = base64.b64decode(
+            (payload_part + padding).encode("ascii"),
+            altchars=b"-_",
+            validate=True,
+        )
+        payload = json.loads(payload_raw.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JWT payload is not an object")
+        return payload
+    except Exception as exc:
+        raise ValueError("malformed JWT payload") from exc
+
+
 def _jwt_encode(payload):
     header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
     header_part = _b64url_encode(json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
@@ -892,6 +912,10 @@ def _public_user(user):
 def _current_account(raw_token):
     if not raw_token:
         raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
+    try:
+        _jwt_unverified_payload(raw_token)
+    except ValueError:
+        raise _McpError(-32001, "token 格式不完整，可能在复制时断行或漏了字符。请重新完整复制一整行 token 后重连。") from None
     try:
         payload = _jwt_decode(raw_token)
         user_id = int(payload["user_id"])
