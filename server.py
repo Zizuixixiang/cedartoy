@@ -95,6 +95,7 @@ ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
 TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
+ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -478,6 +479,18 @@ def _account_slot_player_ids(user):
     return list(dict.fromkeys(ids))
 
 
+def _normalize_save_slot(slot):
+    if isinstance(slot, bool) or not isinstance(slot, (int, str)):
+        return MIN_SAVE_SLOT
+    try:
+        normalized = int(slot)
+    except ValueError:
+        return MIN_SAVE_SLOT
+    if not MIN_SAVE_SLOT <= normalized <= MAX_SAVE_SLOT:
+        return MIN_SAVE_SLOT
+    return normalized
+
+
 def _garden_cat_watchable_gardens_for_user(user, save_root=None):
     """Read summaries for existing saves belonging to a human's bound AIs.
 
@@ -539,6 +552,76 @@ def _garden_cat_watchable_gardens_for_user(user, save_root=None):
 def _garden_cat_watchable_gardens(raw_token):
     user = _current_account(raw_token)
     return {"gardens": _garden_cat_watchable_gardens_for_user(user)}
+
+
+def _eco_watchable_ponds_for_user(user):
+    if not user or user.get("is_ai"):
+        raise _McpError(-32003, "只有人类账号可以围观池塘")
+    with _db_connect() as conn:
+        machines = conn.execute(
+            """
+            SELECT ai.id, ai.username
+            FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND ai.is_ai = 1
+              AND ai.deleted_at IS NULL
+            ORDER BY ai.username, ai.id
+            """,
+            (int(user["id"]),),
+        ).fetchall()
+
+    ponds = []
+    if not machines or not SESSIONS_DB_PATH.exists():
+        return ponds
+    with _sessions_db_connect() as conn:
+        if not _table_exists(conn, "eco_sessions"):
+            return ponds
+        for machine_row in machines:
+            machine = dict(machine_row)
+            candidates = _account_slot_player_ids(machine)
+            placeholders = ",".join("?" for _ in candidates)
+            rows = conn.execute(
+                f"""
+                SELECT player_id, save_data
+                FROM eco_sessions
+                WHERE player_id IN ({placeholders})
+                """,
+                [player_id for player_id, _slot in candidates],
+            ).fetchall()
+            rows_by_player_id = {str(row["player_id"]): row for row in rows}
+            seen_slots = set()
+            for player_id, slot in candidates:
+                if slot in seen_slots:
+                    continue
+                row = rows_by_player_id.get(player_id)
+                if row is None:
+                    continue
+                try:
+                    state = json.loads(row["save_data"])
+                    if not isinstance(state, dict):
+                        raise ValueError("save_data is not a JSON object")
+                    day = state["turn"]
+                    if isinstance(day, bool) or not isinstance(day, int):
+                        raise ValueError("turn is not an integer")
+                except (TypeError, ValueError, KeyError, UnicodeDecodeError) as exc:
+                    logger.warning("eco pond picker skipped unreadable save %s: %s", player_id, exc)
+                    continue
+                ponds.append(
+                    {
+                        "ai_user_id": int(machine["id"]),
+                        "machine_name": machine["username"],
+                        "slot": slot,
+                        "day": day,
+                    }
+                )
+                seen_slots.add(slot)
+    return ponds
+
+
+def _eco_watchable_ponds(raw_token):
+    user = _current_account(raw_token)
+    return {"ponds": _eco_watchable_ponds_for_user(user)}
 
 
 def _row_dict(row):
@@ -806,7 +889,7 @@ def _public_user(user):
 
 def _current_account(raw_token):
     if not raw_token:
-        raise _McpError(-32001, "未登录")
+        raise _McpError(-32001, "当前连接没有账号身份，正处于游客模式。若已注册账号，请将 MCP 地址改为 toy.cedarstar.org/你的token 后重新连接；若尚未注册，请先用 login_or_register 注册。")
     try:
         payload = _jwt_decode(raw_token)
         user_id = int(payload["user_id"])
@@ -929,6 +1012,16 @@ def _append_recent_registration_notice(result, had_recent_registration):
     return result
 
 
+def _normalize_credential_field(value, field_name):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    raise _McpError(-32602, f"{field_name} 需为字符串")
+
+
 def _validate_credentials(username, password):
     if not username or not password:
         raise _McpError(-32602, "username 和 password 必填")
@@ -942,8 +1035,8 @@ def _validate_credentials(username, password):
 
 def _login_or_register(username, password, *, is_ai, client_ip=None):
     """Shared login/register; callers set is_ai (MCP=1, REST human=0)."""
-    username = (username or "").strip()
-    password = password or ""
+    username = _normalize_credential_field(username, "username").strip()
+    password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
     is_ai = 1 if is_ai else 0
     with _db_connect() as conn:
@@ -978,8 +1071,8 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
 
 
 def _login_or_register_ai(username, password, client_ip=None):
-    username = (username or "").strip()
-    password = password or ""
+    username = _normalize_credential_field(username, "username").strip()
+    password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
     with _db_connect() as conn:
         if conn.execute("SELECT id FROM toy_users WHERE username = ?", (username,)).fetchone():
@@ -1001,8 +1094,8 @@ def _login_or_register_ai(username, password, client_ip=None):
 
 
 def _login_existing_account(username, password):
-    username = (username or "").strip()
-    password = password or ""
+    username = _normalize_credential_field(username, "username").strip()
+    password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
     with _db_connect() as conn:
         user = _row_dict(conn.execute(
@@ -1104,7 +1197,7 @@ def _admin_update_user(user_id, body, admin_user):
 
 
 def _admin_reset_user_password(user_id, body):
-    password = body.get("password") or ""
+    password = _normalize_credential_field(body.get("password"), "password")
     if len(password) < 6:
         raise _McpError(-32602, "密码至少 6 位")
     with _db_connect() as conn:
@@ -1143,7 +1236,7 @@ def _generate_reset_link(user_id):
 
 def _reset_password_by_token(reset_token, new_password):
     reset_token = reset_token or ""
-    new_password = new_password or ""
+    new_password = _normalize_credential_field(new_password, "new_password")
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         reset = _row_dict(conn.execute(
@@ -1719,13 +1812,13 @@ def _eco_api_target_user(raw_token, ai_user_id=None):
     return _current_account(raw_token)
 
 
-def _eco_api_player_id(raw_token, ai_user_id=None):
+def _eco_api_player_id(raw_token, ai_user_id=None, slot=1):
     user = _eco_api_target_user(raw_token, ai_user_id)
-    return str(int(user["id"])), user
+    return _account_slot_player_id(user["id"], _normalize_save_slot(slot)), user
 
 
-def _eco_api_response(raw_token, endpoint, *, ai_user_id=None, species_name=None):
-    player_id, user = _eco_api_player_id(raw_token, ai_user_id)
+def _eco_api_response(raw_token, endpoint, *, ai_user_id=None, slot=1, species_name=None):
+    player_id, user = _eco_api_player_id(raw_token, ai_user_id, slot)
     if endpoint == "state":
         data = eco_handler.api_state(player_id)
     elif endpoint == "codex":
@@ -1741,7 +1834,7 @@ def _eco_api_response(raw_token, endpoint, *, ai_user_id=None, species_name=None
     return {"user": _public_user(user), "player_id": player_id, **data}
 
 
-def _eco_human_action(raw_token, ai_user_id, action, payload=None):
+def _eco_human_action(raw_token, ai_user_id, action, payload=None, slot=1):
     """Authorize a human-bound AI target, throttle, then atomically mutate its eco save."""
     human = _current_account(raw_token)
     if human.get("is_ai"):
@@ -1777,7 +1870,8 @@ def _eco_human_action(raw_token, ai_user_id, action, payload=None):
         _ECO_HUMAN_ACTION_RATE_LIMIT[rate_key] = now
 
     try:
-        return eco_handler.human_action(str(ai_user_id), action, payload)
+        player_id = _account_slot_player_id(ai_user_id, _normalize_save_slot(slot))
+        return eco_handler.human_action(player_id, action, payload)
     except eco_handler.JsonRpcError:
         # A missing/corrupt save did not reach the engine and should not consume
         # the user's one-second action allowance.
@@ -2671,8 +2765,8 @@ def _claim_guest_saves(raw_token, claim_code):
 
 def _change_password(raw_token, old_password, new_password):
     user = _current_account(raw_token)
-    old_password = old_password or ""
-    new_password = new_password or ""
+    old_password = _normalize_credential_field(old_password, "old_password")
+    new_password = _normalize_credential_field(new_password, "new_password")
     if not _verify_password(old_password, user["password_hash"]):
         raise _McpError(-32602, "旧密码错误")
     if len(new_password) < 6:
@@ -2739,6 +2833,25 @@ def _delete_vendor_save_dir(game, player_id):
         return None
     shutil.rmtree(save_dir)
     return {"target": f"vendor_saves/{game}/{player_id}", "rows": 1}
+
+
+def _workkk_save_summary(player_id):
+    try:
+        save_path = VENDOR_SAVE_ROOT / "workkk" / player_id / "game_state.json"
+        with save_path.open("r", encoding="utf-8") as save_file:
+            state = json.load(save_file)
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        logger.warning("workkk save summary skipped unreadable save %s: %s", player_id, exc)
+        return None
+    if not isinstance(state, dict):
+        logger.warning("workkk save summary skipped non-object save %s", player_id)
+        return None
+    return {
+        "day": state.get("day_count", 0),
+        "balance": state.get("salary_balance", 0),
+    }
 
 
 def _delete_save(arguments, raw_token):
@@ -2869,6 +2982,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "imitator_td": imitator_td_adapter.save_summary,
         "memoria": memoria_adapter.save_summary,
         "market": market_adapter.save_summary,
+        "workkk": _workkk_save_summary,
     }
     for game, summarize in vendor_summaries.items():
         for candidate, slot in candidate_pairs:
@@ -4221,6 +4335,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_eco_asset(path)
             return
 
+        if path.startswith("/assets/icons/"):
+            self._send_icon_asset(path)
+            return
+
         if path == "/health":
             self._send_json({"ok": True, "service": "cedartoy", "endpoints": ["https://toy.cedarstar.org/mbti", "https://toy.cedarstar.org/dnd", "https://toy.cedarstar.org/love", "https://toy.cedarstar.org/ecr", "https://toy.cedarstar.org/humanity", "https://toy.cedarstar.org/"]})
             return
@@ -4244,6 +4362,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/garden-cat/gardens":
             self._handle_api_garden_cat_gardens()
+            return
+
+        if path == "/api/eco/ponds":
+            self._handle_api_eco_ponds()
             return
 
         if path == "/api/anti-addiction/machines":
@@ -4535,6 +4657,16 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
+    def _handle_api_eco_ponds(self):
+        try:
+            result = _eco_watchable_ponds(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
     def _handle_api_anti_addiction_machines(self):
         try:
             result = _anti_addiction_machines(_extract_bearer(self.headers))
@@ -4622,10 +4754,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     def _handle_eco_api(self, endpoint, params, species_name=None):
         try:
             ai_user_id = self._get_param(params, "ai_user_id", required=False)
+            slot = self._get_param(params, "slot", required=False)
             result = _eco_api_response(
                 _extract_bearer(self.headers),
                 endpoint,
                 ai_user_id=ai_user_id,
+                slot=slot,
                 species_name=species_name,
             )
             self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
@@ -4643,12 +4777,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             _, _, query_string = self.path.partition("?")
             params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
             ai_user_id = self._get_param(params, "ai_user_id", required=False)
+            slot = self._get_param(params, "slot", required=False)
             body = self._read_json_body()
             result = _eco_human_action(
                 _extract_bearer(self.headers),
                 ai_user_id,
                 body.get("action"),
                 body.get("payload"),
+                slot=slot,
             )
             self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
         except _McpError as exc:
@@ -4947,6 +5083,31 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         try:
             asset_path = (ECO_ASSET_ROOT / relative_path).resolve()
             asset_path.relative_to(ECO_ASSET_ROOT)
+        except (OSError, RuntimeError, ValueError):
+            self._send_json({"error": "not found"}, status=404)
+            return
+        if not asset_path.is_file():
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            body = asset_path.read_bytes()
+        except OSError:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        content_type = mimetypes.guess_type(asset_path.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_icon_asset(self, request_path):
+        relative_path = urllib.parse.unquote(request_path.removeprefix("/assets/icons/"))
+        try:
+            asset_path = (ICON_ASSET_ROOT / relative_path).resolve()
+            asset_path.relative_to(ICON_ASSET_ROOT)
         except (OSError, RuntimeError, ValueError):
             self._send_json({"error": "not found"}, status=404)
             return
