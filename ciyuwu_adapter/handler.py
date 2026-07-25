@@ -554,7 +554,7 @@ def _require_player_id(arguments):
     if not isinstance(player_id, str) or PLAYER_ID_RE.fullmatch(player_id) is None:
         raise JsonRpcError(
             -32602,
-            "player_id 须为 1–10 位英文字母或数字（正则 ^[a-zA-Z0-9]{1,10}$）。",
+            "player_id 须为 1–10 位英文字母或数字（正则 ^[a-zA-Z0-9]{1,10}$）。注意：params 必须传 object，不要 JSON.stringify 成字符串。",
         )
     return player_id
 

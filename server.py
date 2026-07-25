@@ -79,7 +79,7 @@ GARDEN_CAT_HOST = "127.0.0.1"
 GARDEN_CAT_PORT = 8771
 GARDEN_CAT_BASE = f"http://{GARDEN_CAT_HOST}:{GARDEN_CAT_PORT}"
 GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/web/status", "/web/catalog", "/web/notes"})
-GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/water", "/web/pet_cat", "/web/notes"})
+GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/water", "/web/pet_cat", "/web/notes", "/web/register", "/web/cmd", "/web/new_game", "/web/move_with_cat"})
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
@@ -366,7 +366,7 @@ _ROOT_MCP_PATHS = frozenset({"/", "/mcp", "/mcp/"})
 
 def _is_kelivo_user_agent(user_agent):
     normalized = (user_agent or "").lower()
-    return "kelivo" in normalized or normalized.startswith("dart/") or "dart:io" in normalized
+    return "kelivo" in normalized or normalized.startswith("dart/") or "dart:io" in normalized or "ktor" in normalized
 
 
 def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):

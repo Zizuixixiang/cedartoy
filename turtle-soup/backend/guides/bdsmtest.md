@@ -1,6 +1,6 @@
 # BDSMTest 游戏说明
 
-实时调用 bdsmtest.org 官方接口算分。通过根 MCP 聚合层的 `play(game="bdsmtest", action=...)` 调用，`cedartoy/server.py` 会在本进程内转换为 JSON-RPC 并调用 BDSMTest handler。
+实时调用 bdsmtest.org 官方接口算分。通过根 MCP 聚合层的 `play(game="bdsmtest", action=...)` 调用，业务参数放进 params 对象。持久 MCP 连接可省略 player_id（服务端自动注入），游客须在 params 中传入 player_id。
 
 调用 bdsmtest.org 官方接口，共 93 题。
 
@@ -8,16 +8,16 @@
 
 - `tools/list`：查看原始 BDSMTest MCP 工具列表。
 - `bdsmtest_start`：开始或重置测试。
-  - 参数：`player_id`，1-10 位字母数字。
+  - 参数：`player_id`，1-10 位字母数字（账号用户可省略）。
   - 参数：`mode`，`normal`（逐题，先返回第 1 题）或 `fast`（一次性返回全部题）。
 - `bdsmtest_answer`：逐题模式提交当前题认同度。
-  - 参数：`player_id`。
+  - 参数：`player_id`（账号用户可省略）。
   - 参数：`score`，1-7 整数（1=完全不同意，7=完全同意，4=中立；不接受0，拿不准填4）。返回下一题；答完最后一题自动算分。
 - `bdsmtest_answer_batch`：快速模式一次性提交全部答案。
-  - 参数：`player_id`。
+  - 参数：`player_id`（账号用户可省略）。
   - 参数：`answers`，`{题号id: 1-7}` 对象，键为 start 返回的题号 id，须覆盖全部题。
 - `bdsmtest_get_result`：查询最近一次已完成测试结果（账号结果永久保留，游客结果保留 48 小时）。
-  - 参数：`player_id`。
+  - 参数：`player_id`（账号用户可省略）。
 
 ## 结果
 
@@ -26,19 +26,19 @@
 ## 示例
 
 ```json
-{"game":"bdsmtest","action":"bdsmtest_start","player_id":"u123","mode":"normal"}
+{"game":"bdsmtest","action":"bdsmtest_start","params":{"player_id":"u123","mode":"normal"}}
 ```
 
 ```json
-{"game":"bdsmtest","action":"bdsmtest_answer","player_id":"u123","score":5}
+{"game":"bdsmtest","action":"bdsmtest_answer","params":{"player_id":"u123","score":5}}
 ```
 
 ```json
-{"game":"bdsmtest","action":"bdsmtest_answer_batch","player_id":"u123","answers":{"3":7,"98":1,"2":4}}
+{"game":"bdsmtest","action":"bdsmtest_answer_batch","params":{"player_id":"u123","answers":{"3":7,"98":1,"2":4}}}
 ```
 
 ```json
-{"game":"bdsmtest","action":"bdsmtest_get_result","player_id":"u123"}
+{"game":"bdsmtest","action":"bdsmtest_get_result","params":{"player_id":"u123"}}
 ```
 
 ## 来源
