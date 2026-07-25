@@ -912,7 +912,13 @@
     const queryParams = new URLSearchParams(window.location.search);
     const views = Object.fromEntries(tabs.map(tab => [tab.id, document.getElementById(`view-${tab.id}`)]));
     const aiUserId = queryParams.get("ai_user_id");
-    const apiSuffix = aiUserId === null ? "" : `?ai_user_id=${encodeURIComponent(aiUserId)}`;
+    const requestedSlot = Number(queryParams.get("slot"));
+    const slot = Number.isInteger(requestedSlot) && requestedSlot >= 1 && requestedSlot <= 5 ? requestedSlot : 1;
+    const apiParams = new URLSearchParams();
+    if (aiUserId !== null) apiParams.set("ai_user_id", aiUserId);
+    if (slot !== 1) apiParams.set("slot", String(slot));
+    const apiQuery = apiParams.toString();
+    const apiSuffix = apiQuery ? `?${apiQuery}` : "";
     const playtestMode = queryParams.get("playtest") === "1";
     const DISASTER_SESSION_KEY = `cedartoy_eco_disasters:${aiUserId || "anonymous"}`;
     const disasterSessionState = readDisasterSessionState();
@@ -1627,7 +1633,7 @@
       if (payload !== null && payload !== undefined) body.payload = payload;
       let response;
       try {
-        response = await fetch(`/eco/api/human_action?ai_user_id=${encodeURIComponent(aiUserId)}`, {
+        response = await fetch(`/eco/api/human_action${apiSuffix}`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify(body)

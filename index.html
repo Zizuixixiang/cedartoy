@@ -309,6 +309,19 @@
       font-size: 28px;
     }
 
+    .glyph.has-img, .art-glyph.has-img {
+      padding: 0;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    .glyph.has-img img, .art-glyph.has-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
     .game-title {
       margin: 0 0 6px;
       color: var(--purple);
@@ -2212,6 +2225,8 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
+    const ICON_IDS = ["soup","fishing","eco","ciyuwu","imitator_td","memoria","arcade","burger","market","leek","delve","travel","workkk","garden_cat","moonlit"];
+
     const games = [
       {
         id: "soup",
@@ -3562,7 +3577,9 @@
         const tags = game.tags.map((tag, index) => `<span class="tag ${index === 0 ? "pink" : ""}">${tag}</span>`).join("");
         return `
           <button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
-            <span class="glyph">${game.glyph}</span>
+            ${ICON_IDS.includes(game.id)
+              ? `<span class="glyph has-img"><img src="/assets/icons/${game.id}.png" alt="" loading="lazy"></span>`
+              : `<span class="glyph">${game.glyph}</span>`}
             <span>
               <h2 class="game-title">${game.name}</h2>
               <p class="game-sub">${game.short}</p>
@@ -3607,7 +3624,14 @@
       $("detailMetricLabel").textContent = game.metricLabel;
       $("detailMetric").textContent = game.metric;
       $("detailBadge").textContent = game.badge;
-      $("detailGlyph").textContent = game.glyph;
+      const detailGlyph = $("detailGlyph");
+      if (ICON_IDS.includes(game.id)) {
+        detailGlyph.classList.add("has-img");
+        detailGlyph.innerHTML = `<img src="/assets/icons/${game.id}.png" alt="" loading="lazy">`;
+      } else {
+        detailGlyph.classList.remove("has-img");
+        detailGlyph.textContent = game.glyph;
+      }
       $("detailDesc").innerHTML = game.logs.map((line) => `&gt; ${line}`).join("<br>");
       $("statOneLabel").textContent = game.stats[0][0];
       $("statOneFill").style.width = game.stats[0][1];
@@ -3683,8 +3707,9 @@
       openGame(game);
     }
 
-    function watchWorkkk(playerId) {
-      const url = `/workkk/?player=${encodeURIComponent(playerId)}&token=${encodeURIComponent(token())}`;
+    function watchWorkkk(playerId, slot = 1) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/workkk/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
       window.location.href = url;
     }
 
@@ -3697,30 +3722,169 @@
     function watchCurrentGame(playerId, slot = 1) {
       const game = currentGame();
       if (game.id === "workkk") {
-        watchWorkkk(playerId);
+        watchWorkkk(playerId, slot);
         return;
       }
       if (game.id === "garden_cat") {
         watchGardenCat(playerId, slot);
         return;
       }
-      if (game.id === "eco") window.location.href = "/eco?ai_user_id=" + playerId;
+      if (game.id === "eco") {
+        const normalizedSlot = Number.isInteger(Number(slot)) && Number(slot) >= 1 && Number(slot) <= 5 ? Number(slot) : 1;
+        const url = `/eco?ai_user_id=${encodeURIComponent(playerId)}`;
+        window.location.href = normalizedSlot === 1 ? url : `${url}&slot=${normalizedSlot}`;
+      }
     }
 
-    function openWorkkkPicker(bindings) {
-      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
-      $("bankPickerTitle").textContent = "选择小机";
-      $("bankPickerOptions").innerHTML = bindings.map((user) => `
-        <button class="bank-picker-option" data-workkk-option="${user.id}" type="button">${escapeHtml(user.username)}</button>
+    function renderWorkkkSlotPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择存档");
+      $("bankPickerTitle").textContent = "选择存档";
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => `
+        <button class="bank-picker-option" data-workkk-slot-option="${escapeHtml(machine.aiUserId)}" data-workkk-slot="${escapeHtml(save.slot)}" type="button">
+          <span class="garden-picker-option-main">槽${escapeHtml(save.slot)}${Number.isFinite(save.day) ? ` · 第${escapeHtml(save.day)}天` : ""}</span>
+        </button>
       `).join("");
-      document.querySelectorAll("[data-workkk-option]").forEach((option) => {
+      document.querySelectorAll("[data-workkk-slot-option]").forEach((option) => {
         option.addEventListener("click", () => {
           closeBankPicker();
-          watchCurrentGame(option.dataset.workkkOption);
+          watchCurrentGame(option.dataset.workkkSlotOption, Number(option.dataset.workkkSlot));
         });
       });
+    }
+
+    async function openWorkkkPicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取存档...</p>`;
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/auth/saves", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error("存档列表读取失败，请稍后再试");
+        const data = await res.json();
+        const savedMachines = new Map(
+          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [
+            String(machine?.user?.id),
+            machine,
+          ])
+        );
+        const machines = bindings.map((user) => {
+          const savedMachine = savedMachines.get(String(user.id));
+          const slots = savedMachine?.saves?.workkk?.slots;
+          return {
+            aiUserId: String(user.id),
+            machineName: user.username,
+            slots: Array.isArray(slots) ? slots : [],
+          };
+        });
+        const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+        $("bankPickerOptions").innerHTML = machines.map((machine) => `
+          <button class="bank-picker-option" data-workkk-machine-option="${escapeHtml(machine.aiUserId)}" type="button">${escapeHtml(machine.machineName)}</button>
+        `).join("");
+        document.querySelectorAll("[data-workkk-machine-option]").forEach((option) => {
+          option.addEventListener("click", () => {
+            const machine = machinesById.get(option.dataset.workkkMachineOption);
+            if (!machine) return;
+            if (machine.slots.length <= 1) {
+              const slot = Number(machine.slots[0]?.slot) || 1;
+              closeBankPicker();
+              watchCurrentGame(machine.aiUserId, slot);
+              return;
+            }
+            renderWorkkkSlotPicker(machine);
+          });
+        });
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "存档列表读取失败，请稍后再试")}</p>`;
+      }
+    }
+
+    function renderEcoPondPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择池塘");
+      $("bankPickerTitle").textContent = "选择池塘";
+      $("bankPickerOptions").innerHTML = machine.ponds.map((pond) => `
+        <button class="bank-picker-option" data-eco-pond-option="${escapeHtml(machine.aiUserId)}" data-eco-pond-slot="${escapeHtml(pond.slot)}" type="button">
+          <span class="garden-picker-option-main">槽${escapeHtml(pond.slot)} · 第${escapeHtml(pond.day)}天</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-eco-pond-option]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchCurrentGame(option.dataset.ecoPondOption, Number(option.dataset.ecoPondSlot));
+        });
+      });
+    }
+
+    function renderEcoMachinePicker(machines) {
+      const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = machines.map((machine) => `
+        <button class="bank-picker-option" data-eco-machine-option="${escapeHtml(machine.aiUserId)}" type="button">
+          <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+          <span class="garden-picker-option-meta">${machine.ponds.length} 个池塘</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-eco-machine-option]").forEach((option) => {
+        option.addEventListener("click", () => {
+          const machine = machinesById.get(option.dataset.ecoMachineOption);
+          if (!machine) return;
+          if (machine.ponds.length <= 1) {
+            const slot = Number(machine.ponds[0]?.slot) || 1;
+            closeBankPicker();
+            watchCurrentGame(machine.aiUserId, slot);
+            return;
+          }
+          renderEcoPondPicker(machine);
+        });
+      });
+    }
+
+    async function openEcoPicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取池塘...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/eco/ponds", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error("池塘列表读取失败，请稍后再试");
+        const data = await res.json();
+        const ponds = Array.isArray(data.ponds) ? data.ponds : [];
+        const pondsByMachine = new Map();
+        ponds.forEach((pond) => {
+          const aiUserId = String(pond.ai_user_id);
+          if (!pondsByMachine.has(aiUserId)) pondsByMachine.set(aiUserId, []);
+          pondsByMachine.get(aiUserId).push(pond);
+        });
+        const machines = bindings.map((user) => ({
+          aiUserId: String(user.id),
+          machineName: user.username,
+          ponds: pondsByMachine.get(String(user.id)) || [],
+        }));
+        if (machines.length === 1) {
+          const machine = machines[0];
+          if (machine.ponds.length <= 1) {
+            const slot = Number(machine.ponds[0]?.slot) || 1;
+            closeBankPicker();
+            watchCurrentGame(machine.aiUserId, slot);
+            return;
+          }
+          renderEcoPondPicker(machine);
+          return;
+        }
+        renderEcoMachinePicker(machines);
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "池塘列表读取失败，请稍后再试")}</p>`;
+      }
     }
 
     function renderGardenCatGardenPicker(machine) {
@@ -3818,6 +3982,10 @@
       const bindings = aiBindings();
       if (!bindings.length) {
         showToast("你还没有绑定小机，先绑定再围观");
+        return;
+      }
+      if (currentGame().id === "eco") {
+        await openEcoPicker(bindings);
         return;
       }
       if (bindings.length === 1) {
