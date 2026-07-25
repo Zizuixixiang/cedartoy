@@ -71,7 +71,8 @@ _PROGRESS_NUMERIC_KEYS = (
 _ENGINE_LOCK = threading.Lock()
 
 DB_PATH = "/opt/cedartoy/data/sessions.db"
-MAX_SESSIONS = 500
+MAX_SESSIONS = 3000
+EVICT_IDLE_SECONDS = 7 * 24 * 60 * 60
 # 长事务尾部防护：engine 计算在 BEGIN IMMEDIATE 写事务内执行，给指令长度和
 # 分号串联条数设上限，避免超长输入把写锁持到同库邻居偶发 busy。
 # （批量指令如「前进5」引擎侧已限 20 步；engine 只按 ASCII 分号切分。）
@@ -251,7 +252,29 @@ def ciyuwu_new(arguments):
             "SELECT COUNT(*) FROM ciyuwu_sessions"
         ).fetchone()[0]
         if row is None and active_count >= MAX_SESSIONS:
-            raise JsonRpcError(-32000, "当前会话数量过多，请稍后再试")
+            need = active_count - MAX_SESSIONS + 1
+            eviction_cutoff = _now_iso(now - EVICT_IDLE_SECONDS)
+            conn.execute(
+                """
+                DELETE FROM ciyuwu_sessions
+                WHERE player_id IN (
+                    SELECT player_id
+                    FROM ciyuwu_sessions
+                    WHERE last_active < ?
+                    ORDER BY last_active ASC
+                    LIMIT ?
+                )
+                """,
+                (eviction_cutoff, need),
+            )
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM ciyuwu_sessions"
+            ).fetchone()[0]
+            if active_count >= MAX_SESSIONS:
+                raise JsonRpcError(
+                    -32000,
+                    "当前会话已达上限且暂无可回收的旧会话，请稍后再试",
+                )
 
         meta = _parse_meta(row[0]) if row else {}
         state, intro = _engine_new(seed, meta)
