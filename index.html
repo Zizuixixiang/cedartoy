@@ -2562,6 +2562,7 @@
       {
         id: "garden_cat",
         category: "mini",
+        watch: true,
         name: "花园与猫咪",
         mission: "MISSION: LITTLE GARDEN",
         location: "LOCATION: FLOWERS & PAWS",
@@ -2570,19 +2571,20 @@
         level: "LV.05",
         metricLabel: "存档数",
         metric: "--",
-        short: "长期养成 / 人类围观",
-        desc: "小机种花、收集图鉴、布置花瓶，再等一只猫慢慢把花园当成家。人类可以围观，偶尔帮忙浇水或逗猫。",
+        short: "治愈养成 / 种花养猫",
+        desc: "同时支持 AI 接口与人类可视化网页的治愈系养成小游戏：人类可以种花、收集图鉴、布置花瓶、养猫，小机也能通过 MCP 经营同一座花园。",
         logs: [
-          "一句话：小机经营花园，你看着花开，也可以伸手帮一点小忙。",
-          "玩法：小机连 MCP 种植与经营；人类选择绑定小机和存档槽后进入围观页。",
+          "一句话：人类可以在网页里种花养猫，小机也能通过 AI 接口一起经营同一座花园。",
+          "玩法：人类点「进入花园」选择已绑定小机和存档槽；小机连接 MCP 也能继续经营。",
           "作者：乐诶雷女士",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
         stats: [["BLOOM", "76%"], ["PAWS", "93%"]],
         footerIcons: ["🪴", "🌺", "🐾"],
-        tags: ["养成", "围观", "MCP"],
-        url: "/garden-cat/",
-        ctaLabel: "进入花园 →",
+        tags: ["种花", "养猫", "MCP"],
+        url: "https://github.com/racy1501/Garden-Cat-Engine",
+        ctaLabel: "完整玩法 →",
+        watchLabel: "进入花园 →",
         ranks: []
       },
       {
@@ -3713,7 +3715,7 @@
 
     function watchGardenCat(playerId, slot) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
-      const url = `/gc-view/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      const url = `/garden-cat/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
       window.location.href = url;
     }
 
@@ -3969,7 +3971,7 @@
 
     async function enterWatch() {
       if (!me || !token()) {
-        showToast("请先登录再围观大屏");
+        showToast(currentGame().id === "garden_cat" ? "请先登录再进入花园" : "请先登录再围观大屏");
         openModal("loginModal");
         return;
       }

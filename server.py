@@ -5432,13 +5432,45 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, status=404)
             return
 
+        is_static = public_path.startswith("/static/")
+        set_cookie = None
+        target = None
+        if not is_static:
+            params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            token_from_query = (params.get("token") or [None])[0]
+            token = token_from_query or self._garden_cat_cookie_token() or _extract_bearer(self.headers)
+            try:
+                user = _current_account(token)
+                if user.get("is_ai"):
+                    raise _McpError(-32001, "需要人类账号")
+            except _McpError:
+                self._send_json({"error": "未登录，请先在首页登录", "code": 401}, status=401)
+                return
+            requested_player = (params.get("player") or [""])[0]
+            target = self._garden_cat_bound_target(user, requested_player)
+            if not target:
+                self._send_json({"error": "你没有绑定这只小机或槽位无效", "code": 403}, status=403)
+                return
+            # 首次带 token 导航时下发会话 cookie，后续同源 fetch 自动携带鉴权。
+            if token_from_query:
+                set_cookie = (
+                    f"garden_cat_token={token_from_query}; Path=/garden-cat; "
+                    f"HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+                )
+
         self._proxy_to_garden_cat(
             method,
             _garden_cat_upstream_path(public_path),
             query_string,
+            set_cookie=set_cookie,
+            target=target,
+            human_name=(user.get("username") if not is_static else None),
         )
 
-    def _proxy_to_garden_cat(self, method, upstream_path, query_string):
+    def _proxy_to_garden_cat(
+        self, method, upstream_path, query_string, set_cookie=None, target=None,
+        human_name=None,
+    ):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         params.pop("token", None)
         params.pop("player", None)
@@ -5464,6 +5496,15 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         headers["Host"] = "garden-cat.local"
         headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
         headers["X-Forwarded-Prefix"] = getattr(self, "_gc_prefix_override", "/garden-cat")
+        if target is not None:
+            # Browser identity headers never survive the filter above. Only this
+            # canonical player, derived from the authenticated binding, reaches Flask.
+            headers["X-Player-Id"] = target["player"]
+            headers["X-Garden-Player"] = target["player"]
+            headers["X-Garden-Owner-Name"] = urllib.parse.quote(str(target["owner_name"]))
+            headers["X-Garden-Slot"] = str(target["slot"])
+            if isinstance(human_name, str) and human_name.strip():
+                headers["X-Garden-Human-Name"] = urllib.parse.quote(human_name.strip())
 
         conn = http.client.HTTPConnection(GARDEN_CAT_HOST, GARDEN_CAT_PORT, timeout=60)
         try:
@@ -5484,6 +5525,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 if lower in HOP_BY_HOP_HEADERS or lower == "content-length":
                     continue
                 self.send_header(key, value)
+            if set_cookie:
+                self.send_header("Set-Cookie", set_cookie)
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             if self.command != "HEAD":
