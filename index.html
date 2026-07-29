@@ -2298,6 +2298,34 @@
         ranks: []
       },
       {
+        id: "duel",
+        category: "mini",
+        watch: true,
+        watchLabel: "进入双弈 →",
+        name: "双弈",
+        mission: "MISSION: DUEL",
+        location: "LOCATION: GAME BOARD",
+        glyph: "棋",
+        badge: "DUEL",
+        level: "LV.02",
+        metricLabel: "棋种",
+        metric: "00002",
+        short: "人机对弈 / 井字棋五子棋",
+        desc: "双弈 · 和你的小机下棋（井字棋/五子棋起步）。",
+        logs: [
+          "一句话：和你绑定的小机，在同一张棋盘上认真下一局。",
+          "玩法：支持 3×3 井字棋与 15×15 无禁手五子棋。",
+          "作者：南山君 & Clio",
+          "人类入口：toy.cedarstar.org/duel"
+        ],
+        stats: [["TURN", "50%"], ["BOARD", "82%"]],
+        footerIcons: ["棋", "○", "×"],
+        tags: ["对弈", "井字棋", "五子棋"],
+        url: "https://github.com/Zizuixixiang/cedarduet",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
         id: "ciyuwu",
         category: "mini",
         name: "词与物",
@@ -3687,6 +3715,10 @@
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
       }
+      if (game.id === "duel") {
+        enterWatch();
+        return;
+      }
       if (game.adultConfirm) {
         pendingAdultUrl = game.url;
         closeDrawers();
@@ -3723,6 +3755,10 @@
       const game = currentGame();
       if (game.id === "workkk") {
         watchWorkkk(playerId, slot);
+        return;
+      }
+      if (game.id === "duel") {
+        window.location.href = `/duel/?token=${encodeURIComponent(token())}`;
         return;
       }
       if (game.id === "garden_cat") {
@@ -3971,12 +4007,19 @@
 
     async function enterWatch() {
       if (!me || !token()) {
-        showToast(currentGame().id === "garden_cat" ? "请先登录再进入花园" : "请先登录再围观大屏");
+        const loginHint = currentGame().id === "garden_cat"
+          ? "请先登录再进入花园"
+          : (currentGame().id === "duel" ? "请先登录再进入双弈" : "请先登录再围观大屏");
+        showToast(loginHint);
         openModal("loginModal");
         return;
       }
       if (currentGame().id === "garden_cat") {
         await openGardenCatPicker();
+        return;
+      }
+      if (currentGame().id === "duel") {
+        window.location.href = `/duel/?token=${encodeURIComponent(token())}`;
         return;
       }
       const bindings = aiBindings();
@@ -4298,7 +4341,8 @@
           headers: headers(false),
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error("auth failed");
+        if (res.status === 401) throw new Error("auth failed");
+        if (!res.ok) { if (!controller.signal.aborted) { renderAuth(); renderGames(); renderDetail(); } return; }
         if (controller.signal.aborted) return;
         me = await res.json();
         machineState = {loaded: false, loading: false, machines: [], error: ""};

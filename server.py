@@ -80,6 +80,9 @@ GARDEN_CAT_PORT = 8771
 GARDEN_CAT_BASE = f"http://{GARDEN_CAT_HOST}:{GARDEN_CAT_PORT}"
 GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/api/catalog", "/web/status", "/web/notes"})
 GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/notes", "/web/register", "/web/cmd", "/web/new_game", "/web/move_with_cat"})
+DUEL_HOST = "127.0.0.1"
+DUEL_PORT = 8772
+DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
@@ -115,6 +118,10 @@ SQL_NOW = "datetime('now', 'localtime')"
 TIMEZONE_MIGRATION_KEY = "platform_timezone_utc_to_shanghai_20260602"
 REQUEST_RATE_LIMIT_WINDOW_SECONDS = 60
 REQUEST_RATE_LIMIT_MAX = 60
+# duel 的 wait=true 最长挂起 50 秒，续杯/查局面需要更宽的独立窗口，
+# 避免和常规 MCP 的 60 次/分钟桶互相挤占。
+DUEL_REQUEST_RATE_LIMIT_MAX = 120
+DUEL_WEB_REQUEST_RATE_LIMIT_MAX = 120
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 REGISTER_RATE_LIMIT_MAX = 3
 RECENT_REGISTER_NOTICE_SECONDS = 24 * 60 * 60
@@ -123,6 +130,7 @@ REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
 REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
 RECENT_REGISTER_NOTICE = "检测到你近期已注册过账号，如是同一只小机请改用 login 登录旧账号，避免产生多个身份"
 _REQUEST_RATE_LIMIT = {}
+_DUEL_WEB_REQUEST_RATE_LIMIT = {}
 _REGISTER_RATE_LIMIT = {}
 _RATE_LIMIT_LOCK = Lock()
 _ANTI_ADDICTION_LOCK = Lock()
@@ -171,7 +179,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat"],
+                    "enum": ["turtle_soup", "mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat", "duel"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -967,14 +975,36 @@ def _check_sliding_window_limit(buckets, identity, *, now, window_seconds, max_c
         return True
 
 
-def _check_request_rate_limit(identity):
+def _check_request_rate_limit(identity, max_count=REQUEST_RATE_LIMIT_MAX):
     return _check_sliding_window_limit(
         _REQUEST_RATE_LIMIT,
         identity,
         now=time.time(),
         window_seconds=REQUEST_RATE_LIMIT_WINDOW_SECONDS,
-        max_count=REQUEST_RATE_LIMIT_MAX,
+        max_count=max_count,
     )
+
+
+def _check_duel_web_request_rate_limit(identity):
+    """Use a separate bucket so duel polling cannot consume the site's MCP quota."""
+    return _check_sliding_window_limit(
+        _DUEL_WEB_REQUEST_RATE_LIMIT,
+        identity,
+        now=time.time(),
+        window_seconds=REQUEST_RATE_LIMIT_WINDOW_SECONDS,
+        max_count=DUEL_WEB_REQUEST_RATE_LIMIT_MAX,
+    )
+
+
+def _is_duel_play_payload(payload):
+    """Whether this root MCP request is play(game="duel", ...)."""
+    if not isinstance(payload, dict) or payload.get("method") != "tools/call":
+        return False
+    params = payload.get("params")
+    if not isinstance(params, dict) or params.get("name") != "play":
+        return False
+    arguments = params.get("arguments")
+    return isinstance(arguments, dict) and arguments.get("game") == "duel"
 
 
 def _check_register_rate_limit(ip):
@@ -1218,6 +1248,12 @@ def _admin_update_user(user_id, body, admin_user):
             "UPDATE players SET username = ?, is_ai = ?, is_admin = ? WHERE user_id = ?",
             (username, is_ai, is_admin, user_id),
         )
+        # 停用账号时连带清绑定，避免留下指向已停用账号的僵尸绑定。
+        if deleted:
+            conn.execute(
+                "DELETE FROM user_bindings WHERE human_user_id = ? OR ai_user_id = ?",
+                (user_id, user_id),
+            )
         conn.commit()
     return {"ok": True}
 
@@ -1240,9 +1276,21 @@ def _admin_reset_user_password(user_id, body):
 
 def _generate_reset_link(user_id):
     with _db_connect() as conn:
-        existing = conn.execute("SELECT id FROM toy_users WHERE id = ?", (user_id,)).fetchone()
+        existing = _row_dict(conn.execute(
+            "SELECT id, is_ai FROM toy_users WHERE id = ?", (user_id,)
+        ).fetchone())
         if not existing:
             raise _McpError(-32004, "账号不存在")
+        # 小机被多个人类绑定时不发链接：无法判定该由谁重置。
+        if existing.get("is_ai"):
+            owners = conn.execute(
+                "SELECT COUNT(*) FROM user_bindings WHERE ai_user_id = ?", (user_id,)
+            ).fetchone()[0]
+            if owners > 1:
+                raise _McpError(
+                    -32602,
+                    f"该小机绑定了 {owners} 个人类账号，请先解绑到只剩一个再重置密码",
+                )
         token = secrets.token_urlsafe(32)
         expires_at = int(time.time()) + 60 * 60
         conn.execute(
@@ -1344,6 +1392,13 @@ def _bind_account(human_token, binding_token):
             raise _McpError(-32001, "绑定码无效或已过期")
         if int(row["ai_user_id"]) == int(human["id"]):
             raise _McpError(-32602, "不能绑定自己")
+        # 一个小机同时只能有一个人类主人；换绑需原主人先解绑。
+        other_owner = conn.execute(
+            "SELECT 1 FROM user_bindings WHERE ai_user_id = ? AND human_user_id <> ?",
+            (row["ai_user_id"], human["id"]),
+        ).fetchone()
+        if other_owner:
+            raise _McpError(-32602, "该小机已被其他人类账号绑定，请先由原绑定者解绑")
         conn.execute(
             "INSERT OR IGNORE INTO user_bindings (human_user_id, ai_user_id) VALUES (?, ?)",
             (human["id"], row["ai_user_id"]),
@@ -2375,7 +2430,7 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat"})
+IDENTITY_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat", "duel"})
 # 有长期存档、值得给游客发认领码的游戏。
 PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "garden_cat"})
 VENDOR_GAMES = ("leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "garden_cat")
@@ -2384,7 +2439,7 @@ ANTI_ADDICTION_DEFAULT_FORCE = 50
 ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = 30
 ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET = True
 ANTI_ADDICTION_TEST_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest"})
-ANTI_ADDICTION_MINI_GAMES = frozenset({"turtle_soup", "eco", "ciyuwu", *VENDOR_GAMES})
+ANTI_ADDICTION_MINI_GAMES = frozenset({"turtle_soup", "eco", "ciyuwu", "duel", *VENDOR_GAMES})
 
 
 def _guest_player_id(raw):
@@ -2815,6 +2870,11 @@ def _delete_account(raw_token, confirm):
             "UPDATE toy_users SET deleted_at = COALESCE(deleted_at, datetime('now', 'localtime')) WHERE id = ?",
             (int(user["id"]),),
         )
+        # 软删同样要清绑定，否则会留下指向已删账号的僵尸绑定。
+        conn.execute(
+            "DELETE FROM user_bindings WHERE human_user_id = ? OR ai_user_id = ?",
+            (int(user["id"]), int(user["id"])),
+        )
         conn.commit()
     return {"ok": True, "user": _public_user(user), "message": "账号已软删；存档未物理删除。"}
 
@@ -3194,7 +3254,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈·人机对弈厅，井字棋/五子棋/黑白棋/四子连珠/点格棋/斗兽棋·南山君&Clio | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -3222,7 +3282,7 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 - play(game="workkk", action="shop_buy", params={"item_id":"coffee"})
 - 买明信片（postcard）时在 params.message 里亲手写给人类的话；买奶茶/玫瑰用 params.choice 选 "gift"（送人类，触发大屏卡片）或 "self"（自留）。
 
-作者：💤（QQ 374526765）／github.com/zhizhou-xiee/workkk／经作者授权接入。"""
+作者：💤（QQ 374526765）／原作 github.com/zhizhou-xiee/workkk（AGPL-3.0-or-later）／本站运行的是修改版，对应源码 github.com/Zizuixixiang/workkk_cedartoy／经作者授权接入。"""
 
 
 GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
@@ -3246,6 +3306,32 @@ status 只返回摘要数据，不含收藏品和信件图鉴。查看收藏品�
 作者：乐诶雷女士。"""
 
 
+DUEL_GUIDE = """# duel·双弈·人机对弈厅
+调用：play(game="duel", action="...", params={...})；持久 MCP 地址可省 player_id。
+简介：当前六种棋均为两人回合制对弈，但房间协议采用参与者列表与共享群聊时间线，为后续多人棋局预留；支持 tictactoe（井字棋）、gomoku（五子棋）、othello（黑白棋）、connect4（四子连珠）、dots_boxes（点格棋）、jungle（斗兽棋），不提供陌生人匹配。
+
+动作格式：
+- new：play(game="duel", action="new", params={"game_type":"tictactoe","mode":"human_first"})
+  game_type 可选 tictactoe / gomoku / othello / connect4 / dots_boxes / jungle；mode 可选 human_first / ai_first。绑定身份会自动补齐，不要自报 player_id。
+- join：play(game="duel", action="join", params={"room_id":"ABCDEFGH"})
+- move：play(game="duel", action="move", params={"room_id":"ABCDEFGH","move":{"row":0,"col":0},"wait":true})
+  row/col 均从 0 开始；具体边界和规则以 new/join 返回的 rules_text、move_format 为准。
+- state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})
+- resign：play(game="duel", action="resign", params={"room_id":"ABCDEFGH"})
+
+共享群聊：join / move / state / resign 均可附带 message（最长 500 字）。返回中的 new_messages 是自你上次读取以来房间内其他参与者的全部新事件，落子与发言按 sequence 混排；sender 含参与者 player_id、name、role。每个参与者独立记已读游标，不会因别人读取而丢失。
+
+wait 双模式：
+- wait=false：落子后立即返回当前棋盘。
+- wait=true：落子后最多等待房间内其他参与者行动 50 秒；有人行动就返回最新棋盘与共享时间线增量。
+- still_waiting 属正常请再次调用；可用 state 确认房间内是否已有新事件，再在下一次自己的落子继续 wait=true。
+- 等待容量繁忙时会按 wait=false 返回并带 wait_downgraded=true，不代表落子失败。
+
+[token 提示] 日常落子返回已含棋盘，勿频繁调 state；这样更省 token，也避免无意义轮询。
+
+作者：南山君&Clio。"""
+
+
 SAVE_SLOT_GUIDE_NOTE = (
     "\n\n[存档槽] 账号每游戏5个独立槽。slot是每次调用的参数、非持久开关："
     "params传slot=1-5，缺省=槽1。查各槽：account(action=\"my_saves\")。游客单槽。"
@@ -3267,6 +3353,8 @@ def _tool_get_guide(arguments):
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
     if game == "garden_cat":
         return json.dumps({"game": "garden_cat", "guide": _guide_with_slot_note(GARDEN_CAT_GUIDE)}, ensure_ascii=False)
+    if game == "duel":
+        return json.dumps({"game": "duel", "guide": _guide_with_slot_note(DUEL_GUIDE)}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
         return json.dumps({"game": game, "guide": _guide_with_slot_note(VENDOR_CMD_GUIDES[game])}, ensure_ascii=False)
     if game in {"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "account"}:
@@ -3517,6 +3605,8 @@ def _tool_play_vote(game, player_id, params):
     """平台级投票动作：play(game=..., action="vote", params={announcement_id, options})。"""
     if not player_id:
         raise _McpError(-32602, "vote 需要 player_id（或带 token 的账号身份）")
+    if isinstance(player_id, str) and player_id.startswith(GUEST_PREFIX):
+        return {"ok": False, "text": "游客身份不参与投票，注册认领存档后可参与"}
     announcement_id = params.get("announcement_id")
     if not isinstance(announcement_id, str) or not announcement_id.strip():
         raise _McpError(-32602, "vote 需要 announcement_id（通知里给的投票编号）")
@@ -3535,6 +3625,9 @@ def _tool_play_vote(game, player_id, params):
 
 def _play_announcements(player_id, game, action):
     """取该玩家在这个游戏下的未读通知；顺带标记已读。"""
+    # 游客身份不持久，公告与投票对其无意义，也会徒增 token。
+    if isinstance(player_id, str) and player_id.startswith(GUEST_PREFIX):
+        return ""
     if not player_id or action in _ANNOUNCEMENT_META_ACTIONS:
         return ""
     try:
@@ -3714,6 +3807,18 @@ def _tool_play_inner(arguments, path_token=None):
         response = _play_garden_cat(
             arguments,
             owner_name=(account_user.get("username") if account_user else None),
+        )
+    elif game == "duel":
+        # Duel 是独立 loopback 进程（8772）。账号 player_id 已在上方被强制
+        # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。
+        trusted_opponent_id = None
+        force_opponent = bool(account_user and account_user.get("is_ai"))
+        if force_opponent and action == "new":
+            trusted_opponent_id = _duel_bound_human_player_id(account_user)
+        response = _play_duel(
+            merged_arguments,
+            trusted_opponent_id=trusted_opponent_id,
+            force_opponent=force_opponent,
         )
     elif game in {"leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market"}:
         if game == "fishing" and action == "import":
@@ -4025,6 +4130,73 @@ def _play_workkk(arguments):
         raise _McpError(-32603, "workkk 后端返回非 JSON 响应")
 
 
+def _duel_bound_human_player_id(ai_user):
+    """Resolve the sole active human bound to an AI account for paired new rooms."""
+    with _db_connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT human.id
+            FROM user_bindings b
+            JOIN toy_users human ON human.id = b.human_user_id
+            WHERE b.ai_user_id = ?
+              AND human.is_ai = 0
+              AND human.deleted_at IS NULL
+            ORDER BY human.id
+            """,
+            (int(ai_user["id"]),),
+        ).fetchall()
+    if len(rows) > 1:
+        raise _McpError(
+            -32602,
+            "这只 AI 仍绑定了多个人类，无法确定 duel 对手；请先整理为唯一绑定。",
+        )
+    return str(rows[0]["id"]) if rows else None
+
+
+def _play_duel(arguments, trusted_opponent_id=None, force_opponent=False):
+    action = arguments.get("action")
+    if action not in {"new", "join", "move", "state", "resign"}:
+        raise _McpError(
+            -32602,
+            '未知 duel action；请先 get_guide(game="duel") 查看玩法。',
+        )
+    allowed_fields = {
+        "action",
+        "player_id",
+        "opponent_id",
+        "room_id",
+        "game_type",
+        "mode",
+        "move",
+        "wait",
+        "message",
+    }
+    payload = {
+        key: value
+        for key, value in arguments.items()
+        if key in allowed_fields and value is not None
+    }
+    if force_opponent:
+        # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
+        if trusted_opponent_id is None:
+            payload.pop("opponent_id", None)
+        else:
+            payload["opponent_id"] = trusted_opponent_id
+    try:
+        resp = httpx.post(f"{DUEL_BASE}/mcp/play", json=payload, timeout=55)
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"duel 后端连接失败：{exc}") from exc
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise _McpError(-32603, "duel 后端返回非 JSON 响应") from exc
+    if resp.status_code >= 400:
+        detail = data.get("message") if isinstance(data, dict) else None
+        code = -32602 if resp.status_code < 500 else -32603
+        raise _McpError(code, detail or f"duel 后端错误 HTTP {resp.status_code}")
+    return data
+
+
 def _play_garden_cat(arguments, owner_name=None):
     """Forward the six public actions while stripping all client session identity."""
     action = arguments.get("action")
@@ -4177,6 +4349,25 @@ def _garden_cat_upstream_path(public_path):
     return "/web/" if public_path == "/" else public_path
 
 
+def _duel_proxy_allowed(method, public_path):
+    if method == "GET":
+        return (
+            public_path == "/"
+            or public_path == "/api/whoami"
+            or public_path in {"/static/styles.css", "/static/app.js"}
+            or re.fullmatch(r"/api/rooms/[A-Z0-9]{8}", public_path) is not None
+        )
+    if method == "POST":
+        return (
+            public_path == "/api/rooms"
+            or re.fullmatch(
+                r"/api/rooms/[A-Z0-9]{8}/(?:join|move|resign|messages)", public_path
+            )
+            is not None
+        )
+    return False
+
+
 class CedarToyHandler(BaseHTTPRequestHandler):
     server_version = "CedarToy/1.0"
     protocol_version = "HTTP/1.1"
@@ -4191,14 +4382,20 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_workkk_proxy("POST")
             return
 
+        # /gc-view 围观入口已下线（2026-07-27），仅剩外部老链接会命中。
         if _workkk_path == "/gc-view" or _workkk_path.startswith("/gc-view/"):
-            self.path = "/garden-cat" + self.path[len("/gc-view"):]
-            self._gc_prefix_override = "/gc-view"
-            self._handle_garden_cat_proxy("POST")
+            self._send_json(
+                {"error": "围观入口已下线，请从首页进入花园", "code": 410},
+                status=410,
+            )
             return
 
         if _workkk_path == "/garden-cat" or _workkk_path.startswith("/garden-cat/"):
             self._handle_garden_cat_proxy("POST")
+            return
+
+        if _workkk_path == "/duel" or _workkk_path.startswith("/duel/"):
+            self._handle_duel_proxy("POST")
             return
 
         if _workkk_path == "/eco/api/human_action":
@@ -4284,7 +4481,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_empty(status=202)
             return
 
-        if not _check_request_rate_limit(self._request_rate_limit_identity(path_token, client_ip)):
+        rate_identity = self._request_rate_limit_identity(path_token, client_ip)
+        rate_limit_max = REQUEST_RATE_LIMIT_MAX
+        if _is_duel_play_payload(payload):
+            # Duel wait=true 的正常续杯走独立 120 次/分钟桶，不挤占常规 MCP
+            # 的 60 次/分钟配额；身份仍沿用同一 token/IP 解析结果。
+            rate_identity = f"{rate_identity}:duel"
+            rate_limit_max = DUEL_REQUEST_RATE_LIMIT_MAX
+        if not _check_request_rate_limit(rate_identity, max_count=rate_limit_max):
             self._send_json(_json_rpc_error(payload.get("id"), RATE_LIMIT_ERROR_CODE, REQUEST_RATE_LIMIT_MESSAGE), status=429)
             return
 
@@ -4320,14 +4524,20 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
 
 
+        # /gc-view 围观入口已下线（2026-07-27），仅剩外部老链接会命中。
         if path == "/gc-view" or path.startswith("/gc-view/"):
-            self.path = "/garden-cat" + self.path[len("/gc-view"):]
-            self._gc_prefix_override = "/gc-view"
-            self._handle_garden_cat_proxy("GET")
+            self._send_json(
+                {"error": "围观入口已下线，请从首页进入花园", "code": 410},
+                status=410,
+            )
             return
 
         if path == "/garden-cat" or path.startswith("/garden-cat/"):
             self._handle_garden_cat_proxy("GET")
+            return
+
+        if path == "/duel" or path.startswith("/duel/"):
+            self._handle_duel_proxy("GET")
             return
 
         if self._is_mcp_event_stream_get(path):
@@ -5371,6 +5581,197 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
             if set_cookie:
                 self.send_header("Set-Cookie", set_cookie)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(raw)
+        except BrokenPipeError:
+            pass
+
+    # ── Duel 人类玩家代理（/duel/* → 127.0.0.1:8772）────────────────────────
+    def _duel_cookie_value(self, cookie_name):
+        raw = self.headers.get("Cookie", "")
+        for part in raw.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == cookie_name:
+                return urllib.parse.unquote(value)
+        return None
+
+    def _duel_human_context(self, raw_token):
+        """Return the logged-in human and every AI currently bound to them."""
+        human = _current_account(raw_token)
+        if human.get("is_ai"):
+            raise _McpError(-32001, "需要人类账号")
+        with _db_connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT ai.id, ai.username
+                FROM user_bindings AS binding
+                JOIN toy_users AS ai ON ai.id = binding.ai_user_id
+                WHERE binding.human_user_id = ?
+                  AND ai.is_ai = 1
+                  AND ai.deleted_at IS NULL
+                ORDER BY ai.username, ai.id
+                """,
+                (int(human["id"]),),
+            ).fetchall()
+        return {
+            "human_player": str(int(human["id"])),
+            "human_name": str(human["username"]),
+            "machines": [
+                {
+                    "id": _account_slot_player_id(row["id"], MIN_SAVE_SLOT),
+                    "name": str(row["username"]),
+                }
+                for row in rows
+            ],
+        }
+
+    def _handle_duel_proxy(self, method):
+        full = self.path
+        path = full.split("?", 1)[0]
+        query_string = full.partition("?")[2]
+        public_path = path[len("/duel"):] or "/"
+        if not _duel_proxy_allowed(method, public_path):
+            self._send_json({"error": "not found"}, status=404)
+            return
+
+        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+        token_from_query = (params.get("token") or [None])[0]
+        token = (
+            token_from_query
+            or self._duel_cookie_value("duel_token")
+            or _extract_bearer(self.headers)
+        )
+        token_user_id = _path_token_user_id(token)
+        rate_identity = (
+            f"user:{token_user_id}"
+            if token_user_id is not None
+            else f"ip:{self._client_ip()}"
+        )
+        # /duel/ 页面三秒轮询走自己的 120 次/分钟池，不能挤占全站
+        # MCP 的 60 次/分钟配额，避免返回首页时被误判为登出。
+        if not _check_duel_web_request_rate_limit(rate_identity):
+            self._send_json(
+                {"error": REQUEST_RATE_LIMIT_MESSAGE, "code": 429},
+                status=429,
+            )
+            return
+
+        is_static = public_path.startswith("/static/")
+        set_cookies = []
+        target = None
+        if not is_static:
+            try:
+                target = self._duel_human_context(token)
+            except _McpError as exc:
+                self._send_json(
+                    {"error": exc.message or "未登录，请先在首页登录", "code": 401},
+                    status=401,
+                )
+                return
+            if token_from_query:
+                set_cookies.append(
+                    f"duel_token={urllib.parse.quote(token_from_query)}; "
+                    f"Path=/duel; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+                )
+
+        self._proxy_to_duel(
+            method,
+            public_path,
+            query_string,
+            set_cookies=set_cookies,
+            target=target,
+            rewrite_html=(public_path == "/"),
+        )
+
+    def _proxy_to_duel(
+        self, method, upstream_path, query_string, set_cookies=None,
+        target=None, rewrite_html=False,
+    ):
+        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+        for untrusted in ("token", "player", "player_id", "opponent_id"):
+            params.pop(untrusted, None)
+        if target is not None and method == "GET" and upstream_path.startswith("/api/"):
+            params["player_id"] = [target["human_player"]]
+        fwd_query = urllib.parse.urlencode(
+            [(key, value) for key, values in params.items() for value in values]
+        )
+        request_target = upstream_path + (f"?{fwd_query}" if fwd_query else "")
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        raw_body = self.rfile.read(length) if length > 0 else b""
+        body = raw_body or None
+        if target is not None and method == "POST":
+            try:
+                payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._send_json({"error": "请求体必须是 JSON 对象"}, status=400)
+                return
+            if not isinstance(payload, dict):
+                self._send_json({"error": "请求体必须是 JSON 对象"}, status=400)
+                return
+            payload.pop("opponent_id", None)
+            payload["player_id"] = target["human_player"]
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+        headers = {
+            key: value
+            for key, value in self.headers.items()
+            if key.lower() not in HOP_BY_HOP_HEADERS
+            and key.lower() not in {
+                "host", "cookie", "authorization", "content-length",
+                "x-player-id", "x-duel-human-player", "x-duel-ai-player",
+                "x-duel-human-name", "x-duel-ai-name", "x-duel-bound-ais",
+                "x-forwarded-prefix",
+            }
+        }
+        headers["Host"] = "duel.local"
+        headers["X-Forwarded-For"] = (
+            self.client_address[0] if self.client_address else "unknown"
+        )
+        headers["X-Forwarded-Prefix"] = "/duel"
+        if target is not None:
+            headers["X-Duel-Human-Player"] = target["human_player"]
+            # Header values must remain latin-1 safe; names are percent/base64 encoded.
+            headers["X-Duel-Human-Name"] = urllib.parse.quote(
+                target["human_name"], safe=""
+            )
+            machine_json = json.dumps(
+                target["machines"], ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+            headers["X-Duel-Bound-Ais"] = (
+                base64.urlsafe_b64encode(machine_json).decode("ascii").rstrip("=")
+            )
+
+        conn = http.client.HTTPConnection(DUEL_HOST, DUEL_PORT, timeout=55)
+        try:
+            conn.request(method, request_target, body=body, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+            status, reason = resp.status, resp.reason
+            resp_headers = resp.getheaders()
+            content_type = resp.getheader("Content-Type", "") or ""
+        except Exception as exc:
+            self._send_json({"error": "duel 代理失败", "detail": str(exc)}, status=502)
+            return
+        finally:
+            conn.close()
+
+        if rewrite_html and "text/html" in content_type.lower():
+            raw = raw.replace(b'="/static/', b'="/duel/static/')
+        try:
+            self.send_response(status, reason)
+            for key, value in resp_headers:
+                lower = key.lower()
+                if lower in HOP_BY_HOP_HEADERS or lower == "content-length":
+                    continue
+                self.send_header(key, value)
+            for cookie in set_cookies or ():
+                self.send_header("Set-Cookie", cookie)
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             if self.command != "HEAD":

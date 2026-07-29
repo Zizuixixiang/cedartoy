@@ -533,8 +533,9 @@
           method: "POST",
           body: JSON.stringify({user_id: user.id}),
         });
-        prompt(`「${user.username}」的密码重置链接（1 小时内有效）`, data.reset_url);
-        setStatus(`已为「${user.username}」生成密码重置链接`);
+        try { await navigator.clipboard.writeText(data.reset_url); } catch (e) {}
+        prompt(`「${user.username}」的重置链接（1 小时内有效，已复制）`, data.reset_url);
+        setStatus(`已为「${user.username}」生成密码重置链接并复制`);
       } catch (err) {
         setStatus(err.message, true);
       }
