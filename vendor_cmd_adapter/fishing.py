@@ -1,6 +1,16 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
+
+
+SAVE_FILES = {"fishing_save.json": "fishing_save.json"}
 
 
 RUNNER_CODE = r'''
@@ -92,6 +102,8 @@ def play(arguments):
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
+    elif action == "export":
+        text = export_json_saves("fishing", player_id, SAVE_FILES)
     elif action == "import":
         require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "fishing")
         save_data = arguments.get("save_data")
@@ -113,5 +125,5 @@ def play(arguments):
             raise VendorCmdError("save_data 序列化后超过 128KB")
         text = GAME.run(player_id, "__import__", extra={"save_data": save_data})
     else:
-        raise VendorCmdError("未知 fishing action")
+        raise VendorCmdError("未知 fishing action；支持 new/cmd/export/import")
     return {"game": "fishing", "player_id": player_id, "text": text}

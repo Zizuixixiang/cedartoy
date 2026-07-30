@@ -1,6 +1,14 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
 
 
 COMMANDS = frozenset({
@@ -16,6 +24,22 @@ COMMANDS = frozenset({
     "wallet_status",
     "trip_shelf",
 })
+SAVE_FILES = {
+    "state.json": "state.json",
+    "wallet.json": "wallet.json",
+    "trips.json": "trips.json",
+    "souvenirs.json": "souvenirs.json",
+    "postcards.json": "postcards.json",
+    "diaries.json": "diaries.json",
+}
+SAVE_TYPES = {
+    "state.json": dict,
+    "wallet.json": dict,
+    "trips.json": list,
+    "souvenirs.json": list,
+    "postcards.json": list,
+    "diaries.json": list,
+}
 
 
 RUNNER_CODE = r'''
@@ -66,7 +90,8 @@ def _save_dir(player_id):
 
 
 def _has_save(player_id):
-    return any(_save_dir(player_id).glob("*.json"))
+    save_dir = _save_dir(player_id)
+    return any((save_dir / filename).exists() for filename in SAVE_FILES)
 
 
 def save_summary(player_id):
@@ -116,6 +141,24 @@ def play(arguments):
             if key not in {"command", "action", "player_id"}
         }
         text = GAME.run(player_id, command, extra=extra)
+    elif action == "export":
+        text = export_json_saves(
+            "travel",
+            player_id,
+            SAVE_FILES,
+            packaged=True,
+            expected_types=SAVE_TYPES,
+        )
+    elif action == "import":
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "travel")
+        text = import_json_saves(
+            "travel",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+            packaged=True,
+            expected_types=SAVE_TYPES,
+        )
     else:
         raise VendorCmdError("未知 travel action")
     return {"game": "travel", "player_id": player_id, "text": text}

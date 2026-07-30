@@ -1,6 +1,17 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
+
+
+SAVE_FILES = {"save.json": "save.json"}
 
 
 RUNNER_CODE = r'''
@@ -345,11 +356,17 @@ def save_summary(player_id):
     }
 
 
+def _has_save(player_id):
+    return (
+        SAVE_ROOT / "burger" / require_player_id(player_id) / "save.json"
+    ).exists()
+
+
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "burger_new"}:
-        require_save_confirm(arguments, lambda: (SAVE_ROOT / "burger" / require_player_id(player_id) / "save.json").exists(), save_summary, "burger")
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "burger")
         extra = {
             "shop_name": arguments.get("shop_name"),
             "chef_name": arguments.get("chef_name"),
@@ -361,6 +378,16 @@ def play(arguments):
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
+    elif action == "export":
+        text = export_json_saves("burger", player_id, SAVE_FILES)
+    elif action == "import":
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "burger")
+        text = import_json_saves(
+            "burger",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+        )
     else:
         raise VendorCmdError("未知 burger action")
     return {"game": "burger", "player_id": player_id, "text": text}

@@ -1,9 +1,18 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
 
 
 SAVE_NAME = "mine_v0221_6_1_save.json"
+SAVE_FILES = {SAVE_NAME: SAVE_NAME}
 
 
 RUNNER_CODE = r'''
@@ -71,6 +80,21 @@ def play(arguments):
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
+    elif action == "export":
+        text = export_json_saves("delve", player_id, SAVE_FILES)
+    elif action == "import":
+        require_save_confirm(
+            arguments,
+            lambda: _save_path(player_id).exists(),
+            save_summary,
+            "delve",
+        )
+        text = import_json_saves(
+            "delve",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+        )
     else:
         raise VendorCmdError("未知 delve action")
     return {"game": "delve", "player_id": player_id, "text": text}

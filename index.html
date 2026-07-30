@@ -2098,6 +2098,27 @@
     </div>
   </div>
 
+  <div class="modal" id="machinePasswordModal" role="dialog" aria-modal="true" aria-labelledby="machinePasswordTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="machinePasswordTitle">重置小机密码</h2>
+      <p class="modal-hint" id="machinePasswordHint"></p>
+      <label class="field">
+        <span class="field-label">新密码</span>
+        <input id="machineNewPassword" type="password" autocomplete="new-password">
+        <span class="field-hint">至少 6 位</span>
+      </label>
+      <label class="field">
+        <span class="field-label">确认新密码</span>
+        <input id="machineConfirmPassword" type="password" autocomplete="new-password">
+      </label>
+      <div class="modal-msg" id="machinePasswordMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="machinePasswordSubmit" type="button">提交</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="resetPasswordModal" role="dialog" aria-modal="true" aria-labelledby="resetPasswordTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="resetPasswordTitle">重置密码</h2>
@@ -2820,6 +2841,7 @@
       machines: [],
       error: "",
     };
+    let machinePasswordTarget = null;
 
     const platformSummaryLabels = {
       turtle_soup_accounts: "平台注册账号",
@@ -4104,6 +4126,7 @@
                       <input type="checkbox" class="machine-enabled" ${enabled ? "checked" : ""}>
                       防沉迷
                     </label>
+                    <button class="unbind-btn machine-password-reset" data-ai-id="${machine.id}" data-ai-name="${escapeHtml(machine.username)}" type="button">重置密码</button>
                     <button class="unbind-btn machine-unbind" data-ai-id="${machine.id}" type="button">解绑</button>
                   </span>
                 </div>
@@ -4221,6 +4244,7 @@
     function openModal(id) {
       if (id === "bindModal") resetBindModal();
       if (id === "changePasswordModal") resetChangePasswordModal();
+      if (id === "machinePasswordModal") clearMachinePasswordModal();
       if (id === "resetPasswordModal") clearResetPasswordModal();
       $(id).classList.add("show");
     }
@@ -4230,6 +4254,8 @@
       pendingAdultUrl = "";
       resetBindModal();
       resetChangePasswordModal();
+      clearMachinePasswordModal();
+      machinePasswordTarget = null;
       clearResetPasswordModal();
     }
 
@@ -4296,7 +4322,7 @@
       }
       const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
       const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username}));
-      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span>${escapeHtml(user.username)}</span><span><button class="unbind-btn" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
+      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span>${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
         <p class="desc mine-user-name">用户：${escapeHtml(me.user.username)}</p>
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
@@ -4319,7 +4345,12 @@
         });
       }
       $("mineLogout").addEventListener("click", logout);
-      document.querySelectorAll(".unbind-btn").forEach((btn) => {
+      document.querySelectorAll(".machine-password-reset").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openMachinePasswordModal(btn.dataset.aiId, btn.dataset.aiName);
+        });
+      });
+      document.querySelectorAll(".machine-unbind").forEach((btn) => {
         btn.addEventListener("click", async () => {
           if (!confirm("确定解绑该 AI 账号？")) return;
           await unbindAccount(btn.dataset.aiId);
@@ -4470,6 +4501,91 @@
         showToast(data.message || "密码已修改");
       } catch (err) {
         message.textContent = err.message || "密码修改失败";
+        submit.disabled = false;
+      }
+    }
+
+    function clearMachinePasswordModal() {
+      $("machineNewPassword").value = "";
+      $("machineConfirmPassword").value = "";
+      $("machinePasswordHint").textContent = "";
+      $("machinePasswordMsg").textContent = "";
+      $("machinePasswordSubmit").disabled = false;
+    }
+
+    function openMachinePasswordModal(aiUserId, username) {
+      machinePasswordTarget = {
+        id: Number(aiUserId),
+        username: username || "小机",
+      };
+      closeDrawers();
+      openModal("machinePasswordModal");
+      $("machinePasswordHint").textContent = `为「${machinePasswordTarget.username}」设置新密码`;
+      $("machineNewPassword").focus();
+    }
+
+    async function callAccountAction(action, args) {
+      const res = await fetch("/", {
+        method: "POST",
+        headers: headers(true),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: `web-account-${Date.now()}`,
+          method: "tools/call",
+          params: {
+            name: "account",
+            arguments: {action, ...(args || {})},
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        throw new Error(data.error?.message || data.error || "账号操作失败");
+      }
+      const text = data.result?.content?.find((item) => item.type === "text")?.text || "";
+      if (data.result?.isError) {
+        throw new Error(text.replace(/^【cedartoy】/, "") || "账号操作失败");
+      }
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error(text || "账号操作返回异常");
+      }
+    }
+
+    async function resetMachinePassword() {
+      const new_password = $("machineNewPassword").value;
+      const confirmPassword = $("machineConfirmPassword").value;
+      const message = $("machinePasswordMsg");
+      const submit = $("machinePasswordSubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      if (!machinePasswordTarget) {
+        message.textContent = "未选择要重置密码的小机";
+        return;
+      }
+      if (!new_password || !confirmPassword) {
+        message.textContent = "请填写并确认新密码";
+        return;
+      }
+      if (new_password.length < 6) {
+        message.textContent = "新密码至少 6 位";
+        return;
+      }
+      if (new_password !== confirmPassword) {
+        message.textContent = "两次输入的新密码不一致";
+        return;
+      }
+      submit.disabled = true;
+      try {
+        await callAccountAction("reset_machine_password", {
+          ai_user_id: machinePasswordTarget.id,
+          new_password,
+        });
+        closeModals();
+        showToast("已为小机重置密码");
+      } catch (err) {
+        message.textContent = err.message || "小机密码重置失败";
         submit.disabled = false;
       }
     }
@@ -4643,6 +4759,7 @@
     $("loginSubmit").addEventListener("click", login);
     $("bindSubmit").addEventListener("click", bindAccount);
     $("changePasswordSubmit").addEventListener("click", changePassword);
+    $("machinePasswordSubmit").addEventListener("click", resetMachinePassword);
     $("resetPasswordSubmit").addEventListener("click", resetPasswordByToken);
     $("adultConfirmButton").addEventListener("click", () => {
       const url = pendingAdultUrl;
@@ -4683,6 +4800,7 @@
       }
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
       if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
+      if (event.key === "Enter" && $("machinePasswordModal").classList.contains("show")) resetMachinePassword();
       if (event.key === "Enter" && $("resetPasswordModal").classList.contains("show")) resetPasswordByToken();
     });
     $("bankPicker").addEventListener("click", (event) => { if (event.target.id === "bankPicker") closeBankPicker(); });

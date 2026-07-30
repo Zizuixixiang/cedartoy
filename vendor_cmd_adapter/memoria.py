@@ -1,6 +1,14 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
 
 
 LEVELS = {
@@ -45,6 +53,13 @@ LEVELS = {
         "difficulty": False,
     },
 }
+SAVE_FILES = {"progress.json": "progress.json"}
+for _level, _config in LEVELS.items():
+    SAVE_FILES[_config["save"]] = f"level{_level}/{_config['save']}"
+    if _config["heartbeat"]:
+        SAVE_FILES[_config["heartbeat"]] = (
+            f"level{_level}/{_config['heartbeat']}"
+        )
 
 
 RUNNER_CODE = r'''
@@ -313,11 +328,17 @@ def save_summary(player_id):
     }
 
 
+def _has_save(player_id):
+    root = SAVE_ROOT / "memoria" / require_player_id(player_id)
+    return any((root / relative_path).exists() for relative_path in SAVE_FILES.values())
+
+
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     requested_level = arguments.get("level") or arguments.get("chapter")
     extra = {}
+    level = None
     if action in {"new", "memoria_new"}:
         level = _normalize_level(requested_level)
         extra["level"] = level
@@ -355,6 +376,37 @@ def play(arguments):
         for key, cfg in LEVELS.items():
             lines.append(f"{key}. {cfg['title']}")
         text = "\n".join(lines)
+    elif action == "export":
+        text = export_json_saves(
+            "memoria",
+            player_id,
+            SAVE_FILES,
+            packaged=True,
+        )
+    elif action == "import":
+        require_save_confirm(
+            arguments,
+            lambda: _has_save(player_id),
+            save_summary,
+            "memoria",
+        )
+        text = import_json_saves(
+            "memoria",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+            packaged=True,
+        )
+        progress = arguments.get("save_data")
+        if isinstance(progress, str):
+            try:
+                progress = json.loads(progress)
+            except (json.JSONDecodeError, ValueError):
+                progress = {}
+        if isinstance(progress, dict):
+            progress = progress.get("progress.json")
+        if isinstance(progress, dict):
+            level = progress.get("current_level")
     else:
         raise VendorCmdError("未知 memoria action")
     return {"game": "memoria", "player_id": player_id, "level": level, "text": text}

@@ -58,7 +58,10 @@ from vendor_cmd_adapter import memoria as memoria_adapter
 from vendor_cmd_adapter import moonlit as moonlit_adapter
 from vendor_cmd_adapter import travel as travel_adapter
 from vendor_cmd_adapter.base import VendorCmdError
-from vendor_cmd_adapter.guides import GUIDES as VENDOR_CMD_GUIDES
+from vendor_cmd_adapter.guides import (
+    GUIDES as VENDOR_CMD_GUIDES,
+    SAVE_SLOT_GUIDE_NOTE,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -184,7 +187,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、burger、delve、fishing、imitator_td、leek、market、memoria、moonlit、travel 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -207,13 +210,14 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
+                    "description": "login_or_register、login、generate_binding_token、reset_machine_password（人类账号需token，传ai_user_id和new_password为已绑定小机重置密码）、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
                 },
                 "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string"},
                 "old_password": {"type": "string"},
                 "new_password": {"type": "string"},
                 "token": {"type": "string"},
+                "ai_user_id": {"type": "integer", "description": "reset_machine_password 用：当前人类账号已绑定的小机账号 ID"},
                 "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
                 "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
                 "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "delete_save 用：账号存档槽 1-5，默认 1；仅支持带 token 的账号用户"},
@@ -294,7 +298,7 @@ def _build_kelivo_platform_tools():
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
-                "description": "导入存档数据；eco/ciyuwu 使用 base64 字符串，fishing 可使用 JSON 对象或 JSON 字符串。",
+                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、burger、delve、fishing、imitator_td、leek、market、memoria、moonlit、travel 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
             },
             "a_score": {
                 "type": "integer",
@@ -380,7 +384,7 @@ def _is_kelivo_user_agent(user_agent):
     return "kelivo" in normalized or normalized.startswith("dart/") or "dart:io" in normalized or "ktor" in normalized
 
 
-def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
+def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, bearer_token=None):
     request_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params") or {}
@@ -421,7 +425,7 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None):
                     text = _tool_account(
                         arguments,
                         user_agent=user_agent,
-                        path_token=path_token,
+                        path_token=path_token or bearer_token,
                         client_ip=client_ip,
                     )
                 else:
@@ -1306,6 +1310,66 @@ def _generate_reset_link(user_id):
         "reset_url": f"https://toy.cedarstar.org/?reset_token={token}",
         "expires_in": "1小时",
     }
+
+
+def _reset_machine_password(raw_token, ai_user_id, new_password):
+    human = _current_account(raw_token)
+    if human.get("is_ai"):
+        raise _McpError(-32602, "只有人类账号可以为小机重置密码")
+    if ai_user_id is None:
+        raise _McpError(-32602, "ai_user_id 必填")
+    try:
+        ai_user_id = int(ai_user_id)
+    except (TypeError, ValueError):
+        raise _McpError(-32602, "ai_user_id 必须是整数") from None
+    new_password = _normalize_credential_field(new_password, "new_password")
+    if len(new_password) < 6:
+        raise _McpError(-32602, "新密码至少 6 位")
+
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        binding = conn.execute(
+            """
+            SELECT 1
+            FROM user_bindings
+            WHERE human_user_id = ? AND ai_user_id = ?
+            LIMIT 1
+            """,
+            (human["id"], ai_user_id),
+        ).fetchone()
+        if not binding:
+            raise _McpError(-32602, "该小机未绑定到你的账号")
+
+        machine = _row_dict(conn.execute(
+            """
+            SELECT id, is_ai
+            FROM toy_users
+            WHERE id = ? AND deleted_at IS NULL
+            """,
+            (ai_user_id,),
+        ).fetchone())
+        if not machine:
+            raise _McpError(-32004, "小机账号不存在或已删除")
+        if not machine.get("is_ai"):
+            raise _McpError(-32602, "目标账号不是小机账号")
+
+        owners = conn.execute(
+            "SELECT COUNT(*) FROM user_bindings WHERE ai_user_id = ?",
+            (ai_user_id,),
+        ).fetchone()[0]
+        if owners > 1:
+            raise _McpError(
+                -32602,
+                f"该小机绑定了 {owners} 个人类账号，请先解绑到只剩一个再重置密码",
+            )
+
+        conn.execute(
+            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
+            (_hash_password(new_password), ai_user_id),
+        )
+        conn.commit()
+
+    return {"ok": True, "message": "已为小机重置密码"}
 
 
 def _reset_password_by_token(reset_token, new_password):
@@ -3332,13 +3396,6 @@ wait 双模式：
 作者：南山君&Clio。"""
 
 
-SAVE_SLOT_GUIDE_NOTE = (
-    "\n\n[存档槽] 账号每游戏5个独立槽。slot是每次调用的参数、非持久开关："
-    "params传slot=1-5，缺省=槽1。查各槽：account(action=\"my_saves\")。游客单槽。"
-    "\n示例：play(game=\"fishing\", action=\"cmd\", params={\"slot\": 2, \"command\": \"cast\"})"
-)
-
-
 def _guide_with_slot_note(text):
     return text + SAVE_SLOT_GUIDE_NOTE
 
@@ -3874,6 +3931,13 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
+    if action == "reset_machine_password":
+        result = _reset_machine_password(
+            raw_token,
+            arguments.get("ai_user_id"),
+            arguments.get("new_password"),
+        )
+        return json.dumps(result, ensure_ascii=False)
     if action == "get_bindings":
         result = _get_bindings(raw_token)
         return json.dumps(result, ensure_ascii=False)
@@ -4508,6 +4572,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 user_agent=self.headers.get("User-Agent", ""),
                 path_token=path_token,
                 client_ip=client_ip,
+                bearer_token=_extract_bearer(self.headers),
             )
         self._send_json(response)
 

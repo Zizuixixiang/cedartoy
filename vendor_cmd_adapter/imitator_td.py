@@ -1,6 +1,20 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
+
+
+SAVE_FILES = {
+    "random_imitator_td_save.json": "random_imitator_td_save.json",
+    "random_imitator_td_records.json": "random_imitator_td_records.json",
+}
 
 
 RUNNER_CODE = r'''
@@ -55,14 +69,16 @@ def save_summary(player_id):
     }
 
 
+def _has_save(player_id):
+    save_dir = SAVE_ROOT / "imitator_td" / require_player_id(player_id)
+    return any((save_dir / filename).exists() for filename in SAVE_FILES)
+
+
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "imitator_td_new"}:
-        def _imitator_has_save():
-            d = SAVE_ROOT / "imitator_td" / require_player_id(player_id)
-            return any((d / f).exists() for f in ("random_imitator_td_save.json", "random_imitator_td_records.json"))
-        require_save_confirm(arguments, _imitator_has_save, save_summary, "imitator_td")
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "imitator_td")
         level = arguments.get("level")
         mode = str(arguments.get("mode") or "").strip()
         chaos = str(arguments.get("chaos") or "").strip()
@@ -85,6 +101,27 @@ def play(arguments):
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
+    elif action == "export":
+        text = export_json_saves(
+            "imitator_td",
+            player_id,
+            SAVE_FILES,
+            packaged=True,
+        )
+    elif action == "import":
+        require_save_confirm(
+            arguments,
+            lambda: _has_save(player_id),
+            save_summary,
+            "imitator_td",
+        )
+        text = import_json_saves(
+            "imitator_td",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+            packaged=True,
+        )
     else:
         raise VendorCmdError("未知 imitator_td action")
     return {"game": "imitator_td", "player_id": player_id, "text": text}

@@ -1,7 +1,19 @@
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
 
 
 SAVE_NAME = "moonlit_v3_save.json"
+SAVE_FILES = {
+    SAVE_NAME: SAVE_NAME,
+    f"{SAVE_NAME}.bak": f"{SAVE_NAME}.bak",
+}
 
 
 RUNNER_CODE = r'''
@@ -44,6 +56,11 @@ def _save_path(player_id):
     return SAVE_ROOT / "moonlit" / require_player_id(player_id) / SAVE_NAME
 
 
+def _has_save(player_id):
+    save_dir = _save_path(player_id).parent
+    return any((save_dir / filename).exists() for filename in SAVE_FILES)
+
+
 def save_summary(player_id):
     """只报告存档存在，不读取卡牌游戏的存档内容。"""
     if not _save_path(player_id).exists():
@@ -57,7 +74,7 @@ def play(arguments):
     if action in {"new", "moonlit_new"}:
         require_save_confirm(
             arguments,
-            lambda: _save_path(player_id).exists(),
+            lambda: _has_save(player_id),
             save_summary,
             "moonlit",
         )
@@ -67,6 +84,27 @@ def play(arguments):
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
+    elif action == "export":
+        text = export_json_saves(
+            "moonlit",
+            player_id,
+            SAVE_FILES,
+            packaged=True,
+        )
+    elif action == "import":
+        require_save_confirm(
+            arguments,
+            lambda: _has_save(player_id),
+            save_summary,
+            "moonlit",
+        )
+        text = import_json_saves(
+            "moonlit",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+            packaged=True,
+        )
     else:
         raise VendorCmdError("未知 moonlit action")
     return {"game": "moonlit", "player_id": player_id, "text": text}

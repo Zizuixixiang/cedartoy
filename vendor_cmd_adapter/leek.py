@@ -1,6 +1,17 @@
 import json
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
+
+
+SAVE_FILES = {"leek_save.json": "leek_save.json"}
 
 
 RUNNER_CODE = r'''
@@ -74,11 +85,17 @@ def save_summary(player_id):
     }
 
 
+def _has_save(player_id):
+    return (
+        SAVE_ROOT / "leek" / require_player_id(player_id) / "leek_save.json"
+    ).exists()
+
+
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
     if action in {"new", "leek_new"}:
-        require_save_confirm(arguments, lambda: (SAVE_ROOT / "leek" / require_player_id(player_id) / "leek_save.json").exists(), save_summary, "leek")
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "leek")
         seed = arguments.get("seed")
         career = str(arguments.get("career") or "").strip().lower()
         parts = ["new_game"]
@@ -92,6 +109,16 @@ def play(arguments):
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         text = GAME.run(player_id, command)
+    elif action == "export":
+        text = export_json_saves("leek", player_id, SAVE_FILES)
+    elif action == "import":
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "leek")
+        text = import_json_saves(
+            "leek",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+        )
     else:
         raise VendorCmdError("未知 leek action")
     return {"game": "leek", "player_id": player_id, "text": text}

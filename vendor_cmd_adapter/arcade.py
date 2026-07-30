@@ -4,11 +4,25 @@ import re
 
 from command_text import normalize_command_spaces
 
-from .base import SAVE_ROOT, VendorCmdError, VendorCmdGame, require_player_id, require_save_confirm
+from .base import (
+    SAVE_ROOT,
+    VendorCmdError,
+    VendorCmdGame,
+    export_json_saves,
+    import_json_saves,
+    require_player_id,
+    require_save_confirm,
+)
 
 
 MAX_BUY_AMOUNT = 500
 GUEST_TRIAL_CHIPS = 200
+SAVE_FILES = {
+    "arcade_save.json": "arcade_save.json",
+    "slots_save.json": "slots_save.json",
+    "blackjack_save.json": "blackjack_save.json",
+    "roulette_save.json": "roulette_save.json",
+}
 ARCADE_SAVE_DEFAULT = {
     "chips": 0,
     "total_bought": 0,
@@ -109,10 +123,7 @@ def _load_state(save_path):
 
 def _has_save(player_id):
     save_dir = _save_dir(player_id, create=False)
-    return any(
-        (save_dir / name).exists()
-        for name in ("arcade_save.json", "slots_save.json", "blackjack_save.json", "roulette_save.json")
-    )
+    return any((save_dir / name).exists() for name in SAVE_FILES)
 
 
 def _guest_trial_eligible(player_id, has_save):
@@ -208,6 +219,22 @@ def play(arguments):
                 if _guest_trial_eligible(player_id, has_save)
                 else 0
             },
+        )
+    elif action == "export":
+        text = export_json_saves(
+            "arcade",
+            player_id,
+            SAVE_FILES,
+            packaged=True,
+        )
+    elif action == "import":
+        require_save_confirm(arguments, lambda: _has_save(player_id), save_summary, "arcade")
+        text = import_json_saves(
+            "arcade",
+            player_id,
+            arguments.get("save_data"),
+            SAVE_FILES,
+            packaged=True,
         )
     else:
         raise VendorCmdError("未知 arcade action")

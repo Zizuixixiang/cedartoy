@@ -1,3 +1,10 @@
+SAVE_SLOT_GUIDE_NOTE = (
+    "\n\n[存档槽] 每游戏5槽，params 传 slot=1-5（缺省1；即 player_id 加 :2~:5 后缀；游客单槽）。"
+    "export/import 按槽生效：空槽导入免 confirm，覆盖需 confirm=true。"
+    "跨槽复制=export 后 import 到另一槽。查各槽：account(action=\"my_saves\")。"
+)
+
+
 GUIDES = {
     "delve": """# Delve（下矿）
 调用：play(game="delve",action="new") 开局；之后 play(game="delve", action="cmd", params={"command": "play 3"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
@@ -17,6 +24,9 @@ GUIDES = {
 - sell common — 出售普通藏品
 - help — 查看全部指令
 
+存档导出：play(game="delve", action="export")
+存档导入：play(game="delve", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
+
 原作信息：
 作者：包工头（QQ 601546041）／仓库：github.com/liyana31811/delve-ai-companion／经作者授权接入。""",
     "travel": """# Travel（旅行 MCP）
@@ -34,6 +44,9 @@ GUIDES = {
 - care_checkin — 记录照顾自己的事项；参数：item（必填：喝水/吃药/运动/早睡/吃得健康/其他）、note（备注，可空；仅 caretaker 经济模式记账）
 - wallet_status — 查看盘缠、XP 和最近账目；无参数
 - trip_shelf — 查看纪念品、明信片和日记；参数：read_diary（trip_id 或 last，可空）
+
+存档导出：play(game="travel", action="export")（返回以文件名为 key 的 JSON 对象）
+存档导入：play(game="travel", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 
 原作信息：
 作者：沈澈 & sevenleft／仓库：github.com/shenchesilas-stack/travel-mcp／经作者授权接入。""",
@@ -61,6 +74,8 @@ GUIDES = {
 批量：分号串联，最多8条，如 research titan; buy titan 10; wait 5; sell titan all
 末尾有紧凑状态栏JSON，省token优先读它。
 等级15后 new 时传 career:"fund" 可进基金经理模式。
+存档导出：play(game="leek", action="export")
+存档导入：play(game="leek", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 完整文档见 toy.cedarstar.org
 
 原作信息：
@@ -92,6 +107,8 @@ GUIDES = {
 
 批量：slots spin 金额 次数 可连续拉；其余按局推进。
 筹码由人类在 CedarToy 网页端发放，小机侧 buy 已禁用。
+存档导出：play(game="arcade", action="export")（返回以文件名为 key 的 JSON 对象）
+存档导入：play(game="arcade", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 完整文档见 toy.cedarstar.org
 
 原作信息：
@@ -129,6 +146,8 @@ GUIDES = {
 
 批量：分号串联，如 accept; grill beef; wait; build bun beef bun; serve
 每单都要单独完成；v0.6 起可用 auto order N / auto day N 快速推进。
+存档导出：play(game="burger", action="export")
+存档导入：play(game="burger", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 完整文档见 toy.cedarstar.org
 
 原作信息：
@@ -157,7 +176,8 @@ GUIDES = {
 
 批量：分号串联，最多8条，如 buy basic_worm 10; cast 10
 末尾有紧凑状态栏JSON，省token优先读它。
-导入存档：play(game="fishing", action="import", params={"player_id":"p1","save_data":{...}})
+存档导出：play(game="fishing", action="export")
+存档导入：play(game="fishing", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 完整文档见 toy.cedarstar.org
 
 原作信息：
@@ -176,6 +196,9 @@ GUIDES = {
 - 帮助 — 查看当前可用的完整指令
 
 每步输出末尾有机器可读的 [STATE] JSON 状态行，优先据此决策。游戏会抵抗读档重刷；请勿读取存档内容或解码源码中的 _PAYLOAD。
+
+存档导出：play(game="moonlit", action="export")（主档与上游回退档一起返回，以文件名为 key）
+存档导入：play(game="moonlit", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 
 原作信息：
 作者：xinwithyu／仓库：github.com/xinwithyu/moonlit-myriad。""",
@@ -202,6 +225,8 @@ GUIDES = {
 批量：分号串联，最多12条；但种植这类自然语言动作可直接写一句。先 cards，再按棋盘状态种植/等待。
 每 5 次玩家决策后会触发一次防沉迷暂停，下一次继续即可。
 末尾有紧凑状态栏JSON，省token优先读它。
+存档导出：play(game="imitator_td", action="export")（返回以文件名为 key 的 JSON 对象）
+存档导入：play(game="imitator_td", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 完整文档见 toy.cedarstar.org
 
 原作信息：
@@ -235,6 +260,9 @@ GUIDES = {
 
 每关可用指令不同，以本关 help 返回为准。攻略是给人类玩家看的，AI 玩家不可读取。
 
+存档导出：play(game="memoria", action="export")（各关主档、心跳档和 progress.json 以文件名为 key 一起返回）
+存档导入：play(game="memoria", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
+
 原作信息：
 作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/Memoria-Station／经作者授权接入。""",
     "market": """# 出门买菜上桌吃饭
@@ -258,6 +286,9 @@ GUIDES = {
 - 状态 / 篮子 / 冰箱 / 成就 / 菜谱 / 图鉴 / 技能：查看信息
 
 中文指令直接透传；她说/记得机制原样保留。
+
+存档导出：play(game="market", action="export")
+存档导入：play(game="market", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 
 原作信息：
 作者：与一旋复（小红书号 94326164228）／仓库：github.com/yuyixuanfu/shangzhuochifan／经作者授权接入。""",
