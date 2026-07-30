@@ -40,6 +40,7 @@ TOOLS = [
         "name": "eco_new",
         "description": (
             "开一局新的「瓶中生态」：为该玩家重置出一个空池塘。你是造物主，从一池清水开始。"
+            "已有池塘时需 confirm 确认才会覆盖。"
             "开局后用 eco_play 发送指令，输入 help 查看所有可用指令。"
             "（游戏总入口：toy.cedarstar.org/，支持 MCP 和 curl 连接，包含更多游戏）"
         ),
@@ -54,6 +55,11 @@ TOOLS = [
                 "seed": {
                     "type": "integer",
                     "description": "可选随机种子（整数）；不传则用默认种子。相同种子生态走向相近。",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "可选，默认 false。已有池塘时须设为 true，确认永久覆盖现有存档。",
                 },
             },
             "required": ["player_id"],
@@ -240,8 +246,6 @@ def eco_new(arguments):
     seed = _coerce_seed(arguments.get("seed"))
     now = time.time()
 
-    save_data, intro = _engine_new(seed)
-
     with _connect() as conn:
         _init_db(conn)
         conn.commit()
@@ -250,9 +254,12 @@ def eco_new(arguments):
         conn.execute("BEGIN IMMEDIATE")
         _cleanup_expired(conn, now)
         existing = conn.execute(
-            "SELECT 1 FROM eco_sessions WHERE player_id = ?",
+            "SELECT save_data, last_active FROM eco_sessions WHERE player_id = ?",
             (player_id,),
         ).fetchone()
+        if existing is not None and str(arguments.get("confirm", "")).lower() != "true":
+            return _overwrite_confirmation(existing[0], existing[1])
+
         active_count = conn.execute(
             "SELECT COUNT(*) FROM eco_sessions"
         ).fetchone()[0]
@@ -281,6 +288,7 @@ def eco_new(arguments):
                     "当前池塘已达上限且暂无可回收的旧池塘，请稍后再试",
                 )
 
+        save_data, intro = _engine_new(seed)
         ts = _now_iso(now)
         conn.execute(
             """
@@ -304,6 +312,41 @@ def eco_new(arguments):
             intro,
             "用 eco_play 发送指令推进。输入 help 查看所有可用指令。",
         ]
+    )
+
+
+def _overwrite_confirmation(save_data, last_active):
+    """生成 eco_new 覆盖已有池塘前的二次确认提示。"""
+    turn = "未知"
+    season = None
+    alive_species = None
+    try:
+        state = json.loads(save_data)
+    except (TypeError, json.JSONDecodeError, ValueError):
+        state = None
+    if isinstance(state, dict):
+        if state.get("turn") is not None:
+            turn = state["turn"]
+        if state.get("season"):
+            season = state["season"]
+        populations = state.get("populations")
+        if isinstance(populations, dict):
+            alive_species = sum(
+                1
+                for population in populations.values()
+                if isinstance(population, (int, float))
+                and not isinstance(population, bool)
+                and population >= 1
+            )
+
+    details = [f"turn：{turn}", f"last_active：{last_active or '未知'}"]
+    if season is not None:
+        details.append(f"季节：{season}")
+    if alive_species is not None:
+        details.append(f"存活种群数：{alive_species}")
+    return (
+        f"检测到该 player_id 已有池塘（{'，'.join(details)}）。"
+        "覆盖后原存档将无法恢复；如确认覆盖请重新调用并带 confirm: true"
     )
 
 
