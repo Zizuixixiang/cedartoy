@@ -2363,6 +2363,33 @@ def _human_test_result_data(game, player_id):
             )
         if len(centers) != 3:
             return None
+        glossary_items = [
+            {
+                "term": "三中心",
+                "definition": (
+                    "脑中心（5/6/7）主要用思考处理恐惧和不确定；"
+                    "心中心（2/3/4）主要从关系、情感与价值感出发；"
+                    "腹中心（8/9/1）更多靠本能和行动处理愤怒、边界与控制。"
+                ),
+            }
+        ]
+        if is_full:
+            glossary_items[0:0] = [
+                {
+                    "term": "侧翼",
+                    "definition": (
+                        "主型旁边两个相邻型号中影响更明显的那个。"
+                        "例如 1w9 表示主型是1号，同时带有相邻9号的一些风格。"
+                    ),
+                },
+                {
+                    "term": "tritype",
+                    "definition": (
+                        "从脑、心、腹三个中心各取一个高分型号组成的“三件套”，"
+                        "用来补充主型之外常用的思考、感受和行动方式。"
+                    ),
+                },
+            ]
         return {
             "kind": "enneagram",
             "primary_type": primary_type,
@@ -2376,26 +2403,23 @@ def _human_test_result_data(game, player_id):
                 "完整型采用 180 条陈述评分，显示的是换算后的相对权重。"
                 "两套分数不可直接比较，因为数字量纲不同。"
             ),
-            "glossary": (
-                "侧翼：主型旁边两个相邻型号中，影响更明显的那个。"
-                "比如 1w9 表示主型是 1 号，同时带有相邻 9 号的一些味道。\n\n"
-                "tritype：从脑、心、腹三个区各取最高分型号，组成一套“三件套”，"
-                "用来补充主型之外常用的思考、感受和行动方式。\n\n"
-                "三中心：脑中心主要用思考处理恐惧和不确定，容易先分析、计划或找可能性；"
-                "心中心主要在意情感连接和别人眼中的形象，容易从关系与价值感出发；"
-                "腹中心更多靠本能和行动应对愤怒、边界与控制，常先感到身体里的“对或不对”。"
-                if is_full
-                else
-                "三中心：脑中心主要用思考处理恐惧和不确定，容易先分析、计划或找可能性；"
-                "心中心主要在意情感连接和别人眼中的形象，容易从关系与价值感出发；"
-                "腹中心更多靠本能和行动应对愤怒、边界与控制，常先感到身体里的“对或不对”。"
+            "glossary": "\n\n".join(
+                f"{item['term']}：{item['definition']}" for item in glossary_items
             ),
+            "glossary_items": glossary_items,
             "core_desire": info["core_desire"],
             "core_fear": info["core_fear"],
+            "key_motivation": info["key_motivation"],
             "centers": centers,
             "description": info["full_description"],
-            "strengths": info["strengths"],
-            "weaknesses": info["weaknesses"],
+            "states": info["states"],
+            "arrows": info["arrows"],
+            "wings": info["wings"] if is_full else {},
+            "growth_tips": info["growth_tips"],
+            "strengths": "\n".join(info["strengths"]),
+            "strength_items": info["strengths"],
+            "weaknesses": "\n".join(info["weaknesses"]),
+            "weakness_items": info["weaknesses"],
         }
 
     if game == "dnd":
@@ -5459,6 +5483,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             arguments = {"player_id": player_id, "answer": answer}
         elif action == "enneagram_get_result":
             player_id = self._get_param(params, "player_id")
+            detail = self._get_param(params, "detail")
             if player_id is None:
                 self._send_json(
                     {"error": "enneagram_get_result 缺少必填参数: player_id"},
@@ -5466,6 +5491,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 )
                 return
             arguments = {"player_id": player_id}
+            if detail is not None:
+                arguments["detail"] = detail
         else:
             self._send_json({"error": f"未知 action: {action}"}, status=400)
             return

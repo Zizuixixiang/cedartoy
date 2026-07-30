@@ -7,10 +7,7 @@ CENTERS = {
     "脑中心": (5, 6, 7),
 }
 
-SCALE_NOTE = (
-    "quick 与 full 使用不同题型和分数量纲：quick 是 36 次 A/B 选择的相对计数，"
-    "full 是 180 条李克特评分；两套分数不可直接比较。"
-)
+SCALE_NOTE = "量纲不同，两套分数不可直接比较。"
 
 
 def score_answers(questions, answers):
@@ -68,22 +65,69 @@ def score_answers(questions, answers):
 
 
 def format_result(mode, result):
+    """Return the compact machine-facing result immediately after completion."""
     primary_type = int(result["primary_type"])
-    info = TYPE_DESCRIPTIONS[primary_type]
-    is_full = bool(result.get("is_full"))
+    is_full_test = bool(result.get("is_full"))
     lines = [
         f"【九型人格测试完成 · {mode}模式】",
         "",
-        f"你的主型：{primary_type}号 · {info['type_name']}（{info['type_nickname']}）",
+        *_score_lines(result, is_full_test=is_full_test),
+        "",
+        *_compact_profile_lines(primary_type),
+        "",
+        _glossary_card(is_full_test),
+        "",
+        "想继续自查：调用 enneagram_get_result，传 detail=full 获取完整版。",
+        "（账号结果永久保留；游客结果保留 48 小时。）",
     ]
-    if is_full:
+    return "\n".join(lines)
+
+
+def format_stored_result(
+    mode,
+    result_value,
+    detail,
+    completed_at_label,
+    *,
+    requested_detail=None,
+):
+    primary_type = int(result_value)
+    is_full_test = bool(detail.get("is_full")) or mode in {"full", "full_fast"}
+    lines = [
+        f"【九型人格历史结果 · {mode}模式 · {completed_at_label}】",
+        "",
+        *_stored_score_lines(detail, primary_type, is_full_test=is_full_test),
+        "",
+    ]
+    if requested_detail == "full":
+        lines.extend(_full_profile_lines(primary_type, include_wings=is_full_test))
+    else:
+        lines.extend(_compact_profile_lines(primary_type))
+    lines.extend(["", _glossary_card(is_full_test)])
+    if requested_detail != "full":
         lines.extend(
             [
-                f"侧翼：{result['wing']}",
-                f"Tritype 推测：{result['tritype']}",
+                "",
+                "想继续自查：再次调用 enneagram_get_result，传 detail=full 获取完整版。",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _score_lines(result, *, is_full_test):
+    primary_type = int(result["primary_type"])
+    info = TYPE_DESCRIPTIONS[primary_type]
+    lines = [
+        f"你的主型：{primary_type}号 · {info['type_name']}（{info['type_nickname']}）"
+    ]
+    if is_full_test:
+        lines.extend(
+            [
+                f"侧翼：{result.get('wing', '暂无')}",
+                f"Tritype 推测：{result.get('tritype', '暂无')}",
                 "",
                 "━━━ 三中心权重（full 李克特相对权重）━━━",
-                *_center_lines(result["center_weights"], is_full=True),
+                *_center_lines(result.get("center_weights") or {}, is_full=True),
             ]
         )
     else:
@@ -91,88 +135,117 @@ def format_result(mode, result):
             [
                 "",
                 "━━━ 三中心相对分（36分制）━━━",
-                *_center_lines(result["center_scores"], is_full=False),
-                "",
-                "quick 仅报告主型与脑/心/腹三中心相对分；侧翼与 tritype 仅 full 档提供。",
+                *_center_lines(result.get("center_scores") or {}, is_full=False),
             ]
         )
-    lines.extend(
-        [
-            "",
-            f"分数量纲说明：{SCALE_NOTE}",
-            "",
-            "━━━ 类型描述 ━━━",
-            info["full_description"],
-            "",
-            "━━━ 性格优势 ━━━",
-            info["strengths"],
-            "",
-            "━━━ 注意事项 ━━━",
-            info["weaknesses"],
-            "",
-            "（账号结果永久保留；游客结果保留 48 小时，可用 enneagram_get_result 查询。）",
-        ]
-    )
-    return "\n".join(lines)
+    lines.extend(["", f"分数量纲说明：{SCALE_NOTE}"])
+    return lines
 
 
-def format_stored_result(mode, result_value, detail, completed_at_label):
-    primary_type = int(result_value)
+def _stored_score_lines(detail, primary_type, *, is_full_test):
+    result = {"primary_type": primary_type, **detail}
+    return _score_lines(result, is_full_test=is_full_test)
+
+
+def _compact_profile_lines(primary_type):
     info = TYPE_DESCRIPTIONS[primary_type]
-    is_full = bool(detail.get("is_full")) or mode in {"full", "full_fast"}
-    lines = [
-        f"【九型人格历史结果 · {mode}模式 · {completed_at_label}】",
+    states = info["states"]
+    arrows = info["arrows"]
+    return [
+        "━━━ 主型速写 ━━━",
+        _first_sentence(info["full_description"].split("\n\n", 1)[0]),
         "",
-        f"你的主型：{primary_type}号 · {info['type_name']}（{info['type_nickname']}）",
+        "━━━ 核心恐惧与欲望 ━━━",
+        f"核心恐惧：{_first_sentence(info['core_fear'])}",
+        f"核心欲望：{_first_sentence(info['core_desire'])}",
+        "",
+        "━━━ 三种状态 ━━━",
+        f"健康状态：{_first_sentence(states['healthy'])}",
+        f"一般状态：{_first_sentence(states['average'])}",
+        f"不健康状态：{_first_sentence(states['unhealthy'])}",
+        "",
+        "━━━ 成长与压力箭头 ━━━",
+        _first_sentence(arrows["growth"]),
+        _first_sentence(arrows["stress"]),
+        "",
+        "━━━ 三条行动建议 ━━━",
+        *[
+            f"{index}. {tip}"
+            for index, tip in enumerate(info["growth_tips"][:3], start=1)
+        ],
     ]
-    if is_full:
-        lines.extend(
-            [
-                f"侧翼：{detail.get('wing', '暂无')}",
-                f"Tritype 推测：{detail.get('tritype', '暂无')}",
-            ]
-        )
-        weights = detail.get("center_weights") or {}
-        if weights:
-            lines.extend(
-                [
-                    "",
-                    "━━━ 三中心权重（full 李克特相对权重）━━━",
-                    *_center_lines(weights, is_full=True),
-                ]
-            )
-    else:
-        center_scores = detail.get("center_scores") or detail.get("center_weights") or {}
-        if center_scores:
-            lines.extend(
-                [
-                    "",
-                    "━━━ 三中心相对分（36分制）━━━",
-                    *_center_lines(center_scores, is_full=False),
-                ]
-            )
-        lines.extend(
-            [
-                "",
-                "quick 仅报告主型与脑/心/腹三中心相对分；侧翼与 tritype 仅 full 档提供。",
-            ]
-        )
+
+
+def _full_profile_lines(primary_type, *, include_wings):
+    info = TYPE_DESCRIPTIONS[primary_type]
+    states = info["states"]
+    arrows = info["arrows"]
+    lines = [
+        "━━━ 主型深度描述 ━━━",
+        info["full_description"],
+        "",
+        "━━━ 核心恐惧 / 核心欲望 / 关键动机 ━━━",
+        f"核心恐惧：{info['core_fear']}",
+        "",
+        f"核心欲望：{info['core_desire']}",
+        "",
+        f"关键动机：{info['key_motivation']}",
+        "",
+        "━━━ 健康 / 一般 / 不健康状态 ━━━",
+        f"健康状态：{states['healthy']}",
+        "",
+        f"一般状态：{states['average']}",
+        "",
+        f"不健康状态：{states['unhealthy']}",
+        "",
+        "━━━ 成长与压力箭头 ━━━",
+        arrows["growth"],
+        "",
+        arrows["stress"],
+    ]
+    if include_wings:
+        lines.extend(["", "━━━ 两个侧翼的差异 ━━━"])
+        for wing_name, wing_text in info["wings"].items():
+            lines.extend([f"{wing_name}：{wing_text}", ""])
+        lines.pop()
     lines.extend(
         [
             "",
-            f"分数量纲说明：{SCALE_NOTE}",
+            "━━━ 成长建议 ━━━",
+            *[
+                f"{index}. {tip}"
+                for index, tip in enumerate(info["growth_tips"], start=1)
+            ],
             "",
-            "━━━ 类型描述 ━━━",
-            info["full_description"],
+            "━━━ 优势 ━━━",
+            *[f"• {item}" for item in info["strengths"]],
             "",
-            "━━━ 性格优势 ━━━",
-            info["strengths"],
-            "",
-            "━━━ 注意事项 ━━━",
-            info["weaknesses"],
+            "━━━ 盲点 ━━━",
+            *[f"• {item}" for item in info["weaknesses"]],
         ]
     )
-    return "\n".join(lines)
+    return lines
+
+
+def _first_sentence(text):
+    head, marker, _ = text.partition("。")
+    return head + marker if marker else text
+
+
+def _glossary_card(is_full_test):
+    entries = []
+    if is_full_test:
+        entries.extend(
+            [
+                "侧翼：主型相邻两型中较明显的一侧。",
+                "tritype：从脑、心、腹三个中心各取一个高分型。",
+            ]
+        )
+    entries.append(
+        "三中心：脑（5/6/7）、心（2/3/4）、腹（8/9/1）三种反应重心。"
+    )
+    body = "\n".join(f"│ {entry}" for entry in entries)
+    return f"┌─ 名词小课堂 ─┐\n{body}\n└──────────┘"
 
 
 def _wing(primary_type, scores):

@@ -19,6 +19,8 @@ MCP 出题为英文原文。quick 只报告主型和脑/心/腹三中心 36 分�
 - `enneagram_start`：传 `mode`。
 - `enneagram_answer`：逐题传 `answer`。
 - `enneagram_answer_batch`：快速模式传当前批次 `answers`。
-- `enneagram_get_result`：查询最近结果；账号永久保留，游客保留 48 小时。
+- `enneagram_get_result`：查询最近结果；默认返回 600–1000 字精简版。
+  - 传 `detail="full"` 返回完整分节文案。
+  - 账号结果永久保留，游客结果保留 48 小时。
 
 题库与计分设计来自 kcdjmaxx/enneagram-llm-evaluator，MIT，感谢原作者。

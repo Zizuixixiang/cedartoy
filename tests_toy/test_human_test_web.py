@@ -438,16 +438,23 @@ class HumanTestWebTests(unittest.TestCase):
             "function renderDndResult", 1
         )[0]
         for heading in (
-            "名词解释",
+            "主型深度描述",
             "核心欲望",
             "核心恐惧",
-            "大白话性格描述",
-            "性格优势",
-            "注意事项",
+            "关键动机",
+            "健康状态",
+            "一般状态",
+            "不健康状态",
+            "成长箭头",
+            "压力箭头",
+            "成长建议",
+            "优势",
+            "盲点",
         ):
             self.assertIn(f'"{heading}"', renderer)
-        self.assertIn("快速型仅报告", renderer)
-        self.assertIn("仅完整型提供", renderer)
+        self.assertIn("appendGlossaryCard", renderer)
+        self.assertIn('"glossary-card"', page)
+        self.assertNotIn("快速型仅报告", renderer)
 
 
 if __name__ == "__main__":

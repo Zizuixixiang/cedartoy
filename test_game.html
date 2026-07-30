@@ -197,6 +197,33 @@
     .result-section h3 { margin: 0 0 11px; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 14px; }
     .result-section p { margin: 0 0 12px; line-height: 1.8; }
     .result-copy-paragraph { white-space: pre-line; }
+    .result-list { margin: 0; padding-left: 22px; }
+    .result-list li { margin: 0 0 10px; line-height: 1.75; }
+    .glossary-card {
+      position: relative;
+      margin-top: 28px;
+      padding: 20px 16px 14px;
+      background: var(--bg);
+      border: 3px solid var(--purple);
+      box-shadow: 5px 5px 0 var(--purple-light);
+    }
+    .glossary-card::before {
+      content: "";
+      position: absolute;
+      top: -3px;
+      left: 18px;
+      width: 46px;
+      border-top: 3px solid var(--pink);
+    }
+    .glossary-title {
+      margin: 0 0 14px;
+      color: var(--purple-darker);
+      font-family: "Silkscreen", "Microsoft YaHei", sans-serif;
+      font-size: 13px;
+    }
+    .glossary-entry { margin: 0 0 12px; line-height: 1.75; }
+    .glossary-entry:last-child { margin-bottom: 0; }
+    .glossary-term { color: var(--pink-dark); font-weight: 800; }
     .axis-list { display: grid; gap: 15px; }
     .axis-card { padding: 12px; background: var(--bg); border: 2px solid var(--purple-light); }
     .axis-labels { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--purple-darker); font-family: "Silkscreen", "Microsoft YaHei", sans-serif; font-size: 11px; }
@@ -758,6 +785,30 @@
       root.appendChild(section);
     }
 
+    function appendResultListSection(root, title, items) {
+      const section = makeResultElement("section", "result-section");
+      section.appendChild(makeResultElement("h3", "", title));
+      const list = makeResultElement("ol", "result-list");
+      items.forEach((item) => list.appendChild(makeResultElement("li", "", item)));
+      section.appendChild(list);
+      root.appendChild(section);
+    }
+
+    function appendGlossaryCard(root, items) {
+      const card = makeResultElement("aside", "glossary-card");
+      card.setAttribute("aria-label", "名词小课堂");
+      card.appendChild(makeResultElement("h3", "glossary-title", "名词小课堂"));
+      items.forEach((item) => {
+        const entry = makeResultElement("p", "glossary-entry");
+        entry.append(
+          makeResultElement("span", "glossary-term", `${item.term}：`),
+          document.createTextNode(item.definition)
+        );
+        card.appendChild(entry);
+      });
+      root.appendChild(card);
+    }
+
     function renderMbtiResult(root, data) {
       const requiredText = [data.type, data.type_name, data.nickname, data.description, data.strengths, data.weaknesses];
       if (data.kind !== "mbti" || requiredText.some((value) => typeof value !== "string" || !value)
@@ -782,7 +833,7 @@
         data.nickname,
         data.core_desire,
         data.core_fear,
-        data.glossary,
+        data.key_motivation,
         data.description,
         data.strengths,
         data.weaknesses
@@ -791,6 +842,11 @@
           || !Number.isInteger(Number(data.primary_type))
           || requiredText.some((value) => typeof value !== "string" || !value)
           || !Array.isArray(data.centers) || data.centers.length !== 3
+          || !Array.isArray(data.glossary_items) || data.glossary_items.length < 1
+          || !Array.isArray(data.growth_tips) || data.growth_tips.length < 3
+          || !Array.isArray(data.strength_items) || data.strength_items.length < 3
+          || !Array.isArray(data.weakness_items) || data.weakness_items.length < 3
+          || !data.states || !data.arrows || !data.wings
           || data.centers.some((entry) => !entry || typeof entry.label !== "string" || !Number.isFinite(Number(entry.value)))) return false;
       const hero = makeResultElement("div", "result-hero");
       hero.append(
@@ -800,9 +856,7 @@
       );
       root.appendChild(hero);
       if (data.is_full) {
-        appendResultTextSection(root, "侧翼与 tritype 推测", `侧翼：${data.wing}\n\ntritype：${data.tritype}`);
-      } else {
-        appendResultTextSection(root, "结果范围", "快速型仅报告主型与脑、心、腹三中心相对分；侧翼与 tritype 仅完整型提供。");
+        appendResultTextSection(root, "完整型附加判定", `侧翼：${data.wing}\n\nTritype：${data.tritype}`);
       }
       appendMetricBars(
         root,
@@ -811,12 +865,26 @@
         "metric-bars-large"
       );
       appendResultTextSection(root, "分数量纲说明", data.score_note);
-      appendResultTextSection(root, "名词解释", data.glossary);
-      appendResultTextSection(root, "核心欲望", data.core_desire);
+      appendGlossaryCard(root, data.glossary_items);
+      appendResultTextSection(root, "主型深度描述", data.description);
       appendResultTextSection(root, "核心恐惧", data.core_fear);
-      appendResultTextSection(root, "大白话性格描述", data.description);
-      appendResultTextSection(root, "性格优势", data.strengths);
-      appendResultTextSection(root, "注意事项", data.weaknesses);
+      appendResultTextSection(root, "核心欲望", data.core_desire);
+      appendResultTextSection(root, "关键动机", data.key_motivation);
+      appendResultTextSection(root, "健康状态", data.states.healthy);
+      appendResultTextSection(root, "一般状态", data.states.average);
+      appendResultTextSection(root, "不健康状态", data.states.unhealthy);
+      appendResultTextSection(root, "成长箭头", data.arrows.growth);
+      appendResultTextSection(root, "压力箭头", data.arrows.stress);
+      if (data.is_full) {
+        appendResultTextSection(
+          root,
+          "两个侧翼的差异",
+          Object.entries(data.wings).map(([wing, copy]) => `${wing}：${copy}`).join("\n\n")
+        );
+      }
+      appendResultListSection(root, "成长建议", data.growth_tips);
+      appendResultListSection(root, "优势", data.strength_items);
+      appendResultListSection(root, "盲点", data.weakness_items);
       return true;
     }
 

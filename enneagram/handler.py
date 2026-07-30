@@ -27,6 +27,7 @@ _engine = ScaleTestEngine(
     ),
     supports_compare=False,
     account_db_path=lambda: ACCOUNT_DB_PATH,
+    result_detail_values=("full",),
 )
 
 TOOLS = _engine.tools
