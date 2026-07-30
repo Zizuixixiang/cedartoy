@@ -39,6 +39,7 @@ from ecr import scoring as ecr_scoring
 from eco_adapter import handler as eco_handler
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
 from enneagram import handler as enneagram_handler
+from enneagram import descriptions as enneagram_descriptions
 from enneagram import questions as enneagram_questions
 from enneagram import scoring as enneagram_scoring
 from humanity import handler as humanity_handler
@@ -2245,8 +2246,10 @@ def _human_test_public_result(game, text):
     replacements = {
         "short_fast模式": "快速版",
         "full_fast模式": "完整版",
+        "quick_fast模式": "快速型",
         "short模式": "快速版",
         "full模式": "完整版",
+        "quick模式": "快速型",
         "DND阵营测试": "九阵营测试",
         "DND历史结果": "九阵营历史结果",
         "dnd_get_result": "结果页",
@@ -2256,6 +2259,16 @@ def _human_test_public_result(game, text):
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    if game == "enneagram":
+        for old, new in (
+            ("quick_fast", "快速型"),
+            ("full_fast", "完整型"),
+            ("quick", "快速型"),
+            ("full", "完整型"),
+            ("快速版", "快速型"),
+            ("完整版", "完整型"),
+        ):
+            text = text.replace(old, new)
     return text
 
 
@@ -2321,7 +2334,7 @@ def _human_test_result_data(game, player_id):
             primary_type = int(result_value)
         except (TypeError, ValueError):
             return None
-        info = enneagram_scoring.TYPE_DESCRIPTIONS.get(primary_type)
+        info = enneagram_descriptions.WEB_TYPE_DESCRIPTIONS.get(primary_type)
         is_full = bool(detail.get("is_full")) or detail.get("mode") in {
             "full",
             "full_fast",
@@ -2358,7 +2371,27 @@ def _human_test_result_data(game, player_id):
             "wing": detail.get("wing"),
             "tritype": detail.get("tritype"),
             "is_full": is_full,
-            "score_note": enneagram_scoring.SCALE_NOTE,
+            "score_note": (
+                "快速型采用 36 次 A/B 选择，显示的是各型号被选中的相对次数；"
+                "完整型采用 180 条陈述评分，显示的是换算后的相对权重。"
+                "两套分数不可直接比较，因为数字量纲不同。"
+            ),
+            "glossary": (
+                "侧翼：主型旁边两个相邻型号中，影响更明显的那个。"
+                "比如 1w9 表示主型是 1 号，同时带有相邻 9 号的一些味道。\n\n"
+                "tritype：从脑、心、腹三个区各取最高分型号，组成一套“三件套”，"
+                "用来补充主型之外常用的思考、感受和行动方式。\n\n"
+                "三中心：脑中心主要用思考处理恐惧和不确定，容易先分析、计划或找可能性；"
+                "心中心主要在意情感连接和别人眼中的形象，容易从关系与价值感出发；"
+                "腹中心更多靠本能和行动应对愤怒、边界与控制，常先感到身体里的“对或不对”。"
+                if is_full
+                else
+                "三中心：脑中心主要用思考处理恐惧和不确定，容易先分析、计划或找可能性；"
+                "心中心主要在意情感连接和别人眼中的形象，容易从关系与价值感出发；"
+                "腹中心更多靠本能和行动应对愤怒、边界与控制，常先感到身体里的“对或不对”。"
+            ),
+            "core_desire": info["core_desire"],
+            "core_fear": info["core_fear"],
             "centers": centers,
             "description": info["full_description"],
             "strengths": info["strengths"],
@@ -2478,7 +2511,11 @@ def _human_test_action(game, action, raw_token, body):
         if mode is None:
             raise _McpError(
                 -32602,
-                "请选择快速版或完整版"
+                (
+                    "请选择快速型或完整型"
+                    if game == "enneagram"
+                    else "请选择快速版或完整版"
+                )
                 if game in {"mbti", "enneagram"}
                 else "测试版本不合法",
             )

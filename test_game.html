@@ -447,8 +447,8 @@
       $("modes").innerHTML = "";
       const modeItems = CONFIG.game === "enneagram"
         ? [
-            {edition: "quick", label: "快速版 · 36题 A/B", desc: "快速查看主型与脑、心、腹三中心相对分"},
-            {edition: "complete", label: "完整版 · 180题", desc: "完整计算主型、侧翼、三中心与 Tritype 推测"}
+            {edition: "quick", label: "快速型 · 36题 A/B", desc: "快速查看主型与脑、心、腹三中心相对分"},
+            {edition: "complete", label: "完整型 · 180题", desc: "完整计算主型、侧翼、三中心与 tritype 推测"}
           ]
         : [
             {edition: "quick", label: "快速版 · 16题", desc: "用较短时间完成一次人格偏好扫描"},
@@ -533,7 +533,7 @@
       $("modeLabel").textContent = CONFIG.game === "mbti"
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
         : CONFIG.game === "enneagram"
-        ? (activeState.edition === "quick" ? "快速版 · 36题 A/B" : "完整版 · 180题")
+        ? (activeState.edition === "quick" ? "快速型 · 36题 A/B" : "完整型 · 180题")
         : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题"}[CONFIG.game] || "测试");
       $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
@@ -777,7 +777,16 @@
     }
 
     function renderEnneagramResult(root, data) {
-      const requiredText = [data.type_name, data.nickname, data.description, data.strengths, data.weaknesses];
+      const requiredText = [
+        data.type_name,
+        data.nickname,
+        data.core_desire,
+        data.core_fear,
+        data.glossary,
+        data.description,
+        data.strengths,
+        data.weaknesses
+      ];
       if (data.kind !== "enneagram"
           || !Number.isInteger(Number(data.primary_type))
           || requiredText.some((value) => typeof value !== "string" || !value)
@@ -791,9 +800,9 @@
       );
       root.appendChild(hero);
       if (data.is_full) {
-        appendResultTextSection(root, "侧翼与 Tritype 推测", `侧翼：${data.wing}\n\nTritype：${data.tritype}`);
+        appendResultTextSection(root, "侧翼与 tritype 推测", `侧翼：${data.wing}\n\ntritype：${data.tritype}`);
       } else {
-        appendResultTextSection(root, "结果范围", "快速版仅报告主型与脑、心、腹三中心相对分；侧翼与 Tritype 仅完整版提供。");
+        appendResultTextSection(root, "结果范围", "快速型仅报告主型与脑、心、腹三中心相对分；侧翼与 tritype 仅完整型提供。");
       }
       appendMetricBars(
         root,
@@ -802,7 +811,10 @@
         "metric-bars-large"
       );
       appendResultTextSection(root, "分数量纲说明", data.score_note);
-      appendResultTextSection(root, "类型描述", data.description);
+      appendResultTextSection(root, "名词解释", data.glossary);
+      appendResultTextSection(root, "核心欲望", data.core_desire);
+      appendResultTextSection(root, "核心恐惧", data.core_fear);
+      appendResultTextSection(root, "大白话性格描述", data.description);
       appendResultTextSection(root, "性格优势", data.strengths);
       appendResultTextSection(root, "注意事项", data.weaknesses);
       return true;

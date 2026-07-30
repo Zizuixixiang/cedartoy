@@ -37,7 +37,7 @@ def _table_count(db_path: Path, table: str, where: str = "") -> int:
 
 
 def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
-    games = {"mbti": [], "dnd": [], "love": [], "ecr": [], "humanity": [], "bdsmtest": []}
+    games = {"mbti": [], "enneagram": [], "dnd": [], "love": [], "ecr": [], "humanity": [], "bdsmtest": []}
     category_order = {
         "love": ("A", "B", "C", "D", "E"),
         "ecr": ("secure", "fearful", "preoccupied", "dismissive"),
@@ -68,7 +68,7 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
                 """
                 SELECT game, result_value, COUNT(*) AS count
                 FROM test_results
-                WHERE game IN ('mbti', 'dnd', 'bdsmtest')
+                WHERE game IN ('mbti', 'enneagram', 'dnd', 'bdsmtest')
                   AND result_value IS NOT NULL
                   AND TRIM(result_value) != ''
                 GROUP BY game, result_value

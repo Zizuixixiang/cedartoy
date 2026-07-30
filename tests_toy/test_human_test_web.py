@@ -137,6 +137,16 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertIsNone(data["tritype"])
         self.assertEqual(sum(item["value"] for item in data["centers"]), 36)
         self.assertIn("两套分数不可直接比较", data["score_note"])
+        self.assertIn("三中心", data["glossary"])
+        self.assertNotIn("侧翼", data["glossary"])
+        self.assertNotIn("tritype", data["glossary"])
+        self.assertTrue(data["core_desire"])
+        self.assertTrue(data["core_fear"])
+        self.assertGreater(len(data["description"]), 120)
+        self.assertIn("快速型", completed["result"])
+        self.assertNotIn("快速版", completed["result"])
+        self.assertNotIn("quick", completed["result"].lower())
+        self.assertNotIn("full", completed["result"].lower())
 
     def test_enneagram_complete_web_uses_16_question_handler_chunks(self):
         player_id = "guest:webenneafull"
@@ -160,6 +170,14 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertTrue(data["is_full"])
         self.assertTrue(data["wing"])
         self.assertTrue(data["tritype"])
+        self.assertIn("侧翼", data["glossary"])
+        self.assertIn("1w9", data["glossary"])
+        self.assertIn("tritype", data["glossary"])
+        self.assertIn("脑、心、腹", data["glossary"])
+        self.assertIn("完整型", completed["result"])
+        self.assertNotIn("完整版", completed["result"])
+        self.assertNotIn("quick", completed["result"].lower())
+        self.assertNotIn("full", completed["result"].lower())
 
     def test_dnd_has_one_web_version_and_completes_in_one_handler_batch(self):
         player_id = "guest:webdnd1"
@@ -381,6 +399,8 @@ class HumanTestWebTests(unittest.TestCase):
         label_function = index.split("function platformResultLabel", 1)[1].split(
             "function renderDistribution", 1
         )[0]
+        self.assertIn('game === "enneagram"', label_function)
+        self.assertIn("`${result}号`", label_function)
         for label in (
             "认证碳基",
             "人味充足",
@@ -403,6 +423,31 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertIn("sortedRows.map", render_distribution)
         self.assertIn("platform-dist-${game}", render_distribution)
         self.assertIn("<b>${count}</b>", render_distribution)
+
+    def test_enneagram_human_copy_uses_type_names_and_glossary(self):
+        page = server.TEST_GAME_INDEX_PATH.read_text(encoding="utf-8")
+        enneagram_modes = page.split(
+            'const modeItems = CONFIG.game === "enneagram"', 1
+        )[1].split("modeItems.forEach", 1)[0]
+        self.assertIn("快速型 · 36题", enneagram_modes)
+        self.assertIn("完整型 · 180题", enneagram_modes)
+        self.assertNotIn("快速版 · 36题", enneagram_modes)
+        self.assertNotIn("完整版 · 180题", enneagram_modes)
+
+        renderer = page.split("function renderEnneagramResult", 1)[1].split(
+            "function renderDndResult", 1
+        )[0]
+        for heading in (
+            "名词解释",
+            "核心欲望",
+            "核心恐惧",
+            "大白话性格描述",
+            "性格优势",
+            "注意事项",
+        ):
+            self.assertIn(f'"{heading}"', renderer)
+        self.assertIn("快速型仅报告", renderer)
+        self.assertIn("仅完整型提供", renderer)
 
 
 if __name__ == "__main__":

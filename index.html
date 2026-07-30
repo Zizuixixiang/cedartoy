@@ -3377,6 +3377,7 @@
     }
 
     function platformResultLabel(game, result) {
+      if (game === "enneagram" && /^[1-9]$/.test(String(result))) return `${result}号`;
       if (game === "dnd") return dndResultLabels[result] || result;
       if (game === "love") return ({A: "肯定言辞", B: "优质时间", C: "服务行动", D: "赠送礼物", E: "身体接触"})[result] || result;
       if (game === "ecr") return ({secure: "安全型", fearful: "恐惧型", preoccupied: "迷恋型", dismissive: "冷漠型"})[result] || result;
