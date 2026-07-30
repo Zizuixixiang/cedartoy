@@ -38,6 +38,7 @@ class ScaleTestEngine:
         prompt,
         supports_compare=True,
         account_db_path=None,
+        result_detail_values=(),
     ):
         self.game = game
         self.title = title
@@ -49,6 +50,7 @@ class ScaleTestEngine:
         self.prompt = prompt
         self.supports_compare = supports_compare
         self._account_db_path = account_db_path
+        self.result_detail_values = tuple(result_detail_values)
         self.tools = self._build_tools()
 
     def handle_mcp(self, payload):
@@ -242,6 +244,13 @@ class ScaleTestEngine:
 
     def get_result(self, arguments):
         player_id = self._require_player_id(arguments, "player_id")
+        requested_detail = arguments.get("detail")
+        if self.result_detail_values and requested_detail not in {
+            None,
+            *self.result_detail_values,
+        }:
+            allowed = "、".join(self.result_detail_values)
+            raise JsonRpcError(-32602, f"detail 须为 {allowed}，或省略以查看精简结果。")
         row = self._load_result(player_id)
         if row is None:
             raise JsonRpcError(
@@ -251,10 +260,17 @@ class ScaleTestEngine:
         result_value, detail, completed_at = row
         mode = detail.get("mode") or "unknown"
         label = self._time_label(completed_at)
-        return (
-            self.scoring.format_stored_result(mode, result_value, detail, label)
-            + f"\n存档身份：{player_id}"
-        )
+        if self.result_detail_values:
+            text = self.scoring.format_stored_result(
+                mode,
+                result_value,
+                detail,
+                label,
+                requested_detail=requested_detail,
+            )
+        else:
+            text = self.scoring.format_stored_result(mode, result_value, detail, label)
+        return text + f"\n存档身份：{player_id}"
 
     def compare(self, arguments):
         if not self.supports_compare:
@@ -579,6 +595,13 @@ class ScaleTestEngine:
         fast_batch_max = int(
             getattr(self.questions, "FAST_BATCH_SIZE_MAX", full_total)
         )
+        result_properties = {"player_id": player}
+        if self.result_detail_values:
+            result_properties["detail"] = {
+                "type": "string",
+                "enum": list(self.result_detail_values),
+                "description": "传 full 返回完整结果文案；省略时返回精简结果。",
+            }
         tools = [
             {
                 "name": f"{self.game}_start",
@@ -634,7 +657,7 @@ class ScaleTestEngine:
                 "description": f"查询最近一次已完成的{self.title}结果。",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"player_id": player},
+                    "properties": result_properties,
                     "required": ["player_id"],
                     "additionalProperties": False,
                 },
