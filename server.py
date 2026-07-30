@@ -757,6 +757,112 @@ def _init_announcement_tables():
         announcements.init_db(conn)
 
 
+def _human_announcement_identity(user):
+    """Keep homepage reads separate from the machine-side numeric player id."""
+    return f"human:{int(user['id'])}"
+
+
+def _announcement_options_for_web(raw):
+    if not raw:
+        return []
+    try:
+        options = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(options, list):
+        return []
+    return [str(option) for option in options]
+
+
+def _web_announcements(raw_token):
+    user = _current_account(raw_token) if raw_token else None
+    identity = _human_announcement_identity(user) if user else None
+    now = announcements._now_iso()
+    with _sessions_db_connect() as conn:
+        announcements.init_db(conn)
+        rows = conn.execute(
+            """
+            SELECT
+                a.id,
+                a.type,
+                a.title,
+                a.content,
+                a.options,
+                a.multiple,
+                a.target_game,
+                a.created_at,
+                a.expires_at,
+                CASE WHEN r.announcement_id IS NULL THEN 1 ELSE 0 END AS unread
+            FROM announcements AS a
+            LEFT JOIN announcement_reads AS r
+              ON r.player_id = ? AND r.announcement_id = a.id
+            WHERE a.expires_at IS NULL OR a.expires_at > ?
+            ORDER BY a.created_at DESC, a.id DESC
+            """,
+            (identity or "", now),
+        ).fetchall()
+
+    items = []
+    for row in rows:
+        unread = bool(identity and row["unread"])
+        items.append(
+            {
+                "id": row["id"],
+                "type": row["type"],
+                "title": row["title"],
+                "content": row["content"],
+                "options": _announcement_options_for_web(row["options"]),
+                "multiple": bool(row["multiple"]),
+                "target_game": row["target_game"],
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+                "unread": unread,
+            }
+        )
+    return {
+        "authenticated": bool(user),
+        "announcements": items,
+        "unread_count": sum(1 for item in items if item["unread"]),
+    }
+
+
+def _mark_web_announcements_read(raw_token, announcement_ids):
+    user = _current_account(raw_token)
+    if not isinstance(announcement_ids, list):
+        raise _McpError(-32602, "announcement_ids 必须是数组")
+    normalized_ids = list(
+        dict.fromkeys(
+            item.strip()
+            for item in announcement_ids
+            if isinstance(item, str) and item.strip()
+        )
+    )
+    if len(normalized_ids) > 500:
+        raise _McpError(-32602, "一次最多标记 500 条通知")
+    if not normalized_ids:
+        return {"marked": 0}
+
+    identity = _human_announcement_identity(user)
+    now = announcements._now_iso()
+    placeholders = ",".join("?" for _ in normalized_ids)
+    with _sessions_db_connect() as conn:
+        announcements.init_db(conn)
+        before = conn.total_changes
+        conn.execute(
+            f"""
+            INSERT OR IGNORE INTO announcement_reads
+                (player_id, announcement_id, votes, read_at)
+            SELECT ?, id, NULL, ?
+            FROM announcements
+            WHERE id IN ({placeholders})
+              AND (expires_at IS NULL OR expires_at > ?)
+            """,
+            (identity, now, *normalized_ids, now),
+        )
+        marked = conn.total_changes - before
+    return {"marked": marked}
+
+
 def _add_column_if_missing(conn, table, column, column_sql):
     columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
@@ -4635,6 +4741,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_change_password()
             return
 
+        if path == "/api/announcements/read":
+            self._handle_api_announcements_read()
+            return
+
         if path == "/api/auth/reset-password":
             self._handle_api_reset_password()
             return
@@ -4811,6 +4921,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/me":
             self._handle_api_me()
+            return
+
+        if path == "/api/announcements":
+            self._handle_api_announcements()
             return
 
         if path == "/api/auth/saves":
@@ -5094,6 +5208,42 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=401)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_announcements(self):
+        try:
+            result = _web_announcements(_extract_bearer(self.headers))
+            self._send_json(
+                result,
+                extra_headers={"Cache-Control": "no-cache, no-store"},
+            )
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message},
+                status=401 if exc.code == -32001 else 400,
+            )
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_announcements_read(self):
+        try:
+            body = self._read_json_body()
+            result = _mark_web_announcements_read(
+                _extract_bearer(self.headers),
+                body.get("announcement_ids"),
+            )
+            self._send_json(
+                result,
+                extra_headers={"Cache-Control": "no-cache, no-store"},
+            )
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message},
+                status=401 if exc.code == -32001 else 400,
+            )
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
