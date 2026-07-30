@@ -38,6 +38,9 @@ from ecr import questions as ecr_questions
 from ecr import scoring as ecr_scoring
 from eco_adapter import handler as eco_handler
 from eco_adapter.handler import handle_mcp as handle_eco_mcp
+from enneagram import handler as enneagram_handler
+from enneagram import questions as enneagram_questions
+from enneagram import scoring as enneagram_scoring
 from humanity import handler as humanity_handler
 from humanity import questions as humanity_questions
 from humanity import scoring as humanity_scoring
@@ -143,6 +146,7 @@ _ECO_HUMAN_ACTION_RATE_LIMIT_LOCK = Lock()
 ECO_HUMAN_ACTION_MIN_INTERVAL_SECONDS = 1.0
 
 handle_mbti_mcp = mbti_handler.handle_mcp
+handle_enneagram_mcp = enneagram_handler.handle_mcp
 handle_dnd_mcp = dnd_handler.handle_mcp
 handle_love_mcp = love_handler.handle_mcp
 handle_ecr_mcp = ecr_handler.handle_mcp
@@ -182,7 +186,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat", "duel"],
+                    "enum": ["turtle_soup", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat", "duel"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -294,7 +298,7 @@ def _build_kelivo_platform_tools():
             },
             "mode": {
                 "type": "string",
-                "description": "游戏模式；用于 mbti/dnd/bdsmtest 开始测试、eco 导出或其他游戏新局。",
+                "description": "游戏模式；用于 mbti/enneagram/dnd/bdsmtest 开始测试、eco 导出或其他游戏新局。",
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
@@ -313,13 +317,13 @@ def _build_kelivo_platform_tools():
             },
             "answer": {
                 "anyOf": [{"type": "integer"}, {"type": "string"}],
-                "description": "DND 当前题选项编号（1-4），或海龟汤自定义题汤底。",
+                "description": "DND 当前题选项编号（1-4）、九型人格频率（1-5），或海龟汤自定义题汤底。",
             },
             "answers": {
                 "anyOf": [
                     {
                         "type": "array",
-                        "items": {"type": "integer", "minimum": 1, "maximum": 4},
+                        "items": {"type": "integer", "minimum": 1, "maximum": 7},
                     },
                     {
                         "type": "object",
@@ -330,7 +334,7 @@ def _build_kelivo_platform_tools():
                         },
                     },
                 ],
-                "description": "批量测试答案；DND 用 1-4 整数数组，BDSMTest 用 {题号: 1-7} 对象。",
+                "description": "批量测试答案；DND 用 1-4、九型人格用 1-5 整数数组，BDSMTest 用 {题号: 1-7} 对象。",
             },
             "score": {
                 "type": "integer",
@@ -1589,15 +1593,15 @@ def _turtle_soup_stats(conn, user):
 def _test_stats(user):
     player_ids = _game_player_ids(user)
     if not player_ids or not SESSIONS_DB_PATH.exists():
-        return {game: {"test_count": 0} for game in ("mbti", "dnd", "love", "ecr", "humanity", "bdsmtest")}
+        return {game: {"test_count": 0} for game in ("mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest")}
     placeholders = ",".join("?" * len(player_ids))
-    counts = {game: 0 for game in ("mbti", "dnd", "love", "ecr", "humanity", "bdsmtest")}
+    counts = {game: 0 for game in ("mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest")}
     with _sessions_db_connect() as conn:
         rows = conn.execute(
             f"""
             SELECT game, COUNT(*) AS test_count
             FROM test_results
-            WHERE player_id IN ({placeholders}) AND game IN ('mbti', 'dnd', 'love', 'ecr', 'humanity', 'bdsmtest')
+            WHERE player_id IN ({placeholders}) AND game IN ('mbti', 'enneagram', 'dnd', 'love', 'ecr', 'humanity', 'bdsmtest')
             GROUP BY game
             """,
             player_ids,
@@ -1606,6 +1610,7 @@ def _test_stats(user):
             counts[row["game"]] = int(row["test_count"])
     return {
         "mbti": {"test_count": counts["mbti"]},
+        "enneagram": {"test_count": counts["enneagram"]},
         "dnd": {"test_count": counts["dnd"]},
         "love": {"test_count": counts["love"]},
         "ecr": {"test_count": counts["ecr"]},
@@ -1620,6 +1625,7 @@ def _game_overview(conn, user):
     return {
         "turtle_soup": soup,
         "mbti": tests["mbti"],
+        "enneagram": tests["enneagram"],
         "dnd": tests["dnd"],
         "love": tests["love"],
         "ecr": tests["ecr"],
@@ -2042,6 +2048,13 @@ HUMAN_TEST_GAMES = {
         "subtitle": "MIND SCAN / 16 TYPES",
         "source": "题库整理自网络公开题目",
     },
+    "enneagram": {
+        "handler": enneagram_handler,
+        "questions": enneagram_questions,
+        "title": "九型人格测试",
+        "subtitle": "ENNEAGRAM / NINE TYPES",
+        "source": "题库与计分设计：kcdjmaxx/enneagram-llm-evaluator（MIT）",
+    },
     "dnd": {
         "handler": dnd_handler,
         "questions": dnd_questions,
@@ -2087,6 +2100,7 @@ HUMAN_TEST_GAMES = {
 
 HUMAN_TEST_PUBLIC_EDITIONS = {
     "mbti": {"quick": "short_fast", "complete": "full_fast"},
+    "enneagram": {"quick": "quick_fast", "complete": "full_fast"},
     "dnd": {"standard": "full_fast"},
     "love": {"standard": "full_fast"},
     "ecr": {"standard": "full_fast"},
@@ -2138,7 +2152,10 @@ def _human_test_public_questions(game, mode):
     questions = HUMAN_TEST_GAMES[game]["questions"].get_questions(mode)
     public = []
     for index, question in enumerate(questions):
-        item = {"number": index + 1, "text": question["text"]}
+        item = {
+            "number": index + 1,
+            "text": question["text_zh"] if game == "enneagram" else question["text"],
+        }
         if game == "mbti":
             item["option_a"] = question["option_a"]
             item["option_b"] = question["option_b"]
@@ -2148,6 +2165,15 @@ def _human_test_public_questions(game, mode):
             item["options"] = [
                 {"value": option["value"], "text": translated_options[option_index]}
                 for option_index, option in enumerate(question["options"])
+            ]
+        elif game == "enneagram":
+            item["options"] = [
+                {
+                    "value": option["value"],
+                    "text": option["text_zh"],
+                    **({"label": option["label"]} if option.get("label") else {}),
+                }
+                for option in question["options"]
             ]
         else:
             item["options"] = [
@@ -2193,6 +2219,15 @@ def _human_test_public_edition(game, mode):
 
 def _human_test_public_state(game, player_id, identity, session):
     mode = session["mode"]
+    instructions = HUMAN_TEST_GAMES[game].get("instructions", "")
+    if game == "enneagram":
+        if mode in {"quick", "quick_fast"}:
+            instructions = "每题有 A/B 两句，请选择更符合你的一句。"
+        else:
+            instructions = (
+                "请按 1–5 评估每条陈述与你的符合程度："
+                "1=几乎从不，2=较少如此，3=有时如此，4=经常如此，5=几乎总是。"
+            )
     return {
         "ok": True,
         "game": game,
@@ -2201,7 +2236,7 @@ def _human_test_public_state(game, player_id, identity, session):
         "complete": False,
         "edition": _human_test_public_edition(game, mode),
         "total": session["total"],
-        "instructions": HUMAN_TEST_GAMES[game].get("instructions", ""),
+        "instructions": instructions,
         "questions": _human_test_public_questions(game, mode),
     }
 
@@ -2216,6 +2251,7 @@ def _human_test_public_result(game, text):
         "DND历史结果": "九阵营历史结果",
         "dnd_get_result": "结果页",
         "mbti_get_result": "结果页",
+        "enneagram_get_result": "结果页",
         "凭 player_id 查询": "在本页查询",
     }
     for old, new in replacements.items():
@@ -2275,6 +2311,55 @@ def _human_test_result_data(game, player_id):
             "type_name": info["type_name"],
             "nickname": info["type_nickname"],
             "dimensions": dimensions,
+            "description": info["full_description"],
+            "strengths": info["strengths"],
+            "weaknesses": info["weaknesses"],
+        }
+
+    if game == "enneagram":
+        try:
+            primary_type = int(result_value)
+        except (TypeError, ValueError):
+            return None
+        info = enneagram_scoring.TYPE_DESCRIPTIONS.get(primary_type)
+        is_full = bool(detail.get("is_full")) or detail.get("mode") in {
+            "full",
+            "full_fast",
+        }
+        center_values = (
+            detail.get("center_weights")
+            if is_full
+            else detail.get("center_scores") or detail.get("center_weights")
+        ) or {}
+        if info is None or not isinstance(center_values, dict):
+            return None
+        centers = []
+        for center, members in enneagram_scoring.CENTERS.items():
+            try:
+                value = float(center_values[center])
+            except (KeyError, TypeError, ValueError):
+                continue
+            centers.append(
+                {
+                    "label": f"{center}（{'/'.join(str(number) for number in members)}）",
+                    "value": value,
+                    "min": 0,
+                    "max": 100 if is_full else 36,
+                    "display": f"{value:.1f}%" if is_full else f"{int(value)}/36",
+                }
+            )
+        if len(centers) != 3:
+            return None
+        return {
+            "kind": "enneagram",
+            "primary_type": primary_type,
+            "type_name": info["type_name"],
+            "nickname": info["type_nickname"],
+            "wing": detail.get("wing"),
+            "tritype": detail.get("tritype"),
+            "is_full": is_full,
+            "score_note": enneagram_scoring.SCALE_NOTE,
+            "centers": centers,
             "description": info["full_description"],
             "strengths": info["strengths"],
             "weaknesses": info["weaknesses"],
@@ -2388,10 +2473,15 @@ def _human_test_action(game, action, raw_token, body):
     identity_line = _storage_identity_line(player_id, account_user)
 
     if action == "start":
-        edition = body.get("edition") if game == "mbti" else "standard"
+        edition = body.get("edition") if game in {"mbti", "enneagram"} else "standard"
         mode = HUMAN_TEST_PUBLIC_EDITIONS[game].get(edition)
         if mode is None:
-            raise _McpError(-32602, "请选择快速版或完整版" if game == "mbti" else "测试版本不合法")
+            raise _McpError(
+                -32602,
+                "请选择快速版或完整版"
+                if game in {"mbti", "enneagram"}
+                else "测试版本不合法",
+            )
         getattr(handler, f"{game}_start")({"player_id": player_id, "mode": mode})
         session = _human_test_active_session(game, player_id)
         if session is None:
@@ -2494,7 +2584,7 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat", "duel"})
+IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "workkk", "garden_cat", "duel"})
 # 有长期存档、值得给游客发认领码的游戏。
 PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "garden_cat"})
 VENDOR_GAMES = ("leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "market", "garden_cat")
@@ -2502,7 +2592,7 @@ ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
 ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = 30
 ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET = True
-ANTI_ADDICTION_TEST_GAMES = frozenset({"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest"})
+ANTI_ADDICTION_TEST_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest"})
 ANTI_ADDICTION_MINI_GAMES = frozenset({"turtle_soup", "eco", "ciyuwu", "duel", *VENDOR_GAMES})
 
 
@@ -2567,7 +2657,7 @@ def _without_slot_param(arguments):
 
 
 def _guestify_mcp_payload(payload):
-    """/mbti、/dnd 直连 MCP 端点无 token，同样把自报 player_id 隔离到 guest: 命名空间。"""
+    """Direct test MCP endpoints have no token; isolate reported IDs as guests."""
     if payload.get("method") != "tools/call":
         return payload
     params = payload.get("params")
@@ -2688,7 +2778,7 @@ def _stamp_save_owner(game, player_id, user_id):
         targets = [("eco_sessions", False)]
     elif game == "ciyuwu":
         targets = [("ciyuwu_sessions", False)]
-    elif game in {"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest"}:
+    elif game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest"}:
         targets = [("test_sessions", True), ("test_results", True)]
     else:
         return
@@ -2952,7 +3042,7 @@ def _delete_owned_session_rows(game, player_id):
             targets = [("eco_sessions", "eco", False)]
         elif game == "ciyuwu":
             targets = [("ciyuwu_sessions", "ciyuwu", False)]
-        elif game in {"dnd", "mbti", "love", "ecr", "humanity", "bdsmtest"}:
+        elif game in {"dnd", "mbti", "enneagram", "love", "ecr", "humanity", "bdsmtest"}:
             targets = [("test_sessions", game, True), ("test_results", game, True)]
         else:
             return deleted
@@ -3012,7 +3102,7 @@ def _delete_save(arguments, raw_token):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         raise _McpError(-32602, "海龟汤对局数据不支持 delete_save")
-    if game not in {"eco", "ciyuwu", "dnd", "mbti", "love", "ecr", "humanity", "bdsmtest", *VENDOR_GAMES}:
+    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "bdsmtest", *VENDOR_GAMES}:
         raise _McpError(-32602, "未知或不支持删除存档的游戏")
 
     if not raw_token:
@@ -3221,6 +3311,7 @@ GAME_RECOMMENDATIONS = (
     ("arcade", "老虎机吃过我500筹码，替我报仇"),
     ("burger", "命令行煎肉排，单子催起来比上班紧张"),
     ("mbti", "已测的机一半是INTJ，来看看你正不正常"),
+    ("enneagram", "36题快速看主型，或180题细看侧翼和tritype"),
     ("dnd", "36题定善恶，看你和甘道夫一不一路"),
     ("love", "30次心动二选一，看看你最常收听哪种爱"),
     ("ecr", "36题看见亲密关系里的靠近、追逐和退缩"),
@@ -3280,7 +3371,7 @@ def _owned_game_names_for_recommendation(user):
             owned.add("turtle_soup")
     if SESSIONS_DB_PATH.exists():
         with _sessions_db_connect() as conn:
-            for game in ("mbti", "dnd", "love", "ecr", "humanity", "bdsmtest"):
+            for game in ("mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest"):
                 if _has_session_save(conn, "test_results", player_ids, game, uid) or _has_session_save(conn, "test_sessions", player_ids, game, uid):
                     owned.add(game)
             if _has_session_save(conn, "eco_sessions", player_ids, uid=uid):
@@ -3317,7 +3408,7 @@ def _tool_list_games(path_token=None):
     base = (
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
-        "测试: mbti·16型人格测试，短/完整/快速·南山君 | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
+        "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
         "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈·人机对弈厅，井字棋/五子棋/黑白棋/四子连珠/点格棋/斗兽棋·南山君&Clio | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
@@ -3414,7 +3505,7 @@ def _tool_get_guide(arguments):
         return json.dumps({"game": "duel", "guide": _guide_with_slot_note(DUEL_GUIDE)}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
         return json.dumps({"game": game, "guide": _guide_with_slot_note(VENDOR_CMD_GUIDES[game])}, ensure_ascii=False)
-    if game in {"mbti", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "account"}:
+    if game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "account"}:
         path = GUIDE_DIR / f"{game}.md"
         if not path.exists():
             raise _McpError(-32603, f"{game} 说明文件不存在")
@@ -3839,6 +3930,8 @@ def _tool_play_inner(arguments, path_token=None):
         response = resp.json()
     elif game == "mbti":
         response = _play_mbti(merged_arguments)
+    elif game == "enneagram":
+        response = _play_scale(enneagram_handler, "enneagram", merged_arguments)
     elif game == "dnd":
         response = _play_dnd(merged_arguments)
     elif game == "love":
@@ -4501,7 +4594,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_arcade_grant()
             return
 
-        human_test_match = re.fullmatch(r"/api/(mbti|dnd|love|ecr|humanity)/(start|answer_batch|result|compare)", path)
+        human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity)/(start|answer_batch|result|compare)", path)
         if human_test_match:
             if human_test_match.group(2) == "compare" and human_test_match.group(1) not in {"love", "ecr"}:
                 self._send_json({"error": "not found"}, status=404)
@@ -4513,7 +4606,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_admin_reset_password(path)
             return
 
-        if path not in (*_ROOT_MCP_PATHS, "/mbti", "/dnd", "/love", "/ecr", "/humanity") and not path_token:
+        if path not in (*_ROOT_MCP_PATHS, "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity") and not path_token:
             self._send_json({"error": "not found"}, status=404)
             return
 
@@ -4541,7 +4634,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json(_json_rpc_error(None, -32600, "Invalid Request"), status=400)
             return
 
-        if path not in {"/mbti", "/dnd", "/love", "/ecr", "/humanity"} and (path in _ROOT_MCP_PATHS or path_token) and "id" not in payload:
+        if path not in {"/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity"} and (path in _ROOT_MCP_PATHS or path_token) and "id" not in payload:
             self._send_empty(status=202)
             return
 
@@ -4558,6 +4651,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/mbti":
             response = handle_mbti_mcp(_guestify_mcp_payload(payload))
+        elif path == "/enneagram":
+            response = handle_enneagram_mcp(_guestify_mcp_payload(payload))
         elif path == "/dnd":
             response = handle_dnd_mcp(_guestify_mcp_payload(payload))
         elif path == "/love":
@@ -4628,7 +4723,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_html_file(ECO_INDEX_PATH)
             return
 
-        if path in ("/mbti", "/dnd", "/love", "/ecr", "/humanity") and not params.get("action"):
+        if path in ("/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity") and not params.get("action"):
             self._send_human_test_page(path.removeprefix("/"))
             return
 
@@ -4641,7 +4736,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/health":
-            self._send_json({"ok": True, "service": "cedartoy", "endpoints": ["https://toy.cedarstar.org/mbti", "https://toy.cedarstar.org/dnd", "https://toy.cedarstar.org/love", "https://toy.cedarstar.org/ecr", "https://toy.cedarstar.org/humanity", "https://toy.cedarstar.org/"]})
+            self._send_json({"ok": True, "service": "cedartoy", "endpoints": ["https://toy.cedarstar.org/mbti", "https://toy.cedarstar.org/enneagram", "https://toy.cedarstar.org/dnd", "https://toy.cedarstar.org/love", "https://toy.cedarstar.org/ecr", "https://toy.cedarstar.org/humanity", "https://toy.cedarstar.org/"]})
             return
 
         if path == "/api/games/stats":
@@ -4677,7 +4772,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_arcade_status(params)
             return
 
-        human_test_match = re.fullmatch(r"/api/(mbti|dnd|love|ecr|humanity)/result", path)
+        human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity)/result", path)
         if human_test_match:
             self._handle_human_test_api(human_test_match.group(1), "result", params=params)
             return
@@ -4709,6 +4804,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/mbti":
             self._handle_get_mbti(params)
+            return
+
+        if path == "/enneagram":
+            self._handle_get_enneagram(params)
             return
 
         if path == "/dnd":
@@ -4759,7 +4858,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def _request_path_and_token(self):
         path = self.path.split("?", 1)[0]
-        if path in (*_ROOT_MCP_PATHS, "/mbti", "/dnd", "/love", "/ecr", "/humanity") or path.startswith("/api/"):
+        if path in (*_ROOT_MCP_PATHS, "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity") or path.startswith("/api/"):
             return path, None
         token = urllib.parse.unquote(path.strip("/"))
         if token and "/" not in token:
@@ -4791,7 +4890,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return False
         if path in _ROOT_MCP_PATHS:
             return True
-        if path in {"/admin", "/health", "/mbti", "/dnd", "/love", "/ecr", "/humanity"} or path.startswith("/api/"):
+        if path in {"/admin", "/health", "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity"} or path.startswith("/api/"):
             return False
         tokenish = path.strip("/")
         return bool(tokenish and "/" not in tokenish)
@@ -5043,7 +5142,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except _McpError as exc:
             status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else (404 if exc.code == -32004 else 400))
             self._send_json({"ok": False, "error": exc.message}, status=status)
-        except (mbti_handler.JsonRpcError, dnd_handler.JsonRpcError, love_handler.JsonRpcError, ecr_handler.JsonRpcError, humanity_handler.JsonRpcError) as exc:
+        except (mbti_handler.JsonRpcError, enneagram_handler.JsonRpcError, dnd_handler.JsonRpcError, love_handler.JsonRpcError, ecr_handler.JsonRpcError, humanity_handler.JsonRpcError) as exc:
             status = 404 if exc.code in (-32001, -32003) else (503 if exc.code == -32000 else 400)
             self._send_json({"ok": False, "error": exc.message}, status=status)
         except ValueError as exc:
@@ -5220,6 +5319,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         if game == "mbti":
             score_param = "a_score"
             score_range = range(0, 6)  # 0~5
+        elif game == "enneagram":
+            score_param = "answer"
+            score_range = (
+                range(1, 3) if re.search(r"(?m)^1\. A — ", result_text) else range(1, 6)
+            )
         else:
             score_param = "answer"
             score_range = range(1, 5)  # 1~4
@@ -5283,6 +5387,67 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         response = handle_mbti_mcp(payload)
         response = self._append_next_url(response, "mbti", action, player_id)
         self._send_json(response, extra_headers={"Cache-Control": "no-cache, no-store"})
+
+    def _handle_get_enneagram(self, params):
+        action = self._get_param(params, "action")
+        if not action:
+            self._send_json({"error": "缺少必填参数: action"}, status=400)
+            return
+
+        if action == "enneagram_start":
+            player_id = self._get_param(params, "player_id")
+            mode = self._get_param(params, "mode")
+            if player_id is None or mode is None:
+                self._send_json(
+                    {"error": "enneagram_start 缺少必填参数: player_id, mode"},
+                    status=400,
+                )
+                return
+            if mode not in {"quick", "full"}:
+                self._send_json(
+                    {"error": "GET 接口仅支持 quick 和 full 模式"},
+                    status=400,
+                )
+                return
+            arguments = {"player_id": player_id, "mode": mode}
+        elif action == "enneagram_answer":
+            player_id = self._get_param(params, "player_id")
+            answer = self._get_param(params, "answer")
+            if player_id is None or answer is None:
+                self._send_json(
+                    {"error": "enneagram_answer 缺少必填参数: player_id, answer"},
+                    status=400,
+                )
+                return
+            arguments = {"player_id": player_id, "answer": answer}
+        elif action == "enneagram_get_result":
+            player_id = self._get_param(params, "player_id")
+            if player_id is None:
+                self._send_json(
+                    {"error": "enneagram_get_result 缺少必填参数: player_id"},
+                    status=400,
+                )
+                return
+            arguments = {"player_id": player_id}
+        else:
+            self._send_json({"error": f"未知 action: {action}"}, status=400)
+            return
+
+        player_id = _guest_player_id(player_id)
+        arguments["player_id"] = player_id
+        payload = {
+            "jsonrpc": "2.0",
+            "id": f"enneagram-{action}",
+            "method": "tools/call",
+            "params": {"name": action, "arguments": arguments},
+        }
+        response = handle_enneagram_mcp(payload)
+        response = self._append_next_url(
+            response, "enneagram", action, player_id
+        )
+        self._send_json(
+            response, extra_headers={"Cache-Control": "no-cache, no-store"}
+        )
 
     def _handle_get_dnd(self, params):
         action = self._get_param(params, "action")

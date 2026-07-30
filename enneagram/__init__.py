@@ -1,0 +1,1 @@
+"""CedarToy Enneagram assessment."""

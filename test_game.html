@@ -248,6 +248,7 @@
     .review-actions { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: clamp(6px, 2vw, 12px); }
     .review-actions .pixel-button { flex: 1 1 0; min-width: 0; padding-inline: clamp(5px, 2vw, 16px); white-space: nowrap; font-size: clamp(9px, 2.5vw, 12px); }
     .source { margin: 24px 0 0; color: var(--muted); text-align: center; font-size: 12px; }
+    .source a { color: var(--purple-darker); }
     .entertainment-badge { width: fit-content; margin: 10px 0 0 auto; color: var(--purple-darker); border: 2px solid var(--purple); padding: 4px 8px; font-size: 9px; letter-spacing: .12em; }
     .loading { display: grid; min-height: 260px; place-items: center; color: var(--purple-dark); text-align: center; }
     .error { margin: 0 0 16px; padding: 12px; color: #9d4f5b; background: #FFF0F2; border-left: 5px solid var(--pink); line-height: 1.5; }
@@ -362,7 +363,17 @@
     document.title = `${CONFIG.title} · CEDAR TOY`;
     $("title").textContent = CONFIG.title;
     $("subtitle").textContent = CONFIG.subtitle;
-    $("source").textContent = CONFIG.source;
+    if (CONFIG.game === "enneagram") {
+      $("source").textContent = "题库来自 ";
+      const sourceLink = document.createElement("a");
+      sourceLink.href = "https://github.com/kcdjmaxx/enneagram-llm-evaluator";
+      sourceLink.target = "_blank";
+      sourceLink.rel = "noopener noreferrer";
+      sourceLink.textContent = "kcdjmaxx/enneagram-llm-evaluator";
+      $("source").append(sourceLink, "（MIT），感谢原作者。");
+    } else {
+      $("source").textContent = CONFIG.source;
+    }
 
     function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
     function guestPlayerId() {
@@ -434,10 +445,16 @@
       cursor = 0;
       $("statusText").textContent = "SYSTEM / SELECT MODE";
       $("modes").innerHTML = "";
-      [
-        {edition: "quick", label: "快速版 · 16题", desc: "用较短时间完成一次人格偏好扫描"},
-        {edition: "complete", label: "完整版 · 93题", desc: "更细致地覆盖四组人格偏好维度"}
-      ].forEach((item) => {
+      const modeItems = CONFIG.game === "enneagram"
+        ? [
+            {edition: "quick", label: "快速版 · 36题 A/B", desc: "快速查看主型与脑、心、腹三中心相对分"},
+            {edition: "complete", label: "完整版 · 180题", desc: "完整计算主型、侧翼、三中心与 Tritype 推测"}
+          ]
+        : [
+            {edition: "quick", label: "快速版 · 16题", desc: "用较短时间完成一次人格偏好扫描"},
+            {edition: "complete", label: "完整版 · 93题", desc: "更细致地覆盖四组人格偏好维度"}
+          ];
+      modeItems.forEach((item) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "mode-button";
@@ -515,6 +532,8 @@
       const answeredCount = answers.filter(Number.isInteger).length;
       $("modeLabel").textContent = CONFIG.game === "mbti"
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
+        : CONFIG.game === "enneagram"
+        ? (activeState.edition === "quick" ? "快速版 · 36题 A/B" : "完整版 · 180题")
         : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题"}[CONFIG.game] || "测试");
       $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
@@ -535,6 +554,17 @@
         $("mbtiPoles").hidden = true;
         $("answers").className = "answers mbti ecr";
         renderEcrScale(question);
+      } else if (CONFIG.game === "enneagram") {
+        $("mbtiPoles").hidden = true;
+        if (activeState.edition === "quick") {
+          $("answers").className = "answers";
+          question.options.forEach((option) => {
+            addAnswer(option.value, `${option.label || option.value} · ${option.text}`);
+          });
+        } else {
+          $("answers").className = "answers mbti ecr";
+          renderEnneagramScale(question);
+        }
       } else {
         $("mbtiPoles").hidden = true;
         $("answers").className = "answers";
@@ -598,6 +628,32 @@
       });
       $("answers").append(ends, track);
     }
+    function renderEnneagramScale(question) {
+      const optionLabels = new Map(question.options.map((option) => [option.value, option.text]));
+      const ends = document.createElement("div");
+      ends.className = "mbti-scale-ends ecr-scale-ends";
+      ends.innerHTML = `<span>${optionLabels.get(1) || "几乎从不"}</span><span>${optionLabels.get(3) || "有时如此"}</span><span>${optionLabels.get(5) || "几乎总是"}</span>`;
+
+      const track = document.createElement("div");
+      track.className = "mbti-scale-track ecr-scale-track";
+      track.style.gridTemplateColumns = "repeat(5, minmax(0, 1fr))";
+      track.setAttribute("role", "radiogroup");
+      track.setAttribute("aria-label", "从几乎从不到几乎总是");
+      [1, 2, 3, 4, 5].forEach((value) => {
+        const button = document.createElement("button");
+        const label = optionLabels.get(value) || String(value);
+        button.type = "button";
+        button.className = "scale-step";
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-label", `${value}，${label}`);
+        button.setAttribute("aria-checked", String(answers[cursor] === value));
+        button.classList.toggle("selected", answers[cursor] === value);
+        button.innerHTML = `<span class="scale-degree">${value}${value === 3 ? '<span class="ecr-neutral">有时</span>' : ""}</span>`;
+        button.addEventListener("click", () => answer(value));
+        track.appendChild(button);
+      });
+      $("answers").append(ends, track);
+    }
     function addAnswer(value, label) {
       const button = document.createElement("button");
       button.type = "button";
@@ -616,10 +672,10 @@
       $("statusText").textContent = "SYSTEM / INITIALIZING";
       try {
         if (discardDraft && activeState) localStorage.removeItem(draftKey());
-        renderState(await api("start", CONFIG.game === "mbti" ? {edition} : {}));
+        renderState(await api("start", ["mbti", "enneagram"].includes(CONFIG.game) ? {edition} : {}));
       } catch (error) {
         showError(error.message);
-        if (CONFIG.game === "mbti") {
+        if (["mbti", "enneagram"].includes(CONFIG.game)) {
           renderModes();
         } else {
           $("loadingPanel").querySelector("span").textContent = "连接失败，请刷新重试";
@@ -714,6 +770,38 @@
       );
       root.appendChild(hero);
       appendResultAxes(root, data.dimensions, "四个维度");
+      appendResultTextSection(root, "类型描述", data.description);
+      appendResultTextSection(root, "性格优势", data.strengths);
+      appendResultTextSection(root, "注意事项", data.weaknesses);
+      return true;
+    }
+
+    function renderEnneagramResult(root, data) {
+      const requiredText = [data.type_name, data.nickname, data.description, data.strengths, data.weaknesses];
+      if (data.kind !== "enneagram"
+          || !Number.isInteger(Number(data.primary_type))
+          || requiredText.some((value) => typeof value !== "string" || !value)
+          || !Array.isArray(data.centers) || data.centers.length !== 3
+          || data.centers.some((entry) => !entry || typeof entry.label !== "string" || !Number.isFinite(Number(entry.value)))) return false;
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary", `${data.primary_type}号`),
+        makeResultElement("p", "result-secondary", data.type_name),
+        makeResultElement("p", "result-nickname", data.nickname)
+      );
+      root.appendChild(hero);
+      if (data.is_full) {
+        appendResultTextSection(root, "侧翼与 Tritype 推测", `侧翼：${data.wing}\n\nTritype：${data.tritype}`);
+      } else {
+        appendResultTextSection(root, "结果范围", "快速版仅报告主型与脑、心、腹三中心相对分；侧翼与 Tritype 仅完整版提供。");
+      }
+      appendMetricBars(
+        root,
+        data.centers,
+        data.is_full ? "脑 / 心 / 腹三中心权重" : "脑 / 心 / 腹三中心相对分（36分制）",
+        "metric-bars-large"
+      );
+      appendResultTextSection(root, "分数量纲说明", data.score_note);
       appendResultTextSection(root, "类型描述", data.description);
       appendResultTextSection(root, "性格优势", data.strengths);
       appendResultTextSection(root, "注意事项", data.weaknesses);
@@ -949,6 +1037,7 @@
       let rendered = false;
       try {
         if (data?.kind === "mbti") rendered = renderMbtiResult(root, data);
+        else if (data?.kind === "enneagram") rendered = renderEnneagramResult(root, data);
         else if (data?.kind === "dnd") rendered = renderDndResult(root, data);
         else if (data?.kind === "love") rendered = renderLoveResult(root, data);
         else if (data?.kind === "ecr") rendered = renderEcrResult(root, data);
@@ -1012,7 +1101,7 @@
       } catch (error) {
         if (error.status === 404) {
           $("identity").textContent = token() ? "ACCOUNT" : "GUEST / LOCAL SAVE";
-          if (CONFIG.game === "mbti") renderModes();
+          if (["mbti", "enneagram"].includes(CONFIG.game)) renderModes();
           else await start("standard");
         } else {
           showError(error.message);
@@ -1028,7 +1117,7 @@
     $("restartButton").addEventListener("click", () => {
       showError();
       if (activeState) localStorage.removeItem(draftKey());
-      if (CONFIG.game === "mbti") renderModes();
+      if (["mbti", "enneagram"].includes(CONFIG.game)) renderModes();
       else start("standard", true);
     });
     resume();

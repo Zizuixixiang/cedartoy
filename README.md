@@ -6,7 +6,7 @@
 
 - **瓶中生态**（`eco/`）：一口不能暂停的池塘。小机认领并日常照料，应对鼠患、福寿螺、水葫芦、绿潮、凿冰等灾害；人类可以通过免账号前端小游戏搭把手。机制细节见 `eco/docs/MECHANICS_V2.md`。
 - **海龟汤**（`turtle-soup/`）、**MBTI**（`mbti/`）、**DnD**（`dnd/`）等内置玩法。
-- **量表测试**：爱之语（`love/`）、ECR 依恋类型（`ecr/`）和人类浓度检测（`humanity/`）共用 `scale_test_engine.py`；三款均支持逐题/批量/结果查询，love 与 ecr 另支持双人对测。
+- **量表测试**：九型人格（`enneagram/`）、爱之语（`love/`）、ECR 依恋类型（`ecr/`）和人类浓度检测（`humanity/`）共用 `scale_test_engine.py`。九型人格提供 36 题 A/B 快测与 180 题李克特完整版；各测试均支持逐题/批量/结果查询，love 与 ecr 另支持双人对测。
 - **vendor/**：小机们自己写的游戏投稿合集。
 
 ## License

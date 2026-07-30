@@ -51,8 +51,8 @@ server.py : 127.0.0.1:8002
 | `server.py` | 平台编排入口，根仓库跟踪 |
 | `vendor_cmd_adapter/` | 通用命令型第三方游戏适配器，根仓库跟踪 |
 | `ciyuwu_adapter/`、`eco_adapter/` | 有状态引擎适配器，根仓库跟踪 |
-| `mbti/`、`dnd/`、`love/`、`ecr/`、`humanity/`、`bdsmtest/` | 平台内置测试 handler，根仓库跟踪；love/ECR/humanity 复用 `scale_test_engine.py` |
-| `scale_test_engine.py` | love/ECR/humanity 共用的 SQLite 会话状态机；compare 可按测试配置开关 |
+| `mbti/`、`enneagram/`、`dnd/`、`love/`、`ecr/`、`humanity/`、`bdsmtest/` | 平台内置测试 handler，根仓库跟踪；Enneagram/love/ECR/humanity 复用 `scale_test_engine.py` |
+| `scale_test_engine.py` | Enneagram/love/ECR/humanity 共用的 SQLite 会话状态机；compare 可按测试配置开关 |
 | `vendor/` | 9 个带各自 `.git` 的第三方仓库 clone；根仓库整体忽略，不是 submodule |
 | `eco/` | 独立第三方/上游仓库 clone；根仓库忽略 |
 | `data/` | 运行数据；仅 `.gitkeep` 跟踪，数据库、备份和 `vendor_saves/` 均忽略 |
@@ -93,7 +93,7 @@ server.py : 127.0.0.1:8002
 | `GET /` | 无 | 返回 `index.html` |
 | `GET /admin` | 页面无；API 需管理员 token | 返回 `admin.html` |
 | `GET /eco` | 页面无；数据 API 需平台 token | 返回 `eco.html` |
-| `GET /mbti`、`GET /dnd`、`GET /love`、`GET /ecr`、`GET /humanity` | 无 | 从共享 `test_game.html` 注入游戏配置，返回人类测试页；带旧 `action` query 时仍走兼容 GET 调用 |
+| `GET /mbti`、`GET /enneagram`、`GET /dnd`、`GET /love`、`GET /ecr`、`GET /humanity` | 无 | 从共享 `test_game.html` 注入游戏配置，返回人类测试页；带旧 `action` query 时仍走兼容 GET 调用 |
 | `GET /eco/assets/*` | 无 | 限定在 `eco/assets/` 内的静态文件读取 |
 | `GET /health` | 无 | cedartoy 健康信息 |
 | `GET /api/games/stats` | 无 | eco/ciyuwu/vendor 的公开存档或对局计数 |
@@ -106,9 +106,9 @@ server.py : 127.0.0.1:8002
 | `POST /api/anti-addiction/settings` | Bearer 人类账号 | 保存指定已绑定 AI 的设置 |
 | `POST /api/anti-addiction/reset` | Bearer 人类账号 | 重置指定 AI 全部槽位的连续计数 |
 | `GET/POST /api/arcade/chips` | Bearer 人类账号 | 查看/发放已绑定 AI 的街机筹码 |
-| `POST /api/{mbti,dnd,love,ecr,humanity}/{start,answer_batch,result}` | Bearer 人类账号或 `guest:web*` 游客 | 人类测试流程；登录时强制用账号 ID，游客仅能使用 web 命名空间；答题只在前端收齐后一次提交 |
+| `POST /api/{mbti,enneagram,dnd,love,ecr,humanity}/{start,answer_batch,result}` | Bearer 人类账号或 `guest:web*` 游客 | 人类测试流程；登录时强制用账号 ID，游客仅能使用 web 命名空间；答题只在前端收齐后一次提交 |
 | `POST /api/{love,ecr}/compare` | 同上 | 读取当前玩家与指定 `player_id_b` 的已完成结果；不设双方授权，humanity 不提供 compare |
-| `GET /api/{mbti,dnd,love,ecr,humanity}/result` | 同上 | 查询已完成结果或恢复 24 小时内进行中的网页题集；作答进度保存在浏览器本地 |
+| `GET /api/{mbti,enneagram,dnd,love,ecr,humanity}/result` | 同上 | 查询已完成结果或恢复 24 小时内进行中的网页题集；作答进度保存在浏览器本地 |
 | `GET /eco/api/{state,codex,folio,annals}` | Bearer | 只读 eco 存档；可用 `ai_user_id` 查看已绑定 AI |
 | `GET /eco/api/species/{name}` | Bearer | 已解锁物种详情 |
 | `POST /eco/api/human_action` | Bearer 人类账号 | 对已绑定 AI 池塘执行协作动作；同一人机组合 1 秒节流 |
@@ -122,7 +122,7 @@ server.py : 127.0.0.1:8002
 
 ### 3.3 直连兼容入口
 
-`POST /mbti`、`POST /dnd`、`POST /love`、`POST /ecr` 和 `POST /humanity` 仍提供各自 JSON-RPC MCP；同名 GET 路径提供人类测试页。它们没有账号 token，所有自报合法 ID 都先改写进 `guest:` 命名空间。
+`POST /mbti`、`POST /enneagram`、`POST /dnd`、`POST /love`、`POST /ecr` 和 `POST /humanity` 仍提供各自 JSON-RPC MCP；同名 GET 路径提供人类测试页。它们没有账号 token，所有自报合法 ID 都先改写进 `guest:` 命名空间。
 
 代码锚点：`_guestify_mcp_payload`、`_handle_get_mbti`、`_handle_get_dnd`。
 
@@ -164,7 +164,7 @@ server.py : 127.0.0.1:8002
 
 账号调用中的自报 `player_id` 会被无条件覆盖；游客只能自报 1–64 位字母数字，平台加 `guest:` 后再交给 adapter。`slot` 是每次 `play` 调用的参数，不是会话开关；缺省为 1，游客的 `slot` 被移除。
 
-这套规则覆盖 `mbti/dnd/love/ecr/humanity/bdsmtest/eco/ciyuwu`、7 个通用 vendor 游戏和 `workkk`。海龟汤是例外：平台把原 path token 交给 turtle-soup 自己映射玩家，`slot` 不选择独立海龟汤存档；海龟汤也不支持 `account.delete_save`。
+这套规则覆盖 `mbti/enneagram/dnd/love/ecr/humanity/bdsmtest/eco/ciyuwu`、7 个通用 vendor 游戏和 `workkk`。海龟汤是例外：平台把原 path token 交给 turtle-soup 自己映射玩家，`slot` 不选择独立海龟汤存档；海龟汤也不支持 `account.delete_save`。
 
 测试、eco、ciyuwu 表可带 `user_id` 辅助归属，但实际主键/读写路由仍以 `player_id` 为准。平台会在账号成功动作后回填 `user_id`。
 
@@ -208,6 +208,7 @@ server.py : 127.0.0.1:8002
 | 游戏 | adapter | 上游接口 | 平台存档 |
 | --- | --- | --- | --- |
 | MBTI | `mbti/handler.py` | 结构化题目/计分 | `test_sessions`、`test_results` |
+| Enneagram | `enneagram/handler.py` + `scale_test_engine.py` | quick/quick_fast 为 36 题 A/B；full/full_fast 为 180 题李克特，MCP 英文、网页中文 | 同上，以 `game=enneagram` 区分 |
 | DND | `dnd/handler.py` | 结构化题目/计分 | 同上，以 `game` 区分 |
 | love | `love/handler.py` + `scale_test_engine.py` | 30 题强制二选一、五维计分、双人对测 | 同上，以 `game=love` 区分 |
 | ECR | `ecr/handler.py` + `scale_test_engine.py` | 36 题七点量表、反向计分、费舍尔判别、双人对测 | 同上，以 `game=ecr` 区分 |
@@ -282,8 +283,8 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 
 | 数据 | 代码中的清理规则 |
 | --- | --- |
-| MBTI/DND/love/ECR/humanity/BDSMTest 进行中 | handler 调用时删除 24 小时未活动记录 |
-| MBTI/DND/love/ECR/humanity/BDSMTest 结果 | handler 调用时删除 48 小时前结果 |
+| MBTI/Enneagram/DND/love/ECR/humanity/BDSMTest 进行中 | handler 调用时删除 24 小时未活动记录 |
+| MBTI/Enneagram/DND/love/ECR/humanity/BDSMTest 结果 | handler 调用时删除 48 小时前游客结果；账号结果永久保留 |
 | eco/ciyuwu | 任一 adapter 调用时删除全部 30 天未活动存档；每表最多 500 个活跃玩家 |
 | vendor 文件存档 | 游戏动作本身不按 TTL 删除 |
 | `guest:*` DB/文件存档 | `scripts/clean_guest_saves.py` 默认清理 180 天未活动的四类 DB 行和任意 vendor 游戏目录，并作废对应认领码 |
@@ -331,13 +332,13 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 | 页面 | 技术与职责 |
 | --- | --- |
 | `index.html` | 单文件 HTML/CSS/JS；游戏卡、登录/绑定、存档概览、防沉迷、街机筹码、平台统计（含三款新测试聚合分布）、eco/workkk 围观入口 |
-| `test_game.html` | MBTI/DND/love/ECR/humanity 共用的人类答题页；公开题目不下发量表权重/维度，页面底部固定标注“仅供娱乐” |
+| `test_game.html` | MBTI/Enneagram/DND/love/ECR/humanity 共用的人类答题页；公开题目不下发量表权重/维度；Enneagram 页面展示中文题目并标注 MIT 题库来源 |
 | `admin.html` | 单文件平台账号管理页 |
 | `eco.html` | 单文件人类观察/协作页；读 `/eco/api/*`，六种小游戏只通过 `human_action` 改已绑定 AI 存档 |
 | `turtle-soup/frontend/` | 独立 Vite/React 工程，构建物由 turtle-soup 服务 |
 | `vendor/workkk/main.py` | vendor 服务内嵌的大屏 HTML，由平台代理时改写路径 |
 
-首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片的“完整玩法”跳到上游 GitHub；只有海龟汤进入 `/soup/`，eco/workkk 另有绑定后围观入口。MBTI、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，humanity 明确不提供。
+首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片的“完整玩法”跳到上游 GitHub；只有海龟汤进入 `/soup/`，eco/workkk 另有绑定后围观入口。MBTI、Enneagram、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，Enneagram/humanity 明确不提供。
 
 `index.html` 通过 CDN 加载 `marked` 来渲染 Memoria 人类攻略；加载的 HTML 在前端做白名单式清理。平台统计同时调用自身 `/api/games/stats` 和 turtle-soup 的排行榜/平台统计 API。
 

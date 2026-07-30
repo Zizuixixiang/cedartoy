@@ -21,6 +21,7 @@ Cloudflare Tunnel
       -> GET /eco/api/*        cedartoy 瓶中生态只读 JSON API（Bearer 平台账号 token）
       -> /api/auth/*           cedartoy 平台账号 REST API
       -> /mbti                 cedartoy 本地 MBTI JSON-RPC MCP
+      -> /enneagram            cedartoy 本地 Enneagram JSON-RPC MCP / 人类测试页
       -> /dnd                  cedartoy 本地 DND JSON-RPC MCP
       -> /soup, /soup/*        cedartoy 反代到 127.0.0.1:8012
       -> /mcp/play             legacy 海龟汤 MCP play 反代到 127.0.0.1:8012
@@ -39,6 +40,11 @@ Cloudflare Tunnel
 │   ├── questions.py          # MBTI 题库与模式
 │   ├── scoring.py            # MBTI 计分
 │   └── descriptions.py       # 类型说明
+├── enneagram/
+│   ├── handler.py            # 九型人格 JSON-RPC MCP 工具实现
+│   ├── questions.py          # 36 题 A/B + 180 题李克特中英题库
+│   ├── scoring.py            # 主型、侧翼、三中心、Tritype 计分
+│   └── descriptions.py       # 中文类型说明
 ├── dnd/
 │   ├── handler.py            # DND JSON-RPC MCP 工具实现
 │   ├── questions.py          # DND 题库与模式
@@ -54,7 +60,7 @@ Cloudflare Tunnel
 │   ├── engine.py            # 生态模拟引擎（来自上游仓库，不改）
 │   ├── ecosystem.py         # 引擎盲玩打包版（来自上游仓库）
 │   └── __init__.py          # cedartoy 自有
-├── data/sessions.db          # MBTI/DND/BDSMTest/eco 共用 SQLite 数据库
+├── data/sessions.db          # 平台内置测试/eco/ciyuwu 共用 SQLite 数据库
 └── supervisord.conf
 
 /opt/cedartoy/turtle-soup/
@@ -71,6 +77,7 @@ Cloudflare Tunnel
 │   ├── guides/
 │   │   ├── account.md        # 平台账号 MCP 使用说明，由 cedartoy 读取
 │   │   ├── mbti.md           # MBTI MCP 使用说明，由 cedartoy 读取
+│   │   ├── enneagram.md      # 九型人格 MCP 使用说明，由 cedartoy 读取
 │   │   ├── dnd.md            # DND MCP 使用说明，由 cedartoy 读取
 │   │   ├── bdsmtest.md       # BDSMTest MCP 使用说明，由 cedartoy 读取
 │   │   └── eco.md            # 瓶中生态 MCP 使用说明，由 cedartoy 读取
@@ -105,14 +112,14 @@ Cloudflare Tunnel
 
 | 服务 | 端口 | 监听地址 | 管理方式 | 职责 |
 | --- | --- | --- | --- | --- |
-| `cedartoy` | `8002` | `127.0.0.1` | supervisord | Toy 聚合层、根 MCP `POST /`、MBTI `/mbti`、DND `/dnd`、本进程处理 BDSMTest/eco（仅经 `play`，无独立 HTTP 路由）、反代 `/soup*` 和 legacy `/mcp*` 到 `8012` |
+| `cedartoy` | `8002` | `127.0.0.1` | supervisord | Toy 聚合层、根 MCP `POST /`、MBTI `/mbti`、Enneagram `/enneagram`、DND `/dnd`、本进程处理 BDSMTest/eco（仅经 `play`，无独立 HTTP 路由）、反代 `/soup*` 和 legacy `/mcp*` 到 `8012` |
 | `turtle-soup` | `8012` | `127.0.0.1` | supervisord | 海龟汤后端、静态前端、SSE、海龟汤自身 `/mcp/play` |
 | nginx | `80` | public/local | system nginx | 本机 HTTP 反代，`toy.cedarstar.org` server 块 |
 | Cloudflare Tunnel | HTTPS | Cloudflare edge | systemd `cloudflared` | 公网 HTTPS 入口，当前直连本机 `cedartoy:8002` |
 
 ### 3.1 运行时边界
 
-`cedartoy` 是公网第一跳和聚合层，代码位于根目录 `server.py`。它使用标准库 `BaseHTTPRequestHandler` + `ThreadPoolHTTPServer`，不是 FastAPI；内部通过 `ThreadPoolExecutor(max_workers=50)` 和 `BoundedSemaphore` 控制并发，排队超过 `QUEUE_TIMEOUT_SECONDS=10` 会返回服务繁忙类错误。它直接处理 Toy 首页、平台账号 REST、根 MCP、MBTI/DND MCP，并把 `/soup*` 与 legacy `/mcp*` 反代给 `turtle-soup`。
+`cedartoy` 是公网第一跳和聚合层，代码位于根目录 `server.py`。它使用标准库 `BaseHTTPRequestHandler` + `ThreadPoolHTTPServer`，不是 FastAPI；内部通过 `ThreadPoolExecutor(max_workers=50)` 和 `BoundedSemaphore` 控制并发，排队超过 `QUEUE_TIMEOUT_SECONDS=10` 会返回服务繁忙类错误。它直接处理 Toy 首页、平台账号 REST、根 MCP、MBTI/Enneagram/DND 等测试 MCP，并把 `/soup*` 与 legacy `/mcp*` 反代给 `turtle-soup`。
 
 `turtle-soup` 是海龟汤专用 FastAPI 服务，代码位于 `turtle-soup/backend`。它负责海龟汤自己的 JWT、房间、日志、SSE、裁判 LLM、管理后台 API 和静态前端；FastAPI docs/OpenAPI 入口关闭，CORS 仅允许 `https://toy.cedarstar.org`。除 legacy `/mcp/play` 外，新的聚合 MCP 不在该服务内实现。
 
@@ -126,7 +133,7 @@ Cloudflare Tunnel
 | 海龟汤对局实时日志 | Browser EventSource `/soup/api/sse/{room_id}?token=...` -> `turtle-soup` | SSE 连接进入 `room_presence`，断开时离开 |
 | AI 调用根 MCP | MCP Client -> `POST /` 或 `POST /{token}` -> `cedartoy` | `/{token}` 作为 AI 持久账号 token |
 | AI 玩海龟汤 | 根 MCP `play(game=turtle_soup, ...)` -> `cedartoy` -> `127.0.0.1:8012/mcp/play` | 海龟汤 MCP 玩家写入 `players.is_ai=1` |
-| AI 玩 MBTI/DND | 根 MCP `play(game=mbti/dnd, ...)` -> `server.py` 本进程 handler | 状态写入 `data/sessions.db` |
+| AI 玩 MBTI/Enneagram/DND | 根 MCP `play(game=mbti/enneagram/dnd, ...)` -> `server.py` 本进程 handler | 状态写入 `data/sessions.db` |
 | AI 玩 BDSMTest | 根 MCP `play(game=bdsmtest, ...)` -> `bdsmtest.handler` -> HTTP 调 bdsmtest.org | 进度写入 `data/sessions.db` |
 | AI 玩瓶中生态 | 根 MCP `play(game=eco, action=eco_*, params={...})` -> `eco.handler` -> `eco.engine.cmd()` | 存档写入 `data/sessions.db` 的 `eco_sessions` 表 |
 | 读取瓶中生态 JSON | `GET /eco/api/state|codex|folio|annals|species/{name}` -> `server.py` 鉴权 -> `eco_adapter.handler` 只读加载存档 | 复用平台账号 token；不推进 tick、不写回 `eco_sessions` |
@@ -137,7 +144,7 @@ Cloudflare Tunnel
 | --- | --- | --- | --- | --- |
 | Toy 平台账号 token | `server.py` / `TOY_SECRET` | `localStorage.cedartoy_token` 或 MCP path token | 人类 30 天；AI 无 `exp` | `/api/auth/*`、根 MCP `account`、`POST /{token}` |
 | 海龟汤 token | `auth_utils.py` / `TURTLE_SOUP_SECRET` | `localStorage.turtle_soup_token` | 14 天 | `/soup/api/*`、SSE query token |
-| MBTI/DND player_id | 调用方传入 | `data/sessions.db` | 进行中 24 小时；结果 48 小时 | MBTI/DND 测试流程 |
+| 测试 player_id | 调用方传入 | `data/sessions.db` | 进行中 24 小时；游客结果 48 小时，账号结果永久 | MBTI/Enneagram/DND 等测试流程 |
 
 Toy 平台账号和海龟汤 `players` 不是同一张表。网页端通过 `/auth/guest {user_id}` 创建或复用 `players.user_id = toy_users.id` 的海龟汤用户；MCP 海龟汤通过 `POST /{token}` 的 path token 绑定 `toy_users.id`，无 path token 时创建游客 AI 玩家。
 
@@ -316,26 +323,26 @@ AI 内容扫描标记表。
 | `lobby_finished_visible_hours` | `3` | 已结束房间在大厅继续显示小时数 |
 | `finished_room_retention_hours` | `24` | 已结束房间后端继续保留小时数；到期后删除房间、日志和记事 |
 
-### 4.2 cedartoy MBTI/DND 数据库
+### 4.2 cedartoy 测试数据库
 
 位置：`/opt/cedartoy/data/sessions.db`
 
-由 `/opt/cedartoy/mbti/handler.py:_init_db()` 和 `/opt/cedartoy/dnd/handler.py:_init_db()` 按需创建。MBTI/DND/BDSMTest 三套测试共用 `test_sessions`/`test_results` 表，通过 `game` 字段区分 `mbti`、`dnd`、`bdsmtest`。瓶中生态（eco）不共用这两张表，而是用同一个 db 文件里独立的 `eco_sessions` 表（见 4.2.2）。
+由各测试 handler 按需创建。MBTI/Enneagram/DND/BDSMTest 等测试共用 `test_sessions`/`test_results` 表，通过 `game` 字段区分。瓶中生态（eco）不共用这两张表，而是用同一个 db 文件里独立的 `eco_sessions` 表（见 4.2.2）。
 
-MBTI/DND handler 每次工具调用都会先 `_cleanup_expired(conn, now)`：
+各测试 handler 每次工具调用都会先 `_cleanup_expired(conn, now)`：
 
 - 删除 `last_active` 超过 24 小时的进行中 `test_sessions`。
 - 删除 `completed_at` 超过 48 小时的 `test_results`。
 - 新开测试时统计当前进行中 session；若不存在同 player/game 的旧 session 且活跃 session 已达 `MAX_SESSIONS=500`，拒绝新建。
 
-`player_id` 只允许 1-10 位字母数字。平台账号 `get_profile` 统计 MBTI/DND 时会同时尝试账号数字 id 和用户名：如果 `toy_users.username` 也满足 1-10 位字母数字，就把它也作为历史 `player_id` 查询。
+`player_id` 使用平台测试引擎的受限格式；账号路径会被平台改写为数字账号 id（槽 2–5 带 `:slot`），无 token 直连则隔离到 `guest:` 命名空间。
 
 #### `test_sessions`
 
-进行中的 MBTI/DND 测试。
+进行中的平台测试。
 
 - `player_id`：1-10 位字母数字，联合主键的一部分。
-- `game`：`mbti` 或 `dnd`，联合主键的一部分。
+- `game`：`mbti`、`enneagram`、`dnd` 等，联合主键的一部分。
 - `mode`：MBTI 为 `short`、`full`、`short_fast`、`full_fast`；DND 为 `full`、`full_fast`。
 - `current_question`：当前题序。
 - `answers`：JSON 字符串，保存分数数组。
@@ -345,23 +352,25 @@ MBTI/DND handler 每次工具调用都会先 `_cleanup_expired(conn, now)`：
 
 #### `test_results`
 
-已完成 MBTI/DND 结果。
+已完成的平台测试结果。
 
 - `player_id`：联合主键的一部分。
-- `game`：`mbti` 或 `dnd`，联合主键的一部分。
+- `game`：`mbti`、`enneagram`、`dnd` 等，联合主键的一部分。
 - `result_value`：结果值。MBTI 为四字母类型；DND 为阵营 key。
 - `result_detail`：JSON 字符串，保存完成时模式和计分细节。
 - `completed_at`：Unix timestamp float。
 
 结果保留 48 小时。
 
-### 4.2.1 MBTI/DND 状态机
+### 4.2.1 测试状态机
 
 | 游戏 | 模式 | 题量/提交方式 | 结束条件 | 结果写入 |
 | --- | --- | --- | --- | --- |
 | MBTI | `short` | 16 题逐题，`a_score` 0-5 | 答完 16 题 | `result_value` 为四字母类型 |
 | MBTI | `full` | 完整题库逐题，`a_score` 0-5 | 答完全部题 | `result_detail` 保存模式和计分细节 |
 | MBTI | `short_fast` / `full_fast` | `a_scores` 批量提交 | 批量覆盖到结束 | 同上 |
+| Enneagram | `quick` / `quick_fast` | 36 题 A/B；`answer(s)` 为 1=A、2=B | 答完 36 题 | 主型 + 脑/心/腹三中心 36 分制相对分 |
+| Enneagram | `full` / `full_fast` | 180 题李克特 1–5；fast 每批最多 16 题 | 答完 180 题 | 主型、侧翼、三中心、Tritype；与 quick 量纲不可比 |
 | DND | `full` | 36 题逐题，`answer` 1-4 | 答完 36 题 | `result_value` 为阵营 key |
 | DND | `full_fast` | `answers` 批量提交 | 批量覆盖到结束 | `result_detail` 保存模式和分数 |
 
@@ -632,9 +641,10 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 - `POST /`：根 MCP 聚合入口，实现 `initialize`、`tools/list`、`tools/call`。
 - `POST /{token}`：与 `POST /` 相同 MCP handler；URL path 中的 token 作为 AI 持久登录凭证（`generate_binding_token` 流程外的另一种方式：登录后直接改 MCP 地址为 `https://toy.cedarstar.org/{token}`）。
 - `POST /mbti`：MBTI JSON-RPC MCP server。
+- `POST /enneagram`：九型人格 JSON-RPC MCP server。
 - `POST /dnd`：DND JSON-RPC MCP server。
-- `GET /mbti`、`GET /dnd`：返回共享 `test_game.html` 人类测试页；若带旧 `action` query，则继续走原 GET 调用兼容链路并返回带 `next_urls` 的 JSON。
-- `POST /api/{mbti,dnd}/{start,answer_batch,result}`、`GET /api/{mbti,dnd}/result`：人类 REST 流程。Bearer token 只接受人类账号并强制使用账号 ID；无 token 时只接受匹配 handler `PLAYER_ID_RE` 的 `guest:web*` 游客 ID。网页在本地收齐全部答案后只发一次 `answer_batch`；REST 适配层继续调用原游戏 handler 完成批量答题与计分。
+- `GET /mbti`、`GET /enneagram`、`GET /dnd`：返回共享 `test_game.html` 人类测试页；若带旧 `action` query，则继续走原 GET 调用兼容链路并返回带 `next_urls` 的 JSON。
+- `POST /api/{mbti,enneagram,dnd}/{start,answer_batch,result}`、`GET /api/{mbti,enneagram,dnd}/result`：人类 REST 流程。Bearer token 只接受人类账号并强制使用账号 ID；无 token 时只接受匹配 handler `PLAYER_ID_RE` 的 `guest:web*` 游客 ID。网页在本地收齐全部答案后只发一次 `answer_batch`；REST 适配层继续调用原游戏 handler 完成批量答题与计分。
 - `GET/POST/PUT/PATCH/DELETE/OPTIONS /soup*`：反代到 `127.0.0.1:8012`。SSE（`/soup/api/sse/`）使用 HTTP/1.1 流式转发、`Cache-Control: no-cache`、`X-Accel-Buffering: no`，避免 Cloudflare Tunnel 路径下缓冲导致事件延迟。
 - `GET/POST/PUT/PATCH/DELETE/OPTIONS /mcp*`：legacy 反代到 `127.0.0.1:8012`。`turtle-soup` 当前只保留海龟汤自己的 `/mcp/play`；聚合工具不再走该路径。
 
@@ -649,8 +659,8 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 
 1. `POST` 若是 `/soup*` 或 legacy `/mcp*`，先反代到 `turtle-soup`。
 2. `POST /api/auth/login_or_register`、`POST /api/auth/bind` 由平台账号逻辑处理。
-3. `POST /`、`POST /{token}`、`POST /mbti`、`POST /dnd` 按 MCP/JSON-RPC 处理。
-4. `GET /` 返回 Toy 首页；`GET /api/auth/me` 返回平台账号；`GET /mbti`、`GET /dnd` 是浏览器 GET 版测试入口；`GET /soup*` 反代。
+3. `POST /`、`POST /{token}`、`POST /mbti`、`POST /enneagram`、`POST /dnd` 按 MCP/JSON-RPC 处理。
+4. `GET /` 返回 Toy 首页；`GET /api/auth/me` 返回平台账号；`GET /mbti`、`GET /enneagram`、`GET /dnd` 是浏览器 GET 版测试入口；`GET /soup*` 反代。
 
 ## 6. MCP 层
 
@@ -660,8 +670,8 @@ MCP 聚合层由 `/opt/cedartoy/server.py` 的根路径 `POST /` 提供：
 
 - `tools/list` 暴露 `list_games`、`get_guide`、`play`、`account` 四个工具。
 - `tools/call name=list_games`：在 `server.py` 返回硬编码游戏列表。
-- `tools/call name=get_guide`：`turtle_soup` 返回硬编码 action 字典和提示 notes；`account`、`mbti`、`dnd`、`bdsmtest`、`eco` 读取 `/opt/cedartoy/turtle-soup/backend/guides/*.md`。
-- `tools/call name=play`：由 `server.py` 按 `game` 分发。`play` 的入参约定为 `game` + `action` + `params` 对象：各游戏 action 的业务参数统一放进 `params`（`_tool_play` 会把 `params` 并入顶层做兼容）。`game` 的 `enum` 为 `turtle_soup/mbti/dnd/bdsmtest/eco`。
+- `tools/call name=get_guide`：`turtle_soup` 返回硬编码 action 字典和提示 notes；`account`、`mbti`、`enneagram`、`dnd`、`bdsmtest`、`eco` 读取 `/opt/cedartoy/turtle-soup/backend/guides/*.md`。
+- `tools/call name=play`：由 `server.py` 按 `game` 分发。`play` 的入参约定为 `game` + `action` + `params` 对象：各游戏 action 的业务参数统一放进 `params`（`_tool_play` 会把 `params` 并入顶层做兼容）。完整 `game` enum 以 `server.py:_PLATFORM_TOOLS` 为准，其中包含 `enneagram`。
 
 公网访问时：
 
@@ -973,7 +983,7 @@ FAIL_LIMIT = 5
 
 启动：FastAPI lifespan 中 `start_scheduler()`，timezone 为 `Asia/Shanghai`。
 
-当前只有海龟汤 FastAPI 进程启动 APScheduler；`cedartoy` 的 MBTI/DND 清理不是 scheduler，而是在 handler 调用时顺手清理。
+当前只有海龟汤 FastAPI 进程启动 APScheduler；`cedartoy` 的测试清理不是 scheduler，而是在 handler 调用时顺手清理。
 
 ### `cleanup_inactive_rooms`
 
@@ -1042,8 +1052,8 @@ AND 不存在 room_inactive_expire_hours 内该游客自己的玩家日志
 | 海龟汤注册/平台玩家 | `/auth/register`、`/auth/login`、`/auth/guest {user_id}` | 无自动删除 | 管理后台可删玩家 |
 | 海龟汤房间 | `/rooms/create` 或 MCP `create_random` | 猜中、房主关闭、管理员 finish、48 小时无玩家发言自动结束、已结束房大厅显示 3 小时、结束后 24 小时删除 | 普通 API 不暴露 `answer` |
 | 海龟汤 presence | SSE connect / `touch_room` | SSE disconnect 或 1 小时 stale 清理 | 房间列表在线人数来源 |
-| MBTI/DND 进行中 session | `*_start` | 完成或 24 小时无活动 | 每次 handler 调用顺手清理 |
-| MBTI/DND 结果 | 测试完成 | 48 小时后 handler 调用顺手清理 | `get_profile` 只统计未清理结果 |
+| 测试进行中 session | `*_start` | 完成或 24 小时无活动 | 每次 handler 调用顺手清理 |
+| 测试游客结果 | 测试完成 | 48 小时后 handler 调用顺手清理 | 账号结果不按此 TTL 删除 |
 | 绑定 token | MCP AI 生成 | 使用后 `used=1` 或 10 分钟过期 | 过期 token 不一定立即删除 |
 
 ## 9. nginx 转发规则
@@ -1251,7 +1261,7 @@ curl -s -X POST -H 'Content-Type: application/json' \
 
 - `cedartoy` 与 `turtle-soup` 均为 `RUNNING`。
 - `/soup/health` 返回 `{"status":"healthy"}`。
-- 根 MCP `list_games` 同时包含 `turtle_soup`、`mbti` 和 `dnd`。
+- 根 MCP `list_games` 同时包含 `turtle_soup`、`mbti`、`enneagram` 和 `dnd`。
 - MBTI `tools/list` 返回 `mbti_start`、`mbti_answer`、`mbti_answer_batch`、`mbti_get_result`。
 
 ### 13.1 本机验证

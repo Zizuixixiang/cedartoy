@@ -100,7 +100,8 @@ class ScaleTestEngine:
         player_id = self._require_player_id(arguments, "player_id")
         mode = arguments.get("mode")
         if mode not in self.questions.VALID_MODES:
-            raise JsonRpcError(-32602, "mode 须为 full 或 full_fast。")
+            allowed = "、".join(self.questions.VALID_MODES)
+            raise JsonRpcError(-32602, f"mode 须为 {allowed} 之一。")
 
         questions = self.questions.get_questions(mode)
         now = time.time()
@@ -361,11 +362,20 @@ class ScaleTestEngine:
             lines.extend([f"【{self.title}开始 · {mode}模式 · 共{total}题】", self.prompt, ""])
         lines.extend([f"第{index + 1}题 / 共{total}题", question["text"], ""])
         for option in question["options"]:
-            lines.append(f"{option['value']}. {option['text']}")
+            label = f"{option.get('label')} — " if option.get("label") else ""
+            lines.append(f"{option['value']}. {label}{option['text']}")
+        allowed = " / ".join(
+            (
+                f"{option['value']}={option['label']}"
+                if option.get("label")
+                else str(option["value"])
+            )
+            for option in question["options"]
+        )
         lines.extend(
             [
                 "",
-                f"请用 {self.game}_answer 传入 answer：{self.answer_min}~{self.answer_max}。",
+                f"请用 {self.game}_answer 传入 answer：{allowed}。",
             ]
         )
         return "\n".join(lines)
@@ -384,7 +394,8 @@ class ScaleTestEngine:
             question = self._public_question(questions[index])
             lines.extend([f"第{index + 1}题 / 共{total}题", question["text"], ""])
             for option in question["options"]:
-                lines.append(f"{option['value']}. {option['text']}")
+                label = f"{option.get('label')} — " if option.get("label") else ""
+                lines.append(f"{option['value']}. {label}{option['text']}")
             lines.append("")
         placeholders = ", ".join("?" for _ in range(batch_size))
         lines.append(
@@ -396,7 +407,14 @@ class ScaleTestEngine:
     def _public_question(question):
         return {
             "text": question["text"],
-            "options": [{"value": option["value"], "text": option["text"]} for option in question["options"]],
+            "options": [
+                {
+                    "value": option["value"],
+                    "text": option["text"],
+                    **({"label": option["label"]} if option.get("label") else {}),
+                }
+                for option in question["options"]
+            ],
         }
 
     def _coerce_answer(self, value):
@@ -557,7 +575,10 @@ class ScaleTestEngine:
             "minimum": self.answer_min,
             "maximum": self.answer_max,
         }
-        total = len(self.questions.get_questions("full"))
+        full_total = len(self.questions.get_questions("full"))
+        fast_batch_max = int(
+            getattr(self.questions, "FAST_BATCH_SIZE_MAX", full_total)
+        )
         tools = [
             {
                 "name": f"{self.game}_start",
@@ -574,7 +595,11 @@ class ScaleTestEngine:
             },
             {
                 "name": f"{self.game}_answer",
-                "description": "逐题提交当前题答案。",
+                "description": getattr(
+                    self.questions,
+                    "ANSWER_DESCRIPTION",
+                    "逐题提交当前题答案。",
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {"player_id": player, "answer": answer},
@@ -584,7 +609,11 @@ class ScaleTestEngine:
             },
             {
                 "name": f"{self.game}_answer_batch",
-                "description": f"快速模式一次提交全部 {total} 题答案。",
+                "description": getattr(
+                    self.questions,
+                    "BATCH_ANSWER_DESCRIPTION",
+                    "快速模式提交当前批次答案；数组长度必须与当前批次题数一致。",
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -592,8 +621,8 @@ class ScaleTestEngine:
                         "answers": {
                             "type": "array",
                             "items": answer,
-                            "minItems": total,
-                            "maxItems": total,
+                            "minItems": 1,
+                            "maxItems": fast_batch_max,
                         },
                     },
                     "required": ["player_id", "answers"],

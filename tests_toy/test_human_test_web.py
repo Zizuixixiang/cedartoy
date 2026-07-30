@@ -15,15 +15,18 @@ class HumanTestWebTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self.temp_dir.name) / "sessions.db")
         self.mbti_db = patch.object(server.mbti_handler, "DB_PATH", self.db_path)
+        self.enneagram_db = patch.object(server.enneagram_handler, "DB_PATH", self.db_path)
         self.dnd_db = patch.object(server.dnd_handler, "DB_PATH", self.db_path)
         self.bdsm_db = patch.object(bdsmtest_handler, "DB_PATH", self.db_path)
         self.mbti_db.start()
+        self.enneagram_db.start()
         self.dnd_db.start()
         self.bdsm_db.start()
 
     def tearDown(self):
         self.bdsm_db.stop()
         self.dnd_db.stop()
+        self.enneagram_db.stop()
         self.mbti_db.stop()
         self.temp_dir.cleanup()
 
@@ -107,6 +110,56 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertEqual(answer_batch.call_count, 6)
         self.assertIn("完整版", completed["result"])
         self.assertNotIn("full_fast", completed["result"])
+
+    def test_enneagram_quick_web_uses_chinese_ab_and_returns_quick_scope(self):
+        player_id = "guest:webenneaquick"
+        state = server._human_test_action(
+            "enneagram", "start", "", {"player_id": player_id, "edition": "quick"}
+        )
+        self.assertEqual(state["edition"], "quick")
+        self.assertEqual(state["total"], 36)
+        first = state["questions"][0]
+        self.assertEqual(first["text"], "请选择更符合你的一句。")
+        self.assertEqual([option["label"] for option in first["options"]], ["A", "B"])
+        self.assertIn("我一直比较浪漫", first["options"][0]["text"])
+        self.assertNotIn("romantic", str(first))
+
+        completed = server._human_test_action(
+            "enneagram",
+            "answer_batch",
+            "",
+            {"player_id": player_id, "answers": [1] * 36},
+        )
+        self.assertTrue(completed["complete"])
+        data = completed["result_data"]
+        self.assertFalse(data["is_full"])
+        self.assertIsNone(data["wing"])
+        self.assertIsNone(data["tritype"])
+        self.assertEqual(sum(item["value"] for item in data["centers"]), 36)
+        self.assertIn("两套分数不可直接比较", data["score_note"])
+
+    def test_enneagram_complete_web_uses_16_question_handler_chunks(self):
+        player_id = "guest:webenneafull"
+        state = server._human_test_action(
+            "enneagram", "start", "", {"player_id": player_id, "edition": "complete"}
+        )
+        self.assertEqual(state["total"], 180)
+        self.assertIn("我富有创造力", state["questions"][0]["text"])
+        original = server.enneagram_handler.enneagram_answer_batch
+        with patch.object(
+            server.enneagram_handler, "enneagram_answer_batch", wraps=original
+        ) as answer_batch:
+            completed = server._human_test_action(
+                "enneagram",
+                "answer_batch",
+                "",
+                {"player_id": player_id, "answers": [3] * 180},
+            )
+        self.assertEqual(answer_batch.call_count, 12)
+        data = completed["result_data"]
+        self.assertTrue(data["is_full"])
+        self.assertTrue(data["wing"])
+        self.assertTrue(data["tritype"])
 
     def test_dnd_has_one_web_version_and_completes_in_one_handler_batch(self):
         player_id = "guest:webdnd1"
@@ -275,11 +328,13 @@ class HumanTestWebTests(unittest.TestCase):
             self.assertNotIn(internal_mode, template)
 
         index = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
-        for game in ("mbti", "dnd"):
+        for game in ("mbti", "enneagram", "dnd"):
             block = index.split(f'id: "{game}"', 1)[1].split("ranks: []", 1)[0]
             self.assertNotIn("comingSoon", block)
             self.assertIn(f'url: "/{game}"', block)
         self.assertIn('name: "九阵营"', index)
+        self.assertIn('name: "九型人格"', index)
+        self.assertIn('url: "/enneagram"', index)
         self.assertIn('name: "属性测试"', index)
         self.assertIn('badge: "ATTR"', index)
         self.assertIn("本测试含成人内容，请确认已满18岁", index)
@@ -292,6 +347,10 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertEqual(
             server.HUMAN_TEST_GAMES["dnd"]["source"],
             "题库与阵营描述译自 easydamus.com",
+        )
+        self.assertIn(
+            "kcdjmaxx/enneagram-llm-evaluator",
+            server.HUMAN_TEST_GAMES["enneagram"]["source"],
         )
         mbti_guide = (Path("turtle-soup/backend/guides/mbti.md")).read_text(encoding="utf-8")
         dnd_guide = (Path("turtle-soup/backend/guides/dnd.md")).read_text(encoding="utf-8")
