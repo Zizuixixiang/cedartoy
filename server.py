@@ -4779,6 +4779,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
 
         if path not in (*_ROOT_MCP_PATHS, "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity") and not path_token:
+            self._drain_body()
             self._send_json({"error": "not found"}, status=404)
             return
 
@@ -5070,6 +5071,21 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return False
         tokenish = path.strip("/")
         return bool(tokenish and "/" not in tokenish)
+
+    def _drain_body(self):
+        """早退(404等)前清掉未读的请求体,避免 keep-alive 连接粘包毒害下一个请求。"""
+        try:
+            if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+                self._read_chunked_body()
+            else:
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                while length > 0:
+                    chunk = self.rfile.read(min(length, 65536))
+                    if not chunk:
+                        break
+                    length -= len(chunk)
+        except Exception:
+            self.close_connection = True
 
     def _read_chunked_body(self):
         max_chunk_size = 10 * 1024 * 1024
