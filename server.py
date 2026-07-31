@@ -4769,6 +4769,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity)/(start|answer_batch|result|compare)", path)
         if human_test_match:
             if human_test_match.group(2) == "compare" and human_test_match.group(1) not in {"love", "ecr"}:
+                self._drain_body()
                 self._send_json({"error": "not found"}, status=404)
                 return
             self._handle_human_test_api(*human_test_match.groups())
