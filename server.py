@@ -421,11 +421,11 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
             arguments = params.get("arguments") or {}
             try:
                 if name == "list_games":
-                    text = _tool_list_games(path_token=path_token)
+                    text = _tool_list_games(path_token=path_token or bearer_token)
                 elif name == "get_guide":
                     text = _tool_get_guide(arguments)
                 elif name == "play":
-                    text = _tool_play(arguments, path_token=path_token)
+                    text = _tool_play(arguments, path_token=path_token or bearer_token)
                 elif name == "account":
                     text = _tool_account(
                         arguments,
