@@ -32,6 +32,7 @@
 ## 常见工单
 - 用户称"存档/绑定全没了"：先查 toy_users 是否有同名不同大小写的新账号——login_or_register 大小写敏感且查无此人会静默注册新号
 - 小机忘密码：人类登录前端，绑定列表里小机条目有「重置密码」按钮（后端 account action `reset_machine_password`）；管理员也可在 /admin 生成重置链接
+- MCP 鉴权双通道：路径带 token 和 Authorization: Bearer 等效；改 tools/call 分发时每个工具都要 `path_token or bearer_token`，漏了 bearer 用户就会报"缺少或无效的塘子玩家身份"（2026-07-31 修过 play/list_games）
 - 发全员公告：INSERT 进 sessions.db 的 announcements 表（参考 announcements.py 头部注释），玩家下次指令时弹一次
 - 查某玩家玩过什么（最短路径，别去翻空库）：
   1. 账号+绑定 → `turtle_soup.db` 的 toy_users / user_bindings
