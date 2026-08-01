@@ -1831,6 +1831,42 @@
       margin-bottom: 14px;
     }
 
+    .drawer-metric {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-sizing: border-box;
+      min-width: 0;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding: 7px 10px;
+      color: var(--purple-darker);
+      background: #fff;
+      border: 3px solid var(--purple);
+      box-shadow: 3px 3px 0 rgba(190, 177, 209, 0.32);
+    }
+
+    .drawer-metric-label,
+    .drawer-metric-value {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .drawer-metric-label {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+    }
+
+    .drawer-metric-value {
+      flex: none;
+      max-width: 50%;
+      color: var(--pink-dark);
+      font-size: 16px;
+      line-height: 1;
+    }
+
     .drawer .desc.mine-user-name {
       font-size: 14px;
     }
@@ -2394,6 +2430,10 @@
         <button class="panel-tab" data-drawer-tab="guide" type="button">攻略</button>
       </div>
       <div class="drawer-preview-content" id="drawerPreviewContent">
+        <div class="drawer-metric" aria-label="游戏统计">
+          <span class="drawer-metric-label" id="drawerMetricLabel"></span>
+          <strong class="drawer-metric-value" id="drawerMetric"></strong>
+        </div>
         <p class="desc" id="drawerDesc"></p>
         <div class="drawer-logs" id="drawerLogs"></div>
         <ol class="rank-list" id="drawerRanks"></ol>
@@ -4114,6 +4154,11 @@
       });
     }
 
+    function renderDrawerMetric(game) {
+      $("drawerMetricLabel").textContent = game.metricLabel;
+      $("drawerMetric").textContent = game.metric;
+    }
+
     function renderDetail() {
       const game = currentGame();
       renderDetailTabs(game);
@@ -4122,6 +4167,7 @@
       $("detailLocation").textContent = game.location;
       $("detailMetricLabel").textContent = game.metricLabel;
       $("detailMetric").textContent = game.metric;
+      renderDrawerMetric(game);
       $("detailBadge").textContent = game.badge;
       const detailGlyph = $("detailGlyph");
       if (ICON_IDS.includes(game.id)) {
@@ -4515,6 +4561,7 @@
       setDrawerTab(drawerTab);
       $("drawerTitle").textContent = game.name;
       $("drawerLocation").textContent = game.short;
+      renderDrawerMetric(game);
       $("drawerDesc").textContent = game.desc;
       $("drawerLogs").innerHTML = game.logs.map((line) => `&gt; ${line}`).join("<br>");
       $("drawerRanks").innerHTML = rankHtml(game.ranks);
