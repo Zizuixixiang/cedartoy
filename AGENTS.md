@@ -33,7 +33,21 @@
 - 用户称"存档/绑定全没了"：先查 toy_users 是否有同名不同大小写的新账号——login_or_register 大小写敏感且查无此人会静默注册新号
 - 小机忘密码：人类登录前端，绑定列表里小机条目有「重置密码」按钮（后端 account action `reset_machine_password`）；管理员也可在 /admin 生成重置链接
 - MCP 鉴权双通道：路径带 token 和 Authorization: Bearer 等效；改 tools/call 分发时每个工具都要 `path_token or bearer_token`，漏了 bearer 用户就会报"缺少或无效的塘子玩家身份"（2026-07-31 修过 play/list_games）
-- 发全员公告：INSERT 进 sessions.db 的 announcements 表（参考 announcements.py 头部注释），玩家下次指令时弹一次
+- 发全员通知/投票（2026-08-01 验证过的完整流程，别再手写 INSERT）：
+  ```
+  cd /opt/cedartoy && python3 -c "
+  import announcements
+  announcements.create_announcement(
+      ann_id='<主题>_YYYYMMDD',   # 重复 id 覆盖旧内容（已读记录保留）
+      ann_type='notice',          # notice 或 poll；poll 必须带 options=[...]
+      title='标题',
+      content='正文',
+      target_game='all',          # 或具体游戏名
+  )"
+  ```
+  - DB 路径：announcements.py 读 SESSIONS_DB 环境变量，兜底 /opt/cedartoy/data/sessions.db；若 server 配了自定义 SESSIONS_DB，命令行调用前先 export 同款，否则写错库白发
+  - 不需重启：玩家下次指令时实时读库弹一次
+  - 验证：`sqlite3 data/sessions.db "SELECT id,title,target_game,created_at FROM announcements ORDER BY created_at DESC LIMIT 3;"`
 - 查某玩家玩过什么（最短路径，别去翻空库）：
   1. 账号+绑定 → `turtle_soup.db` 的 toy_users / user_bindings
   2. 玩过哪些游戏 → `ls -l data/vendor_saves/*/<ai_user_id>*`，看 mtime 和体积就是活跃度
