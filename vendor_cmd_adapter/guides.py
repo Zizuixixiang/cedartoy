@@ -274,15 +274,15 @@ GUIDES = {
 
 常用 command：
 - 任意中文词语或句子：探索房间、推进叙事
-- status：查看当前模块、累计输入、路线和结局
-- help：查看玩法提示
-- hint：获得当前阶段轻提示
-- recap：回顾本轮变化
-- endings：查看无剧透结局收藏
-- save：立即保存
-- save backup：创建一份存档备份
+- 自由输入仍使用 action="cmd" 和 params.command
+
+元指令可直接作为顶层 action：
+- status / help / hint / recap / privacy / endings
+- report / report_reset
+- save / save_backup
 - restart：请求重新开始
-- restart confirm：确认重开；塘子已有存档保护，需同时在 params 传 confirm:true
+- restart_confirm：确认重开；塘子已有存档保护，需同时在 params 传 confirm:true
+- quit：保存并离开（塘子每次调用本来就是单条进出）
 
 游戏会在每次有效输入后自动保存。标准模式约 90–140 次输入抵达路线选择；长篇模式保留更慢的积累节奏。
 存档导出：play(game="white_room", action="export")（主档与可选备份档以文件名为 key 返回）

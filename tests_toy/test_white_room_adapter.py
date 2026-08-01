@@ -29,37 +29,26 @@ class WhiteRoomAdapterTests(unittest.TestCase):
         opening = white_room.play({"action": "new", "player_id": slot1})["text"]
         self.assertIn("你在这里", opening)
         white_room.play({"action": "cmd", "player_id": slot1, "command": "光"})
-        status = white_room.play(
-            {"action": "cmd", "player_id": slot1, "command": "status"}
-        )["text"]
+        status = white_room.play({"action": "status", "player_id": slot1})["text"]
         self.assertIn("累计输入: 1 次", status)
         self.assertIn(
             "存档已保存",
-            white_room.play(
-                {"action": "cmd", "player_id": slot1, "command": "save"}
-            )["text"],
+            white_room.play({"action": "save", "player_id": slot1})["text"],
         )
-        white_room.play(
-            {"action": "cmd", "player_id": slot1, "command": "save backup"}
-        )
+        white_room.play({"action": "save_backup", "player_id": slot1})
 
         with self.assertRaisesRegex(VendorCmdError, "confirm=true"):
             white_room.play({"action": "new", "player_id": slot1})
 
-        restart = white_room.play(
-            {"action": "cmd", "player_id": slot1, "command": "restart"}
-        )["text"]
+        restart = white_room.play({"action": "restart", "player_id": slot1})["text"]
         self.assertIn("restart confirm", restart)
         with self.assertRaisesRegex(VendorCmdError, "confirm=true"):
-            white_room.play(
-                {"action": "cmd", "player_id": slot1, "command": "restart confirm"}
-            )
+            white_room.play({"action": "restart_confirm", "player_id": slot1})
 
         white_room.play(
             {
-                "action": "cmd",
+                "action": "restart_confirm",
                 "player_id": slot1,
-                "command": "restart confirm",
                 "confirm": True,
             }
         )
@@ -91,9 +80,39 @@ class WhiteRoomAdapterTests(unittest.TestCase):
             }
         )
         imported_status = white_room.play(
-            {"action": "cmd", "player_id": "player1:3", "command": "status"}
+            {"action": "status", "player_id": "player1:3"}
         )["text"]
         self.assertIn("累计输入: 1 次", imported_status)
+
+    def test_all_meta_actions_are_explicit_and_typos_still_fail(self):
+        player_id = "meta1"
+        white_room.play({"action": "new", "player_id": player_id})
+
+        expected_text = {
+            "status": "【当前状态】",
+            "help": "可用命令",
+            "hint": "试着描述你能感知到的东西",
+            "recap": "【回声回顾】",
+            "privacy": "【隐私说明】",
+            "endings": "【结局收藏】",
+            "report": "匿名试玩报告已生成",
+            "report_reset": "试玩统计已清空",
+            "save": "存档已保存",
+            "save_backup": "存档备份已创建",
+            "quit": "打字机安静了。下次再见。",
+        }
+        for action, marker in expected_text.items():
+            with self.subTest(action=action):
+                result = white_room.play(
+                    {"action": action, "player_id": player_id}
+                )["text"]
+                self.assertIn(marker, result)
+
+        status = white_room.play({"action": "status", "player_id": player_id})["text"]
+        self.assertIn("累计输入: 0 次", status)
+
+        with self.assertRaisesRegex(VendorCmdError, "未知 white_room action"):
+            white_room.play({"action": "statuz", "player_id": player_id})
 
 
 if __name__ == "__main__":

@@ -17,6 +17,21 @@ SAVE_FILES = {
     SAVE_NAME: SAVE_NAME,
     BACKUP_NAME: BACKUP_NAME,
 }
+META_ACTION_COMMANDS = {
+    "status": "status",
+    "help": "help",
+    "hint": "hint",
+    "recap": "recap",
+    "privacy": "privacy",
+    "endings": "endings",
+    "report": "report",
+    "report_reset": "report reset",
+    "save": "save",
+    "save_backup": "save backup",
+    "restart": "restart",
+    "restart_confirm": "restart confirm",
+    "quit": "quit",
+}
 
 
 RUNNER_CODE = r'''
@@ -41,7 +56,10 @@ engine.REPORT_PATH = str(save_dir / "_ewr_report.txt")
 engine._STATE = None
 engine._init_state()
 
-if payload.get("reset"):
+if command.lower() in {"quit", "exit", "退出"}:
+    engine._save()
+    result = "打字机安静了。下次再见。"
+elif payload.get("reset"):
     result = engine.new_game(extra.get("mode") or "standard")
 else:
     result = engine.cmd(command)
@@ -132,6 +150,15 @@ def play(arguments):
                 "白房间",
             )
         text = GAME.run(player_id, command)
+    elif action in META_ACTION_COMMANDS:
+        if action == "restart_confirm":
+            require_save_confirm(
+                arguments,
+                lambda: _has_save(player_id),
+                save_summary,
+                "白房间",
+            )
+        text = GAME.run(player_id, META_ACTION_COMMANDS[action])
     elif action == "export":
         text = export_json_saves(
             "white_room",
