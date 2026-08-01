@@ -30,3 +30,8 @@ eco/
 # cedartoy 的 MCP 适配层在 vendor_cmd_adapter/、eco_adapter/ 等（纳入版本控制）。
 vendor/
 *.db
+
+# 按 AGENTS.md Git 纪律：备份不进库
+backups/
+*.bak
+*.bak_before_edit
