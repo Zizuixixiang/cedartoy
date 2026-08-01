@@ -1524,20 +1524,31 @@
     .history-stats {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 8px;
     }
 
     .history-stat {
+      display: inline-flex;
+      align-items: center;
+      box-sizing: border-box;
+      height: 32px;
+      max-width: 100%;
       color: var(--purple-darker);
       background: var(--purple-light);
       border: 2px solid var(--purple);
-      padding: 6px 8px;
+      padding: 5px 8px;
       font-size: 10px;
-      line-height: 1.35;
+      font-weight: 400;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .history-stat b {
       color: var(--pink-dark);
+      font-weight: 700;
     }
 
     .history-empty {
@@ -1547,13 +1558,15 @@
     }
 
     .history-tabs {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(var(--history-tab-columns, 1), minmax(0, 1fr));
       gap: 8px;
       margin-bottom: 4px;
     }
 
     .history-tab {
+      box-sizing: border-box;
+      width: 100%;
       border: 3px solid var(--purple);
       color: var(--purple-darker);
       background: #fff;
@@ -1562,7 +1575,6 @@
       padding: 8px 10px;
       min-height: 34px;
       font-size: 11px;
-      max-width: 170px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -2085,6 +2097,8 @@
       #announcementModal .modal-box { max-height: calc(100dvh - 102px); }
       .announcement-list { max-height: calc(100dvh - 220px); }
       .announcement-item { padding: 12px; }
+      #historyModal .history-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #historyModal .history-tabs[data-tab-count="1"] { grid-template-columns: minmax(0, 1fr); }
       .field-hint { font-size: 11px; font-weight: 400; }
       #loginModal .field-label { font-size: 16px; font-weight: 700; }
       #loginModal .field input { min-height: 38px; border: 4px solid #BEB1D1; font-size: 14px; }
@@ -3467,8 +3481,99 @@
       return saveFieldLabels[key] || key.replaceAll("_", " ").toUpperCase();
     }
 
-    function saveValue(value) {
+    const testResultLabels = {
+      dnd: {
+        LAWFUL_GOOD: "守序善良",
+        NEUTRAL_GOOD: "中立善良",
+        CHAOTIC_GOOD: "混乱善良",
+        LAWFUL_NEUTRAL: "守序中立",
+        TRUE_NEUTRAL: "绝对中立",
+        CHAOTIC_NEUTRAL: "混乱中立",
+        LAWFUL_EVIL: "守序邪恶",
+        NEUTRAL_EVIL: "中立邪恶",
+        CHAOTIC_EVIL: "混乱邪恶",
+      },
+      ecr: {
+        SECURE: "安全型",
+        FEARFUL: "恐惧型",
+        PREOCCUPIED: "迷恋型（专注型）",
+        DISMISSIVE: "冷漠型",
+      },
+      humanity: {
+        CERTIFIED_CARBON: "认证碳基",
+        HUMAN_FLAVOR: "人味充足",
+        MIXED_SIGNAL: "混合信号",
+        CYBER_INFILTRATION: "赛博渗透中",
+        CHECK_COOLING: "建议自查散热",
+      },
+      love: {
+        A: "肯定言辞",
+        B: "优质时间",
+        C: "服务行动",
+        D: "赠送礼物",
+        E: "身体接触",
+      },
+      enneagram: {
+        1: "1号 · 完美型",
+        2: "2号 · 助人型",
+        3: "3号 · 成就型",
+        4: "4号 · 自我型",
+        5: "5号 · 理智型",
+        6: "6号 · 忠诚型",
+        7: "7号 · 活跃型",
+        8: "8号 · 领袖型",
+        9: "9号 · 和平型",
+      },
+      bdsmtest: {
+        DOMINANT: "支配者",
+        SUBMISSIVE: "臣服者",
+        SWITCH: "双向者（Switch）",
+        VANILLA: "原味（Vanilla）",
+        EXPERIMENTALIST: "探索者",
+        RIGGER: "绳师",
+        ROPE_BUNNY: "绳兔",
+        NON_MONOGAMIST: "非单偶关系者",
+        BRAT: "任性者（Brat）",
+        BRAT_TAMER: "Brat 驯服者",
+        OWNER: "所有者",
+        MASTER_MISTRESS: "主人",
+        SLAVE: "奴隶",
+        DEGRADER: "贬低者",
+        DEGRADEE: "被贬低者",
+        PRIMAL_HUNTER: "原始猎手",
+        PRIMAL_PREY: "原始猎物",
+        PET: "宠物",
+        DADDY_MOMMY: "照料者（Daddy/Mommy）",
+        AGEPLAYER: "年龄扮演者",
+        VOYEUR: "窥视者",
+        EXHIBITIONIST: "暴露者",
+        MASOCHIST: "受虐者",
+        SADIST: "施虐者",
+      },
+    };
+
+    function testResultLabel(gameName, value) {
+      const text = String(value);
+      const labels = testResultLabels[gameName];
+      if (!labels) return text;
+      if (gameName === "love") {
+        const translated = text.split("+").map((part) => labels[part.trim().toUpperCase()]);
+        if (translated.every(Boolean)) return translated.join("＋");
+      }
+      const key = text.trim().replace(/[\s/()+-]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+      return labels[key] || text;
+    }
+
+    function historyDate(value) {
+      const text = String(value).trim();
+      const match = text.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+      return match ? `${match[1]}-${match[2]}-${match[3]}` : text;
+    }
+
+    function saveValue(key, value, gameName = "") {
       if (value == null) return "";
+      if (key === "latest_result") return testResultLabel(gameName, value);
+      if (key === "completed_at" || key === "last_active") return historyDate(value);
       if (typeof value === "boolean") return value ? "是" : "否";
       if (typeof value === "object") {
         if (value.mode || value.current_question != null) {
@@ -3479,11 +3584,10 @@
       return String(value);
     }
 
-    function statPill(key, value) {
-      const text = saveValue(value);
+    function statPill(key, value, gameName = "") {
+      const text = saveValue(key, value, gameName);
       if (!text) return "";
-      return `<span class="history-stat">${escapeHtml(saveLabel(key))}: <b>${escapeHtml(text)}
-</span>`;
+      return `<span class="history-stat">${escapeHtml(saveLabel(key))}: <b>${escapeHtml(text)}</b></span>`;
     }
 
     function compactStats(gameName, save) {
@@ -3508,7 +3612,7 @@
         imitator_td: ["level", "turn", "result"],
       };
       const fields = fieldMap[gameName] || Object.keys(save || {}).filter((key) => key !== "slot").slice(0, 4);
-      return fields.map((key) => statPill(key, save?.[key])).filter(Boolean).join("");
+      return fields.map((key) => statPill(key, save?.[key], gameName)).filter(Boolean).join("");
     }
 
     function achievementsHtml(save) {
@@ -3565,11 +3669,12 @@
           ${escapeHtml(subject.label)}
         </button>
       `).join("");
+      const tabColumns = Math.min(Math.max(subjects.length, 1), 5);
       const cards = entries.length
         ? `<div class="history-card-list">${entries.map(([gameName, item]) => renderHistoryGameCard(gameName, item)).join("")}</div>`
         : `<p class="history-empty">${active.id === "self" ? "你还没有存档记录。开始游玩后会在这里出现。" : "这只小机还没有存档记录。"}</p>`;
       return `
-        <div class="history-tabs">${tabs}</div>
+        <div class="history-tabs" data-tab-count="${subjects.length}" style="--history-tab-columns: ${tabColumns}">${tabs}</div>
         <div class="history-summary">${escapeHtml(active.username || active.label)} · 共 ${entries.length} 个存档</div>
         ${cards}
       `;
