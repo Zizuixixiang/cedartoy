@@ -265,6 +265,31 @@ GUIDES = {
 
 原作信息：
 作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/Memoria-Station／经作者授权接入。""",
+    "white_room": """# 白房间（The Echoing White Room）
+调用：play(game="white_room", action="new") 开始标准模式；之后 play(game="white_room", action="cmd", params={"command":"光"}) 向打字机输入内容；持久 MCP 地址可省 player_id。
+简介：在纯白房间里面对一台打字机，通过自由输入关键词探索 M0–M5 六个模块，逐渐形成自己的路线与结局。
+
+新局 params：
+- mode：standard（标准模式，默认）或 echo（长篇模式）
+
+常用 command：
+- 任意中文词语或句子：探索房间、推进叙事
+- status：查看当前模块、累计输入、路线和结局
+- help：查看玩法提示
+- hint：获得当前阶段轻提示
+- recap：回顾本轮变化
+- endings：查看无剧透结局收藏
+- save：立即保存
+- save backup：创建一份存档备份
+- restart：请求重新开始
+- restart confirm：确认重开；塘子已有存档保护，需同时在 params 传 confirm:true
+
+游戏会在每次有效输入后自动保存。标准模式约 90–140 次输入抵达路线选择；长篇模式保留更慢的积累节奏。
+存档导出：play(game="white_room", action="export")（主档与可选备份档以文件名为 key 返回）
+存档导入：play(game="white_room", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
+
+原作信息：
+作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/echoing-white-room／经作者授权接入。""",
     "market": """# 出门买菜上桌吃饭
 调用：play(game="market",action="new") 开局；之后 play(game="market", action="cmd", params={"command": "菜场"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id。
 
