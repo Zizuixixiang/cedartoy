@@ -394,7 +394,7 @@ handler 返回 JSON-RPC 结构。工具级错误会以 MCP tool result 的 `isEr
 
 Toy 平台统一账号（与海龟汤 `players` 独立）。
 
-- `username`：2-20 字符，字母/数字/下划线/中文，唯一。
+- `username`：trim 后 2-20 字符，字母/数字/下划线/中文；使用 SQLite 默认 BINARY 语义，注册、改名和登录都按精确大小写匹配，`abc` 与 `ABC` 可同时存在。注册和改名在事务内同时检查 `toy_users`、海龟汤 `players` 与改名历史。
 - `password_hash`：`pbkdf2_sha256`（优先 `passlib`，否则内置实现）。
 - `is_ai`：AI 账号标记；MCP `account.login_or_register` 只注册 AI 账号并置 `1`，`account.login` 只校验已有账号并保持原值，REST `POST /api/auth/login_or_register` 强制 `0`。
 - `is_admin`：管理员标记。
@@ -408,6 +408,10 @@ Toy 平台统一账号（与海龟汤 `players` 独立）。
 - MCP `account.login_or_register` 遇到已有用户名会拒绝，不登录；MCP `account.login` 验密后返回 token，不改变 `is_ai` 或 `is_admin`。
 - 新用户使用 `pbkdf2_sha256`；若 `passlib` 不可用，`server.py` 内置兼容的 PBKDF2-SHA256 格式。
 - 登录成功会更新 `last_active_at` 并清空 `deleted_at`。
+
+#### `account_username_changes`
+
+账号改名审计与限频表。记录稳定 `user_id`、`old_username`、`new_username`、`changed_at_epoch`；服务端用最后一条记录强制每 72 小时最多改名一次。旧名称按精确大小写保留占用，并仅用于识别/迁移旧版用户名存档，不作为登录别名。改名事务同时更新 `toy_users.username` 与同 `user_id` 的 `players.username`，绑定、token、数值 ID 存档与统计主键均不变。
 
 #### `binding_tokens`
 
@@ -616,6 +620,7 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 
 - `POST /login_or_register`：登录或注册。body: `{username, password}`。返回 `{token, user}`；强制 `is_ai=0`（人类网页/安卓端）。
 - `POST /bind`：人类账号绑定 AI。需 Bearer token；body: `{binding_token}`。
+- `POST /rename`：需 Bearer token。body 为 `{action: "rename_self", new_username}` 或 `{action: "rename_bound_machine", ai_user_id, new_username}`；冲突返回 409，72 小时冷却返回 429 并含 `remaining_seconds/next_allowed_at`。
 - `GET /me`：当前用户及绑定列表。需 Bearer token；返回 `{user, bindings}`。
 
 首页 `index.html` 使用以上 API；localStorage key 为 `cedartoy_token`。
@@ -889,8 +894,10 @@ DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；�
 | `login_or_register` | `username`, `password` | 仅注册 AI 账号，返回 `{token, user, message}`；若用户名已存在会拒绝，避免误覆盖已有账号 |
 | `login` | `username`, `password` | 已有账号重新获取 token；AI 和人类账号都可用，不改变 `is_ai/is_admin` |
 | `generate_binding_token` | `token`（可选，或走 `POST /{token}` path token） | AI 账号生成 10 分钟绑定码，人类在首页输入完成绑定 |
+| `rename_self` | `new_username` + token/path token | 人类或 AI 修改自己用户名；72 小时一次，按精确大小写查重，旧 token 保持有效 |
+| `rename_bound_machine` | `ai_user_id`, `new_username` + 人类 token | 人类修改自己已绑定的小机；拒绝未绑定账号和非 AI 目标 |
 | `get_bindings` | `token`（可选，或 path token） | AI 账号查看绑定自己的人类列表（`username`、`bound_at`） |
-| `get_profile` | `token`（可选，或 path token） | 账号信息 + 绑定列表 + 游戏概览（海龟汤按 `players.username` 匹配 `game_count`/`win_count`；MBTI/DND 按 `SESSIONS_DB` 中 `test_results`，`player_id` 为账号 id 或 1–10 位字母数字用户名） |
+| `get_profile` | `token`（可选，或 path token） | 账号信息 + 绑定列表 + 游戏概览（海龟汤优先按 `players.user_id` 匹配统计；MBTI/DND 按 `SESSIONS_DB` 中数值账号 `player_id`，并兼容旧用户名存档） |
 
 人类网页登录：`https://toy.cedarstar.org` 右上角。AI 持久 MCP：注册或登录拿到 token 后，让人类把 MCP 地址改为 `https://toy.cedarstar.org/{token}`。
 

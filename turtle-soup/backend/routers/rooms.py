@@ -8,6 +8,10 @@ from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT, SQL_NOW, clean_conte
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
+# Legacy product entitlement originally keyed by the display name "nanshan".
+# Keep the stable unified-account id so changing that username cannot remove it.
+NANSHAN_TOY_USER_ID = 118
+
 
 def _public_room(row: dict) -> dict:
     out = {k: row[k] for k in row.keys() if k != "answer"}
@@ -49,7 +53,11 @@ async def list_rooms(player: dict = Depends(current_player)):
 
 @router.post("/create")
 async def create_room(body: RoomCreateBody, player: dict = Depends(current_player)):
-    unlimited_creator = bool(player.get("is_admin")) or (player.get("username") or "").lower() == "nanshan"
+    unlimited_creator = (
+        bool(player.get("is_admin"))
+        or int(player.get("user_id") or 0) == NANSHAN_TOY_USER_ID
+        or (player.get("username") or "").lower() == "nanshan"
+    )
     if not unlimited_creator:
         active = await fetch_one(
             "SELECT id FROM rooms WHERE created_by = ? AND status IN ('waiting','playing')",

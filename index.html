@@ -1667,6 +1667,20 @@
       flex-wrap: wrap;
     }
 
+    .mine-user-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .mine-user-row .mine-user-name {
+      min-width: 0;
+      margin-bottom: 0;
+      overflow-wrap: anywhere;
+    }
+
     .machine-name {
       min-width: 0;
       overflow: hidden;
@@ -2101,6 +2115,9 @@
         padding: 8px 10px;
       }
       .drawer .rank-list { font-size: 12px; margin-bottom: 12px; }
+      .machine-head { align-items: flex-start; flex-direction: column; }
+      .machine-head-actions { justify-content: flex-start; width: 100%; }
+      .mine-user-row { align-items: flex-start; }
       .drawer .pixel-btn:not(.drawer-close) {
         width: 100%;
         min-height: 38px;
@@ -2336,6 +2353,23 @@
       <div class="modal-actions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="machinePasswordSubmit" type="button">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="renameModal" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="renameTitle">修改用户名</h2>
+      <p class="modal-hint" id="renameHint"></p>
+      <label class="field">
+        <span class="field-label">新用户名</span>
+        <input id="renameUsername" type="text" maxlength="20" autocomplete="off">
+        <span class="field-hint">2-20 个字符，仅字母、数字、下划线、中文；每 72 小时限改一次</span>
+      </label>
+      <div class="modal-msg" id="renameMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="renameSubmit" type="button">确认改名</button>
       </div>
     </div>
   </div>
@@ -3123,6 +3157,7 @@
       error: "",
     };
     let machinePasswordTarget = null;
+    let renameTarget = null;
 
     const platformSummaryLabels = {
       turtle_soup_accounts: "平台注册账号",
@@ -4622,6 +4657,7 @@
                       <input type="checkbox" class="machine-enabled" ${enabled ? "checked" : ""}>
                       防沉迷
                     </label>
+                    <button class="unbind-btn machine-rename" data-ai-id="${machine.id}" data-ai-name="${escapeHtml(machine.username)}" type="button">改名</button>
                     <button class="unbind-btn machine-password-reset" data-ai-id="${machine.id}" data-ai-name="${escapeHtml(machine.username)}" type="button">重置密码</button>
                     <button class="unbind-btn machine-unbind" data-ai-id="${machine.id}" type="button">解绑</button>
                   </span>
@@ -4741,6 +4777,7 @@
       if (id === "bindModal") resetBindModal();
       if (id === "changePasswordModal") resetChangePasswordModal();
       if (id === "machinePasswordModal") clearMachinePasswordModal();
+      if (id === "renameModal") clearRenameModal();
       if (id === "resetPasswordModal") clearResetPasswordModal();
       $(id).classList.add("show");
     }
@@ -4752,6 +4789,8 @@
       resetChangePasswordModal();
       clearMachinePasswordModal();
       machinePasswordTarget = null;
+      clearRenameModal();
+      renameTarget = null;
       clearResetPasswordModal();
     }
 
@@ -4818,9 +4857,9 @@
       }
       const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
       const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username}));
-      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span>${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
+      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span>${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
-        <p class="desc mine-user-name">用户：${escapeHtml(me.user.username)}</p>
+        <div class="mine-user-row"><p class="desc mine-user-name">用户：${escapeHtml(me.user.username)}</p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
         ${renderMachinePanel()}
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
@@ -4829,6 +4868,7 @@
         <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
       `;
       bindMachinePanel();
+      $("mineRenameSelf").addEventListener("click", () => openRenameModal("self", me.user.id, me.user.username));
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");
@@ -4844,6 +4884,11 @@
       document.querySelectorAll(".machine-password-reset").forEach((btn) => {
         btn.addEventListener("click", () => {
           openMachinePasswordModal(btn.dataset.aiId, btn.dataset.aiName);
+        });
+      });
+      document.querySelectorAll(".machine-rename").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openRenameModal("machine", btn.dataset.aiId, btn.dataset.aiName);
         });
       });
       document.querySelectorAll(".machine-unbind").forEach((btn) => {
@@ -5021,6 +5066,73 @@
       openModal("machinePasswordModal");
       $("machinePasswordHint").textContent = `为「${machinePasswordTarget.username}」设置新密码`;
       $("machineNewPassword").focus();
+    }
+
+    function clearRenameModal() {
+      $("renameUsername").value = "";
+      $("renameHint").textContent = "";
+      $("renameMsg").textContent = "";
+      $("renameSubmit").disabled = false;
+      $("renameSubmit").textContent = "确认改名";
+    }
+
+    function openRenameModal(kind, userId, username) {
+      renameTarget = {
+        kind,
+        id: Number(userId),
+        username: username || "账号",
+      };
+      closeDrawers();
+      openModal("renameModal");
+      $("renameHint").textContent = `当前名称：「${renameTarget.username}」。改名后请用新用户名登录，现有登录不会失效。`;
+      $("renameUsername").value = renameTarget.username;
+      $("renameUsername").select();
+    }
+
+    async function renameAccount() {
+      const new_username = $("renameUsername").value.trim();
+      const message = $("renameMsg");
+      const submit = $("renameSubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      if (!renameTarget) {
+        message.textContent = "未选择要改名的账号";
+        return;
+      }
+      if (!USERNAME_RE.test(new_username)) {
+        message.textContent = "用户名须为 2-20 个字符，且只能包含字母、数字、下划线和中文";
+        return;
+      }
+      if (new_username === renameTarget.username) {
+        message.textContent = "新用户名与当前名称相同";
+        return;
+      }
+
+      submit.disabled = true;
+      submit.textContent = "提交中...";
+      const payload = {
+        action: renameTarget.kind === "machine" ? "rename_bound_machine" : "rename_self",
+        new_username,
+      };
+      if (renameTarget.kind === "machine") payload.ai_user_id = renameTarget.id;
+      try {
+        const res = await fetch("/api/auth/rename", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "改名失败");
+        closeModals();
+        await loadMe();
+        if (me && !me.user.is_ai) await loadMachines();
+        renderMine();
+        showToast(`已改名为「${data.user?.username || new_username}」`);
+      } catch (err) {
+        message.textContent = err.message || "改名失败";
+        submit.disabled = false;
+        submit.textContent = "确认改名";
+      }
     }
 
     async function callAccountAction(action, args) {
@@ -5261,6 +5373,7 @@
     $("bindSubmit").addEventListener("click", bindAccount);
     $("changePasswordSubmit").addEventListener("click", changePassword);
     $("machinePasswordSubmit").addEventListener("click", resetMachinePassword);
+    $("renameSubmit").addEventListener("click", renameAccount);
     $("resetPasswordSubmit").addEventListener("click", resetPasswordByToken);
     $("adultConfirmButton").addEventListener("click", () => {
       const url = pendingAdultUrl;
@@ -5302,6 +5415,7 @@
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
       if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
       if (event.key === "Enter" && $("machinePasswordModal").classList.contains("show")) resetMachinePassword();
+      if (event.key === "Enter" && $("renameModal").classList.contains("show")) renameAccount();
       if (event.key === "Enter" && $("resetPasswordModal").classList.contains("show")) resetPasswordByToken();
     });
     $("bankPicker").addEventListener("click", (event) => { if (event.target.id === "bankPicker") closeBankPicker(); });

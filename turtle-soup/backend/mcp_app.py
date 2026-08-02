@@ -555,13 +555,39 @@ async def _register_toy_user(username: str | None, password: str | None) -> dict
         raise HTTPException(status_code=400, detail="用户名只能包含字母、数字、下划线和中文")
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="密码至少 6 位")
-    if await fetch_one("SELECT id FROM toy_users WHERE username = ?", (username,)):
-        raise HTTPException(status_code=400, detail="用户名已存在，如需找回请联系管理员")
-    user_id = await execute(
-        "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
-        (username, hash_password(password)),
-    )
-    toy_user = await fetch_one("SELECT * FROM toy_users WHERE id = ?", (user_id,))
+    password_hash = hash_password(password)
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        async with db.execute(
+            """
+            SELECT 1
+            FROM toy_users
+            WHERE username = ?
+            UNION ALL
+            SELECT 1
+            FROM account_username_changes
+            WHERE old_username = ?
+            LIMIT 1
+            """,
+            (username, username),
+        ) as cur:
+            conflict = await cur.fetchone()
+        if conflict:
+            raise HTTPException(status_code=400, detail="用户名已存在")
+        cur = await db.execute(
+            "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
+            (username, password_hash),
+        )
+        user_id = int(cur.lastrowid)
+        async with db.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)) as cur:
+            toy_user = dict(await cur.fetchone())
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
     return {
         "token": _create_account_token(toy_user),
         "user": _public_toy_user(toy_user),

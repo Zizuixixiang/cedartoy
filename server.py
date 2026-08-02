@@ -133,6 +133,7 @@ DUEL_WEB_REQUEST_RATE_LIMIT_MAX = 120
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 REGISTER_RATE_LIMIT_MAX = 3
 RECENT_REGISTER_NOTICE_SECONDS = 24 * 60 * 60
+RENAME_COOLDOWN_SECONDS = 72 * 60 * 60
 RATE_LIMIT_ERROR_CODE = -32029
 REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
 REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
@@ -216,14 +217,15 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、reset_machine_password（人类账号需token，传ai_user_id和new_password为已绑定小机重置密码）、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
+                    "description": "login_or_register、login、generate_binding_token、rename_self（需token，传new_username改自己）、rename_bound_machine（人类账号需token，传ai_user_id和new_username改已绑定小机）、reset_machine_password（人类账号需token，传ai_user_id和new_password为已绑定小机重置密码）、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
                 },
                 "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string"},
                 "old_password": {"type": "string"},
                 "new_password": {"type": "string"},
+                "new_username": {"type": "string", "description": "rename_self/rename_bound_machine 用：trim 后 2-20 字符，仅字母、数字、下划线、中文"},
                 "token": {"type": "string"},
-                "ai_user_id": {"type": "integer", "description": "reset_machine_password 用：当前人类账号已绑定的小机账号 ID"},
+                "ai_user_id": {"type": "integer", "description": "rename_bound_machine/reset_machine_password 用：当前人类账号已绑定的小机账号 ID"},
                 "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
                 "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
                 "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "delete_save 用：账号存档槽 1-5，默认 1；仅支持带 token 的账号用户"},
@@ -455,10 +457,11 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
 
 
 class _McpError(Exception):
-    def __init__(self, code, message):
+    def __init__(self, code, message, details=None):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details or {}
 
 
 def _db_connect():
@@ -476,9 +479,9 @@ def _sessions_db_connect():
 
 def _game_player_ids(user):
     ids = [str(user["id"])]
-    username = user.get("username") or ""
-    if GAME_PLAYER_ID_RE.fullmatch(username):
-        ids.append(username)
+    for username in _account_username_aliases(user):
+        if GAME_PLAYER_ID_RE.fullmatch(username):
+            ids.append(username)
     return list(dict.fromkeys(ids))
 
 
@@ -493,9 +496,9 @@ def _account_slot_player_id(user_id, slot):
 
 def _account_slot_player_ids(user):
     ids = [(_account_slot_player_id(user["id"], slot), slot) for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1)]
-    username = user.get("username") or ""
-    if GAME_PLAYER_ID_RE.fullmatch(username):
-        ids.append((username, 1))
+    for username in _account_username_aliases(user):
+        if GAME_PLAYER_ID_RE.fullmatch(username):
+            ids.append((username, 1))
     return list(dict.fromkeys(ids))
 
 
@@ -713,6 +716,33 @@ def _init_password_reset_tokens_table(conn):
     )
 
 
+def _init_username_changes_table(conn):
+    """Create the append-only rename ledger without rewriting historical users."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_username_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
+            old_username TEXT NOT NULL,
+            new_username TEXT NOT NULL,
+            changed_at_epoch INTEGER NOT NULL DEFAULT (unixepoch())
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_account_username_changes_user_changed
+        ON account_username_changes(user_id, changed_at_epoch DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_account_username_changes_old_username
+        ON account_username_changes(old_username)
+        """
+    )
+
+
 def _init_anti_addiction_tables(conn):
     conn.execute(
         """
@@ -884,6 +914,7 @@ def _migrate_platform_timestamps():
         _init_guest_claim_table(conn)
         _init_registration_events_table(conn)
         _init_password_reset_tokens_table(conn)
+        _init_username_changes_table(conn)
         _init_anti_addiction_tables(conn)
         if conn.execute("SELECT value FROM settings WHERE key = ?", (TIMEZONE_MIGRATION_KEY,)).fetchone():
             conn.commit()
@@ -1033,6 +1064,30 @@ def _public_user(user):
     }
 
 
+def _account_username_aliases(user):
+    """Current display name plus reserved former names used by legacy saves."""
+    names = [str(user.get("username") or "").strip()]
+    try:
+        with _db_connect() as conn:
+            if _table_exists(conn, "account_username_changes"):
+                names.extend(
+                    row["old_username"]
+                    for row in conn.execute(
+                        """
+                        SELECT old_username
+                        FROM account_username_changes
+                        WHERE user_id = ?
+                        ORDER BY id DESC
+                        """,
+                        (int(user["id"]),),
+                    ).fetchall()
+                )
+    except (KeyError, TypeError, ValueError, sqlite3.Error):
+        # Legacy-save discovery is best effort; canonical numeric user_id remains authoritative.
+        pass
+    return [name for name in dict.fromkeys(names) if name]
+
+
 def _current_account(raw_token):
     if not raw_token:
         raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
@@ -1133,9 +1188,64 @@ def _check_register_rate_limit(ip):
     )
 
 
+def _username_conflict(conn, username, *, exclude_user_id=None, include_history=True):
+    params = [username]
+    exclude_sql = ""
+    if exclude_user_id is not None:
+        exclude_sql = " AND id <> ?"
+        params.append(int(exclude_user_id))
+    current = conn.execute(
+        f"SELECT id, username FROM toy_users WHERE username = ?{exclude_sql} LIMIT 1",
+        params,
+    ).fetchone()
+    if current:
+        return {"source": "current", "user_id": int(current["id"]), "username": current["username"]}
+    if _table_exists(conn, "players"):
+        params = [username]
+        exclude_sql = ""
+        if exclude_user_id is not None:
+            exclude_sql = " AND (user_id IS NULL OR user_id <> ?)"
+            params.append(int(exclude_user_id))
+        player = conn.execute(
+            f"SELECT user_id, username FROM players WHERE username = ?{exclude_sql} LIMIT 1",
+            params,
+        ).fetchone()
+        if player:
+            return {
+                "source": "player",
+                "user_id": int(player["user_id"]) if player["user_id"] is not None else None,
+                "username": player["username"],
+            }
+    if not include_history:
+        return None
+    _init_username_changes_table(conn)
+    params = [username]
+    exclude_sql = ""
+    if exclude_user_id is not None:
+        exclude_sql = " AND user_id <> ?"
+        params.append(int(exclude_user_id))
+    historical = conn.execute(
+        f"""
+        SELECT user_id, old_username
+        FROM account_username_changes
+        WHERE old_username = ?{exclude_sql}
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    if historical:
+        return {
+            "source": "history",
+            "user_id": int(historical["user_id"]),
+            "username": historical["old_username"],
+        }
+    return None
+
+
 def _user_exists(username):
     with _db_connect() as conn:
-        return conn.execute("SELECT 1 FROM toy_users WHERE username = ?", (username,)).fetchone() is not None
+        return _username_conflict(conn, username) is not None
 
 
 def _enforce_register_rate_limit(username, client_ip):
@@ -1194,13 +1304,19 @@ def _normalize_credential_field(value, field_name):
     raise _McpError(-32602, f"{field_name} 需为字符串")
 
 
-def _validate_credentials(username, password):
-    if not username or not password:
-        raise _McpError(-32602, "username 和 password 必填")
+def _validate_username(username):
+    if not username:
+        raise _McpError(-32602, "用户名必填")
     if len(username) < 2 or len(username) > 20:
         raise _McpError(-32602, "用户名长度须为 2-20 个字符")
     if not re.fullmatch(r"[a-zA-Z0-9_\u4e00-\u9fff]+", username):
         raise _McpError(-32602, "用户名只能包含字母、数字、下划线和中文")
+
+
+def _validate_credentials(username, password):
+    if not username or not password:
+        raise _McpError(-32602, "username 和 password 必填")
+    _validate_username(username)
     if len(password) < 6:
         raise _McpError(-32602, "密码至少 6 位")
 
@@ -1229,6 +1345,13 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
         else:
             _enforce_register_rate_limit(username, client_ip)
+            conn.execute("BEGIN IMMEDIATE")
+            conflict = _username_conflict(conn, username)
+            if conflict:
+                raise _McpError(
+                    -32602,
+                    "用户名已存在",
+                )
             had_recent_registration = _recent_registration_exists(conn, client_ip)
             cur = conn.execute(
                 "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, ?)",
@@ -1247,9 +1370,10 @@ def _login_or_register_ai(username, password, client_ip=None):
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
     with _db_connect() as conn:
-        if conn.execute("SELECT id FROM toy_users WHERE username = ?", (username,)).fetchone():
-            raise _McpError(-32602, "用户名已存在，如需找回请联系管理员")
         _enforce_register_rate_limit(username, client_ip)
+        conn.execute("BEGIN IMMEDIATE")
+        if _username_conflict(conn, username):
+            raise _McpError(-32602, "用户名已存在")
         had_recent_registration = _recent_registration_exists(conn, client_ip)
         cur = conn.execute(
             "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
@@ -1290,6 +1414,134 @@ def _login_or_register_human(username, password, client_ip=None):
     return _login_or_register(username, password, is_ai=0, client_ip=client_ip)
 
 
+def _rename_next_allowed_at(epoch):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(epoch)))
+
+
+def _rename_user_in_transaction(conn, target, new_username):
+    """Rename one account inside the caller's write transaction."""
+    new_username = _normalize_credential_field(new_username, "new_username").strip()
+    _validate_username(new_username)
+    old_username = target["username"]
+    if new_username == old_username:
+        return {
+            "renamed": False,
+            "previous_username": old_username,
+            "user": _public_user(target),
+        }
+
+    _init_username_changes_table(conn)
+    conflict = _username_conflict(conn, new_username, exclude_user_id=target["id"])
+    if conflict:
+        raise _McpError(
+            -32009,
+            "用户名已存在",
+            {"reason": "username_conflict"},
+        )
+
+    now_epoch = int(time.time())
+    last_change = conn.execute(
+        """
+        SELECT changed_at_epoch
+        FROM account_username_changes
+        WHERE user_id = ?
+        ORDER BY changed_at_epoch DESC, id DESC
+        LIMIT 1
+        """,
+        (int(target["id"]),),
+    ).fetchone()
+    if last_change:
+        next_epoch = int(last_change["changed_at_epoch"]) + RENAME_COOLDOWN_SECONDS
+        if now_epoch < next_epoch:
+            remaining = max(1, next_epoch - now_epoch)
+            next_allowed_at = _rename_next_allowed_at(next_epoch)
+            raise _McpError(
+                RATE_LIMIT_ERROR_CODE,
+                f"每个账号 72 小时只能改名一次，还需等待 {remaining} 秒（{next_allowed_at} 后可再次修改）",
+                {
+                    "reason": "rename_cooldown",
+                    "remaining_seconds": remaining,
+                    "next_allowed_at": next_allowed_at,
+                },
+            )
+
+    conn.execute(
+        "UPDATE toy_users SET username = ? WHERE id = ?",
+        (new_username, int(target["id"])),
+    )
+    # 海龟汤玩家是 user_id 的镜像；同步显示名但不改变玩家主键和统计行。
+    conn.execute(
+        "UPDATE players SET username = ? WHERE user_id = ?",
+        (new_username, int(target["id"])),
+    )
+    conn.execute(
+        """
+        INSERT INTO account_username_changes
+            (user_id, old_username, new_username, changed_at_epoch)
+        VALUES (?, ?, ?, ?)
+        """,
+        (int(target["id"]), old_username, new_username, now_epoch),
+    )
+    updated = _row_dict(conn.execute(
+        "SELECT * FROM toy_users WHERE id = ?",
+        (int(target["id"]),),
+    ).fetchone())
+    next_epoch = now_epoch + RENAME_COOLDOWN_SECONDS
+    return {
+        "renamed": True,
+        "previous_username": old_username,
+        "user": _public_user(updated),
+        "cooldown_seconds": RENAME_COOLDOWN_SECONDS,
+        "next_allowed_at": _rename_next_allowed_at(next_epoch),
+    }
+
+
+def _rename_self(raw_token, new_username):
+    current = _current_account(raw_token)
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        target = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+            (int(current["id"]),),
+        ).fetchone())
+        if not target:
+            raise _McpError(-32004, "账号不存在或已删除")
+        result = _rename_user_in_transaction(conn, target, new_username)
+        conn.commit()
+    return result
+
+
+def _rename_bound_machine(raw_token, ai_user_id, new_username):
+    human = _current_account(raw_token)
+    if human.get("is_ai"):
+        raise _McpError(-32602, "只有人类账号可以修改绑定小机的用户名")
+    try:
+        ai_user_id = int(ai_user_id)
+    except (TypeError, ValueError):
+        raise _McpError(-32602, "ai_user_id 必填且必须是整数") from None
+
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        target = _row_dict(conn.execute(
+            """
+            SELECT ai.*
+            FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND b.ai_user_id = ?
+              AND ai.deleted_at IS NULL
+            """,
+            (int(human["id"]), ai_user_id),
+        ).fetchone())
+        if not target:
+            raise _McpError(-32004, "该小机未绑定到你的账号")
+        if not target.get("is_ai"):
+            raise _McpError(-32602, "目标账号不是小机账号")
+        result = _rename_user_in_transaction(conn, target, new_username)
+        conn.commit()
+    return result
+
+
 def _require_admin_account(raw_token):
     user = _current_account(raw_token)
     if not user.get("is_admin"):
@@ -1328,41 +1580,32 @@ def _admin_user_rows():
 
 def _admin_update_user(user_id, body, admin_user):
     username = (body.get("username") or "").strip()
-    if not username:
-        raise _McpError(-32602, "username 必填")
-    if len(username) < 2 or len(username) > 20:
-        raise _McpError(-32602, "用户名长度须为 2-20 个字符")
-    if not re.fullmatch(r"[a-zA-Z0-9_\u4e00-\u9fff]+", username):
-        raise _McpError(-32602, "用户名只能包含字母、数字、下划线和中文")
+    _validate_username(username)
     is_ai = 1 if body.get("is_ai") else 0
     is_admin = 1 if body.get("is_admin") else 0
     deleted = 1 if body.get("deleted") else 0
     if int(user_id) == int(admin_user["id"]) and (not is_admin or deleted):
         raise _McpError(-32602, "不能取消当前登录管理员的权限或软删当前账号")
     with _db_connect() as conn:
-        existing = conn.execute("SELECT id FROM toy_users WHERE id = ?", (user_id,)).fetchone()
+        conn.execute("BEGIN IMMEDIATE")
+        existing = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
         if not existing:
             raise _McpError(-32004, "账号不存在")
-        duplicate = conn.execute(
-            "SELECT id FROM toy_users WHERE username = ? AND id <> ?",
-            (username, user_id),
-        ).fetchone()
-        if duplicate:
-            raise _McpError(-32602, "用户名已存在")
+        if username != existing["username"]:
+            _rename_user_in_transaction(conn, existing, username)
         conn.execute(
             """
             UPDATE toy_users
-            SET username = ?,
-                is_ai = ?,
+            SET is_ai = ?,
                 is_admin = ?,
                 deleted_at = CASE WHEN ? THEN COALESCE(deleted_at, datetime('now', 'localtime')) ELSE NULL END
             WHERE id = ?
             """,
-            (username, is_ai, is_admin, deleted, user_id),
+            (is_ai, is_admin, deleted, user_id),
         )
         conn.execute(
-            "UPDATE players SET username = ?, is_ai = ?, is_admin = ? WHERE user_id = ?",
-            (username, is_ai, is_admin, user_id),
+            "UPDATE players SET is_ai = ?, is_admin = ? WHERE user_id = ?",
+            (is_ai, is_admin, user_id),
         )
         # 停用账号时连带清绑定，避免留下指向已停用账号的僵尸绑定。
         if deleted:
@@ -1673,9 +1916,11 @@ def _turtle_soup_stats(conn, user):
         """
         SELECT game_count, win_count, ask_count, ask_count_y, ask_count_n, ask_count_u, ask_count_p
         FROM players
-        WHERE username = ?
+        WHERE user_id = ? OR (user_id IS NULL AND username = ?)
+        ORDER BY user_id = ? DESC
+        LIMIT 1
         """,
-        (user["username"],),
+        (int(user["id"]), user["username"], int(user["id"])),
     ).fetchone()
     if not row:
         return {
@@ -3058,14 +3303,14 @@ def _migrate_player_saves(old_player_id, user_id):
     return {"old_player_id": old_player_id, "new_player_id": target_player_id, "migrated": migrated}
 
 
-def _auto_migrate_legacy_account_saves(user):
-    """Best-effort bridge for pre-account saves keyed by username.
+def _auto_migrate_legacy_username_saves(user, username):
+    """Best-effort bridge for pre-account saves keyed by one username.
 
     Older games used the account username as ``player_id``. Token-based play now
     uses the numeric account id, so move only non-conflicting username saves to
     the numeric id before dispatching the game command.
     """
-    username = (user.get("username") or "").strip()
+    username = (username or "").strip()
     if not username or not GAME_PLAYER_ID_RE.fullmatch(username):
         return []
     target_player_id = str(int(user["id"]))
@@ -3137,6 +3382,14 @@ def _auto_migrate_legacy_account_saves(user):
             old_dir.rename(target_dir)
             migrated.append(f"vendor_saves/{game}")
     return migrated
+
+
+def _auto_migrate_legacy_account_saves(user):
+    """Migrate saves under both the current and all reserved former names."""
+    migrated = []
+    for username in _account_username_aliases(user):
+        migrated.extend(_auto_migrate_legacy_username_saves(user, username))
+    return list(dict.fromkeys(migrated))
 
 
 def _claim_guest_saves(raw_token, claim_code):
@@ -4195,6 +4448,16 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
+    if action == "rename_self":
+        result = _rename_self(raw_token, arguments.get("new_username"))
+        return json.dumps(result, ensure_ascii=False)
+    if action == "rename_bound_machine":
+        result = _rename_bound_machine(
+            raw_token,
+            arguments.get("ai_user_id"),
+            arguments.get("new_username"),
+        )
+        return json.dumps(result, ensure_ascii=False)
     if action == "reset_machine_password":
         result = _reset_machine_password(
             raw_token,
@@ -4747,6 +5010,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_change_password()
             return
 
+        if path == "/api/auth/rename":
+            self._handle_api_rename()
+            return
+
         if path == "/api/announcements/read":
             self._handle_api_announcements_read()
             return
@@ -5191,6 +5458,38 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json(result)
         except _McpError as exc:
             self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_rename(self):
+        try:
+            body = self._read_json_body()
+            action = body.get("action")
+            raw_token = _extract_bearer(self.headers)
+            if action == "rename_self":
+                result = _rename_self(raw_token, body.get("new_username"))
+            elif action == "rename_bound_machine":
+                result = _rename_bound_machine(
+                    raw_token,
+                    body.get("ai_user_id"),
+                    body.get("new_username"),
+                )
+            else:
+                raise _McpError(-32602, "未知改名 action")
+            self._send_json(result)
+        except _McpError as exc:
+            payload = {"error": exc.message, **exc.details}
+            if exc.code == -32001:
+                status = 401
+            elif exc.details.get("reason") == "username_conflict":
+                status = 409
+            elif exc.details.get("reason") == "rename_cooldown":
+                status = 429
+            else:
+                status = 400
+            self._send_json(payload, status=status)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
