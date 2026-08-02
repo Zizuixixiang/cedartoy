@@ -1195,7 +1195,12 @@ def _username_conflict(conn, username, *, exclude_user_id=None, include_history=
         exclude_sql = " AND id <> ?"
         params.append(int(exclude_user_id))
     current = conn.execute(
-        f"SELECT id, username FROM toy_users WHERE username = ?{exclude_sql} LIMIT 1",
+        f"""
+        SELECT id, username
+        FROM toy_users
+        WHERE TRIM(username) = TRIM(?) COLLATE NOCASE{exclude_sql}
+        LIMIT 1
+        """,
         params,
     ).fetchone()
     if current:
@@ -1207,7 +1212,12 @@ def _username_conflict(conn, username, *, exclude_user_id=None, include_history=
             exclude_sql = " AND (user_id IS NULL OR user_id <> ?)"
             params.append(int(exclude_user_id))
         player = conn.execute(
-            f"SELECT user_id, username FROM players WHERE username = ?{exclude_sql} LIMIT 1",
+            f"""
+            SELECT user_id, username
+            FROM players
+            WHERE TRIM(username) = TRIM(?) COLLATE NOCASE{exclude_sql}
+            LIMIT 1
+            """,
             params,
         ).fetchone()
         if player:
@@ -1228,7 +1238,7 @@ def _username_conflict(conn, username, *, exclude_user_id=None, include_history=
         f"""
         SELECT user_id, old_username
         FROM account_username_changes
-        WHERE old_username = ?{exclude_sql}
+        WHERE TRIM(old_username) = TRIM(?) COLLATE NOCASE{exclude_sql}
         ORDER BY id DESC
         LIMIT 1
         """,

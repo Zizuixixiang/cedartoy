@@ -183,40 +183,69 @@ class AccountRenameTests(unittest.TestCase):
         self.assertEqual(sent[-1][1]["reason"], "rename_cooldown")
         self.assertGreater(sent[-1][1]["remaining_seconds"], 0)
 
-    def test_registration_rejects_trimmed_exact_duplicate_but_allows_other_case(self):
+    def test_registration_rejects_trimmed_case_equivalent_current_username(self):
+        for username in ("  ExistingName  ", "existingname", "EXISTINGNAME"):
+            with self.subTest(username=username), self.assertRaises(server._McpError) as raised:
+                server._login_or_register_ai(
+                    username,
+                    self.password,
+                    client_ip=f"{self._testMethodName}:{username}",
+                )
+            self.assertEqual(raised.exception.message, "用户名已存在")
+
         with self.assertRaises(server._McpError) as raised:
-            server._login_or_register_ai(
-                "  ExistingName  ",
+            server._login_or_register_human(
+                "existingname",
                 self.password,
                 client_ip=self._testMethodName,
             )
         self.assertEqual(raised.exception.message, "用户名已存在")
 
-        result = server._login_or_register_ai(
+    def test_legacy_case_duplicate_accounts_still_login_by_exact_username(self):
+        legacy_duplicate_id = self._add_user("existingname", is_ai=True)
+
+        mixed_login = server._login_existing_account("ExistingName", self.password)
+        lower_login = server._login_existing_account("existingname", self.password)
+        self.assertEqual(mixed_login["user"]["id"], self.conflict_id)
+        self.assertEqual(lower_login["user"]["id"], legacy_duplicate_id)
+
+        mixed_web_login = server._login_or_register_human(
+            "ExistingName",
+            self.password,
+            client_ip=self._testMethodName,
+        )
+        lower_web_login = server._login_or_register_human(
             "existingname",
             self.password,
             client_ip=self._testMethodName,
         )
-        self.assertNotEqual(result["user"]["id"], self.conflict_id)
-        self.assertEqual(result["user"]["username"], "existingname")
-
-        upper_login = server._login_existing_account("ExistingName", self.password)
-        lower_login = server._login_existing_account("existingname", self.password)
-        self.assertEqual(upper_login["user"]["id"], self.conflict_id)
-        self.assertEqual(lower_login["user"]["id"], result["user"]["id"])
+        self.assertEqual(mixed_web_login["user"]["id"], self.conflict_id)
+        self.assertEqual(lower_web_login["user"]["id"], legacy_duplicate_id)
         with self.assertRaises(server._McpError):
             server._login_existing_account("EXISTINGNAME", self.password)
 
-    def test_rename_rejects_exact_duplicate_but_allows_other_case(self):
+    def test_registration_and_rename_reject_case_equivalent_player_username(self):
+        with self._connect() as conn:
+            conn.execute("INSERT INTO players (username) VALUES (?)", ("SoupOnly",))
+
         with self.assertRaises(server._McpError) as raised:
-            server._rename_self(self.human_token, "ExistingName")
+            server._login_or_register_ai(
+                "souponly",
+                self.password,
+                client_ip=self._testMethodName,
+            )
+        self.assertEqual(raised.exception.message, "用户名已存在")
+
+        with self.assertRaises(server._McpError) as raised:
+            server._rename_self(self.human_token, "SOUPONLY")
+        self.assertEqual(raised.exception.details.get("reason"), "username_conflict")
+
+    def test_rename_rejects_case_equivalent_current_username(self):
+        with self.assertRaises(server._McpError) as raised:
+            server._rename_self(self.human_token, "existingname")
         self.assertEqual(raised.exception.message, "用户名已存在")
         self.assertEqual(raised.exception.details.get("reason"), "username_conflict")
         self.assertEqual(server._current_account(self.human_token)["username"], "HumanOne")
-
-        result = server._rename_self(self.human_token, "existingname")
-        self.assertTrue(result["renamed"])
-        self.assertEqual(result["user"]["username"], "existingname")
 
     def test_case_only_rename_succeeds_and_starts_cooldown(self):
         result = server._rename_self(self.human_token, "humanone")
@@ -243,24 +272,22 @@ class AccountRenameTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(tuple(change), ("HumanOne", "humanone"))
 
-    def test_historical_name_reservation_is_case_sensitive(self):
+    def test_historical_name_reservation_rejects_case_equivalent_names(self):
         server._rename_self(self.human_token, "HumanTwo")
         with self.assertRaises(server._McpError) as raised:
             server._login_or_register_ai(
-                "HumanOne",
+                "humanone",
                 self.password,
                 client_ip=self._testMethodName,
             )
         self.assertEqual(raised.exception.message, "用户名已存在")
 
-        result = server._login_or_register_ai(
-            "humanone",
-            self.password,
-            client_ip=self._testMethodName,
-        )
-        self.assertEqual(result["user"]["username"], "humanone")
+        with self.assertRaises(server._McpError) as raised:
+            server._rename_self(self.machine_token, "HUMANONE")
+        self.assertEqual(raised.exception.message, "用户名已存在")
+        self.assertEqual(raised.exception.details.get("reason"), "username_conflict")
 
-    def test_username_indexes_use_default_binary_semantics(self):
+    def test_username_indexes_do_not_add_nocase_unique_index(self):
         with self._connect() as conn:
             rows = conn.execute(
                 """

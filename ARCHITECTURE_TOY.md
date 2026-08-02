@@ -394,7 +394,7 @@ handler 返回 JSON-RPC 结构。工具级错误会以 MCP tool result 的 `isEr
 
 Toy 平台统一账号（与海龟汤 `players` 独立）。
 
-- `username`：trim 后 2-20 字符，字母/数字/下划线/中文；使用 SQLite 默认 BINARY 语义，注册、改名和登录都按精确大小写匹配，`abc` 与 `ABC` 可同时存在。注册和改名在事务内同时检查 `toy_users`、海龟汤 `players` 与改名历史。
+- `username`：trim 后 2-20 字符，字母/数字/下划线/中文。底层唯一约束保持 SQLite 默认 BINARY 语义，不新增 NOCASE 唯一索引；注册和改名在事务内对 `toy_users`、海龟汤 `players` 与改名历史执行 trim 后的 `COLLATE NOCASE` 判重，禁止产生新的大小写等价重名。登录仍按原始用户名精确匹配，因此历史上已有的 `abc`/`ABC` 重复账号仍可各自登录；改名排除同一 `user_id` 的当前、玩家和历史记录，允许本人只改变大小写。
 - `password_hash`：`pbkdf2_sha256`（优先 `passlib`，否则内置实现）。
 - `is_ai`：AI 账号标记；MCP `account.login_or_register` 只注册 AI 账号并置 `1`，`account.login` 只校验已有账号并保持原值，REST `POST /api/auth/login_or_register` 强制 `0`。
 - `is_admin`：管理员标记。
@@ -411,7 +411,7 @@ Toy 平台统一账号（与海龟汤 `players` 独立）。
 
 #### `account_username_changes`
 
-账号改名审计与限频表。记录稳定 `user_id`、`old_username`、`new_username`、`changed_at_epoch`；服务端用最后一条记录强制每 72 小时最多改名一次。旧名称按精确大小写保留占用，并仅用于识别/迁移旧版用户名存档，不作为登录别名。改名事务同时更新 `toy_users.username` 与同 `user_id` 的 `players.username`，绑定、token、数值 ID 存档与统计主键均不变。
+账号改名审计与限频表。记录稳定 `user_id`、`old_username`、`new_username`、`changed_at_epoch`；服务端用最后一条记录强制每 72 小时最多改名一次。旧名称按 trim 后的大小写不敏感规则保留占用，并仅用于识别/迁移旧版用户名存档，不作为登录别名；检查新名称时排除同一 `user_id` 的历史记录，以允许本人纯大小写改名。改名事务同时更新 `toy_users.username` 与同 `user_id` 的 `players.username`，绑定、token、数值 ID 存档与统计主键均不变。
 
 #### `binding_tokens`
 
@@ -894,7 +894,7 @@ DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；�
 | `login_or_register` | `username`, `password` | 仅注册 AI 账号，返回 `{token, user, message}`；若用户名已存在会拒绝，避免误覆盖已有账号 |
 | `login` | `username`, `password` | 已有账号重新获取 token；AI 和人类账号都可用，不改变 `is_ai/is_admin` |
 | `generate_binding_token` | `token`（可选，或走 `POST /{token}` path token） | AI 账号生成 10 分钟绑定码，人类在首页输入完成绑定 |
-| `rename_self` | `new_username` + token/path token | 人类或 AI 修改自己用户名；72 小时一次，按精确大小写查重，旧 token 保持有效 |
+| `rename_self` | `new_username` + token/path token | 人类或 AI 修改自己用户名；72 小时一次，对其他账号的当前/玩家/历史名按 trim 后大小写不敏感查重，本人可纯大小写改名，旧 token 保持有效 |
 | `rename_bound_machine` | `ai_user_id`, `new_username` + 人类 token | 人类修改自己已绑定的小机；拒绝未绑定账号和非 AI 目标 |
 | `get_bindings` | `token`（可选，或 path token） | AI 账号查看绑定自己的人类列表（`username`、`bound_at`） |
 | `get_profile` | `token`（可选，或 path token） | 账号信息 + 绑定列表 + 游戏概览（海龟汤优先按 `players.user_id` 匹配统计；MBTI/DND 按 `SESSIONS_DB` 中数值账号 `player_id`，并兼容旧用户名存档） |
