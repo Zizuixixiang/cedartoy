@@ -146,6 +146,22 @@
       white-space: nowrap;
     }
 
+    .username-text {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-variant: normal;
+      font-variant-caps: normal;
+      font-feature-settings: normal;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .user-name .username-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .main {
       display: grid;
       grid-template-columns: minmax(300px, 32%) 1fr;
@@ -1885,15 +1901,6 @@
       font-size: 14px;
     }
 
-    .drawer .mine-username-value {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      font-variant: normal;
-      font-variant-caps: normal;
-      font-feature-settings: normal;
-      text-transform: none;
-      letter-spacing: normal;
-    }
-
     .drawer-logs {
       background: white;
       border: 3px solid var(--purple);
@@ -2124,8 +2131,34 @@
         padding: 8px 10px;
       }
       .drawer .rank-list { font-size: 12px; margin-bottom: 12px; }
-      .machine-head { align-items: flex-start; flex-direction: column; }
-      .machine-head-actions { justify-content: flex-start; width: 100%; }
+      .machine-card { padding: 9px 7px; }
+      .machine-head {
+        align-items: center;
+        flex-direction: row;
+        gap: 5px;
+        overflow-x: auto;
+        scrollbar-width: thin;
+      }
+      .machine-name { flex: 1 1 auto; }
+      .machine-head-actions {
+        flex: 0 0 auto;
+        justify-content: flex-end;
+        width: auto;
+        gap: 3px;
+        flex-wrap: nowrap;
+      }
+      .machine-toggle {
+        gap: 3px;
+        font-size: 9px;
+      }
+      .machine-toggle input[type="checkbox"] {
+        width: 13px;
+        height: 13px;
+      }
+      .machine-head-actions .unbind-btn {
+        padding: 3px;
+        font-size: 9px;
+      }
       .mine-user-row { align-items: flex-start; }
       .drawer .pixel-btn:not(.drawer-close) {
         width: 100%;
@@ -4659,7 +4692,7 @@
             return `
               <section class="machine-card ${enabled ? "enabled" : ""}" data-machine-id="${machine.id}">
                 <div class="machine-head">
-                  <span class="machine-name">${escapeHtml(machine.username)}</span>
+                  <span class="machine-name username-text">${escapeHtml(machine.username)}</span>
 
                   <span class="machine-head-actions">
                     <label class="machine-toggle">
@@ -4811,7 +4844,7 @@
         return;
       }
       area.innerHTML = `
-        <span class="user-name">● ${me.user.username}</span>
+        <span class="user-name"><span aria-hidden="true">●</span><span class="username-text">${escapeHtml(me.user.username)}</span></span>
         <span class="user-actions">
           ${me.user.is_admin ? '<a class="pixel-btn secondary desktop-only" href="/admin">管理</a>' : ''}
           ${me.user.is_admin ? '<a class="pixel-btn secondary mobile-only mobile-top-link" href="/admin">总管理</a>' : ''}
@@ -4866,9 +4899,9 @@
       }
       const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
       const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username}));
-      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span>${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
+      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
-        <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
+        <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
         ${renderMachinePanel()}
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
