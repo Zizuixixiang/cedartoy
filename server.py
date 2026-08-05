@@ -217,7 +217,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、rename_self（需token，传new_username改自己）、rename_bound_machine（人类账号需token，传ai_user_id和new_username改已绑定小机）、reset_machine_password（人类账号需token，传ai_user_id和new_password为已绑定小机重置密码）、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
+                    "description": "login_or_register、login、generate_binding_token、rename_self（需token，传new_username改自己）、rename_bound_machine（人类账号需token，传ai_user_id和new_username改已绑定小机）、reset_machine_password（人类账号需token，传ai_user_id和new_password为已绑定小机重置密码）、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号指定 slot，默认1）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
                 },
                 "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string"},
@@ -228,10 +228,10 @@ _PLATFORM_TOOLS = [
                 "ai_user_id": {"type": "integer", "description": "rename_bound_machine/reset_machine_password 用：当前人类账号已绑定的小机账号 ID"},
                 "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
                 "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
-                "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "delete_save 用：账号存档槽 1-5，默认 1；仅支持带 token 的账号用户"},
+                "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "claim/delete_save 用：账号存档槽 1-5，默认 1；claim 会把全部游客存档迁入同一个目标槽"},
                 "confirm": {"type": "boolean", "description": "delete_save/delete_account 必须显式传 true 才执行"},
                 "player_id": {"type": "string", "description": "guest_claim_code 用：旧游客 player_id，可传原始裸 id 或 guest: 前缀 id"},
-                "claim_code": {"type": "string", "description": "claim 用：游客开档时发放的一次性认领码"},
+                "claim_code": {"type": "string", "description": "claim 用：游客开档时发放的一次性认领码；可配合 slot=1..5 选择目标槽"},
             },
             "required": ["action"],
             "additionalProperties": True,
@@ -3009,8 +3009,9 @@ PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
 IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat"})
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"})
 VENDOR_GAMES = ("leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
+DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
 ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = 30
@@ -3057,12 +3058,9 @@ def _save_slot_from_arguments(arguments):
 
 def _save_slot_from_account_arguments(arguments):
     raw = arguments.get("slot", MIN_SAVE_SLOT)
-    if isinstance(raw, bool):
+    if isinstance(raw, bool) or not isinstance(raw, int):
         raise _McpError(-32602, "slot 必须是 1-5 的整数")
-    try:
-        slot = int(raw)
-    except (TypeError, ValueError):
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    slot = raw
     if slot < MIN_SAVE_SLOT or slot > MAX_SAVE_SLOT:
         raise _McpError(-32602, "slot 必须是 1-5 的整数")
     return slot
@@ -3108,10 +3106,14 @@ def _init_guest_claim_table(conn):
             guest_player_id TEXT NOT NULL UNIQUE,
             created_at TEXT,
             claimed_by INTEGER,
-            claimed_at TEXT
+            claimed_at TEXT,
+            claimed_slot INTEGER
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(guest_claim_codes)")}
+    if "claimed_slot" not in columns:
+        conn.execute("ALTER TABLE guest_claim_codes ADD COLUMN claimed_slot INTEGER")
 
 
 def _ensure_guest_claim_code(guest_player_id):
@@ -3150,6 +3152,30 @@ def _normalize_guest_player_id(value):
     raise _McpError(-32602, "player_id 只能包含 1-64 位字母数字；也可传 guest: 前缀")
 
 
+def _claimed_guest_record(guest_player_id):
+    with _db_connect() as conn:
+        _init_guest_claim_table(conn)
+        return _row_dict(conn.execute(
+            """
+            SELECT guest_player_id, claimed_by, claimed_at, claimed_slot
+            FROM guest_claim_codes
+            WHERE guest_player_id = ? AND claimed_by IS NOT NULL
+            """,
+            (guest_player_id,),
+        ).fetchone())
+
+
+def _reject_claimed_guest(guest_player_id):
+    row = _claimed_guest_record(guest_player_id)
+    if not row:
+        return
+    slot = row.get("claimed_slot") or MIN_SAVE_SLOT
+    raise _McpError(
+        -32003,
+        f"该游客身份已认领，请改用带 token 的 MCP 地址并选择对应 slot（槽 {slot}）。",
+    )
+
+
 def _guest_claim_code_for_player_id(player_id):
     guest_player_id = _normalize_guest_player_id(player_id)
     found, _conflicts = _collect_player_saves(guest_player_id, "__claim_probe__")
@@ -3163,13 +3189,19 @@ def _guest_claim_code_for_player_id(player_id):
             (guest_player_id,),
         ).fetchone())
         if row:
+            claimed_slot = row.get("claimed_slot") or MIN_SAVE_SLOT
             return {
                 "guest_player_id": guest_player_id,
                 "claim_code": row["code"],
                 "claimed_by": row.get("claimed_by"),
                 "claimed_at": row.get("claimed_at"),
+                "claimed_slot": claimed_slot if row.get("claimed_by") is not None else None,
                 "saves": found,
-                "message": "该游客存档已有认领码；若 claimed_by 为空，可用 account(action=\"claim\", claim_code=\"...\") 转入账号。",
+                "message": (
+                    f"该游客身份已认领到槽 {claimed_slot}，请改用带 token 的 MCP 地址并选择对应 slot。"
+                    if row.get("claimed_by") is not None
+                    else "该游客存档已有认领码；可先用 my_saves 选择空槽，再用 account(action=\"claim\", claim_code=\"...\", slot=2) 转入账号。"
+                ),
             }
         code = secrets.token_urlsafe(9)
         conn.execute(
@@ -3183,7 +3215,7 @@ def _guest_claim_code_for_player_id(player_id):
         "claimed_by": None,
         "claimed_at": None,
         "saves": found,
-        "message": "已为旧游客存档生成认领码；登录账号后调用 account(action=\"claim\", claim_code=\"...\") 可转入账号。",
+        "message": "已为旧游客存档生成认领码；登录后可先用 my_saves 选择空槽，再调用 account(action=\"claim\", claim_code=\"...\", slot=2)；slot 默认 1。",
     }
 
 
@@ -3260,22 +3292,150 @@ def _collect_player_saves(old_player_id, target_player_id):
                         (target_player_id, game),
                     ).fetchone():
                         conflicts.append(f"{game}/{table}（账号名下已有记录）")
-    for game in VENDOR_GAMES:
+    for game in DIRECTORY_VENDOR_GAMES:
         old_dir = VENDOR_SAVE_ROOT / game / old_player_id
         if not old_dir.is_dir():
             continue
         found[f"vendor:{game}"] = {"dir": str(old_dir)}
         if (VENDOR_SAVE_ROOT / game / target_player_id).exists():
             conflicts.append(f"{game}（账号名下已有存档目录）")
+    garden_old_dir = VENDOR_SAVE_ROOT / "garden_cat" / old_player_id
+    if (garden_old_dir / "state.json").is_file():
+        found["garden_cat"] = {"dir": str(garden_old_dir)}
+        if (VENDOR_SAVE_ROOT / "garden_cat" / target_player_id).exists():
+            conflicts.append("garden_cat（账号目标槽已有存档目录）")
+    workkk_old_dir = VENDOR_SAVE_ROOT / "workkk" / old_player_id
+    if (workkk_old_dir / "game_state.json").is_file():
+        found["workkk"] = {"dir": str(workkk_old_dir)}
+        workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
+        if workkk_target_dir.exists():
+            conflicts.append("workkk（账号名下已有存档目录）")
     return found, conflicts
 
 
-def _migrate_player_saves(old_player_id, user_id):
-    """把 old_player_id 名下所有存档改绑到账号：player_id 迁为 str(user_id) 并回填 user_id 列。
+def _workkk_save_admin(action, **payload):
+    """Ask the resident workkk process to mutate a save while holding its cache lock."""
+    try:
+        response = httpx.post(
+            f"{WORKKK_BASE}/internal/saves/{action}",
+            json=payload,
+            timeout=15,
+        )
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"workkk 存档管理服务连接失败：{exc}") from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if response.status_code == 409:
+        raise _McpError(-32602, detail or "workkk 目标存档已存在")
+    if response.status_code == 404:
+        raise _McpError(-32004, detail or "没有找到 workkk 存档")
+    if response.status_code >= 400:
+        raise _McpError(
+            -32603,
+            detail or f"workkk 存档管理失败 HTTP {response.status_code}：{response.text[:200]}",
+        )
+    if not isinstance(body, dict):
+        raise _McpError(-32603, "workkk 存档管理服务返回格式错误")
+    return body
+
+
+def _migrate_workkk_save(old_player_id, target_player_id):
+    result = _workkk_save_admin(
+        "migrate",
+        source_player_id=old_player_id,
+        target_player_id=target_player_id,
+    )
+    if result.get("migrated") is not True:
+        raise _McpError(-32603, "workkk 存档管理服务未确认迁移成功")
+    return True
+
+
+def _delete_workkk_save(player_id):
+    result = _workkk_save_admin("delete", player_id=player_id)
+    if not result.get("deleted"):
+        return None
+    return {"target": f"vendor_saves/workkk/{player_id}", "rows": 1}
+
+
+def _garden_cat_save_admin(action, **payload):
+    """Ask Garden-Cat to mutate state/cache/notes under its own store lock."""
+    try:
+        response = httpx.post(
+            f"{GARDEN_CAT_BASE}/internal/saves/{action}",
+            json=payload,
+            timeout=15,
+        )
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"Garden-Cat 存档管理服务连接失败：{exc}") from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    detail = None
+    if isinstance(body, dict):
+        detail = body.get("detail") or body.get("message")
+    if response.status_code == 409:
+        raise _McpError(-32602, detail or "Garden-Cat 目标存档或便签已存在")
+    if response.status_code == 404:
+        raise _McpError(-32004, detail or "没有找到 Garden-Cat 存档")
+    if response.status_code >= 400:
+        raise _McpError(
+            -32603,
+            detail or f"Garden-Cat 存档管理失败 HTTP {response.status_code}：{response.text[:200]}",
+        )
+    if not isinstance(body, dict):
+        raise _McpError(-32603, "Garden-Cat 存档管理服务返回格式错误")
+    return body
+
+
+def _migrate_garden_cat_save(old_player_id, target_player_id):
+    result = _garden_cat_save_admin(
+        "migrate",
+        source_player_id=old_player_id,
+        target_player_id=target_player_id,
+    )
+    if result.get("migrated") is not True:
+        raise _McpError(-32603, "Garden-Cat 存档管理服务未确认迁移成功")
+    return True
+
+
+def _delete_garden_cat_save(player_id):
+    result = _garden_cat_save_admin("delete", player_id=player_id)
+    if not result.get("deleted"):
+        return None
+    return {
+        "target": f"vendor_saves/garden_cat/{player_id}",
+        "rows": 1,
+        "notes_deleted": int(result.get("notes_deleted") or 0),
+    }
+
+
+def _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id):
+    for game, migrate in reversed(managed_migrations):
+        try:
+            migrate(target_player_id, old_player_id)
+        except Exception as rollback_exc:
+            message = getattr(rollback_exc, "message", str(rollback_exc))
+            logger.error(
+                "%s claim rollback failed %s -> %s: %s",
+                game,
+                target_player_id,
+                old_player_id,
+                message,
+            )
+
+
+def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
+    """把游客全部存档改绑到账号选择的 canonical slot，并回填 user_id 列。
 
     冲突时整体报错、不迁移、绝不覆盖或删除任何存档。返回迁移摘要。
     """
-    target_player_id = str(int(user_id))
+    if isinstance(slot, bool) or not isinstance(slot, int) or not MIN_SAVE_SLOT <= slot <= MAX_SAVE_SLOT:
+        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+    target_player_id = _account_slot_player_id(user_id, slot)
     if old_player_id == target_player_id:
         raise _McpError(-32602, "旧 id 与账号 id 相同，无需迁移")
     found, conflicts = _collect_player_saves(old_player_id, target_player_id)
@@ -3287,30 +3447,72 @@ def _migrate_player_saves(old_player_id, user_id):
             "以下游戏在账号名下已有存档，迁移会冲突，已全部取消（不覆盖不删档）：" + "、".join(conflicts),
         )
     migrated = []
-    if SESSIONS_DB_PATH.exists():
-        with _sessions_db_connect() as conn:
+    managed_migrations = []
+    moved_directories = []
+    sessions_conn = None
+    try:
+        # Resident services own live caches. They must all succeed before touching
+        # ordinary saves; never fall back to direct rename for either service.
+        if "garden_cat" in found:
+            _migrate_garden_cat_save(old_player_id, target_player_id)
+            managed_migrations.append(("garden_cat", _migrate_garden_cat_save))
+            migrated.append("vendor_saves/garden_cat")
+        if "workkk" in found:
+            _migrate_workkk_save(old_player_id, target_player_id)
+            managed_migrations.append(("workkk", _migrate_workkk_save))
+            migrated.append("vendor_saves/workkk")
+
+        if SESSIONS_DB_PATH.exists():
+            sessions_conn = _sessions_db_connect()
             for table in ("eco_sessions", "ciyuwu_sessions", "test_sessions", "test_results"):
-                if not _table_exists(conn, table):
+                if not _table_exists(sessions_conn, table):
                     continue
-                if "user_id" in _sessions_table_columns(conn, table):
-                    cur = conn.execute(
+                if "user_id" in _sessions_table_columns(sessions_conn, table):
+                    cur = sessions_conn.execute(
                         f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
                         (target_player_id, int(user_id), old_player_id),
                     )
                 else:
-                    cur = conn.execute(
+                    cur = sessions_conn.execute(
                         f"UPDATE {table} SET player_id = ? WHERE player_id = ?",
                         (target_player_id, old_player_id),
                     )
                 if cur.rowcount:
                     migrated.append(f"{table}×{cur.rowcount}")
-            conn.commit()
-    for game in VENDOR_GAMES:
-        old_dir = VENDOR_SAVE_ROOT / game / old_player_id
-        if old_dir.is_dir():
-            old_dir.rename(VENDOR_SAVE_ROOT / game / target_player_id)
-            migrated.append(f"vendor_saves/{game}")
-    return {"old_player_id": old_player_id, "new_player_id": target_player_id, "migrated": migrated}
+        for game in DIRECTORY_VENDOR_GAMES:
+            old_dir = VENDOR_SAVE_ROOT / game / old_player_id
+            if old_dir.is_dir():
+                target_dir = VENDOR_SAVE_ROOT / game / target_player_id
+                old_dir.rename(target_dir)
+                moved_directories.append((old_dir, target_dir))
+                migrated.append(f"vendor_saves/{game}")
+        if sessions_conn is not None:
+            sessions_conn.commit()
+    except Exception:
+        if sessions_conn is not None:
+            sessions_conn.rollback()
+        for old_dir, target_dir in reversed(moved_directories):
+            try:
+                target_dir.rename(old_dir)
+            except OSError as rollback_exc:
+                logger.error(
+                    "directory claim rollback failed %s -> %s: %s",
+                    target_dir,
+                    old_dir,
+                    rollback_exc,
+                )
+        _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id)
+        raise
+    finally:
+        if sessions_conn is not None:
+            sessions_conn.close()
+    return {
+        "old_player_id": old_player_id,
+        "new_player_id": target_player_id,
+        "target_player_id": target_player_id,
+        "slot": slot,
+        "migrated": migrated,
+    }
 
 
 def _auto_migrate_legacy_username_saves(user, username):
@@ -3384,13 +3586,42 @@ def _auto_migrate_legacy_username_saves(user, username):
         except sqlite3.OperationalError:
             pass
 
-    for game in VENDOR_GAMES:
+    garden_old_dir = VENDOR_SAVE_ROOT / "garden_cat" / username
+    garden_target_dir = VENDOR_SAVE_ROOT / "garden_cat" / target_player_id
+    if (garden_old_dir / "state.json").is_file() and not garden_target_dir.exists():
+        try:
+            if _migrate_garden_cat_save(username, target_player_id):
+                migrated.append("vendor_saves/garden_cat")
+        except _McpError as exc:
+            logger.warning(
+                "garden_cat legacy save migration deferred %s -> %s: %s",
+                username,
+                target_player_id,
+                exc.message,
+            )
+
+    for game in DIRECTORY_VENDOR_GAMES:
         old_dir = VENDOR_SAVE_ROOT / game / username
         target_dir = VENDOR_SAVE_ROOT / game / target_player_id
         if old_dir.is_dir() and not target_dir.exists():
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             old_dir.rename(target_dir)
             migrated.append(f"vendor_saves/{game}")
+    workkk_old_dir = VENDOR_SAVE_ROOT / "workkk" / username
+    workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
+    if (workkk_old_dir / "game_state.json").is_file() and not workkk_target_dir.exists():
+        try:
+            if _migrate_workkk_save(username, target_player_id):
+                migrated.append("vendor_saves/workkk")
+        except _McpError as exc:
+            # Legacy migration is best-effort. Never bypass the resident process,
+            # because an out-of-band rename can be undone by its stale cache.
+            logger.warning(
+                "workkk legacy save migration deferred %s -> %s: %s",
+                username,
+                target_player_id,
+                exc.message,
+            )
     return migrated
 
 
@@ -3402,8 +3633,9 @@ def _auto_migrate_legacy_account_saves(user):
     return list(dict.fromkeys(migrated))
 
 
-def _claim_guest_saves(raw_token, claim_code):
+def _claim_guest_saves(raw_token, claim_code, slot=MIN_SAVE_SLOT):
     user = _current_account(raw_token)
+    slot = _save_slot_from_account_arguments({"slot": slot})
     claim_code = (claim_code or "").strip()
     if not claim_code:
         raise _McpError(-32602, "claim_code 必填")
@@ -3414,18 +3646,26 @@ def _claim_guest_saves(raw_token, claim_code):
         ).fetchone())
     if not row or row.get("claimed_by") is not None:
         raise _McpError(-32001, "认领码无效或已被使用")
-    result = _migrate_player_saves(row["guest_player_id"], int(user["id"]))
+    result = _migrate_player_saves(
+        row["guest_player_id"],
+        int(user["id"]),
+        slot=slot,
+    )
     with _db_connect() as conn:
         conn.execute(
-            "UPDATE guest_claim_codes SET claimed_by = ?, claimed_at = datetime('now', 'localtime') WHERE code = ?",
-            (int(user["id"]), claim_code),
+            """
+            UPDATE guest_claim_codes
+            SET claimed_by = ?, claimed_at = datetime('now', 'localtime'), claimed_slot = ?
+            WHERE code = ? AND claimed_by IS NULL
+            """,
+            (int(user["id"]), slot, claim_code),
         )
         conn.commit()
     return {
         "ok": True,
         "user": _public_user(user),
         **result,
-        "message": "游客存档已认领并转入账号名下；之后带 token 游玩会自动续档。",
+        "message": f"游客存档已认领并转入账号槽 {slot}；旧游客身份已停用，请带 token 并选择该 slot 续档。",
     }
 
 
@@ -3497,7 +3737,7 @@ def _delete_owned_session_rows(game, player_id):
 
 
 def _delete_vendor_save_dir(game, player_id):
-    if game not in VENDOR_GAMES:
+    if game not in DIRECTORY_VENDOR_GAMES:
         return None
     save_dir = VENDOR_SAVE_ROOT / game / player_id
     if not save_dir.is_dir():
@@ -3525,6 +3765,29 @@ def _workkk_save_summary(player_id):
     }
 
 
+def _garden_cat_save_summary(player_id):
+    """Read an existing Garden-Cat state without importing or calling its engine."""
+    save_path = VENDOR_SAVE_ROOT / "garden_cat" / player_id / "state.json"
+    try:
+        with save_path.open("r", encoding="utf-8") as save_file:
+            state = json.load(save_file)
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.warning("garden_cat save summary skipped unreadable save %s: %s", save_path, exc)
+        return None
+    if not isinstance(state, dict):
+        logger.warning("garden_cat save summary skipped non-object save %s", save_path)
+        return None
+    encyclopedia = state.get("encyclopedia")
+    return {
+        "money": state.get("money", 0),
+        "encyclopedia_count": len(encyclopedia) if isinstance(encyclopedia, list) else 0,
+        "has_cat": state.get("cat") is not None,
+        "last_active": _epoch_to_local_str(state.get("last_active_at")),
+    }
+
+
 def _delete_save(arguments, raw_token):
     if arguments.get("confirm") is not True:
         raise _McpError(-32602, "delete_save 必须显式传 confirm=true")
@@ -3533,7 +3796,7 @@ def _delete_save(arguments, raw_token):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         raise _McpError(-32602, "海龟汤对局数据不支持 delete_save")
-    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "bdsmtest", *VENDOR_GAMES}:
+    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "bdsmtest", "workkk", *VENDOR_GAMES}:
         raise _McpError(-32602, "未知或不支持删除存档的游戏")
 
     if not raw_token:
@@ -3548,7 +3811,15 @@ def _delete_save(arguments, raw_token):
     player_id = _account_slot_player_id(user["id"], slot)
 
     deleted = []
-    if game in VENDOR_GAMES:
+    if game == "garden_cat":
+        garden_deleted = _delete_garden_cat_save(player_id)
+        if garden_deleted:
+            deleted.append(garden_deleted)
+    elif game == "workkk":
+        workkk_deleted = _delete_workkk_save(player_id)
+        if workkk_deleted:
+            deleted.append(workkk_deleted)
+    elif game in DIRECTORY_VENDOR_GAMES:
         vendor_deleted = _delete_vendor_save_dir(game, player_id)
         if vendor_deleted:
             deleted.append(vendor_deleted)
@@ -3655,6 +3926,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "white_room": white_room_adapter.save_summary,
         "market": market_adapter.save_summary,
         "workkk": _workkk_save_summary,
+        "garden_cat": _garden_cat_save_summary,
     }
     for game, summarize in vendor_summaries.items():
         for candidate, slot in candidate_pairs:
@@ -4331,6 +4603,17 @@ def _tool_play_inner(arguments, path_token=None):
         arguments = _without_slot_param(arguments)
         params = arguments.get("params")
 
+    # A claimed guest id is a permanent tombstone. Check the canonical guest id
+    # before anti-addiction, announcements, or any concrete game/satellite call.
+    if not path_token:
+        canonical_guest_id = guest_player_id
+        if canonical_guest_id is None:
+            candidate = _guest_player_id(_reported_player_id(arguments))
+            if isinstance(candidate, str) and candidate.startswith(GUEST_PREFIX):
+                canonical_guest_id = candidate
+        if canonical_guest_id is not None:
+            _reject_claimed_guest(canonical_guest_id)
+
     merged_arguments = {
         key: value
         for key, value in arguments.items()
@@ -4431,7 +4714,8 @@ def _tool_play_inner(arguments, path_token=None):
             response["guest_save_notice"] = (
                 f"当前是游客身份，存档记在 {guest_player_id} 名下。"
                 f"一次性认领码：{code}（请保存好）。"
-                '注册账号后调用 account(action="claim", claim_code="...") 可把该游客的全部存档转入账号；'
+                '注册后先用 account(action="my_saves") 选择空槽，再调用 '
+                'account(action="claim", claim_code="...", slot=2)；slot 可为 1-5，默认 1。'
                 "之后把 MCP 地址改为 https://toy.cedarstar.org/{token} 即获得持久身份。"
             )
     if succeeded:
@@ -4482,7 +4766,8 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _get_profile(raw_token)
         return json.dumps(result, ensure_ascii=False)
     if action == "claim":
-        result = _claim_guest_saves(raw_token, arguments.get("claim_code"))
+        slot = _save_slot_from_account_arguments(arguments)
+        result = _claim_guest_saves(raw_token, arguments.get("claim_code"), slot=slot)
         return json.dumps(result, ensure_ascii=False)
     if action == "my_saves":
         result = _account_my_saves(
