@@ -196,7 +196,8 @@ async def play(body: PlayBody):
         prompt = await _answer_reveal_prompt(body.room_id)
         if prompt:
             payload["answer_reveal_prompt"] = prompt
-        payload["room"] = await _public_room(body.room_id)
+        # join/status already provide the full surface; avoid repeating it on every ask.
+        payload["room"] = await _public_room(body.room_id, include_surface=False)
         payload["logs_since_last_own_action"] = await _room_logs_after(
             body.room_id,
             previous_own_log["id"] if previous_own_log else None,
@@ -246,7 +247,7 @@ async def play(body: PlayBody):
     raise HTTPException(status_code=400, detail="未知 action")
 
 
-async def _public_room(room_id: str) -> dict:
+async def _public_room(room_id: str, *, include_surface: bool = True) -> dict:
     room = await fetch_one(
         """
         SELECT r.id, r.surface, r.status, r.winner_id, r.created_at, r.finished_at,
@@ -260,6 +261,8 @@ async def _public_room(room_id: str) -> dict:
     )
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")
+    if not include_surface:
+        room.pop("surface", None)
     return room
 
 

@@ -10,7 +10,7 @@ DB_PATH = Path(os.getenv("TURTLE_SOUP_DB", BASE_DIR / "turtle_soup.db"))
 
 
 DEFAULT_SETTINGS = {
-    "max_rooms": "5",
+    "max_rooms": "100",
     "hint_trigger_count": "30",
     "answer_reveal_prompt_count": "100",
     "ai_cooldown_questions": "5",

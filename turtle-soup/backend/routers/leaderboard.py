@@ -37,7 +37,7 @@ def _table_count(db_path: Path, table: str, where: str = "") -> int:
 
 
 def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
-    games = {"mbti": [], "enneagram": [], "dnd": [], "love": [], "ecr": [], "humanity": [], "bdsmtest": []}
+    games = {"mbti": [], "enneagram": [], "dnd": [], "love": [], "ecr": [], "humanity": [], "sins_virtues": [], "bdsmtest": []}
     category_order = {
         "love": ("A", "B", "C", "D", "E"),
         "ecr": ("secure", "fearful", "preoccupied", "dismissive"),
@@ -47,6 +47,15 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
             "mixed_signal",
             "cyber_infiltration",
             "check_cooling",
+        ),
+        "sins_virtues": (
+            "lust_chastity",
+            "gluttony_temperance",
+            "greed_generosity",
+            "sloth_diligence",
+            "wrath_patience",
+            "envy_kindness",
+            "pride_humility",
         ),
     }
     category_counts = {
@@ -79,7 +88,7 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
                 """
                 SELECT game, result_value, result_detail
                 FROM test_results
-                WHERE game IN ('love', 'ecr', 'humanity')
+                WHERE game IN ('love', 'ecr', 'humanity', 'sins_virtues')
                 """
             ).fetchall()
     except sqlite3.Error:

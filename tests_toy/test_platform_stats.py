@@ -71,6 +71,51 @@ class PlatformStatsTests(unittest.TestCase):
             [{"result": "INTJ", "count": 1}],
         )
 
+    def test_sins_virtues_results_use_stable_pair_categories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "sessions.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE test_results (
+                        player_id TEXT NOT NULL,
+                        game TEXT NOT NULL,
+                        result_value TEXT,
+                        result_detail TEXT,
+                        completed_at REAL
+                    )
+                    """
+                )
+                conn.executemany(
+                    """
+                    INSERT INTO test_results
+                        (player_id, game, result_value, result_detail, completed_at)
+                    VALUES (?, 'sins_virtues', ?, '{}', 0)
+                    """,
+                    (
+                        ("sins-1", "wrath_patience"),
+                        ("sins-2", "wrath_patience"),
+                        ("sins-3", "pride_humility"),
+                    ),
+                )
+
+            with patch.object(leaderboard, "SESSIONS_DB_PATH", db_path):
+                distribution = leaderboard._test_result_distributions()["sins_virtues"]
+
+        self.assertEqual(len(distribution), 7)
+        self.assertEqual(
+            {item["result"]: item["count"] for item in distribution},
+            {
+                "lust_chastity": 0,
+                "gluttony_temperance": 0,
+                "greed_generosity": 0,
+                "sloth_diligence": 0,
+                "wrath_patience": 2,
+                "envy_kindness": 0,
+                "pride_humility": 1,
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

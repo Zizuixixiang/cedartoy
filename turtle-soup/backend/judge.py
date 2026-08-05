@@ -131,7 +131,7 @@ async def _chat(
     messages: list[dict[str, str]],
     temperature: float = 0.1,
     *,
-    timeout: float = 45,
+    timeout: float = 20,
     max_tokens: int | None = None,
     pool: str = "judge",
 ) -> str:
@@ -178,7 +178,7 @@ async def _chat(
             return str(text).strip()
         except Exception as exc:
             fail_counts[pool][cid] = fail_counts[pool].get(cid, 0) + 1
-            errors.append(f"{cfg.get('name')}: {exc}")
+            errors.append(f"{cfg.get('name')}: {exc!r}")
             continue
     logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
     raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")

@@ -59,6 +59,8 @@
     .eyebrow { color: var(--pink-dark); font-size: 11px; letter-spacing: .08em; }
     h1 { margin: 7px 0 6px; color: var(--purple-darker); font-size: clamp(26px, 7vw, 46px); line-height: 1.15; }
     .hero p { margin: 0; color: var(--muted); font-size: 14px; }
+    .question-intro.page-disclaimer { margin: 14px 0 0; font-size: 12px; }
+    .page-disclaimer[hidden] { display: none; }
     .shell {
       position: relative;
       min-height: 430px;
@@ -249,6 +251,15 @@
     .metric-bar-fill.humanity-mixed-signal { background: linear-gradient(90deg, var(--purple-dark), var(--purple)); }
     .metric-bar-fill.humanity-cyber-infiltration { background: linear-gradient(90deg, var(--purple-darker), var(--purple-dark)); }
     .metric-bar-fill.humanity-check-cooling { background: linear-gradient(90deg, #4F4661, #80758F); }
+    .sins-virtues-legend { display: flex; justify-content: center; gap: 18px; margin-bottom: 12px; color: var(--muted); font-size: 11px; }
+    .sins-virtues-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .sins-virtues-swatch { width: 15px; height: 9px; background: var(--purple-light); border: 2px solid var(--purple-darker); }
+    .sins-virtues-swatch.virtue { background: var(--bg); border-color: var(--pink-dark); }
+    .sins-virtues-radar-shell { width: min(100%, 520px); margin: 0 auto; }
+    .sins-virtues-radar { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1.08; }
+    .metric-bar-fill.sins-virtues-sin { background: var(--purple-darker); }
+    .metric-bar-fill.sins-virtues-virtue { background: var(--pink); }
+    .sins-virtues-scale-note { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; color: var(--muted); font-size: 9px; }
     .compare-box { margin-top: 24px; padding: 16px; background: var(--bg); border: 2px dashed var(--purple); }
     .compare-box h3 { margin: 0 0 10px; color: var(--purple-darker); font-size: 14px; }
     .compare-form { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -299,6 +310,7 @@
       .result-screen { padding: 16px 12px; box-shadow: 5px 5px 0 var(--purple-light); }
       .axis-card { padding: 10px 8px; }
       .compare-people { grid-template-columns: 1fr; }
+      .sins-virtues-legend { gap: 10px; font-size: 10px; }
     }
   </style>
 </head>
@@ -312,6 +324,7 @@
       <div class="eyebrow" id="subtitle"></div>
       <h1 id="title"></h1>
       <p>人类网页端 · 进度保留 24 小时</p>
+      <p class="question-intro page-disclaimer" id="pageDisclaimer" hidden></p>
     </section>
     <section class="shell" aria-live="polite">
       <div class="status-row">
@@ -385,11 +398,14 @@
     let answers = [];
     let cursor = 0;
     let busy = false;
+    let resultRadarCleanup = null;
 
     const $ = (id) => document.getElementById(id);
     document.title = `${CONFIG.title} · CEDAR TOY`;
     $("title").textContent = CONFIG.title;
     $("subtitle").textContent = CONFIG.subtitle;
+    $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
+    $("pageDisclaimer").hidden = !CONFIG.disclaimer;
     if (CONFIG.game === "enneagram") {
       $("source").textContent = "题库来自 ";
       const sourceLink = document.createElement("a");
@@ -561,7 +577,7 @@
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
         : CONFIG.game === "enneagram"
         ? (activeState.edition === "quick" ? "快速型 · 36题 A/B" : "完整型 · 180题")
-        : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题"}[CONFIG.game] || "测试");
+        : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题", sins_virtues: "七宗罪 VS 七美德 · 35题"}[CONFIG.game] || "测试");
       $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
       $("questionNumber").textContent = `QUESTION ${question.number}`;
@@ -581,6 +597,10 @@
         $("mbtiPoles").hidden = true;
         $("answers").className = "answers mbti ecr";
         renderEcrScale(question);
+      } else if (CONFIG.game === "sins_virtues") {
+        $("mbtiPoles").hidden = true;
+        $("answers").className = "answers mbti ecr";
+        renderFivePointAgreement(question);
       } else if (CONFIG.game === "enneagram") {
         $("mbtiPoles").hidden = true;
         if (activeState.edition === "quick") {
@@ -676,6 +696,32 @@
         button.setAttribute("aria-checked", String(answers[cursor] === value));
         button.classList.toggle("selected", answers[cursor] === value);
         button.innerHTML = `<span class="scale-degree">${value}${value === 3 ? '<span class="ecr-neutral">有时</span>' : ""}</span>`;
+        button.addEventListener("click", () => answer(value));
+        track.appendChild(button);
+      });
+      $("answers").append(ends, track);
+    }
+    function renderFivePointAgreement(question) {
+      const optionLabels = new Map(question.options.map((option) => [option.value, option.text]));
+      const ends = document.createElement("div");
+      ends.className = "mbti-scale-ends ecr-scale-ends";
+      ends.innerHTML = `<span>${optionLabels.get(1) || "非常不同意"}</span><span>${optionLabels.get(3) || "看情况"}</span><span>${optionLabels.get(5) || "非常同意"}</span>`;
+
+      const track = document.createElement("div");
+      track.className = "mbti-scale-track ecr-scale-track";
+      track.style.gridTemplateColumns = "repeat(5, minmax(0, 1fr))";
+      track.setAttribute("role", "radiogroup");
+      track.setAttribute("aria-label", "从非常不同意到非常同意");
+      [1, 2, 3, 4, 5].forEach((value) => {
+        const button = document.createElement("button");
+        const label = optionLabels.get(value) || String(value);
+        button.type = "button";
+        button.className = "scale-step";
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-label", `${value}，${label}`);
+        button.setAttribute("aria-checked", String(answers[cursor] === value));
+        button.classList.toggle("selected", answers[cursor] === value);
+        button.innerHTML = `<span class="scale-degree">${value}${value === 3 ? '<span class="ecr-neutral">看情况</span>' : ""}</span>`;
         button.addEventListener("click", () => answer(value));
         track.appendChild(button);
       });
@@ -1042,6 +1088,208 @@
       return true;
     }
 
+    function drawSinsVirtuesRadar(canvas, axes) {
+      if (!canvas?.getContext || !Array.isArray(axes) || axes.length !== 14) return;
+      const pageStyles = getComputedStyle(document.documentElement);
+      const color = (name) => pageStyles.getPropertyValue(name).trim();
+      const colors = {
+        grid: color("--purple-light"),
+        outline: color("--purple"),
+        sin: color("--purple-darker"),
+        virtue: color("--pink-dark")
+      };
+      const bounds = canvas.getBoundingClientRect();
+      const cssWidth = Math.max(1, Math.min(520, bounds.width || canvas.parentElement?.clientWidth || 320));
+      const compact = cssWidth < 360;
+      const cssHeight = Math.round(cssWidth * (compact ? 1.12 : 1.06));
+      const pixelRatio = Math.max(1, Number(window.devicePixelRatio) || 1);
+      canvas.style.height = `${cssHeight}px`;
+      canvas.width = Math.round(cssWidth * pixelRatio);
+      canvas.height = Math.round(cssHeight * pixelRatio);
+      const context = canvas.getContext("2d");
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.clearRect(0, 0, cssWidth, cssHeight);
+
+      const centerX = cssWidth / 2;
+      const centerY = cssHeight / 2;
+      const labelGap = compact ? 17 : 25;
+      const labelAllowance = compact ? 30 : 40;
+      const radius = Math.max(44, Math.min(
+        centerX - labelGap - labelAllowance,
+        centerY - labelGap - (compact ? 25 : 32)
+      ));
+      const angleFor = (index) => -Math.PI / 2 + index * Math.PI * 2 / axes.length;
+      const pointAt = (distance, index) => ({
+        x: centerX + Math.cos(angleFor(index)) * distance,
+        y: centerY + Math.sin(angleFor(index)) * distance
+      });
+      const tracePolygon = (points) => {
+        context.beginPath();
+        points.forEach((point, index) => index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y));
+        context.closePath();
+      };
+
+      [20, 40, 60, 80, 100].forEach((level) => {
+        tracePolygon(axes.map((_axis, index) => pointAt(radius * level / 100, index)));
+        context.strokeStyle = level === 100 ? colors.outline : colors.grid;
+        context.lineWidth = level === 100 ? 1.5 : 1;
+        context.stroke();
+      });
+      axes.forEach((_axis, index) => {
+        const end = pointAt(radius, index);
+        context.beginPath();
+        context.moveTo(centerX, centerY);
+        context.lineTo(end.x, end.y);
+        context.strokeStyle = colors.grid;
+        context.lineWidth = 1;
+        context.stroke();
+      });
+
+      const drawDataset = (group, stroke) => {
+        const points = axes
+          .map((axis, index) => ({axis, index}))
+          .filter((entry) => entry.axis.group === group)
+          .map((entry) => pointAt(radius * entry.axis.score / 100, entry.index));
+        tracePolygon(points);
+        context.fillStyle = stroke;
+        context.globalAlpha = .2;
+        context.fill();
+        context.globalAlpha = 1;
+        context.strokeStyle = stroke;
+        context.lineWidth = compact ? 2 : 2.5;
+        context.lineJoin = "round";
+        context.stroke();
+        points.forEach((point) => {
+          context.beginPath();
+          context.arc(point.x, point.y, compact ? 2.5 : 3.2, 0, Math.PI * 2);
+          context.fillStyle = stroke;
+          context.fill();
+        });
+      };
+      drawDataset("sin", colors.sin);
+      drawDataset("virtue", colors.virtue);
+
+      const labelRadius = radius + labelGap;
+      const labelSize = compact ? 10 : 12;
+      axes.forEach((axis, index) => {
+        const angle = angleFor(index);
+        const position = pointAt(labelRadius, index);
+        const horizontal = Math.cos(angle);
+        context.textAlign = horizontal > .22 ? "left" : horizontal < -.22 ? "right" : "center";
+        context.textBaseline = "alphabetic";
+        context.font = `700 ${labelSize}px -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif`;
+        context.fillStyle = axis.group === "sin" ? colors.sin : colors.virtue;
+        context.fillText(axis.label, position.x, position.y);
+        context.font = `${labelSize - 1}px "Silkscreen", "Microsoft YaHei", sans-serif`;
+        context.fillText(`${resultPercent(axis.score)}%`, position.x, position.y + labelSize + 2);
+      });
+    }
+
+    function mountSinsVirtuesRadar(canvas, axes) {
+      let frame = 0;
+      const redraw = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => drawSinsVirtuesRadar(canvas, axes));
+      };
+      redraw();
+      if ("ResizeObserver" in window) {
+        const observer = new ResizeObserver(redraw);
+        observer.observe(canvas);
+        return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+      }
+      window.addEventListener("resize", redraw);
+      return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", redraw); };
+    }
+
+    function renderSinsVirtuesResult(root, data) {
+      if (data.kind !== "sins_virtues" || !data.scores || !data.sins || !data.virtues
+          || !data.disclaimer || !data.scoring_note
+          || !Array.isArray(data.pairs) || data.pairs.length !== 7
+          || !data.pairs.every((pair) => pair && data.sins[pair.sin] && data.virtues[pair.virtue]
+            && Number.isFinite(Number(data.scores[pair.sin]))
+            && Number.isFinite(Number(data.scores[pair.virtue])))) return false;
+      const scoreFor = (code) => Math.max(0, Math.min(100, Number(data.scores[code])));
+      const highestPairFor = (side) => data.pairs.reduce((highest, pair) => {
+        const code = pair[side];
+        return !highest || scoreFor(code) > highest.score ? {code, score: scoreFor(code)} : highest;
+      }, null);
+      const highestSin = highestPairFor("sin");
+      const highestVirtue = highestPairFor("virtue");
+      const hero = makeResultElement("div", "result-hero");
+      hero.append(
+        makeResultElement("p", "result-primary dnd-name", data.dominant_pair_name || "七宗罪 VS 七美德"),
+        makeResultElement("p", "result-secondary", "你的七宗罪 VS 七美德结果"),
+        makeResultElement(
+          "p",
+          "result-nickname",
+          `最高罪：${data.sins[highestSin.code]} ${resultPercent(highestSin.score)}% · 最高德：${data.virtues[highestVirtue.code]} ${resultPercent(highestVirtue.score)}%`
+        )
+      );
+      root.appendChild(hero);
+
+      const radarSection = makeResultElement("section", "result-section");
+      radarSection.appendChild(makeResultElement("h3", "", "十四维雷达图"));
+      const radarCard = makeResultElement("div", "axis-card");
+      const legend = makeResultElement("div", "sins-virtues-legend");
+      [
+        ["", "七宗罪 · 欲望与反应"],
+        ["virtue", "七美德 · 调节与选择"]
+      ].forEach(([modifier, label]) => {
+        const item = makeResultElement("span", "", label);
+        item.prepend(makeResultElement("i", `sins-virtues-swatch ${modifier}`.trim()));
+        legend.appendChild(item);
+      });
+      const radarShell = makeResultElement("div", "sins-virtues-radar-shell");
+      const radar = makeResultElement("canvas", "sins-virtues-radar");
+      const axes = data.pairs.flatMap((pair) => [
+        {label: data.sins[pair.sin], score: scoreFor(pair.sin), group: "sin"},
+        {label: data.virtues[pair.virtue], score: scoreFor(pair.virtue), group: "virtue"}
+      ]);
+      radar.setAttribute("role", "img");
+      radar.setAttribute("aria-label", `十四维雷达图；${axes.map((axis) => `${axis.label} ${resultPercent(axis.score)}`).join("，")}；两侧各自按 0 到 100 独立计分`);
+      radarShell.appendChild(radar);
+      radarCard.append(legend, radarShell);
+      radarSection.appendChild(radarCard);
+      root.appendChild(radarSection);
+      resultRadarCleanup = mountSinsVirtuesRadar(radar, axes);
+
+      const section = makeResultElement("section", "result-section");
+      section.appendChild(makeResultElement("h3", "", "七组成对分数（两侧各自 0—100）"));
+      const pairs = makeResultElement("div", "axis-list");
+      data.pairs.forEach((pair) => {
+        const sinScore = scoreFor(pair.sin);
+        const virtueScore = scoreFor(pair.virtue);
+        const card = makeResultElement("article", "axis-card sins-virtues-pair");
+        const labels = makeResultElement("div", "axis-labels");
+        labels.append(
+          makeResultElement("span", "", data.sins[pair.sin]),
+          makeResultElement("span", "", data.virtues[pair.virtue])
+        );
+        const barsRoot = makeResultElement("div", "");
+        appendMetricBars(barsRoot, [
+          {label: `罪 · ${data.sins[pair.sin]}`, value: sinScore, max: 100, display: `${resultPercent(sinScore)}%`, fillClass: "sins-virtues-sin"},
+          {label: `德 · ${data.virtues[pair.virtue]}`, value: virtueScore, max: 100, display: `${resultPercent(virtueScore)}%`, fillClass: "sins-virtues-virtue"}
+        ], "", "metric-bars-compact sins-virtues-pair-tracks");
+        const tracks = barsRoot.firstElementChild.lastElementChild;
+        const scaleNote = makeResultElement("div", "sins-virtues-scale-note");
+        scaleNote.append(
+          makeResultElement("span", "", "罪侧独立分 0—100"),
+          makeResultElement("span", "", "德侧独立分 0—100")
+        );
+        card.append(labels, tracks, scaleNote);
+        pairs.appendChild(card);
+      });
+      section.appendChild(pairs);
+      root.appendChild(section);
+
+      root.appendChild(makeResultElement(
+        "p",
+        "result-footnote",
+        `${data.scoring_note} ${data.disclaimer} 分数高低不代表好坏、品格或现实行为；两侧分数彼此独立，不强制合计 100。`
+      ));
+      return true;
+    }
+
     function appendComparePeople(root, people, detailsFor) {
       const grid = makeResultElement("div", "compare-people");
       people.forEach((person, index) => {
@@ -1113,6 +1361,10 @@
     function renderResult(data, fallbackText) {
       const root = $("resultStructured");
       const fallback = $("resultText");
+      if (resultRadarCleanup) {
+        resultRadarCleanup();
+        resultRadarCleanup = null;
+      }
       root.innerHTML = "";
       let rendered = false;
       try {
@@ -1122,6 +1374,7 @@
         else if (data?.kind === "love") rendered = renderLoveResult(root, data);
         else if (data?.kind === "ecr") rendered = renderEcrResult(root, data);
         else if (data?.kind === "humanity") rendered = renderHumanityResult(root, data);
+        else if (data?.kind === "sins_virtues") rendered = renderSinsVirtuesResult(root, data);
         else if (data?.kind === "love_compare") rendered = renderLoveCompare(root, data);
         else if (data?.kind === "ecr_compare") rendered = renderEcrCompare(root, data);
       } catch (_) {

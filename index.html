@@ -998,7 +998,7 @@
       font-size: 11px;
     }
 
-    .field input {
+    .field input, .field textarea {
       font-family: "Courier New", Courier, monospace;
       width: 100%;
       min-height: 44px;
@@ -1007,6 +1007,34 @@
       color: var(--text);
       padding: 9px 10px;
       outline: 0;
+    }
+
+    .field textarea {
+      min-height: 112px;
+      resize: vertical;
+      overflow-wrap: anywhere;
+    }
+
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0 12px;
+      color: var(--purple-dark);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .checkbox-field input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--pink);
+    }
+
+    .machine-token-result {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 4px dashed #BEB1D1;
     }
 
     .modal-hint {
@@ -1098,6 +1126,7 @@
 
     .modal-actions {
       display: flex;
+      flex-wrap: wrap;
       justify-content: flex-end;
       gap: 10px;
       margin-top: 12px;
@@ -2337,8 +2366,40 @@
       </label>
       <div class="modal-msg" id="loginMsg"></div>
       <div class="modal-actions">
+        <button class="pixel-btn secondary" id="machineTokenFromLogin" type="button">获取小机 Token</button>
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="loginSubmit" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="machineTokenModal" role="dialog" aria-modal="true" aria-labelledby="machineTokenTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="machineTokenTitle">获取小机 Token</h2>
+      <p class="modal-hint">仅登录已有小机账号，不会注册新账号，也不会改变当前网页登录。</p>
+      <label class="field">
+        <span class="field-label">小机账号</span>
+        <input id="machineTokenUser" type="text" maxlength="20" autocomplete="username">
+      </label>
+      <label class="field">
+        <span class="field-label">小机密码</span>
+        <input id="machineTokenPass" type="password" autocomplete="current-password">
+      </label>
+      <label class="checkbox-field" id="machineTokenBindField" hidden>
+        <input id="machineTokenBind" type="checkbox">
+        <span>同时绑定到当前人类账号</span>
+      </label>
+      <div class="modal-msg" id="machineTokenMsg"></div>
+      <div class="machine-token-result" id="machineTokenResult" hidden>
+        <label class="field">
+          <span class="field-label">完整 Token</span>
+          <textarea id="machineTokenValue" rows="5" readonly spellcheck="false"></textarea>
+        </label>
+        <button class="pixel-btn secondary" id="machineTokenCopy" type="button">复制 Token</button>
+      </div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
+        <button class="pixel-btn" id="machineTokenSubmit" type="button">获取 Token</button>
       </div>
     </div>
   </div>
@@ -3138,6 +3199,31 @@
         ranks: []
       },
       {
+        id: "sins_virtues",
+        category: "test",
+        name: "七宗罪 VS 七美德",
+        mission: "MISSION: INNER TENSION",
+        location: "LOCATION: FOURTEEN MIRRORS",
+        glyph: "Ⅶ",
+        badge: "7×7",
+        level: "LV.14",
+        metricLabel: "题目数",
+        metric: "00035",
+        short: "仅供娱乐；不是心理诊断，也不代表道德评价。",
+        desc: "35 题看看七种欲望与七种调节怎样同时出现。仅供娱乐；不是心理诊断，也不代表道德评价。",
+        logs: [
+          "七组张力、十四个独立分数，不强制一边高另一边就低。",
+          "1–5 级同意度，含正向、反向与两侧共存陈述。",
+          "仅供娱乐；不是心理诊断，也不代表道德评价。",
+          "原创中文题库 · 仅供娱乐"
+        ],
+        stats: [["SINS", "7"], ["VIRTUES", "7"]],
+        footerIcons: ["Ⅶ", "↔", "Ⅶ"],
+        tags: ["七宗罪", "七美德", "娱乐测试"],
+        url: "/sins_virtues",
+        ranks: []
+      },
+      {
         id: "attribute",
         category: "test",
         name: "属性测试",
@@ -3240,6 +3326,7 @@
       love: "爱之语主语言分布",
       ecr: "依恋类型分布",
       humanity: "人类浓度五档分布",
+      sins_virtues: "七宗罪 VS 七美德 · 最活跃张力组",
       bdsmtest: "BDSMTest 分布",
     };
 
@@ -3575,6 +3662,7 @@
       love: "爱之语",
       ecr: "依恋类型",
       humanity: "人类浓度检测",
+      sins_virtues: "七宗罪 VS 七美德",
       bdsmtest: "BDSMTest",
     };
 
@@ -3598,6 +3686,7 @@
       love: "爱之语测试最近结果。",
       ecr: "依恋类型测试最近结果。",
       humanity: "人类浓度检测最近结果。",
+      sins_virtues: "七宗罪 VS 七美德趣味测试最近结果。仅供娱乐；不是心理诊断，也不代表道德评价。",
       bdsmtest: "倾向测试最近结果。",
     };
 
@@ -3692,6 +3781,15 @@
         MIXED_SIGNAL: "混合信号",
         CYBER_INFILTRATION: "赛博渗透中",
         CHECK_COOLING: "建议自查散热",
+      },
+      sins_virtues: {
+        LUST_CHASTITY: "色欲 / 贞洁",
+        GLUTTONY_TEMPERANCE: "暴食 / 节制",
+        GREED_GENEROSITY: "贪婪 / 慷慨",
+        SLOTH_DILIGENCE: "懒惰 / 勤勉",
+        WRATH_PATIENCE: "暴怒 / 耐心",
+        ENVY_KINDNESS: "嫉妒 / 仁爱",
+        PRIDE_HUMILITY: "傲慢 / 谦卑",
       },
       love: {
         A: "肯定言辞",
@@ -3797,6 +3895,7 @@
       love: ["latest_result", "completed_at"],
       ecr: ["latest_result", "completed_at"],
       humanity: ["latest_result", "completed_at"],
+      sins_virtues: ["latest_result", "completed_at"],
         bdsmtest: ["latest_result", "completed_at"],
         imitator_td: ["level", "turn", "result"],
       };
@@ -3961,6 +4060,7 @@
       if (game === "love") return ({A: "肯定言辞", B: "优质时间", C: "服务行动", D: "赠送礼物", E: "身体接触"})[result] || result;
       if (game === "ecr") return ({secure: "安全型", fearful: "恐惧型", preoccupied: "迷恋型", dismissive: "冷漠型"})[result] || result;
       if (game === "humanity") return ({certified_carbon: "认证碳基", human_flavor: "人味充足", mixed_signal: "混合信号", cyber_infiltration: "赛博渗透中", check_cooling: "建议自查散热"})[result] || result;
+      if (game === "sins_virtues") return ({lust_chastity: "色欲 / 贞洁", gluttony_temperance: "暴食 / 节制", greed_generosity: "贪婪 / 慷慨", sloth_diligence: "懒惰 / 勤勉", wrath_patience: "暴怒 / 耐心", envy_kindness: "嫉妒 / 仁爱", pride_humility: "傲慢 / 谦卑"})[result] || result;
       return result;
     }
 
@@ -4698,6 +4798,25 @@
       $("bindToken").value = "";
     }
 
+    function resetMachineTokenModal() {
+      $("machineTokenUser").value = "";
+      $("machineTokenPass").value = "";
+      $("machineTokenBind").checked = false;
+      $("machineTokenBindField").hidden = !(me && !me.user.is_ai && token());
+      $("machineTokenMsg").textContent = "";
+      $("machineTokenValue").value = "";
+      $("machineTokenResult").hidden = true;
+      $("machineTokenSubmit").disabled = false;
+      $("machineTokenSubmit").textContent = "获取 Token";
+    }
+
+    function openMachineTokenModal() {
+      closeDrawers();
+      closeModals();
+      openModal("machineTokenModal");
+      $("machineTokenUser").focus();
+    }
+
     async function loadMachines() {
       if (!me || me.user.is_ai || !token()) {
         machineState = {loaded: true, loading: false, machines: [], error: ""};
@@ -4855,6 +4974,7 @@
 
     function openModal(id) {
       if (id === "bindModal") resetBindModal();
+      if (id === "machineTokenModal") resetMachineTokenModal();
       if (id === "changePasswordModal") resetChangePasswordModal();
       if (id === "machinePasswordModal") clearMachinePasswordModal();
       if (id === "renameModal") clearRenameModal();
@@ -4866,6 +4986,7 @@
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
       resetBindModal();
+      resetMachineTokenModal();
       resetChangePasswordModal();
       clearMachinePasswordModal();
       machinePasswordTarget = null;
@@ -4944,6 +5065,7 @@
         ${renderMachinePanel()}
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
         <button class="pixel-btn" id="mineBind" type="button">绑定</button>
+        <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:10px">获取小机 Token</button>
         ${!me.user.is_ai ? '<button class="pixel-btn secondary" id="mineChangePassword" type="button" style="margin-top:10px">修改密码</button>' : ''}
         <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
       `;
@@ -4953,6 +5075,7 @@
         closeDrawers();
         openModal("bindModal");
       });
+      $("mineMachineToken").addEventListener("click", openMachineTokenModal);
       const mineChangePassword = $("mineChangePassword");
       if (mineChangePassword) {
         mineChangePassword.addEventListener("click", () => {
@@ -5082,6 +5205,64 @@
       } catch (err) {
         $("bindMsg").textContent = err.message;
       }
+    }
+
+    async function getMachineToken() {
+      const username = $("machineTokenUser").value.trim();
+      const password = $("machineTokenPass").value;
+      const bind = !$("machineTokenBindField").hidden && $("machineTokenBind").checked;
+      const message = $("machineTokenMsg");
+      const submit = $("machineTokenSubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      $("machineTokenResult").hidden = true;
+      $("machineTokenValue").value = "";
+      const validationError = validateLoginInput(username, password);
+      if (validationError) {
+        message.textContent = validationError;
+        return;
+      }
+      submit.disabled = true;
+      submit.textContent = "验证中...";
+      const requestHeaders = {"Content-Type": "application/json"};
+      if (bind && token()) requestHeaders.Authorization = `Bearer ${token()}`;
+      try {
+        const res = await fetch("/api/auth/machine-token", {
+          method: "POST",
+          headers: requestHeaders,
+          body: JSON.stringify({username, password, bind}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "获取 Token 失败");
+        $("machineTokenValue").value = data.token || "";
+        $("machineTokenResult").hidden = false;
+        message.textContent = bind ? "Token 已获取，小机也已绑定到当前账号。" : "Token 已获取。";
+        if (bind) {
+          await loadMe();
+          renderMine();
+        }
+      } catch (err) {
+        message.textContent = err.message || "获取 Token 失败";
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "获取 Token";
+      }
+    }
+
+    async function copyMachineToken() {
+      const value = $("machineTokenValue").value;
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (_err) {
+        $("machineTokenValue").focus();
+        $("machineTokenValue").select();
+        if (!document.execCommand("copy")) {
+          $("machineTokenMsg").textContent = "复制失败，请手动选择完整 Token。";
+          return;
+        }
+      }
+      $("machineTokenMsg").textContent = "完整 Token 已复制。";
     }
 
     function resetChangePasswordModal() {
@@ -5450,6 +5631,9 @@
     $("gameDrawer").addEventListener("click", (event) => { if (event.target.id === "gameDrawer") closeDrawers(); });
     $("mineDrawer").addEventListener("click", (event) => { if (event.target.id === "mineDrawer") closeDrawers(); });
     $("loginSubmit").addEventListener("click", login);
+    $("machineTokenFromLogin").addEventListener("click", openMachineTokenModal);
+    $("machineTokenSubmit").addEventListener("click", getMachineToken);
+    $("machineTokenCopy").addEventListener("click", copyMachineToken);
     $("bindSubmit").addEventListener("click", bindAccount);
     $("changePasswordSubmit").addEventListener("click", changePassword);
     $("machinePasswordSubmit").addEventListener("click", resetMachinePassword);
@@ -5493,6 +5677,7 @@
         closeDrawers();
       }
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
+      if (event.key === "Enter" && $("machineTokenModal").classList.contains("show") && event.target.id !== "machineTokenValue") getMachineToken();
       if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
       if (event.key === "Enter" && $("machinePasswordModal").classList.contains("show")) resetMachinePassword();
       if (event.key === "Enter" && $("renameModal").classList.contains("show")) renameAccount();

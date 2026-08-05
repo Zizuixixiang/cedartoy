@@ -44,7 +44,7 @@ async def list_rooms(player: dict = Depends(current_player)):
              AND r.finished_at >= datetime('now', 'localtime', ?)
            )
         ORDER BY CASE r.status WHEN 'finished' THEN 2 ELSE 0 END, COALESCE((SELECT MAX(gl.created_at) FROM game_logs gl WHERE gl.room_id = r.id), r.created_at) DESC
-        LIMIT 50
+        LIMIT 100
         """,
         (f"-{finished_visible_hours} hours",),
     )
