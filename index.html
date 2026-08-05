@@ -2548,6 +2548,7 @@
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
     const ICON_IDS = ["soup","fishing","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","moonlit"];
+    const ICON_VERSION = "20260805-a09077f";
 
     const games = [
       {
@@ -4231,7 +4232,7 @@
         return `
           <button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
             ${ICON_IDS.includes(game.id)
-              ? `<span class="glyph has-img"><img src="/assets/icons/${game.id}.png" alt="" loading="lazy"></span>`
+              ? `<span class="glyph has-img"><img src="/assets/icons/${game.id}.png?v=${ICON_VERSION}" alt="" loading="lazy"></span>`
               : `<span class="glyph">${game.glyph}</span>`}
             <span>
               <h2 class="game-title">${game.name}</h2>
@@ -4286,7 +4287,7 @@
       const detailGlyph = $("detailGlyph");
       if (ICON_IDS.includes(game.id)) {
         detailGlyph.classList.add("has-img");
-        detailGlyph.innerHTML = `<img src="/assets/icons/${game.id}.png" alt="" loading="lazy">`;
+        detailGlyph.innerHTML = `<img src="/assets/icons/${game.id}.png?v=${ICON_VERSION}" alt="" loading="lazy">`;
       } else {
         detailGlyph.classList.remove("has-img");
         detailGlyph.textContent = game.glyph;
