@@ -1804,21 +1804,39 @@ def _bind_account(human_token, binding_token):
     human = _current_account(human_token)
     if human.get("is_ai"):
         raise _McpError(-32602, "只有人类账号可以绑定 AI")
-    binding_token = (binding_token or "").strip()
+    raw_binding_token = binding_token or ""
+    binding_token = raw_binding_token.strip()
     if not binding_token:
-        raise _McpError(-32602, "binding_token 必填")
+        raise _McpError(-32602, "绑定码必填")
+    if (
+        raw_binding_token != binding_token
+        or len(binding_token) != 32
+        or not re.fullmatch(r"[A-Za-z0-9_-]{32}", binding_token)
+    ):
+        raise _McpError(
+            -32602,
+            "绑定码格式不正确。请只复制32位绑定码本身，不要带引号、反引号、空格、换行或其他隐藏字符。",
+        )
     with _db_connect() as conn:
         row = _row_dict(conn.execute(
             """
-            SELECT * FROM binding_tokens
+            SELECT *, expires_at <= datetime('now', 'localtime') AS expired
+            FROM binding_tokens
             WHERE token = ?
-              AND used = 0
-              AND expires_at > datetime('now', 'localtime')
+            ORDER BY rowid DESC
+            LIMIT 1
             """,
             (binding_token,),
         ).fetchone())
         if not row:
-            raise _McpError(-32001, "绑定码无效或已过期")
+            raise _McpError(
+                -32001,
+                "绑定码不存在。请检查是否完整复制；不要带引号、反引号、空格、换行或隐藏字符。",
+            )
+        if row.get("used"):
+            raise _McpError(-32001, "绑定码已使用，请让小机重新生成一枚新的绑定码。")
+        if row.get("expired"):
+            raise _McpError(-32001, "绑定码已过期（有效期10分钟），请让小机重新生成后立即绑定。")
         if int(row["ai_user_id"]) == int(human["id"]):
             raise _McpError(-32602, "不能绑定自己")
         # 一个小机同时只能有一个人类主人；换绑需原主人先解绑。
