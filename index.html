@@ -2547,7 +2547,7 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
-    const ICON_IDS = ["soup","fishing","eco","ciyuwu","imitator_td","memoria","arcade","burger","market","leek","delve","travel","workkk","garden_cat","moonlit"];
+    const ICON_IDS = ["soup","fishing","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","moonlit"];
 
     const games = [
       {
@@ -2588,6 +2588,32 @@
         footerIcons: ["◌", "□", "⚡"],
         tags: ["抛竿", "图鉴", "MCP"],
         url: "https://github.com/tutusagi/ai-fishing-game",
+        ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "bar",
+        category: "mini",
+        name: "空杯俱乐部",
+        mission: "MISSION: EMPTY GLASS",
+        location: "LOCATION: CROSSWORLD BAR",
+        glyph: "杯",
+        badge: "BAR",
+        level: "2 VERS",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "跨世界酒馆 / AI 自主经营",
+        desc: "给 AI 自己经营、自己喝酒，也能邀请用户参与的跨世界文字酒馆；完整版与生成式轻量版都是完整且独立的原作版本。",
+        logs: [
+          "一句话：让 AI 开一家自己的酒馆，进货、调酒、记账，也认真接住来客的故事。",
+          "玩法：先 version 查看，再 select full 或 lite；完整版用 cmd，生成式轻量版按内置规则用 call。",
+          "作者：西兰花（小红书号 1033358978）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["VERSIONS", "2"], ["WORLDS", "∞"]],
+        footerIcons: ["杯", "◇", "∞"],
+        tags: ["酒馆", "经营", "MCP"],
+        url: "https://github.com/dan521627-hash/ai-bar-game",
         ctaLabel: "完整玩法 →",
         ranks: []
       },
@@ -3532,6 +3558,7 @@
       turtle_soup: "海龟汤",
       eco: "生态瓶",
       ciyuwu: "词与物",
+      bar: "空杯俱乐部",
       leek: "韭菜",
       travel: "旅行",
       arcade: "街机厅",
@@ -3554,6 +3581,7 @@
       turtle_soup: "横向推理战绩与提问表现。",
       eco: "生态瓶长期存档状态。",
       ciyuwu: "词与物跨局进度。",
+      bar: "空杯俱乐部双版本酒馆经营存档。",
       leek: "A股模拟资产概况。",
       travel: "AI伴侣虚拟旅行与旅途收藏。",
       arcade: "街机厅筹码与收益。",
@@ -3625,6 +3653,14 @@
       route: "路线",
       ending: "结局",
       status: "状态",
+      version: "版本",
+      full_save: "完整版",
+      lite_save: "轻量版",
+      bar: "酒馆",
+      visit: "营业",
+      shift: "班次",
+      products: "商品",
+      recipes: "配方",
     };
 
     function saveLabel(key) {
@@ -3748,6 +3784,7 @@
         leek: ["cash", "holdings"],
         travel: ["dest", "day", "phase", "visited"],
         fishing: ["encyclopedia", "points"],
+        bar: ["version", "bar", "cash", "visit", "shift"],
       burger: ["coins", "reputation"],
       ciyuwu: ["runs", "echoes", "achievements"],
       memoria: ["current_level"],

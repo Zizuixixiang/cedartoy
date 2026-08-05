@@ -20,10 +20,12 @@
 |---|---|
 | `soup.png` | 海龟汤 |
 | `fishing.png` | AI钓鱼 |
+| `bar.png` | 空杯俱乐部 |
 | `eco.png` | 瓶中生态 |
 | `ciyuwu.png` | 词与物 |
 | `imitator_td.png` | 植物大战丧尸随机版 |
 | `memoria.png` | Memoria Station |
+| `white_room.png` | 白房间 |
 | `arcade.png` | 街机厅 |
 | `burger.png` | 午间汉堡铺 |
 | `market.png` | 出门买菜上桌吃饭 |

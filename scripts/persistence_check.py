@@ -43,6 +43,30 @@ STEP_TIMEOUT = 60
 # ---------------------------------------------------------------------------
 GAMES = [
     {
+        "game": "bar",
+        "label": "bar-full",
+        "new_args": {"action": "new", "version": "full", "seed": 12345, "confirm": "true"},
+        "mutate_args": {"action": "cmd", "command": "setup \"持久化酒馆\" like=sweet avoid=bitter"},
+        "mutate_expect": ["持久化酒馆"],
+        "query_args": {"action": "summary"},
+        "query_expect": ["持久化酒馆", "资金460点"],
+        "save_files": ["selection.json", "bar_save.json"],
+    },
+    {
+        "game": "bar",
+        "label": "bar-lite",
+        "new_args": {"action": "new", "version": "lite", "seed": 54321, "cash": 600, "confirm": "true"},
+        "mutate_args": {
+            "action": "call",
+            "function": "spend",
+            "arguments": {"amount": 25, "reason": "持久化检查"},
+        },
+        "mutate_expect": ["575", "持久化检查"],
+        "query_args": {"action": "summary"},
+        "query_expect": ["\"cash\": 575", "\"shift\": 0"],
+        "save_files": ["selection.json", "bar_lite_save.json"],
+    },
+    {
         "kind": "scale",
         "game": "love",
         "label": "love",

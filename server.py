@@ -51,6 +51,7 @@ from love import scoring as love_scoring
 from mbti import handler as mbti_handler
 from mbti import questions as mbti_questions
 from mbti import scoring as mbti_scoring
+from vendor_cmd_adapter import bar as bar_adapter
 from vendor_cmd_adapter import arcade as arcade_adapter
 from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import delve as delve_adapter
@@ -189,12 +190,12 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"],
+                    "enum": ["turtle_soup", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"],
                     "description": "游戏名称。",
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、burger、delve、fishing、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、delve、fishing、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -286,6 +287,19 @@ def _build_kelivo_platform_tools():
                 "anyOf": [{"type": "integer"}, {"type": "string"}],
                 "description": "新局可选随机种子。",
             },
+            "version": {
+                "type": "string",
+                "description": "bar 选版/new 使用：full（完整版）或 lite（生成式轻量版）。",
+            },
+            "function": {
+                "type": "string",
+                "description": "bar 轻量版 action=call 使用的显式公开函数名。",
+            },
+            "arguments": {
+                "type": "object",
+                "description": "bar 轻量版 action=call 的函数关键字参数对象。",
+                "additionalProperties": True,
+            },
             "days": {
                 "type": "integer",
                 "minimum": 1,
@@ -306,7 +320,7 @@ def _build_kelivo_platform_tools():
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
-                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、burger、delve、fishing、imitator_td、leek、market、memoria、moonlit、travel、white_room 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
+                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、delve、fishing、imitator_td、leek、market、memoria、moonlit、travel、white_room 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
             },
             "a_score": {
                 "type": "integer",
@@ -2067,7 +2081,7 @@ def _public_game_stats():
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
     }
-    for game in ("arcade", "burger", "leek", "delve", "travel", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
+    for game in ("arcade", "bar", "burger", "leek", "delve", "travel", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -3025,10 +3039,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"})
+IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"})
-VENDOR_GAMES = ("leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"})
+VENDOR_GAMES = ("bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
@@ -3932,6 +3946,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
                     entry.clear()
                     entry.update({"slot": slot, **summary})
     vendor_summaries = {
+        "bar": bar_adapter.save_summary,
         "leek": leek_adapter.save_summary,
         "delve": delve_adapter.save_summary,
         "travel": travel_adapter.save_summary,
@@ -4024,6 +4039,7 @@ def _epoch_to_local_str(epoch):
 
 GAME_RECOMMENDATIONS = (
     ("turtle_soup", '千人同猜的镇店之宝，每个"是"都藏着弯'),
+    ("bar", "让 AI 开一家自己的跨世界酒馆，认真记账，也认真听客人把话说完"),
     ("fishing", "鼻祖之作，第一竿永远不知道咬钩的是什么"),
     ("moonlit", "月光下构筑一副会乘法的牌，八幕之后才是终演"),
     ("eco", "当一回造物主，浮萍和乌龟都会记得你"),
@@ -4132,7 +4148,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -4705,7 +4721,7 @@ def _tool_play_inner(arguments, path_token=None):
             trusted_opponent_id=trusted_opponent_id,
             force_opponent=force_opponent,
         )
-    elif game in {"leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
+    elif game in {"bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -5212,6 +5228,8 @@ def _play_vendor_cmd(game, arguments):
     extra["action"] = action
 
     try:
+        if game == "bar":
+            return bar_adapter.play(extra)
         if game == "leek":
             return leek_adapter.play(extra)
         if game == "delve":

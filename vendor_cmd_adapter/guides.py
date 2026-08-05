@@ -290,6 +290,66 @@ GUIDES = {
 
 原作信息：
 作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/echoing-white-room／经作者授权接入。""",
+    "bar": """# 空杯俱乐部 / Empty Glass Club
+公开 game id：`bar`。这是两个功能目标相同、实现方式独立的原作版本；未明确选择前，塘子不会加载或运行任何一版，也不会默认完整版。
+
+必须先选版本：
+- full（完整版）：代码内置 244 位人物、168 款核心酒和大量导演流程；开局稳定、跨模型一致性较强，首次读取更重。
+- lite（生成式轻量版）：完整规则书、示例人物格式与数值引擎内置；人物、酒单、商店、装修和剧情由执行 AI 自主导演，上下文更小、每家店更独特，也更依赖 AI 持续遵守规则。轻量版不是删减版。
+
+选版与状态：
+- `play(game="bar", action="version")`：查看本槽当前选择和两版存档是否存在。
+- `play(game="bar", action="select", params={"version":"full"})`：切到完整版；也可传 `lite`。只切换，不新建、重置或删除存档。
+- `play(game="bar", action="new", params={"version":"full","seed":123})`：新建完整版。
+- `play(game="bar", action="new", params={"version":"lite","seed":123,"cash":460,"owner_tolerance":52,"owner_absorption":1.0})`：新建轻量版。
+- 已有该版存档时，`new` 必须再传 `confirm:true`；只重置指定版本，另一版原封不动。version 可省略的唯一情况是本槽已经 select 过。
+- `play(game="bar", action="rules")`：完整版原样返回原作帮助；轻量版原样返回 `start()` 的完整内置规则书、示例人物格式与运行入口。
+- `play(game="bar", action="summary")`：只查看当前版本简要状态；别名 `status`。
+
+完整版（full）调用：
+`play(game="bar", action="cmd", params={"command":"status"})`
+
+原作命令由 `bar_game.cmd(command)` 原样执行，保留分号/换行批量语义（一次最多 8 条），适配层不改写命令。主要命令完整列举如下：
+- `help` / `?`：完整帮助；`view` / `viewer`：只读观察窗；`archive`：原作严格文字档案。
+- `setup`、`design`：酒馆名称、老板口味与空间设计。
+- `shop` / `market`、`vendor`、`buy`：常驻商店、游商与进货。
+- `open`、`next`、`leave`：开门、推进一个现场节点、离店。
+- `drinks`、`invent`、`recipe`、`price`：酒单、原创调酒、配方与定价。
+- `serve`、`cheers`、`recommend`、`ask_taste`、`bargain`、`decline`：出杯、共饮、推荐、追问口味、议价与拒绝。
+- `drink`、`cheers_user`、`water`、`eat`：老板自饮、与用户共饮及身体照顾。
+- `talk`、`observe`、`intervene`、`story_note`：交谈、观察/干预 NPC 互动与常客故事记录。
+- `status`、`guests`、`memory`、`ledger`、`report`、`reviews`：状态、来客、经历、流水、经营简报与评价。
+- `loan`、`upgrades`、`upgrade`、`decor`、`source_decor`、`decorate`：贷款、升级、装修与自由来源物品。
+遇到参数不确定时用 `cmd("help")` 或 action=`rules` 查看原作完整帮助，以上命令名不替代原文说明。
+
+生成式轻量版（lite）调用：
+`play(game="bar", action="call", params={"function":"summary","arguments":{}})`
+
+`arguments` 必须是 JSON 对象；参数按原作函数签名严格校验。已开放的全部 33 个 public function：
+- 创意方向与人物方向：`register_creation_direction`、`draw_creation_direction`、`register_guest_domain`、`draw_guest_domain`。
+- 开局与状态：`new_game`、`summary`、`start`。
+- 商品、库存与配方：`define_product`、`purchase`、`define_recipe`、`recipe_profile`。
+- 人物、服务与酒精：`register_person`、`serve`、`owner_drink`、`score_drink`、`quote_decision`、`stars`、`record_review`、`intox_stage`、`advance_turn`、`conversation_turn`。
+- 事件与经营：`roll_event`、`spend`、`earn`、`take_loan`、`repay_loan`、`close_shift`。
+- 装修与资产：`buy_asset`、`upgrade_asset`、`record_asset_story`。
+- 原作跨窗口档案与观察窗：`export_archive`、`restore_archive`、`viewer_link`。
+
+调用例：
+- `play(game="bar", action="call", params={"function":"draw_guest_domain","arguments":{}})`
+- `play(game="bar", action="call", params={"function":"define_product","arguments":{"product_id":"house_gin","name":"店藏金酒","kind":"gin","bottle_ml":700,"abv":40,"bottle_cost":150}})`
+- `play(game="bar", action="call", params={"function":"purchase","arguments":{"product_id":"house_gin","bottles":2}})`
+- `play(game="bar", action="call", params={"function":"conversation_turn","arguments":{"person_id":"owner"}})`
+
+轻量版的叙事由执行 AI 依 action=`rules` 返回的原作规则自主导演。用户未明确要求快进时，每个对用户可见的前台回复最多推进一个关键节点，不能把“进门→点单→喝完→评价→离店”一口气演完；自然停在现场即可，不要机械弹选项。关门或离店后，只要老板仍有 `intox` 或 `pending`，每轮普通对话前必须调用 `conversation_turn(person_id="owner")`，并遵守返回的身体、认知、表达与 hard_limit，直到 `must_act=false`。
+
+平台备份（与原作 archive 接口并存）：
+- `play(game="bar", action="export")`：返回严格 JSON 包，只含实际存在的 `selection.json`、`bar_save.json`、`bar_lite_save.json`。
+- `play(game="bar", action="import", params={"save_data":{...},"confirm":true})`：按当前槽无损恢复双版本包；已有任一 bar 游戏存档时必须 confirm=true。不要拿原作 `export_archive` / `restore_archive` 的文字档案代替平台 export/import。
+
+署名与修改说明：
+Based on “空杯俱乐部 / Empty Glass Club” by 西兰花（小红书号 1033358978）
+Original source: https://github.com/dan521627-hash/ai-bar-game
+代码采用 MIT License；原创规则、玩法文本与创意材料采用 CC BY 4.0（https://creativecommons.org/licenses/by/4.0/）。本站仅做 CedarToy 平台身份、存档路径、接口封装、参数校验与注册适配，未修改原作玩法、规则文本、概率、人物、酒款、函数行为、指令语义或返回文案；不暗示原作者认可、赞助或参与本站适配。""",
     "market": """# 出门买菜上桌吃饭
 调用：play(game="market",action="new") 开局；之后 play(game="market", action="cmd", params={"command": "菜场"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id。
 
