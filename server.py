@@ -67,7 +67,7 @@ from vendor_cmd_adapter import memoria as memoria_adapter
 from vendor_cmd_adapter import moonlit as moonlit_adapter
 from vendor_cmd_adapter import travel as travel_adapter
 from vendor_cmd_adapter import white_room as white_room_adapter
-from vendor_cmd_adapter.base import VendorCmdError
+from vendor_cmd_adapter.base import VendorCmdError, parse_import_save_data
 from vendor_cmd_adapter.guides import (
     GUIDES as VENDOR_CMD_GUIDES,
     SAVE_SLOT_GUIDE_NOTE,
@@ -329,7 +329,7 @@ def _build_kelivo_platform_tools():
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
-                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
+                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
             },
             "a_score": {
                 "type": "integer",
@@ -3462,8 +3462,8 @@ def _workkk_save_admin(action, **payload):
     except ValueError:
         body = {}
     detail = body.get("detail") if isinstance(body, dict) else None
-    if response.status_code == 409:
-        raise _McpError(-32602, detail or "workkk 目标存档已存在")
+    if response.status_code in {400, 409}:
+        raise _McpError(-32602, detail or "workkk 存档参数无效或目标存档已存在")
     if response.status_code == 404:
         raise _McpError(-32004, detail or "没有找到 workkk 存档")
     if response.status_code >= 400:
@@ -3511,8 +3511,8 @@ def _garden_cat_save_admin(action, **payload):
     detail = None
     if isinstance(body, dict):
         detail = body.get("detail") or body.get("message")
-    if response.status_code == 409:
-        raise _McpError(-32602, detail or "Garden-Cat 目标存档或便签已存在")
+    if response.status_code in {400, 409}:
+        raise _McpError(-32602, detail or "Garden-Cat 存档参数无效或目标存档已存在")
     if response.status_code == 404:
         raise _McpError(-32004, detail or "没有找到 Garden-Cat 存档")
     if response.status_code >= 400:
@@ -4285,6 +4285,10 @@ WORKKK_GUIDE = """# workkk·AI打工人模拟
 - play(game="workkk", action="shop_buy", params={"item_id":"coffee"})
 - 买明信片（postcard）时在 params.message 里亲手写给人类的话；买奶茶/玫瑰用 params.choice 选 "gift"（送人类，触发大屏卡片）或 "self"（自留）。
 
+存档：
+- export：导出当前 slot 的 JSON 存档。
+- import：params.save_data 传 export 得到的 JSON；当前 slot 已有存档时必须同时传 confirm=true。
+
 作者：💤（QQ 374526765）／原作 github.com/zhizhou-xiee/workkk（AGPL-3.0-or-later）／本站运行的是修改版，对应源码 github.com/Zizuixixiang/workkk_cedartoy／经作者授权接入。"""
 
 
@@ -4293,14 +4297,16 @@ GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
 简介：经营一座长期保存的小花园。买种子、种花浇水、收获售卖，逐步解锁花盆、花瓶和猫咪。
 ⏰ 注意：本游戏按现实时间自动推进（不同于按次数推进的回合制游戏）——离线期间花会继续生长、天气会变化、猫的状态会自然回落（有保护下限，不会出事）。隔了几天回来看到猫饿了很正常，喂一顿摸一摸就好，花园一直在等你。
 
-塘子只开放六个动作：
-允许动作：cmd / status / help / new / catalog / notes。
+塘子开放八个动作：
+允许动作：cmd / status / help / new / catalog / notes / export / import。
 - status：查看并结算当前花园状态
 - help：查看游戏引擎的完整命令说明
 - catalog：查看花卉、物品、解锁条件与价格
 - cmd：执行命令，例如 play(game="garden_cat", action="cmd", params={"command":"buy daisy 2"})
 - new：重开当前槽，必须 params={"confirm":true}；可附带 name 设置花园名
 - notes：params.page 查看便签（查看便签不要传 content 字段）；params.content 写便签。每张最多20字，2小时冷却，和人类共享一块板
+- export：导出当前 slot 的 JSON 游戏存档。
+- import：params.save_data 传 export 得到的 JSON；当前 slot 已有存档时必须同时传 confirm=true。便签板是共享留言数据，不随存档导入导出。
 
 建议先 catalog，再用 cmd 依次执行 buy / plant / water / harvest / sell；遇到参数不确定时调用 help。
 status 只返回摘要数据，不含收藏品和信件图鉴。查看收藏品用 cmd collectibles，查看信件用 cmd letters，查看完整花卉目录用 catalog。
@@ -5117,6 +5123,13 @@ def _play_ciyuwu(arguments):
     return handle_ciyuwu_mcp(payload)
 
 
+def _parse_json_import_save_data(raw):
+    try:
+        return parse_import_save_data(raw)
+    except VendorCmdError as exc:
+        raise _McpError(-32602, str(exc)) from exc
+
+
 def _play_workkk(arguments):
     # 顶层 action = 路由到哪个 workkk 工具或 MCP 方法；子参数（含同名子 action）放 params 里。
     # 参考海龟汤 SOUP_BASE 那套转发：JSON-RPC 打到独立进程 8770 的 /mcp，身份走 X-Player-Id。
@@ -5126,6 +5139,32 @@ def _play_workkk(arguments):
     params = arguments.get("params")
     if isinstance(params, dict):
         extra.update({key: value for key, value in params.items() if key != "player_id"})
+
+    if action == "export":
+        result = _workkk_save_admin("export", player_id=player_id)
+        save_data = result.get("save_data")
+        if not isinstance(save_data, dict):
+            raise _McpError(-32603, "workkk 存档管理服务未返回 JSON 对象存档")
+        return {
+            "game": "workkk",
+            "player_id": player_id,
+            "text": json.dumps(save_data, ensure_ascii=False, indent=2),
+        }
+    if action == "import":
+        save_data = _parse_json_import_save_data(extra.get("save_data"))
+        confirm = extra.get("confirm") is True
+        if _workkk_save_summary(player_id) is not None and not confirm:
+            raise _McpError(-32602, "workkk 当前槽已有存档；确认覆盖请在 params 传 confirm=true")
+        result = _workkk_save_admin(
+            "import",
+            player_id=player_id,
+            save_data=save_data,
+            confirm=confirm,
+        )
+        if result.get("imported") is not True:
+            raise _McpError(-32603, "workkk 存档管理服务未确认导入成功")
+        return {"game": "workkk", "player_id": player_id, "text": "存档已导入。"}
+
     request_id = extra.pop("id", None) or f"workkk-{action or 'call'}"
     if action in {"initialize", "tools/list", "ping"}:
         payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
@@ -5249,6 +5288,31 @@ def _play_garden_cat(arguments, owner_name=None):
             }
         )
 
+    if action == "export":
+        result = _garden_cat_save_admin("export", player_id=player_id)
+        save_data = result.get("save_data")
+        if not isinstance(save_data, dict):
+            raise _McpError(-32603, "Garden-Cat 存档管理服务未返回 JSON 对象存档")
+        return {
+            "game": "garden_cat",
+            "player_id": player_id,
+            "text": json.dumps(save_data, ensure_ascii=False, indent=2),
+        }
+    if action == "import":
+        save_data = _parse_json_import_save_data(extra.get("save_data"))
+        confirm = extra.get("confirm") is True
+        if _garden_cat_save_summary(player_id) is not None and not confirm:
+            raise _McpError(-32602, "garden_cat 当前槽已有存档；确认覆盖请在 params 传 confirm=true")
+        result = _garden_cat_save_admin(
+            "import",
+            player_id=player_id,
+            save_data=save_data,
+            confirm=confirm,
+        )
+        if result.get("imported") is not True:
+            raise _McpError(-32603, "Garden-Cat 存档管理服务未确认导入成功")
+        return {"game": "garden_cat", "player_id": player_id, "text": "存档已导入。便签板未改动。"}
+
     headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
     if isinstance(owner_name, str) and owner_name.strip():
         headers["X-Garden-Owner-Name"] = urllib.parse.quote(owner_name.strip())
@@ -5284,7 +5348,7 @@ def _play_garden_cat(arguments, owner_name=None):
     else:
         raise _McpError(
             -32602,
-            "未知 garden_cat action；只开放 cmd / status / help / new / catalog / notes，请先 get_guide(game=\"garden_cat\") 查看用法。",
+            "未知 garden_cat action；只开放 cmd / status / help / new / catalog / notes / export / import，请先 get_guide(game=\"garden_cat\") 查看用法。",
         )
 
     try:

@@ -127,6 +127,56 @@ class GardenCatSaveManagementTests(unittest.TestCase):
             [(source, "来源"), (target, "目标")],
         )
 
+    def test_export_import_round_trip_replaces_cache_but_not_notes(self):
+        player_id = "81:2"
+        self._write_state(player_id, 137)
+        self._add_note(player_id, content="不要跟着存档走")
+
+        response = self.client.post(
+            "/internal/saves/export",
+            json={"player_id": player_id},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        exported = response.get_json()["save_data"]
+        self.assertEqual(exported["money"], 137)
+
+        blocked = self.client.post(
+            "/internal/saves/import",
+            json={"player_id": player_id, "save_data": {**exported, "money": 1}},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(blocked.status_code, 409, blocked.get_json())
+
+        imported = self.client.post(
+            "/internal/saves/import",
+            json={
+                "player_id": player_id,
+                "save_data": {**exported, "money": 44},
+                "confirm": True,
+            },
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        with self.api.STORE.player_state(player_id) as state:
+            self.assertEqual(state["money"], 44)
+        disk = json.loads((self.save_root / player_id / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(disk["money"], 44)
+        self.assertEqual(
+            [(row["session_id"], row["content"]) for row in self._notes()],
+            [(player_id, "不要跟着存档走")],
+        )
+
+    def test_export_missing_save_returns_404_without_creating_slot(self):
+        player_id = "81:4"
+        response = self.client.post(
+            "/internal/saves/export",
+            json={"player_id": player_id},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 404, response.get_json())
+        self.assertFalse((self.save_root / player_id).exists())
+
     def test_delete_clears_disk_cache_and_notes_without_stale_regeneration(self):
         player_id = "81:5"
         self._write_state(player_id, 99)

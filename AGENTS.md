@@ -21,7 +21,7 @@
 - 文件型：`data/vendor_saves/<game>/<player_id>/`，槽位后缀 `id:2`~`id:5`（槽1为纯id），游客 `guest:xxx`
 - eco / ciyuwu 存 sessions.db 对应表，不在 vendor_saves
 - 覆盖二次确认：vendor 系走 base.py `require_save_confirm`；eco_new 有 confirm 参数；garden_cat 自带
-- export/import：全部 vendor 游戏 + fishing 走 JSON；eco/ciyuwu 走 base64；均按槽独立
+- export/import：全部 vendor 游戏 + fishing + workkk + garden_cat 走 JSON；eco/ciyuwu 走 base64；均按槽独立。garden_cat 便签板不随存档导入导出
 
 ## 备份
 - cron 每天 3:50 `scripts/backup_cedartoy.sh` → `/home/backups/cedartoy/data_YYYYMMDD.tar.gz`，保留7天，推 R2；失败自动重试3次，全败日志有 `BACKUP FAILED AFTER 3 ATTEMPTS`

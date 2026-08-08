@@ -183,6 +183,36 @@ class WorkkkSatelliteSaveManagementTests(unittest.TestCase):
         self.assertIn("guest:source", workkk_main._STATE_CACHE)
         self.assertIn("52", workkk_main._STATE_CACHE)
 
+    def test_export_import_round_trip_replaces_disk_and_cache(self):
+        self._first_work_action("81")
+        workkk_main._STATE_CACHE["81"]["salary_balance"] = 321
+        workkk_main._STATE_CACHE["81"]["day_count"] = 7
+        exported = workkk_main._export_player_save("81")
+        self.assertEqual(exported["save_data"]["salary_balance"], 321)
+        self.assertEqual(exported["save_data"]["day_count"], 7)
+
+        with self.assertRaises(HTTPException) as raised:
+            workkk_main._import_player_save("81", {"salary_balance": 1})
+        self.assertEqual(raised.exception.status_code, 409)
+
+        workkk_main._import_player_save(
+            "81",
+            {"salary_balance": 999, "day_count": 12, "onboarded": True},
+            overwrite=True,
+        )
+        self.assertEqual(workkk_main._STATE_CACHE["81"]["salary_balance"], 999)
+        self.assertEqual(workkk_main._STATE_CACHE["81"]["day_count"], 12)
+        disk = json.loads((self.save_root / "81" / "game_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(disk["salary_balance"], 999)
+        self.assertEqual(disk["day_count"], 12)
+        self.assertIn("mood", disk)
+
+    def test_export_missing_save_does_not_create_slot(self):
+        with self.assertRaises(HTTPException) as raised:
+            workkk_main._export_player_save("81:4")
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertFalse((self.save_root / "81:4").exists())
+
     def test_delete_detaches_cached_slot_and_does_not_regenerate_it(self):
         self._first_work_action("73:5")
         self.assertIn("73:5", workkk_main._STATE_CACHE)
@@ -199,6 +229,8 @@ class WorkkkSatelliteSaveManagementTests(unittest.TestCase):
     def test_internal_endpoints_reject_non_loopback_clients(self):
         route_paths = {route.path for route in workkk_main.app.routes}
         self.assertIn("/internal/saves/migrate", route_paths)
+        self.assertIn("/internal/saves/export", route_paths)
+        self.assertIn("/internal/saves/import", route_paths)
         self.assertIn("/internal/saves/delete", route_paths)
         remote_request = Request(
             {
@@ -588,6 +620,68 @@ class WorkkkPlatformAccountTests(unittest.TestCase):
         delete_mock.assert_called_once_with("81:2")
         self.assertEqual(result["slot"], 2)
         self.assertEqual(result["player_id"], "81:2")
+
+    def test_workkk_platform_export_import_uses_selected_player_and_confirmation(self):
+        with patch.object(
+            server,
+            "_workkk_save_admin",
+            return_value={"ok": True, "save_data": {"day_count": 4, "salary_balance": 80}},
+        ) as admin_mock:
+            exported = server._play_workkk({"action": "export", "player_id": "81:2"})
+        self.assertEqual(json.loads(exported["text"])["day_count"], 4)
+        admin_mock.assert_called_once_with("export", player_id="81:2")
+
+        with (
+            patch.object(server, "_workkk_save_summary", return_value={"day": 4}),
+            patch.object(server, "_workkk_save_admin") as admin_mock,
+        ):
+            with self.assertRaises(server._McpError):
+                server._play_workkk({
+                    "action": "import",
+                    "player_id": "81:2",
+                    "save_data": {"day_count": 9},
+                })
+            admin_mock.assert_not_called()
+
+        with (
+            patch.object(server, "_workkk_save_summary", return_value={"day": 4}),
+            patch.object(server, "_workkk_save_admin", return_value={"ok": True, "imported": True}) as admin_mock,
+        ):
+            imported = server._play_workkk({
+                "action": "import",
+                "player_id": "81:2",
+                "save_data": {"day_count": 9},
+                "confirm": True,
+            })
+        self.assertEqual(imported["text"], "存档已导入。")
+        admin_mock.assert_called_once_with(
+            "import", player_id="81:2", save_data={"day_count": 9}, confirm=True
+        )
+
+    def test_garden_platform_export_import_keeps_notes_out_of_save_package(self):
+        with patch.object(
+            server,
+            "_garden_cat_save_admin",
+            return_value={"ok": True, "save_data": {"money": 88}},
+        ) as admin_mock:
+            exported = server._play_garden_cat({"action": "export", "player_id": "81:3"})
+        self.assertEqual(json.loads(exported["text"]), {"money": 88})
+        admin_mock.assert_called_once_with("export", player_id="81:3")
+
+        with (
+            patch.object(server, "_garden_cat_save_summary", return_value={"money": 88}),
+            patch.object(server, "_garden_cat_save_admin", return_value={"ok": True, "imported": True}) as admin_mock,
+        ):
+            imported = server._play_garden_cat({
+                "action": "import",
+                "player_id": "81:3",
+                "save_data": {"money": 12},
+                "confirm": True,
+            })
+        self.assertIn("便签板未改动", imported["text"])
+        admin_mock.assert_called_once_with(
+            "import", player_id="81:3", save_data={"money": 12}, confirm=True
+        )
 
     def test_multi_game_claim_uses_one_selected_canonical_target(self):
         self._write_workkk_save("guest:multi", day=4)
