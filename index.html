@@ -2608,7 +2608,7 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
-    const ICON_IDS = ["soup","fishing","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","moonlit"];
+    const ICON_IDS = ["soup","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","moonlit"];
     const ICON_VERSION = "20260805-a09077f";
 
     const games = [
@@ -2676,6 +2676,7 @@
         footerIcons: ["🌲", "🪵", "◇"],
         tags: ["童话", "叙事", "MCP"],
         url: "https://github.com/ai11231123alal11-ui/mo-yao-play-games",
+        iconFile: "forest.jpg",
         ctaLabel: "GitHub 原页面 →",
         ranks: []
       },
@@ -4044,6 +4045,10 @@
       return !game.adminOnly || Boolean(me && me.user && me.user.is_admin);
     }
 
+    function gameIconUrl(game) {
+      return `/assets/icons/${game.iconFile || `${game.id}.png`}?v=${ICON_VERSION}`;
+    }
+
     function rankHtml(ranks) {
       if (!ranks || ranks.length === 0) {
         return `<li class="empty-rank"><span>暂无数据</span></li>`;
@@ -4368,7 +4373,7 @@
         return `
           <button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
             ${ICON_IDS.includes(game.id)
-              ? `<span class="glyph has-img"><img src="/assets/icons/${game.id}.png?v=${ICON_VERSION}" alt="" loading="lazy"></span>`
+              ? `<span class="glyph has-img"><img src="${gameIconUrl(game)}" alt="" loading="lazy"></span>`
               : `<span class="glyph">${game.glyph}</span>`}
             <span>
               <h2 class="game-title">${game.name}</h2>
@@ -4423,7 +4428,7 @@
       const detailGlyph = $("detailGlyph");
       if (ICON_IDS.includes(game.id)) {
         detailGlyph.classList.add("has-img");
-        detailGlyph.innerHTML = `<img src="/assets/icons/${game.id}.png?v=${ICON_VERSION}" alt="" loading="lazy">`;
+        detailGlyph.innerHTML = `<img src="${gameIconUrl(game)}" alt="" loading="lazy">`;
       } else {
         detailGlyph.classList.remove("has-img");
         detailGlyph.textContent = game.glyph;
