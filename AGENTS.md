@@ -66,9 +66,3 @@
   - travel-mcp 2026-07-31 就是这种（34 对 34，diff 0 文件，无共同祖先），已对齐
 - 真更新（fork + 本地适配那类）：直接 `git merge origin/main`，本地适配是独立 commit，一般不冲突；合完看改的是不是 server.py import 的模块，是就重启 cedartoy
 - 合前先 `git status --porcelain`：ci-yu-wu 的 `ending.txt` 是游戏跑出来的存档产物被 git 追踪着，别当脏改动清掉
-
-## Codex 与生产上线边界
-- Codex 只负责代码修改、静态检查和测试；不要把生产部署、`git push`、supervisor 重启或公网验收交给 Codex 沙箱。
-- 生产操作由当前主助手直接通过 VPS shell 执行：核对 diff → 跑测试 → 只提交目标文件 → push → 重启对应服务 → 检查端口/日志 → 公网验收。
-- 没有完成重启和公网验收，就只能说“代码已改/测试已过，尚未上线”，绝不能说“好了”或“已完成”。
-- 小改动不要做无关的全库指纹扫描或长时间兜圈；先解决当前阻断，并及时报告真实状态。

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sqlite3
 import sys
 import tempfile
@@ -71,7 +72,7 @@ class PlatformStatsTests(unittest.TestCase):
             [{"result": "INTJ", "count": 1}],
         )
 
-    def test_sins_virtues_results_use_stable_pair_categories(self):
+    def _sins_virtues_distributions(self, rows):
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "sessions.db"
             with sqlite3.connect(db_path) as conn:
@@ -90,30 +91,121 @@ class PlatformStatsTests(unittest.TestCase):
                     """
                     INSERT INTO test_results
                         (player_id, game, result_value, result_detail, completed_at)
-                    VALUES (?, 'sins_virtues', ?, '{}', 0)
+                    VALUES (?, 'sins_virtues', ?, ?, 0)
                     """,
-                    (
-                        ("sins-1", "wrath_patience"),
-                        ("sins-2", "wrath_patience"),
-                        ("sins-3", "pride_humility"),
-                    ),
+                    rows,
                 )
 
             with patch.object(leaderboard, "SESSIONS_DB_PATH", db_path):
-                distribution = leaderboard._test_result_distributions()["sins_virtues"]
+                distributions = leaderboard._test_result_distributions()
 
-        self.assertEqual(len(distribution), 7)
+        return distributions
+
+    def test_sins_and_virtues_use_independent_top_dimension_distributions(self):
+        distributions = self._sins_virtues_distributions(
+            (
+                (
+                    "sins-1",
+                    "pride_humility",
+                    json.dumps(
+                        {
+                            "top_sins": ["wrath", "pride"],
+                            "top_virtues": ["kindness", "humility"],
+                        }
+                    ),
+                ),
+                (
+                    "sins-2",
+                    "lust_chastity",
+                    json.dumps(
+                        {
+                            "top_sins": ["wrath", "lust"],
+                            "top_virtues": ["patience", "chastity"],
+                        }
+                    ),
+                ),
+            )
+        )
+
+        sins = distributions["sins_virtues_sins"]
+        virtues = distributions["sins_virtues_virtues"]
+        self.assertEqual(sum(item["count"] for item in sins), 2)
+        self.assertEqual(sum(item["count"] for item in virtues), 2)
+        self.assertEqual({item["result"]: item["count"] for item in sins}["wrath"], 2)
         self.assertEqual(
-            {item["result"]: item["count"] for item in distribution},
+            {item["result"]: item["count"] for item in virtues},
             {
-                "lust_chastity": 0,
-                "gluttony_temperance": 0,
-                "greed_generosity": 0,
-                "sloth_diligence": 0,
-                "wrath_patience": 2,
-                "envy_kindness": 0,
-                "pride_humility": 1,
+                "chastity": 0,
+                "temperance": 0,
+                "generosity": 0,
+                "diligence": 0,
+                "patience": 1,
+                "kindness": 1,
+                "humility": 0,
             },
+        )
+        self.assertNotIn("sins_virtues", distributions)
+
+    def test_sins_virtues_old_scores_use_stable_order_for_ties(self):
+        distributions = self._sins_virtues_distributions(
+            (
+                (
+                    "scores-only",
+                    "pride_humility",
+                    json.dumps(
+                        {
+                            "scores": {
+                                "lust": 90,
+                                "gluttony": 90,
+                                "chastity": 75,
+                                "temperance": 75,
+                            }
+                        }
+                    ),
+                ),
+            )
+        )
+
+        sins = {item["result"]: item["count"] for item in distributions["sins_virtues_sins"]}
+        virtues = {
+            item["result"]: item["count"]
+            for item in distributions["sins_virtues_virtues"]
+        }
+        self.assertEqual(sins["lust"], 1)
+        self.assertEqual(sins["pride"], 0)
+        self.assertEqual(virtues["chastity"], 1)
+        self.assertEqual(virtues["humility"], 0)
+
+    def test_sins_virtues_old_pair_is_final_compatibility_fallback(self):
+        distributions = self._sins_virtues_distributions(
+            (
+                ("sins-1", "wrath_patience", "{}"),
+                ("sins-2", "wrath_patience", "not-json"),
+                ("sins-3", "pride_humility", "{}"),
+            )
+        )
+
+        sins = distributions["sins_virtues_sins"]
+        virtues = distributions["sins_virtues_virtues"]
+        self.assertEqual(len(sins), 7)
+        self.assertEqual(len(virtues), 7)
+        self.assertEqual(
+            {item["result"]: item["count"] for item in sins},
+            {
+                "lust": 0,
+                "gluttony": 0,
+                "greed": 0,
+                "sloth": 0,
+                "wrath": 2,
+                "envy": 0,
+                "pride": 1,
+            },
+        )
+        self.assertEqual(
+            {item["result"]: item["count"] for item in virtues}["patience"], 2
+        )
+        self.assertEqual(
+            {item["result"]: item["count"] for item in virtues}["humility"], 1
         )
 
 

@@ -2654,6 +2654,32 @@
         ranks: []
       },
       {
+        id: "forest",
+        category: "mini",
+        name: "格林童话境遇",
+        mission: "MISSION: INTO THE FOREST",
+        location: "LOCATION: GRIMM FOREST",
+        glyph: "🌲",
+        badge: "TALE",
+        level: "11 LINES",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "多轮选择叙事 / 十一条角色线",
+        desc: "十一条翻转格林童话原著的角色线。AI 与玩家并肩进入森林，在多轮选择中继续推进，直到抵达自然结局。",
+        logs: [
+          "一句话：和 AI 一起进入十一条格林童话角色线，每次选择之后还有选择。",
+          "玩法：lines 查看角色线；start 进入；choose 选择；status 查看当前位置与纪念品。",
+          "作者：阿尢（1155896103）",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [["LINES", "11"], ["CHOICE", "∞"]],
+        footerIcons: ["🌲", "🪵", "◇"],
+        tags: ["童话", "叙事", "MCP"],
+        url: "https://github.com/ai11231123alal11-ui/mo-yao-play-games",
+        ctaLabel: "GitHub 原页面 →",
+        ranks: []
+      },
+      {
         id: "bar",
         category: "mini",
         name: "空杯俱乐部",
@@ -3326,7 +3352,8 @@
       love: "爱之语主语言分布",
       ecr: "依恋类型分布",
       humanity: "人类浓度五档分布",
-      sins_virtues: "七宗罪 VS 七美德 · 最活跃张力组",
+      sins_virtues_sins: "七宗罪最高项分布",
+      sins_virtues_virtues: "七美德最高项分布",
       bdsmtest: "BDSMTest 分布",
     };
 
@@ -3652,6 +3679,7 @@
       arcade: "街机厅",
       burger: "汉堡店",
       fishing: "钓鱼",
+      forest: "格林童话境遇",
       imitator_td: "随机塔防",
       memoria: "Memoria Station",
       white_room: "白房间",
@@ -3676,6 +3704,7 @@
       arcade: "街机厅筹码与收益。",
       burger: "汉堡店经营收入。",
       fishing: "钓鱼图鉴与点数。",
+      forest: "格林童话角色线、当前位置、结局纪念品与每日走线进度。",
       imitator_td: "随机塔防当前进度。",
       memoria: "文字推理关卡进度。",
       white_room: "白房间互动叙事的模块、路线与结局进度。",
@@ -3727,6 +3756,11 @@
       echoes: "遗刻",
       level: "等级",
       current_level: "关卡",
+      current_line: "角色线",
+      current_scene: "场景",
+      souvenirs: "纪念品",
+      daily_lines: "今日走线",
+      total_lines: "累计走线",
       budget: "菜钱",
       spent: "花费",
       spent_usd: "旅费",
@@ -3883,6 +3917,7 @@
         leek: ["cash", "holdings"],
         travel: ["dest", "day", "phase", "visited"],
         fishing: ["encyclopedia", "points"],
+        forest: ["current_line", "current_scene", "souvenirs", "daily_lines", "total_lines"],
         bar: ["version", "bar", "cash", "visit", "shift"],
       burger: ["coins", "reputation"],
       ciyuwu: ["runs", "echoes", "achievements"],
@@ -4060,7 +4095,8 @@
       if (game === "love") return ({A: "肯定言辞", B: "优质时间", C: "服务行动", D: "赠送礼物", E: "身体接触"})[result] || result;
       if (game === "ecr") return ({secure: "安全型", fearful: "恐惧型", preoccupied: "迷恋型", dismissive: "冷漠型"})[result] || result;
       if (game === "humanity") return ({certified_carbon: "认证碳基", human_flavor: "人味充足", mixed_signal: "混合信号", cyber_infiltration: "赛博渗透中", check_cooling: "建议自查散热"})[result] || result;
-      if (game === "sins_virtues") return ({lust_chastity: "色欲 / 贞洁", gluttony_temperance: "暴食 / 节制", greed_generosity: "贪婪 / 慷慨", sloth_diligence: "懒惰 / 勤勉", wrath_patience: "暴怒 / 耐心", envy_kindness: "嫉妒 / 仁爱", pride_humility: "傲慢 / 谦卑"})[result] || result;
+      if (game === "sins_virtues_sins") return ({lust: "色欲", gluttony: "暴食", greed: "贪婪", sloth: "懒惰", wrath: "暴怒", envy: "嫉妒", pride: "傲慢"})[result] || result;
+      if (game === "sins_virtues_virtues") return ({chastity: "贞洁", temperance: "节制", generosity: "慷慨", diligence: "勤勉", patience: "耐心", kindness: "仁爱", humility: "谦卑"})[result] || result;
       return result;
     }
 

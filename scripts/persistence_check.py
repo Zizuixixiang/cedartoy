@@ -155,6 +155,16 @@ GAMES = [
         "save_files": ["fishing_save.json"],
     },
     {
+        "game": "forest",
+        "label": "forest",
+        "new_args": {"action": "new", "confirm": "true"},
+        "mutate_args": {"action": "start", "line": 1},
+        "mutate_expect": ["韩塞尔", "当前场景ID"],
+        "query_args": {"action": "status"},
+        "query_expect": ["韩塞尔", "今日走线调用：1 次"],
+        "save_files": ["forest_save.json"],
+    },
+    {
         "game": "leek",
         "label": "leek",
         "new_args": {"action": "new", "seed": 12345, "confirm": "true"},

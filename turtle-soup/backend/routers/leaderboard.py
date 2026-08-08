@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sqlite3
 import time
@@ -18,6 +19,26 @@ STATS_CACHE_TTL = 60
 
 _stats_cache: dict[str, object] = {"expires_at": 0.0, "data": None}
 
+SINS_ORDER = ("lust", "gluttony", "greed", "sloth", "wrath", "envy", "pride")
+VIRTUES_ORDER = (
+    "chastity",
+    "temperance",
+    "generosity",
+    "diligence",
+    "patience",
+    "kindness",
+    "humility",
+)
+SINS_VIRTUES_PAIRS = {
+    "lust_chastity": ("lust", "chastity"),
+    "gluttony_temperance": ("gluttony", "temperance"),
+    "greed_generosity": ("greed", "generosity"),
+    "sloth_diligence": ("sloth", "diligence"),
+    "wrath_patience": ("wrath", "patience"),
+    "envy_kindness": ("envy", "kindness"),
+    "pride_humility": ("pride", "humility"),
+}
+
 
 def _table_count(db_path: Path, table: str, where: str = "") -> int:
     if not db_path.exists():
@@ -36,8 +57,60 @@ def _table_count(db_path: Path, table: str, where: str = "") -> int:
         return 0
 
 
+def _ranked_dimension(detail: dict, top_key: str, order: tuple[str, ...]):
+    top_dimensions = detail.get(top_key)
+    if isinstance(top_dimensions, list) and top_dimensions:
+        first = top_dimensions[0]
+        if first in order:
+            return first
+
+    scores = detail.get("scores")
+    if not isinstance(scores, dict):
+        return None
+    winner = None
+    winner_score = None
+    for dimension in order:
+        try:
+            score = float(scores[dimension])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(score):
+            continue
+        if winner_score is None or score > winner_score:
+            winner = dimension
+            winner_score = score
+    return winner
+
+
+def _sins_virtues_winners(result_value: object, detail_json: object):
+    try:
+        detail = json.loads(detail_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        detail = {}
+    if not isinstance(detail, dict):
+        detail = {}
+
+    sin = _ranked_dimension(detail, "top_sins", SINS_ORDER)
+    virtue = _ranked_dimension(detail, "top_virtues", VIRTUES_ORDER)
+    fallback = SINS_VIRTUES_PAIRS.get(str(result_value))
+    if fallback:
+        sin = sin or fallback[0]
+        virtue = virtue or fallback[1]
+    return sin, virtue
+
+
 def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
-    games = {"mbti": [], "enneagram": [], "dnd": [], "love": [], "ecr": [], "humanity": [], "sins_virtues": [], "bdsmtest": []}
+    games = {
+        "mbti": [],
+        "enneagram": [],
+        "dnd": [],
+        "love": [],
+        "ecr": [],
+        "humanity": [],
+        "sins_virtues_sins": [],
+        "sins_virtues_virtues": [],
+        "bdsmtest": [],
+    }
     category_order = {
         "love": ("A", "B", "C", "D", "E"),
         "ecr": ("secure", "fearful", "preoccupied", "dismissive"),
@@ -48,15 +121,8 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
             "cyber_infiltration",
             "check_cooling",
         ),
-        "sins_virtues": (
-            "lust_chastity",
-            "gluttony_temperance",
-            "greed_generosity",
-            "sloth_diligence",
-            "wrath_patience",
-            "envy_kindness",
-            "pride_humility",
-        ),
+        "sins_virtues_sins": SINS_ORDER,
+        "sins_virtues_virtues": VIRTUES_ORDER,
     }
     category_counts = {
         game: {result: 0 for result in results}
@@ -99,7 +165,13 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
     for game, result_value, count in rows:
         games.setdefault(game, []).append({"result": result_value, "count": int(count)})
     for game, result_value, detail_json in scale_rows:
-        if game == "love":
+        if game == "sins_virtues":
+            sin, virtue = _sins_virtues_winners(result_value, detail_json)
+            if sin:
+                category_counts["sins_virtues_sins"][sin] += 1
+            if virtue:
+                category_counts["sins_virtues_virtues"][virtue] += 1
+        elif game == "love":
             try:
                 primary = json.loads(detail_json or "{}").get("primary") or str(result_value).split("+")
             except (TypeError, json.JSONDecodeError):

@@ -1145,12 +1145,15 @@
         context.stroke();
       });
 
+      const datasetIndexes = {
+        virtue: [1, 2, 3, 4, 5, 6, 7],
+        sin: [0, 13, 12, 11, 10, 9, 8]
+      };
       const drawDataset = (group, stroke) => {
-        const points = axes
-          .map((axis, index) => ({axis, index}))
-          .filter((entry) => entry.axis.group === group)
-          .map((entry) => pointAt(radius * entry.axis.score / 100, entry.index));
-        tracePolygon(points);
+        const points = datasetIndexes[group]
+          .map((index) => pointAt(radius * axes[index].score / 100, index));
+        const pathPoints = [{x: centerX, y: centerY}, ...points, {x: centerX, y: centerY}];
+        tracePolygon(pathPoints);
         context.fillStyle = stroke;
         context.globalAlpha = .2;
         context.fill();
@@ -1241,10 +1244,15 @@
       });
       const radarShell = makeResultElement("div", "sins-virtues-radar-shell");
       const radar = makeResultElement("canvas", "sins-virtues-radar");
-      const axes = data.pairs.flatMap((pair) => [
-        {label: data.sins[pair.sin], score: scoreFor(pair.sin), group: "sin"},
-        {label: data.virtues[pair.virtue], score: scoreFor(pair.virtue), group: "virtue"}
-      ]);
+      const axes = [
+        {label: data.sins[data.pairs[0].sin], score: scoreFor(data.pairs[0].sin), group: "sin"},
+        ...data.pairs.map((pair) => (
+          {label: data.virtues[pair.virtue], score: scoreFor(pair.virtue), group: "virtue"}
+        )),
+        ...data.pairs.slice(-1).concat(data.pairs.slice(1, -1)).map((pair) => (
+          {label: data.sins[pair.sin], score: scoreFor(pair.sin), group: "sin"}
+        ))
+      ];
       radar.setAttribute("role", "img");
       radar.setAttribute("aria-label", `十四维雷达图；${axes.map((axis) => `${axis.label} ${resultPercent(axis.score)}`).join("，")}；两侧各自按 0 到 100 独立计分`);
       radarShell.appendChild(radar);

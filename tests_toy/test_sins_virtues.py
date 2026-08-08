@@ -190,6 +190,11 @@ class SinsVirtuesTests(unittest.TestCase):
         text = completed["result"]["content"][0]["text"]
         self.assertIn("七宗罪 VS 七美德完成", text)
         self.assertIn(questions.DISCLAIMER, text)
+        self.assertIn("分数最高的七宗罪", text)
+        self.assertIn("分数最高的七美德", text)
+        self.assertNotIn("比较响亮的欲望侧", text)
+        self.assertNotIn("比较响亮的调节侧", text)
+        self.assertNotIn("张力最活跃的一组", text)
         with (
             patch.object(server, "_play_announcements", return_value=""),
             patch.object(server, "_reject_claimed_guest", return_value=None),
@@ -219,6 +224,7 @@ class SinsVirtuesTests(unittest.TestCase):
 
         page = server.TEST_GAME_INDEX_PATH.read_text(encoding="utf-8")
         self.assertIn("renderSinsVirtuesResult", page)
+        self.assertIn('data.dominant_pair_name || "七宗罪 VS 七美德"', page)
         self.assertIn("function drawSinsVirtuesRadar", page)
         self.assertIn("drawDataset(\"sin\"", page)
         self.assertIn("drawDataset(\"virtue\"", page)
@@ -227,8 +233,65 @@ class SinsVirtuesTests(unittest.TestCase):
         self.assertIn("context.setTransform(pixelRatio", page)
         self.assertIn("ResizeObserver", page)
         self.assertIn("width: min(100%, 520px)", page)
-        self.assertIn("data.pairs.flatMap", page)
-        self.assertIn("你的七宗罪 VS 七美德结果", page)
+        radar_renderer = page.split("function drawSinsVirtuesRadar", 1)[1].split(
+            "function scheduleSinsVirtuesRadar", 1
+        )[0]
+        self.assertIn("virtue: [1, 2, 3, 4, 5, 6, 7]", radar_renderer)
+        self.assertIn("sin: [0, 13, 12, 11, 10, 9, 8]", radar_renderer)
+        dataset_renderer = radar_renderer.split("const drawDataset", 1)[1].split(
+            'drawDataset("sin"', 1
+        )[0]
+        self.assertIn("const points = datasetIndexes[group]", dataset_renderer)
+        self.assertIn(
+            "const pathPoints = [{x: centerX, y: centerY}, ...points, "
+            "{x: centerX, y: centerY}]",
+            dataset_renderer,
+        )
+        self.assertIn("tracePolygon(pathPoints)", dataset_renderer)
+        self.assertIn("points.forEach", dataset_renderer)
+        self.assertNotIn("pathPoints.forEach", dataset_renderer)
+        renderer = page.split("function renderSinsVirtuesResult", 1)[1].split(
+            "function renderLoveCompare", 1
+        )[0]
+        self.assertNotIn("flatMap", renderer)
+        axes_source = renderer.split("const axes = [", 1)[1].split("];", 1)[0]
+        first_sin = axes_source.index("data.sins[data.pairs[0].sin]")
+        virtues = axes_source.index("...data.pairs.map")
+        remaining_sins = axes_source.index(
+            "...data.pairs.slice(-1).concat(data.pairs.slice(1, -1)).map"
+        )
+        self.assertLess(first_sin, virtues)
+        self.assertLess(virtues, remaining_sins)
+
+        pair_dimensions = [(sin, virtue) for _pair, sin, virtue in questions.PAIRS]
+        axis_codes = (
+            [pair_dimensions[0][0]]
+            + [virtue for _sin, virtue in pair_dimensions]
+            + [pair_dimensions[-1][0]]
+            + [sin for sin, _virtue in pair_dimensions[1:-1]]
+        )
+        axis_names = [scoring.DIMENSION_NAMES[code] for code in axis_codes]
+        self.assertEqual(
+            axis_names,
+            [
+                "色欲", "贞洁", "节制", "慷慨", "勤勉", "耐心", "仁爱",
+                "谦卑", "傲慢", "暴食", "贪婪", "懒惰", "暴怒", "嫉妒",
+            ],
+        )
+        axis_groups = ["sin"] + ["virtue"] * 7 + ["sin"] * 6
+        circular_group_changes = sum(
+            axis_groups[index] != axis_groups[(index + 1) % len(axis_groups)]
+            for index in range(len(axis_groups))
+        )
+        self.assertEqual(circular_group_changes, 2)
+        self.assertIn(
+            '"result-primary dnd-name", data.dominant_pair_name || "七宗罪 VS 七美德"',
+            renderer,
+        )
+        self.assertIn(
+            '"result-secondary", "你的七宗罪 VS 七美德结果"', renderer
+        )
+        self.assertIn('"result-nickname",', renderer)
         self.assertIn("最高罪", page)
         self.assertIn("最高德", page)
         self.assertIn("axis-card sins-virtues-pair", page)
@@ -247,7 +310,12 @@ class SinsVirtuesTests(unittest.TestCase):
         self.assertIn(questions.DISCLAIMER, guide)
         self.assertIn("不做互补归一", guide)
         leaderboard = Path("turtle-soup/backend/routers/leaderboard.py").read_text(encoding="utf-8")
-        self.assertIn('"sins_virtues"', leaderboard)
+        self.assertIn('"sins_virtues_sins"', leaderboard)
+        self.assertIn('"sins_virtues_virtues"', leaderboard)
+
+        self.assertIn("七宗罪最高项分布", index)
+        self.assertIn("七美德最高项分布", index)
+        self.assertNotIn("最活跃张力组", index)
 
 
 if __name__ == "__main__":

@@ -290,6 +290,26 @@ GUIDES = {
 
 原作信息：
 作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/echoing-white-room／经作者授权接入。""",
+    "forest": """# 格林童话境遇
+公开 game id：`forest`。十一条翻转格林童话原著的角色线；每次选择后继续多轮推进，直到自然结局。没有爱情线，AI 是与玩家并肩进入森林的同游者。
+
+推荐顺序：
+- `play(game="forest", action="lines")`：列出 11 条角色线、标题与概要。
+- `play(game="forest", action="new")`：建立空白森林存档；已有存档时需在 params 传 `confirm:true`。
+- `play(game="forest", action="start", params={"line":1})`：进入角色线。line 可为 1-11；服务器会保存当前线、opening 场景和当日走线计数。
+- `play(game="forest", action="choose", params={"option":"A"})`：按服务器保存的当前位置选择 A/B/C/D。无需回传 line、scene_id 或 souvenirs。
+- `play(game="forest", action="status")`：查看当前位置、当日计数和已收集纪念品；收集 3 个纪念品后会显示篝火空地。
+
+持久化与重开：
+- start/choose 的当前位置、结局和纪念品按 player_id 与存档槽隔离，并在每次变更后保存。
+- 同一天多次 start 会累计；达到原作的温柔/坚定提醒阈值时，森林会暂停进入新线。按北京时间跨日后当日计数归零。
+- `reset` 与 `new` 都会覆盖当前槽；已有存档时必须传 `confirm:true`。
+- `play(game="forest", action="export")`：导出当前槽 JSON 存档。
+- `play(game="forest", action="import", params={"save_data":{...},"confirm":true})`：导入当前槽；已有存档时必须确认。
+
+原作信息：
+作者：阿尢（1155896103）／仓库：https://github.com/ai11231123alal11-ui/mo-yao-play-games
+本站适配层只读取原作 `forest_game_data.json` 的游戏运行数据，并保持其中的童话场景文案不变。""",
     "bar": """# 空杯俱乐部 / Empty Glass Club
 公开 game id：`bar`。这是两个功能目标相同、实现方式独立的原作版本；未明确选择前，塘子不会加载或运行任何一版，也不会默认完整版。
 
