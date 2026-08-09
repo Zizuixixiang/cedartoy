@@ -235,6 +235,9 @@ def _choose(game, state, option, save_path):
     target = options.get(choice, {}).get("target", "")
     if not target:
         raise ValueError(f"选项 {option} 无效。可用：{', '.join(options)}。")
+    if target == "free_play":
+        text = game.get("free_play", {}).get("text", "你走了自己的路。森林接住了。")
+        return text.replace("__return_scene__", scene_id)
     scene = line.get("scenes", {}).get(target, {})
     if not scene:
         raise ValueError("目标场景未找到，游戏数据可能已损坏。")

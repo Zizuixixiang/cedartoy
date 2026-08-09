@@ -97,6 +97,15 @@ class ForestAdapterTests(unittest.TestCase):
         self.assertIn("今日走线调用：0 次", self.play("daily", "status")["text"])
         self.assertEqual(forest.save_summary("daily")["daily_lines"], 0)
 
+    def test_free_play_matches_upstream_and_keeps_current_scene(self):
+        self.play("free", "new")
+        self.play("free", "start", line=3)
+        before = self.state("free")
+        text = self.play("free", "choose", option="D")["text"]
+        expected = GAME_DATA["free_play"]["text"].replace("__return_scene__", "opening")
+        self.assertEqual(text, expected)
+        self.assertEqual(self.state("free"), before)
+
     def test_concurrent_commands_are_serialized_by_player_lock(self):
         self.play("parallel", "new")
         with ThreadPoolExecutor(max_workers=8) as pool:
