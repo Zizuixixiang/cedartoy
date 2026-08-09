@@ -22,9 +22,8 @@ GUIDES = {
 - upgrade <item> — 升级装备（pickaxe / lantern / rope / backpack）
 - choose <A/B/C> — 处理当前轻决策
 - sell common — 出售普通藏品
+- return — 回地面营地
 - help — 查看全部指令
-
-支线选择结算后直接继续 dig/play 即回到正常探索；return 是回地面营地，不是“返回主线”。
 
 存档导出：play(game="delve", action="export")
 存档导入：play(game="delve", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）

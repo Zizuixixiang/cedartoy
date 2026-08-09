@@ -31,10 +31,11 @@ os.chdir(save_dir)
 sys.path.insert(0, vendor_dir)
 
 if payload.get("reset"):
-    try:
-        os.remove(os.path.join(save_dir, "moonlit_v3_save.json"))
-    except FileNotFoundError:
-        pass
+    for name in ("moonlit_v3_save.json", "moonlit_v3_save.json.bak"):
+        try:
+            os.remove(os.path.join(save_dir, name))
+        except FileNotFoundError:
+            pass
 
 import moonlit_cards
 moonlit_cards.SAVE_PATH = Path(save_dir) / "moonlit_v3_save.json"

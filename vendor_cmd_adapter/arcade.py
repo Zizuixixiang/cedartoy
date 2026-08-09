@@ -178,6 +178,18 @@ def grant_chips(player_id, amount):
         return _status_from_state(state)
 
 
+def _rewrite_platform_funding_hints(text):
+    replacements = {
+        "赌资找金主要——问她注多少，再 buy [金额]。": "赌资由人类在 CedarToy 网页端发放。",
+        "buy [金额]       买筹码（找金主要）": "筹码由人类在 CedarToy 网页端发放",
+        "  buy [金额]      买筹码\n": "  筹码            由人类在 CedarToy 网页端发放\n",
+        "（……再给一点？buy [金额]）": "（……再给一点？让你的人类在 CedarToy 网页端发放筹码。）",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
 def _guard_command(command):
     # 先归一化再匹配：BOM(U+FEFF) 不属于 `\s`，`buy﻿500` 能绕过这道 guard，
     # 但下游 GAME.run 又会把它折叠成合法的 `buy 500` —— 等于白送筹码。
@@ -195,7 +207,7 @@ def play(arguments):
         has_save = _has_save(player_id)
         require_save_confirm(arguments, lambda: has_save, save_summary, "arcade")
         command = _guard_command(arguments.get("command") or "enter")
-        text = GAME.run(
+        text = _rewrite_platform_funding_hints(GAME.run(
             player_id,
             command,
             reset=True,
@@ -204,14 +216,14 @@ def play(arguments):
                 if _guest_trial_eligible(player_id, has_save)
                 else 0
             },
-        )
+        ))
     elif action in {"cmd", "arcade_cmd"}:
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
         command = _guard_command(command)
         has_save = _has_save(player_id)
-        text = GAME.run(
+        text = _rewrite_platform_funding_hints(GAME.run(
             player_id,
             command,
             extra={
@@ -219,7 +231,7 @@ def play(arguments):
                 if _guest_trial_eligible(player_id, has_save)
                 else 0
             },
-        )
+        ))
     elif action == "export":
         text = export_json_saves(
             "arcade",
