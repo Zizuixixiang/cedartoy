@@ -82,17 +82,40 @@ class ForestAdapterTests(unittest.TestCase):
         self.assertIn(state["souvenirs"][0], status)
         self.assertIn(f"/ {state['current_scene']}", status)
 
-    def test_daily_reminder_counter_keeps_advancing_to_firm_threshold(self):
+    def test_daily_reminder_does_not_advance_counter_or_reach_firm_threshold(self):
         self.play("daily", "new")
-        outputs = [self.play("daily", "start", line=1)["text"] for _ in range(6)]
-        self.assertEqual(self.state("daily")["daily"]["count"], 6)
+        for _ in range(3):
+            self.play("daily", "start", line=1)
+        save_path = self.save_root / "forest" / "daily" / forest.SAVE_NAME
+        saved_bytes = save_path.read_bytes()
+        saved_stat = save_path.stat()
+        saved_file_identity = (
+            saved_stat.st_ino,
+            saved_stat.st_size,
+            saved_stat.st_mtime_ns,
+            saved_stat.st_ctime_ns,
+        )
+
+        outputs = [self.play("daily", "start", line=1)["text"] for _ in range(3)]
+        self.assertEqual(self.state("daily")["daily"]["count"], 3)
         self.assertEqual(self.state("daily")["total_lines_started"], 3)
-        self.assertIn(GAME_DATA["anti_addiction"]["gentle"]["text"], outputs[3])
-        self.assertIn(GAME_DATA["anti_addiction"]["firm"]["text"], outputs[5])
+        self.assertEqual(save_path.read_bytes(), saved_bytes)
+        current_stat = save_path.stat()
+        self.assertEqual(
+            (
+                current_stat.st_ino,
+                current_stat.st_size,
+                current_stat.st_mtime_ns,
+                current_stat.st_ctime_ns,
+            ),
+            saved_file_identity,
+        )
+        for output in outputs:
+            self.assertIn(GAME_DATA["anti_addiction"]["gentle"]["text"], output)
+            self.assertNotIn(GAME_DATA["anti_addiction"]["firm"]["text"], output)
 
         old_state = self.state("daily")
         old_state["daily"] = {"date": "2000-01-01", "count": 99}
-        save_path = self.save_root / "forest" / "daily" / forest.SAVE_NAME
         save_path.write_text(json.dumps(old_state, ensure_ascii=False), encoding="utf-8")
         self.assertIn("今日走线调用：0 次", self.play("daily", "status")["text"])
         self.assertEqual(forest.save_summary("daily")["daily_lines"], 0)
@@ -113,7 +136,7 @@ class ForestAdapterTests(unittest.TestCase):
                 pool.map(lambda _index: self.play("parallel", "start", line=1), range(8))
             )
         self.assertEqual(len(outputs), 8)
-        self.assertEqual(self.state("parallel")["daily"]["count"], 8)
+        self.assertEqual(self.state("parallel")["daily"]["count"], 3)
         self.assertFalse(
             list(
                 (self.save_root / "forest" / "parallel").glob(

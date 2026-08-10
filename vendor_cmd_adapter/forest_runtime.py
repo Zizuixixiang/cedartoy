@@ -306,25 +306,19 @@ def _start(game, state, line_id, save_path):
         daily = {"date": today, "count": 0}
         state["daily"] = daily
 
-    # Keep counting start requests even when the reminder pauses entry.  The
-    # upstream implementation returned before incrementing, making its firm
-    # threshold permanently unreachable.
-    previous_count = daily["count"]
-    daily["count"] = previous_count + 1
     anti_addiction = game.get("anti_addiction", {})
     threshold = int(anti_addiction.get("threshold", 3))
     firm_threshold = threshold + 2
     reminder = None
-    if previous_count >= firm_threshold:
+    if daily["count"] >= firm_threshold:
         reminder = anti_addiction.get("firm", {}).get("text", "")
-    elif previous_count >= threshold:
+    elif daily["count"] >= threshold:
         reminder = anti_addiction.get("gentle", {}).get("text", "")
 
     if reminder:
-        _touch(state)
-        _atomic_write(save_path, state)
         return f"## 🌲 森林今天的门\n\n{reminder}"
 
+    daily["count"] += 1
     state["current_line"] = line_id
     state["current_scene"] = "opening"
     state["total_lines_started"] += 1
