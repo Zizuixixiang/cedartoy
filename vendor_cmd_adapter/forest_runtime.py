@@ -20,6 +20,7 @@ SAVE_VERSION = 1
 SAVE_NAME = "forest_save.json"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 MAX_OBSERVATION_LENGTH = 4000
+DAILY_SEMANTIC = "completed_endings_v1"
 
 
 def _now():
@@ -37,7 +38,11 @@ def _fresh_state():
         "observations": {},
         "latest_observation_key": None,
         "participants": {"player": "旅人", "ai": "同行者"},
-        "daily": {"date": _now().date().isoformat(), "count": 0},
+        "daily": {
+            "date": _now().date().isoformat(),
+            "count": 0,
+            "semantic": DAILY_SEMANTIC,
+        },
         "total_lines_started": 0,
         "total_choices": 0,
         "updated_at": _now().isoformat(timespec="seconds"),
@@ -156,6 +161,17 @@ def _validate_state(state, game):
     count = daily.get("count")
     if isinstance(count, bool) or not isinstance(count, int) or count < 0:
         raise ValueError("daily.count 必须是非负整数")
+    semantic = daily.get("semantic")
+    if semantic is None:
+        # v2.7 and earlier counted starts. Treat that current-day value as zero
+        # under the new completed-ending semantics; the next mutation persists it.
+        state["daily"] = {
+            "date": _now().date().isoformat(),
+            "count": 0,
+            "semantic": DAILY_SEMANTIC,
+        }
+    elif semantic != DAILY_SEMANTIC:
+        raise ValueError(f"不支持的 daily 计数语义：{semantic!r}")
     for key in ("total_lines_started", "total_choices"):
         value = state.get(key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -229,6 +245,15 @@ def _scene_for(line_data, scene_id):
     return line_data.get("scenes", {}).get(scene_id, {})
 
 
+def _daily_for_today(state):
+    today = _now().date().isoformat()
+    daily = state["daily"]
+    if daily["date"] != today:
+        daily = {"date": today, "count": 0, "semantic": DAILY_SEMANTIC}
+        state["daily"] = daily
+    return daily
+
+
 def _participant_names(state):
     participants = state.get("participants") if isinstance(state, dict) else None
     participants = participants if isinstance(participants, dict) else {}
@@ -300,11 +325,7 @@ def _start(game, state, line_id, save_path):
     if not line:
         raise ValueError(f"线 {line_id} 不存在。用 lines 查看可选线。")
 
-    today = _now().date().isoformat()
-    daily = state["daily"]
-    if daily["date"] != today:
-        daily = {"date": today, "count": 0}
-        state["daily"] = daily
+    daily = _daily_for_today(state)
 
     anti_addiction = game.get("anti_addiction", {})
     threshold = int(anti_addiction.get("threshold", 3))
@@ -318,7 +339,6 @@ def _start(game, state, line_id, save_path):
     if reminder:
         return f"## 🌲 森林今天的门\n\n{reminder}"
 
-    daily["count"] += 1
     state["current_line"] = line_id
     state["current_scene"] = "opening"
     state["total_lines_started"] += 1
@@ -365,6 +385,7 @@ def _choose(game, state, option, save_path):
     state["current_scene"] = target
     state["total_choices"] += 1
     if scene.get("type") == "ending":
+        _daily_for_today(state)["count"] += 1
         ending_key = f"{line_id}:{target}"
         if ending_key not in state["completed_endings"]:
             state["completed_endings"].append(ending_key)
@@ -390,7 +411,7 @@ def _status(game, state, has_save):
         rows.append("当前位置：尚未进入角色线")
     today = _now().date().isoformat()
     daily_count = state["daily"]["count"] if state["daily"]["date"] == today else 0
-    rows.append(f"今日走线调用：{daily_count} 次")
+    rows.append(f"今日完成角色线：{daily_count} 次")
     rows.append(f"累计进入角色线：{state['total_lines_started']} 次")
     rows.append(f"累计选择：{state['total_choices']} 次")
     if len(items) >= 3 and game.get("campfire_scene"):

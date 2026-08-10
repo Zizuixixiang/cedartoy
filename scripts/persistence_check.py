@@ -161,7 +161,7 @@ GAMES = [
         "mutate_args": {"action": "start", "line": 1},
         "mutate_expect": ["韩塞尔", "当前场景ID"],
         "query_args": {"action": "status"},
-        "query_expect": ["韩塞尔", "今日走线调用：1 次"],
+        "query_expect": ["韩塞尔", "今日完成角色线：0 次"],
         "save_files": ["forest_save.json"],
     },
     {

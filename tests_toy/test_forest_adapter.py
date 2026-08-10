@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import server
-from vendor_cmd_adapter import base, forest
+from vendor_cmd_adapter import base, forest, forest_runtime
 from vendor_cmd_adapter.base import VendorCmdError
 
 
@@ -42,6 +42,22 @@ class ForestAdapterTests(unittest.TestCase):
             )
         )
 
+    def finish_line(self, player_id, line_id=1):
+        self.play(player_id, "start", line=line_id)
+        line = GAME_DATA["lines"][str(line_id)]
+        for _ in range(20):
+            state = self.state(player_id)
+            scene_id = state["current_scene"]
+            scene = (
+                line["opening"]
+                if scene_id == "opening"
+                else line["scenes"][scene_id]
+            )
+            if scene.get("type") == "ending":
+                return
+            self.play(player_id, "choose", option=next(iter(scene["options"])))
+        self.fail(f"line {line_id} did not reach an ending")
+
     def test_new_is_immediately_saved_and_requires_confirmation_to_overwrite(self):
         text = self.play("fresh", "new")["text"]
         self.assertIn("新的森林存档已建立", text)
@@ -61,7 +77,8 @@ class ForestAdapterTests(unittest.TestCase):
         self.assertIn("当前场景ID", opening)
         state = self.state("515")
         self.assertEqual((state["current_line"], state["current_scene"]), ("1", "opening"))
-        self.assertEqual(state["daily"]["count"], 1)
+        self.assertEqual(state["daily"]["count"], 0)
+        self.assertEqual(state["daily"]["semantic"], forest_runtime.DAILY_SEMANTIC)
         self.assertEqual(self.state("515:2")["daily"]["count"], 0)
 
         line = GAME_DATA["lines"]["1"]
@@ -77,15 +94,19 @@ class ForestAdapterTests(unittest.TestCase):
             self.fail("line 1 did not reach an ending")
 
         state = self.state("515")
+        self.assertEqual(state["daily"]["count"], 1)
         self.assertEqual(len(state["souvenirs"]), 1)
+        with self.assertRaisesRegex(VendorCmdError, "已经是结局"):
+            self.play("515", "choose", option="A")
+        self.assertEqual(self.state("515")["daily"]["count"], 1)
         status = self.play("515", "status")["text"]
         self.assertIn(state["souvenirs"][0], status)
         self.assertIn(f"/ {state['current_scene']}", status)
 
-    def test_daily_reminder_does_not_advance_counter_or_reach_firm_threshold(self):
+    def test_daily_count_increments_only_at_endings_and_gentle_blocks_starts(self):
         self.play("daily", "new")
         for _ in range(3):
-            self.play("daily", "start", line=1)
+            self.finish_line("daily")
         save_path = self.save_root / "forest" / "daily" / forest.SAVE_NAME
         saved_bytes = save_path.read_bytes()
         saved_stat = save_path.stat()
@@ -114,11 +135,62 @@ class ForestAdapterTests(unittest.TestCase):
             self.assertIn(GAME_DATA["anti_addiction"]["gentle"]["text"], output)
             self.assertNotIn(GAME_DATA["anti_addiction"]["firm"]["text"], output)
 
-        old_state = self.state("daily")
-        old_state["daily"] = {"date": "2000-01-01", "count": 99}
-        save_path.write_text(json.dumps(old_state, ensure_ascii=False), encoding="utf-8")
-        self.assertIn("今日走线调用：0 次", self.play("daily", "status")["text"])
-        self.assertEqual(forest.save_summary("daily")["daily_lines"], 0)
+    def test_legacy_start_count_is_zero_until_next_mutation_persists_migration(self):
+        self.play("legacy", "new")
+        self.play("legacy", "start", line=1)
+        save_path = self.save_root / "forest" / "legacy" / forest.SAVE_NAME
+        legacy = self.state("legacy")
+        legacy["daily"].pop("semantic")
+        legacy["daily"]["count"] = 99
+        legacy["souvenirs"] = ["旧纪念品"]
+        legacy["completed_endings"] = ["1:1d"]
+        legacy["observations"] = {"1:1d": "旧观察还在。"}
+        legacy["latest_observation_key"] = "1:1d"
+        legacy["participants"] = {"player": "旧旅人", "ai": "旧同行者"}
+        legacy["revision"] = 17
+        save_path.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+        legacy_bytes = save_path.read_bytes()
+
+        status = self.play("legacy", "status")["text"]
+        self.assertIn("今日完成角色线：0 次", status)
+        self.assertEqual(forest.save_summary("legacy")["daily_lines"], 0)
+        self.assertEqual(save_path.read_bytes(), legacy_bytes)
+
+        self.play("legacy", "start", line=2)
+        migrated = self.state("legacy")
+        self.assertEqual(migrated["daily"]["count"], 0)
+        self.assertEqual(migrated["daily"]["semantic"], forest_runtime.DAILY_SEMANTIC)
+        self.assertEqual(migrated["souvenirs"], legacy["souvenirs"])
+        self.assertEqual(migrated["completed_endings"], legacy["completed_endings"])
+        self.assertEqual(migrated["observations"], legacy["observations"])
+        self.assertEqual(migrated["participants"], legacy["participants"])
+        self.assertEqual(migrated["latest_observation_key"], legacy["latest_observation_key"])
+        self.assertEqual(migrated["revision"], legacy["revision"] + 1)
+        self.assertEqual(migrated["total_choices"], legacy["total_choices"])
+
+    def test_web_actions_count_only_the_ending_transition(self):
+        snapshot = forest.web_state("webdaily", player_name="旅人", ai_name="同行者")
+        snapshot = forest.web_action(
+            "webdaily",
+            "start",
+            expected_revision=snapshot["revision"],
+            player_name="旅人",
+            ai_name="同行者",
+            line=1,
+        )
+        self.assertEqual(snapshot["daily"]["count"], 0)
+        while not snapshot["current"]["is_ending"]:
+            snapshot = forest.web_action(
+                "webdaily",
+                "choose",
+                expected_revision=snapshot["revision"],
+                expected_scene=snapshot["current"]["scene_id"],
+                player_name="旅人",
+                ai_name="同行者",
+                option=snapshot["current"]["options"][0]["key"],
+            )
+        self.assertEqual(snapshot["daily"]["count"], 1)
+        self.assertEqual(self.state("webdaily")["daily"]["count"], 1)
 
     def test_free_play_matches_upstream_and_keeps_current_scene(self):
         self.play("free", "new")
@@ -136,7 +208,8 @@ class ForestAdapterTests(unittest.TestCase):
                 pool.map(lambda _index: self.play("parallel", "start", line=1), range(8))
             )
         self.assertEqual(len(outputs), 8)
-        self.assertEqual(self.state("parallel")["daily"]["count"], 3)
+        self.assertEqual(self.state("parallel")["daily"]["count"], 0)
+        self.assertEqual(self.state("parallel")["total_lines_started"], 8)
         self.assertFalse(
             list(
                 (self.save_root / "forest" / "parallel").glob(

@@ -15,6 +15,7 @@ from .base import (
 
 SAVE_NAME = "forest_save.json"
 SAVE_FILES = {SAVE_NAME: SAVE_NAME}
+DAILY_SEMANTIC = "completed_endings_v1"
 
 
 class ForestConflictError(VendorCmdError):
@@ -70,7 +71,9 @@ def save_summary(player_id):
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
     daily_count = (
         daily.get("count", 0)
-        if isinstance(daily, dict) and daily.get("date") == today
+        if isinstance(daily, dict)
+        and daily.get("date") == today
+        and daily.get("semantic") == DAILY_SEMANTIC
         else 0
     )
     return {
