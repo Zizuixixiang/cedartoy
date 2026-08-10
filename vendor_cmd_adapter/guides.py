@@ -298,8 +298,9 @@ GUIDES = {
 - `play(game="forest", action="lines")`：列出 11 条角色线、标题与概要。
 - `play(game="forest", action="new")`：建立空白森林存档；已有存档时需在 params 传 `confirm:true`。
 - `play(game="forest", action="start", params={"line":1})`：进入角色线。line 可为 1-11；服务器会保存当前线、opening 场景和当日走线计数。
-- `play(game="forest", action="choose", params={"option":"A"})`：按服务器保存的当前位置选择 A/B/C/D。无需回传 line、scene_id 或 souvenirs。
-- `play(game="forest", action="status")`：查看当前位置、当日计数和已收集纪念品；收集 3 个纪念品后会显示篝火空地。
+- `play(game="forest", action="status")`：查看当前位置、当前 v3 双主角故事、同行者观察提示、选项、当日计数与纪念品；人类网页走过一步后直接 status 就能接着看。
+- `play(game="forest", action="observe", params={"content":"我在糖玻璃里看见了海。"})`：把同行者的自由观察写进当前场景；人类面板会在下一次轻量同步时看见。
+- `play(game="forest", action="choose", params={"option":"A"})`：按服务器保存的当前位置选择 A/B/C/D。可同时传 `observation`，先把当前观察写入再前进；无需回传 line、scene_id 或 souvenirs。
 
 持久化与重开：
 - start/choose 的当前位置、结局和纪念品按 player_id 与存档槽隔离，并在每次变更后保存。
@@ -310,7 +311,7 @@ GUIDES = {
 
 原作信息：
 作者：阿尢（1155896103）／仓库：https://github.com/ai11231123alal11-ui/mo-yao-play-games
-本站适配层只读取原作 `forest_game_data.json` 的游戏运行数据，并保持其中的童话场景文案不变。""",
+本站以原作 `forest_game_data.json` 的 v2.7 场景与分支图作为正式运行和老档兼容锚点；全部 11 份 `forest_line*_v3_draft.json` 通过完整结构校验后，一次性采用作者 v3 的 human_text 与 ai_slot。草稿若与 v2.7 分支指向不一致，该选项回退正式 v2.7 文案与指向；不复制或改写原作剧情文案。""",
     "bar": """# 空杯俱乐部 / Empty Glass Club
 公开 game id：`bar`。这是两个功能目标相同、实现方式独立的原作版本；未明确选择前，塘子不会加载或运行任何一版，也不会默认完整版。
 

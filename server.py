@@ -109,6 +109,7 @@ MEMORIA_AFTER_CLEAR_DIR = Path(__file__).resolve().parent / "vendor" / "Memoria-
 TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
+FOREST_INDEX_PATH = Path(__file__).resolve().parent / "forest.html"
 TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
@@ -200,7 +201,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/choose/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -598,6 +599,82 @@ def _garden_cat_watchable_gardens_for_user(user, save_root=None):
 def _garden_cat_watchable_gardens(raw_token):
     user = _current_account(raw_token)
     return {"gardens": _garden_cat_watchable_gardens_for_user(user)}
+
+
+def _forest_bound_target_for_user(user, requested_player):
+    """Resolve a browser-supplied player to one canonical bound AI save slot."""
+    if not user or user.get("is_ai"):
+        return None
+    match = re.fullmatch(r"([1-9][0-9]*)(?::([1-5]))?", str(requested_player or ""))
+    if not match:
+        return None
+    ai_user_id = int(match.group(1))
+    slot = int(match.group(2) or MIN_SAVE_SLOT)
+    with _db_connect() as conn:
+        row = conn.execute(
+            """
+            SELECT ai.id, ai.username
+            FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND b.ai_user_id = ?
+              AND ai.is_ai = 1
+              AND ai.deleted_at IS NULL
+            LIMIT 1
+            """,
+            (int(user["id"]), ai_user_id),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "player": _account_slot_player_id(row["id"], slot),
+        "ai_user_id": int(row["id"]),
+        "machine_name": str(row["username"]),
+        "slot": slot,
+    }
+
+
+def _forest_watchable_slots_for_user(user):
+    if not user or user.get("is_ai"):
+        raise _McpError(-32003, "只有人类账号可以进入双人森林")
+    with _db_connect() as conn:
+        machines = conn.execute(
+            """
+            SELECT ai.id, ai.username
+            FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ?
+              AND ai.is_ai = 1
+              AND ai.deleted_at IS NULL
+            ORDER BY ai.username, ai.id
+            """,
+            (int(user["id"]),),
+        ).fetchall()
+    result = []
+    for machine in machines:
+        slots = []
+        for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1):
+            player_id = _account_slot_player_id(machine["id"], slot)
+            summary = forest_adapter.save_summary(player_id)
+            slots.append(
+                {
+                    "slot": slot,
+                    "exists": summary is not None,
+                    "summary": summary,
+                }
+            )
+        result.append(
+            {
+                "ai_user_id": int(machine["id"]),
+                "machine_name": str(machine["username"]),
+                "slots": slots,
+            }
+        )
+    return result
+
+
+def _forest_watchable_slots(raw_token):
+    return {"machines": _forest_watchable_slots_for_user(_current_account(raw_token))}
 
 
 def _eco_watchable_ponds_for_user(user):
@@ -5503,6 +5580,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_eco_human_action()
             return
 
+        if _workkk_path == "/forest/api/action":
+            self._handle_forest_api_action()
+            return
+
         path, path_token = self._request_path_and_token()
         client_ip = self._client_ip()
 
@@ -5683,6 +5764,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_html_file(ECO_INDEX_PATH)
             return
 
+        if path in {"/forest", "/forest/"}:
+            self._handle_forest_page(params)
+            return
+
         if path in ("/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues") and not params.get("action"):
             self._send_human_test_page(path.removeprefix("/"))
             return
@@ -5722,6 +5807,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/garden-cat/gardens":
             self._handle_api_garden_cat_gardens()
+            return
+
+        if path == "/api/forest/saves":
+            self._handle_api_forest_saves()
+            return
+
+        if path == "/forest/api/state":
+            self._handle_forest_api_state(params)
             return
 
         if path == "/api/eco/ponds":
@@ -5933,6 +6026,129 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             raise ValueError("Invalid JSON object")
         return payload
 
+    def _forest_cookie_token(self):
+        cookie = self.headers.get("Cookie", "")
+        for item in cookie.split(";"):
+            name, separator, value = item.strip().partition("=")
+            if separator and name == "forest_token":
+                return urllib.parse.unquote(value)
+        return ""
+
+    def _forest_human_target(self, requested_player, token_from_query=""):
+        token = token_from_query or self._forest_cookie_token() or _extract_bearer(self.headers)
+        user = _current_account(token)
+        if user.get("is_ai"):
+            raise _McpError(-32003, "只有人类账号可以进入双人森林")
+        target = _forest_bound_target_for_user(user, requested_player)
+        if target is None:
+            raise _McpError(-32003, "你没有绑定这只小机或槽位无效")
+        return user, target
+
+    @staticmethod
+    def _forest_http_status(exc):
+        if exc.code == -32001:
+            return 401
+        if exc.code == -32003:
+            return 403
+        return 400
+
+    def _handle_forest_page(self, params):
+        token_from_query = (params.get("token") or [""])[0]
+        requested_player = (params.get("player") or [""])[0]
+        try:
+            self._forest_human_target(requested_player, token_from_query)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._forest_http_status(exc))
+            return
+        if token_from_query:
+            cookie = (
+                f"forest_token={urllib.parse.quote(token_from_query, safe='')}; "
+                f"Path=/forest; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+            )
+            clean_query = urllib.parse.urlencode({"player": requested_player})
+            self.send_response(303)
+            self.send_header("Location", f"/forest/?{clean_query}")
+            self.send_header("Set-Cookie", cookie)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self._send_html_file(
+            FOREST_INDEX_PATH,
+            extra_headers={
+                "Referrer-Policy": "no-referrer",
+                "X-Frame-Options": "SAMEORIGIN",
+            },
+        )
+
+    def _forest_state_response(self, user, target):
+        state = forest_adapter.web_state(
+            target["player"],
+            player_name=str(user.get("username") or "旅人"),
+            ai_name=target["machine_name"],
+        )
+        state["player_id"] = target["player"]
+        state["ai_user_id"] = target["ai_user_id"]
+        state["machine_name"] = target["machine_name"]
+        state["human_name"] = str(user.get("username") or "旅人")
+        state["slot"] = target["slot"]
+        return state
+
+    def _handle_forest_api_state(self, params):
+        requested_player = (params.get("player") or [""])[0]
+        try:
+            user, target = self._forest_human_target(requested_player)
+            result = self._forest_state_response(user, target)
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._forest_http_status(exc))
+        except VendorCmdError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("forest web state failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_forest_api_action(self):
+        try:
+            body = self._read_json_body()
+            user, target = self._forest_human_target(body.get("player"))
+            action = str(body.get("action") or "").strip().lower()
+            if action not in {"start", "choose"}:
+                raise VendorCmdError("网页动作只支持 start / choose")
+            expected_revision = body.get("expected_revision")
+            if isinstance(expected_revision, bool) or not isinstance(expected_revision, int):
+                raise VendorCmdError("expected_revision 必须是整数")
+            params = {}
+            if action == "start":
+                params["line"] = body.get("line")
+            else:
+                params["option"] = body.get("option")
+                params["expected_scene"] = body.get("expected_scene")
+            result = forest_adapter.web_action(
+                target["player"],
+                action,
+                expected_revision=expected_revision,
+                player_name=str(user.get("username") or "旅人"),
+                ai_name=target["machine_name"],
+                **params,
+            )
+            result["player_id"] = target["player"]
+            result["ai_user_id"] = target["ai_user_id"]
+            result["machine_name"] = target["machine_name"]
+            result["human_name"] = str(user.get("username") or "旅人")
+            result["slot"] = target["slot"]
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except forest_adapter.ForestConflictError as exc:
+            self._send_json({"error": str(exc), "conflict": True}, status=409)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._forest_http_status(exc))
+        except (VendorCmdError, ValueError) as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("forest web action failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
     def _handle_api_login_or_register(self):
         try:
             body = self._read_json_body()
@@ -6119,6 +6335,17 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else 400)
             self._send_json({"error": exc.message}, status=status)
         except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_forest_saves(self):
+        try:
+            result = _forest_watchable_slots(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else 400)
+            self._send_json({"error": exc.message}, status=status)
+        except Exception as exc:
+            logger.exception("forest save picker failed")
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
     def _handle_api_eco_ponds(self):
@@ -6587,7 +6814,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.end_headers()
 
-    def _send_html_file(self, path):
+    def _send_html_file(self, path, extra_headers=None):
         try:
             with path.open("rb") as html_file:
                 stat = os.fstat(html_file.fileno())
@@ -6607,6 +6834,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                     self.send_response(304)
                     self.send_header("ETag", etag)
                     self.send_header("Cache-Control", "no-cache")
+                    if extra_headers:
+                        for key, value in extra_headers.items():
+                            self.send_header(key, value)
                     self.end_headers()
                     return
 
@@ -6615,7 +6845,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except OSError:
             self._send_json({"error": "index not found"}, status=404)
             return
-        self._send_html_bytes(body, etag=etag)
+        self._send_html_bytes(body, etag=etag, extra_headers=extra_headers)
 
     def _send_human_test_page(self, game):
         config = HUMAN_TEST_GAMES[game]
@@ -6684,13 +6914,16 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_html_bytes(self, body, etag=None):
+    def _send_html_bytes(self, body, etag=None, extra_headers=None):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
         if etag is not None:
             self.send_header("ETag", etag)
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 

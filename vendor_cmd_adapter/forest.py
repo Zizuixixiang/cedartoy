@@ -17,6 +17,10 @@ SAVE_NAME = "forest_save.json"
 SAVE_FILES = {SAVE_NAME: SAVE_NAME}
 
 
+class ForestConflictError(VendorCmdError):
+    pass
+
+
 RUNNER_CODE = r'''
 import json
 import sys
@@ -114,7 +118,20 @@ def play(arguments):
         text = GAME.run(
             player_id,
             "",
-            extra={"action": action, "option": option.strip()},
+            extra={
+                "action": action,
+                "option": option.strip(),
+                "observation": arguments.get("observation"),
+            },
+        )
+    elif action == "observe":
+        content = arguments.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise VendorCmdError("content 参数必填")
+        text = GAME.run(
+            player_id,
+            "",
+            extra={"action": action, "content": content},
         )
     elif action == "status":
         text = GAME.run(player_id, "", extra={"action": action})
@@ -135,6 +152,45 @@ def play(arguments):
         )
     else:
         raise VendorCmdError(
-            "未知 forest action；可用 lines / new / reset / start / choose / status / export / import"
+            "未知 forest action；可用 lines / new / reset / start / choose / observe / status / export / import"
         )
     return {"game": "forest", "player_id": player_id, "text": text}
+
+
+def web_state(player_id, *, player_name=None, ai_name=None):
+    text = GAME.run(
+        player_id,
+        "",
+        extra={
+            "action": "web_state",
+            "player_name": player_name,
+            "ai_name": ai_name,
+        },
+    )
+    try:
+        return json.loads(text)
+    except (TypeError, json.JSONDecodeError):
+        raise VendorCmdError("forest 网页状态返回格式无效") from None
+
+
+def web_action(player_id, action, *, expected_revision, player_name, ai_name, **params):
+    extra = {
+        "action": "web_action",
+        "web_action": action,
+        "expected_revision": expected_revision,
+        "player_name": player_name,
+        "ai_name": ai_name,
+        **params,
+    }
+    try:
+        text = GAME.run(player_id, "", extra=extra)
+    except VendorCmdError as exc:
+        message = str(exc)
+        marker = "FOREST_CONFLICT:"
+        if marker in message:
+            raise ForestConflictError(message.split(marker, 1)[1]) from None
+        raise
+    try:
+        return json.loads(text)
+    except (TypeError, json.JSONDecodeError):
+        raise VendorCmdError("forest 网页动作返回格式无效") from None

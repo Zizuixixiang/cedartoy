@@ -2656,6 +2656,7 @@
       {
         id: "forest",
         category: "mini",
+        watch: true,
         name: "格林童话境遇",
         mission: "MISSION: INTO THE FOREST",
         location: "LOCATION: GRIMM FOREST",
@@ -2665,10 +2666,10 @@
         metricLabel: "存档数",
         metric: "--",
         short: "多轮选择叙事 / 十一条角色线",
-        desc: "十一条翻转格林童话原著的角色线。AI 与玩家并肩进入森林，在多轮选择中继续推进，直到抵达自然结局。",
+        desc: "十一条翻转格林童话原著的角色线。人类在双人面板读故事、作选择，小机通过 MCP 写观察或继续走同一份存档。",
         logs: [
           "一句话：和 AI 一起进入十一条格林童话角色线，每次选择之后还有选择。",
-          "玩法：lines 查看角色线；start 进入；choose 选择；status 查看当前位置与纪念品。",
+          "玩法：人类点「进入双人森林」选择已绑定小机和存档槽；小机用 status / observe / choose 继续同一条路。",
           "作者：阿尢（1155896103）",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
@@ -2678,6 +2679,7 @@
         url: "https://github.com/ai11231123alal11-ui/mo-yao-play-games",
         iconFile: "forest.jpg",
         ctaLabel: "GitHub 原页面 →",
+        watchLabel: "进入双人森林 →",
         ranks: []
       },
       {
@@ -4524,6 +4526,12 @@
       window.location.href = url;
     }
 
+    function watchForest(playerId, slot = 1) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/forest/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
     function watchCurrentGame(playerId, slot = 1) {
       const game = currentGame();
       if (game.id === "workkk") {
@@ -4536,6 +4544,10 @@
       }
       if (game.id === "garden_cat") {
         watchGardenCat(playerId, slot);
+        return;
+      }
+      if (game.id === "forest") {
+        watchForest(playerId, slot);
         return;
       }
       if (game.id === "eco") {
@@ -4778,17 +4790,94 @@
       }
     }
 
+    function renderForestSlotPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择森林存档");
+      $("bankPickerTitle").textContent = `${machine.machineName} · 选择存档`;
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => {
+        const summary = save.summary || {};
+        const position = save.exists
+          ? (summary.current_line ? `线${escapeHtml(summary.current_line)} · ${escapeHtml(summary.current_scene || "入口")}` : "尚未走线")
+          : "新旅程";
+        const souvenirs = save.exists ? ` · 🎒${escapeHtml(summary.souvenirs || 0)}` : "";
+        return `
+          <button class="bank-picker-option" data-forest-slot="${escapeHtml(save.slot)}" type="button">
+            <span class="garden-picker-option-main">槽${escapeHtml(save.slot)} · ${position}</span>
+            <span class="garden-picker-option-meta">${save.exists ? `已有存档${souvenirs}` : "从森林入口开始"}</span>
+          </button>
+        `;
+      }).join("");
+      document.querySelectorAll("[data-forest-slot]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchForest(machine.aiUserId, Number(option.dataset.forestSlot) || 1);
+        });
+      });
+    }
+
+    function renderForestMachinePicker(machines) {
+      const machinesById = new Map(machines.map((machine) => [String(machine.aiUserId), machine]));
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择同行小机";
+      $("bankPickerOptions").innerHTML = machines.map((machine) => {
+        const existing = machine.slots.filter((slot) => slot.exists).length;
+        return `
+          <button class="bank-picker-option" data-forest-machine="${escapeHtml(machine.aiUserId)}" type="button">
+            <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+            <span class="garden-picker-option-meta">${existing ? `${existing} 个已有存档` : "还没进入森林"}</span>
+          </button>
+        `;
+      }).join("");
+      document.querySelectorAll("[data-forest-machine]").forEach((option) => {
+        option.addEventListener("click", () => {
+          const machine = machinesById.get(option.dataset.forestMachine);
+          if (machine) renderForestSlotPicker(machine);
+        });
+      });
+    }
+
+    async function openForestPicker() {
+      $("bankPickerPanel").setAttribute("aria-label", "选择森林存档");
+      $("bankPickerTitle").textContent = "选择同行小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在听森林里的脚步...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/forest/saves", {headers: headers(false), cache: "no-store"});
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error(data.error || "森林存档读取失败，请稍后再试");
+        const machines = (Array.isArray(data.machines) ? data.machines : []).map((machine) => ({
+          aiUserId: String(machine.ai_user_id),
+          machineName: machine.machine_name,
+          slots: Array.isArray(machine.slots) ? machine.slots : [],
+        }));
+        if (!machines.length) {
+          $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">你还没有绑定小机，先绑定一位同行者再进入森林。</p>`;
+          return;
+        }
+        if (machines.length === 1) renderForestSlotPicker(machines[0]);
+        else renderForestMachinePicker(machines);
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "森林存档读取失败，请稍后再试")}</p>`;
+      }
+    }
+
     async function enterWatch() {
       if (!me || !token()) {
         const loginHint = currentGame().id === "garden_cat"
           ? "请先登录再进入花园"
-          : (currentGame().id === "duel" ? "请先登录再进入双弈" : "请先登录再围观大屏");
+          : (currentGame().id === "forest" ? "请先登录再进入双人森林"
+          : (currentGame().id === "duel" ? "请先登录再进入双弈" : "请先登录再围观大屏"));
         showToast(loginHint);
         openModal("loginModal");
         return;
       }
       if (currentGame().id === "garden_cat") {
         await openGardenCatPicker();
+        return;
+      }
+      if (currentGame().id === "forest") {
+        await openForestPicker();
         return;
       }
       if (currentGame().id === "duel") {

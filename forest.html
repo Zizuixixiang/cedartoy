@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<!--
+  格林童话境遇 · 双人面板
+  ========================
+  一本可以互动的梦幻童话绘本。
+  左边是故事页，右边是观察笔记。
+  两个人，同一条路。
+
+  写于 2026-08-10。墨清弦。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>格林童话境遇 · 双人绘本</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Serif+SC:wght@400;500&family=Ma+Shan+Zheng&display=swap');
+
+  :root {
+    --bg:          #faf5ee;
+    --surface:     #f3ece0;
+    --surface2:    #ede3d2;
+    --page-bg:     #fefcf7;
+    --text:        #3a2a18;
+    --text-dim:    #7a6a55;
+    --text-muted:  #b5a590;
+    --ink:         #2c3e5a;
+    --ink-light:   #5a7a9a;
+    --rose:        #d4a0a0;
+    --rose-dim:    #c49090;
+    --lavender:    #c4c0d8;
+    --lavender-dim:#a9a4c4;
+    --starlight:   #e8d890;
+    --cloud:       #d8dce8;
+    --story-bdr:   #e0d6c4;
+    --tape:        rgba(232,220,200,0.55);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Noto Serif SC","Source Han Serif SC","SimSun",serif;
+    min-height: 100vh; overflow-x: hidden; line-height: 1.75;
+    background-image:
+      radial-gradient(ellipse at 20% 80%, rgba(212,160,160,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(196,192,216,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, rgba(232,216,144,0.04) 0%, transparent 70%);
+  }
+
+  /* ── Storybook Background ── */
+  #storybook-bg { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+  .bg-moon {
+    position:absolute; top:6%; right:10%; width:56px; height:56px;
+    background:radial-gradient(circle,#faf5ee 40%,#efe4d0 100%);
+    border-radius:50%; opacity:0.45;
+    box-shadow:0 0 36px 10px rgba(232,216,144,0.22), 0 0 70px 20px rgba(232,216,144,0.06);
+  }
+  .bg-star {
+    position:absolute; color:var(--starlight); font-size:10px;
+    animation: twinkle var(--tw-dur) ease-in-out infinite;
+    animation-delay: var(--tw-delay); opacity:0.3;
+  }
+  @keyframes twinkle {
+    0%,100% { opacity:0.18; transform:scale(1); }
+    50%     { opacity:0.55; transform:scale(1.25); }
+  }
+  .bg-cloud {
+    position:absolute; background:var(--cloud); border-radius:50%;
+    opacity:0.09; animation: driftCloud var(--dr-dur) linear infinite;
+    animation-delay: var(--dr-delay);
+  }
+  @keyframes driftCloud {
+    0%   { transform:translateX(-120px); }
+    100% { transform:translateX(calc(100vw + 120px)); }
+  }
+  .bg-hill {
+    position:absolute; bottom:0; border-radius:50%;
+    opacity:0.05; background:var(--ink-light);
+  }
+
+  /* ── App Layout ── */
+  .app { position:relative; z-index:1; max-width:1100px; margin:0 auto; padding:24px 20px; min-height:100vh; display:flex; flex-direction:column; }
+
+  /* ── Header ── */
+  header { text-align:center; padding:30px 20px 18px; position:relative; }
+  header h1 {
+    font-family: "ZCOOL XiaoWei","Ma Shan Zheng","Noto Serif SC",serif;
+    font-size:clamp(26px,4vw,36px); font-weight:400; color:var(--ink);
+    letter-spacing:0.08em;
+  }
+  header h1::after {
+    content:''; display:block; margin:12px auto 0;
+    width:min(280px,60%); height:1px;
+    background:repeating-linear-gradient(90deg, var(--text-muted) 0, var(--text-muted) 4px, transparent 4px, transparent 10px);
+  }
+  header .sub {
+    font-size:13px; color:var(--text-dim); margin-top:8px;
+    font-style:italic; letter-spacing:0.05em;
+  }
+
+  /* ── Name Bar ── */
+  .name-bar {
+    display:flex; align-items:center; justify-content:center; gap:14px;
+    padding:16px 20px 6px; flex-wrap:wrap;
+  }
+  .name-bar .sep { color:var(--text-muted); font-size:15px; }
+  .name-bar .name-card { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .name-bar label { font-size:11px; color:var(--text-dim); letter-spacing:0.08em; }
+  .name-bar input {
+    background:var(--page-bg); border:2px dashed #d8cebc; border-radius:10px;
+    padding:9px 12px; color:var(--ink); font-family:"ZCOOL XiaoWei","Noto Serif SC",serif;
+    font-size:14px; width:130px; text-align:center; outline:none;
+    transition:border-color .3s, box-shadow .3s;
+  }
+  .name-bar input:focus { border-color:var(--ink-light); border-style:solid; box-shadow:0 0 0 4px rgba(90,122,154,0.08); }
+  .name-bar input.player-input:focus { border-color:var(--rose); box-shadow:0 0 0 4px rgba(212,160,160,0.12); }
+  .name-bar input.ai-input:focus { border-color:var(--lavender-dim); box-shadow:0 0 0 4px rgba(169,164,196,0.12); }
+  .name-bar input::placeholder { color:var(--text-muted); font-style:italic; }
+
+  /* ── Line Picker ── */
+  .picker { flex:1; display:flex; flex-direction:column; align-items:center; }
+  .picker-grid {
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+    gap:18px; width:100%; max-width:960px; margin-top:24px;
+  }
+  .line-card {
+    background:var(--page-bg); border:1px solid var(--story-bdr); border-radius:6px;
+    padding:22px 24px; cursor:pointer; transition:all .3s;
+    position:relative; box-shadow:1px 2px 6px rgba(0,0,0,0.04);
+  }
+  .line-card:hover {
+    border-color:var(--ink-light); background:#fff;
+    transform:translateY(-3px); box-shadow:2px 4px 14px rgba(0,0,0,0.08);
+  }
+  .line-card .emoji { font-size:30px; margin-bottom:8px; }
+  .line-card .title {
+    font-size:17px; color:var(--ink); font-weight:500;
+    font-family:"ZCOOL XiaoWei","Noto Serif SC",serif;
+  }
+  .line-card .brief {
+    font-size:13px; color:var(--text-dim); margin-top:6px; line-height:1.7;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .line-card .id-num {
+    position:absolute; top:14px; right:18px; font-size:11px; color:var(--text-muted);
+    font-family:"ZCOOL XiaoWei",serif;
+  }
+  .line-card.placeholder { opacity:0.4; cursor:default; }
+  .line-card.placeholder:hover { border-color:var(--story-bdr); background:var(--page-bg); transform:none; box-shadow:1px 2px 6px rgba(0,0,0,0.04); }
+  .line-card.placeholder .brief { color:var(--text-muted); font-style:italic; }
+
+  /* ── Game Screen ── */
+  .game { flex:1; display:none; flex-direction:column; }
+  .game.active { display:flex; }
+  .picker.hidden { display:none; }
+
+  .top-bar {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:4px 4px 16px; gap:12px; flex-wrap:wrap;
+  }
+  .back-btn {
+    background:var(--page-bg); border:1px solid var(--story-bdr); color:var(--text-dim);
+    padding:7px 18px; border-radius:20px; cursor:pointer;
+    font-family:"ZCOOL XiaoWei","Noto Serif SC",serif;
+    font-size:13px; transition:all .25s; box-shadow:0 1px 3px rgba(0,0,0,0.03);
+  }
+  .back-btn:hover { border-color:var(--ink-light); color:var(--ink); transform:translateY(-1px); }
+  .line-label { font-size:13px; color:var(--text-dim); font-style:italic; }
+  .souvenir-badge {
+    background:var(--page-bg); border:1px solid var(--story-bdr);
+    padding:7px 16px; border-radius:20px; font-size:13px; color:var(--text-dim);
+    cursor:pointer; transition:all .25s; font-family:"ZCOOL XiaoWei","Noto Serif SC",serif;
+    box-shadow:0 1px 3px rgba(0,0,0,0.03);
+  }
+  .souvenir-badge:hover { border-color:var(--starlight); color:var(--ink); box-shadow:0 0 14px rgba(232,216,144,0.3); }
+
+  /* ── Main Split ── */
+  .main-split { flex:1; display:flex; gap:22px; min-height:0; }
+  @media (max-width:768px) { .main-split { flex-direction:column; } }
+
+  /* ── Story Page (Left) ── */
+  .story-page {
+    flex:1.4; background:var(--page-bg); border:1px solid var(--story-bdr);
+    border-radius:3px 12px 12px 3px; padding:32px 28px; overflow-y:auto;
+    position:relative; min-height:300px;
+    box-shadow:
+      inset -6px 0 10px -6px rgba(0,0,0,0.04),
+      1px 2px 8px rgba(0,0,0,0.04);
+  }
+  .story-page .scene-text {
+    font-size:16px; line-height:2.1; white-space:pre-line; color:var(--text);
+    font-family:"Noto Serif SC",serif;
+  }
+  .story-page .scene-text em { color:var(--rose-dim); font-style:italic; }
+  .story-page .scene-text .ai-hint {
+    display:block; margin:18px 0; padding:14px 16px;
+    background:rgba(196,192,216,0.12); border-left:3px solid var(--lavender-dim);
+    border-radius:0 8px 8px 0; font-size:13px; color:var(--ink-light);
+    font-style:italic; line-height:1.7;
+  }
+  .story-page .ending-marker {
+    display:inline-block; margin-top:22px; padding:8px 20px;
+    background:rgba(232,216,144,0.2); border:1px solid rgba(232,216,144,0.5);
+    border-radius:20px; font-size:13px; color:#8a7a40;
+    font-family:"ZCOOL XiaoWei",serif;
+  }
+
+  /* ── Observation Note (Right) ── */
+  .observation-note {
+    flex:1; background:var(--page-bg); border:1px solid var(--story-bdr);
+    border-radius:12px 3px 12px 12px; padding:0; display:flex; flex-direction:column;
+    min-height:300px; position:relative; overflow:hidden;
+    box-shadow:1px 2px 8px rgba(0,0,0,0.04);
+  }
+  .observation-note .tape {
+    position:absolute; top:-2px; left:50%; transform:translateX(-50%) rotate(1deg);
+    width:70px; height:22px; background:var(--tape);
+    border-radius:2px; z-index:2; opacity:0.7;
+  }
+  .note-inner {
+    flex:1; display:flex; flex-direction:column; padding:28px 22px 22px;
+    position:relative; z-index:1;
+  }
+  .note-title {
+    font-family:"ZCOOL XiaoWei","Ma Shan Zheng",serif;
+    font-size:15px; color:var(--ink); letter-spacing:0.06em;
+    margin-bottom:14px;
+  }
+  .note-prompt {
+    font-size:13px; color:var(--text-dim); line-height:1.7; margin-bottom:16px;
+    padding:12px 14px; background:rgba(196,192,216,0.08);
+    border-radius:8px; font-style:italic;
+    border:1px dashed #e0d8e8;
+  }
+  .note-prompt::before { content:"🖊️ "; font-style:normal; }
+  .note-writing { flex:1; display:flex; flex-direction:column; }
+  .observation-note textarea {
+    flex:1; min-height:160px; background:transparent;
+    border:none; padding:0; color:var(--text);
+    font-family:"Noto Serif SC",serif; font-size:14px; line-height:2;
+    resize:none; outline:none;
+  }
+  .observation-note textarea::placeholder { color:var(--text-muted); font-style:italic; }
+  .observation-note .note-footer {
+    font-size:11px; color:var(--text-muted); text-align:right;
+    padding-top:10px; border-top:1px dashed #e8e0d4; margin-top:8px;
+  }
+  .note-corner {
+    position:absolute; bottom:10px; left:14px; font-size:18px; opacity:0.3;
+    pointer-events:none;
+  }
+
+  /* ── Story Choices ── */
+  .story-choices { display:flex; gap:14px; padding:22px 4px 8px; flex-wrap:wrap; }
+  .choice-card {
+    flex:1; min-width:130px; padding:16px 18px;
+    background:var(--page-bg); border:1.5px dashed #d8cebc;
+    border-radius:6px; cursor:pointer; transition:all .25s;
+    font-family:"Noto Serif SC",serif; font-size:14px; color:var(--text);
+    text-align:left; display:flex; align-items:flex-start; gap:10px;
+    line-height:1.6; position:relative;
+    box-shadow:0 2px 4px rgba(0,0,0,0.03);
+  }
+  .choice-card:hover {
+    border-color:var(--ink-light); border-style:solid;
+    background:#fff; transform:translateY(-3px);
+    box-shadow:0 6px 16px rgba(0,0,0,0.08);
+  }
+  .choice-card .key {
+    flex-shrink:0; width:28px; height:28px;
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:600;
+    background:transparent; color:var(--ink);
+    border:1.5px dashed var(--text-muted);
+    font-family:"ZCOOL XiaoWei",serif;
+  }
+  .choice-card:hover .key { border-color:var(--ink); background:var(--ink); color:#fff; border-style:solid; }
+
+  /* ── Treasure Box Modal ── */
+  .modal-overlay {
+    display:none; position:fixed; inset:0; background:rgba(58,42,24,0.45);
+    z-index:100; align-items:center; justify-content:center;
+    backdrop-filter:blur(2px);
+  }
+  .modal-overlay.active { display:flex; }
+  .treasure-box {
+    background:var(--page-bg); border:2px solid var(--story-bdr);
+    border-radius:8px; padding:36px 32px; max-width:420px; width:90%; text-align:center;
+    box-shadow:0 8px 40px rgba(0,0,0,0.12);
+    animation: unfold .4s ease-out;
+  }
+  @keyframes unfold { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
+  .treasure-box .souvenir-emoji { font-size:52px; margin-bottom:10px; animation: popIn .5s ease-out .1s both; }
+  @keyframes popIn { 0% { transform:scale(0.3); opacity:0; } 60% { transform:scale(1.15); } 100% { transform:scale(1); opacity:1; } }
+  .treasure-box .souvenir-name { font-size:20px; color:var(--ink); margin-bottom:6px; font-family:"ZCOOL XiaoWei",serif; }
+  .treasure-box .souvenir-label { font-size:11px; color:var(--text-dim); letter-spacing:0.12em; margin-bottom:22px; }
+  .treasure-box button {
+    background:var(--page-bg); border:1.5px dashed var(--text-muted); color:var(--text-dim);
+    padding:10px 36px; border-radius:24px; font-family:"ZCOOL XiaoWei","Noto Serif SC",serif;
+    font-size:15px; cursor:pointer; transition:all .25s;
+  }
+  .treasure-box button:hover { border-color:var(--ink); color:var(--ink); border-style:solid; }
+
+  /* ── Souvenir List ── */
+  .souvenir-list {
+    display:none; position:fixed; inset:0; background:rgba(58,42,24,0.45);
+    z-index:100; align-items:center; justify-content:center;
+    backdrop-filter:blur(2px);
+  }
+  .souvenir-list.active { display:flex; }
+  .souvenir-list .treasure-box { max-width:460px; text-align:left; }
+  .souvenir-list h3 {
+    font-size:17px; color:var(--ink); margin-bottom:18px; font-weight:400;
+    text-align:center; font-family:"ZCOOL XiaoWei",serif;
+  }
+  .souvenir-list ul { list-style:none; }
+  .souvenir-list li {
+    padding:10px 12px; border-bottom:1px dashed #e8e0d4;
+    font-size:14px; color:var(--text); display:flex; align-items:center; gap:10px;
+  }
+  .souvenir-list li .s-emoji { font-size:22px; }
+  .souvenir-list .close-btn { margin-top:18px; width:100%; }
+
+  /* ── Animations ── */
+  @keyframes fadeIn {
+    from { opacity:0; transform:translateY(8px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  .fade-in { animation:fadeIn .45s ease-out; }
+  @keyframes pageGlow {
+    0%,100% { box-shadow:inset 0 0 30px rgba(232,216,144,0.12), 1px 2px 8px rgba(0,0,0,0.04); }
+    50%     { box-shadow:inset 0 0 50px rgba(232,216,144,0.22), 1px 2px 12px rgba(0,0,0,0.06); }
+  }
+  .ending .story-page { animation:pageGlow 2.5s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<div id="storybook-bg"></div>
+
+<div class="app">
+  <header>
+    <h1>格林童话境遇</h1>
+    <div class="sub">翻开这本童话书，两个人一起走</div>
+  </header>
+
+  <!-- Line Picker -->
+  <div class="picker" id="picker">
+    <div class="name-bar">
+      <div class="name-card">
+        <label>✦ 旅人</label>
+        <input class="player-input" id="playerNameInput" placeholder="旅人" maxlength="12" readonly>
+      </div>
+      <span class="sep">✦</span>
+      <div class="name-card">
+        <label>✦ 同行者</label>
+        <input class="ai-input" id="aiNameInput" placeholder="同行者" maxlength="12" readonly>
+      </div>
+    </div>
+    <div class="picker-grid" id="pickerGrid"></div>
+  </div>
+
+  <!-- Game Screen -->
+  <div class="game" id="game">
+    <div class="top-bar">
+      <button class="back-btn" onclick="goBack()">← 合上书页</button>
+      <span class="line-label" id="lineLabel"></span>
+      <span class="souvenir-badge" id="souvenirBadge" onclick="showSouvenirList()">✦ 旅行箱 (<span id="souvenirCount">0</span>)</span>
+    </div>
+    <div class="main-split">
+      <div class="story-page" id="narrative"></div>
+      <div class="observation-note" id="aiPanel"></div>
+    </div>
+    <div class="story-choices" id="choices"></div>
+  </div>
+</div>
+
+<!-- Souvenir Popup -->
+<div class="modal-overlay" id="souvenirPopup">
+  <div class="treasure-box">
+    <div class="souvenir-emoji">🎁</div>
+    <div class="souvenir-label">森林里找到的宝贝</div>
+    <div class="souvenir-name" id="souvenirName"></div>
+    <button onclick="closeSouvenirPopup()">收进旅行箱</button>
+  </div>
+</div>
+
+<!-- Souvenir List -->
+<div class="souvenir-list" id="souvenirList">
+  <div class="treasure-box">
+    <h3>✦ 旅行箱里的宝贝</h3>
+    <ul id="souvenirItems"></ul>
+    <button class="close-btn" onclick="closeSouvenirList()">合上箱子</button>
+  </div>
+</div>
+
+<script>
+
+
+const player = new URLSearchParams(location.search).get('player') || '';
+const state = {
+  lineId: null,
+  sceneId: null,
+  history: [],
+  souvenirs: [],
+  currentData: null,
+  playerName: '旅人',
+  aiName: '同行者'
+};
+let snapshot = null;
+let requestBusy = false;
+let showingPicker = false;
+let freePlay = false;
+
+function init() {
+  createStorybookBg();
+  if (!player) {
+    showPageError('缺少同行者存档槽。');
+    return;
+  }
+  refreshState(true);
+  window.setInterval(() => {
+    if (!document.hidden) refreshState(false);
+  }, 8000);
+}
+
+function createStorybookBg() {
+  const c = document.getElementById('storybook-bg');
+  if (!c) return;
+
+  const moon = document.createElement('div'); moon.className = 'bg-moon'; c.appendChild(moon);
+
+  const starChars = ['✦','✧','⭑','·','✶'];
+  for (let i = 0; i < 18; i++) {
+    const s = document.createElement('div'); s.className = 'bg-star';
+    s.textContent = starChars[i % starChars.length];
+    s.style.left = Math.random() * 94 + '%';
+    s.style.top = Math.random() * 55 + '%';
+    s.style.fontSize = (7 + Math.random() * 10) + 'px';
+    s.style.setProperty('--tw-dur', (2.5 + Math.random() * 4) + 's');
+    s.style.setProperty('--tw-delay', Math.random() * 3 + 's');
+    c.appendChild(s);
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const cl = document.createElement('div'); cl.className = 'bg-cloud';
+    const w = 70 + Math.random() * 100;
+    cl.style.width = w + 'px'; cl.style.height = (w * 0.35) + 'px';
+    cl.style.top = (8 + Math.random() * 18) + '%';
+    cl.style.setProperty('--dr-dur', (55 + Math.random() * 40) + 's');
+    cl.style.setProperty('--dr-delay', -(Math.random() * 40) + 's');
+    c.appendChild(cl);
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const h = document.createElement('div'); h.className = 'bg-hill';
+    h.style.width = (200 + Math.random() * 360) + 'px';
+    h.style.height = (60 + Math.random() * 120) + 'px';
+    h.style.left = (i * 35 + Math.random() * 10) + '%';
+    c.appendChild(h);
+  }
+}
+
+async function request(url, options = {}) {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    ...options
+  });
+  let data = {};
+  try { data = await response.json(); } catch (_error) {}
+  if (!response.ok) {
+    const error = new Error(data.error || `请求失败（${response.status}）`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+function applySnapshot(next) {
+  snapshot = next;
+  state.playerName = next.human_name || '旅人';
+  state.aiName = next.machine_name || '同行者';
+  state.souvenirs = (next.souvenirs || []).map((name, index) => ({
+    name,
+    emoji: souvenirEmoji(name),
+    lineId: ((next.completed_endings || [])[index] || '').split(':')[0]
+  }));
+  document.getElementById('playerNameInput').value = state.playerName;
+  document.getElementById('aiNameInput').value = state.aiName;
+  updateSouvenirBadge();
+  renderLinePicker();
+}
+
+async function refreshState(initial) {
+  if (requestBusy) return;
+  requestBusy = true;
+  try {
+    const next = await request(`/forest/api/state?player=${encodeURIComponent(player)}`);
+    const changed = !snapshot || next.revision !== snapshot.revision;
+    applySnapshot(next);
+    if (next.data_warning && initial) window.alert(next.data_warning);
+    if ((initial || changed) && !showingPicker && !freePlay && next.current) {
+      showCurrentScene();
+    }
+  } catch (error) {
+    if (initial) showPageError(error.message);
+  } finally {
+    requestBusy = false;
+  }
+}
+
+function showPageError(message) {
+  const grid = document.getElementById('pickerGrid');
+  grid.innerHTML = `<div class="line-card placeholder">
+    <div class="emoji">📖</div>
+    <div class="title">${escHtml(message)}</div>
+  </div>`;
+}
+
+function renderLinePicker() {
+  if (!snapshot) return;
+  const grid = document.getElementById('pickerGrid');
+  grid.innerHTML = (snapshot.lines || []).map(line => `
+    <div class="line-card" onclick="startLine('${escHtml(line.id)}')">
+      <span class="id-num">${escHtml(line.id)}</span>
+      <div class="emoji">${escHtml(line.emoji)}</div>
+      <div class="title">${escHtml(line.title)}</div>
+      <div class="brief">${escHtml(line.brief)}</div>
+    </div>`).join('');
+}
+
+async function performAction(payload) {
+  if (requestBusy || !snapshot) return null;
+  requestBusy = true;
+  const previousSouvenirs = new Set(snapshot.souvenirs || []);
+  try {
+    const next = await request('/forest/api/action', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        player,
+        expected_revision: snapshot.revision,
+        ...payload
+      })
+    });
+    applySnapshot(next);
+    const newSouvenir = (next.souvenirs || []).find(name => !previousSouvenirs.has(name));
+    if (newSouvenir) showSouvenirPopup(newSouvenir);
+    return next;
+  } catch (error) {
+    if (error.status === 409) {
+      requestBusy = false;
+      await refreshState(false);
+    }
+    window.alert(error.message);
+    return null;
+  } finally {
+    requestBusy = false;
+  }
+}
+
+async function startLine(lineId) {
+  if (!snapshot) return;
+  const next = await performAction({action: 'start', line: lineId});
+  if (!next) return;
+  if (next.notice && next.notice.includes('森林今天的门')) {
+    window.alert(next.notice);
+    return;
+  }
+  if (!next.current || next.current.line_id !== String(lineId)) {
+    if (next.notice) window.alert(next.notice);
+    return;
+  }
+  showingPicker = false;
+  freePlay = false;
+  showCurrentScene();
+}
+
+function goBack() {
+  document.getElementById('game').classList.remove('active');
+  document.getElementById('picker').classList.remove('hidden');
+  showingPicker = true;
+  freePlay = false;
+  state.lineId = null;
+  state.sceneId = null;
+  state.history = [];
+  state.currentData = null;
+}
+
+function showCurrentScene() {
+  const current = snapshot && snapshot.current;
+  if (!current) return;
+  showingPicker = false;
+  freePlay = false;
+  state.lineId = current.line_id;
+  state.sceneId = current.scene_id;
+
+  document.getElementById('picker').classList.add('hidden');
+  document.getElementById('game').classList.add('active');
+  document.getElementById('lineLabel').textContent = current.line_emoji + ' ' + current.line_title;
+
+  const isEnding = current.is_ending;
+  const narrative = document.getElementById('narrative');
+  narrative.className = 'story-page' + (isEnding ? ' ending' : '');
+  let text = escHtml(current.human_text || '');
+  text = text.replace(/\*\[AI：([^*]+)\]\*/g, '<span class="ai-hint">$1</span>');
+  narrative.innerHTML = '<div class="scene-text">' + text + '</div>' +
+    (isEnding ? '<div class="ending-marker">✦ 这一页翻过去了</div>' : '');
+  narrative.classList.add('fade-in');
+
+  const prompt = current.ai_prompt || '';
+  const observation = current.observation || `${state.aiName}在这里写下看到的……`;
+  document.getElementById('aiPanel').innerHTML = `
+    <div class="tape"></div>
+    <div class="note-inner">
+      <div class="note-title">✦ ${escHtml(state.aiName)}的观察笔记</div>
+      ${prompt ? `<div class="note-prompt">${escHtml(prompt)}</div>` : ''}
+      <div class="note-writing">
+        <div style="font-size:14px;line-height:2;white-space:pre-wrap;${current.observation ? '' : 'color:var(--text-muted);font-style:italic;'}">${escHtml(observation)}</div>
+      </div>
+      <div class="note-footer">${escHtml(state.aiName)}的童话笔记</div>
+    </div>
+    <div class="note-corner">🪶</div>`;
+
+  const choices = document.getElementById('choices');
+  if (isEnding) {
+    choices.innerHTML = '<button class="choice-card" onclick="handleEndingContinue()" style="justify-content:center;flex:1;">✦ 继续翻开下一页</button>';
+  } else if (current.options && current.options.length) {
+    const tilts = ['-0.4deg','0.3deg','-0.25deg','0.35deg'];
+    choices.innerHTML = current.options.map((option, index) => `
+      <button class="choice-card" data-option="${escHtml(option.key)}" style="--tilt:${tilts[index] || '0deg'}" onclick="makeChoice('${escHtml(option.key)}')">
+        <span class="key">${escHtml(option.key)}</span>
+        <span>${escHtml(option.text)}</span>
+      </button>`).join('');
+  } else {
+    choices.innerHTML = '<button class="choice-card" onclick="goBack()" style="justify-content:center;flex:1;">← 合上书页</button>';
+  }
+
+  state.history.push({sceneId: current.scene_id, aiText: '', isEnding: !!isEnding});
+  updateSouvenirBadge();
+  narrative.scrollTop = 0;
+}
+
+function renderFreePlay() {
+  freePlay = true;
+  const narrative = document.getElementById('narrative');
+  narrative.className = 'story-page fade-in';
+  narrative.innerHTML = `<div class="scene-text" style="text-align:center;padding-top:60px;">
+    <p style="font-size:18px;color:var(--ink);">✦ 做点别的</p>
+    <p style="color:var(--text-dim);margin-top:16px;">你和同行者不选任何一条给出的路。<br>你们有自己的方向。</p>
+    <p style="color:var(--text-muted);margin-top:24px;font-style:italic;">——这个路口留给旅人和同行者一起走。<br>你想去哪里？</p>
+  </div>`;
+  document.getElementById('aiPanel').innerHTML = `
+    <div class="tape"></div>
+    <div class="note-inner">
+      <div class="note-title">✦ ${escHtml(state.aiName)}的观察笔记</div>
+      <div class="note-prompt">没有预设的提示。这是你们两个人的路口。你想说什么？想带她去哪儿？</div>
+      <div class="note-writing">
+        <div style="font-size:14px;line-height:2;color:var(--text-muted);font-style:italic;">${escHtml(state.aiName)}自由书写……</div>
+      </div>
+      <div class="note-footer">${escHtml(state.aiName)}的童话笔记</div>
+    </div>
+    <div class="note-corner">🪶</div>`;
+  document.getElementById('choices').innerHTML =
+    '<button class="choice-card" onclick="goBack()" style="justify-content:center;flex:1;">← 合上书页</button>';
+}
+
+async function makeChoice(option) {
+  if (!snapshot || !snapshot.current) return;
+  const next = await performAction({
+    action: 'choose',
+    option,
+    expected_scene: snapshot.current.scene_id
+  });
+  if (!next) return;
+  if (next.notice && next.notice.includes('你没有选那几条路')) renderFreePlay();
+  else showCurrentScene();
+}
+
+function handleEndingContinue() {
+  goBack();
+}
+
+function souvenirEmoji(name) {
+  const map = {
+    '一颗永远不化的糖':'🍬','一张半截木雕':'🪵','一根自己劈的柴':'🪓','一只空碗':'🥣',
+    '一张歪字纸条':'📝','半块饼干':'🍪','一勺少放的盐':'🧂','一片糖玻璃':'🪟',
+    '一块掰下来的糖玻璃':'🔍','匹诺曹的入口石':'🪨',
+    '布条收据':'🧾','一截粗布袖口':'🧵','一根狗尾巴草':'🌾','一双膝盖不沾泥的台阶':'🪜',
+    '一颗葡萄籽':'🫐','一双绿脚':'🐾','一滴池塘水':'💧','一块浮木':'🪵',
+    '一块池边石头':'🪨','一块不收费石头':'📜','一颗裂字的金球':'🔮','一个暖膝盖':'☀️',
+    '一颗口袋里的金球':'👑','一根水草':'🌿','一件打了补丁的裙子':'👗','一颗轻拿轻放':'🤲',
+    '橡树枝上的稻草人':'🎭','窗框灰尘上的字':'🪟','一扇不锁的后门':'🚪',
+    '面馆的方向':'🍜','一根葱':'🧅','门框上的墙灰':'🏚️',
+    '被听见的瞬间':'👂','光头上的海带影':'☘️','窗台上的瓦片':'🧱',
+    '一张今天写的羊皮纸':'📜','对花苞的笑':'🌹','一盆白玫瑰':'🪴',
+    '烧过的玫瑰底下的新芽':'🌱','一块放在花圃边的石头':'🪨','一条翻面的手帕':'🤍',
+    '石头底下的刻字':'🔤','石头上的弧形印子':'🌀','平齐的视线':'👀',
+    '一页童话':'📖','一张守夜人的全家福':'🖼️'
+  };
+  return map[name] || '🎁';
+}
+
+function escHtml(value) {
+  return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function showSouvenirPopup(name) {
+  document.getElementById('souvenirName').textContent = name;
+  document.getElementById('souvenirPopup').classList.add('active');
+}
+function closeSouvenirPopup() {
+  document.getElementById('souvenirPopup').classList.remove('active');
+}
+
+function showSouvenirList() {
+  const ul = document.getElementById('souvenirItems');
+  if (state.souvenirs.length === 0) {
+    ul.innerHTML = '<li style="color:var(--text-muted);text-align:center;padding:20px;">旅行箱还是空的。<br>去森林里走走吧 ✦</li>';
+  } else {
+    ul.innerHTML = state.souvenirs.map(s =>
+      `<li><span class="s-emoji">${s.emoji}</span>${escHtml(s.name)}${s.lineId ? ` <span style="color:var(--text-muted);font-size:12px;">— 线${escHtml(s.lineId)}</span>` : ''}</li>`
+    ).join('');
+  }
+  document.getElementById('souvenirList').classList.add('active');
+}
+function closeSouvenirList() {
+  document.getElementById('souvenirList').classList.remove('active');
+}
+function updateSouvenirBadge() {
+  document.getElementById('souvenirCount').textContent = state.souvenirs.length;
+}
+
+document.addEventListener('keydown', function(event) {
+  if (!state.sceneId || requestBusy) return;
+  const key = event.key.toUpperCase();
+  const button = document.querySelector(`.choice-card[data-option="${key}"]`);
+  if (button) button.click();
+});
+
+init();
+</script>
+</body>
+</html>
