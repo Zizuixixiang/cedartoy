@@ -4793,16 +4793,17 @@
     function renderForestSlotPicker(machine) {
       $("bankPickerPanel").setAttribute("aria-label", "选择森林存档");
       $("bankPickerTitle").textContent = `${machine.machineName} · 选择存档`;
-      $("bankPickerOptions").innerHTML = machine.slots.map((save) => {
+      const existingSlots = machine.slots.filter((save) => save.exists);
+      $("bankPickerOptions").innerHTML = existingSlots.map((save) => {
         const summary = save.summary || {};
-        const position = save.exists
-          ? (summary.current_line ? `线${escapeHtml(summary.current_line)} · ${escapeHtml(summary.current_scene || "入口")}` : "尚未走线")
-          : "新旅程";
-        const souvenirs = save.exists ? ` · 🎒${escapeHtml(summary.souvenirs || 0)}` : "";
+        const position = summary.current_line
+          ? `线${escapeHtml(summary.current_line)} · ${escapeHtml(summary.current_scene || "入口")}`
+          : "尚未走线";
+        const souvenirs = ` · 🎒${escapeHtml(summary.souvenirs || 0)}`;
         return `
           <button class="bank-picker-option" data-forest-slot="${escapeHtml(save.slot)}" type="button">
             <span class="garden-picker-option-main">槽${escapeHtml(save.slot)} · ${position}</span>
-            <span class="garden-picker-option-meta">${save.exists ? `已有存档${souvenirs}` : "从森林入口开始"}</span>
+            <span class="garden-picker-option-meta">已有存档${souvenirs}</span>
           </button>
         `;
       }).join("");
@@ -4850,9 +4851,9 @@
           aiUserId: String(machine.ai_user_id),
           machineName: machine.machine_name,
           slots: Array.isArray(machine.slots) ? machine.slots : [],
-        }));
+        })).filter((machine) => machine.slots.some((slot) => slot.exists));
         if (!machines.length) {
-          $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">你还没有绑定小机，先绑定一位同行者再进入森林。</p>`;
+          $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">你绑定的小机还没有森林存档。</p>`;
           return;
         }
         if (machines.length === 1) renderForestSlotPicker(machines[0]);
