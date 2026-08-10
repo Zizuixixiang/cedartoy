@@ -78,7 +78,9 @@ def save_summary(player_id):
     )
     return {
         "current_line": state.get("current_line"),
-        "current_scene": state.get("current_scene"),
+        "current_scene": state.get("human_scene", state.get("current_scene")),
+        "ai_scene": state.get("ai_scene"),
+        "ai_mode": state.get("ai_mode"),
         "souvenirs": len(souvenirs) if isinstance(souvenirs, list) else 0,
         "daily_lines": daily_count,
         "total_lines": state.get("total_lines_started", 0),
@@ -127,6 +129,16 @@ def play(arguments):
                 "observation": arguments.get("observation"),
             },
         )
+    elif action == "ai_choose":
+        option = arguments.get("option")
+        if not isinstance(option, str) or not option.strip():
+            raise VendorCmdError("option 参数必填")
+        extra = {"action": action, "option": option.strip()}
+        if arguments.get("line") is not None:
+            extra["line"] = arguments.get("line")
+        if arguments.get("scene_id") is not None:
+            extra["scene_id"] = arguments.get("scene_id")
+        text = GAME.run(player_id, "", extra=extra)
     elif action == "observe":
         content = arguments.get("content")
         if not isinstance(content, str) or not content.strip():
@@ -155,7 +167,7 @@ def play(arguments):
         )
     else:
         raise VendorCmdError(
-            "未知 forest action；可用 lines / new / reset / start / choose / observe / status / export / import"
+            "未知 forest action；可用 lines / new / reset / start / choose / ai_choose / observe / status / export / import"
         )
     return {"game": "forest", "player_id": player_id, "text": text}
 

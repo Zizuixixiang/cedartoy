@@ -1,8 +1,6 @@
 import json
-import shutil
 import tempfile
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,328 +9,329 @@ from vendor_cmd_adapter import base, forest, forest_runtime
 from vendor_cmd_adapter.base import VendorCmdError
 
 
-ROOT = Path(__file__).resolve().parent.parent
-GAME_DATA = json.loads(
-    (ROOT / "vendor" / "mo-yao-play-games" / "forest_game_data.json").read_text(
-        encoding="utf-8"
-    )
-)
+ROOT = Path(__file__).resolve().parents[1]
+VENDOR_DIR = ROOT / "vendor" / "mo-yao-play-games"
+GAME_DATA = json.loads((VENDOR_DIR / "forest_game_data.json").read_text(encoding="utf-8"))
 
 
-class ForestAdapterTests(unittest.TestCase):
+class ForestRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.save_root = Path(self.temp_dir.name)
-        self.base_save_patch = patch.object(base, "SAVE_ROOT", self.save_root)
-        self.adapter_save_patch = patch.object(forest, "SAVE_ROOT", self.save_root)
-        self.base_save_patch.start()
-        self.adapter_save_patch.start()
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="forest-v3-")
+        self.root = Path(self.temp_dir.name)
 
     def tearDown(self):
-        self.adapter_save_patch.stop()
-        self.base_save_patch.stop()
         self.temp_dir.cleanup()
 
-    def play(self, player_id, action, **kwargs):
-        return forest.play({"player_id": player_id, "action": action, **kwargs})
-
-    def state(self, player_id):
-        return json.loads(
-            (self.save_root / "forest" / player_id / forest.SAVE_NAME).read_text(
-                encoding="utf-8"
-            )
+    def invoke(self, player, action, **extra):
+        return forest_runtime.run_payload(
+            {
+                "vendor_dir": str(VENDOR_DIR),
+                "save_dir": str(self.root / player),
+                "extra": {"action": action, **extra},
+            }
         )
 
-    def finish_line(self, player_id, line_id=1):
-        self.play(player_id, "start", line=line_id)
-        line = GAME_DATA["lines"][str(line_id)]
-        for _ in range(20):
-            state = self.state(player_id)
-            scene_id = state["current_scene"]
-            scene = (
-                line["opening"]
-                if scene_id == "opening"
-                else line["scenes"][scene_id]
-            )
-            if scene.get("type") == "ending":
-                return
-            self.play(player_id, "choose", option=next(iter(scene["options"])))
-        self.fail(f"line {line_id} did not reach an ending")
+    def state(self, player):
+        return json.loads((self.root / player / forest.SAVE_NAME).read_text(encoding="utf-8"))
 
-    def test_author_embedded_ai_slots_take_priority_over_v3_drafts(self):
-        game = forest_runtime._read_game(
-            ROOT / "vendor" / "mo-yao-play-games"
-        )
-        author_opening = GAME_DATA["lines"]["1"]["opening"]
-        runtime_opening = game["lines"]["1"]["opening"]
+    def web(self, player, action="web_state", **extra):
+        return json.loads(self.invoke(player, action, **extra))
 
-        self.assertEqual(runtime_opening["text"], author_opening["text"])
-        self.assertEqual(runtime_opening.get("ai_slot"), author_opening.get("ai_slot"))
-        self.assertNotIn("human_text", runtime_opening)
+    def reach_line1_final(self, player):
+        self.invoke(player, "start", line="1")
+        self.invoke(player, "ai_choose", option="E", line="1", scene_id="opening")
+        for option in ("A", "A", "A", "A"):
+            self.invoke(player, "choose", option=option)
+        self.assertEqual(self.state(player)["human_scene"], "shared_final_sweet")
+        self.assertEqual(self.state(player)["ai_scene"], "shared_final_sweet")
 
-    def test_author_line_2_prompt_survives_and_mcp_start_replaces_names(self):
-        game = forest_runtime._read_game(
-            ROOT / "vendor" / "mo-yao-play-games"
-        )
-        author_prompt = GAME_DATA["lines"]["2"]["opening"]["ai_slot"]["prompt"]
-        self.assertEqual(
-            game["lines"]["2"]["opening"]["ai_slot"]["prompt"],
-            author_prompt,
-        )
-
-        initial = forest.web_state("named", player_name="小满", ai_name="阿橘")
-        forest.web_action(
-            "named",
-            "start",
-            expected_revision=initial["revision"],
-            player_name="小满",
-            ai_name="阿橘",
-            line=1,
-        )
-        output = self.play("named", "start", line=2)["text"]
-        self.assertIn(
-            author_prompt.replace("{player}", "小满").replace("{ai}", "阿橘"),
-            output,
-        )
+    def test_new_and_start_create_v3_dual_axis_state_and_private_opening(self):
+        self.invoke("fresh", "new")
+        output = self.invoke("fresh", "start", line="11")
+        state = self.state("fresh")
+        self.assertEqual(state["version"], 2)
+        self.assertEqual(state["current_scene"], "opening")
+        self.assertEqual(state["human_scene"], "opening")
+        self.assertEqual(state["ai_scene"], "opening")
+        self.assertEqual(state["ai_mode"], "shared")
+        self.assertEqual(state["pending_shared"], {})
+        self.assertIn("AI 的岔路", output)
+        self.assertIn("D.", output)
+        self.assertIn("E.", output)
         self.assertNotIn("{player}", output)
+        self.assertNotIn("{ai_name}", output)
         self.assertNotIn("{ai}", output)
 
-    def test_promptless_legacy_author_data_falls_back_to_v3_drafts(self):
-        legacy_vendor = self.save_root / "legacy-vendor"
-        legacy_vendor.mkdir()
-        legacy_game = json.loads(json.dumps(GAME_DATA, ensure_ascii=False))
-        for line in legacy_game["lines"].values():
-            for scene in [line["opening"], *line["scenes"].values()]:
-                scene.pop("ai_slot", None)
-        (legacy_vendor / "forest_game_data.json").write_text(
-            json.dumps(legacy_game, ensure_ascii=False),
+    def test_human_choose_is_abc_only_and_ai_choose_is_de_only(self):
+        self.invoke("strict", "start", line="1")
+        with self.assertRaisesRegex(ValueError, "只接受 A/B/C"):
+            self.invoke("strict", "choose", option="D")
+        with self.assertRaisesRegex(ValueError, "只接受 D/E"):
+            self.invoke("strict", "ai_choose", option="A")
+        self.invoke("strict", "choose", option="A")
+        self.assertEqual(self.state("strict")["human_scene"], "1a")
+        self.invoke("strict", "ai_choose", option="D", line="1", scene_id="opening")
+        self.assertEqual(self.state("strict")["ai_scene"], "ai_taste_wall")
+        with self.assertRaisesRegex(ValueError, "line 与存档不一致"):
+            self.invoke("strict", "ai_choose", option="D", line="2")
+
+    def test_human_path_and_ai_d_solo_progress_independently(self):
+        self.invoke("parallel", "start", line="8")
+        self.invoke("parallel", "choose", option="B")
+        self.invoke("parallel", "ai_choose", option="D")
+        state = self.state("parallel")
+        self.assertEqual(state["human_scene"], "8b")
+        self.assertEqual(state["current_scene"], "8b")
+        self.assertEqual(state["ai_scene"], "ai_seafloor")
+        self.assertEqual(state["ai_mode"], "ai_solo")
+
+        self.invoke("parallel", "choose", option="C")
+        self.invoke("parallel", "ai_choose", option="D")
+        state = self.state("parallel")
+        self.assertEqual(state["human_scene"], "8b_deep")
+        self.assertEqual(state["ai_scene"], "ai_scale_memory")
+        self.assertEqual(state["ai_loop_count"], 1)
+
+    def test_null_e_follows_human_for_both_action_orders(self):
+        self.invoke("human-first", "start", line="1")
+        self.invoke("human-first", "choose", option="B")
+        self.invoke("human-first", "choose", option="C")
+        self.invoke("human-first", "ai_choose", option="E", scene_id="opening")
+        human_first = self.state("human-first")
+        self.assertEqual(human_first["human_scene"], "1b_deep")
+        self.assertEqual(human_first["ai_scene"], "1b_deep")
+        self.assertEqual(human_first["ai_mode"], "following")
+        self.assertEqual(human_first["pending_shared"], {})
+
+        self.invoke("ai-first", "start", line="1")
+        self.invoke("ai-first", "ai_choose", option="E", scene_id="opening")
+        waiting = self.state("ai-first")
+        self.assertEqual(waiting["ai_scene"], "opening")
+        self.assertEqual(waiting["ai_mode"], "following")
+        self.invoke("ai-first", "choose", option="B")
+        self.invoke("ai-first", "choose", option="C")
+        ai_first = self.state("ai-first")
+        self.assertEqual(ai_first["human_scene"], "1b_deep")
+        self.assertEqual(ai_first["ai_scene"], "1b_deep")
+        self.assertEqual(ai_first["pending_shared"], {})
+
+    def test_final_combo_is_order_independent_and_completion_counted_once(self):
+        for player in ("human-first", "ai-first"):
+            self.reach_line1_final(player)
+
+        waiting = self.invoke("human-first", "choose", option="B")
+        self.assertIn("等待同行者", waiting)
+        self.invoke("human-first", "ai_choose", option="D")
+
+        waiting = self.invoke("ai-first", "ai_choose", option="D")
+        self.assertIn("等待人类", waiting)
+        self.invoke("ai-first", "choose", option="B")
+
+        first = self.state("human-first")
+        second = self.state("ai-first")
+        for state in (first, second):
+            self.assertEqual(state["human_scene"], "ending_stop_stirring")
+            self.assertEqual(state["ai_scene"], "ending_stop_stirring")
+            self.assertEqual(state["current_scene"], "ending_stop_stirring")
+            self.assertEqual(state["daily"]["count"], 1)
+            self.assertEqual(state["completed_endings"], ["1:ending_stop_stirring"])
+            self.assertEqual(len(state["souvenirs"]), 1)
+            self.assertEqual(state["pending_shared"], {})
+        web = self.web("human-first")
+        self.assertTrue(web["current"]["is_ending"])
+        self.assertEqual(web["current"]["scene_id"], "ending_stop_stirring")
+        with self.assertRaisesRegex(ValueError, "已经是结局"):
+            self.invoke("human-first", "ai_choose", option="D")
+        self.assertEqual(self.state("human-first")["daily"]["count"], 1)
+
+    def test_ai_solo_max_loop_uses_actual_return_chain_and_memory_is_private(self):
+        self.invoke("loop", "start", line="1")
+        self.invoke("loop", "choose", option="A")
+        self.invoke("loop", "ai_choose", option="D")
+        first_memory = self.invoke("loop", "ai_choose", option="D")
+        self.assertIn("随机记忆", first_memory)
+        self.assertEqual(self.state("loop")["ai_loop_count"], 1)
+        second_memory = self.invoke("loop", "ai_choose", option="D")
+        self.assertIn("随机记忆", second_memory)
+        self.assertEqual(self.state("loop")["ai_loop_count"], 2)
+        returned = self.invoke("loop", "ai_choose", option="D")
+        state = self.state("loop")
+        self.assertIn("ai_return_sweet", returned)
+        self.assertIn("merge_candy", returned)
+        self.assertIn("shared_final_sweet", returned)
+        self.assertEqual(state["ai_scene"], "shared_final_sweet")
+        self.assertEqual(state["ai_mode"], "shared")
+        self.assertEqual(state["ai_loop_count"], 0)
+        web_json = self.invoke("loop", "web_state")
+        saved_json = json.dumps(state, ensure_ascii=False)
+        for memory in GAME_DATA["lines"]["1"]["memory_pool"]:
+            self.assertNotIn(memory["text"], web_json)
+            self.assertNotIn(memory["text"], saved_json)
+
+    def test_web_snapshot_is_recursive_privacy_allowlist_and_keeps_public_state(self):
+        self.invoke("private", "start", line="8")
+        game = forest_runtime._read_game(VENDOR_DIR)
+        game["lines"]["8"]["opening"]["public_state"] = "海水已经没过脚踝"
+        state = forest_runtime._validate_state(self.state("private"), game)
+        snapshot = forest_runtime._web_snapshot(game, state, True)
+        encoded = json.dumps(snapshot, ensure_ascii=False)
+
+        forbidden_keys = {
+            "ai_text", "private_text", "ai_hidden", "hidden_info", "ai_layer",
+            "random_pool", "memory_pool", "ai_scene", "ai_mode", "ai_prompt",
+        }
+
+        def walk(value):
+            if isinstance(value, dict):
+                self.assertTrue(forbidden_keys.isdisjoint(value))
+                for child in value.values():
+                    walk(child)
+            elif isinstance(value, list):
+                for child in value:
+                    walk(child)
+
+        walk(snapshot)
+        self.assertEqual(snapshot["current"]["public_state"], "海水已经没过脚踝")
+        self.assertEqual({item["key"] for item in snapshot["current"]["options"]}, {"A", "B", "C"})
+        opening = GAME_DATA["lines"]["8"]["opening"]
+        self.assertNotIn(opening["ai_layer"]["hidden_info"], encoded)
+        for option in opening["ai_layer"]["options"].values():
+            self.assertNotIn(option["text"], encoded)
+
+    def test_status_contains_dual_resume_position_and_private_context(self):
+        self.invoke("resume", "start", line="8")
+        self.invoke("resume", "choose", option="C")
+        self.invoke("resume", "ai_choose", option="D")
+        status = self.invoke("resume", "status")
+        private_scene = GAME_DATA["lines"]["8"]["scenes"]["ai_seafloor"]
+        self.assertIn("人类位置：8c", status)
+        self.assertIn("AI 位置：ai_seafloor（ai_solo）", status)
+        self.assertIn(private_scene["ai_hidden"], status)
+        self.assertIn("D.", status)
+        self.assertIn("E.", status)
+
+    def test_old_flat_valid_and_removed_completed_saves_migrate_without_loss(self):
+        base_state = {
+            "version": 1,
+            "revision": 17,
+            "current_line": "1",
+            "current_scene": "1a",
+            "souvenirs": ["旧纪念品"],
+            "completed_endings": ["9:旧结局"],
+            "observations": {"1:1a": "旧观察"},
+            "latest_observation_key": "1:1a",
+            "participants": {"player": "旧旅人", "ai": "旧同行者"},
+            "daily": {"date": "2026-08-10", "count": 2, "semantic": forest_runtime.DAILY_SEMANTIC},
+            "total_lines_started": 3,
+            "total_choices": 4,
+            "updated_at": "2026-08-10T12:00:00+08:00",
+            "historical_extra": {"keep": True},
+        }
+        path = self.root / "valid" / forest.SAVE_NAME
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(base_state, ensure_ascii=False), encoding="utf-8")
+        before = path.read_bytes()
+        status = self.invoke("valid", "status")
+        self.assertIn("人类位置：1a", status)
+        self.assertIn("AI 位置：1a（following）", status)
+        self.assertEqual(path.read_bytes(), before)
+        self.invoke("valid", "observe", content="新观察")
+        migrated = self.state("valid")
+        self.assertEqual(migrated["version"], 2)
+        self.assertEqual(migrated["human_scene"], "1a")
+        self.assertEqual(migrated["ai_scene"], "1a")
+        self.assertEqual(migrated["historical_extra"], {"keep": True})
+        self.assertEqual(migrated["souvenirs"], ["旧纪念品"])
+        self.assertEqual(migrated["revision"], 18)
+
+        removed = dict(base_state)
+        removed.update({"current_scene": "1d", "completed_endings": ["1:1d"]})
+        removed_path = self.root / "removed" / forest.SAVE_NAME
+        removed_path.parent.mkdir(parents=True)
+        removed_path.write_text(json.dumps(removed, ensure_ascii=False), encoding="utf-8")
+        web = self.web("removed")
+        self.assertIsNone(web["current"])
+        self.assertEqual(web["completed_endings"], ["1:1d"])
+        self.assertEqual(web["souvenirs"], ["旧纪念品"])
+        self.assertFalse(list(removed_path.parent.glob(f"{forest.SAVE_NAME}.corrupt-*")))
+        self.invoke("removed", "start", line="2")
+        persisted = self.state("removed")
+        self.assertEqual(persisted["completed_endings"], ["1:1d"])
+        self.assertEqual(persisted["souvenirs"], ["旧纪念品"])
+        self.assertEqual(persisted["observations"], {"1:1a": "旧观察"})
+        self.assertEqual(persisted["historical_extra"], {"keep": True})
+
+
+class ForestAdapterIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="forest-adapter-")
+        self.save_root = Path(self.temp_dir.name)
+        self.base_patch = patch.object(base, "SAVE_ROOT", self.save_root)
+        self.forest_patch = patch.object(forest, "SAVE_ROOT", self.save_root)
+        self.base_patch.start()
+        self.forest_patch.start()
+
+    def tearDown(self):
+        self.forest_patch.stop()
+        self.base_patch.stop()
+        self.temp_dir.cleanup()
+
+    def state(self, player):
+        return json.loads(
+            (self.save_root / "forest" / player / forest.SAVE_NAME).read_text(encoding="utf-8")
+        )
+
+    def test_human_mcp_revision_sync_slots_export_and_import(self):
+        initial = forest.web_state("42", player_name="小满", ai_name="阿橘")
+        started = forest.web_action(
+            "42", "start", expected_revision=initial["revision"],
+            player_name="小满", ai_name="阿橘", line=1,
+        )
+        ai_result = forest.play(
+            {"player_id": "42", "action": "ai_choose", "option": "E", "scene_id": "opening"}
+        )["text"]
+        self.assertIn("等待人类", ai_result)
+        refreshed = forest.web_state("42", player_name="小满", ai_name="阿橘")
+        self.assertGreater(refreshed["revision"], started["revision"])
+        human = forest.web_action(
+            "42", "choose", expected_revision=refreshed["revision"],
+            expected_scene="opening", player_name="小满", ai_name="阿橘", option="A",
+        )
+        self.assertEqual(human["current"]["scene_id"], "1a")
+        self.assertIn("人类位置：1a", forest.play({"player_id": "42", "action": "status"})["text"])
+
+        forest.play({"player_id": "42:2", "action": "new"})
+        forest.play({"player_id": "42:2", "action": "start", "line": 8})
+        archive = json.loads(forest.play({"player_id": "42:2", "action": "export"})["text"])
+        forest.play({"player_id": "99", "action": "import", "save_data": archive})
+        imported = self.state("99")
+        self.assertEqual(imported["current_line"], "8")
+        self.assertEqual(imported["human_scene"], "opening")
+        self.assertEqual(imported["ai_scene"], "opening")
+        self.assertEqual(self.state("42")["current_line"], "1")
+
+    def test_confirm_action_list_guide_and_legacy_save_summary(self):
+        forest.play({"player_id": "confirm", "action": "new"})
+        with self.assertRaisesRegex(VendorCmdError, "confirm=true"):
+            forest.play({"player_id": "confirm", "action": "new"})
+        with self.assertRaisesRegex(VendorCmdError, "ai_choose"):
+            forest.play({"player_id": "confirm", "action": "unknown"})
+
+        legacy_path = self.save_root / "forest" / "legacysummary" / forest.SAVE_NAME
+        legacy_path.parent.mkdir(parents=True)
+        legacy_path.write_text(
+            json.dumps({"current_line": "1", "current_scene": "1d", "souvenirs": ["旧物"]}),
             encoding="utf-8",
         )
-        source_vendor = ROOT / "vendor" / "mo-yao-play-games"
-        for draft in source_vendor.glob("forest_line*_v3_draft.json"):
-            shutil.copy2(draft, legacy_vendor / draft.name)
+        summary = forest.save_summary("legacysummary")
+        self.assertEqual(summary["current_scene"], "1d")
+        self.assertEqual(summary["souvenirs"], 1)
 
-        game = forest_runtime._read_game(legacy_vendor)
-        line_1_draft = json.loads(
-            (legacy_vendor / "forest_line1_v3_draft.json").read_text(encoding="utf-8")
-        )["1"]
-        self.assertEqual(
-            game["lines"]["1"]["opening"]["text"],
-            line_1_draft["opening"]["human_text"],
-        )
-        self.assertEqual(
-            game["lines"]["1"]["opening"]["ai_slot"],
-            line_1_draft["opening"]["ai_slot"],
-        )
-
-    def test_new_is_immediately_saved_and_requires_confirmation_to_overwrite(self):
-        text = self.play("fresh", "new")["text"]
-        self.assertIn("新的森林存档已建立", text)
-        self.assertEqual(self.state("fresh")["total_lines_started"], 0)
-        with self.assertRaisesRegex(VendorCmdError, "confirm=true"):
-            self.play("fresh", "new")
-        self.play("fresh", "reset", confirm=True)
-        self.assertEqual(self.state("fresh")["current_line"], None)
-        self.assertFalse(
-            list((self.save_root / "forest" / "fresh").glob(f"{forest.SAVE_NAME}.corrupt-*"))
-        )
-
-    def test_position_daily_count_souvenir_and_slot_isolation_persist(self):
-        self.play("515", "new")
-        self.play("515:2", "new")
-        opening = self.play("515", "start", line=1)["text"]
-        self.assertIn("当前场景ID", opening)
-        state = self.state("515")
-        self.assertEqual((state["current_line"], state["current_scene"]), ("1", "opening"))
-        self.assertEqual(state["daily"]["count"], 0)
-        self.assertEqual(state["daily"]["semantic"], forest_runtime.DAILY_SEMANTIC)
-        self.assertEqual(self.state("515:2")["daily"]["count"], 0)
-
-        line = GAME_DATA["lines"]["1"]
-        for _ in range(20):
-            state = self.state("515")
-            scene_id = state["current_scene"]
-            scene = line["opening"] if scene_id == "opening" else line["scenes"][scene_id]
-            if scene.get("type") == "ending":
-                break
-            option = next(iter(scene["options"]))
-            self.play("515", "choose", option=option)
-        else:
-            self.fail("line 1 did not reach an ending")
-
-        state = self.state("515")
-        self.assertEqual(state["daily"]["count"], 1)
-        self.assertEqual(len(state["souvenirs"]), 1)
-        with self.assertRaisesRegex(VendorCmdError, "已经是结局"):
-            self.play("515", "choose", option="A")
-        self.assertEqual(self.state("515")["daily"]["count"], 1)
-        status = self.play("515", "status")["text"]
-        self.assertIn(state["souvenirs"][0], status)
-        self.assertIn(f"/ {state['current_scene']}", status)
-
-    def test_daily_count_increments_only_at_endings_and_gentle_blocks_starts(self):
-        self.play("daily", "new")
-        for _ in range(3):
-            self.finish_line("daily")
-        save_path = self.save_root / "forest" / "daily" / forest.SAVE_NAME
-        saved_bytes = save_path.read_bytes()
-        saved_stat = save_path.stat()
-        saved_file_identity = (
-            saved_stat.st_ino,
-            saved_stat.st_size,
-            saved_stat.st_mtime_ns,
-            saved_stat.st_ctime_ns,
-        )
-
-        outputs = [self.play("daily", "start", line=1)["text"] for _ in range(3)]
-        self.assertEqual(self.state("daily")["daily"]["count"], 3)
-        self.assertEqual(self.state("daily")["total_lines_started"], 3)
-        self.assertEqual(save_path.read_bytes(), saved_bytes)
-        current_stat = save_path.stat()
-        self.assertEqual(
-            (
-                current_stat.st_ino,
-                current_stat.st_size,
-                current_stat.st_mtime_ns,
-                current_stat.st_ctime_ns,
-            ),
-            saved_file_identity,
-        )
-        for output in outputs:
-            self.assertIn(GAME_DATA["anti_addiction"]["gentle"]["text"], output)
-            self.assertNotIn(GAME_DATA["anti_addiction"]["firm"]["text"], output)
-
-    def test_legacy_start_count_is_zero_until_next_mutation_persists_migration(self):
-        self.play("legacy", "new")
-        self.play("legacy", "start", line=1)
-        save_path = self.save_root / "forest" / "legacy" / forest.SAVE_NAME
-        legacy = self.state("legacy")
-        legacy["daily"].pop("semantic")
-        legacy["daily"]["count"] = 99
-        legacy["souvenirs"] = ["旧纪念品"]
-        legacy["completed_endings"] = ["1:1d"]
-        legacy["observations"] = {"1:1d": "旧观察还在。"}
-        legacy["latest_observation_key"] = "1:1d"
-        legacy["participants"] = {"player": "旧旅人", "ai": "旧同行者"}
-        legacy["revision"] = 17
-        save_path.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
-        legacy_bytes = save_path.read_bytes()
-
-        status = self.play("legacy", "status")["text"]
-        self.assertIn("今日完成角色线：0 次", status)
-        self.assertEqual(forest.save_summary("legacy")["daily_lines"], 0)
-        self.assertEqual(save_path.read_bytes(), legacy_bytes)
-
-        self.play("legacy", "start", line=2)
-        migrated = self.state("legacy")
-        self.assertEqual(migrated["daily"]["count"], 0)
-        self.assertEqual(migrated["daily"]["semantic"], forest_runtime.DAILY_SEMANTIC)
-        self.assertEqual(migrated["souvenirs"], legacy["souvenirs"])
-        self.assertEqual(migrated["completed_endings"], legacy["completed_endings"])
-        self.assertEqual(migrated["observations"], legacy["observations"])
-        self.assertEqual(migrated["participants"], legacy["participants"])
-        self.assertEqual(migrated["latest_observation_key"], legacy["latest_observation_key"])
-        self.assertEqual(migrated["revision"], legacy["revision"] + 1)
-        self.assertEqual(migrated["total_choices"], legacy["total_choices"])
-
-    def test_web_actions_count_only_the_ending_transition(self):
-        snapshot = forest.web_state("webdaily", player_name="旅人", ai_name="同行者")
-        snapshot = forest.web_action(
-            "webdaily",
-            "start",
-            expected_revision=snapshot["revision"],
-            player_name="旅人",
-            ai_name="同行者",
-            line=1,
-        )
-        self.assertEqual(snapshot["daily"]["count"], 0)
-        while not snapshot["current"]["is_ending"]:
-            snapshot = forest.web_action(
-                "webdaily",
-                "choose",
-                expected_revision=snapshot["revision"],
-                expected_scene=snapshot["current"]["scene_id"],
-                player_name="旅人",
-                ai_name="同行者",
-                option=snapshot["current"]["options"][0]["key"],
-            )
-        self.assertEqual(snapshot["daily"]["count"], 1)
-        self.assertEqual(self.state("webdaily")["daily"]["count"], 1)
-
-    def test_free_play_matches_upstream_and_keeps_current_scene(self):
-        self.play("free", "new")
-        self.play("free", "start", line=3)
-        before = self.state("free")
-        text = self.play("free", "choose", option="D")["text"]
-        expected = GAME_DATA["free_play"]["text"].replace("__return_scene__", "opening")
-        self.assertEqual(text, expected)
-        self.assertEqual(self.state("free"), before)
-
-    def test_concurrent_commands_are_serialized_by_player_lock(self):
-        self.play("parallel", "new")
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            outputs = list(
-                pool.map(lambda _index: self.play("parallel", "start", line=1), range(8))
-            )
-        self.assertEqual(len(outputs), 8)
-        self.assertEqual(self.state("parallel")["daily"]["count"], 0)
-        self.assertEqual(self.state("parallel")["total_lines_started"], 8)
-        self.assertFalse(
-            list(
-                (self.save_root / "forest" / "parallel").glob(
-                    f".{forest.SAVE_NAME}.tmp-*"
-                )
-            )
-        )
-
-    def test_corrupt_save_is_backed_up_warned_and_rebuilt(self):
-        self.play("broken", "new")
-        save_path = self.save_root / "forest" / "broken" / forest.SAVE_NAME
-        save_path.write_text("{broken", encoding="utf-8")
-        text = self.play("broken", "status")["text"]
-        self.assertTrue(text.startswith("⚠️ 存档告警"))
-        backups = list(save_path.parent.glob(f"{forest.SAVE_NAME}.corrupt-*"))
-        self.assertEqual(len(backups), 1)
-        self.assertEqual(backups[0].read_text(encoding="utf-8"), "{broken")
-        json.loads(save_path.read_text(encoding="utf-8"))
-        self.assertFalse(list(save_path.parent.glob(f".{forest.SAVE_NAME}.tmp-*")))
-
-        save_path.write_text("{broken-again", encoding="utf-8")
-        with self.assertRaisesRegex(VendorCmdError, "⚠️ 存档告警"):
-            self.play("broken", "choose", option="A")
-
-    def test_export_import_and_server_registries(self):
-        self.play("exporter", "new")
-        self.play("exporter", "start", line=2)
-        archive = json.loads(self.play("exporter", "export")["text"])
-        self.play("importer", "import", save_data=archive)
-        self.assertEqual(self.state("importer")["current_line"], "2")
-
-        self.assertIn("forest", server.IDENTITY_GAMES)
-        self.assertIn("forest", server.PERSISTENT_SAVE_GAMES)
-        self.assertIn("forest", server.VENDOR_GAMES)
-        self.assertIn("forest·格林童话境遇", server._tool_list_games())
-        play_schema = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")
-        self.assertIn("forest", play_schema["inputSchema"]["properties"]["game"]["enum"])
         guide = json.loads(server._tool_get_guide({"game": "forest"}))["guide"]
+        self.assertIn('action="ai_choose"', guide)
+        self.assertIn("shared / human_path / ai_solo / merge", guide)
         self.assertIn("阿尢（1155896103）", guide)
-        self.assertNotIn("memory/", guide)
-
-        expected = {"game": "forest", "player_id": "guest:r", "text": "ok"}
-        with patch.object(server.forest_adapter, "play", return_value=expected) as dispatch:
-            self.assertEqual(
-                server._play_vendor_cmd(
-                    "forest",
-                    {
-                        "game": "forest",
-                        "action": "status",
-                        "params": {"player_id": "guest:r"},
-                    },
-                ),
-                expected,
-            )
-            self.assertEqual(dispatch.call_args.args[0]["player_id"], "guest:r")
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

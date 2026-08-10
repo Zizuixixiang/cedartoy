@@ -292,26 +292,27 @@ GUIDES = {
 原作信息：
 作者：雨刀（X: SwordRa1n_）／仓库：github.com/hatakeyuyuko-dotcom/echoing-white-room／经作者授权接入。""",
     "forest": """# 格林童话境遇
-公开 game id：`forest`。十一条翻转格林童话原著的角色线；每次选择后继续多轮推进，直到自然结局。没有爱情线，AI 是与玩家并肩进入森林的同游者。
+公开 game id：`forest`。作者 v3.0 双轴叙事：人类走 A/B/C 明线，AI 独立走 D/E 暗线，双方在共享场景汇合并由组合选择决定结局。
 
 推荐顺序：
 - `play(game="forest", action="lines")`：列出 11 条角色线、标题与概要。
 - `play(game="forest", action="new")`：建立空白森林存档；已有存档时需在 params 传 `confirm:true`。
-- `play(game="forest", action="start", params={"line":1})`：进入角色线。line 可为 1-11；服务器会保存当前线、opening 场景和当日走线计数。
-- `play(game="forest", action="status")`：查看当前位置、当前 v3 双主角故事、同行者观察提示、选项、当日计数与纪念品；人类网页走过一步后直接 status 就能接着看。
+- `play(game="forest", action="start", params={"line":1})`：进入角色线。返回共享 opening 的人类 A/B/C 文案，以及仅 AI 可见的 D/E、暗流和观察提示。
+- `play(game="forest", action="status")`：查看持久化的人类轴、AI 轴、等待中的组合选择、AI 私密续玩上下文、当日完成数与纪念品。
 - `play(game="forest", action="observe", params={"content":"我在糖玻璃里看见了海。"})`：把同行者的自由观察写进当前场景；人类面板会在下一次轻量同步时看见。
-- `play(game="forest", action="choose", params={"option":"A"})`：按服务器保存的当前位置选择 A/B/C/D。可同时传 `observation`，先把当前观察写入再前进；无需回传 line、scene_id 或 souvenirs。
+- `play(game="forest", action="choose", params={"option":"A"})`：人类轴选择，只接受 A/B/C。可同时传 `observation`，先把这条明确共享的观察写入再前进。
+- `play(game="forest", action="ai_choose", params={"option":"D"})`：AI 轴选择，只接受 D/E。`line`、`scene_id` 可省略并从存档推断；若传入则必须与持久化 AI 位置一致。AI 独行中的随机记忆只在本次 AI 响应中出现。
 
 持久化与重开：
-- start/choose 的当前位置、结局和纪念品按 player_id 与存档槽隔离，并在每次变更后保存。
-- 同一天多次 start 会累计；达到原作的温柔/坚定提醒阈值时，森林会暂停进入新线。按北京时间跨日后当日计数归零。
+- 人类位置、AI 位置、跟随/独行状态、循环进度、待组合选择、结局和纪念品共同保存在每槽唯一的 `forest_save.json` 中。
+- 防沉迷按自然完成结局计数；达到原作的温柔/坚定提醒阈值时暂停进入新线，按北京时间跨日归零。
 - `reset` 与 `new` 都会覆盖当前槽；已有存档时必须传 `confirm:true`。
 - `play(game="forest", action="export")`：导出当前槽 JSON 存档。
 - `play(game="forest", action="import", params={"save_data":{...},"confirm":true})`：导入当前槽；已有存档时必须确认。
 
 原作信息：
 作者：阿尢（1155896103）／仓库：https://github.com/ai11231123alal11-ui/mo-yao-play-games
-本站以原作 `forest_game_data.json` 的 v2.7 场景与分支图作为正式运行和老档兼容锚点；全部 11 份 `forest_line*_v3_draft.json` 通过完整结构校验后，一次性采用作者 v3 的 human_text 与 ai_slot。草稿若与 v2.7 分支指向不一致，该选项回退正式 v2.7 文案与指向；不复制或改写原作剧情文案。""",
+本站直接以原作 `forest_game_data.json` 的 v3.0 shared / human_path / ai_solo / merge 图运行；适配层只增加 CedarToy 单文件共档、并发修订、槽位导入导出和人类网页隐私投影，不改写原作故事。""",
     "bar": """# 空杯俱乐部 / Empty Glass Club
 公开 game id：`bar`。这是两个功能目标相同、实现方式独立的原作版本；未明确选择前，塘子不会加载或运行任何一版，也不会默认完整版。
 

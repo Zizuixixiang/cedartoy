@@ -277,6 +277,64 @@
   }
   .choice-card:hover .key { border-color:var(--ink); background:var(--ink); color:#fff; border-style:solid; }
 
+  /* ── Dual-axis Choice Panels ── */
+  .dual-choices { display:flex; gap:18px; flex-wrap:wrap; }
+  .choice-group { flex:1; min-width:200px; }
+  .choice-group .choice-label {
+    font-size:12px; color:var(--text-dim); letter-spacing:0.1em;
+    padding:4px 8px 10px; font-family:"ZCOOL XiaoWei",serif;
+  }
+  .choice-group.human-choices .choice-label { color:var(--rose-dim); }
+  .choice-group.ai-choices .choice-label { color:var(--lavender-dim); }
+  .choice-card.selected {
+    border-style:solid; transform:translateY(-3px);
+    box-shadow:0 6px 18px rgba(0,0,0,0.1);
+  }
+  .choice-card.selected.human { border-color:var(--rose); background:rgba(212,160,160,0.06); }
+  .choice-card.selected.ai { border-color:var(--lavender-dim); background:rgba(196,192,216,0.08); }
+  .choice-card.selected .key.human-key { border-color:var(--rose); background:var(--rose); color:#fff; border-style:solid; }
+  .choice-card.selected .key.ai-key { border-color:var(--lavender-dim); background:var(--lavender-dim); color:#fff; border-style:solid; }
+  .choice-card.waiting { opacity:0.55; pointer-events:none; }
+  .combo-resolve {
+    display:none; text-align:center; padding:14px 0;
+  }
+  .combo-resolve.ready { display:block; animation:fadeIn .4s ease-out; }
+  .combo-resolve button {
+    background:var(--ink); color:var(--page-bg); border:none;
+    padding:10px 40px; border-radius:24px; font-family:"ZCOOL XiaoWei",serif;
+    font-size:15px; cursor:pointer; transition:all .25s;
+    box-shadow:0 3px 12px rgba(44,62,90,0.2);
+  }
+  .combo-resolve button:hover { background:#3d5270; transform:translateY(-2px); box-shadow:0 6px 20px rgba(44,62,90,0.3); }
+
+  /* ── AI Solo Mode ── */
+  .ai-solo .story-page { background:rgba(196,192,216,0.04); }
+  .ai-hidden-info {
+    margin:16px 0; padding:14px 16px; background:rgba(196,192,216,0.08);
+    border-radius:8px; font-size:13px; color:var(--ink-light);
+    line-height:1.7; border:1px dashed #e0d8e8;
+    display:none;
+  }
+  .ai-hidden-info.open { display:block; }
+  .ai-hidden-toggle {
+    font-size:12px; color:var(--lavender-dim); cursor:pointer;
+    font-family:"ZCOOL XiaoWei",serif; padding:4px 0;
+    transition:color .2s;
+  }
+  .ai-hidden-toggle:hover { color:var(--ink-light); }
+  .memory-draw {
+    margin:12px 0; padding:12px 14px; background:rgba(232,216,144,0.08);
+    border-radius:8px; font-size:13px; color:var(--text-dim); line-height:1.7;
+    border-left:2px solid var(--starlight);
+  }
+  .memory-draw .mem-title { font-weight:500; color:var(--ink); margin-bottom:4px; }
+
+  /* ── Merge auto-advance ── */
+  .merge-timer {
+    text-align:center; padding:10px; font-size:12px; color:var(--text-muted);
+    font-style:italic;
+  }
+
   /* ── Treasure Box Modal ── */
   .modal-overlay {
     display:none; position:fixed; inset:0; background:rgba(58,42,24,0.45);
@@ -610,15 +668,18 @@ function showCurrentScene() {
     (isEnding ? '<div class="ending-marker">✦ 这一页翻过去了</div>' : '');
   narrative.classList.add('fade-in');
 
-  const prompt = current.ai_prompt || '';
-  const observation = current.observation || `${state.aiName}在这里写下看到的……`;
+  const hasObservation = !!current.observation;
+  const observation = current.observation || (
+    current.waiting_for === 'ai'
+      ? `${state.aiName}还在另一页，故事会在同行者回应后继续……`
+      : `${state.aiName}还没有分享观察……`
+  );
   document.getElementById('aiPanel').innerHTML = `
     <div class="tape"></div>
     <div class="note-inner">
       <div class="note-title">✦ ${escHtml(state.aiName)}的观察笔记</div>
-      ${prompt ? `<div class="note-prompt">${escHtml(prompt)}</div>` : ''}
       <div class="note-writing">
-        <div style="font-size:14px;line-height:2;white-space:pre-wrap;${current.observation ? '' : 'color:var(--text-muted);font-style:italic;'}">${escHtml(observation)}</div>
+        <div style="font-size:14px;line-height:2;white-space:pre-wrap;${hasObservation ? '' : 'color:var(--text-muted);font-style:italic;'}">${escHtml(observation)}</div>
       </div>
       <div class="note-footer">${escHtml(state.aiName)}的童话笔记</div>
     </div>
@@ -630,7 +691,7 @@ function showCurrentScene() {
   } else if (current.options && current.options.length) {
     const tilts = ['-0.4deg','0.3deg','-0.25deg','0.35deg'];
     choices.innerHTML = current.options.map((option, index) => `
-      <button class="choice-card" data-option="${escHtml(option.key)}" style="--tilt:${tilts[index] || '0deg'}" onclick="makeChoice('${escHtml(option.key)}')">
+      <button class="choice-card${current.selected_human_choice === option.key ? ' selected human waiting' : ''}" data-option="${escHtml(option.key)}" style="--tilt:${tilts[index] || '0deg'}" onclick="makeChoice('${escHtml(option.key)}')"${current.selected_human_choice ? ' disabled' : ''}>
         <span class="key">${escHtml(option.key)}</span>
         <span>${escHtml(option.text)}</span>
       </button>`).join('');

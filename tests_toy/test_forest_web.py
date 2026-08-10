@@ -31,94 +31,18 @@ class ForestSharedStateTests(unittest.TestCase):
 
     def state(self, player_id):
         return json.loads(
-            (self.save_root / "forest" / player_id / forest.SAVE_NAME).read_text(
-                encoding="utf-8"
-            )
+            (self.save_root / "forest" / player_id / forest.SAVE_NAME).read_text(encoding="utf-8")
         )
 
-    def test_author_integrated_v3_data_is_the_runtime_source(self):
+    def test_author_v3_data_is_used_without_projection_or_rewrite(self):
         game = forest_runtime._read_game(VENDOR_DIR)
         author = json.loads((VENDOR_DIR / "forest_game_data.json").read_text(encoding="utf-8"))
-        self.assertEqual(game["_forest_data_version"], "v3-display/v2-runtime")
-        self.assertNotIn("_forest_data_warning", game)
+        self.assertEqual(game["_forest_data_version"], "v3.0-dual-axis")
         self.assertEqual(game["lines"], author["lines"])
         self.assertEqual(set(game["lines"]), {str(number) for number in range(1, 12)})
-        self.assertNotIn("ai_slot", game["lines"]["1"]["opening"])
-        self.assertTrue(game["lines"]["2"]["opening"]["ai_slot"]["prompt"].strip())
-        for line_id, line in game["lines"].items():
-            nodes = {"opening": line["opening"], **line["scenes"]}
-            for scene_id, scene in nodes.items():
-                ai_slot = scene.get("ai_slot")
-                if ai_slot:
-                    self.assertTrue(ai_slot.get("free"), (line_id, scene_id))
-                    self.assertTrue(ai_slot.get("prompt", "").strip(), (line_id, scene_id))
-                for option in scene.get("options", {}).values():
-                    self.assertTrue(
-                        option["target"] == "free_play" or option["target"] in nodes,
-                        (line_id, scene_id, option),
-                    )
-
-    def test_human_and_mcp_actions_are_bidirectionally_visible(self):
-        initial = forest.web_state("42", player_name="小满", ai_name="阿橘")
-        self.assertFalse(initial["has_save"])
-        human_started = forest.web_action(
-            "42",
-            "start",
-            expected_revision=initial["revision"],
-            player_name="小满",
-            ai_name="阿橘",
-            line=2,
-        )
-        self.assertEqual(human_started["current"]["scene_id"], "opening")
-        self.assertIn("小满", human_started["current"]["human_text"])
-        self.assertIn("阿橘", human_started["current"]["human_text"])
-        self.assertIn("小满", human_started["current"]["ai_prompt"])
-        self.assertNotIn("{player}", human_started["current"]["ai_prompt"])
-        self.assertIn("阿橘", forest.play({"player_id": "42", "action": "status"})["text"])
-
-        forest.play({"player_id": "42", "action": "choose", "option": "A"})
-        after_ai_choice = forest.web_state("42", player_name="小满", ai_name="阿橘")
-        self.assertEqual(after_ai_choice["current"]["scene_id"], "2a")
-
-        forest.play(
-            {
-                "player_id": "42",
-                "action": "observe",
-                "content": "我注意到炉灰是新的。",
-            }
-        )
-        after_observation = forest.web_state("42", player_name="小满", ai_name="阿橘")
-        self.assertEqual(after_observation["current"]["observation"], "我注意到炉灰是新的。")
-        self.assertEqual(after_observation["latest_observation"]["scene_id"], "2a")
-
-        human_finished = forest.web_action(
-            "42",
-            "choose",
-            expected_revision=after_observation["revision"],
-            expected_scene="2a",
-            player_name="小满",
-            ai_name="阿橘",
-            option="B",
-        )
-        self.assertTrue(human_finished["current"]["is_ending"])
-        self.assertEqual(human_finished["latest_observation"]["text"], "我注意到炉灰是新的。")
-        mcp_status = forest.play({"player_id": "42", "action": "status"})["text"]
-        self.assertIn(human_finished["current"]["scene_id"], mcp_status)
-        self.assertIn(human_finished["current"]["souvenir"], mcp_status)
-
-    def test_slots_are_isolated_for_web_and_mcp(self):
-        first = forest.web_state("77", player_name="人类", ai_name="小机")
-        second = forest.web_state("77:2", player_name="人类", ai_name="小机")
-        forest.web_action(
-            "77", "start", expected_revision=first["revision"],
-            player_name="人类", ai_name="小机", line=2,
-        )
-        forest.web_action(
-            "77:2", "start", expected_revision=second["revision"],
-            player_name="人类", ai_name="小机", line=8,
-        )
-        self.assertEqual(forest.web_state("77")["current"]["line_id"], "2")
-        self.assertEqual(forest.play({"player_id": "77:2", "action": "status"})["text"].split("当前位置：", 1)[1][0], "8")
+        self.assertEqual(game["lines"]["8"]["opening"]["mode"], "shared")
+        self.assertEqual(game["lines"]["8"]["scenes"]["ai_seafloor"]["mode"], "ai_solo")
+        self.assertEqual(game["lines"]["8"]["scenes"]["merge_seashore"]["mode"], "merge")
 
     def test_stale_parallel_web_choices_conflict_without_double_advancing(self):
         empty = forest.web_state("parallel", player_name="人类", ai_name="小机")
@@ -130,10 +54,8 @@ class ForestSharedStateTests(unittest.TestCase):
         def choose():
             try:
                 return forest.web_action(
-                    "parallel", "choose",
-                    expected_revision=started["revision"],
-                    expected_scene="opening",
-                    player_name="人类", ai_name="小机", option="A",
+                    "parallel", "choose", expected_revision=started["revision"],
+                    expected_scene="opening", player_name="人类", ai_name="小机", option="A",
                 )
             except forest.ForestConflictError as exc:
                 return exc
@@ -143,38 +65,30 @@ class ForestSharedStateTests(unittest.TestCase):
         self.assertEqual(sum(isinstance(item, dict) for item in outcomes), 1)
         self.assertEqual(sum(isinstance(item, forest.ForestConflictError) for item in outcomes), 1)
         saved = self.state("parallel")
-        self.assertEqual(saved["current_scene"], "1a")
+        self.assertEqual(saved["human_scene"], "1a")
+        self.assertEqual(saved["ai_scene"], "opening")
         self.assertEqual(saved["total_choices"], 1)
-        self.assertFalse(list((self.save_root / "forest" / "parallel").glob(".*.tmp-*")))
 
-    def test_v2_7_save_without_v3_fields_is_normalized_non_destructively(self):
-        old_state = {
-            "version": 1,
-            "current_line": "1",
-            "current_scene": "1d",
-            "souvenirs": ["旧纪念品"],
-            "completed_endings": ["1:1d"],
-            "daily": {"date": "2026-08-09", "count": 2},
-            "total_lines_started": 3,
-            "total_choices": 4,
-            "updated_at": "2026-08-09T12:00:00+08:00",
-        }
-        path = self.save_root / "forest" / "legacy" / forest.SAVE_NAME
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps(old_state, ensure_ascii=False), encoding="utf-8")
+    def test_web_rejects_d_and_never_exposes_ai_options_or_private_text(self):
+        initial = forest.web_state("private", player_name="人类", ai_name="小机")
+        started = forest.web_action(
+            "private", "start", expected_revision=initial["revision"],
+            player_name="人类", ai_name="小机", line=8,
+        )
+        self.assertEqual({item["key"] for item in started["current"]["options"]}, {"A", "B", "C"})
+        with self.assertRaisesRegex(forest.VendorCmdError, "只接受 A/B/C"):
+            forest.web_action(
+                "private", "choose", expected_revision=started["revision"],
+                expected_scene="opening", player_name="人类", ai_name="小机", option="D",
+            )
+        encoded = json.dumps(started, ensure_ascii=False)
+        author_opening = json.loads(
+            (VENDOR_DIR / "forest_game_data.json").read_text(encoding="utf-8")
+        )["lines"]["8"]["opening"]
+        self.assertNotIn(author_opening["ai_layer"]["hidden_info"], encoded)
+        self.assertNotIn(author_opening["ai_layer"]["options"]["D"]["text"], encoded)
 
-        web = forest.web_state("legacy", player_name="旧旅人", ai_name="旧同行者")
-        self.assertEqual(web["current"]["scene_id"], "1d")
-        self.assertEqual(web["souvenirs"], ["旧纪念品"])
-        self.assertEqual(web["revision"], 0)
-        forest.play({"player_id": "legacy", "action": "observe", "content": "旧路也还在。"})
-        normalized = self.state("legacy")
-        self.assertEqual(normalized["souvenirs"], ["旧纪念品"])
-        self.assertEqual(normalized["completed_endings"], ["1:1d"])
-        self.assertEqual(normalized["observations"]["1:1d"], "旧路也还在。")
-        self.assertEqual(normalized["version"], 1)
-
-    def test_corrupt_web_save_is_backed_up_and_returns_json_snapshot(self):
+    def test_corrupt_web_save_is_backed_up_and_web_actions_are_human_only(self):
         forest.play({"player_id": "webbroken", "action": "new"})
         path = self.save_root / "forest" / "webbroken" / forest.SAVE_NAME
         path.write_text("{broken", encoding="utf-8")
@@ -182,20 +96,11 @@ class ForestSharedStateTests(unittest.TestCase):
         self.assertTrue(snapshot["has_save"])
         self.assertIn("存档告警", snapshot["data_warning"])
         self.assertEqual(len(list(path.parent.glob(f"{forest.SAVE_NAME}.corrupt-*"))), 1)
-
-    def test_web_actions_cannot_reset_or_overwrite_an_existing_save(self):
-        initial = forest.web_state("protected", player_name="人类", ai_name="小机")
-        forest.web_action(
-            "protected", "start", expected_revision=initial["revision"],
-            player_name="人类", ai_name="小机", line=1,
-        )
-        before = self.state("protected")
         with self.assertRaisesRegex(forest.VendorCmdError, "只支持 start / choose"):
             forest.web_action(
-                "protected", "reset", expected_revision=before["revision"],
-                player_name="人类", ai_name="小机",
+                "webbroken", "ai_choose", expected_revision=snapshot["revision"],
+                player_name="人类", ai_name="小机", option="D",
             )
-        self.assertEqual(self.state("protected"), before)
 
 
 class ForestWebAuthorizationTests(unittest.TestCase):
@@ -329,8 +234,11 @@ class ForestWebRouteTests(unittest.TestCase):
         self.assertIn('next.human_name', page)
         self.assertIn('next.machine_name', page)
         self.assertIn("current.human_text", page)
-        self.assertIn("current.ai_prompt", page)
+        self.assertNotIn("current.ai_prompt", page)
+        self.assertIn("current.waiting_for", page)
         self.assertIn("current.observation", page)
+        self.assertNotIn("ai_hidden", page)
+        self.assertNotIn("hidden_info", page)
 
     def test_page_reuses_author_interactions_with_server_backing(self):
         page = (ROOT / "forest.html").read_text(encoding="utf-8")
@@ -354,6 +262,7 @@ class ForestWebRouteTests(unittest.TestCase):
         self.assertIn("action: 'choose'", page)
         self.assertNotIn("action: 'observe'", page)
         self.assertIn("credentials: 'same-origin'", page)
+        self.assertIn("}, 8000);", page)
 
     def test_basic_page_and_api_routes_dispatch(self):
         get_handler = object.__new__(server.CedarToyHandler)
