@@ -276,6 +276,23 @@ class ForestWebRouteTests(unittest.TestCase):
         self.assertIn("/forest/?player=", home)
         self.assertIn('watchLabel: "进入双人森林 →"', home)
 
+    def test_home_picker_only_renders_machines_and_slots_with_existing_saves(self):
+        home = (ROOT / "index.html").read_text(encoding="utf-8")
+        picker = home.split("function renderForestSlotPicker", 1)[1].split(
+            "async function enterWatch", 1
+        )[0]
+
+        self.assertIn(
+            "slots: (Array.isArray(machine.slots) ? machine.slots : []).filter((slot) => slot.exists)",
+            picker,
+        )
+        self.assertIn(".filter((machine) => machine.slots.length)", picker)
+        self.assertIn("machine.slots.map((save) =>", picker)
+        self.assertIn("${machine.slots.length} 个已有存档", picker)
+        self.assertIn("你绑定的小机还没有森林存档。", picker)
+        self.assertNotIn("从森林入口开始", picker)
+        self.assertNotIn("还没进入森林", picker)
+
     def test_page_keeps_upstream_storybook_structure_and_mobile_layout(self):
         page = (ROOT / "forest.html").read_text(encoding="utf-8")
         author = (VENDOR_DIR / "forest_panel.html").read_text(encoding="utf-8")

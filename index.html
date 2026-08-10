@@ -3296,6 +3296,29 @@
       }
     ];
 
+    const FIXED_GAME_IDS = ["soup", "fishing", "eco"];
+    const HUMAN_FRONTEND_GAME_IDS = new Set([
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat"
+    ]);
+
+    function fixedGameRank(id) {
+      const index = FIXED_GAME_IDS.indexOf(id);
+      return index === -1 ? FIXED_GAME_IDS.length : index;
+    }
+
+    function compareHomepageGames(left, right) {
+      const fixedOrder = fixedGameRank(left.id) - fixedGameRank(right.id);
+      if (fixedOrder) return fixedOrder;
+
+      const frontendOrder = Number(HUMAN_FRONTEND_GAME_IDS.has(right.id))
+        - Number(HUMAN_FRONTEND_GAME_IDS.has(left.id));
+      if (frontendOrder) return frontendOrder;
+
+      return left.name.localeCompare(right.name, "zh-CN");
+    }
+
+    const homepageGames = [...games].sort(compareHomepageGames);
+
     let selected = "soup";
     let filter = "mini";
     let me = null;
@@ -4363,11 +4386,11 @@
 
     function renderGames() {
       const query = $("searchInput").value.trim().toLowerCase();
-      const visibleGames = games.filter(canShowGame);
+      const visibleGames = homepageGames.filter(canShowGame);
       if (!visibleGames.some((game) => game.id === selected)) {
         selected = visibleGames[0]?.id || "soup";
       }
-      $("gameList").innerHTML = games.map((game) => {
+      $("gameList").innerHTML = homepageGames.map((game) => {
         const searchable = `${game.name} ${game.short} ${game.tags.join(" ")}`.toLowerCase();
         const hidden = !canShowGame(game) || game.category !== filter || (query && !searchable.includes(query));
         const enterLabel = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
@@ -4793,8 +4816,7 @@
     function renderForestSlotPicker(machine) {
       $("bankPickerPanel").setAttribute("aria-label", "选择森林存档");
       $("bankPickerTitle").textContent = `${machine.machineName} · 选择存档`;
-      const existingSlots = machine.slots.filter((save) => save.exists);
-      $("bankPickerOptions").innerHTML = existingSlots.map((save) => {
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => {
         const summary = save.summary || {};
         const position = summary.current_line
           ? `线${escapeHtml(summary.current_line)} · ${escapeHtml(summary.current_scene || "入口")}`
@@ -4820,11 +4842,10 @@
       $("bankPickerPanel").setAttribute("aria-label", "选择小机");
       $("bankPickerTitle").textContent = "选择同行小机";
       $("bankPickerOptions").innerHTML = machines.map((machine) => {
-        const existing = machine.slots.filter((slot) => slot.exists).length;
         return `
           <button class="bank-picker-option" data-forest-machine="${escapeHtml(machine.aiUserId)}" type="button">
             <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
-            <span class="garden-picker-option-meta">${existing ? `${existing} 个已有存档` : "还没进入森林"}</span>
+            <span class="garden-picker-option-meta">${machine.slots.length} 个已有存档</span>
           </button>
         `;
       }).join("");
@@ -4850,8 +4871,8 @@
         const machines = (Array.isArray(data.machines) ? data.machines : []).map((machine) => ({
           aiUserId: String(machine.ai_user_id),
           machineName: machine.machine_name,
-          slots: Array.isArray(machine.slots) ? machine.slots : [],
-        })).filter((machine) => machine.slots.some((slot) => slot.exists));
+          slots: (Array.isArray(machine.slots) ? machine.slots : []).filter((slot) => slot.exists),
+        })).filter((machine) => machine.slots.length);
         if (!machines.length) {
           $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">你绑定的小机还没有森林存档。</p>`;
           return;
