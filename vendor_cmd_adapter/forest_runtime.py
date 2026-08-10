@@ -87,12 +87,36 @@ def _validated_v3_game(game, vendor_dir):
     return candidate
 
 
+def _has_embedded_ai_slot_prompt(game):
+    """Return whether the author data already carries any scene prompt."""
+    for line in game.get("lines", {}).values():
+        if not isinstance(line, dict):
+            continue
+        line_scenes = line.get("scenes")
+        line_scenes = line_scenes if isinstance(line_scenes, dict) else {}
+        scenes = [line.get("opening"), *line_scenes.values()]
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            ai_slot = scene.get("ai_slot")
+            if isinstance(ai_slot, dict) and isinstance(ai_slot.get("prompt"), str):
+                return True
+    return False
+
+
 def _read_game(vendor_dir):
     path = Path(vendor_dir) / "forest_game_data.json"
     with path.open("r", encoding="utf-8") as source:
         game = json.load(source)
     if not isinstance(game, dict) or not isinstance(game.get("lines"), dict):
         raise ValueError("forest_game_data.json 格式无效")
+    if _has_embedded_ai_slot_prompt(game):
+        # Newer author releases embed the AI observation copy in the main data.
+        # A release may migrate lines incrementally, so one embedded prompt is
+        # enough to make the whole file authoritative; filling the remaining
+        # gaps from drafts could replace newer author text or transitions.
+        game["_forest_data_version"] = "v3-display/v2-runtime"
+        return game
     try:
         return _validated_v3_game(game, vendor_dir)
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:

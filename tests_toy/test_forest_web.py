@@ -36,32 +36,27 @@ class ForestSharedStateTests(unittest.TestCase):
             )
         )
 
-    def test_all_author_v3_drafts_form_one_valid_runtime_view(self):
+    def test_author_integrated_v3_data_is_the_runtime_source(self):
         game = forest_runtime._read_game(VENDOR_DIR)
+        author = json.loads((VENDOR_DIR / "forest_game_data.json").read_text(encoding="utf-8"))
         self.assertEqual(game["_forest_data_version"], "v3-display/v2-runtime")
         self.assertNotIn("_forest_data_warning", game)
+        self.assertEqual(game["lines"], author["lines"])
         self.assertEqual(set(game["lines"]), {str(number) for number in range(1, 12)})
+        self.assertNotIn("ai_slot", game["lines"]["1"]["opening"])
+        self.assertTrue(game["lines"]["2"]["opening"]["ai_slot"]["prompt"].strip())
         for line_id, line in game["lines"].items():
             nodes = {"opening": line["opening"], **line["scenes"]}
             for scene_id, scene in nodes.items():
-                self.assertEqual(scene["text"], scene["human_text"], (line_id, scene_id))
-                self.assertTrue(scene["ai_slot"]["free"], (line_id, scene_id))
-                self.assertTrue(scene["ai_slot"]["prompt"].strip(), (line_id, scene_id))
+                ai_slot = scene.get("ai_slot")
+                if ai_slot:
+                    self.assertTrue(ai_slot.get("free"), (line_id, scene_id))
+                    self.assertTrue(ai_slot.get("prompt", "").strip(), (line_id, scene_id))
                 for option in scene.get("options", {}).values():
                     self.assertTrue(
                         option["target"] == "free_play" or option["target"] in nodes,
                         (line_id, scene_id, option),
                     )
-        self.assertEqual(game["lines"]["1"]["opening"]["options"]["D"]["target"], "1d")
-        self.assertEqual(
-            game["lines"]["1"]["opening"]["options"]["D"]["source"],
-            "v2_fallback",
-        )
-        self.assertEqual(
-            {(item["line"], item["scene"], item["option"]) for item in game["_forest_mapping_issues"]},
-            {("1", "opening", "D"), ("11", "11a_linger", "B")},
-        )
-        self.assertIn("11a_end_c", game["lines"]["11"]["scenes"])
 
     def test_human_and_mcp_actions_are_bidirectionally_visible(self):
         initial = forest.web_state("42", player_name="小满", ai_name="阿橘")
@@ -72,15 +67,18 @@ class ForestSharedStateTests(unittest.TestCase):
             expected_revision=initial["revision"],
             player_name="小满",
             ai_name="阿橘",
-            line=1,
+            line=2,
         )
         self.assertEqual(human_started["current"]["scene_id"], "opening")
         self.assertIn("小满", human_started["current"]["human_text"])
+        self.assertIn("阿橘", human_started["current"]["human_text"])
+        self.assertIn("小满", human_started["current"]["ai_prompt"])
+        self.assertNotIn("{player}", human_started["current"]["ai_prompt"])
         self.assertIn("阿橘", forest.play({"player_id": "42", "action": "status"})["text"])
 
         forest.play({"player_id": "42", "action": "choose", "option": "A"})
         after_ai_choice = forest.web_state("42", player_name="小满", ai_name="阿橘")
-        self.assertEqual(after_ai_choice["current"]["scene_id"], "1a")
+        self.assertEqual(after_ai_choice["current"]["scene_id"], "2a")
 
         forest.play(
             {
@@ -91,13 +89,13 @@ class ForestSharedStateTests(unittest.TestCase):
         )
         after_observation = forest.web_state("42", player_name="小满", ai_name="阿橘")
         self.assertEqual(after_observation["current"]["observation"], "我注意到炉灰是新的。")
-        self.assertEqual(after_observation["latest_observation"]["scene_id"], "1a")
+        self.assertEqual(after_observation["latest_observation"]["scene_id"], "2a")
 
         human_finished = forest.web_action(
             "42",
             "choose",
             expected_revision=after_observation["revision"],
-            expected_scene="1a",
+            expected_scene="2a",
             player_name="小满",
             ai_name="阿橘",
             option="B",

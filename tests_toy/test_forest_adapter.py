@@ -1,4 +1,5 @@
 import json
+import shutil
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +58,72 @@ class ForestAdapterTests(unittest.TestCase):
                 return
             self.play(player_id, "choose", option=next(iter(scene["options"])))
         self.fail(f"line {line_id} did not reach an ending")
+
+    def test_author_embedded_ai_slots_take_priority_over_v3_drafts(self):
+        game = forest_runtime._read_game(
+            ROOT / "vendor" / "mo-yao-play-games"
+        )
+        author_opening = GAME_DATA["lines"]["1"]["opening"]
+        runtime_opening = game["lines"]["1"]["opening"]
+
+        self.assertEqual(runtime_opening["text"], author_opening["text"])
+        self.assertEqual(runtime_opening.get("ai_slot"), author_opening.get("ai_slot"))
+        self.assertNotIn("human_text", runtime_opening)
+
+    def test_author_line_2_prompt_survives_and_mcp_start_replaces_names(self):
+        game = forest_runtime._read_game(
+            ROOT / "vendor" / "mo-yao-play-games"
+        )
+        author_prompt = GAME_DATA["lines"]["2"]["opening"]["ai_slot"]["prompt"]
+        self.assertEqual(
+            game["lines"]["2"]["opening"]["ai_slot"]["prompt"],
+            author_prompt,
+        )
+
+        initial = forest.web_state("named", player_name="小满", ai_name="阿橘")
+        forest.web_action(
+            "named",
+            "start",
+            expected_revision=initial["revision"],
+            player_name="小满",
+            ai_name="阿橘",
+            line=1,
+        )
+        output = self.play("named", "start", line=2)["text"]
+        self.assertIn(
+            author_prompt.replace("{player}", "小满").replace("{ai}", "阿橘"),
+            output,
+        )
+        self.assertNotIn("{player}", output)
+        self.assertNotIn("{ai}", output)
+
+    def test_promptless_legacy_author_data_falls_back_to_v3_drafts(self):
+        legacy_vendor = self.save_root / "legacy-vendor"
+        legacy_vendor.mkdir()
+        legacy_game = json.loads(json.dumps(GAME_DATA, ensure_ascii=False))
+        for line in legacy_game["lines"].values():
+            for scene in [line["opening"], *line["scenes"].values()]:
+                scene.pop("ai_slot", None)
+        (legacy_vendor / "forest_game_data.json").write_text(
+            json.dumps(legacy_game, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        source_vendor = ROOT / "vendor" / "mo-yao-play-games"
+        for draft in source_vendor.glob("forest_line*_v3_draft.json"):
+            shutil.copy2(draft, legacy_vendor / draft.name)
+
+        game = forest_runtime._read_game(legacy_vendor)
+        line_1_draft = json.loads(
+            (legacy_vendor / "forest_line1_v3_draft.json").read_text(encoding="utf-8")
+        )["1"]
+        self.assertEqual(
+            game["lines"]["1"]["opening"]["text"],
+            line_1_draft["opening"]["human_text"],
+        )
+        self.assertEqual(
+            game["lines"]["1"]["opening"]["ai_slot"],
+            line_1_draft["opening"]["ai_slot"],
+        )
 
     def test_new_is_immediately_saved_and_requires_confirmation_to_overwrite(self):
         text = self.play("fresh", "new")["text"]
