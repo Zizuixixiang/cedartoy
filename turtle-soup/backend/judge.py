@@ -1,10 +1,15 @@
 import asyncio
 import json
 import logging
+import math
 import re
 import time
+from dataclasses import dataclass
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import HTTPException
@@ -13,14 +18,30 @@ from database import DEFAULT_SETTINGS, fetch_all, fetch_one
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
-fail_counts: dict[str, dict[int, int]] = {"judge": {}, "hint": {}}
-_rr_index: dict[str, int] = {"judge": 0, "hint": 0}
+_rr_index: dict[str, dict[int, int]] = {"judge": {}, "hint": {}}
 _rr_locks: dict[str, asyncio.Lock] = {"judge": asyncio.Lock(), "hint": asyncio.Lock()}
-_config_locks: dict[str, asyncio.Lock] = {}
+_config_locks: dict[int, asyncio.Lock] = {}
 _guess_lock = asyncio.Lock()
-FAIL_LIMIT = 5
+FAIL_LIMIT = 3
+COOLDOWN_SECONDS = (60, 120, 300)
+RATE_LIMIT_MIN_COOLDOWN_SECONDS = 120
+DEEPSEEK_V4_NODE_TIMEOUT = 30.0
+DEEPSEEK_V4_MIN_MAX_TOKENS = 8192
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ConfigRuntimeState:
+    consecutive_failures: int = 0
+    cooldown_stage: int = -1
+    cooldown_until: float = 0.0
+    probe_in_flight: bool = False
+    last_error: str | None = None
+    last_success_at: str | None = None
+
+
+_runtime_states: dict[int, ConfigRuntimeState] = {}
 
 STYLE_DESCRIPTIONS = {
     "cozy": '主打"情感的错位与反转"。汤面必须看起来像是某种冷漠、奇怪甚至带有恶意的行为，但汤底揭晓时，其实是极致的保护、笨拙的爱意或温柔的成全。出题发力点参考：误解的善意、跨越时间的约定、隐秘的保护、无法开口的道别、用笨拙方式表达的爱。',
@@ -74,23 +95,149 @@ async def _get_judge_prompt_clue() -> str:
 
 
 def _pool_name(pool: str) -> str:
-    return pool if pool in fail_counts else "judge"
+    return pool if pool in _rr_index else "judge"
 
 
 def _config_lock(cfg: dict[str, Any]) -> asyncio.Lock:
-    key = "|".join(str(cfg.get(part) or "") for part in ("api_url", "api_key", "model"))
-    lock = _config_locks.get(key)
+    config_id = int(cfg["id"])
+    lock = _config_locks.get(config_id)
     if lock is None:
         lock = asyncio.Lock()
-        _config_locks[key] = lock
+        _config_locks[config_id] = lock
     return lock
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def _wall_now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _state(config_id: int) -> ConfigRuntimeState:
+    return _runtime_states.setdefault(int(config_id), ConfigRuntimeState())
+
+
+def _runtime_status(state: ConfigRuntimeState, now: float | None = None) -> str:
+    now = _now() if now is None else now
+    if state.cooldown_until > now:
+        return "cooling"
+    if state.cooldown_stage >= 0 or state.probe_in_flight:
+        return "half_open"
+    return "healthy"
+
+
+def get_config_runtime_status(config_id: int, *, enabled: bool = True) -> dict[str, Any]:
+    state = _runtime_states.get(int(config_id), ConfigRuntimeState())
+    now = _now()
+    remaining = max(0, math.ceil(state.cooldown_until - now))
+    return {
+        "runtime_status": "disabled" if not enabled else _runtime_status(state, now),
+        "consecutive_failures": state.consecutive_failures,
+        "cooldown_remaining_seconds": remaining,
+        "last_error": state.last_error,
+        "last_success_at": state.last_success_at,
+    }
+
+
+def _config_available(config_id: int, now: float | None = None) -> bool:
+    state = _runtime_states.get(int(config_id))
+    if state is None:
+        return True
+    now = _now() if now is None else now
+    return state.cooldown_until <= now and not state.probe_in_flight
+
+
+def _claim_attempt(config_id: int) -> bool | None:
+    """Return whether this attempt is half-open, or None when it must be skipped."""
+    state = _state(config_id)
+    now = _now()
+    if state.cooldown_until > now or state.probe_in_flight:
+        return None
+    is_probe = state.cooldown_stage >= 0
+    if is_probe:
+        state.probe_in_flight = True
+    return is_probe
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 429:
+        return None
+    value = exc.response.headers.get("Retry-After", "").strip()
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            return max(0.0, retry_at.timestamp() - time.time())
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+
+def _classify_error(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        category = "429" if status == 429 else f"http_{status // 100}xx"
+        return category, f"HTTP {status} {exc.response.reason_phrase}".strip()
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return "connect", type(exc).__name__
+    if isinstance(exc, (httpx.TimeoutException, asyncio.TimeoutError)):
+        return "timeout", type(exc).__name__
+    if isinstance(exc, httpx.HTTPError):
+        return "network", type(exc).__name__
+    return "response", f"{type(exc).__name__}: {exc}"
+
+
+def _record_failure(config_id: int, exc: Exception, *, was_probe: bool) -> str:
+    state = _state(config_id)
+    state.probe_in_flight = False
+    state.consecutive_failures += 1
+    category, detail = _classify_error(exc)
+    state.last_error = f"{category}: {detail}"
+
+    retry_after = _retry_after_seconds(exc)
+    should_cool = was_probe or state.consecutive_failures >= FAIL_LIMIT or category == "429"
+    if should_cool:
+        next_stage = min(state.cooldown_stage + 1, len(COOLDOWN_SECONDS) - 1)
+        if category == "429":
+            next_stage = max(next_stage, 1)
+        state.cooldown_stage = next_stage
+        duration = float(COOLDOWN_SECONDS[next_stage])
+        if category == "429":
+            duration = max(duration, RATE_LIMIT_MIN_COOLDOWN_SECONDS)
+        if retry_after is not None:
+            duration = max(duration, retry_after)
+        state.cooldown_until = _now() + duration
+    return state.last_error
+
+
+def _record_success(config_id: int) -> None:
+    state = _state(config_id)
+    state.consecutive_failures = 0
+    state.cooldown_stage = -1
+    state.cooldown_until = 0.0
+    state.probe_in_flight = False
+    state.last_error = None
+    state.last_success_at = _wall_now_iso()
+
+
+def mark_config_success(config_id: int) -> None:
+    _record_success(config_id)
+
+
+def _release_probe(config_id: int) -> None:
+    state = _runtime_states.get(int(config_id))
+    if state is not None:
+        state.probe_in_flight = False
 
 
 async def _configs(pool: str = "judge") -> list[dict[str, Any]]:
     rows = await _matching_configs(pool)
-    pool = _pool_name(pool)
-    pool_fail_counts = fail_counts[pool]
-    return [r for r in rows if pool_fail_counts.get(int(r["id"]), 0) < FAIL_LIMIT]
+    now = _now()
+    return [row for row in rows if _config_available(int(row["id"]), now)]
 
 
 async def _matching_configs(pool: str = "judge") -> list[dict[str, Any]]:
@@ -105,12 +252,11 @@ async def _matching_configs(pool: str = "judge") -> list[dict[str, Any]]:
 
 
 def reset_fail_counts(config_id: int | None = None, purpose: str | None = None) -> None:
-    pools = list(fail_counts) if purpose is None or purpose == "both" else [_pool_name(purpose)]
-    for pool in pools:
-        if config_id is None:
-            fail_counts[pool].clear()
-        else:
-            fail_counts[pool].pop(int(config_id), None)
+    del purpose  # Runtime health belongs to the API node, not to its scheduling pool.
+    if config_id is None:
+        _runtime_states.clear()
+    else:
+        _runtime_states.pop(int(config_id), None)
 
 
 def _endpoint(base: str) -> str:
@@ -127,6 +273,57 @@ def _models_endpoint(base: str) -> str:
     return f"{base}/models"
 
 
+def _is_official_deepseek_v4(cfg: dict[str, Any]) -> bool:
+    try:
+        host = (urlsplit(str(cfg.get("api_url") or "")).hostname or "").lower()
+    except ValueError:
+        return False
+    model = str(cfg.get("model") or "").lower()
+    return host == "api.deepseek.com" and model.startswith("deepseek-v4-")
+
+
+def _is_openrouter_gpt_oss(cfg: dict[str, Any]) -> bool:
+    try:
+        host = (urlsplit(str(cfg.get("api_url") or "")).hostname or "").lower()
+    except ValueError:
+        return False
+    model = str(cfg.get("model") or "").lower()
+    return host == "openrouter.ai" and model.startswith("openai/gpt-oss-")
+
+
+def _request_timeout(cfg: dict[str, Any], timeout: float) -> float | httpx.Timeout:
+    if not _is_official_deepseek_v4(cfg):
+        return timeout
+    return httpx.Timeout(timeout, read=DEEPSEEK_V4_NODE_TIMEOUT)
+
+
+def _request_max_tokens(cfg: dict[str, Any], max_tokens: int | None) -> int | None:
+    if max_tokens is None or not _is_official_deepseek_v4(cfg):
+        return max_tokens
+    return max(max_tokens, DEEPSEEK_V4_MIN_MAX_TOKENS)
+
+
+async def _post_chat_completion(
+    cfg: dict[str, Any],
+    payload: dict[str, Any],
+    timeout: float,
+) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=_request_timeout(cfg, timeout)) as client:
+        return await client.post(
+            _endpoint(cfg["api_url"]),
+            headers={"Authorization": f"Bearer {cfg['api_key']}"},
+            json=payload,
+        )
+
+
+async def _layer_start(pool: str, priority: int, size: int) -> int:
+    async with _rr_locks[pool]:
+        indices = _rr_index[pool]
+        start = indices.get(priority, 0) % size
+        indices[priority] = (start + 1) % size
+        return start
+
+
 async def _chat(
     messages: list[dict[str, str]],
     temperature: float = 0.1,
@@ -141,45 +338,59 @@ async def _chat(
     if not available:
         matching = await _matching_configs(pool)
         if matching:
-            logger.warning("%s configs exhausted by failure counts; resetting pool for retry", pool)
-            reset_fail_counts(purpose=pool)
-            available = matching
+            logger.warning("%s configs are cooling or already probing", pool)
         else:
-            raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
-    n = len(available)
-    async with _rr_locks[pool]:
-        start = _rr_index[pool] % n
-        _rr_index[pool] = (_rr_index[pool] + 1) % n
-    for i in range(n):
-        cfg = available[(start + i) % n]
-        cid = int(cfg["id"])
-        try:
+            logger.warning("%s has no enabled API configs", pool)
+        raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
+    layers: dict[int, list[dict[str, Any]]] = {}
+    for cfg in sorted(available, key=lambda item: (int(item.get("priority") or 0), int(item["id"]))):
+        layers.setdefault(int(cfg.get("priority") or 0), []).append(cfg)
+
+    for priority, candidates in layers.items():
+        start = await _layer_start(pool, priority, len(candidates))
+        for i in range(len(candidates)):
+            cfg = candidates[(start + i) % len(candidates)]
+            cid = int(cfg["id"])
             async with _config_lock(cfg):
-                payload: dict[str, Any] = {
-                    "model": cfg["model"],
-                    "messages": messages,
-                    "temperature": temperature,
-                }
-                if max_tokens is not None:
-                    payload["max_tokens"] = max_tokens
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(
-                        _endpoint(cfg["api_url"]),
-                        headers={"Authorization": f"Bearer {cfg['api_key']}"},
-                        json=payload,
-                    )
+                is_probe = _claim_attempt(cid)
+                if is_probe is None:
+                    continue
+                try:
+                    payload: dict[str, Any] = {
+                        "model": cfg["model"],
+                        "messages": messages,
+                        "temperature": temperature,
+                    }
+                    if _is_openrouter_gpt_oss(cfg):
+                        payload["reasoning"] = {"effort": "low", "exclude": True}
+                    request_max_tokens = _request_max_tokens(cfg, max_tokens)
+                    if request_max_tokens is not None:
+                        payload["max_tokens"] = request_max_tokens
+                    request = _post_chat_completion(cfg, payload, timeout)
+                    if _is_official_deepseek_v4(cfg):
+                        resp = await asyncio.wait_for(
+                            request,
+                            timeout=DEEPSEEK_V4_NODE_TIMEOUT,
+                        )
+                    else:
+                        resp = await request
                     resp.raise_for_status()
                     data = resp.json()
                     choice = data["choices"][0]
                     if choice.get("finish_reason") == "length":
                         raise RuntimeError("response truncated due to max_tokens")
                     text = choice["message"]["content"]
-            fail_counts[pool][cid] = 0
-            return str(text).strip()
-        except Exception as exc:
-            fail_counts[pool][cid] = fail_counts[pool].get(cid, 0) + 1
-            errors.append(f"{cfg.get('name')}: {exc!r}")
-            continue
+                    if not isinstance(text, str) or not text.strip():
+                        raise RuntimeError("empty response content")
+                except asyncio.CancelledError:
+                    _release_probe(cid)
+                    raise
+                except Exception as exc:
+                    error = _record_failure(cid, exc, was_probe=is_probe)
+                    errors.append(f"{cfg.get('name')}: {error}")
+                    continue
+                _record_success(cid)
+                return text.strip()
     logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
     raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
 
@@ -380,11 +591,15 @@ def _extract_clue_from_ask(text: str) -> str | None:
                     break
                 clue_lines.append(next_stripped)
             content = "\n".join(line for line in clue_lines if line).strip()
-            return content if content else _CLUE_PREFIX
+            return content or None
     return None
 
 
 def _extract_clue_from_answer(answer: str, triggered_clue: str | None = None) -> str | None:
+    clue = (triggered_clue or "").strip()
+    if not clue or clue == _CLUE_PREFIX:
+        return None
+
     segments: list[str] = []
     search_start = 0
     while True:
@@ -403,12 +618,11 @@ def _extract_clue_from_answer(answer: str, triggered_clue: str | None = None) ->
             segments.append(content)
     if not segments:
         return None
-    clue = (triggered_clue or "").strip()
-    if clue:
-        for segment in segments:
-            if clue in segment or segment in clue:
-                return segment
-    return segments[0]
+    normalized_clue = re.sub(r"\s+", "", clue)
+    for segment in segments:
+        if re.sub(r"\s+", "", segment) == normalized_clue:
+            return segment
+    return None
 
 
 def _extract_legacy_clue_segment(clue_text: str) -> str:
@@ -438,7 +652,11 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
         "不要输出通关格式。"
     )
     if has_clue:
-        ask_instruction += "若触发线索，可在第二行输出【线索公布】。实际公布内容会从汤底的【线索公布】与【线索公布结束】之间读取。"
+        ask_instruction += (
+            "若触发线索，第二行必须输出【线索公布】并逐字复制汤底对应线索的完整具体内容；"
+            "仅输出空的【线索公布】视为未触发。实际公布内容会从汤底的"
+            "【线索公布】与【线索公布结束】之间读取。"
+        )
     messages = [
         {"role": "system", "content": system},
         {"role": "system", "content": ask_instruction},
@@ -464,7 +682,7 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
     if not has_clue:
         clue = None
     elif clue is not None:
-        clue = _extract_clue_from_answer(answer, clue) or clue
+        clue = _extract_clue_from_answer(answer, clue)
     return {
         "judgment": _ASK_MAPPING[first_line],
         "clue": clue,

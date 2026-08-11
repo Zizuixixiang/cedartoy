@@ -59,6 +59,12 @@ const fieldLabels = {
   model: '模型',
   purpose: '用途',
   priority: '优先级',
+  runtime_summary: '运行状态',
+  runtime_status: '运行状态',
+  consecutive_failures: '连续失败',
+  cooldown_remaining_seconds: '剩余冷却（秒）',
+  last_error: '最近错误',
+  last_success_at: '最近成功',
   key: '配置项',
   value: '值',
   description: '说明',
@@ -73,7 +79,7 @@ const tabDescriptions = {
   bans: '按 IP 封禁访问，命中后会阻止继续使用海龟汤。',
   reports: '玩家对房间发言或用户的举报记录。',
   flags: '系统或管理员标记的风险内容，用于后续处理。',
-  'api-configs': '裁判 LLM 的接口配置。用途决定进入问答池、提示池或两边都用；同一池内按优先级轮转，停用或连续失败 5 次后不会被调度。',
+  'api-configs': '裁判 LLM 的接口配置。用途决定进入问答池、提示池或两边都用；优先尝试 priority 数值最低的一层，同层轮询且整层失败后才使用下一层。连续失败 3 次后自动冷却，随后以单次半开探测恢复。数据库启用开关与运行状态相互独立。',
   settings: '运行参数。修改后会影响新请求或后续流程。',
 }
 
@@ -104,6 +110,10 @@ const statusText = {
   judge: '问答',
   hint: '提示',
   both: '两边',
+  healthy: '健康',
+  cooling: '冷却中',
+  half_open: '半开探测',
+  disabled: '已停用',
 }
 
 const columns = {
@@ -114,7 +124,7 @@ const columns = {
   bans: ['id', 'ip', 'reason', 'banned_by', 'created_at'],
   reports: ['id', 'reporter_id', 'target_player_id', 'room_id', 'log_id', 'reason', 'status', 'created_at'],
   flags: ['id', 'type', 'ref_id', 'content', 'reason', 'status', 'created_at'],
-  'api-configs': ['id', 'name', 'api_url', 'api_key', 'model', 'purpose', 'enabled', 'priority', 'created_at'],
+  'api-configs': ['id', 'name', 'api_url', 'api_key', 'model', 'purpose', 'enabled', 'runtime_summary', 'priority', 'created_at'],
   settings: ['key', 'value', 'description'],
 }
 
@@ -193,7 +203,16 @@ const canAdd = new Set(['puzzles', 'submissions', 'players', 'rooms', 'bans', 'r
 const canEdit = new Set(['puzzles', 'submissions', 'players', 'rooms', 'bans', 'reports', 'flags', 'api-configs', 'settings'])
 const canDelete = new Set(['puzzles', 'submissions', 'players', 'rooms', 'bans', 'reports', 'flags', 'api-configs', 'settings'])
 
-const timestampFields = new Set(['created_at', 'last_active_at', 'finished_at', 'updated_at', 'joined_at', 'expires_at', 'deleted_at', 'bound_at'])
+const timestampFields = new Set(['created_at', 'last_active_at', 'last_success_at', 'finished_at', 'updated_at', 'joined_at', 'expires_at', 'deleted_at', 'bound_at'])
+
+function runtimeSummary(row) {
+  const status = statusText[row.runtime_status] || row.runtime_status || '健康'
+  const failures = Number(row.consecutive_failures || 0)
+  if (row.runtime_status === 'cooling') {
+    return `${status} ${Number(row.cooldown_remaining_seconds || 0)} 秒 · 连败 ${failures}`
+  }
+  return `${status} · 连败 ${failures}`
+}
 
 function displayValue(key, value) {
   if (value === null || value === undefined || value === '') return '未填写'
@@ -211,6 +230,7 @@ function displayValue(key, value) {
 
 function cellValue(tab, row, key) {
   if (key === 'description' && tab === 'settings') return settingDescriptions[row.key] || '自定义配置项'
+  if (key === 'runtime_summary' && tab === 'api-configs') return runtimeSummary(row)
   if (key === 'username' && tab === 'players' && !row[key]) return row.is_guest ? `游客${row.id}` : `玩家${row.id}`
   if (key === 'source') return row[key] === 'mcp' ? 'MCP / AI' : '网页'
   return row[key]
@@ -556,6 +576,16 @@ function AdminTable({ tab, rows, onView, onEdit, onDelete, onAction, onTest, tes
             <tr key={rowKey(tab, row)}>
               {cols.map((key) => {
                 const value = displayValue(key, cellValue(tab, row, key))
+                if (tab === 'api-configs' && key === 'runtime_summary') {
+                  const title = [value, row.last_error, row.last_success_at ? `最近成功：${displayValue('last_success_at', row.last_success_at)}` : '']
+                    .filter(Boolean)
+                    .join('\n')
+                  return (
+                    <td key={key} data-label={fieldLabels[key]} title={title}>
+                      <span className={`runtime-status runtime-status--${row.runtime_status || 'healthy'}`}>{value}</span>
+                    </td>
+                  )
+                }
                 return <td key={key} data-label={fieldLabels[key] || key} title={value}>{clip(value)}</td>
               })}
               <td data-label="操作">

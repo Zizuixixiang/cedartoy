@@ -5,7 +5,13 @@ from pydantic import BaseModel, Field
 
 from auth_utils import admin_player, verify_password
 from database import execute, fetch_all, fetch_one
-from judge import list_models, reset_fail_counts, test_config
+from judge import (
+    get_config_runtime_status,
+    list_models,
+    mark_config_success,
+    reset_fail_counts,
+    test_config,
+)
 from models import RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, SQL_NOW, clean_content, room_id
 
@@ -485,6 +491,12 @@ async def api_configs(admin: dict = Depends(admin_player)):
     for row in rows:
         key = row.get("api_key") or ""
         row["api_key"] = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
+        row.update(
+            get_config_runtime_status(
+                int(row["id"]),
+                enabled=bool(row.get("enabled")),
+            )
+        )
     return rows
 
 
@@ -531,8 +543,7 @@ async def test_api_config_draft(body: ApiTestBody, admin: dict = Depends(admin_p
     }
     result = await test_config(cfg)
     if result.get("success") and body.config_id:
-        purpose = normalize_api_config_purpose(existing.get("purpose") if existing else "judge")
-        reset_fail_counts(config_id=body.config_id, purpose=purpose)
+        mark_config_success(body.config_id)
     return result
 
 
@@ -568,7 +579,7 @@ async def test_api_config(config_id: int, admin: dict = Depends(admin_player)):
         raise HTTPException(status_code=404, detail="配置不存在")
     result = await test_config(cfg)
     if result.get("success"):
-        reset_fail_counts(config_id=config_id, purpose=normalize_api_config_purpose(cfg.get("purpose")))
+        mark_config_success(config_id)
     return result
 
 

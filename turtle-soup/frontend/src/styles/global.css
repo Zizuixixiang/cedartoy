@@ -229,6 +229,11 @@ main { width: min(1280px, 100%); margin: 0 auto; padding: 18px; }
 .admin-data-table td { max-width: 280px; overflow-wrap: anywhere; line-height: 1.45; }
 .admin-data-table tbody tr:hover { background: #fbfdfc; }
 .admin-data-table tr:last-child td { border-bottom: 0; }
+.runtime-status { display: inline-block; border-radius: 999px; padding: 4px 8px; white-space: nowrap; font-size: 12px; font-weight: 700; background: #eef2f6; color: #475467; }
+.runtime-status--healthy { background: #dcfae6; color: #067647; }
+.runtime-status--cooling { background: #fef0c7; color: #b54708; }
+.runtime-status--half_open { background: #e8f1ff; color: #175cd3; }
+.runtime-status--disabled { background: #eef2f6; color: #667085; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 220px; }
 .row-actions button { padding: 6px 9px; font-size: 13px; }
 .admin-modal { width: min(720px, 100%); max-height: calc(100vh - 40px); overflow: auto; background: #fff; border-radius: 8px; padding: 18px; box-shadow: 0 16px 48px rgba(13, 48, 43, .22); }
