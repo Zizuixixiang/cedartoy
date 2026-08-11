@@ -1163,6 +1163,47 @@
       margin-top: 12px;
     }
 
+    #deleteAccountModal [hidden] { display: none !important; }
+    #deleteAccountModal .modal-box {
+      width: min(360px, 100%);
+      padding: 20px;
+    }
+    #deleteAccountModal .delete-warning {
+      margin: 0 0 14px;
+      color: var(--pink-dark);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    #deleteAccountModal .delete-note {
+      display: block;
+      margin-top: 5px;
+      color: var(--purple-dark);
+      font-size: 10px;
+      opacity: 0.72;
+    }
+    #deleteAccountModal .checkbox-field { margin: 10px 0 2px; }
+    #deleteAccountModal .delete-account-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    #deleteAccountModal .delete-account-actions .pixel-btn {
+      width: 100%;
+      min-width: 0;
+      padding: 10px 8px;
+      min-height: 42px;
+    }
+    #deleteAccountModal .delete-final {
+      margin: 4px 0 2px;
+      padding: 14px 12px;
+      border: 3px dashed #BEB1D1;
+      color: var(--purple-dark);
+      font-size: 12px;
+      line-height: 1.7;
+      text-align: center;
+    }
+
     #historyModal .modal-box {
       width: min(760px, 100%);
       height: fit-content;
@@ -2544,27 +2585,27 @@
     <div class="modal-box">
       <h2 class="modal-title" id="deleteAccountTitle">注销账号</h2>
       <div id="deleteAccountStepOne">
-        <p class="modal-hint">申请后立即停止正常使用。72 小时内可以取消；超过后账号和个人存档会永久删除，公共多人记录仅匿名化保留。</p>
+        <p class="delete-warning">申请后账号将暂停使用。72 小时内可取消；到期后账号和个人存档永久删除。<span class="delete-note">公共多人记录只做匿名化保留。</span></p>
         <label class="field" id="deleteAccountPasswordField">
           <span class="field-label">再次输入当前密码</span>
           <input id="deleteAccountPassword" type="password" autocomplete="current-password">
         </label>
         <label class="checkbox-field">
           <input id="deleteAccountConfirm" type="checkbox">
-          <span>我已了解以上内容</span>
+          <span>我已了解注销影响</span>
         </label>
       </div>
       <div id="deleteAccountStepTwo" hidden>
-        <p class="modal-hint">再次确认：申请后账号会立即进入待注销状态，正常游戏将暂停。确定要开始 72 小时注销冷静期吗？</p>
+        <p class="delete-final">确定申请注销？<br>提交后将开始 72 小时冷静期。</p>
       </div>
       <div class="modal-msg" id="deleteAccountMsg"></div>
-      <div class="modal-actions" id="deleteAccountStepOneActions">
+      <div class="modal-actions delete-account-actions" id="deleteAccountStepOneActions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
-        <button class="pixel-btn" id="deleteAccountContinue" type="button">继续</button>
+        <button class="pixel-btn" id="deleteAccountContinue" type="button">下一步</button>
       </div>
-      <div class="modal-actions" id="deleteAccountStepTwoActions" hidden>
+      <div class="modal-actions delete-account-actions" id="deleteAccountStepTwoActions" hidden>
         <button class="pixel-btn secondary" id="deleteAccountBack" type="button">返回</button>
-        <button class="pixel-btn" id="deleteAccountSubmit" type="button">确认申请注销</button>
+        <button class="pixel-btn" id="deleteAccountSubmit" type="button">确认注销</button>
       </div>
     </div>
   </div>
@@ -6024,7 +6065,7 @@
       const message = $("deleteAccountMsg");
       message.textContent = "";
       if (!confirmed) {
-        message.textContent = "请先勾选“我已了解以上内容”";
+        message.textContent = "请先勾选“我已了解注销影响”";
         return;
       }
       if (!me?.user?.is_ai && !current_password) {
