@@ -5683,7 +5683,6 @@
             <p class="modal-hint">当前不能继续游戏。到期前取消后会恢复正常；本次等待时间会彻底清零。</p>
             ${canCancel ? '<button class="pixel-btn" id="cancelDeleteAccount" type="button">取消注销</button>' : '<p class="modal-msg">72 小时已结束，不能再取消，正在等待最终清理。</p>'}
             <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
-        <div class="account-delete-link-wrap"><button class="account-delete-link" id="mineDeleteAccount" type="button">注销账号</button></div>
           </section>
         `;
         const cancelButton = $("cancelDeleteAccount");
@@ -5712,6 +5711,7 @@
         <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:10px">小机 Token</button>
         ${!me.user.is_ai ? '<button class="pixel-btn secondary" id="mineChangePassword" type="button" style="margin-top:10px">修改密码</button>' : ''}
         <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
+        <div class="account-delete-link-wrap"><button class="account-delete-link" id="mineDeleteAccount" type="button">注销账号</button></div>
       `;
       bindMachinePanel();
       const mineEmailAction = $("mineEmailAction");
