@@ -215,6 +215,9 @@ class ForestWebRouteTests(unittest.TestCase):
             'id="souvenirPopup"',
             'id="souvenirList"',
             "@keyframes pageGlow",
+            'class="epilogue"',
+            "@keyframes echoPulse",
+            "@keyframes echoFlash",
             "@media (max-width:768px)",
         ):
             self.assertIn(marker, page)
@@ -237,6 +240,9 @@ class ForestWebRouteTests(unittest.TestCase):
         self.assertNotIn("current.ai_prompt", page)
         self.assertIn("current.waiting_for", page)
         self.assertIn("current.observation", page)
+        self.assertIn("current.epilogue", page)
+        self.assertIn("current.ai_round", page)
+        self.assertIn("current.ai_round_max", page)
         self.assertNotIn("ai_hidden", page)
         self.assertNotIn("hidden_info", page)
 
@@ -250,6 +256,8 @@ class ForestWebRouteTests(unittest.TestCase):
             "function handleEndingContinue()",
             "function showSouvenirPopup(name)",
             "function showSouvenirList()",
+            "function observationChanged(previous, next)",
+            "function pulseObservationEcho()",
             "data-option=",
         ):
             self.assertIn(interaction, page)

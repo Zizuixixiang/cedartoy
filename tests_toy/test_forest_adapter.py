@@ -151,6 +151,9 @@ class ForestRuntimeTests(unittest.TestCase):
         first_memory = self.invoke("loop", "ai_choose", option="D")
         self.assertIn("随机记忆", first_memory)
         self.assertEqual(self.state("loop")["ai_loop_count"], 1)
+        web = self.web("loop")
+        self.assertEqual(web["current"]["ai_round"], 1)
+        self.assertEqual(web["current"]["ai_round_max"], 3)
         second_memory = self.invoke("loop", "ai_choose", option="D")
         self.assertIn("随机记忆", second_memory)
         self.assertEqual(self.state("loop")["ai_loop_count"], 2)
@@ -172,6 +175,7 @@ class ForestRuntimeTests(unittest.TestCase):
         self.invoke("private", "start", line="8")
         game = forest_runtime._read_game(VENDOR_DIR)
         game["lines"]["8"]["opening"]["public_state"] = "海水已经没过脚踝"
+        game["lines"]["8"]["opening"]["epilogue"] = "{player}和{ai_name}听见余音"
         state = forest_runtime._validate_state(self.state("private"), game)
         snapshot = forest_runtime._web_snapshot(game, state, True)
         encoded = json.dumps(snapshot, ensure_ascii=False)
@@ -192,6 +196,7 @@ class ForestRuntimeTests(unittest.TestCase):
 
         walk(snapshot)
         self.assertEqual(snapshot["current"]["public_state"], "海水已经没过脚踝")
+        self.assertEqual(snapshot["current"]["epilogue"], "旅人和同行者听见余音")
         self.assertEqual({item["key"] for item in snapshot["current"]["options"]}, {"A", "B", "C"})
         opening = GAME_DATA["lines"]["8"]["opening"]
         self.assertNotIn(opening["ai_layer"]["hidden_info"], encoded)

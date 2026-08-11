@@ -199,6 +199,12 @@
     border-radius:0 8px 8px 0; font-size:13px; color:var(--ink-light);
     font-style:italic; line-height:1.7;
   }
+  .story-page .epilogue {
+    display:block; margin:24px 0 8px; padding:18px 20px;
+    background:rgba(232,216,144,0.08); border-left:2px solid var(--starlight);
+    border-radius:0 8px 8px 0; font-size:14px; color:var(--text-dim);
+    font-style:italic; line-height:1.9;
+  }
   .story-page .ending-marker {
     display:inline-block; margin-top:22px; padding:8px 20px;
     background:rgba(232,216,144,0.2); border:1px solid rgba(232,216,144,0.5);
@@ -333,6 +339,20 @@
   .merge-timer {
     text-align:center; padding:10px; font-size:12px; color:var(--text-muted);
     font-style:italic;
+  }
+
+  /* ── Observation Echo ── */
+  .echo-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--text-muted); margin-left:6px; vertical-align:middle; transition:all .3s; }
+  .echo-dot.pulse { background:var(--starlight); box-shadow:0 0 8px var(--starlight); animation:echoPulse .8s ease-out; }
+  @keyframes echoPulse {
+    0%   { transform:scale(1); opacity:1; }
+    50%  { transform:scale(2.5); opacity:0.5; }
+    100% { transform:scale(1); opacity:0.3; }
+  }
+  .echo-flash { animation:echoFlash 1.8s ease-out; }
+  @keyframes echoFlash {
+    0%   { color:var(--starlight); text-shadow:0 0 6px rgba(232,216,144,0.4); }
+    100% { color:var(--text-muted); text-shadow:none; }
   }
 
   /* ── Treasure Box Modal ── */
@@ -551,16 +571,44 @@ function applySnapshot(next) {
   renderLinePicker();
 }
 
+function observationChanged(previous, next) {
+  const before = previous && previous.current;
+  const after = next && next.current;
+  return !!(
+    before && after &&
+    before.line_id === after.line_id &&
+    before.scene_id === after.scene_id &&
+    after.observation &&
+    before.observation !== after.observation
+  );
+}
+
+function pulseObservationEcho() {
+  const dot = document.querySelector('#aiPanel .echo-dot');
+  const footer = document.querySelector('#aiPanel .note-footer');
+  if (dot) {
+    dot.classList.remove('pulse');
+    void dot.offsetWidth;
+    dot.classList.add('pulse');
+  }
+  if (footer) {
+    footer.classList.remove('echo-flash');
+    void footer.offsetWidth;
+    footer.classList.add('echo-flash');
+  }
+}
+
 async function refreshState(initial) {
   if (requestBusy) return;
   requestBusy = true;
   try {
     const next = await request(`/forest/api/state?player=${encodeURIComponent(player)}`);
     const changed = !snapshot || next.revision !== snapshot.revision;
+    const echoObservation = !initial && observationChanged(snapshot, next);
     applySnapshot(next);
     if (next.data_warning && initial) window.alert(next.data_warning);
     if ((initial || changed) && !showingPicker && !freePlay && next.current) {
-      showCurrentScene();
+      showCurrentScene(echoObservation);
     }
   } catch (error) {
     if (initial) showPageError(error.message);
@@ -647,7 +695,7 @@ function goBack() {
   state.currentData = null;
 }
 
-function showCurrentScene() {
+function showCurrentScene(echoObservation = false) {
   const current = snapshot && snapshot.current;
   if (!current) return;
   showingPicker = false;
@@ -664,7 +712,11 @@ function showCurrentScene() {
   narrative.className = 'story-page' + (isEnding ? ' ending' : '');
   let text = escHtml(current.human_text || '');
   text = text.replace(/\*\[AI：([^*]+)\]\*/g, '<span class="ai-hint">$1</span>');
+  const epilogue = isEnding && current.epilogue
+    ? '<div class="epilogue">' + escHtml(current.epilogue) + '</div>'
+    : '';
   narrative.innerHTML = '<div class="scene-text">' + text + '</div>' +
+    epilogue +
     (isEnding ? '<div class="ending-marker">✦ 这一页翻过去了</div>' : '');
   narrative.classList.add('fade-in');
 
@@ -674,6 +726,9 @@ function showCurrentScene() {
       ? `${state.aiName}还在另一页，故事会在同行者回应后继续……`
       : `${state.aiName}还没有分享观察……`
   );
+  const noteStatus = current.ai_round && current.ai_round_max
+    ? `AI感知层 · 第 ${current.ai_round} 轮 / 共 ${current.ai_round_max} 轮`
+    : `${state.aiName}的童话笔记`;
   document.getElementById('aiPanel').innerHTML = `
     <div class="tape"></div>
     <div class="note-inner">
@@ -681,9 +736,10 @@ function showCurrentScene() {
       <div class="note-writing">
         <div style="font-size:14px;line-height:2;white-space:pre-wrap;${hasObservation ? '' : 'color:var(--text-muted);font-style:italic;'}">${escHtml(observation)}</div>
       </div>
-      <div class="note-footer">${escHtml(state.aiName)}的童话笔记</div>
+      <div class="note-footer">${escHtml(noteStatus)} <span class="echo-dot"></span></div>
     </div>
     <div class="note-corner">🪶</div>`;
+  if (echoObservation) pulseObservationEcho();
 
   const choices = document.getElementById('choices');
   if (isEnding) {
@@ -721,7 +777,7 @@ function renderFreePlay() {
       <div class="note-writing">
         <div style="font-size:14px;line-height:2;color:var(--text-muted);font-style:italic;">${escHtml(state.aiName)}自由书写……</div>
       </div>
-      <div class="note-footer">${escHtml(state.aiName)}的童话笔记</div>
+      <div class="note-footer">${escHtml(state.aiName)}的童话笔记 <span class="echo-dot"></span></div>
     </div>
     <div class="note-corner">🪶</div>`;
   document.getElementById('choices').innerHTML =

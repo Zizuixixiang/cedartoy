@@ -832,6 +832,13 @@ def _web_snapshot(game, state, has_save, notice=""):
     if line_id and scene_id:
         line = game["lines"][line_id]
         scene = _scene_for(line, scene_id)
+        ai_scene = _scene_for(line, state.get("ai_scene"))
+        ai_round_max = 0
+        if ai_scene.get("mode") == "ai_solo":
+            ai_round_max = int(ai_scene.get("max_loop") or 0)
+        ai_round = None
+        if ai_round_max:
+            ai_round = min(max(state.get("ai_loop_count", 0), 1), ai_round_max)
         options = [
             {"key": key, "text": _replace_names(option.get("text", ""), state)}
             for key, option in scene.get("options", {}).items()
@@ -853,6 +860,7 @@ def _web_snapshot(game, state, has_save, notice=""):
             "scene_id": scene_id,
             "mode": scene.get("mode", "legacy"),
             "human_text": _replace_names(scene.get("human_text", scene.get("text", "")), state),
+            "epilogue": _replace_names(scene.get("epilogue", ""), state),
             "public_state": _public_state_text(scene, state),
             "observation": _observation_for(state, line_id, scene_id),
             "options": options,
@@ -860,6 +868,8 @@ def _web_snapshot(game, state, has_save, notice=""):
             "souvenir": scene.get("souvenir"),
             "waiting_for": waiting_for,
             "selected_human_choice": pending.get("human_choice"),
+            "ai_round": ai_round,
+            "ai_round_max": ai_round_max or None,
         }
     latest_key = state.get("latest_observation_key")
     latest_observation = None
