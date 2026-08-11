@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 
 from fastapi import APIRouter, HTTPException
@@ -28,6 +29,14 @@ logger = logging.getLogger(__name__)
 
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
+AI_OPAQUE_TOKEN_PREFIX = "ctai_v1_"
+AI_OPAQUE_TOKEN_BYTES = 32
+AI_OPAQUE_TOKEN_FORMAT_VERSION = 1
+LEGACY_AI_JWT_COMPAT_ENABLED = os.getenv(
+    "LEGACY_AI_JWT_COMPAT_ENABLED", "true"
+).strip().lower() not in {"0", "false", "no", "off"}
+
+
 class PlayBody(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -502,14 +511,8 @@ async def get_player_from_token(db, path_token: str | None):
     """
     if not path_token:
         raise HTTPException(status_code=401, detail="path_token 必填")
-    user_id = _account_user_id(path_token)
-    async with db.execute(
-        "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-        (user_id,),
-    ) as cur:
-        toy_user = await cur.fetchone()
-    if not toy_user:
-        raise HTTPException(status_code=401, detail="账号不存在或已删除")
+    toy_user = await _account_user(db, path_token)
+    user_id = int(toy_user["id"])
 
     await db.execute(f"UPDATE toy_users SET last_active_at = {SQL_NOW} WHERE id = ?", (user_id,))
     async with db.execute("SELECT * FROM players WHERE user_id = ?", (user_id,)) as cur:
@@ -585,6 +588,7 @@ async def _register_toy_user(username: str | None, password: str | None) -> dict
         user_id = int(cur.lastrowid)
         async with db.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)) as cur:
             toy_user = dict(await cur.fetchone())
+        token = await _issue_ai_token(db, toy_user)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -592,7 +596,7 @@ async def _register_toy_user(username: str | None, password: str | None) -> dict
     finally:
         await db.close()
     return {
-        "token": _create_account_token(toy_user),
+        "token": token,
         "user": _public_toy_user(toy_user),
         "message": "注册成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份，无需再次登录。",
     }
@@ -609,22 +613,125 @@ def _public_toy_user(user: dict) -> dict:
     }
 
 
-def _create_account_token(user: dict) -> str:
-    payload = {
-        "user_id": int(user["id"]),
-        "username": user["username"],
-        "is_ai": bool(user.get("is_ai")),
-        "is_admin": bool(user.get("is_admin")),
-    }
-    return _jwt_encode(payload)
+def _opaque_ai_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _account_user_id(path_token: str) -> int:
+async def _issue_ai_token(db, user: dict) -> str:
+    if not user.get("is_ai") or user.get("deleted_at") is not None:
+        raise HTTPException(status_code=400, detail="目标账号不是有效的小机账号")
+    for _attempt in range(3):
+        token = AI_OPAQUE_TOKEN_PREFIX + secrets.token_urlsafe(AI_OPAQUE_TOKEN_BYTES)
+        try:
+            await db.execute(
+                """
+                INSERT INTO ai_access_tokens (
+                    token_hash, user_id, generation, format_version
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    _opaque_ai_token_hash(token),
+                    int(user["id"]),
+                    int(user.get("ai_token_version") or 0),
+                    AI_OPAQUE_TOKEN_FORMAT_VERSION,
+                ),
+            )
+            return token
+        except Exception as exc:
+            if "UNIQUE constraint failed: ai_access_tokens.token_hash" not in str(exc):
+                raise
+    raise RuntimeError("failed to allocate a unique AI token")
+
+
+def _jwt_unverified_payload(token: str) -> dict:
     try:
-        payload = _jwt_decode(path_token)
-        return int(payload["user_id"])
-    except (KeyError, TypeError, ValueError):
-        raise HTTPException(status_code=401, detail="登录已失效") from None
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError("not a three-part JWT")
+        payload = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JWT payload is not an object")
+        return payload
+    except Exception as exc:
+        raise ValueError("bad token") from exc
+
+
+async def _legacy_allowlisted_ai_payload(db, token: str) -> dict:
+    if not LEGACY_AI_JWT_COMPAT_ENABLED:
+        raise ValueError("legacy AI JWT compatibility is disabled")
+    payload = _jwt_unverified_payload(token)
+    if set(payload) != {"user_id", "username", "is_ai", "is_admin"}:
+        raise ValueError("unexpected legacy payload")
+    if payload.get("is_ai") is not True:
+        raise ValueError("not a permanent AI token")
+    async with db.execute(
+        """
+        SELECT user_id, token_version
+        FROM legacy_ai_token_hashes
+        WHERE token_hash = ?
+        """,
+        (hashlib.sha256(token.encode("utf-8")).hexdigest(),),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or int(row["user_id"]) != int(payload["user_id"]):
+        raise ValueError("legacy token is not allowlisted")
+    payload["_legacy_token_version"] = int(row["token_version"])
+    return payload
+
+
+async def _account_user(db, path_token: str) -> dict:
+    if path_token.startswith(AI_OPAQUE_TOKEN_PREFIX):
+        async with db.execute(
+            """
+            SELECT u.*, t.generation, t.format_version
+            FROM ai_access_tokens AS t
+            JOIN toy_users AS u ON u.id = t.user_id
+            WHERE t.token_hash = ?
+              AND t.revoked_at_epoch IS NULL
+              AND u.deleted_at IS NULL
+            """,
+            (_opaque_ai_token_hash(path_token),),
+        ) as cur:
+            row = await cur.fetchone()
+        if (
+            not row
+            or not row["is_ai"]
+            or int(row["format_version"]) != AI_OPAQUE_TOKEN_FORMAT_VERSION
+            or int(row["generation"]) != int(row["ai_token_version"] or 0)
+        ):
+            raise HTTPException(status_code=401, detail="登录已失效")
+        toy_user = dict(row)
+    else:
+        try:
+            payload = _jwt_decode(path_token)
+        except ValueError:
+            try:
+                payload = await _legacy_allowlisted_ai_payload(db, path_token)
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(status_code=401, detail="登录已失效") from None
+        try:
+            user_id = int(payload["user_id"])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=401, detail="登录已失效") from None
+        async with db.execute(
+            "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="账号不存在或已删除")
+        toy_user = dict(row)
+        if payload.get("is_ai") is True:
+            if not toy_user.get("is_ai"):
+                raise HTTPException(status_code=401, detail="登录已失效")
+            version = int(payload.get("token_version", payload.get("_legacy_token_version", 0)))
+            if version != int(toy_user.get("ai_token_version") or 0):
+                raise HTTPException(status_code=401, detail="登录已失效")
+        elif toy_user.get("is_ai"):
+            raise HTTPException(status_code=401, detail="登录已失效")
+    if toy_user.get("deletion_requested_at_epoch") is not None:
+        raise HTTPException(status_code=401, detail="账号处于待注销状态")
+    return toy_user
 
 
 def _jwt_encode(payload: dict) -> str:
@@ -648,6 +755,8 @@ def _jwt_decode(token: str) -> dict:
         if header.get("alg") != JWT_ALGORITHM:
             raise ValueError("bad algorithm")
         payload = json.loads(_b64url_decode(payload_part).decode("utf-8"))
+        if payload.get("is_ai") is True and not LEGACY_AI_JWT_COMPAT_ENABLED:
+            raise ValueError("legacy AI JWT compatibility is disabled")
         exp = payload.get("exp")
         if exp is not None and int(exp) < int(time.time()):
             raise ValueError("expired")

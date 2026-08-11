@@ -104,6 +104,13 @@ DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
+AI_OPAQUE_TOKEN_PREFIX = "ctai_v1_"
+AI_OPAQUE_TOKEN_BYTES = 32
+AI_OPAQUE_TOKEN_FORMAT_VERSION = 1
+AI_OPAQUE_TOKEN_MAX_ACTIVE = 5
+LEGACY_AI_JWT_COMPAT_ENABLED = os.getenv(
+    "LEGACY_AI_JWT_COMPAT_ENABLED", "true"
+).strip().lower() not in {"0", "false", "no", "off"}
 BINDING_TOKEN_SECONDS = 10 * 60
 TURTLE_DB_PATH = Path(os.getenv("TURTLE_SOUP_DB", Path(__file__).resolve().parent / "turtle-soup" / "backend" / "turtle_soup.db"))
 SESSIONS_DB_PATH = Path(os.getenv("SESSIONS_DB", Path(__file__).resolve().parent / "data" / "sessions.db"))
@@ -896,6 +903,25 @@ def _init_account_security_schema(conn):
         ON legacy_ai_token_hashes(user_id)
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ai_access_tokens (
+            token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
+            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            format_version INTEGER NOT NULL DEFAULT 1 CHECK (format_version = 1),
+            created_at_epoch INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+            revoked_at_epoch INTEGER,
+            revoked_reason TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_ai_access_tokens_user_active
+        ON ai_access_tokens(user_id, revoked_at_epoch, generation, created_at_epoch)
+        """
+    )
     if _table_exists(conn, "players"):
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_players_user_id ON players(user_id)"
@@ -1439,9 +1465,67 @@ def _legacy_ai_token_hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _opaque_ai_token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _issue_ai_token_in_transaction(conn, user, *, enforce_active_limit=True):
+    """Issue one opaque AI token; only its SHA-256 hash survives this call."""
+    user_id = int(user["id"])
+    if not user.get("is_ai") or user.get("deleted_at") is not None:
+        raise _McpError(-32602, "目标账号不是有效的小机账号")
+    generation = int(user.get("ai_token_version") or 0)
+    if enforce_active_limit:
+        active_count = int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ai_access_tokens
+            WHERE user_id = ? AND generation = ? AND revoked_at_epoch IS NULL
+            """,
+            (user_id, generation),
+        ).fetchone()[0])
+        if active_count >= AI_OPAQUE_TOKEN_MAX_ACTIVE:
+            raise _McpError(
+                -32021,
+                f"该小机已有 {AI_OPAQUE_TOKEN_MAX_ACTIVE} 枚有效 Token。为避免自动踢掉仍在使用的 MCP，"
+                "普通登录不会继续签发；请使用网页“更新 Token”或 rotate_token 明确撤销旧 Token。",
+                {"reason": "active_token_limit", "max_active_tokens": AI_OPAQUE_TOKEN_MAX_ACTIVE},
+            )
+    for _attempt in range(3):
+        token = AI_OPAQUE_TOKEN_PREFIX + secrets.token_urlsafe(AI_OPAQUE_TOKEN_BYTES)
+        try:
+            conn.execute(
+                """
+                INSERT INTO ai_access_tokens (
+                    token_hash, user_id, generation, format_version
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    _opaque_ai_token_hash(token),
+                    user_id,
+                    generation,
+                    AI_OPAQUE_TOKEN_FORMAT_VERSION,
+                ),
+            )
+            return token
+        except sqlite3.IntegrityError as exc:
+            if "ai_access_tokens.token_hash" not in str(exc):
+                raise
+            continue
+    raise RuntimeError("failed to allocate a unique AI token")
+
+
+def _issue_current_account_token_in_transaction(conn, user):
+    if user.get("is_ai"):
+        return _issue_ai_token_in_transaction(conn, user)
+    return _create_account_jwt(user)
+
+
 def _legacy_allowlisted_ai_payload(token):
     """Accept only an exact pre-verified legacy AI token hash, never a candidate."""
     try:
+        if not LEGACY_AI_JWT_COMPAT_ENABLED:
+            raise ValueError("legacy AI JWT compatibility is disabled")
         payload = _jwt_unverified_payload(token)
         if set(payload) != {"user_id", "username", "is_ai", "is_admin"}:
             raise ValueError("unexpected legacy payload")
@@ -1480,6 +1564,8 @@ def _jwt_decode(token):
         if header.get("alg") != JWT_ALGORITHM:
             raise ValueError("bad algorithm")
         payload = json.loads(_b64url_decode(payload_part).decode("utf-8"))
+        if payload.get("is_ai") is True and not LEGACY_AI_JWT_COMPAT_ENABLED:
+            raise ValueError("legacy AI JWT compatibility is disabled")
         exp = payload.get("exp")
         if exp is not None and int(exp) < int(time.time()):
             raise ValueError("expired")
@@ -1488,7 +1574,7 @@ def _jwt_decode(token):
         raise ValueError("登录已失效。请检查：1) MCP 地址是否为 toy.cedarstar.org/你的token（不要带花括号）；2) 人类是否完整复制了 token（不要漏字符）；3) 如果 token 确实丢失，可用 account 工具的 login 重新获取。") from exc
 
 
-def _create_account_token(user):
+def _create_account_jwt(user):
     payload = {
         "user_id": int(user["id"]),
         "username": user["username"],
@@ -1500,6 +1586,23 @@ def _create_account_token(user):
     else:
         payload["exp"] = int(time.time()) + HUMAN_TOKEN_SECONDS
     return _jwt_encode(payload)
+
+
+def _create_account_token(user):
+    """Issue the current token format: opaque for AI, unchanged JWT for humans."""
+    if not user.get("is_ai"):
+        return _create_account_jwt(user)
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current_user = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+            (int(user["id"]),),
+        ).fetchone())
+        if not current_user:
+            raise _McpError(-32004, "小机账号不存在或已删除")
+        token = _issue_ai_token_in_transaction(conn, current_user)
+        conn.commit()
+    return token
 
 
 def _public_user(user):
@@ -1552,23 +1655,47 @@ def _account_username_aliases(user):
 def _current_account(raw_token, *, allow_pending_deletion=False):
     if not raw_token:
         raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
-    try:
-        _jwt_unverified_payload(raw_token)
-    except ValueError:
-        raise _McpError(-32001, "token 格式不完整，可能在复制时断行或漏了字符。请重新完整复制一整行 token 后重连。") from None
-    try:
-        payload = _jwt_decode(raw_token)
-        user_id = int(payload["user_id"])
-    except (KeyError, TypeError, ValueError):
-        raise _McpError(-32001, "登录已失效。请检查：1) MCP 地址是否为 toy.cedarstar.org/你的token（不要带花括号）；2) 人类是否完整复制了 token（不要漏字符）；3) 如果 token 确实丢失，可用 account 工具的 login 重新获取。") from None
+    raw_token = str(raw_token)
+    is_opaque = raw_token.startswith(AI_OPAQUE_TOKEN_PREFIX)
+    payload = None
+    if not is_opaque:
+        try:
+            _jwt_unverified_payload(raw_token)
+        except ValueError:
+            raise _McpError(-32001, "token 格式不完整，可能在复制时断行或漏了字符。请重新完整复制一整行 token 后重连。") from None
+        try:
+            payload = _jwt_decode(raw_token)
+            user_id = int(payload["user_id"])
+        except (KeyError, TypeError, ValueError):
+            raise _McpError(-32001, "登录已失效。请检查：1) MCP 地址是否为 toy.cedarstar.org/你的token（不要带花括号）；2) 人类是否完整复制了 token（不要漏字符）；3) 如果 token 确实丢失，可用 account 工具的 login 重新获取。") from None
     with _db_connect() as conn:
+        if is_opaque:
+            token_row = _row_dict(conn.execute(
+                """
+                SELECT user_id, generation, format_version
+                FROM ai_access_tokens
+                WHERE token_hash = ? AND revoked_at_epoch IS NULL
+                """,
+                (_opaque_ai_token_hash(raw_token),),
+            ).fetchone())
+            if not token_row or int(token_row["format_version"]) != AI_OPAQUE_TOKEN_FORMAT_VERSION:
+                raise _McpError(-32001, "登录已失效：Token 不存在或已撤销")
+            user_id = int(token_row["user_id"])
         user = _row_dict(conn.execute(
             "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
             (user_id,),
         ).fetchone())
         if not user:
             raise _McpError(-32001, "账号不存在或已删除")
-        if payload.get("is_ai") is True or user.get("is_ai"):
+        if is_opaque:
+            if not user.get("is_ai"):
+                raise _McpError(-32001, "登录已失效：该账号已不是小机账号")
+            if int(token_row["generation"]) != int(user.get("ai_token_version") or 0):
+                raise _McpError(-32001, "登录已失效：该小机 Token 已更新")
+            auth_token_format = "opaque_v1"
+        elif payload.get("is_ai") is True:
+            if not user.get("is_ai"):
+                raise _McpError(-32001, "登录已失效：该账号已不是小机账号")
             presented_version = payload.get(
                 "token_version",
                 payload.get("_legacy_token_version", 0),
@@ -1579,6 +1706,11 @@ def _current_account(raw_token, *, allow_pending_deletion=False):
                 raise _McpError(-32001, "登录已失效") from None
             if presented_version != int(user.get("ai_token_version") or 0):
                 raise _McpError(-32001, "登录已失效：该小机 Token 已更新")
+            auth_token_format = "legacy_jwt"
+        else:
+            if user.get("is_ai"):
+                raise _McpError(-32001, "登录已失效：Token 账号类型不匹配")
+            auth_token_format = "jwt"
         if user.get("deletion_requested_at_epoch") is not None:
             scheduled = int(user["scheduled_delete_at_epoch"])
             if not allow_pending_deletion:
@@ -1588,16 +1720,41 @@ def _current_account(raw_token, *, allow_pending_deletion=False):
                     f"账号处于待注销状态，将于 {when} 永久删除；当前只可查询或取消注销。",
                     {"reason": "pending_deletion"},
                 )
+            user["_auth_token_format"] = auth_token_format
             return user
         conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user_id,))
         conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
+        user["_auth_token_format"] = auth_token_format
     return user
 
 
 def _path_token_user_id(path_token):
     if not path_token:
         return None
+    if str(path_token).startswith(AI_OPAQUE_TOKEN_PREFIX):
+        try:
+            with _db_connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT t.user_id
+                    FROM ai_access_tokens AS t
+                    JOIN toy_users AS u ON u.id = t.user_id
+                    WHERE t.token_hash = ?
+                      AND t.revoked_at_epoch IS NULL
+                      AND t.format_version = ?
+                      AND t.generation = u.ai_token_version
+                      AND u.is_ai = 1
+                      AND u.deleted_at IS NULL
+                    """,
+                    (
+                        _opaque_ai_token_hash(str(path_token)),
+                        AI_OPAQUE_TOKEN_FORMAT_VERSION,
+                    ),
+                ).fetchone()
+            return int(row["user_id"]) if row else None
+        except (KeyError, TypeError, ValueError, sqlite3.Error):
+            return None
     try:
         payload = _jwt_decode(path_token)
         return int(payload["user_id"])
@@ -1898,10 +2055,13 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
             )
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
             _record_successful_registration(conn, user, client_ip)
+            token = _issue_current_account_token_in_transaction(conn, user)
             conn.commit()
-            result = {"token": _create_account_token(user), "user": _public_user(user)}
+            result = {"token": token, "user": _public_user(user)}
             return _append_recent_registration_notice(result, had_recent_registration)
-    return {"token": _create_account_token(user), "user": _public_user(user)}
+        token = _issue_current_account_token_in_transaction(conn, user)
+        conn.commit()
+    return {"token": token, "user": _public_user(user)}
 
 
 def _login_or_register_ai(username, password, client_ip=None):
@@ -1920,9 +2080,10 @@ def _login_or_register_ai(username, password, client_ip=None):
         )
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
         _record_successful_registration(conn, user, client_ip)
+        token = _issue_ai_token_in_transaction(conn, user)
         conn.commit()
     return _append_recent_registration_notice({
-        "token": _create_account_token(user),
+        "token": token,
         "user": _public_user(user),
         "message": "注册成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份，无需再次登录。",
     }, had_recent_registration)
@@ -1942,12 +2103,21 @@ def _login_existing_account(username, password, client_ip=None):
         if not user or not _verify_password(password, user["password_hash"]):
             _raise_failed_login(client_ip, username)
         _clear_failed_login(client_ip, username)
+        if user.get("is_ai"):
+            conn.execute("BEGIN IMMEDIATE")
+            user = _row_dict(conn.execute(
+                "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+                (user["id"],),
+            ).fetchone())
+            if not user or not user.get("is_ai"):
+                raise _McpError(-32001, "用户名或密码错误")
         if user.get("deletion_requested_at_epoch") is None:
             conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user["id"],))
-            conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
+        token = _issue_current_account_token_in_transaction(conn, user)
+        conn.commit()
     result = {
-        "token": _create_account_token(user),
+        "token": token,
         "user": _public_user(user),
     }
     if user.get("deletion_requested_at_epoch") is not None:
@@ -2599,6 +2769,15 @@ def _rotate_ai_user_in_transaction(conn, user_id):
         """,
         (int(user_id),),
     )
+    conn.execute(
+        """
+        UPDATE ai_access_tokens
+        SET revoked_at_epoch = CAST(strftime('%s', 'now') AS INTEGER),
+            revoked_reason = 'rotation'
+        WHERE user_id = ? AND revoked_at_epoch IS NULL
+        """,
+        (int(user_id),),
+    )
     return _row_dict(conn.execute(
         "SELECT * FROM toy_users WHERE id = ?",
         (int(user_id),),
@@ -2612,9 +2791,10 @@ def _rotate_ai_token(raw_token):
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         user = _rotate_ai_user_in_transaction(conn, user["id"])
+        token = _issue_ai_token_in_transaction(conn, user, enforce_active_limit=False)
         conn.commit()
     return {
-        "token": _create_account_token(user),
+        "token": token,
         "user": _public_user(user),
         "message": "旧 Token 已失效，请让人类替换 MCP 地址。",
     }
@@ -2640,9 +2820,10 @@ def _rotate_bound_machine_token(human_token, ai_user_id):
         if not binding:
             raise _McpError(-32602, "该小机未绑定到你的账号")
         user = _rotate_ai_user_in_transaction(conn, ai_user_id)
+        token = _issue_ai_token_in_transaction(conn, user, enforce_active_limit=False)
         conn.commit()
     return {
-        "token": _create_account_token(user),
+        "token": token,
         "user": _public_user(user),
         "rotated": True,
         "message": "旧 Token 已失效，请替换 MCP 地址。",
@@ -2683,6 +2864,7 @@ def _machine_account_token(
             raise _McpError(-32602, "只有人类账号可以绑定 AI")
 
     with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         user = _row_dict(conn.execute(
             "SELECT * FROM toy_users WHERE username = ? AND deleted_at IS NULL",
             (username,),
@@ -2695,19 +2877,26 @@ def _machine_account_token(
         if user.get("deletion_requested_at_epoch") is not None:
             raise _McpError(-32010, "该小机处于待注销状态，只能登录后查询或取消注销")
         if bind:
-            conn.execute("BEGIN IMMEDIATE")
             _ensure_ai_binding(conn, human["id"], user["id"])
         if rotate:
             user = _rotate_ai_user_in_transaction(conn, user["id"])
+            token = _issue_ai_token_in_transaction(
+                conn, user, enforce_active_limit=False
+            )
         else:
             conn.execute(
                 "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
                 (user["id"],),
             )
+            user = _row_dict(conn.execute(
+                "SELECT * FROM toy_users WHERE id = ?",
+                (user["id"],),
+            ).fetchone())
+            token = _issue_ai_token_in_transaction(conn, user)
         conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
 
-    result = {"token": _create_account_token(user), "user": _public_user(user)}
+    result = {"token": token, "user": _public_user(user)}
     if rotate:
         result.update({
             "rotated": True,
@@ -2978,6 +3167,10 @@ def _get_profile(raw_token):
     return {
         "username": user["username"],
         "is_ai": bool(user.get("is_ai")),
+        "token_format": user.get("_auth_token_format", "unknown"),
+        "token_migration_recommended": bool(
+            user.get("is_ai") and user.get("_auth_token_format") == "legacy_jwt"
+        ),
         "created_at": user.get("created_at"),
         "bindings": [_public_binding(dict(row)) for row in rows],
         "games": games,
@@ -8981,6 +9174,7 @@ def _json_rpc_error(request_id, code, message):
 _JWT_LOG_VALUE_RE = re.compile(
     r"eyJ[A-Za-z0-9_-]*(?:\.|%2[eE])[A-Za-z0-9_-]+(?:\.|%2[eE])[A-Za-z0-9_-]+"
 )
+_OPAQUE_AI_LOG_VALUE_RE = re.compile(r"ctai_v1_[A-Za-z0-9_-]{40,}")
 _SENSITIVE_QUERY_LOG_RE = re.compile(
     r"([?&](?:token|reset_token|access_token)=)[^&#\s\"]+",
     re.IGNORECASE,
@@ -8989,6 +9183,7 @@ _SENSITIVE_QUERY_LOG_RE = re.compile(
 
 def _redact_http_log_text(value):
     text = str(value)
+    text = _OPAQUE_AI_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
     text = _JWT_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
     return _SENSITIVE_QUERY_LOG_RE.sub(r"\1<TOKEN_REDACTED>", text)
 

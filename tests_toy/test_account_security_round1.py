@@ -106,6 +106,7 @@ class AccountSecurityRoundOneTests(unittest.TestCase):
         self.assertIn("ai_token_version", columns)
         self.assertIn("idx_players_user_id", indexes)
         self.assertIn("legacy_ai_token_hashes", tables)
+        self.assertIn("ai_access_tokens", tables)
 
     def test_human_login_and_registration_never_fall_through(self):
         registered = server._register_human("NewHuman", "secret-pass", client_ip="1.1.1.1")

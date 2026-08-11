@@ -88,6 +88,7 @@ class AccountDeletionRound3Tests(unittest.TestCase):
                 CREATE TABLE email_verification_attempts (id INTEGER PRIMARY KEY, code_id INTEGER, user_id INTEGER REFERENCES toy_users(id), email_hash TEXT);
                 """
             )
+            server._init_account_security_schema(conn)
             account_deletion.init_schema(conn)
             conn.commit()
 
@@ -239,6 +240,8 @@ class AccountDeletionRound3Tests(unittest.TestCase):
                 INSERT INTO user_bindings VALUES (1, {other}, {uid});
                 INSERT INTO binding_tokens VALUES ('bind-secret', {uid}, '2099-01-01', 0);
                 INSERT INTO password_reset_tokens VALUES (1, {uid}, 'reset-secret');
+                INSERT INTO ai_access_tokens (token_hash, user_id, generation, format_version)
+                VALUES ('{'b' * 64}', {uid}, 0, 1);
                 INSERT INTO legacy_ai_token_hashes VALUES ('{'a' * 64}', {uid}, 0, 'test');
                 INSERT INTO account_registration_events VALUES (1, {uid}, 'purgee', '1.2.3.4');
                 INSERT INTO account_username_changes VALUES (1, {uid}, 'oldpurgee', 'purgee', 1);
@@ -305,7 +308,7 @@ class AccountDeletionRound3Tests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM toy_users WHERE id=?", (uid,)).fetchone()[0], 0)
             for table in (
                 "user_bindings", "binding_tokens", "password_reset_tokens",
-                "legacy_ai_token_hashes", "account_registration_events",
+                "ai_access_tokens", "legacy_ai_token_hashes", "account_registration_events",
                 "account_username_changes", "anti_addiction_settings",
                 "anti_addiction_states", "guest_claim_codes", "account_emails",
                 "email_verification_codes", "email_verification_attempts",
@@ -459,7 +462,8 @@ class AccountDeletionRound3Tests(unittest.TestCase):
 
     def test_admin_immediate_release_uses_complete_purge(self):
         admin_id = self._create_user("admin")
-        target_id = self._create_user("release-me")
+        target_id = self._create_user("release-me", is_ai=1)
+        target_token = self._token(target_id)
         with sqlite3.connect(self.account_db) as conn:
             conn.execute("UPDATE toy_users SET is_admin=1 WHERE id=?", (admin_id,))
             conn.execute(
@@ -468,8 +472,11 @@ class AccountDeletionRound3Tests(unittest.TestCase):
             )
         result = server._admin_release_user(target_id, self._user(admin_id))
         self.assertTrue(result["ok"])
+        with self.assertRaises(server._McpError):
+            server._current_account(target_token)
         with sqlite3.connect(self.account_db) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM toy_users WHERE id=?", (target_id,)).fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM ai_access_tokens WHERE user_id=?", (target_id,)).fetchone()[0], 0)
             player = conn.execute("SELECT username,password_hash,user_id FROM players WHERE id=10").fetchone()
         self.assertTrue(player[0].startswith("deleted-"))
         self.assertIsNone(player[1])

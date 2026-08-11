@@ -15,6 +15,7 @@ class AccountRenameTests(unittest.TestCase):
         self.db_patch = patch.object(server, "TURTLE_DB_PATH", self.db_path)
         self.db_patch.start()
         with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             conn.executescript(
                 """
                 PRAGMA foreign_keys = ON;
@@ -56,6 +57,7 @@ class AccountRenameTests(unittest.TestCase):
             server._init_username_changes_table(conn)
             # The migration is intentionally safe to run more than once.
             server._init_username_changes_table(conn)
+            server._init_account_security_schema(conn)
 
         self.password = "rename-pass"
         self.human_id = self._add_user("HumanOne", is_ai=False, with_player=True)

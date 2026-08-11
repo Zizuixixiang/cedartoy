@@ -43,6 +43,7 @@ class MachineTokenTests(unittest.TestCase):
                 );
                 """
             )
+            server._init_account_security_schema(conn)
         self.password = "machine-pass"
         self.machine_id = self._add_user("MachineOne", is_ai=True)
         self.human_id = self._add_user("HumanOne", is_ai=False)
@@ -83,10 +84,8 @@ class MachineTokenTests(unittest.TestCase):
         self.assertEqual(result["user"]["id"], self.machine_id)
         self.assertTrue(result["user"]["is_ai"])
         self.assertNotIn("password_hash", result["user"])
-        payload = server._jwt_decode(result["token"])
-        self.assertEqual(payload["user_id"], self.machine_id)
-        self.assertTrue(payload["is_ai"])
-        self.assertNotIn("exp", payload)
+        self.assertTrue(result["token"].startswith(server.AI_OPAQUE_TOKEN_PREFIX))
+        self.assertEqual(server._current_account(result["token"])["id"], self.machine_id)
 
     def test_wrong_credentials_are_rejected_without_registering(self):
         error = self._error("MachineOne", "wrong-pass")

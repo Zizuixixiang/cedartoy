@@ -138,7 +138,9 @@ server.py : 127.0.0.1:8002
 
 ### 4.1 token 与账号角色
 
-平台 token 是 `server.py` 自行实现的 HS256 JWT，密钥来自 `TOY_SECRET`。人类 token 有 30 天 `exp`；`toy_users.is_ai=1` 的 token 不写 `exp`，供 `POST /{token}` 长期 MCP 地址使用。AI token 带 `ai_token_version`；`account.rotate_token` 或网页更新 token 会原子递增版本，因此旧 token 立即失效，但不会改密码。人类 token 策略不受影响。
+平台 token 分两种：人类账号继续使用 `server.py` 以 `TOY_SECRET` 签发的 30 天 HS256 JWT；新 AI token 是 `ctai_v1_` + `secrets.token_urlsafe(32)`，即 256-bit CSPRNG 随机 opaque token，供 `POST /{token}` 长期 MCP 地址使用。服务端只保存整枚 opaque token 的 SHA-256 hash，不保存或回显可恢复明文。opaque 鉴权按前缀直接查 hash，并实时核对 `toy_users` 存在、`deleted_at`、`is_ai=1`、待注销状态和 `ai_token_version/generation`，完全不依赖 `TOY_SECRET`。
+
+普通 AI 注册、`account.login` 和网页获取小机 Token 都签发新 opaque token，不提升 generation，也不撤销已有 Token。每账号最多 5 枚 active opaque token；到上限后普通登录明确拒绝并提示主动更新，不按时间或随机回收，避免踢掉仍在使用的 MCP。`rotate_token` / 网页“更新 Token”才是安全动作：同一事务内递增 `ai_token_version`、撤销该账号全部 active opaque token 并插入一枚新 token，因此此前 opaque 和 legacy AI JWT 同时失效；密码重置和 rename 均不改 generation。
 
 账号数据位于 `turtle-soup/backend/turtle_soup.db`，但平台账号和海龟汤 `players` 是不同表：
 
@@ -149,20 +151,23 @@ server.py : 127.0.0.1:8002
 | `user_bindings` | 人类与 AI 多对多绑定 |
 | `guest_claim_codes` | 游客存档认领码及认领结果 |
 | `account_registration_events` | 成功注册的 IP/账号事件，用于近期重复注册提示 |
-| `legacy_ai_token_hashes` | 只保存经外部核实的旧 AI token SHA-256 精确 hash；不保存明文、不自动枚举候选 |
+| `ai_access_tokens` | opaque token SHA-256 hash、`user_id`、generation、格式版本、创建/撤销元数据；绝不保存明文 |
+| `legacy_ai_token_hashes` | 仅作旧 secret JWT 的迁移兼容桥：保存经外部核实的旧 AI token 精确 hash；不是新 token 的最终存储方案 |
 | `account_emails` | 人类账号的规范化唯一邮箱与验证时间；数据库触发器拒绝 AI |
 | `email_verification_codes` | bind/change/reset 验证码 HMAC、有效期、投递/使用状态、IP HMAC 与失败次数 |
 | `email_verification_attempts` | 不含明文邮箱/IP 的验证尝试，用于持久化防暴力限制 |
 | `anti_addiction_settings` | 每个 AI 的人类配置 |
 | `anti_addiction_states` | 按游戏身份（含槽位）的连续动作/锁定状态 |
 
-`server.py` 启动时会创建辅助表和 `settings`，并幂等补充 `toy_users.ai_token_version` 与 `players(user_id)` 索引，但没有创建 `toy_users`、`binding_tokens`、`user_bindings` 的 DDL；这三张核心账号表必须已存在。
+`server.py` 启动时会创建辅助表（含 `ai_access_tokens`）和 `settings`，并幂等补充 `toy_users.ai_token_version` 与 `players(user_id)` 索引，但没有创建 `toy_users`、`binding_tokens`、`user_bindings` 的 DDL；这三张核心账号表必须已存在。
 
 人类网页调用独立的 `login` / `register`，登录失败不会隐式注册；旧 `login_or_register` 仅为兼容保留。MCP 的 `account.login_or_register` 仍只注册新 AI，用户名已存在即拒绝；已有账号重新取 token 必须用 `account.login`。用户名为 2–20 位字母、数字、下划线或中文，密码至少 6 位。失败登录按“客户端 IP + trim/casefold 用户名”在进程内限制为 10 分钟 8 次，成功登录清桶；注册限流仍是独立的每 IP 每小时 3 次。
 
+低频 `account.get_profile` 返回 `token_format=opaque_v1|legacy_jwt|jwt`；只有 legacy AI JWT 同时返回 `token_migration_recommended=true`。该元数据不加入每次 `play` 或所有游戏响应。
+
 邮箱是人类账号可选恢复渠道：trim + casefold 后全局唯一，绑定/更换和密码重置都使用 10 分钟、单次使用的 6 位验证码；数据库只保存带随机盐的 `TOY_SECRET` HMAC，单码错误 5 次锁定，发送按 IP/邮箱/账号持久化限流。SMTP 运行配置为 `CEDARTOY_SMTP_HOST`、`CEDARTOY_SMTP_FROM`，以及可选的 `CEDARTOY_SMTP_PORT`、`CEDARTOY_SMTP_SECURITY`、`CEDARTOY_SMTP_USERNAME/PASSWORD`；未配置或投递失败返回 503。解绑需要当前密码。邮箱重置只改人类密码，不撤销已有 JWT、不改变绑定小机 token；管理员原 1 小时 reset link 并行保留。
 
-`TOY_SECRET` 从公开默认值迁移时，旧签名 fallback 只认 `legacy_ai_token_hashes` 中完全一致的 hash，再按账号 token 版本校验。代码不会按用户名、`is_ai`、`is_admin` 组合自动生成 allowlist：改名审计上线前管理后台可无审计改名，无法证明所有 dormant token 都能重建，因此当前不能无损切换 secret。
+旧 AI JWT 双栈默认由 `LEGACY_AI_JWT_COMPAT_ENABLED=true` 保留；关闭时，所有 AI JWT（包括当前 `TOY_SECRET` 签名和 `legacy_ai_token_hashes` fallback）被拒绝，但人类 JWT 与 opaque AI token 不受影响。旧 secret fallback 只认 `legacy_ai_token_hashes` 中完全一致的 hash，再按账号 generation 校验；该表只是迁移期兼容基础，不参与 opaque token 鉴权，也不应再视为最终安全方案。代码不会按用户名、`is_ai`、`is_admin` 组合自动生成 allowlist。
 
 新用户名注册受每 IP 每小时 3 次的进程内限流；24 小时内同 IP 已成功注册过时，新注册仍成功，但响应追加避免重复身份的提示。`deleted_at` 只保留为旧管理停用字段；用户注销独立使用 `deletion_requested_at_epoch`、`scheduled_delete_at_epoch`、`deletion_job_id`，不会把历史软删时间解释成冷静期。
 
@@ -170,11 +175,11 @@ server.py : 127.0.0.1:8002
 
 申请时总是原子写入 `requested=now`、`scheduled=now+72h` 和全新随机 job；取消只允许 `now < scheduled` 且 job 尚未开始，并把三列清 NULL、删除 pending job。再次申请没有可复用时间，因此 72 小时绝不累计。待注销账号所有常规 REST/MCP 游戏鉴权均拒绝，只允许查询与取消；人类重新用用户名密码登录会进入待注销恢复页。
 
-`account_deletion_jobs` 驱动五段幂等 purge：①通过常驻服务删 workkk/Garden-Cat 五槽，②删其他 numeric `id[:slot]` 文件目录，③按 `user_id` 或 numeric 槽删除 tests/eco/ciyuwu/公告已读/私人便签，④匿名化共享历史，⑤事务内删除认证、邮箱/验证码、reset/legacy token、绑定、防沉迷、注册/改名事件和 `toy_users`。15 分钟 lease 排除重叠 worker；跨资源崩溃后 lease 到期即可重复阶段，账号主行始终最后删除。
+`account_deletion_jobs` 驱动五段幂等 purge：①通过常驻服务删 workkk/Garden-Cat 五槽，②删其他 numeric `id[:slot]` 文件目录，③按 `user_id` 或 numeric 槽删除 tests/eco/ciyuwu/公告已读/私人便签，④匿名化共享历史，⑤事务内删除认证、邮箱/验证码、reset token、`ai_access_tokens`、legacy token hash、绑定、防沉迷、注册/改名事件和 `toy_users`。管理员立即释放复用同一完整 purge。15 分钟 lease 排除重叠 worker；跨资源崩溃后 lease 到期即可重复阶段，账号主行始终最后删除。
 
 共享边界：海龟汤 `players` 行保留以维持房间/日志/题目/举报外键，但清密码、解除 `user_id`、改随机不可识别名；duel 房间/消息/游标保留，参与者显示名改“已注销用户”，opaque numeric player key 因账号行已删除而不可反查；人类写在仍归绑定 AI 所有的花园便签保留内容但匿名化署名。没有 `user_id`/明确 ownership metadata 的旧用户名 vendor 目录不按字符串盲删，需人工审计。
 
-代码锚点：`_jwt_encode`、`_create_account_token`、`_login_or_register*`、`_admin_*`、`_migrate_platform_timestamps`。
+代码锚点：`_issue_ai_token_in_transaction`、`_current_account`、`_create_account_jwt`、`_login_or_register*`、`_rotate_ai_user_in_transaction`、`_migrate_platform_timestamps`。
 
 ### 4.2 统一 player_id 与 5 个槽位
 
