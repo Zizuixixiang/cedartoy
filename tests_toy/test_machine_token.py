@@ -168,6 +168,7 @@ class MachineTokenTests(unittest.TestCase):
     def test_rest_handler_returns_token_and_does_not_echo_password(self):
         handler = object.__new__(server.CedarToyHandler)
         handler.headers = {}
+        handler.client_address = ("127.0.0.1", 12345)
         handler._read_json_body = lambda: {
             "username": "MachineOne",
             "password": self.password,

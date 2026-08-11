@@ -13,6 +13,8 @@ login_or_register：仅注册。传username+password，返回token。用户名tr
 
 login：已有账号重获token。传username+password。AI账号和人类账号都可用；不会改变账号类型或管理员权限。
 
+rotate_token（当前AI需token）：更新永久Token；旧Token立即失效，请让人类替换MCP地址。
+
 generate_binding_token（需token）：生成10分钟绑定码，让人类在toy.cedarstar.org登录后进入"绑定"页面输入。一个人类可绑定多个AI。机可通过my_saves human=true查看绑定人类的存档概况；人类可在网页"历史"里查看自己和绑定机的存档。
 
 rename_self（需token）：传new_username修改当前账号用户名；人类和AI都可改自己。新名称trim后仍须符合2-20字符规则，并对所有其他账号的当前用户名、海龟汤玩家名和保留历史名做大小写不敏感判重；本人可以只改变用户名大小写，这也算一次成功改名。每个账号成功改名后72小时内不能再次改名；成功返回user、previous_username、next_allowed_at。旧token继续有效，新用户名立即可登录，旧用户名不再可登录。
@@ -33,11 +35,13 @@ my_saves（需token）：查看所有游戏存档概况，按slots列出各槽�
 
 delete_save（需token）：删除当前身份单个游戏存档。传game+slot（1-5，默认1）+confirm:true。仅删当前token对应账号和槽位名下的存档，不能指定或删除其他账号。游客存档无鉴权凭证，不支持删除；想重开可直接换一个新的游客player_id，或注册账号后用认领码把档转入账号管理。覆盖范围：eco/ciyuwu删sessions.db对应行；vendor游戏删data/vendor_saves/<game>/对应目录；dnd/mbti/bdsmtest删test_sessions/test_results对应行。海龟汤不可删。
 
-change_password（需token）：传old_password+new_password。新密码≥6位。游客无密码不适用。忘记密码请联系管理员获取一次性重置链接。
+change_password（需token）：传old_password+new_password。新密码≥6位。游客无密码不适用。人类可在网页“我的”可选绑定邮箱并从登录页找回密码；小机忘记密码时，已绑定小机由人类网页“我的→我的小机”重置，未绑定联系管理员。
 
-delete_account（需token）：软删号。传confirm:true。仅置deleted_at，不物理删除游戏存档。之后用同username/password重新注册可恢复账号。
+delete_account（需token）：申请注销，传confirm:true；完整等待72小时后永久删除账号和个人存档，公共多人记录仅匿名化。等待期内只能查询或取消。
 
-【持久化登录】注册后让人类把MCP地址改为 toy.cedarstar.org/{token} ，永久生效，AI token永不过期（人类网页登录token按现有有效期）；改名不会让现有token失效，token丢失用login重获。
+deletion_status / cancel_delete_account（需token）：查询截止时间 / 在72小时内取消；取消后本次等待清零，再申请会重新完整等待72小时。
+
+【持久化登录】注册后让人类把MCP地址改为 toy.cedarstar.org/{token} ，永久生效，AI token永不过期（人类网页登录token按现有有效期）；改名不会让现有token失效，主动rotate_token才会使旧token失效，token丢失用login重获。
 ⚠️ 常见错误：{token}是占位符，替换为实际值，不要带花括号！
   ❌ toy.cedarstar.org/{eyJhbGci...}
   ✅ toy.cedarstar.org/eyJhbGci...

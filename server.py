@@ -11,15 +11,20 @@ import random
 import re
 import secrets
 import shutil
+import smtplib
 import sqlite3
+import ssl
 import time
 import urllib.parse
+from email.message import EmailMessage
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import BoundedSemaphore, Lock
 
 import httpx
+
+import account_deletion
 
 try:
     from passlib.context import CryptContext
@@ -114,6 +119,9 @@ TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
+DUEL_DB_PATH = Path(__file__).resolve().parent / "vendor" / "duel" / "data" / "duel.db"
+GARDEN_NOTES_DB_PATH = Path(__file__).resolve().parent / "data" / "garden_cat_notes.db"
+GARDEN_LEGACY_DB_PATH = Path(__file__).resolve().parent / "vendor" / "Garden-Cat-Engine" / "garden_cat.db"
 _HTML_ETAG_CACHE = {}
 _HTML_ETAG_CACHE_LOCK = Lock()
 HOP_BY_HOP_HEADERS = {
@@ -138,15 +146,33 @@ DUEL_REQUEST_RATE_LIMIT_MAX = 120
 DUEL_WEB_REQUEST_RATE_LIMIT_MAX = 120
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 REGISTER_RATE_LIMIT_MAX = 3
+FAILED_LOGIN_WINDOW_SECONDS = 10 * 60
+FAILED_LOGIN_MAX = 8
+EMAIL_CODE_TTL_SECONDS = 10 * 60
+EMAIL_CODE_MAX_ATTEMPTS = 5
+EMAIL_SEND_COOLDOWN_SECONDS = 60
+EMAIL_SEND_WINDOW_SECONDS = 60 * 60
+EMAIL_SEND_MAX_PER_EMAIL = 5
+EMAIL_SEND_MAX_PER_ACCOUNT = 5
+EMAIL_SEND_MAX_PER_IP = 20
+EMAIL_VERIFY_WINDOW_SECONDS = 10 * 60
+EMAIL_VERIFY_MAX_PER_ACCOUNT = 10
+EMAIL_VERIFY_MAX_PER_IP = 20
+EMAIL_PROVIDER_ERROR_CODE = -32050
+ADMIN_USERS_DEFAULT_PAGE_SIZE = 50
+ADMIN_USERS_MAX_PAGE_SIZE = 200
+ADMIN_USERS_MAX_SEARCH_LENGTH = 100
 RECENT_REGISTER_NOTICE_SECONDS = 24 * 60 * 60
 RENAME_COOLDOWN_SECONDS = 72 * 60 * 60
 RATE_LIMIT_ERROR_CODE = -32029
 REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
 REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
+FAILED_LOGIN_RATE_LIMIT_MESSAGE = "登录失败次数过多，请稍后再试"
 RECENT_REGISTER_NOTICE = "检测到你近期已注册过账号，如是同一只小机请改用 login 登录旧账号，避免产生多个身份"
 _REQUEST_RATE_LIMIT = {}
 _DUEL_WEB_REQUEST_RATE_LIMIT = {}
 _REGISTER_RATE_LIMIT = {}
+_FAILED_LOGIN_RATE_LIMIT = {}
 _RATE_LIMIT_LOCK = Lock()
 _ANTI_ADDICTION_LOCK = Lock()
 _ANTI_ADDICTION_ANY_ENABLED = None
@@ -224,10 +250,11 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、generate_binding_token、rename_self（需token，传new_username改自己）、rename_bound_machine（人类账号需token，传ai_user_id和new_username改已绑定小机）、reset_machine_password（人类账号需token，传ai_user_id和new_password为已绑定小机重置密码）、get_profile、get_bindings、guest_claim_code（按游客 player_id 查询/补发认领码）、claim（凭认领码把游客存档转入账号指定 slot，默认1）、my_saves（查自己在所有游戏的存档概况；human=true 时查绑定人类存档概况）、delete_save（仅带 token 账号可用，删除当前账号自己的单个游戏槽位存档）、change_password（需token，传old_password和new_password修改密码）、delete_account（软删当前账号）",
+                    "description": "login_or_register、login、rotate_token、generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account",
                 },
                 "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string"},
+                "current_password": {"type": "string", "description": "人类账号申请注销时再次输入当前密码"},
                 "old_password": {"type": "string"},
                 "new_password": {"type": "string"},
                 "new_username": {"type": "string", "description": "rename_self/rename_bound_machine 用：trim 后 2-20 字符，仅字母、数字、下划线、中文"},
@@ -843,6 +870,157 @@ def _init_username_changes_table(conn):
     )
 
 
+def _init_account_security_schema(conn):
+    """Idempotent account/token compatibility and query-performance schema."""
+    if _table_exists(conn, "toy_users"):
+        _add_column_if_missing(
+            conn,
+            "toy_users",
+            "ai_token_version",
+            "INTEGER NOT NULL DEFAULT 0",
+        )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS legacy_ai_token_hashes (
+            token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
+            user_id INTEGER NOT NULL,
+            token_version INTEGER NOT NULL DEFAULT 0,
+            source TEXT NOT NULL DEFAULT 'verified_import',
+            created_at TIMESTAMP NOT NULL DEFAULT (datetime('now', 'localtime'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_legacy_ai_token_hashes_user
+        ON legacy_ai_token_hashes(user_id)
+        """
+    )
+    if _table_exists(conn, "players"):
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_players_user_id ON players(user_id)"
+        )
+
+
+def _init_account_email_schema(conn):
+    """Create the optional, human-only email recovery schema idempotently."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_emails (
+            user_id INTEGER PRIMARY KEY REFERENCES toy_users(id) ON DELETE CASCADE,
+            email_normalized TEXT NOT NULL COLLATE NOCASE,
+            verified INTEGER NOT NULL DEFAULT 1 CHECK (verified = 1),
+            verified_at_epoch INTEGER NOT NULL,
+            created_at_epoch INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+            updated_at_epoch INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_account_emails_unique_normalized
+        ON account_emails(email_normalized COLLATE NOCASE)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS account_emails_human_only_insert
+        BEFORE INSERT ON account_emails
+        WHEN COALESCE((SELECT is_ai FROM toy_users WHERE id = NEW.user_id), 1) != 0
+        BEGIN
+            SELECT RAISE(ABORT, 'email is only available to human accounts');
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS account_emails_human_only_update
+        BEFORE UPDATE OF user_id ON account_emails
+        WHEN COALESCE((SELECT is_ai FROM toy_users WHERE id = NEW.user_id), 1) != 0
+        BEGIN
+            SELECT RAISE(ABORT, 'email is only available to human accounts');
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_verification_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
+            email_normalized TEXT NOT NULL COLLATE NOCASE,
+            purpose TEXT NOT NULL CHECK (purpose IN ('bind', 'change', 'reset')),
+            code_salt TEXT NOT NULL,
+            code_hash TEXT NOT NULL CHECK (length(code_hash) = 64),
+            request_ip_hash TEXT NOT NULL CHECK (length(request_ip_hash) = 64),
+            created_at_epoch INTEGER NOT NULL,
+            expires_at_epoch INTEGER NOT NULL,
+            delivered_at_epoch INTEGER,
+            used_at_epoch INTEGER,
+            failed_attempts INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS account_emails_remove_if_user_becomes_ai
+        AFTER UPDATE OF is_ai ON toy_users
+        WHEN NEW.is_ai != 0
+        BEGIN
+            DELETE FROM account_emails WHERE user_id = NEW.id;
+            UPDATE email_verification_codes
+            SET used_at_epoch = COALESCE(
+                used_at_epoch,
+                CAST(strftime('%s', 'now') AS INTEGER)
+            )
+            WHERE user_id = NEW.id;
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_email_codes_account_purpose_created
+        ON email_verification_codes(user_id, purpose, created_at_epoch DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_email_codes_email_created
+        ON email_verification_codes(email_normalized, created_at_epoch DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_email_codes_ip_created
+        ON email_verification_codes(request_ip_hash, created_at_epoch DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_verification_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code_id INTEGER REFERENCES email_verification_codes(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
+            email_hash TEXT NOT NULL CHECK (length(email_hash) = 64),
+            request_ip_hash TEXT NOT NULL CHECK (length(request_ip_hash) = 64),
+            succeeded INTEGER NOT NULL DEFAULT 0,
+            attempted_at_epoch INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_email_attempts_account_time
+        ON email_verification_attempts(user_id, attempted_at_epoch DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_email_attempts_ip_time
+        ON email_verification_attempts(request_ip_hash, attempted_at_epoch DESC)
+        """
+    )
+
+
 def _init_anti_addiction_tables(conn):
     conn.execute(
         """
@@ -1015,7 +1193,12 @@ def _migrate_platform_timestamps():
         _init_registration_events_table(conn)
         _init_password_reset_tokens_table(conn)
         _init_username_changes_table(conn)
+        _init_account_security_schema(conn)
+        _init_account_email_schema(conn)
         _init_anti_addiction_tables(conn)
+        # New voluntary-deletion fields are independent from legacy deleted_at.
+        # In particular, no historical soft-deleted row is scheduled here.
+        account_deletion.init_schema(conn)
         if conn.execute("SELECT value FROM settings WHERE key = ?", (TIMEZONE_MIGRATION_KEY,)).fetchone():
             conn.commit()
             return
@@ -1083,6 +1266,137 @@ def _ab64_decode(value):
     return base64.b64decode((normalized + padding).encode("ascii"))
 
 
+def _normalize_email(value):
+    if not isinstance(value, str):
+        raise _McpError(-32602, "邮箱必填")
+    email = value.strip().casefold()
+    if len(email) > 254 or not re.fullmatch(
+        r"[a-z0-9.!#$%&'*+/=?^_{}|~-]{1,64}@[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?",
+        email,
+    ):
+        raise _McpError(-32602, "邮箱格式不正确")
+    local, domain = email.rsplit("@", 1)
+    if "." not in domain or any(
+        not label or label.startswith("-") or label.endswith("-") or len(label) > 63
+        for label in domain.split(".")
+    ):
+        raise _McpError(-32602, "邮箱格式不正确")
+    return email
+
+
+def _mask_email(email):
+    local, domain = email.rsplit("@", 1)
+    domain_parts = domain.split(".")
+    domain_name = domain_parts[0]
+    suffix = "." + ".".join(domain_parts[1:]) if len(domain_parts) > 1 else ""
+    return f"{local[:1]}***@{domain_name[:1]}***{suffix}"
+
+
+def _email_hmac(*parts):
+    payload = "\x1f".join(str(part) for part in parts).encode("utf-8")
+    return hmac.new(TOY_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def _email_code_hash(code, salt, purpose, user_id, email):
+    return _email_hmac("email-code-v1", salt, purpose, int(user_id), email, code)
+
+
+def _email_ip_hash(client_ip):
+    return _email_hmac("email-ip-v1", client_ip or "unknown")
+
+
+def _email_value_hash(email):
+    return _email_hmac("email-value-v1", email)
+
+
+def _smtp_config():
+    host = os.getenv("CEDARTOY_SMTP_HOST", "").strip()
+    sender = os.getenv("CEDARTOY_SMTP_FROM", "").strip()
+    if not host or not sender:
+        raise _McpError(
+            EMAIL_PROVIDER_ERROR_CODE,
+            "邮件服务尚未配置，请联系管理员（缺少 CEDARTOY_SMTP_HOST / CEDARTOY_SMTP_FROM）",
+            {"reason": "email_provider_not_configured"},
+        )
+    security = os.getenv("CEDARTOY_SMTP_SECURITY", "starttls").strip().lower()
+    if security not in {"starttls", "ssl", "none"}:
+        raise _McpError(
+            EMAIL_PROVIDER_ERROR_CODE,
+            "邮件服务配置错误，请联系管理员（CEDARTOY_SMTP_SECURITY 无效）",
+            {"reason": "email_provider_misconfigured"},
+        )
+    default_port = 465 if security == "ssl" else 587
+    try:
+        port = int(os.getenv("CEDARTOY_SMTP_PORT", str(default_port)))
+    except ValueError:
+        raise _McpError(
+            EMAIL_PROVIDER_ERROR_CODE,
+            "邮件服务配置错误，请联系管理员（CEDARTOY_SMTP_PORT 无效）",
+            {"reason": "email_provider_misconfigured"},
+        ) from None
+    username = os.getenv("CEDARTOY_SMTP_USERNAME", "")
+    password = os.getenv("CEDARTOY_SMTP_PASSWORD", "")
+    if bool(username) != bool(password):
+        raise _McpError(
+            EMAIL_PROVIDER_ERROR_CODE,
+            "邮件服务配置错误，请联系管理员（SMTP 用户名和密码必须同时配置）",
+            {"reason": "email_provider_misconfigured"},
+        )
+    return {
+        "host": host,
+        "port": port,
+        "sender": sender,
+        "username": username,
+        "password": password,
+        "security": security,
+    }
+
+
+def _send_verification_email(email, code, purpose, smtp_config):
+    purpose_labels = {
+        "bind": "绑定邮箱",
+        "change": "更换邮箱",
+        "reset": "重置密码",
+    }
+    label = purpose_labels[purpose]
+    message = EmailMessage()
+    message["Subject"] = f"CedarToy 验证码：{label}"
+    message["From"] = smtp_config["sender"]
+    message["To"] = email
+    message.set_content(
+        f"你的 CedarToy 验证码是：{code}\n\n"
+        f"验证码用于{label}，10 分钟内有效。\n"
+        "如果不是你本人操作，请忽略这封邮件。"
+    )
+    try:
+        if smtp_config["security"] == "ssl":
+            client = smtplib.SMTP_SSL(
+                smtp_config["host"],
+                smtp_config["port"],
+                timeout=10,
+                context=ssl.create_default_context(),
+            )
+        else:
+            client = smtplib.SMTP(
+                smtp_config["host"],
+                smtp_config["port"],
+                timeout=10,
+            )
+        with client:
+            if smtp_config["security"] == "starttls":
+                client.starttls(context=ssl.create_default_context())
+            if smtp_config["username"]:
+                client.login(smtp_config["username"], smtp_config["password"])
+            client.send_message(message)
+    except (OSError, smtplib.SMTPException) as exc:
+        logger.warning("email delivery failed: %s", type(exc).__name__)
+        raise _McpError(
+            EMAIL_PROVIDER_ERROR_CODE,
+            "邮件暂时无法发送，请稍后重试或联系管理员",
+            {"reason": "email_delivery_unavailable"},
+        ) from exc
+
+
 def _b64url_encode(raw):
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -1121,6 +1435,39 @@ def _jwt_encode(payload):
     return f"{header_part}.{payload_part}.{_b64url_encode(signature)}"
 
 
+def _legacy_ai_token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _legacy_allowlisted_ai_payload(token):
+    """Accept only an exact pre-verified legacy AI token hash, never a candidate."""
+    try:
+        payload = _jwt_unverified_payload(token)
+        if set(payload) != {"user_id", "username", "is_ai", "is_admin"}:
+            raise ValueError("unexpected legacy payload")
+        if payload.get("is_ai") is not True:
+            raise ValueError("not a permanent AI token")
+        user_id = int(payload["user_id"])
+        token_hash = _legacy_ai_token_hash(token)
+        with _db_connect() as conn:
+            if not _table_exists(conn, "legacy_ai_token_hashes"):
+                raise ValueError("legacy allowlist unavailable")
+            row = conn.execute(
+                """
+                SELECT user_id, token_version
+                FROM legacy_ai_token_hashes
+                WHERE token_hash = ?
+                """,
+                (token_hash,),
+            ).fetchone()
+        if not row or int(row["user_id"]) != user_id:
+            raise ValueError("legacy token is not allowlisted")
+        payload["_legacy_token_version"] = int(row["token_version"])
+        return payload
+    except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise ValueError("legacy token is not allowlisted") from exc
+
+
 def _jwt_decode(token):
     try:
         header_part, payload_part, signature_part = token.split(".", 2)
@@ -1128,7 +1475,7 @@ def _jwt_decode(token):
         expected = hmac.new(TOY_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
         actual = _b64url_decode(signature_part)
         if not hmac.compare_digest(expected, actual):
-            raise ValueError("bad signature")
+            return _legacy_allowlisted_ai_payload(token)
         header = json.loads(_b64url_decode(header_part).decode("utf-8"))
         if header.get("alg") != JWT_ALGORITHM:
             raise ValueError("bad algorithm")
@@ -1148,13 +1495,15 @@ def _create_account_token(user):
         "is_ai": bool(user.get("is_ai")),
         "is_admin": bool(user.get("is_admin")),
     }
-    if not user.get("is_ai"):
+    if user.get("is_ai"):
+        payload["token_version"] = int(user.get("ai_token_version") or 0)
+    else:
         payload["exp"] = int(time.time()) + HUMAN_TOKEN_SECONDS
     return _jwt_encode(payload)
 
 
 def _public_user(user):
-    return {
+    result = {
         "id": user["id"],
         "username": user["username"],
         "is_ai": bool(user.get("is_ai")),
@@ -1162,6 +1511,18 @@ def _public_user(user):
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }
+    if user.get("deletion_requested_at_epoch") is not None:
+        scheduled = int(user["scheduled_delete_at_epoch"])
+        result["deletion"] = {
+            "status": "due" if int(time.time()) >= scheduled else "pending",
+            "deletion_requested_at_epoch": int(user["deletion_requested_at_epoch"]),
+            "scheduled_delete_at_epoch": scheduled,
+            "scheduled_delete_at": time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(scheduled)
+            ),
+            "can_cancel": int(time.time()) < scheduled,
+        }
+    return result
 
 
 def _account_username_aliases(user):
@@ -1188,7 +1549,7 @@ def _account_username_aliases(user):
     return [name for name in dict.fromkeys(names) if name]
 
 
-def _current_account(raw_token):
+def _current_account(raw_token, *, allow_pending_deletion=False):
     if not raw_token:
         raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
     try:
@@ -1207,6 +1568,27 @@ def _current_account(raw_token):
         ).fetchone())
         if not user:
             raise _McpError(-32001, "账号不存在或已删除")
+        if payload.get("is_ai") is True or user.get("is_ai"):
+            presented_version = payload.get(
+                "token_version",
+                payload.get("_legacy_token_version", 0),
+            )
+            try:
+                presented_version = int(presented_version)
+            except (TypeError, ValueError):
+                raise _McpError(-32001, "登录已失效") from None
+            if presented_version != int(user.get("ai_token_version") or 0):
+                raise _McpError(-32001, "登录已失效：该小机 Token 已更新")
+        if user.get("deletion_requested_at_epoch") is not None:
+            scheduled = int(user["scheduled_delete_at_epoch"])
+            if not allow_pending_deletion:
+                when = time.strftime("%Y-%m-%d %H:%M", time.localtime(scheduled))
+                raise _McpError(
+                    -32010,
+                    f"账号处于待注销状态，将于 {when} 永久删除；当前只可查询或取消注销。",
+                    {"reason": "pending_deletion"},
+                )
+            return user
         conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user_id,))
         conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
@@ -1286,6 +1668,49 @@ def _check_register_rate_limit(ip):
         window_seconds=REGISTER_RATE_LIMIT_WINDOW_SECONDS,
         max_count=REGISTER_RATE_LIMIT_MAX,
     )
+
+
+def _failed_login_identity(client_ip, username):
+    normalized_username = (username or "").strip().casefold()
+    return f"ip:{client_ip or 'unknown'}|username:{normalized_username}"
+
+
+def _failed_login_is_limited(client_ip, username, *, now=None):
+    now = time.time() if now is None else now
+    identity = _failed_login_identity(client_ip, username)
+    with _RATE_LIMIT_LOCK:
+        _prune_rate_limit_buckets(
+            _FAILED_LOGIN_RATE_LIMIT,
+            now,
+            FAILED_LOGIN_WINDOW_SECONDS,
+        )
+        return len(_FAILED_LOGIN_RATE_LIMIT.get(identity, ())) >= FAILED_LOGIN_MAX
+
+
+def _record_failed_login(client_ip, username, *, now=None):
+    now = time.time() if now is None else now
+    identity = _failed_login_identity(client_ip, username)
+    with _RATE_LIMIT_LOCK:
+        _prune_rate_limit_buckets(
+            _FAILED_LOGIN_RATE_LIMIT,
+            now,
+            FAILED_LOGIN_WINDOW_SECONDS,
+        )
+        timestamps = _FAILED_LOGIN_RATE_LIMIT.setdefault(identity, [])
+        timestamps.append(now)
+        return len(timestamps) >= FAILED_LOGIN_MAX
+
+
+def _clear_failed_login(client_ip, username):
+    identity = _failed_login_identity(client_ip, username)
+    with _RATE_LIMIT_LOCK:
+        _FAILED_LOGIN_RATE_LIMIT.pop(identity, None)
+
+
+def _raise_failed_login(client_ip, username):
+    if _record_failed_login(client_ip, username):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
+    raise _McpError(-32001, "用户名或密码错误")
 
 
 def _username_conflict(conn, username, *, exclude_user_id=None, include_history=True):
@@ -1440,18 +1865,22 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
     with _db_connect() as conn:
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE username = ?", (username,)).fetchone())
         if user:
+            if _failed_login_is_limited(client_ip, username):
+                raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
             if not _verify_password(password, user["password_hash"]):
-                raise _McpError(-32001, "用户名或密码错误")
-            conn.execute(
-                """
-                UPDATE toy_users
-                SET last_active_at = datetime('now', 'localtime'),
-                    deleted_at = NULL
-                WHERE id = ?
-                """,
-                (user["id"],),
-            )
-            conn.commit()
+                _raise_failed_login(client_ip, username)
+            _clear_failed_login(client_ip, username)
+            if user.get("deletion_requested_at_epoch") is None:
+                conn.execute(
+                    """
+                    UPDATE toy_users
+                    SET last_active_at = datetime('now', 'localtime'),
+                        deleted_at = NULL
+                    WHERE id = ?
+                    """,
+                    (user["id"],),
+                )
+                conn.commit()
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
         else:
             _enforce_register_rate_limit(username, client_ip)
@@ -1499,29 +1928,102 @@ def _login_or_register_ai(username, password, client_ip=None):
     }, had_recent_registration)
 
 
-def _login_existing_account(username, password):
+def _login_existing_account(username, password, client_ip=None):
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
+    if _failed_login_is_limited(client_ip, username):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
     with _db_connect() as conn:
         user = _row_dict(conn.execute(
             "SELECT * FROM toy_users WHERE username = ? AND deleted_at IS NULL",
             (username,),
         ).fetchone())
         if not user or not _verify_password(password, user["password_hash"]):
-            raise _McpError(-32001, "用户名或密码错误")
-        conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user["id"],))
-        conn.commit()
+            _raise_failed_login(client_ip, username)
+        _clear_failed_login(client_ip, username)
+        if user.get("deletion_requested_at_epoch") is None:
+            conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user["id"],))
+            conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
-    return {
+    result = {
         "token": _create_account_token(user),
         "user": _public_user(user),
-        "message": "登录成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份。",
     }
+    if user.get("deletion_requested_at_epoch") is not None:
+        result["message"] = "账号处于待注销状态；当前 token 只能查询或取消注销。"
+    else:
+        result["message"] = "登录成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份。"
+    return result
 
 
 def _login_or_register_human(username, password, client_ip=None):
     return _login_or_register(username, password, is_ai=0, client_ip=client_ip)
+
+
+def _login_human(username, password, client_ip=None):
+    username = _normalize_credential_field(username, "username").strip()
+    password = _normalize_credential_field(password, "password")
+    _validate_credentials(username, password)
+    if _failed_login_is_limited(client_ip, username):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
+    with _db_connect() as conn:
+        user = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE username = ?",
+            (username,),
+        ).fetchone())
+        if (
+            not user
+            or user.get("is_ai")
+            or not _verify_password(password, user["password_hash"])
+        ):
+            _raise_failed_login(client_ip, username)
+        _clear_failed_login(client_ip, username)
+        if user.get("deletion_requested_at_epoch") is None:
+            conn.execute(
+                """
+                UPDATE toy_users
+                SET last_active_at = datetime('now', 'localtime'), deleted_at = NULL
+                WHERE id = ?
+                """,
+                (user["id"],),
+            )
+            conn.commit()
+        user = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE id = ?",
+            (user["id"],),
+        ).fetchone())
+    result = {"token": _create_account_token(user), "user": _public_user(user)}
+    if user.get("deletion_requested_at_epoch") is not None:
+        result["pending_deletion"] = True
+        result["message"] = "账号处于待注销状态，只能查看或取消注销。"
+    return result
+
+
+def _register_human(username, password, client_ip=None):
+    username = _normalize_credential_field(username, "username").strip()
+    password = _normalize_credential_field(password, "password")
+    _validate_credentials(username, password)
+    _enforce_register_rate_limit(username, client_ip)
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if _username_conflict(conn, username):
+            raise _McpError(-32602, "用户名已存在，请直接登录")
+        had_recent_registration = _recent_registration_exists(conn, client_ip)
+        cur = conn.execute(
+            "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 0)",
+            (username, _hash_password(password)),
+        )
+        user = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone())
+        _record_successful_registration(conn, user, client_ip)
+        conn.commit()
+    return _append_recent_registration_notice(
+        {"token": _create_account_token(user), "user": _public_user(user)},
+        had_recent_registration,
+    )
 
 
 def _rename_next_allowed_at(epoch):
@@ -1659,10 +2161,79 @@ def _require_admin_account(raw_token):
     return user
 
 
-def _admin_user_rows():
+def _admin_user_page(page=1, page_size=ADMIN_USERS_DEFAULT_PAGE_SIZE, search=""):
+    try:
+        page = int(page)
+        page_size = int(page_size)
+    except (TypeError, ValueError):
+        raise ValueError("page 和 page_size 必须是整数") from None
+    if page < 1:
+        raise ValueError("page 必须大于等于 1")
+    if page_size < 1 or page_size > ADMIN_USERS_MAX_PAGE_SIZE:
+        raise ValueError(f"page_size 必须在 1-{ADMIN_USERS_MAX_PAGE_SIZE} 之间")
+    search = str(search or "").strip()
+    if len(search) > ADMIN_USERS_MAX_SEARCH_LENGTH:
+        raise ValueError(f"搜索内容最多 {ADMIN_USERS_MAX_SEARCH_LENGTH} 个字符")
+
+    where_sql = ""
+    params = []
+    if search:
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where_sql = "WHERE u.username LIKE ? ESCAPE '\\' COLLATE NOCASE"
+        params.append(f"%{escaped}%")
+        try:
+            search_id = int(search)
+        except ValueError:
+            search_id = None
+        if search_id is not None:
+            where_sql = "WHERE (u.id = ? OR u.username LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            params = [search_id, f"%{escaped}%"]
+
     with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
+        total = int(conn.execute(
+            f"SELECT COUNT(*) FROM toy_users u {where_sql}",
+            params,
+        ).fetchone()[0])
         rows = conn.execute(
-            """
+            f"""
+            WITH page_users AS MATERIALIZED (
+                SELECT
+                    u.id, u.username, u.is_ai, u.is_admin, u.created_at,
+                    u.last_active_at, u.deleted_at,
+                    u.deletion_requested_at_epoch, u.scheduled_delete_at_epoch
+                FROM toy_users u
+                {where_sql}
+                ORDER BY u.deleted_at IS NOT NULL ASC, u.id DESC
+                LIMIT ? OFFSET ?
+            ),
+            player_counts AS (
+                SELECT p.user_id, COUNT(*) AS count
+                FROM players p
+                JOIN page_users pu ON pu.id = p.user_id
+                GROUP BY p.user_id
+            ),
+            bound_ai_counts AS (
+                SELECT b.human_user_id AS user_id, COUNT(*) AS count
+                FROM user_bindings b
+                JOIN page_users pu ON pu.id = b.human_user_id
+                GROUP BY b.human_user_id
+            ),
+            bound_human_counts AS (
+                SELECT b.ai_user_id AS user_id, COUNT(*) AS count
+                FROM user_bindings b
+                JOIN page_users pu ON pu.id = b.ai_user_id
+                GROUP BY b.ai_user_id
+            ),
+            active_token_counts AS (
+                SELECT t.ai_user_id AS user_id, COUNT(*) AS count
+                FROM binding_tokens t
+                JOIN page_users pu ON pu.id = t.ai_user_id
+                WHERE t.used = 0
+                  AND t.expires_at > datetime('now', 'localtime')
+                GROUP BY t.ai_user_id
+            )
             SELECT
                 u.id,
                 u.username,
@@ -1671,21 +2242,27 @@ def _admin_user_rows():
                 u.created_at,
                 u.last_active_at,
                 u.deleted_at,
-                (SELECT COUNT(*) FROM players p WHERE p.user_id = u.id) AS soup_player_count,
-                (SELECT COUNT(*) FROM user_bindings b WHERE b.human_user_id = u.id) AS bound_ai_count,
-                (SELECT COUNT(*) FROM user_bindings b WHERE b.ai_user_id = u.id) AS bound_human_count,
-                (
-                    SELECT COUNT(*)
-                    FROM binding_tokens t
-                    WHERE t.ai_user_id = u.id
-                      AND t.used = 0
-                      AND t.expires_at > datetime('now', 'localtime')
-                ) AS active_binding_tokens
-            FROM toy_users u
+                u.deletion_requested_at_epoch,
+                u.scheduled_delete_at_epoch,
+                COALESCE(pc.count, 0) AS soup_player_count,
+                COALESCE(bac.count, 0) AS bound_ai_count,
+                COALESCE(bhc.count, 0) AS bound_human_count,
+                COALESCE(atc.count, 0) AS active_binding_tokens
+            FROM page_users u
+            LEFT JOIN player_counts pc ON pc.user_id = u.id
+            LEFT JOIN bound_ai_counts bac ON bac.user_id = u.id
+            LEFT JOIN bound_human_counts bhc ON bhc.user_id = u.id
+            LEFT JOIN active_token_counts atc ON atc.user_id = u.id
             ORDER BY u.deleted_at IS NOT NULL ASC, u.id DESC
-            """
+            """,
+            (*params, page_size, (page - 1) * page_size),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "users": [dict(row) for row in rows],
+    }
 
 
 def _admin_update_user(user_id, body, admin_user):
@@ -1697,10 +2274,14 @@ def _admin_update_user(user_id, body, admin_user):
     if int(user_id) == int(admin_user["id"]) and (not is_admin or deleted):
         raise _McpError(-32602, "不能取消当前登录管理员的权限或软删当前账号")
     with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
         conn.execute("BEGIN IMMEDIATE")
         existing = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
         if not existing:
             raise _McpError(-32004, "账号不存在")
+        if existing.get("deletion_requested_at_epoch") is not None:
+            raise _McpError(-32010, "待注销账号不能通过普通编辑修改或取消状态")
         if username != existing["username"]:
             _rename_user_in_transaction(conn, existing, username)
         conn.execute(
@@ -1732,9 +2313,16 @@ def _admin_reset_user_password(user_id, body):
     if len(password) < 6:
         raise _McpError(-32602, "密码至少 6 位")
     with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
         existing = conn.execute("SELECT id FROM toy_users WHERE id = ?", (user_id,)).fetchone()
         if not existing:
             raise _McpError(-32004, "账号不存在")
+        pending = conn.execute(
+            "SELECT deletion_requested_at_epoch FROM toy_users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if pending[0] is not None:
+            raise _McpError(-32010, "待注销账号不能重置密码；请先由账号本人取消注销")
         conn.execute(
             "UPDATE toy_users SET password_hash = ?, deleted_at = NULL WHERE id = ?",
             (_hash_password(password), user_id),
@@ -1745,11 +2333,15 @@ def _admin_reset_user_password(user_id, body):
 
 def _generate_reset_link(user_id):
     with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
         existing = _row_dict(conn.execute(
-            "SELECT id, is_ai FROM toy_users WHERE id = ?", (user_id,)
+            "SELECT id, is_ai, deletion_requested_at_epoch FROM toy_users WHERE id = ?", (user_id,)
         ).fetchone())
         if not existing:
             raise _McpError(-32004, "账号不存在")
+        if existing.get("deletion_requested_at_epoch") is not None:
+            raise _McpError(-32010, "待注销账号不能生成密码重置链接")
         # 小机被多个人类绑定时不发链接：无法判定该由谁重置。
         if existing.get("is_ai"):
             owners = conn.execute(
@@ -1856,6 +2448,12 @@ def _reset_password_by_token(reset_token, new_password):
             raise _McpError(-32602, "该链接已使用")
         if bool(reset["expired"]):
             raise _McpError(-32602, "链接已过期")
+        user = conn.execute(
+            "SELECT deletion_requested_at_epoch FROM toy_users WHERE id = ?",
+            (int(reset["user_id"]),),
+        ).fetchone()
+        if not user or user[0] is not None:
+            raise _McpError(-32602, "账号处于待注销状态，不能重置密码")
         if len(new_password) < 6:
             raise _McpError(-32602, "新密码至少 6 位")
         conn.execute(
@@ -1874,15 +2472,34 @@ def _admin_release_user(user_id, admin_user):
     if int(user_id) == int(admin_user["id"]):
         raise _McpError(-32602, "不能释放当前登录的管理员账号")
     with _db_connect() as conn:
-        existing = conn.execute("SELECT id FROM toy_users WHERE id = ?", (user_id,)).fetchone()
+        account_deletion.init_schema(conn)
+        conn.commit()
+        existing = conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone()
         if not existing:
             raise _McpError(-32004, "账号不存在")
-        conn.execute("UPDATE players SET user_id = NULL WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM binding_tokens WHERE ai_user_id = ?", (user_id,))
-        conn.execute("DELETE FROM user_bindings WHERE human_user_id = ? OR ai_user_id = ?", (user_id, user_id))
-        conn.execute("DELETE FROM toy_users WHERE id = ?", (user_id,))
-        conn.commit()
-    return {"ok": True}
+        now_epoch = int(time.time())
+        if existing["deletion_requested_at_epoch"] is None:
+            account_deletion.request_deletion(
+                conn, int(user_id), now_epoch=now_epoch, delay_seconds=0
+            )
+        else:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "UPDATE toy_users SET scheduled_delete_at_epoch=? WHERE id=?",
+                (now_epoch, int(user_id)),
+            )
+            conn.execute(
+                """
+                UPDATE account_deletion_jobs SET scheduled_at_epoch=?
+                WHERE job_id=? AND status IN ('pending', 'running')
+                """,
+                (now_epoch, existing["deletion_job_id"]),
+            )
+            conn.commit()
+    result = _purge_account_deletion(int(user_id), now_epoch=now_epoch)
+    if result.get("status") != "complete":
+        raise _McpError(-32603, "立即释放未完成，后台清理将继续重试")
+    return {"ok": True, "message": "账号及私人数据已清理，共享历史已匿名化"}
 
 
 def _generate_binding_token(raw_token):
@@ -1962,13 +2579,100 @@ def _bind_account(human_token, binding_token):
     return {"ok": True}
 
 
-def _machine_account_token(username, password, *, bind=False, human_token=""):
-    """Return an existing AI account token, optionally binding it to a human."""
+def _rotate_ai_user_in_transaction(conn, user_id):
+    user = _row_dict(conn.execute(
+        "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+        (int(user_id),),
+    ).fetchone())
+    if not user:
+        raise _McpError(-32004, "小机账号不存在或已删除")
+    if not user.get("is_ai"):
+        raise _McpError(-32602, "目标账号不是小机账号")
+    if user.get("deletion_requested_at_epoch") is not None:
+        raise _McpError(-32010, "待注销小机不能更新 Token")
+    conn.execute(
+        """
+        UPDATE toy_users
+        SET ai_token_version = ai_token_version + 1,
+            last_active_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        (int(user_id),),
+    )
+    return _row_dict(conn.execute(
+        "SELECT * FROM toy_users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone())
+
+
+def _rotate_ai_token(raw_token):
+    user = _current_account(raw_token)
+    if not user.get("is_ai"):
+        raise _McpError(-32602, "只有小机账号可以更新 Token")
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        user = _rotate_ai_user_in_transaction(conn, user["id"])
+        conn.commit()
+    return {
+        "token": _create_account_token(user),
+        "user": _public_user(user),
+        "message": "旧 Token 已失效，请让人类替换 MCP 地址。",
+    }
+
+
+def _rotate_bound_machine_token(human_token, ai_user_id):
+    human = _current_account(human_token)
+    if human.get("is_ai"):
+        raise _McpError(-32602, "只有人类账号可以更新绑定小机 Token")
+    try:
+        ai_user_id = int(ai_user_id)
+    except (TypeError, ValueError):
+        raise _McpError(-32602, "ai_user_id 必填") from None
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        binding = conn.execute(
+            """
+            SELECT 1 FROM user_bindings
+            WHERE human_user_id = ? AND ai_user_id = ?
+            """,
+            (int(human["id"]), ai_user_id),
+        ).fetchone()
+        if not binding:
+            raise _McpError(-32602, "该小机未绑定到你的账号")
+        user = _rotate_ai_user_in_transaction(conn, ai_user_id)
+        conn.commit()
+    return {
+        "token": _create_account_token(user),
+        "user": _public_user(user),
+        "rotated": True,
+        "message": "旧 Token 已失效，请替换 MCP 地址。",
+    }
+
+
+def _machine_account_token(
+    username,
+    password,
+    *,
+    bind=False,
+    rotate=False,
+    ai_user_id=None,
+    human_token="",
+    client_ip=None,
+):
+    """Return or rotate an AI token; bound machines can rotate passwordlessly."""
     if not isinstance(bind, bool):
         raise _McpError(-32602, "bind 必须是布尔值")
+    if not isinstance(rotate, bool):
+        raise _McpError(-32602, "rotate 必须是布尔值")
+    if rotate and ai_user_id is not None:
+        if not human_token:
+            raise _McpError(-32001, "请先登录人类账号")
+        return _rotate_bound_machine_token(human_token, ai_user_id)
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
+    if _failed_login_is_limited(client_ip, username):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
 
     human = None
     if bind:
@@ -1984,20 +2688,31 @@ def _machine_account_token(username, password, *, bind=False, human_token=""):
             (username,),
         ).fetchone())
         if not user or not _verify_password(password, user["password_hash"]):
-            raise _McpError(-32001, "用户名或密码错误")
+            _raise_failed_login(client_ip, username)
+        _clear_failed_login(client_ip, username)
         if not user.get("is_ai"):
             raise _McpError(-32602, "该账号不是小机账号")
+        if user.get("deletion_requested_at_epoch") is not None:
+            raise _McpError(-32010, "该小机处于待注销状态，只能登录后查询或取消注销")
         if bind:
             conn.execute("BEGIN IMMEDIATE")
             _ensure_ai_binding(conn, human["id"], user["id"])
-        conn.execute(
-            "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
-            (user["id"],),
-        )
+        if rotate:
+            user = _rotate_ai_user_in_transaction(conn, user["id"])
+        else:
+            conn.execute(
+                "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
+                (user["id"],),
+            )
         conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
 
     result = {"token": _create_account_token(user), "user": _public_user(user)}
+    if rotate:
+        result.update({
+            "rotated": True,
+            "message": "旧 Token 已失效，请替换 MCP 地址。",
+        })
     if bind:
         result["bound"] = True
     return result
@@ -2270,7 +2985,14 @@ def _get_profile(raw_token):
 
 
 def _account_me(raw_token):
-    user = _current_account(raw_token)
+    user = _current_account(raw_token, allow_pending_deletion=True)
+    if user.get("deletion_requested_at_epoch") is not None:
+        return {
+            "user": _public_user(user),
+            "bindings": [],
+            "pending_deletion": True,
+            "deletion": _account_deletion_status(raw_token),
+        }
     with _db_connect() as conn:
         if user.get("is_ai"):
             rows = conn.execute(
@@ -2295,6 +3017,442 @@ def _account_me(raw_token):
                 (user["id"],),
             ).fetchall()
     return {"user": _public_user(user), "bindings": [_public_user(dict(row)) for row in rows]}
+
+
+def _require_human_account(raw_token):
+    user = _current_account(raw_token)
+    if user.get("is_ai"):
+        raise _McpError(-32003, "只有人类账号可以使用邮箱安全功能")
+    return user
+
+
+def _email_send_rate_limit(conn, user_id, email, ip_hash, now):
+    dimensions = (
+        ("user_id = ?", int(user_id), EMAIL_SEND_MAX_PER_ACCOUNT),
+        ("email_normalized = ? COLLATE NOCASE", email, EMAIL_SEND_MAX_PER_EMAIL),
+        ("request_ip_hash = ?", ip_hash, EMAIL_SEND_MAX_PER_IP),
+    )
+    latest = None
+    for where_sql, value, _limit in dimensions:
+        row = conn.execute(
+            f"SELECT MAX(created_at_epoch) FROM email_verification_codes WHERE {where_sql}",
+            (value,),
+        ).fetchone()
+        if row and row[0] is not None:
+            latest = max(latest or 0, int(row[0]))
+    if latest is not None and now - latest < EMAIL_SEND_COOLDOWN_SECONDS:
+        raise _McpError(
+            RATE_LIMIT_ERROR_CODE,
+            "验证码发送太频繁，请稍后再试",
+            {"retry_after": EMAIL_SEND_COOLDOWN_SECONDS - (now - latest)},
+        )
+    window_start = now - EMAIL_SEND_WINDOW_SECONDS
+    for where_sql, value, limit in dimensions:
+        count = int(conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM email_verification_codes
+            WHERE {where_sql} AND created_at_epoch > ?
+            """,
+            (value, window_start),
+        ).fetchone()[0])
+        if count >= limit:
+            raise _McpError(
+                RATE_LIMIT_ERROR_CODE,
+                "验证码发送次数过多，请稍后再试",
+            )
+
+
+def _issue_email_code(user_id, email, purpose, client_ip):
+    smtp_config = _smtp_config()
+    now = int(time.time())
+    ip_hash = _email_ip_hash(client_ip)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    salt = secrets.token_hex(16)
+    code_hash = _email_code_hash(code, salt, purpose, user_id, email)
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _email_send_rate_limit(conn, user_id, email, ip_hash, now)
+        cursor = conn.execute(
+            """
+            INSERT INTO email_verification_codes (
+                user_id, email_normalized, purpose, code_salt, code_hash,
+                request_ip_hash, created_at_epoch, expires_at_epoch
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(user_id),
+                email,
+                purpose,
+                salt,
+                code_hash,
+                ip_hash,
+                now,
+                now + EMAIL_CODE_TTL_SECONDS,
+            ),
+        )
+        code_id = int(cursor.lastrowid)
+        conn.commit()
+    try:
+        _send_verification_email(email, code, purpose, smtp_config)
+    except Exception:
+        with _db_connect() as conn:
+            conn.execute(
+                "UPDATE email_verification_codes SET used_at_epoch = ? WHERE id = ?",
+                (int(time.time()), code_id),
+            )
+            conn.commit()
+        raise
+    delivered_at = int(time.time())
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """
+            UPDATE email_verification_codes
+            SET used_at_epoch = ?
+            WHERE user_id = ? AND purpose = ? AND id != ?
+              AND delivered_at_epoch IS NOT NULL AND used_at_epoch IS NULL
+            """,
+            (delivered_at, int(user_id), purpose, code_id),
+        )
+        conn.execute(
+            "UPDATE email_verification_codes SET delivered_at_epoch = ? WHERE id = ?",
+            (delivered_at, code_id),
+        )
+        conn.commit()
+    return {
+        "ok": True,
+        "state": "code_sent",
+        "purpose": purpose,
+        "masked_email": _mask_email(email),
+        "expires_in": EMAIL_CODE_TTL_SECONDS,
+        "message": "验证码已发送，10 分钟内有效",
+    }
+
+
+def _check_email_verify_rate_limit(conn, user_id, ip_hash, now):
+    window_start = now - EMAIL_VERIFY_WINDOW_SECONDS
+    account_failures = int(conn.execute(
+        """
+        SELECT COUNT(*) FROM email_verification_attempts
+        WHERE user_id = ? AND succeeded = 0 AND attempted_at_epoch > ?
+        """,
+        (int(user_id), window_start),
+    ).fetchone()[0])
+    ip_failures = int(conn.execute(
+        """
+        SELECT COUNT(*) FROM email_verification_attempts
+        WHERE request_ip_hash = ? AND succeeded = 0 AND attempted_at_epoch > ?
+        """,
+        (ip_hash, window_start),
+    ).fetchone()[0])
+    if account_failures >= EMAIL_VERIFY_MAX_PER_ACCOUNT or ip_failures >= EMAIL_VERIFY_MAX_PER_IP:
+        raise _McpError(
+            RATE_LIMIT_ERROR_CODE,
+            "验证码错误次数过多，请稍后再试",
+        )
+
+
+def _verify_email_code_in_transaction(conn, user_id, email, purpose, code, client_ip):
+    now = int(time.time())
+    ip_hash = _email_ip_hash(client_ip)
+    _check_email_verify_rate_limit(conn, user_id, ip_hash, now)
+    row = _row_dict(conn.execute(
+        """
+        SELECT *
+        FROM email_verification_codes
+        WHERE user_id = ? AND email_normalized = ? COLLATE NOCASE AND purpose = ?
+          AND delivered_at_epoch IS NOT NULL AND used_at_epoch IS NULL
+          AND expires_at_epoch >= ?
+        ORDER BY delivered_at_epoch DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id), email, purpose, now),
+    ).fetchone())
+    if not row:
+        raise _McpError(-32602, "验证码无效、已过期或已使用")
+    supplied_code = code.strip() if isinstance(code, str) else ""
+    expected_hash = _email_code_hash(
+        supplied_code,
+        row["code_salt"],
+        purpose,
+        user_id,
+        email,
+    )
+    succeeded = hmac.compare_digest(expected_hash, row["code_hash"])
+    conn.execute(
+        """
+        INSERT INTO email_verification_attempts (
+            code_id, user_id, email_hash, request_ip_hash, succeeded, attempted_at_epoch
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(row["id"]),
+            int(user_id),
+            _email_value_hash(email),
+            ip_hash,
+            1 if succeeded else 0,
+            now,
+        ),
+    )
+    if not succeeded:
+        failed_attempts = int(row["failed_attempts"]) + 1
+        conn.execute(
+            """
+            UPDATE email_verification_codes
+            SET failed_attempts = ?,
+                used_at_epoch = CASE WHEN ? >= ? THEN ? ELSE used_at_epoch END
+            WHERE id = ?
+            """,
+            (
+                failed_attempts,
+                failed_attempts,
+                EMAIL_CODE_MAX_ATTEMPTS,
+                now,
+                int(row["id"]),
+            ),
+        )
+        conn.commit()
+        if failed_attempts >= EMAIL_CODE_MAX_ATTEMPTS:
+            raise _McpError(
+                RATE_LIMIT_ERROR_CODE,
+                "验证码错误次数过多，请重新获取",
+            )
+        raise _McpError(-32602, "验证码错误")
+    updated = conn.execute(
+        """
+        UPDATE email_verification_codes
+        SET used_at_epoch = ?
+        WHERE id = ? AND used_at_epoch IS NULL
+        """,
+        (now, int(row["id"])),
+    ).rowcount
+    if updated != 1:
+        raise _McpError(-32602, "验证码已使用")
+    return row
+
+
+def _account_email_status(raw_token):
+    user = _require_human_account(raw_token)
+    with _db_connect() as conn:
+        row = conn.execute(
+            "SELECT email_normalized, verified FROM account_emails WHERE user_id = ?",
+            (int(user["id"]),),
+        ).fetchone()
+    return {
+        "bound": bool(row and row["verified"]),
+        "verified": bool(row and row["verified"]),
+        "masked_email": _mask_email(row["email_normalized"]) if row else None,
+    }
+
+
+def _send_account_email_code(raw_token, email, client_ip=None):
+    user = _require_human_account(raw_token)
+    email = _normalize_email(email)
+    with _db_connect() as conn:
+        current = conn.execute(
+            "SELECT email_normalized FROM account_emails WHERE user_id = ?",
+            (int(user["id"]),),
+        ).fetchone()
+        conflict = conn.execute(
+            "SELECT user_id FROM account_emails WHERE email_normalized = ? COLLATE NOCASE AND user_id != ?",
+            (email, int(user["id"])),
+        ).fetchone()
+    if conflict:
+        raise _McpError(-32602, "该邮箱已绑定其他账号", {"reason": "email_in_use"})
+    if current and current["email_normalized"].casefold() == email:
+        raise _McpError(-32602, "该邮箱已经绑定当前账号")
+    purpose = "change" if current else "bind"
+    return _issue_email_code(user["id"], email, purpose, client_ip)
+
+
+def _confirm_account_email(raw_token, email, code, client_ip=None):
+    user = _require_human_account(raw_token)
+    email = _normalize_email(email)
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute(
+            "SELECT email_normalized FROM account_emails WHERE user_id = ?",
+            (int(user["id"]),),
+        ).fetchone()
+        purpose = "change" if current else "bind"
+        _verify_email_code_in_transaction(
+            conn,
+            user["id"],
+            email,
+            purpose,
+            code,
+            client_ip,
+        )
+        try:
+            conn.execute(
+                """
+                INSERT INTO account_emails (
+                    user_id, email_normalized, verified, verified_at_epoch,
+                    created_at_epoch, updated_at_epoch
+                ) VALUES (
+                    ?, ?, 1,
+                    CAST(strftime('%s', 'now') AS INTEGER),
+                    CAST(strftime('%s', 'now') AS INTEGER),
+                    CAST(strftime('%s', 'now') AS INTEGER)
+                )
+                ON CONFLICT(user_id) DO UPDATE SET
+                    email_normalized = excluded.email_normalized,
+                    verified = 1,
+                    verified_at_epoch = excluded.verified_at_epoch,
+                    updated_at_epoch = excluded.updated_at_epoch
+                """,
+                (int(user["id"]), email),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise _McpError(
+                -32602,
+                "该邮箱已绑定其他账号",
+                {"reason": "email_in_use"},
+            ) from exc
+        conn.commit()
+    return {
+        "ok": True,
+        "bound": True,
+        "verified": True,
+        "masked_email": _mask_email(email),
+        "message": "邮箱已绑定" if purpose == "bind" else "邮箱已更换",
+    }
+
+
+def _unbind_account_email(raw_token, password):
+    user = _require_human_account(raw_token)
+    password = _normalize_credential_field(password, "password")
+    if not _verify_password(password, user["password_hash"]):
+        raise _McpError(-32602, "当前密码错误")
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        deleted = conn.execute(
+            "DELETE FROM account_emails WHERE user_id = ?",
+            (int(user["id"]),),
+        ).rowcount
+        conn.execute(
+            """
+            UPDATE email_verification_codes
+            SET used_at_epoch = COALESCE(
+                used_at_epoch,
+                CAST(strftime('%s', 'now') AS INTEGER)
+            )
+            WHERE user_id = ? AND used_at_epoch IS NULL
+            """,
+            (int(user["id"]),),
+        )
+        conn.commit()
+    if not deleted:
+        raise _McpError(-32602, "当前账号未绑定邮箱")
+    return {"ok": True, "bound": False, "message": "邮箱已解绑"}
+
+
+_MACHINE_PASSWORD_RECOVERY_MESSAGE = (
+    "这是小机账号。已绑定人类的小机，请让绑定的人类在『我的 -> 我的小机 -> 重置密码』中设置新密码；"
+    "未绑定的小机请联系管理员。"
+)
+_NO_EMAIL_RECOVERY_MESSAGE = "该账号未绑定邮箱，无法自助找回，请联系管理员"
+
+
+def _account_security_http_status(exc):
+    if exc.code == -32001:
+        return 401
+    if exc.code == -32003:
+        return 403
+    if exc.code == RATE_LIMIT_ERROR_CODE:
+        return 429
+    if exc.code == EMAIL_PROVIDER_ERROR_CODE:
+        return 503
+    if exc.details.get("reason") == "email_in_use":
+        return 409
+    return 400
+
+
+def _start_password_recovery(username, client_ip=None):
+    username = username.strip() if isinstance(username, str) else ""
+    with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
+        user = _row_dict(conn.execute(
+            """
+            SELECT id, username, is_ai, deletion_requested_at_epoch
+            FROM toy_users
+            WHERE username = ? AND deleted_at IS NULL
+            """,
+            (username,),
+        ).fetchone())
+        email_row = None
+        if user and not user.get("is_ai") and user.get("deletion_requested_at_epoch") is None:
+            email_row = conn.execute(
+                """
+                SELECT email_normalized
+                FROM account_emails
+                WHERE user_id = ? AND verified = 1
+                """,
+                (int(user["id"]),),
+            ).fetchone()
+    if user and user.get("is_ai"):
+        return {"state": "machine", "message": _MACHINE_PASSWORD_RECOVERY_MESSAGE}
+    if user and user.get("deletion_requested_at_epoch") is not None:
+        return {"state": "unavailable", "message": "账号待注销；请用用户名和密码登录后取消注销"}
+    if not user or not email_row:
+        return {"state": "unavailable", "message": _NO_EMAIL_RECOVERY_MESSAGE}
+    return _issue_email_code(
+        user["id"],
+        email_row["email_normalized"],
+        "reset",
+        client_ip,
+    )
+
+
+def _reset_human_password_by_email(username, code, new_password, client_ip=None):
+    username = username.strip() if isinstance(username, str) else ""
+    new_password = _normalize_credential_field(new_password, "new_password")
+    if len(new_password) < 6:
+        raise _McpError(-32602, "新密码至少 6 位")
+    with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        user = _row_dict(conn.execute(
+            """
+            SELECT id, is_ai, deletion_requested_at_epoch
+            FROM toy_users
+            WHERE username = ? AND deleted_at IS NULL
+            """,
+            (username,),
+        ).fetchone())
+        if user and user.get("is_ai"):
+            raise _McpError(-32602, _MACHINE_PASSWORD_RECOVERY_MESSAGE)
+        if not user:
+            raise _McpError(-32602, "验证码无效、已过期或已使用")
+        if user.get("deletion_requested_at_epoch") is not None:
+            raise _McpError(-32602, "账号待注销；请登录后取消注销")
+        email_row = conn.execute(
+            """
+            SELECT email_normalized
+            FROM account_emails
+            WHERE user_id = ? AND verified = 1
+            """,
+            (int(user["id"]),),
+        ).fetchone()
+        if not email_row:
+            raise _McpError(-32602, _NO_EMAIL_RECOVERY_MESSAGE)
+        _verify_email_code_in_transaction(
+            conn,
+            user["id"],
+            email_row["email_normalized"],
+            "reset",
+            code,
+            client_ip,
+        )
+        conn.execute(
+            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
+            (_hash_password(new_password), int(user["id"])),
+        )
+        conn.commit()
+    return {"ok": True, "message": "密码已重置，请用新密码登录"}
 
 
 def _require_bound_ai(raw_token, ai_user_id, operation="操作绑定小机"):
@@ -3897,22 +5055,116 @@ def _change_password(raw_token, old_password, new_password):
     return {"ok": True, "message": "密码已修改"}
 
 
-def _delete_account(raw_token, confirm):
+def _account_deletion_status(raw_token):
+    user = _current_account(raw_token, allow_pending_deletion=True)
+    with _db_connect() as conn:
+        account_deletion.init_schema(conn)
+        conn.commit()
+        result = account_deletion.deletion_status(conn, int(user["id"]))
+    if result.get("scheduled_delete_at_epoch") is not None:
+        result["scheduled_delete_at"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S",
+            time.localtime(int(result["scheduled_delete_at_epoch"])),
+        )
+    result["user"] = _public_user(user)
+    return result
+
+
+def _delete_account(raw_token, confirm, current_password=None):
+    """Request deletion; this never performs or carries forward old waiting time."""
     if confirm is not True:
         raise _McpError(-32602, "delete_account 必须显式传 confirm=true")
     user = _current_account(raw_token)
+    if not user.get("is_ai"):
+        current_password = _normalize_credential_field(
+            current_password, "current_password"
+        )
+        if not current_password or not _verify_password(
+            current_password, user["password_hash"]
+        ):
+            raise _McpError(
+                -32001,
+                "当前密码错误，未申请注销",
+                {"reason": "password_mismatch"},
+            )
     with _db_connect() as conn:
-        conn.execute(
-            "UPDATE toy_users SET deleted_at = COALESCE(deleted_at, datetime('now', 'localtime')) WHERE id = ?",
-            (int(user["id"]),),
-        )
-        # 软删同样要清绑定，否则会留下指向已删账号的僵尸绑定。
-        conn.execute(
-            "DELETE FROM user_bindings WHERE human_user_id = ? OR ai_user_id = ?",
-            (int(user["id"]), int(user["id"])),
-        )
+        account_deletion.init_schema(conn)
         conn.commit()
-    return {"ok": True, "user": _public_user(user), "message": "账号已软删；存档未物理删除。"}
+        result = account_deletion.request_deletion(
+            conn, int(user["id"])
+        )
+    result["ok"] = True
+    result["scheduled_delete_at"] = time.strftime(
+        "%Y-%m-%d %H:%M:%S",
+        time.localtime(int(result["scheduled_delete_at_epoch"])),
+    )
+    result["user"] = _public_user({**user, **{
+        "deletion_requested_at_epoch": result["deletion_requested_at_epoch"],
+        "scheduled_delete_at_epoch": result["scheduled_delete_at_epoch"],
+    }})
+    result["message"] = (
+        "注销申请已提交。72 小时内可取消；到期后账号和个人存档永久删除，"
+        "多人公共历史将匿名化保留。"
+    )
+    return result
+
+
+def _purge_managed_save_safely(delete_func, player_id):
+    try:
+        return delete_func(player_id)
+    except _McpError as exc:
+        if exc.code == -32004:
+            return None
+        raise
+
+
+def _purge_account_deletion(user_id, *, now_epoch=None):
+    return account_deletion.purge_account(
+        account_db=TURTLE_DB_PATH,
+        sessions_db=SESSIONS_DB_PATH,
+        vendor_save_root=VENDOR_SAVE_ROOT,
+        duel_db=DUEL_DB_PATH,
+        garden_notes_db=GARDEN_NOTES_DB_PATH,
+        garden_legacy_db=GARDEN_LEGACY_DB_PATH,
+        user_id=int(user_id),
+        now_epoch=now_epoch,
+        workkk_delete=lambda player_id: _purge_managed_save_safely(
+            _delete_workkk_save, player_id
+        ),
+        garden_delete=lambda player_id: _purge_managed_save_safely(
+            _delete_garden_cat_save, player_id
+        ),
+    )
+
+
+def _cancel_account_deletion(raw_token):
+    user = _current_account(raw_token, allow_pending_deletion=True)
+    try:
+        with _db_connect() as conn:
+            account_deletion.init_schema(conn)
+            conn.commit()
+            result = account_deletion.cancel_deletion(conn, int(user["id"]))
+    except account_deletion.DeletionError as exc:
+        if exc.reason == "deletion_due":
+            try:
+                purge_result = _purge_account_deletion(int(user["id"]))
+            except Exception:
+                logger.exception("due account purge failed for user_id=%s", user["id"])
+                raise _McpError(
+                    -32010,
+                    "72 小时已结束，不能取消；最终清理正在等待后台重试。",
+                    {"reason": "deletion_due"},
+                ) from None
+            if purge_result.get("status") == "complete":
+                raise _McpError(
+                    -32010,
+                    "72 小时已结束，账号已完成永久删除。",
+                    {"reason": "already_deleted"},
+                ) from None
+        raise _McpError(-32010, str(exc), {"reason": exc.reason}) from None
+    result["ok"] = True
+    result["message"] = "注销已取消；本次等待时间已彻底作废。"
+    return result
 
 
 def _delete_owned_session_rows(game, player_id):
@@ -4960,7 +6212,11 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _login_or_register_ai(arguments.get("username"), arguments.get("password"), client_ip=client_ip)
         return json.dumps(result, ensure_ascii=False)
     if action == "login":
-        result = _login_existing_account(arguments.get("username"), arguments.get("password"))
+        result = _login_existing_account(
+            arguments.get("username"),
+            arguments.get("password"),
+            client_ip=client_ip,
+        )
         return json.dumps(result, ensure_ascii=False)
     if action == "guest_claim_code":
         result = _guest_claim_code_for_player_id(arguments.get("player_id"))
@@ -4970,6 +6226,9 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
+    if action == "rotate_token":
+        result = _rotate_ai_token(raw_token)
+        return json.dumps(result, ensure_ascii=False)
     if action == "rename_self":
         result = _rename_self(raw_token, arguments.get("new_username"))
         return json.dumps(result, ensure_ascii=False)
@@ -5012,7 +6271,17 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _change_password(raw_token, arguments.get("old_password"), arguments.get("new_password"))
         return json.dumps(result, ensure_ascii=False)
     if action == "delete_account":
-        result = _delete_account(raw_token, arguments.get("confirm"))
+        result = _delete_account(
+            raw_token,
+            arguments.get("confirm"),
+            arguments.get("current_password"),
+        )
+        return json.dumps(result, ensure_ascii=False)
+    if action == "deletion_status":
+        result = _account_deletion_status(raw_token)
+        return json.dumps(result, ensure_ascii=False)
+    if action == "cancel_delete_account":
+        result = _cancel_account_deletion(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raise _McpError(-32602, "未知 account action")
 
@@ -5587,6 +6856,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         path, path_token = self._request_path_and_token()
         client_ip = self._client_ip()
 
+        if path == "/api/auth/login":
+            self._handle_api_login()
+            return
+
+        if path == "/api/auth/register":
+            self._handle_api_register()
+            return
+
         if path == "/api/auth/login_or_register":
             self._handle_api_login_or_register()
             return
@@ -5601,6 +6878,30 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/change-password":
             self._handle_api_change_password()
+            return
+
+        if path == "/api/auth/delete-account":
+            self._handle_api_delete_account()
+            return
+
+        if path == "/api/auth/cancel-delete-account":
+            self._handle_api_cancel_delete_account()
+            return
+
+        if path == "/api/account/email/send-code":
+            self._handle_api_account_email_send()
+            return
+
+        if path == "/api/account/email/confirm":
+            self._handle_api_account_email_confirm()
+            return
+
+        if path == "/api/auth/forgot-password":
+            self._handle_api_forgot_password()
+            return
+
+        if path == "/api/auth/forgot-password/reset":
+            self._handle_api_forgot_password_reset()
             return
 
         if path == "/api/auth/rename":
@@ -5797,6 +7098,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_me()
             return
 
+        if path == "/api/auth/deletion":
+            self._handle_api_deletion_status()
+            return
+
+        if path == "/api/account/email":
+            self._handle_api_account_email_status()
+            return
+
         if path == "/api/announcements":
             self._handle_api_announcements()
             return
@@ -5896,6 +7205,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/auth/bind":
             self._handle_api_unbind()
+            return
+        if path == "/api/account/email":
+            self._handle_api_account_email_unbind()
             return
         if path.startswith("/api/admin/users/"):
             self._handle_admin_release_user(path)
@@ -6159,7 +7471,46 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             )
             self._send_json(result)
         except _McpError as exc:
-            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+            status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else (
+                401 if exc.code == -32001 else 400
+            )
+            self._send_json({"error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_login(self):
+        try:
+            body = self._read_json_body()
+            result = _login_human(
+                body.get("username"),
+                body.get("password"),
+                client_ip=self._client_ip(),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else (
+                401 if exc.code == -32001 else 400
+            )
+            self._send_json({"error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_register(self):
+        try:
+            body = self._read_json_body()
+            result = _register_human(
+                body.get("username"),
+                body.get("password"),
+                client_ip=self._client_ip(),
+            )
+            self._send_json(result, status=201)
+        except _McpError as exc:
+            status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else 400
+            self._send_json({"error": exc.message}, status=status)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
@@ -6172,11 +7523,17 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 body.get("username"),
                 body.get("password"),
                 bind=body.get("bind", False),
+                rotate=body.get("rotate", False),
+                ai_user_id=body.get("ai_user_id"),
                 human_token=_extract_bearer(self.headers),
+                client_ip=self._client_ip(),
             )
             self._send_json(result)
         except _McpError as exc:
-            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+            status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else (
+                401 if exc.code == -32001 else 400
+            )
+            self._send_json({"error": exc.message}, status=status)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
         except Exception:
@@ -6209,6 +7566,144 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_delete_account(self):
+        try:
+            body = self._read_json_body()
+            result = _delete_account(
+                _extract_bearer(self.headers),
+                body.get("confirm"),
+                body.get("current_password"),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else 409 if exc.code == -32010 else 400
+            self._send_json({"error": exc.message, **exc.details}, status=status)
+        except Exception as exc:
+            logger.exception("account deletion request failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_cancel_delete_account(self):
+        try:
+            result = _cancel_account_deletion(_extract_bearer(self.headers))
+            self._send_json(result)
+        except _McpError as exc:
+            status = 401 if exc.code == -32001 else 409 if exc.code == -32010 else 400
+            self._send_json({"error": exc.message, **exc.details}, status=status)
+        except Exception as exc:
+            logger.exception("account deletion cancel failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_deletion_status(self):
+        try:
+            self._send_json(
+                _account_deletion_status(_extract_bearer(self.headers)),
+                extra_headers={"Cache-Control": "no-store"},
+            )
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=401 if exc.code == -32001 else 400,
+            )
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_account_email_status(self):
+        try:
+            result = _account_email_status(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=_account_security_http_status(exc),
+            )
+        except Exception:
+            self._send_json({"error": "server error"}, status=500)
+
+    def _handle_api_account_email_send(self):
+        try:
+            body = self._read_json_body()
+            result = _send_account_email_code(
+                _extract_bearer(self.headers),
+                body.get("email"),
+                client_ip=self._client_ip(),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=_account_security_http_status(exc),
+            )
+        except Exception:
+            self._send_json({"error": "server error"}, status=500)
+
+    def _handle_api_account_email_confirm(self):
+        try:
+            body = self._read_json_body()
+            result = _confirm_account_email(
+                _extract_bearer(self.headers),
+                body.get("email"),
+                body.get("code"),
+                client_ip=self._client_ip(),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=_account_security_http_status(exc),
+            )
+        except Exception:
+            self._send_json({"error": "server error"}, status=500)
+
+    def _handle_api_account_email_unbind(self):
+        try:
+            body = self._read_json_body()
+            result = _unbind_account_email(
+                _extract_bearer(self.headers),
+                body.get("password"),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=_account_security_http_status(exc),
+            )
+        except Exception:
+            self._send_json({"error": "server error"}, status=500)
+
+    def _handle_api_forgot_password(self):
+        try:
+            body = self._read_json_body()
+            result = _start_password_recovery(
+                body.get("username"),
+                client_ip=self._client_ip(),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=_account_security_http_status(exc),
+            )
+        except Exception:
+            self._send_json({"error": "server error"}, status=500)
+
+    def _handle_api_forgot_password_reset(self):
+        try:
+            body = self._read_json_body()
+            result = _reset_human_password_by_email(
+                body.get("username"),
+                body.get("code"),
+                body.get("new_password"),
+                client_ip=self._client_ip(),
+            )
+            self._send_json(result)
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=_account_security_http_status(exc),
+            )
+        except Exception:
+            self._send_json({"error": "server error"}, status=500)
 
     def _handle_api_rename(self):
         try:
@@ -6515,9 +8010,16 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     def _handle_admin_users(self):
         try:
             _require_admin_account(_extract_bearer(self.headers))
-            self._send_json({"users": _admin_user_rows()})
+            _, _, query_string = self.path.partition("?")
+            params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            page = (params.get("page") or ["1"])[0]
+            page_size = (params.get("page_size") or [str(ADMIN_USERS_DEFAULT_PAGE_SIZE)])[0]
+            search = (params.get("search") or [""])[0]
+            self._send_json(_admin_user_page(page, page_size, search))
         except _McpError as exc:
             self._send_json({"error": exc.message}, status=self._admin_error_status(exc))
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
@@ -6790,7 +8292,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self._send_json(response, extra_headers={"Cache-Control": "no-cache, no-store"})
 
     def log_message(self, fmt, *args):
-        print("%s - - [%s] %s" % (self.client_address[0], self.log_date_time_string(), fmt % args))
+        safe_message = _redact_http_log_text(fmt % args)
+        print("%s - - [%s] %s" % (
+            self.client_address[0],
+            self.log_date_time_string(),
+            safe_message,
+        ))
 
     def _send_json(self, payload, status=200, extra_headers=None):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -7469,6 +8976,21 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
 def _json_rpc_error(request_id, code, message):
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+
+
+_JWT_LOG_VALUE_RE = re.compile(
+    r"eyJ[A-Za-z0-9_-]*(?:\.|%2[eE])[A-Za-z0-9_-]+(?:\.|%2[eE])[A-Za-z0-9_-]+"
+)
+_SENSITIVE_QUERY_LOG_RE = re.compile(
+    r"([?&](?:token|reset_token|access_token)=)[^&#\s\"]+",
+    re.IGNORECASE,
+)
+
+
+def _redact_http_log_text(value):
+    text = str(value)
+    text = _JWT_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
+    return _SENSITIVE_QUERY_LOG_RE.sub(r"\1<TOKEN_REDACTED>", text)
 
 
 class ThreadPoolHTTPServer(HTTPServer):

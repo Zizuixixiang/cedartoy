@@ -998,7 +998,7 @@
       font-size: 11px;
     }
 
-    .field input, .field textarea {
+    .field input, .field textarea, .field select {
       font-family: "Courier New", Courier, monospace;
       width: 100%;
       min-height: 44px;
@@ -1007,6 +1007,18 @@
       color: var(--text);
       padding: 9px 10px;
       outline: 0;
+    }
+
+    .auth-mode-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .auth-mode-tabs .pixel-btn.active {
+      color: #fff;
+      background: var(--purple-dark);
     }
 
     .field textarea {
@@ -2352,8 +2364,12 @@
 
   <div class="modal" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
     <div class="modal-box">
-      <h2 class="modal-title" id="loginTitle">登录 / 注册</h2>
-      <p class="modal-hint">没有账号？输入用户名和密码直接注册</p>
+      <h2 class="modal-title" id="loginTitle">账号登录</h2>
+      <div class="auth-mode-tabs" aria-label="选择登录或注册">
+        <button class="pixel-btn active" id="loginModeLogin" type="button">登录</button>
+        <button class="pixel-btn secondary" id="loginModeRegister" type="button">注册</button>
+      </div>
+      <p class="modal-hint" id="loginHint">登录已有的人类账号；用户名不存在时不会自动注册。</p>
       <label class="field">
         <span class="field-label">用户名</span>
         <input id="loginUser" type="text" maxlength="20" autocomplete="username">
@@ -2366,9 +2382,67 @@
       </label>
       <div class="modal-msg" id="loginMsg"></div>
       <div class="modal-actions">
-        <button class="pixel-btn secondary" id="machineTokenFromLogin" type="button">获取小机 Token</button>
+        <button class="pixel-btn secondary" id="forgotPasswordOpen" type="button">忘记密码？</button>
+        <button class="pixel-btn secondary" id="machineTokenFromLogin" type="button">小机 Token</button>
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
-        <button class="pixel-btn" id="loginSubmit" type="button">确定</button>
+        <button class="pixel-btn" id="loginSubmit" type="button">登录</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="forgotPasswordModal" role="dialog" aria-modal="true" aria-labelledby="forgotPasswordTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="forgotPasswordTitle">忘记密码</h2>
+      <p class="modal-hint" id="forgotPasswordHint">输入账号名，系统会根据账号类型提供找回方式。</p>
+      <label class="field" id="forgotUsernameField">
+        <span class="field-label">用户名</span>
+        <input id="forgotUsername" type="text" maxlength="20" autocomplete="username">
+      </label>
+      <div id="forgotCodeFields" hidden>
+        <label class="field">
+          <span class="field-label">邮箱验证码</span>
+          <input id="forgotCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        </label>
+        <label class="field">
+          <span class="field-label">新密码</span>
+          <input id="forgotNewPassword" type="password" autocomplete="new-password">
+          <span class="field-hint">至少 6 位</span>
+        </label>
+        <label class="field">
+          <span class="field-label">确认新密码</span>
+          <input id="forgotConfirmPassword" type="password" autocomplete="new-password">
+        </label>
+      </div>
+      <div class="modal-msg" id="forgotPasswordMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="forgotPasswordSubmit" type="button">下一步</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="emailSecurityModal" role="dialog" aria-modal="true" aria-labelledby="emailSecurityTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="emailSecurityTitle">绑定邮箱</h2>
+      <p class="modal-hint" id="emailSecurityHint">邮箱只用于人类账号安全与密码找回。</p>
+      <label class="field" id="emailSecurityEmailField">
+        <span class="field-label">邮箱</span>
+        <input id="emailSecurityEmail" type="email" maxlength="254" autocomplete="email">
+      </label>
+      <label class="field" id="emailSecurityCodeField" hidden>
+        <span class="field-label">验证码</span>
+        <input id="emailSecurityCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        <span class="field-hint">验证码 10 分钟内有效</span>
+      </label>
+      <label class="field" id="emailSecurityPasswordField" hidden>
+        <span class="field-label">当前密码</span>
+        <input id="emailSecurityPassword" type="password" autocomplete="current-password">
+        <span class="field-hint">解绑会移除自助找回方式，需要当前密码确认</span>
+      </label>
+      <div class="modal-msg" id="emailSecurityMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="emailSecuritySubmit" type="button">发送验证码</button>
       </div>
     </div>
   </div>
@@ -2376,12 +2450,20 @@
   <div class="modal" id="machineTokenModal" role="dialog" aria-modal="true" aria-labelledby="machineTokenTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="machineTokenTitle">获取小机 Token</h2>
-      <p class="modal-hint">仅登录已有小机账号，不会注册新账号，也不会改变当前网页登录。</p>
-      <label class="field">
+      <div class="auth-mode-tabs" aria-label="获取或更新小机 Token">
+        <button class="pixel-btn active" id="machineTokenModeGet" type="button">获取 Token</button>
+        <button class="pixel-btn secondary" id="machineTokenModeRotate" type="button">更新 Token</button>
+      </div>
+      <p class="modal-hint" id="machineTokenHint">仅登录已有小机账号，不会注册新账号，也不会改变当前网页登录。</p>
+      <label class="field" id="machineTokenBoundField" hidden>
+        <span class="field-label">已绑定小机</span>
+        <select id="machineTokenBound"></select>
+      </label>
+      <label class="field" id="machineTokenUserField">
         <span class="field-label">小机账号</span>
         <input id="machineTokenUser" type="text" maxlength="20" autocomplete="username">
       </label>
-      <label class="field">
+      <label class="field" id="machineTokenPassField">
         <span class="field-label">小机密码</span>
         <input id="machineTokenPass" type="password" autocomplete="current-password">
       </label>
@@ -2435,6 +2517,26 @@
       <div class="modal-actions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="changePasswordSubmit" type="button">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="deleteAccountModal" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="deleteAccountTitle">注销账号</h2>
+      <p class="modal-hint">申请后立即停止正常使用。72 小时内可反悔；超过后账号和个人存档会永久删除，公共多人记录可能仅匿名化保留。</p>
+      <label class="field" id="deleteAccountPasswordField">
+        <span class="field-label">再次输入当前密码</span>
+        <input id="deleteAccountPassword" type="password" autocomplete="current-password">
+      </label>
+      <label class="checkbox-field">
+        <input id="deleteAccountConfirm" type="checkbox">
+        <span>我理解到期后无法恢复，并确认申请注销</span>
+      </label>
+      <div class="modal-msg" id="deleteAccountMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="deleteAccountSubmit" type="button">申请注销</button>
       </div>
     </div>
   </div>
@@ -3323,6 +3425,12 @@
     let filter = "mini";
     let me = null;
     let loadMeAbort = null;
+    const EMAIL_SECURITY_UI_ENABLED = false;
+    let emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
+    let emailSecurityMode = "bind";
+    let emailSecurityStep = "email";
+    let forgotPasswordStep = "username";
+    let forgotPasswordUsername = "";
     let announcementState = {
       loaded: false,
       loading: false,
@@ -3365,6 +3473,8 @@
     };
     let machinePasswordTarget = null;
     let renameTarget = null;
+    let loginMode = "login";
+    let machineTokenMode = "get";
 
     const platformSummaryLabels = {
       turtle_soup_accounts: "平台注册账号",
@@ -4950,16 +5060,322 @@
       $("bindToken").value = "";
     }
 
+    function setLoginMode(mode) {
+      loginMode = mode === "register" ? "register" : "login";
+      const registering = loginMode === "register";
+      $("loginModeLogin").classList.toggle("active", !registering);
+      $("loginModeRegister").classList.toggle("active", registering);
+      $("loginTitle").textContent = registering ? "注册人类账号" : "账号登录";
+      $("loginHint").textContent = registering
+        ? "创建新的人类账号；已有用户名不会被登录或覆盖。"
+        : "登录已有的人类账号；用户名不存在时不会自动注册。";
+      $("loginSubmit").textContent = registering ? "注册" : "登录";
+      $("forgotPasswordOpen").hidden = registering || !EMAIL_SECURITY_UI_ENABLED;
+      $("loginMsg").textContent = "";
+    }
+
+    function resetLoginModal() {
+      setLoginMode("login");
+      $("loginMsg").textContent = "";
+    }
+
+    function resetForgotPasswordModal() {
+      forgotPasswordStep = "username";
+      forgotPasswordUsername = "";
+      $("forgotUsername").value = "";
+      $("forgotUsernameField").hidden = false;
+      $("forgotCodeFields").hidden = true;
+      $("forgotCode").value = "";
+      $("forgotNewPassword").value = "";
+      $("forgotConfirmPassword").value = "";
+      $("forgotPasswordHint").textContent = "输入账号名，系统会根据账号类型提供找回方式。";
+      $("forgotPasswordMsg").textContent = "";
+      $("forgotPasswordSubmit").textContent = "下一步";
+      $("forgotPasswordSubmit").disabled = false;
+    }
+
+    function openForgotPasswordModal() {
+      const suggestedUsername = $("loginUser").value.trim();
+      closeModals();
+      openModal("forgotPasswordModal");
+      $("forgotUsername").value = suggestedUsername;
+      $("forgotUsername").focus();
+    }
+
+    async function submitForgotPassword() {
+      const message = $("forgotPasswordMsg");
+      const submit = $("forgotPasswordSubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      if (forgotPasswordStep === "username") {
+        const username = $("forgotUsername").value.trim();
+        if (!username) {
+          message.textContent = "请输入用户名";
+          return;
+        }
+        submit.disabled = true;
+        try {
+          const res = await fetch("/api/auth/forgot-password", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({username}),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "找回请求失败");
+          if (data.state !== "code_sent") {
+            message.textContent = data.message || "该账号无法自助找回，请联系管理员";
+            return;
+          }
+          forgotPasswordStep = "code";
+          forgotPasswordUsername = username;
+          $("forgotUsernameField").hidden = true;
+          $("forgotCodeFields").hidden = false;
+          $("forgotPasswordHint").textContent = `验证码已发送至 ${data.masked_email || "绑定邮箱"}，10 分钟内有效。`;
+          submit.textContent = "重置密码";
+          $("forgotCode").focus();
+        } catch (err) {
+          message.textContent = err.message || "找回请求失败";
+        } finally {
+          submit.disabled = false;
+        }
+        return;
+      }
+
+      const code = $("forgotCode").value.trim();
+      const new_password = $("forgotNewPassword").value;
+      const confirmPassword = $("forgotConfirmPassword").value;
+      if (!/^\d{6}$/.test(code)) {
+        message.textContent = "请输入 6 位验证码";
+        return;
+      }
+      if (new_password.length < 6) {
+        message.textContent = "新密码至少 6 位";
+        return;
+      }
+      if (new_password !== confirmPassword) {
+        message.textContent = "两次输入的新密码不一致";
+        return;
+      }
+      submit.disabled = true;
+      try {
+        const res = await fetch("/api/auth/forgot-password/reset", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({username: forgotPasswordUsername, code, new_password}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "密码重置失败");
+        const username = forgotPasswordUsername;
+        closeModals();
+        openModal("loginModal");
+        $("loginUser").value = username;
+        $("loginPass").focus();
+        $("loginMsg").textContent = data.message || "密码已重置，请用新密码登录";
+      } catch (err) {
+        message.textContent = err.message || "密码重置失败";
+      } finally {
+        submit.disabled = false;
+      }
+    }
+
+    function resetEmailSecurityModal() {
+      emailSecurityStep = "email";
+      const unbinding = emailSecurityMode === "unbind";
+      $("emailSecurityTitle").textContent = unbinding
+        ? "解绑邮箱"
+        : (emailSecurityMode === "change" ? "更换邮箱" : "绑定邮箱");
+      $("emailSecurityHint").textContent = unbinding
+        ? `当前绑定：${emailSecurityState.maskedEmail || "已验证邮箱"}`
+        : "邮箱只用于人类账号安全与密码找回。";
+      $("emailSecurityEmailField").hidden = unbinding;
+      $("emailSecurityCodeField").hidden = true;
+      $("emailSecurityPasswordField").hidden = !unbinding;
+      $("emailSecurityEmail").value = "";
+      $("emailSecurityEmail").readOnly = false;
+      $("emailSecurityCode").value = "";
+      $("emailSecurityPassword").value = "";
+      $("emailSecurityMsg").textContent = "";
+      $("emailSecuritySubmit").textContent = unbinding ? "确认解绑" : "发送验证码";
+      $("emailSecuritySubmit").disabled = false;
+    }
+
+    function openEmailSecurityModal(mode) {
+      emailSecurityMode = mode;
+      closeDrawers();
+      closeModals();
+      openModal("emailSecurityModal");
+      const focusTarget = mode === "unbind" ? $("emailSecurityPassword") : $("emailSecurityEmail");
+      focusTarget.focus();
+    }
+
+    async function submitEmailSecurity() {
+      const message = $("emailSecurityMsg");
+      const submit = $("emailSecuritySubmit");
+      if (submit.disabled) return;
+      message.textContent = "";
+      if (emailSecurityMode === "unbind") {
+        const password = $("emailSecurityPassword").value;
+        if (!password) {
+          message.textContent = "请输入当前密码";
+          return;
+        }
+        submit.disabled = true;
+        try {
+          const res = await fetch("/api/account/email", {
+            method: "DELETE",
+            headers: headers(true),
+            body: JSON.stringify({password}),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "邮箱解绑失败");
+          emailSecurityState = {loaded: true, loading: false, bound: false, maskedEmail: "", error: ""};
+          closeModals();
+          renderMine();
+          showToast(data.message || "邮箱已解绑");
+        } catch (err) {
+          message.textContent = err.message || "邮箱解绑失败";
+          submit.disabled = false;
+        }
+        return;
+      }
+
+      const email = $("emailSecurityEmail").value.trim();
+      if (!email) {
+        message.textContent = "请输入邮箱";
+        return;
+      }
+      submit.disabled = true;
+      try {
+        const endpoint = emailSecurityStep === "email"
+          ? "/api/account/email/send-code"
+          : "/api/account/email/confirm";
+        const payload = emailSecurityStep === "email"
+          ? {email}
+          : {email, code: $("emailSecurityCode").value.trim()};
+        if (emailSecurityStep === "code" && !/^\d{6}$/.test(payload.code)) {
+          throw new Error("请输入 6 位验证码");
+        }
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "邮箱操作失败");
+        if (emailSecurityStep === "email") {
+          emailSecurityStep = "code";
+          $("emailSecurityEmail").readOnly = true;
+          $("emailSecurityCodeField").hidden = false;
+          $("emailSecurityHint").textContent = `验证码已发送至 ${data.masked_email || "新邮箱"}，10 分钟内有效。`;
+          submit.textContent = emailSecurityMode === "change" ? "确认更换" : "确认绑定";
+          $("emailSecurityCode").focus();
+        } else {
+          emailSecurityState = {
+            loaded: true,
+            loading: false,
+            bound: true,
+            maskedEmail: data.masked_email || "已验证邮箱",
+            error: "",
+          };
+          closeModals();
+          renderMine();
+          showToast(data.message || "邮箱已绑定");
+        }
+      } catch (err) {
+        message.textContent = err.message || "邮箱操作失败";
+      } finally {
+        submit.disabled = false;
+      }
+    }
+
+    async function loadEmailSecurity() {
+      if (!me || me.user.is_ai || !token()) {
+        emailSecurityState = {loaded: true, loading: false, bound: false, maskedEmail: "", error: ""};
+        return;
+      }
+      emailSecurityState = {...emailSecurityState, loading: true, error: ""};
+      try {
+        const res = await fetch("/api/account/email", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "读取邮箱状态失败");
+        emailSecurityState = {
+          loaded: true,
+          loading: false,
+          bound: Boolean(data.bound),
+          maskedEmail: data.masked_email || "",
+          error: "",
+        };
+      } catch (err) {
+        emailSecurityState = {
+          ...emailSecurityState,
+          loaded: true,
+          loading: false,
+          error: err.message || "读取邮箱状态失败",
+        };
+      }
+    }
+
+    function renderEmailSecurityCard() {
+      if (!EMAIL_SECURITY_UI_ENABLED || !me || me.user.is_ai) return "";
+      if (emailSecurityState.loading || !emailSecurityState.loaded) {
+        return '<section class="machine-panel"><p class="history-empty">账号安全：正在读取邮箱状态。</p></section>';
+      }
+      if (emailSecurityState.error) {
+        return `<section class="machine-panel"><p class="history-empty">账号安全：${escapeHtml(emailSecurityState.error)}</p></section>`;
+      }
+      if (!emailSecurityState.bound) {
+        return `
+          <section class="machine-panel">
+            <div class="mine-user-row"><p class="desc mine-user-name">账号安全：未绑定邮箱</p><button class="unbind-btn" id="mineEmailAction" type="button">绑定邮箱</button></div>
+          </section>
+        `;
+      }
+      return `
+        <section class="machine-panel">
+          <div class="mine-user-row">
+            <p class="desc mine-user-name">账号安全：${escapeHtml(emailSecurityState.maskedEmail)}</p>
+            <span><button class="unbind-btn" id="mineEmailAction" type="button">更换</button> <button class="unbind-btn" id="mineEmailUnbind" type="button">解绑</button></span>
+          </div>
+        </section>
+      `;
+    }
+
+    function setMachineTokenMode(mode) {
+      machineTokenMode = mode === "rotate" ? "rotate" : "get";
+      const rotating = machineTokenMode === "rotate";
+      $("machineTokenModeGet").classList.toggle("active", !rotating);
+      $("machineTokenModeRotate").classList.toggle("active", rotating);
+      $("machineTokenTitle").textContent = rotating ? "更新小机 Token" : "获取小机 Token";
+      $("machineTokenHint").textContent = rotating
+        ? "更新后旧 Token 立即失效，需要替换 MCP 地址。已绑定小机无需密码。"
+        : "仅登录已有小机账号，不会注册新账号，也不会改变当前网页登录。";
+      const bindings = me && !me.user.is_ai && token() ? (me.bindings || []) : [];
+      $("machineTokenBoundField").hidden = !rotating || bindings.length === 0;
+      $("machineTokenBound").innerHTML = bindings.map((machine) =>
+        `<option value="${machine.id}">${escapeHtml(machine.username)}</option>`
+      ).join("") + (bindings.length ? '<option value="">其他小机（使用账号密码）</option>' : "");
+      const usingBoundMachine = rotating && bindings.length > 0 && Boolean($("machineTokenBound").value);
+      $("machineTokenUserField").hidden = usingBoundMachine;
+      $("machineTokenPassField").hidden = usingBoundMachine;
+      $("machineTokenBindField").hidden = rotating || !(me && !me.user.is_ai && token());
+      $("machineTokenSubmit").textContent = rotating ? "更新 Token" : "获取 Token";
+      $("machineTokenMsg").textContent = "";
+      $("machineTokenResult").hidden = true;
+      $("machineTokenValue").value = "";
+    }
+
     function resetMachineTokenModal() {
       $("machineTokenUser").value = "";
       $("machineTokenPass").value = "";
       $("machineTokenBind").checked = false;
-      $("machineTokenBindField").hidden = !(me && !me.user.is_ai && token());
       $("machineTokenMsg").textContent = "";
       $("machineTokenValue").value = "";
       $("machineTokenResult").hidden = true;
       $("machineTokenSubmit").disabled = false;
-      $("machineTokenSubmit").textContent = "获取 Token";
+      setMachineTokenMode("get");
     }
 
     function openMachineTokenModal() {
@@ -5125,9 +5541,13 @@
     }
 
     function openModal(id) {
+      if (id === "loginModal") resetLoginModal();
+      if (id === "forgotPasswordModal") resetForgotPasswordModal();
+      if (id === "emailSecurityModal") resetEmailSecurityModal();
       if (id === "bindModal") resetBindModal();
       if (id === "machineTokenModal") resetMachineTokenModal();
       if (id === "changePasswordModal") resetChangePasswordModal();
+      if (id === "deleteAccountModal") resetDeleteAccountModal();
       if (id === "machinePasswordModal") clearMachinePasswordModal();
       if (id === "renameModal") clearRenameModal();
       if (id === "resetPasswordModal") clearResetPasswordModal();
@@ -5138,8 +5558,11 @@
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
       resetBindModal();
+      resetForgotPasswordModal();
+      resetEmailSecurityModal();
       resetMachineTokenModal();
       resetChangePasswordModal();
+      resetDeleteAccountModal();
       clearMachinePasswordModal();
       machinePasswordTarget = null;
       clearRenameModal();
@@ -5152,6 +5575,22 @@
       if (!me) {
         area.innerHTML = `<button class="pixel-btn" id="loginOpen" type="button">登录</button>`;
         $("loginOpen").addEventListener("click", () => openModal("loginModal"));
+        return;
+      }
+      if (me.pending_deletion || me.user.deletion) {
+        const when = me.user.deletion?.scheduled_delete_at || "待后台确认";
+        area.innerHTML = `
+          <span class="user-name"><span aria-hidden="true">●</span><span class="username-text">${escapeHtml(me.user.username)}（待注销）</span></span>
+          <span class="user-actions">
+            <button class="pixel-btn secondary" id="pendingDeletionOpen" type="button">查看 / 取消注销</button>
+            <button class="pixel-btn secondary" id="logoutBtn" type="button">登出</button>
+          </span>
+        `;
+        $("pendingDeletionOpen").addEventListener("click", () => {
+          renderMine();
+          $("mineDrawer").classList.add("show");
+        });
+        $("logoutBtn").addEventListener("click", logout);
         return;
       }
       area.innerHTML = `
@@ -5193,9 +5632,10 @@
       const content = $("mineContent");
       if (!me) {
         machineState = {loaded: false, loading: false, machines: [], error: ""};
+        emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
         content.innerHTML = `
           <p class="desc">当前未登录。</p>
-          <p class="modal-hint">没有账号？输入用户名和密码直接注册</p>
+          <p class="modal-hint">登录与注册已分开，避免误输用户名时创建空账号。</p>
           <button class="pixel-btn" id="mineLogin" type="button">登录</button>
         `;
         $("mineLogin").addEventListener("click", () => {
@@ -5204,9 +5644,31 @@
         });
         return;
       }
+      if (me.pending_deletion || me.user.deletion) {
+        const deletion = me.deletion || me.user.deletion || {};
+        const when = deletion.scheduled_delete_at || "后台计划时间待确认";
+        const canCancel = deletion.can_cancel !== false;
+        content.innerHTML = `
+          <section class="machine-panel">
+            <h3>账号待注销</h3>
+            <p class="desc">账号将在 ${escapeHtml(when)} 永久删除。</p>
+            <p class="modal-hint">当前不能继续游戏。到期前取消后会恢复正常；本次等待时间会彻底清零。</p>
+            ${canCancel ? '<button class="pixel-btn" id="cancelDeleteAccount" type="button">取消注销</button>' : '<p class="modal-msg">72 小时已结束，不能再取消，正在等待最终清理。</p>'}
+            <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
+          </section>
+        `;
+        const cancelButton = $("cancelDeleteAccount");
+        if (cancelButton) cancelButton.addEventListener("click", cancelDeleteAccount);
+        $("mineLogout").addEventListener("click", logout);
+        return;
+      }
       if (!me.user.is_ai && !machineState.loaded && !machineState.loading) {
         machineState.loading = true;
         loadMachines().then(renderMine);
+      }
+      if (EMAIL_SECURITY_UI_ENABLED && !me.user.is_ai && !emailSecurityState.loaded && !emailSecurityState.loading) {
+        emailSecurityState.loading = true;
+        loadEmailSecurity().then(renderMine);
       }
       const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
       const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username}));
@@ -5215,19 +5677,35 @@
         <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
         ${renderMachinePanel()}
+        ${renderEmailSecurityCard()}
+        <section class="machine-panel">
+          <div class="mine-user-row"><p class="desc mine-user-name">账号安全：注销账号</p><button class="unbind-btn" id="mineDeleteAccount" type="button">申请注销</button></div>
+          <p class="modal-hint">72 小时冷静期，到期后永久删除个人数据；公共多人历史仅匿名化。</p>
+        </section>
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
         <button class="pixel-btn" id="mineBind" type="button">绑定</button>
-        <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:10px">获取小机 Token</button>
+        <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:10px">小机 Token</button>
         ${!me.user.is_ai ? '<button class="pixel-btn secondary" id="mineChangePassword" type="button" style="margin-top:10px">修改密码</button>' : ''}
         <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
       `;
       bindMachinePanel();
+      const mineEmailAction = $("mineEmailAction");
+      if (mineEmailAction) {
+        mineEmailAction.addEventListener("click", () => {
+          openEmailSecurityModal(emailSecurityState.bound ? "change" : "bind");
+        });
+      }
+      const mineEmailUnbind = $("mineEmailUnbind");
+      if (mineEmailUnbind) {
+        mineEmailUnbind.addEventListener("click", () => openEmailSecurityModal("unbind"));
+      }
       $("mineRenameSelf").addEventListener("click", () => openRenameModal("self", me.user.id, me.user.username));
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");
       });
       $("mineMachineToken").addEventListener("click", openMachineTokenModal);
+      $("mineDeleteAccount").addEventListener("click", () => openModal("deleteAccountModal"));
       const mineChangePassword = $("mineChangePassword");
       if (mineChangePassword) {
         mineChangePassword.addEventListener("click", () => {
@@ -5274,6 +5752,7 @@
         if (controller.signal.aborted) return;
         me = await res.json();
         machineState = {loaded: false, loading: false, machines: [], error: ""};
+        emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
         if (me && me.user && me.user.id) {
           localStorage.setItem("cedartoy_user_id", me.user.id);
         }
@@ -5282,12 +5761,18 @@
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem("cedartoy_user_id");
         me = null;
+        emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
       }
       if (controller.signal.aborted) return;
       renderAuth();
       renderGames();
       renderDetail();
-      await loadAnnouncements({autoPopup: Boolean(me)});
+      if (me && (me.pending_deletion || me.user?.deletion)) {
+        renderMine();
+        $("mineDrawer").classList.add("show");
+      } else {
+        await loadAnnouncements({autoPopup: Boolean(me)});
+      }
       if (currentGame().id === "arcade") loadArcadeBankStatus();
     }
 
@@ -5312,22 +5797,31 @@
         return;
       }
       try {
-        const res = await fetch("/api/auth/login_or_register", {
+        const endpoint = loginMode === "register" ? "/api/auth/register" : "/api/auth/login";
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({username, password})
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "登录失败");
+        if (!res.ok) throw new Error(data.error || (loginMode === "register" ? "注册失败" : "登录失败"));
         localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem("cedartoy_user_id", data.user.id);
-        me = {user: data.user, bindings: []};
+        me = {user: data.user, bindings: [], pending_deletion: Boolean(data.pending_deletion)};
         machineState = {loaded: false, loading: false, machines: [], error: ""};
+        emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
         closeModals();
         renderAuth();
         renderGames();
         renderDetail();
-        await loadAnnouncements({autoPopup: true});
+        if (data.pending_deletion || data.user.deletion) {
+          me.pending_deletion = true;
+          me.deletion = data.user.deletion;
+          renderMine();
+          $("mineDrawer").classList.add("show");
+        } else {
+          await loadAnnouncements({autoPopup: true});
+        }
         if (currentGame().id === "arcade") loadArcadeBankStatus();
       } catch (err) {
         $("loginMsg").textContent = err.message;
@@ -5363,32 +5857,47 @@
       const username = $("machineTokenUser").value.trim();
       const password = $("machineTokenPass").value;
       const bind = !$("machineTokenBindField").hidden && $("machineTokenBind").checked;
+      const rotating = machineTokenMode === "rotate";
+      const boundAiUserId = rotating && !$("machineTokenBoundField").hidden
+        ? $("machineTokenBound").value
+        : "";
       const message = $("machineTokenMsg");
       const submit = $("machineTokenSubmit");
       if (submit.disabled) return;
       message.textContent = "";
       $("machineTokenResult").hidden = true;
       $("machineTokenValue").value = "";
-      const validationError = validateLoginInput(username, password);
-      if (validationError) {
-        message.textContent = validationError;
+      if (!boundAiUserId) {
+        const validationError = validateLoginInput(username, password);
+        if (validationError) {
+          message.textContent = validationError;
+          return;
+        }
+      }
+      if (rotating && !confirm("更新后旧 Token 会立即失效。确认更新并准备替换 MCP 地址？")) {
         return;
       }
       submit.disabled = true;
       submit.textContent = "验证中...";
       const requestHeaders = {"Content-Type": "application/json"};
-      if (bind && token()) requestHeaders.Authorization = `Bearer ${token()}`;
+      if ((bind || boundAiUserId) && token()) requestHeaders.Authorization = `Bearer ${token()}`;
       try {
         const res = await fetch("/api/auth/machine-token", {
           method: "POST",
           headers: requestHeaders,
-          body: JSON.stringify({username, password, bind}),
+          body: JSON.stringify({
+            username,
+            password,
+            bind,
+            rotate: rotating,
+            ...(boundAiUserId ? {ai_user_id: Number(boundAiUserId)} : {}),
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "获取 Token 失败");
         $("machineTokenValue").value = data.token || "";
         $("machineTokenResult").hidden = false;
-        message.textContent = bind ? "Token 已获取，小机也已绑定到当前账号。" : "Token 已获取。";
+        message.textContent = data.message || (bind ? "Token 已获取，小机也已绑定到当前账号。" : "Token 已获取。");
         if (bind) {
           await loadMe();
           renderMine();
@@ -5397,7 +5906,7 @@
         message.textContent = err.message || "获取 Token 失败";
       } finally {
         submit.disabled = false;
-        submit.textContent = "获取 Token";
+        submit.textContent = rotating ? "更新 Token" : "获取 Token";
       }
     }
 
@@ -5459,6 +5968,74 @@
       } catch (err) {
         message.textContent = err.message || "密码修改失败";
         submit.disabled = false;
+      }
+    }
+
+    function resetDeleteAccountModal() {
+      if (!$("deleteAccountPassword")) return;
+      $("deleteAccountPassword").value = "";
+      $("deleteAccountConfirm").checked = false;
+      $("deleteAccountMsg").textContent = "";
+      $("deleteAccountSubmit").disabled = false;
+      $("deleteAccountPasswordField").hidden = Boolean(me?.user?.is_ai);
+    }
+
+    async function requestDeleteAccount() {
+      const current_password = $("deleteAccountPassword").value;
+      const confirmed = $("deleteAccountConfirm").checked;
+      const message = $("deleteAccountMsg");
+      const submit = $("deleteAccountSubmit");
+      message.textContent = "";
+      if (!confirmed) {
+        message.textContent = "请先勾选明确确认";
+        return;
+      }
+      if (!me?.user?.is_ai && !current_password) {
+        message.textContent = "请输入当前密码";
+        return;
+      }
+      submit.disabled = true;
+      try {
+        const res = await fetch("/api/auth/delete-account", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({confirm: true, current_password}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "注销申请失败");
+        me = {
+          user: data.user,
+          bindings: [],
+          pending_deletion: true,
+          deletion: data,
+        };
+        closeModals();
+        renderAuth();
+        renderMine();
+        $("mineDrawer").classList.add("show");
+      } catch (err) {
+        message.textContent = err.message || "注销申请失败";
+        submit.disabled = false;
+      }
+    }
+
+    async function cancelDeleteAccount() {
+      const button = $("cancelDeleteAccount");
+      if (button) button.disabled = true;
+      try {
+        const res = await fetch("/api/auth/cancel-delete-account", {
+          method: "POST",
+          headers: headers(true),
+          body: "{}",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "取消注销失败");
+        showToast(data.message || "注销已取消");
+        await loadMe();
+        renderMine();
+      } catch (err) {
+        alert(err.message || "取消注销失败");
+        if (button) button.disabled = false;
       }
     }
 
@@ -5703,6 +6280,7 @@
       arcadeBankState.aiUserId = "";
       arcadeBankState.message = "";
       machineState = {loaded: false, loading: false, machines: [], error: ""};
+      emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
       renderAuth();
       renderGames();
       renderDetail();
@@ -5783,11 +6361,26 @@
     $("gameDrawer").addEventListener("click", (event) => { if (event.target.id === "gameDrawer") closeDrawers(); });
     $("mineDrawer").addEventListener("click", (event) => { if (event.target.id === "mineDrawer") closeDrawers(); });
     $("loginSubmit").addEventListener("click", login);
+    $("loginModeLogin").addEventListener("click", () => setLoginMode("login"));
+    $("loginModeRegister").addEventListener("click", () => setLoginMode("register"));
+    $("forgotPasswordOpen").addEventListener("click", openForgotPasswordModal);
+    $("forgotPasswordSubmit").addEventListener("click", submitForgotPassword);
+    $("emailSecuritySubmit").addEventListener("click", submitEmailSecurity);
     $("machineTokenFromLogin").addEventListener("click", openMachineTokenModal);
+    $("machineTokenModeGet").addEventListener("click", () => setMachineTokenMode("get"));
+    $("machineTokenModeRotate").addEventListener("click", () => setMachineTokenMode("rotate"));
+    $("machineTokenBound").addEventListener("change", () => {
+      const usingBoundMachine = Boolean($("machineTokenBound").value);
+      $("machineTokenUserField").hidden = usingBoundMachine;
+      $("machineTokenPassField").hidden = usingBoundMachine;
+      $("machineTokenMsg").textContent = "";
+      $("machineTokenResult").hidden = true;
+    });
     $("machineTokenSubmit").addEventListener("click", getMachineToken);
     $("machineTokenCopy").addEventListener("click", copyMachineToken);
     $("bindSubmit").addEventListener("click", bindAccount);
     $("changePasswordSubmit").addEventListener("click", changePassword);
+    $("deleteAccountSubmit").addEventListener("click", requestDeleteAccount);
     $("machinePasswordSubmit").addEventListener("click", resetMachinePassword);
     $("renameSubmit").addEventListener("click", renameAccount);
     $("resetPasswordSubmit").addEventListener("click", resetPasswordByToken);
@@ -5829,8 +6422,11 @@
         closeDrawers();
       }
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
+      if (event.key === "Enter" && $("forgotPasswordModal").classList.contains("show")) submitForgotPassword();
+      if (event.key === "Enter" && $("emailSecurityModal").classList.contains("show")) submitEmailSecurity();
       if (event.key === "Enter" && $("machineTokenModal").classList.contains("show") && event.target.id !== "machineTokenValue") getMachineToken();
       if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
+      if (event.key === "Enter" && $("deleteAccountModal").classList.contains("show")) requestDeleteAccount();
       if (event.key === "Enter" && $("machinePasswordModal").classList.contains("show")) resetMachinePassword();
       if (event.key === "Enter" && $("renameModal").classList.contains("show")) renameAccount();
       if (event.key === "Enter" && $("resetPasswordModal").classList.contains("show")) resetPasswordByToken();

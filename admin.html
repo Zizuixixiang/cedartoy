@@ -24,7 +24,7 @@
       color: var(--text);
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    button, input {
+    button, input, select {
       font: inherit;
     }
     button, .button-link {
@@ -107,6 +107,21 @@
       margin-left: auto;
       color: var(--muted);
       font-size: 14px;
+    }
+    .pagination {
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pagination select {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      padding: 6px 9px;
     }
     .search {
       width: min(360px, 100%);
@@ -267,7 +282,7 @@
     <header class="topbar">
       <div>
         <h1>CEDAR TOY 管理后台</h1>
-        <p class="sub">统一账号管理：查账号、生成密码重置链接、软删恢复、释放用户名。</p>
+        <p class="sub">统一账号管理：查账号、旧停用状态、待注销期限与高危立即清理。</p>
       </div>
       <div class="top-actions">
         <a class="button-link" href="/">开始页</a>
@@ -277,7 +292,7 @@
     </header>
 
     <section class="toolbar" aria-label="工具栏">
-      <input class="search" id="searchInput" type="search" placeholder="搜索用户名 / ID / 状态">
+      <input class="search" id="searchInput" type="search" placeholder="搜索用户名 / 精确 ID">
       <button id="refreshBtn" type="button">刷新</button>
       <span class="count" id="countText">未加载</span>
     </section>
@@ -304,6 +319,17 @@
       </table>
       <div class="empty" id="emptyState" hidden>暂无账号</div>
     </section>
+    <nav class="panel pagination" aria-label="账号分页">
+      <label for="pageSize">每页</label>
+      <select id="pageSize">
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+      <button id="prevPage" type="button">上一页</button>
+      <span id="pageText">第 1 / 1 页</span>
+      <button id="nextPage" type="button">下一页</button>
+    </nav>
   </main>
 
   <div class="modal" id="editModal">
@@ -320,7 +346,7 @@
         <div class="checks">
           <label class="check"><input id="editIsAi" type="checkbox"> AI</label>
           <label class="check"><input id="editIsAdmin" type="checkbox"> 管理员</label>
-          <label class="check"><input id="editDeleted" type="checkbox"> 软删</label>
+          <label class="check"><input id="editDeleted" type="checkbox"> 旧管理停用</label>
         </div>
       </div>
       <p class="status error" id="editError"></p>
@@ -337,6 +363,11 @@
     const $ = (id) => document.getElementById(id);
     let users = [];
     let editing = null;
+    let currentPage = 1;
+    let pageSize = 50;
+    let totalUsers = 0;
+    let searchQuery = "";
+    let searchTimer = null;
 
     function token() {
       return localStorage.getItem(TOKEN_KEY) || "";
@@ -380,9 +411,19 @@
     }
 
     function statusBadge(user) {
+      if (user.deletion_requested_at_epoch) {
+        return `<span class="badge warn">待注销<br>${escapeHtml(formatEpoch(user.scheduled_delete_at_epoch))}</span>`;
+      }
       return user.deleted_at
-        ? `<span class="badge warn">已软删</span>`
+        ? `<span class="badge warn">旧管理停用</span>`
         : `<span class="badge">正常</span>`;
+    }
+
+    function formatEpoch(value) {
+      if (!value) return "";
+      return new Date(Number(value) * 1000).toLocaleString("zh-CN", {
+        timeZone: "Asia/Shanghai", hour12: false,
+      });
     }
 
     function clip(value) {
@@ -390,23 +431,14 @@
       return text.length > 60 ? `${text.slice(0, 60)}...` : text;
     }
 
-    function rowMatches(user, needle) {
-      if (!needle) return true;
-      return [
-        user.id,
-        user.username,
-        user.is_ai ? "AI" : "人类",
-        user.is_admin ? "管理员" : "",
-        user.deleted_at ? "软删 已删除" : "正常",
-      ].join(" ").toLowerCase().includes(needle);
-    }
-
     function render() {
-      const needle = $("searchInput").value.trim().toLowerCase();
-      const rows = users.filter((user) => rowMatches(user, needle));
-      $("countText").textContent = `${rows.length} / ${users.length} 个账号`;
-      $("emptyState").hidden = rows.length !== 0;
-      $("userRows").innerHTML = rows.map((user) => `
+      const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+      $("countText").textContent = `共 ${totalUsers} 个账号，本页 ${users.length} 个`;
+      $("pageText").textContent = `第 ${currentPage} / ${totalPages} 页`;
+      $("prevPage").disabled = currentPage <= 1;
+      $("nextPage").disabled = currentPage >= totalPages;
+      $("emptyState").hidden = users.length !== 0;
+      $("userRows").innerHTML = users.map((user) => `
         <tr>
           <td data-label="ID">${user.id}</td>
           <td data-label="用户名" title="${escapeHtml(user.username)}">${escapeHtml(clip(user.username))}</td>
@@ -419,10 +451,10 @@
           <td data-label="活跃时间">${escapeHtml(formatDbDateTime(user.last_active_at))}</td>
           <td data-label="操作">
             <div class="row-actions">
-              <button type="button" data-action="edit" data-id="${user.id}">编辑</button>
+              <button type="button" data-action="edit" data-id="${user.id}" ${user.deletion_requested_at_epoch ? "disabled" : ""}>编辑</button>
               
-              <button type="button" data-action="reset-link" data-id="${user.id}">生成重置链接</button>
-              <button class="danger" type="button" data-action="release" data-id="${user.id}">释放用户名</button>
+              <button type="button" data-action="reset-link" data-id="${user.id}" ${user.deletion_requested_at_epoch ? "disabled" : ""}>生成重置链接</button>
+              <button class="danger" type="button" data-action="release" data-id="${user.id}">立即释放账号（高危）</button>
             </div>
           </td>
         </tr>
@@ -458,12 +490,26 @@
       }
       setStatus("加载中...");
       try {
-        const data = await request("/api/admin/users");
+        const params = new URLSearchParams({
+          page: String(currentPage),
+          page_size: String(pageSize),
+        });
+        if (searchQuery) params.set("search", searchQuery);
+        const data = await request(`/api/admin/users?${params}`);
         users = data.users || [];
+        totalUsers = Number(data.total || 0);
+        currentPage = Number(data.page || currentPage);
+        pageSize = Number(data.page_size || pageSize);
+        const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+        if (currentPage > totalPages) {
+          currentPage = totalPages;
+          return loadUsers();
+        }
         render();
         setStatus("");
       } catch (err) {
         users = [];
+        totalUsers = 0;
         render();
         setStatus(err.message, true);
       }
@@ -542,11 +588,11 @@
     }
 
     async function releaseUser(user) {
-      const ok = confirm(`确认释放用户名「${user.username}」？\n\n这会删除统一账号、解除绑定和绑定码，并断开海龟汤身份的 user_id；海龟汤历史记录不会被清除。`);
+      const ok = confirm(`确认立即释放账号「${user.username}」？\n\n此管理员高危动作会跳过 72 小时冷静期，永久删除认证信息和私人存档；多人历史只做匿名化。不可恢复。`);
       if (!ok) return;
       try {
         await request(`/api/admin/users/${user.id}`, {method: "DELETE"});
-        setStatus(`已释放「${user.username}」`);
+        setStatus(`已立即清理并释放「${user.username}」`);
         await loadUsers();
       } catch (err) {
         setStatus(err.message, true);
@@ -554,7 +600,31 @@
     }
 
     $("refreshBtn").addEventListener("click", loadUsers);
-    $("searchInput").addEventListener("input", render);
+    $("searchInput").addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchQuery = $("searchInput").value.trim();
+        currentPage = 1;
+        loadUsers();
+      }, 250);
+    });
+    $("pageSize").addEventListener("change", () => {
+      pageSize = Number($("pageSize").value);
+      currentPage = 1;
+      loadUsers();
+    });
+    $("prevPage").addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        loadUsers();
+      }
+    });
+    $("nextPage").addEventListener("click", () => {
+      if (currentPage * pageSize < totalUsers) {
+        currentPage += 1;
+        loadUsers();
+      }
+    });
     $("saveEditBtn").addEventListener("click", saveEdit);
     $("logoutBtn").addEventListener("click", () => {
       localStorage.removeItem(TOKEN_KEY);

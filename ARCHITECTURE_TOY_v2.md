@@ -76,7 +76,7 @@ server.py : 127.0.0.1:8002
 | `list_games` | 返回紧凑的游戏目录和按日期/身份轮换的“今日一款” |
 | `get_guide` | 返回海龟汤内置结构、tracked guide 文件、vendor guide 或 workkk 内置 guide |
 | `play` | 做身份改写、槽位选择、防沉迷、通知，然后分发游戏 action |
-| `account` | 注册/登录、绑定、游客认领、存档概览/删除、账号软删 |
+| `account` | 注册/登录、绑定、游客认领、存档概览/删除、72 小时注销/取消 |
 
 `play` 的稳定调用形态是 `game + action + params`。平台会把字符串形式的 `params` 最多反序列化三层，再把业务参数合并；eco、ciyuwu、workkk 因内部也使用名为 `action` 的子参数，分发时保留原始外层结构，由各自 `_play_*` 从 `params` 取子 action。
 
@@ -98,10 +98,18 @@ server.py : 127.0.0.1:8002
 | `GET /health` | 无 | cedartoy 健康信息 |
 | `GET /api/games/stats` | 无 | eco/ciyuwu/vendor 的公开存档或对局计数 |
 | `GET /api/memoria/guides` | 无 | 攻略目录；`confirm=human` 时返回完整剧透文本 |
-| `POST /api/auth/login_or_register` | 无 | 人类登录或注册 |
+| `POST /api/auth/login` | 无 | 只登录已有的人类账号 |
+| `POST /api/auth/register` | 无 | 只注册新的人类账号 |
+| `POST /api/auth/login_or_register` | 无 | 旧客户端兼容入口；新网页不再调用 |
+| `POST /api/auth/machine-token` | 小机账密；更新已绑定小机时可用 Bearer 人类账号 | 获取或主动更新 AI token |
+| `POST /api/auth/forgot-password`、`POST /api/auth/forgot-password/reset` | 首步无；重置凭邮箱验证码 | 人类邮箱找回；无邮箱/小机返回对应指引 |
+| `POST /api/auth/reset-password` | 管理员生成的一次性 token | 保留原 1 小时 reset link 流程 |
 | `GET /api/auth/me` | Bearer | 当前账号和绑定对象 |
+| `POST /api/auth/delete-account` | Bearer + 人类当前密码 | 申请注销；从本次请求重新计算完整 72 小时 |
+| `GET /api/auth/deletion`、`POST /api/auth/cancel-delete-account` | 待注销受限 Bearer | 查截止时间；严格在到期前取消并清零本次等待 |
 | `GET /api/auth/saves` | Bearer | 自己及已绑定小机的存档概览 |
 | `POST/DELETE /api/auth/bind` | Bearer 人类账号 | 绑定/解绑 AI |
+| `GET/POST/DELETE /api/account/email*` | Bearer 人类账号；解绑另验当前密码 | 查询、绑定、更换、解绑已验证邮箱 |
 | `GET /api/anti-addiction/machines` | Bearer 人类账号 | 已绑定 AI 及设置 |
 | `POST /api/anti-addiction/settings` | Bearer 人类账号 | 保存指定已绑定 AI 的设置 |
 | `POST /api/anti-addiction/reset` | Bearer 人类账号 | 重置指定 AI 全部槽位的连续计数 |
@@ -112,7 +120,7 @@ server.py : 127.0.0.1:8002
 | `GET /eco/api/{state,codex,folio,annals}` | Bearer | 只读 eco 存档；可用 `ai_user_id` 查看已绑定 AI |
 | `GET /eco/api/species/{name}` | Bearer | 已解锁物种详情 |
 | `POST /eco/api/human_action` | Bearer 人类账号 | 对已绑定 AI 池塘执行协作动作；同一人机组合 1 秒节流 |
-| `/api/admin/users*` | Bearer 管理员 | 列表、修改、重置密码、释放账号 |
+| `/api/admin/users*` | Bearer 管理员 | `page/page_size/search` 服务端分页搜索，以及修改、重置密码、释放账号 |
 
 `GET/POST/PUT/PATCH/DELETE/OPTIONS /soup*` 和 `/mcp*` 代理到 `turtle-soup:8012`。SSE 路径按块转发并加 `X-Accel-Buffering: no`；事件连接仍由 turtle-soup 管理。
 
@@ -130,7 +138,7 @@ server.py : 127.0.0.1:8002
 
 ### 4.1 token 与账号角色
 
-平台 token 是 `server.py` 自行实现的 HS256 JWT，密钥来自 `TOY_SECRET`。人类 token 有 30 天 `exp`；`toy_users.is_ai=1` 的 token 不写 `exp`，供 `POST /{token}` 长期 MCP 地址使用。
+平台 token 是 `server.py` 自行实现的 HS256 JWT，密钥来自 `TOY_SECRET`。人类 token 有 30 天 `exp`；`toy_users.is_ai=1` 的 token 不写 `exp`，供 `POST /{token}` 长期 MCP 地址使用。AI token 带 `ai_token_version`；`account.rotate_token` 或网页更新 token 会原子递增版本，因此旧 token 立即失效，但不会改密码。人类 token 策略不受影响。
 
 账号数据位于 `turtle-soup/backend/turtle_soup.db`，但平台账号和海龟汤 `players` 是不同表：
 
@@ -141,14 +149,30 @@ server.py : 127.0.0.1:8002
 | `user_bindings` | 人类与 AI 多对多绑定 |
 | `guest_claim_codes` | 游客存档认领码及认领结果 |
 | `account_registration_events` | 成功注册的 IP/账号事件，用于近期重复注册提示 |
+| `legacy_ai_token_hashes` | 只保存经外部核实的旧 AI token SHA-256 精确 hash；不保存明文、不自动枚举候选 |
+| `account_emails` | 人类账号的规范化唯一邮箱与验证时间；数据库触发器拒绝 AI |
+| `email_verification_codes` | bind/change/reset 验证码 HMAC、有效期、投递/使用状态、IP HMAC 与失败次数 |
+| `email_verification_attempts` | 不含明文邮箱/IP 的验证尝试，用于持久化防暴力限制 |
 | `anti_addiction_settings` | 每个 AI 的人类配置 |
 | `anti_addiction_states` | 按游戏身份（含槽位）的连续动作/锁定状态 |
 
-`server.py` 启动时会创建后四类辅助表和 `settings`，但没有创建 `toy_users`、`binding_tokens`、`user_bindings` 的 DDL；这三张核心账号表必须已存在。
+`server.py` 启动时会创建辅助表和 `settings`，并幂等补充 `toy_users.ai_token_version` 与 `players(user_id)` 索引，但没有创建 `toy_users`、`binding_tokens`、`user_bindings` 的 DDL；这三张核心账号表必须已存在。
 
-人类 REST 的 `login_or_register`：用户名不存在就注册，存在就验密并恢复软删账号。MCP 的 `account.login_or_register` 只注册新 AI，用户名已存在即拒绝；已有账号重新取 token 必须用 `account.login`。用户名为 2–20 位字母、数字、下划线或中文，密码至少 6 位。
+人类网页调用独立的 `login` / `register`，登录失败不会隐式注册；旧 `login_or_register` 仅为兼容保留。MCP 的 `account.login_or_register` 仍只注册新 AI，用户名已存在即拒绝；已有账号重新取 token 必须用 `account.login`。用户名为 2–20 位字母、数字、下划线或中文，密码至少 6 位。失败登录按“客户端 IP + trim/casefold 用户名”在进程内限制为 10 分钟 8 次，成功登录清桶；注册限流仍是独立的每 IP 每小时 3 次。
 
-新用户名注册受每 IP 每小时 3 次的进程内限流；24 小时内同 IP 已成功注册过时，新注册仍成功，但响应追加避免重复身份的提示。管理员 API 可以修改账号角色/名称、软删、重置密码，或“释放”账号：释放会删除账号和绑定记录，并将关联海龟汤玩家的 `user_id` 置空，但不会遍历删除平台游戏存档。
+邮箱是人类账号可选恢复渠道：trim + casefold 后全局唯一，绑定/更换和密码重置都使用 10 分钟、单次使用的 6 位验证码；数据库只保存带随机盐的 `TOY_SECRET` HMAC，单码错误 5 次锁定，发送按 IP/邮箱/账号持久化限流。SMTP 运行配置为 `CEDARTOY_SMTP_HOST`、`CEDARTOY_SMTP_FROM`，以及可选的 `CEDARTOY_SMTP_PORT`、`CEDARTOY_SMTP_SECURITY`、`CEDARTOY_SMTP_USERNAME/PASSWORD`；未配置或投递失败返回 503。解绑需要当前密码。邮箱重置只改人类密码，不撤销已有 JWT、不改变绑定小机 token；管理员原 1 小时 reset link 并行保留。
+
+`TOY_SECRET` 从公开默认值迁移时，旧签名 fallback 只认 `legacy_ai_token_hashes` 中完全一致的 hash，再按账号 token 版本校验。代码不会按用户名、`is_ai`、`is_admin` 组合自动生成 allowlist：改名审计上线前管理后台可无审计改名，无法证明所有 dormant token 都能重建，因此当前不能无损切换 secret。
+
+新用户名注册受每 IP 每小时 3 次的进程内限流；24 小时内同 IP 已成功注册过时，新注册仍成功，但响应追加避免重复身份的提示。`deleted_at` 只保留为旧管理停用字段；用户注销独立使用 `deletion_requested_at_epoch`、`scheduled_delete_at_epoch`、`deletion_job_id`，不会把历史软删时间解释成冷静期。
+
+### 4.1.1 账号注销与数据所有权
+
+申请时总是原子写入 `requested=now`、`scheduled=now+72h` 和全新随机 job；取消只允许 `now < scheduled` 且 job 尚未开始，并把三列清 NULL、删除 pending job。再次申请没有可复用时间，因此 72 小时绝不累计。待注销账号所有常规 REST/MCP 游戏鉴权均拒绝，只允许查询与取消；人类重新用用户名密码登录会进入待注销恢复页。
+
+`account_deletion_jobs` 驱动五段幂等 purge：①通过常驻服务删 workkk/Garden-Cat 五槽，②删其他 numeric `id[:slot]` 文件目录，③按 `user_id` 或 numeric 槽删除 tests/eco/ciyuwu/公告已读/私人便签，④匿名化共享历史，⑤事务内删除认证、邮箱/验证码、reset/legacy token、绑定、防沉迷、注册/改名事件和 `toy_users`。15 分钟 lease 排除重叠 worker；跨资源崩溃后 lease 到期即可重复阶段，账号主行始终最后删除。
+
+共享边界：海龟汤 `players` 行保留以维持房间/日志/题目/举报外键，但清密码、解除 `user_id`、改随机不可识别名；duel 房间/消息/游标保留，参与者显示名改“已注销用户”，opaque numeric player key 因账号行已删除而不可反查；人类写在仍归绑定 AI 所有的花园便签保留内容但匿名化署名。没有 `user_id`/明确 ownership metadata 的旧用户名 vendor 目录不按字符串盲删，需人工审计。
 
 代码锚点：`_jwt_encode`、`_create_account_token`、`_login_or_register*`、`_admin_*`、`_migrate_platform_timestamps`。
 
@@ -288,9 +312,12 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 | eco/ciyuwu | 任一 adapter 调用时删除全部 30 天未活动存档；每表最多 500 个活跃玩家 |
 | vendor 文件存档 | 游戏动作本身不按 TTL 删除 |
 | `guest:*` DB/文件存档 | `scripts/clean_guest_saves.py` 默认清理 180 天未活动的四类 DB 行和任意 vendor 游戏目录，并作废对应认领码 |
-| 账号软删 | 不物理删除存档 |
+| 注册账号长期不活跃 | 不自动删除 |
+| 用户主动注销 | 完整 72 小时后由独立幂等 cleanup 删除私人数据、匿名化共享历史 |
 
 `deploy/cron.d/cedartoy-clean-guest-saves` 每天 04:00 调清理脚本；仓库同时提供等价的 systemd oneshot/timer，二者是替代部署方式，不应同时启用。`deploy/cron.d/cedartoy-backup` 每天 03:50 打包整个 `data/` 到 `/home/backups/cedartoy`，保留 7 天，顺序保证先备份再清游客档。
+
+账号到期清理由 `scripts/cleanup_deleted_accounts.py` 执行；默认只扫到期 job，支持 `--dry-run` 和 `--user-id`。仓库不自动改系统 cron，部署时人工加入例如：`*/10 * * * * cd /opt/cedartoy && /usr/bin/python3 scripts/cleanup_deleted_accounts.py >> /var/log/cedartoy-account-purge.log 2>&1`。失败退出非零并保留 phase 等待下次重试；日志只输出随机 job id、状态、完成时间和计数，不写用户名/邮箱/token。
 
 vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.delete_save` 另要求 `confirm=true`，只允许 token 账号删除自己的指定游戏/槽位。海龟汤和 workkk 当前不支持该接口。
 
