@@ -965,6 +965,25 @@
       opacity: 1;
     }
 
+    .account-delete-link-wrap {
+      display: flex;
+      justify-content: center;
+      margin-top: 22px;
+      padding-bottom: 6px;
+    }
+    .account-delete-link {
+      border: 0;
+      background: transparent;
+      color: var(--pink-dark);
+      font: inherit;
+      font-size: 11px;
+      opacity: 0.5;
+      padding: 6px 12px;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .account-delete-link:hover { opacity: 0.9; }
+
     .modal, .drawer-scrim {
       position: fixed;
       inset: 0;
@@ -2524,19 +2543,28 @@
   <div class="modal" id="deleteAccountModal" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="deleteAccountTitle">注销账号</h2>
-      <p class="modal-hint">申请后立即停止正常使用。72 小时内可反悔；超过后账号和个人存档会永久删除，公共多人记录可能仅匿名化保留。</p>
-      <label class="field" id="deleteAccountPasswordField">
-        <span class="field-label">再次输入当前密码</span>
-        <input id="deleteAccountPassword" type="password" autocomplete="current-password">
-      </label>
-      <label class="checkbox-field">
-        <input id="deleteAccountConfirm" type="checkbox">
-        <span>我理解到期后无法恢复，并确认申请注销</span>
-      </label>
+      <div id="deleteAccountStepOne">
+        <p class="modal-hint">申请后立即停止正常使用。72 小时内可以取消；超过后账号和个人存档会永久删除，公共多人记录仅匿名化保留。</p>
+        <label class="field" id="deleteAccountPasswordField">
+          <span class="field-label">再次输入当前密码</span>
+          <input id="deleteAccountPassword" type="password" autocomplete="current-password">
+        </label>
+        <label class="checkbox-field">
+          <input id="deleteAccountConfirm" type="checkbox">
+          <span>我已了解以上内容</span>
+        </label>
+      </div>
+      <div id="deleteAccountStepTwo" hidden>
+        <p class="modal-hint">再次确认：申请后账号会立即进入待注销状态，正常游戏将暂停。确定要开始 72 小时注销冷静期吗？</p>
+      </div>
       <div class="modal-msg" id="deleteAccountMsg"></div>
-      <div class="modal-actions">
+      <div class="modal-actions" id="deleteAccountStepOneActions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
-        <button class="pixel-btn" id="deleteAccountSubmit" type="button">申请注销</button>
+        <button class="pixel-btn" id="deleteAccountContinue" type="button">继续</button>
+      </div>
+      <div class="modal-actions" id="deleteAccountStepTwoActions" hidden>
+        <button class="pixel-btn secondary" id="deleteAccountBack" type="button">返回</button>
+        <button class="pixel-btn" id="deleteAccountSubmit" type="button">确认申请注销</button>
       </div>
     </div>
   </div>
@@ -5655,6 +5683,7 @@
             <p class="modal-hint">当前不能继续游戏。到期前取消后会恢复正常；本次等待时间会彻底清零。</p>
             ${canCancel ? '<button class="pixel-btn" id="cancelDeleteAccount" type="button">取消注销</button>' : '<p class="modal-msg">72 小时已结束，不能再取消，正在等待最终清理。</p>'}
             <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
+        <div class="account-delete-link-wrap"><button class="account-delete-link" id="mineDeleteAccount" type="button">注销账号</button></div>
           </section>
         `;
         const cancelButton = $("cancelDeleteAccount");
@@ -5678,10 +5707,6 @@
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
         ${renderMachinePanel()}
         ${renderEmailSecurityCard()}
-        <section class="machine-panel">
-          <div class="mine-user-row"><p class="desc mine-user-name">账号安全：注销账号</p><button class="unbind-btn" id="mineDeleteAccount" type="button">申请注销</button></div>
-          <p class="modal-hint">72 小时冷静期，到期后永久删除个人数据；公共多人历史仅匿名化。</p>
-        </section>
         ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
         <button class="pixel-btn" id="mineBind" type="button">绑定</button>
         <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:10px">小机 Token</button>
@@ -5705,7 +5730,15 @@
         openModal("bindModal");
       });
       $("mineMachineToken").addEventListener("click", openMachineTokenModal);
-      $("mineDeleteAccount").addEventListener("click", () => openModal("deleteAccountModal"));
+      $("mineDeleteAccount").addEventListener("click", () => {
+        closeDrawers();
+        closeModals();
+        openModal("deleteAccountModal");
+        setTimeout(() => {
+          const password = $("deleteAccountPassword");
+          if (password && !$("deleteAccountPasswordField").hidden) password.focus();
+        }, 0);
+      });
       const mineChangePassword = $("mineChangePassword");
       if (mineChangePassword) {
         mineChangePassword.addEventListener("click", () => {
@@ -5977,23 +6010,46 @@
       $("deleteAccountConfirm").checked = false;
       $("deleteAccountMsg").textContent = "";
       $("deleteAccountSubmit").disabled = false;
+      $("deleteAccountContinue").disabled = false;
       $("deleteAccountPasswordField").hidden = Boolean(me?.user?.is_ai);
+      $("deleteAccountStepOne").hidden = false;
+      $("deleteAccountStepOneActions").hidden = false;
+      $("deleteAccountStepTwo").hidden = true;
+      $("deleteAccountStepTwoActions").hidden = true;
     }
 
-    async function requestDeleteAccount() {
+    function continueDeleteAccount() {
       const current_password = $("deleteAccountPassword").value;
       const confirmed = $("deleteAccountConfirm").checked;
       const message = $("deleteAccountMsg");
-      const submit = $("deleteAccountSubmit");
       message.textContent = "";
       if (!confirmed) {
-        message.textContent = "请先勾选明确确认";
+        message.textContent = "请先勾选“我已了解以上内容”";
         return;
       }
       if (!me?.user?.is_ai && !current_password) {
         message.textContent = "请输入当前密码";
         return;
       }
+      $("deleteAccountStepOne").hidden = true;
+      $("deleteAccountStepOneActions").hidden = true;
+      $("deleteAccountStepTwo").hidden = false;
+      $("deleteAccountStepTwoActions").hidden = false;
+    }
+
+    function backDeleteAccount() {
+      $("deleteAccountMsg").textContent = "";
+      $("deleteAccountStepOne").hidden = false;
+      $("deleteAccountStepOneActions").hidden = false;
+      $("deleteAccountStepTwo").hidden = true;
+      $("deleteAccountStepTwoActions").hidden = true;
+    }
+
+    async function requestDeleteAccount() {
+      const current_password = $("deleteAccountPassword").value;
+      const message = $("deleteAccountMsg");
+      const submit = $("deleteAccountSubmit");
+      message.textContent = "";
       submit.disabled = true;
       try {
         const res = await fetch("/api/auth/delete-account", {
@@ -6380,6 +6436,8 @@
     $("machineTokenCopy").addEventListener("click", copyMachineToken);
     $("bindSubmit").addEventListener("click", bindAccount);
     $("changePasswordSubmit").addEventListener("click", changePassword);
+    $("deleteAccountContinue").addEventListener("click", continueDeleteAccount);
+    $("deleteAccountBack").addEventListener("click", backDeleteAccount);
     $("deleteAccountSubmit").addEventListener("click", requestDeleteAccount);
     $("machinePasswordSubmit").addEventListener("click", resetMachinePassword);
     $("renameSubmit").addEventListener("click", renameAccount);
@@ -6426,7 +6484,10 @@
       if (event.key === "Enter" && $("emailSecurityModal").classList.contains("show")) submitEmailSecurity();
       if (event.key === "Enter" && $("machineTokenModal").classList.contains("show") && event.target.id !== "machineTokenValue") getMachineToken();
       if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
-      if (event.key === "Enter" && $("deleteAccountModal").classList.contains("show")) requestDeleteAccount();
+      if (event.key === "Enter" && $("deleteAccountModal").classList.contains("show")) {
+        if (!$("deleteAccountStepTwo").hidden) requestDeleteAccount();
+        else continueDeleteAccount();
+      }
       if (event.key === "Enter" && $("machinePasswordModal").classList.contains("show")) resetMachinePassword();
       if (event.key === "Enter" && $("renameModal").classList.contains("show")) renameAccount();
       if (event.key === "Enter" && $("resetPasswordModal").classList.contains("show")) resetPasswordByToken();
