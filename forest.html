@@ -313,6 +313,28 @@
   }
   .combo-resolve button:hover { background:#3d5270; transform:translateY(-2px); box-shadow:0 6px 20px rgba(44,62,90,0.3); }
 
+  /* ── Branch Status Banner ── */
+  .branch-status {
+    text-align:center; padding:10px 16px; margin:10px 0 6px;
+    font-size:13px; color:var(--ink-light); letter-spacing:0.05em;
+    background:rgba(232,216,144,0.12); border-radius:12px;
+    border:1px dashed rgba(232,216,144,0.35);
+    font-family:"ZCOOL XiaoWei",serif;
+    animation:fadeIn .5s ease-out;
+  }
+  .branch-status.ai-chosen { border-color:rgba(196,192,216,0.45); background:rgba(196,192,216,0.08); }
+  .branch-status.both-ready { border-color:rgba(212,160,160,0.5); background:rgba(212,160,160,0.06); animation:pulseReady 1.6s ease-in-out infinite; }
+  @keyframes pulseReady {
+    0%,100% { opacity:1; }
+    50%     { opacity:0.7; }
+  }
+  .ai-action-alert {
+    text-align:center; padding:8px 14px; margin:8px 0 4px;
+    font-size:12px; color:var(--lavender-dim); letter-spacing:0.05em;
+    background:rgba(196,192,216,0.06); border-radius:10px;
+    font-style:italic; animation:fadeIn .6s ease-out;
+  }
+
   /* ── AI Solo Mode ── */
   .ai-solo .story-page { background:rgba(196,192,216,0.04); }
   .ai-hidden-info {
@@ -695,6 +717,30 @@ function goBack() {
   state.currentData = null;
 }
 
+function renderBranchStatus(current, choices) {
+  if (!choices || !current || current.is_ending) return;
+  const old = document.getElementById('branchStatusBanner');
+  if (old) old.remove();
+
+  let text = '';
+  let extraClass = '';
+  if (current.waiting_for === 'human') {
+    text = '✨ 你的同游者已经做出了他的选择，请完成你的抉择来继续故事。';
+    extraClass = ' ai-chosen';
+  } else if (current.waiting_for === 'ai' && current.selected_human_choice) {
+    text = '✨ 你已经做出选择，等待同游者完成他的抉择。';
+  } else if (current.mode === 'shared' && current.options && current.options.length) {
+    text = '✨ 等待你与同游者分别做出选择。';
+  }
+  if (!text) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'branchStatusBanner';
+  banner.className = 'branch-status' + extraClass;
+  banner.textContent = text;
+  choices.insertAdjacentElement('afterbegin', banner);
+}
+
 function showCurrentScene(echoObservation = false) {
   const current = snapshot && snapshot.current;
   if (!current) return;
@@ -755,6 +801,7 @@ function showCurrentScene(echoObservation = false) {
     choices.innerHTML = '<button class="choice-card" onclick="goBack()" style="justify-content:center;flex:1;">← 合上书页</button>';
   }
 
+  renderBranchStatus(current, choices);
   state.history.push({sceneId: current.scene_id, aiText: '', isEnding: !!isEnding});
   updateSouvenirBadge();
   narrative.scrollTop = 0;
