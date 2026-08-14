@@ -116,7 +116,7 @@
 
 - **状态位置**：`sessions.db` 的 `eco_sessions.save_data` JSON（`eco_adapter/handler.py:23-28,686-703`）。engine 原本的文件保存被禁用，由 adapter 接管（`:13-20`）。state 内包含 seed 与 `rng_state`（`eco/engine.py:2192-2199,2627-2634`）。
 - **落盘时机**：新局生成后立即 UPSERT；每条命令先 `BEGIN IMMEDIATE`，在同一事务内 load → engine cmd → UPDATE（adapter `:461-498`）；人类网页动作也使用同样的早期写锁并在成功时 UPDATE（`:501-536`）。
-- **重启恢复**：每次命令从 DB JSON 恢复，`_migrate` 后赋给 engine `_STATE`，执行后重新序列化，并在 finally 清掉 `_STATE`（`:539-567`）。重启可恢复 30 天 TTL 内的完整状态。
+- **重启恢复**：每次命令从 DB JSON 恢复，`_migrate` 后赋给 engine `_STATE`，执行后重新序列化，并在 finally 清掉 `_STATE`（`:539-567`）。注册账号存档不因不活跃删除；明确游客存档在 30 天不活跃 TTL 内可完整恢复，身份不明遗留行保守保留。
 - **仅内存关键状态**：`_STATE` 是临时工作对象，`_ENGINE_LOCK` 只负责进程内串行；权威状态在 DB。没有发现未序列化的关键进度。
 
 ### ciyuwu — ⚠️疑似

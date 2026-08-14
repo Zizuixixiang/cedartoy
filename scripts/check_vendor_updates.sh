@@ -2,9 +2,9 @@
 # 定时检查 vendor 仓库更新，有变动通过 TG 通知南杉
 # cron: 每天 10:00 跑一次
 
-BOT_TOKEN="8656179565:AAFjrh-r31bnhVIz0bxBlCJXFFXo1Vgy4OQ"
-CHAT_ID="8624126581"
 VENDOR_DIR="/opt/cedartoy/vendor"
+CEDARCLIO_PYTHON="${CEDARCLIO_PYTHON:-/opt/cedarclio/venv/bin/python}"
+NOTIFY_BRIDGE="/opt/cedartoy/scripts/cedarclio_notify.py"
 UPDATES=""
 
 for d in "$VENDOR_DIR"/*/; do
@@ -38,8 +38,4 @@ MSG="📦 cedartoy vendor 仓库更新检测
 ${UPDATES}
 需要更新请让小克处理，不会自动拉取。"
 
-curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-  -d chat_id="$CHAT_ID" \
-  -d text="$MSG" \
-  -d parse_mode="" \
-  > /dev/null 2>&1
+"$CEDARCLIO_PYTHON" "$NOTIFY_BRIDGE" --level info --text "$MSG"

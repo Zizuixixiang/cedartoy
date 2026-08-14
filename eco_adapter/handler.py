@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import announcements
 from command_text import normalize_command_spaces
 from eco import engine
+from eco_adapter import capacity_alerts
 
 # engine.py 默认自己读写 eco_save.json 存档。handler 层接管存档：
 # 直接操作 engine 的 _STATE 全局做序列化/反序列化，并把 engine 的文件写入屏蔽掉，
@@ -22,8 +23,7 @@ _ENGINE_LOCK = threading.Lock()
 
 DB_PATH = "/opt/cedartoy/data/sessions.db"
 GAME = "eco"
-MAX_SESSIONS = 3000
-EVICT_IDLE_SECONDS = 7 * 24 * 60 * 60
+MAX_SESSIONS = capacity_alerts.MAX_SESSIONS
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 # 允许平台身份层注入的前缀 id：账号玩家=纯数字账号 id 或 id:slot，游客=guest:xxx。
 PLAYER_ID_RE = re.compile(r"^(?:guest:[a-zA-Z0-9]{1,64}|[a-zA-Z0-9]{1,64}(?::[1-5])?)$")
@@ -246,6 +246,11 @@ def eco_new(arguments):
     seed = _coerce_seed(arguments.get("seed"))
     now = time.time()
 
+    capacity_alert = None
+    capacity_error = None
+    confirmation = None
+    intro = None
+
     with _connect() as conn:
         _init_db(conn)
         conn.commit()
@@ -258,49 +263,42 @@ def eco_new(arguments):
             (player_id,),
         ).fetchone()
         if existing is not None and str(arguments.get("confirm", "")).lower() != "true":
-            return _overwrite_confirmation(existing[0], existing[1])
-
-        active_count = conn.execute(
-            "SELECT COUNT(*) FROM eco_sessions"
-        ).fetchone()[0]
-        if existing is None and active_count >= MAX_SESSIONS:
-            need = active_count - MAX_SESSIONS + 1
-            eviction_cutoff = _now_iso(now - EVICT_IDLE_SECONDS)
-            conn.execute(
-                """
-                DELETE FROM eco_sessions
-                WHERE player_id IN (
-                    SELECT player_id
-                    FROM eco_sessions
-                    WHERE last_active < ?
-                    ORDER BY last_active ASC
-                    LIMIT ?
-                )
-                """,
-                (eviction_cutoff, need),
-            )
+            confirmation = _overwrite_confirmation(existing[0], existing[1])
+        else:
             active_count = conn.execute(
                 "SELECT COUNT(*) FROM eco_sessions"
             ).fetchone()[0]
-            if active_count >= MAX_SESSIONS:
-                raise JsonRpcError(
+            if existing is None and active_count >= MAX_SESSIONS:
+                capacity_error = JsonRpcError(
                     -32000,
-                    "当前池塘已达上限且暂无可回收的旧池塘，请稍后再试",
+                    "ECO 池塘容量已满（3000/3000），且没有超过 30 天不活跃、"
+                    "可安全回收的游客池塘；当前无法新建池塘。已有池塘仍可正常访问。",
+                )
+            else:
+                save_data, intro = _engine_new(seed)
+                ts = _now_iso(now)
+                conn.execute(
+                    """
+                    INSERT INTO eco_sessions (player_id, save_data, created_at, last_active)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(player_id) DO UPDATE SET
+                        save_data = excluded.save_data,
+                        created_at = excluded.created_at,
+                        last_active = excluded.last_active
+                    """,
+                    (player_id, save_data, ts, ts),
                 )
 
-        save_data, intro = _engine_new(seed)
-        ts = _now_iso(now)
-        conn.execute(
-            """
-            INSERT INTO eco_sessions (player_id, save_data, created_at, last_active)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(player_id) DO UPDATE SET
-                save_data = excluded.save_data,
-                created_at = excluded.created_at,
-                last_active = excluded.last_active
-            """,
-            (player_id, save_data, ts, ts),
-        )
+        final_count = conn.execute("SELECT COUNT(*) FROM eco_sessions").fetchone()[0]
+        capacity_alert = capacity_alerts.update_alert_state(conn, final_count)
+
+    # Notification runs only after the business transaction commits. Launch/send
+    # failures are logged by this process/CedarClio and never change the response.
+    capacity_alerts.dispatch_alert(capacity_alert)
+    if capacity_error is not None:
+        raise capacity_error
+    if confirmation is not None:
+        return confirmation
 
     header = "🌊 新池初成"
     if seed is not None:
@@ -544,8 +542,8 @@ def _run_player_command(player_id, command):
         if row is None:
             raise JsonRpcError(
                 -32001,
-                "没有进行中的池塘（可能从未 eco_new，或超过 30 天未活动已被清理）。"
-                "请先 eco_new 开一局。",
+                "没有进行中的池塘（可能从未 eco_new；明确游客池塘超过 30 天"
+                "不活跃会被清理，注册账号池塘不会因不活跃删除）。请先 eco_new 开一局。",
             )
 
         save_data = row[0]
@@ -560,6 +558,8 @@ def _run_player_command(player_id, command):
             "UPDATE eco_sessions SET save_data = ?, last_active = ? WHERE player_id = ?",
             (new_save_data, _now_iso(now), player_id),
         )
+        final_count = conn.execute("SELECT COUNT(*) FROM eco_sessions").fetchone()[0]
+        capacity_alerts.rearm_after_count_drop(conn, final_count)
 
     return text
 
@@ -599,6 +599,8 @@ def human_action(player_id, action, payload=None):
                 "UPDATE eco_sessions SET save_data = ?, last_active = ? WHERE player_id = ?",
                 (save_data, _now_iso(now), player_id),
             )
+        final_count = conn.execute("SELECT COUNT(*) FROM eco_sessions").fetchone()[0]
+        capacity_alerts.rearm_after_count_drop(conn, final_count)
     return result
 
 
@@ -772,7 +774,14 @@ def _init_db(conn):
 def _cleanup_expired(conn, now):
     cutoff = _now_iso(now - SESSION_TTL_SECONDS)
     conn.execute(
-        "DELETE FROM eco_sessions WHERE last_active < ?",
+        """
+        DELETE FROM eco_sessions
+        WHERE user_id IS NULL
+          AND player_id GLOB 'guest:*'
+          AND length(player_id) > length('guest:')
+          AND last_active IS NOT NULL
+          AND last_active < ?
+        """,
         (cutoff,),
     )
 

@@ -314,9 +314,10 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 | --- | --- |
 | MBTI/Enneagram/DND/love/ECR/humanity/BDSMTest 进行中 | handler 调用时删除 24 小时未活动记录 |
 | MBTI/Enneagram/DND/love/ECR/humanity/BDSMTest 结果 | handler 调用时删除 48 小时前游客结果；账号结果永久保留 |
-| eco/ciyuwu | 任一 adapter 调用时删除全部 30 天未活动存档；每表最多 500 个活跃玩家 |
+| eco | adapter 调用及每日脚本只清理 `user_id IS NULL`、严格 `guest:` 前缀且 30 天未活动的明确游客池塘；注册账号永久保存，身份不明行保守保留；全表硬上限 3000，容量满时不淘汰注册档 |
+| ciyuwu | adapter 调用及每日脚本只清理 `user_id IS NULL`、严格 `guest:` 前缀且 30 天未活动的明确游客存档；注册账号永久保存，身份不明行保守保留；全表硬上限 3000，容量满时不淘汰注册档 |
 | vendor 文件存档 | 游戏动作本身不按 TTL 删除 |
-| `guest:*` DB/文件存档 | `scripts/clean_guest_saves.py` 默认清理 180 天未活动的四类 DB 行和任意 vendor 游戏目录，并作废对应认领码 |
+| `guest:*` DB/文件存档 | `scripts/clean_guest_saves.py` 对 ECO 和 ciyuwu 使用 30 天，对其它 DB/文件存档保持 180 天默认值，并作废对应认领码 |
 | 注册账号长期不活跃 | 不自动删除 |
 | 用户主动注销 | 完整 72 小时后由独立幂等 cleanup 删除私人数据、匿名化共享历史 |
 
@@ -396,7 +397,7 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 - 明确哪些 action 是读、写、重开、导入；破坏性覆盖要求 `confirm=true`；
 - 返回可 JSON 序列化的 dict；业务失败应转成 `VendorCmdError` 或 MCP `isError`，不能把 traceback 当正常文本；
 - 提供 `save_summary(player_id)`，供账号存档页显示；
-- 若支持游客长期存档，必须纳入认领、迁移、删除和 180 天清理；
+- 若支持游客长期存档，必须纳入认领、迁移、删除和对应游戏的游客 TTL 清理（ECO 为 30 天，其它现有长期存档默认 180 天）；
 - adapter 只承载兼容/隔离，不把大量游戏规则复制进平台层。
 
 ### 9.3 必须同步的硬编码注册点
@@ -442,7 +443,7 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 | 账号 token 只用于持久登录 | token 还强制覆盖游戏身份、选择 5 个槽位、触发旧用户名迁档、回填 `user_id` 和防沉迷 |
 | 未描述游客与账号存档隔离 | 无 token 的自报 ID 强制加 `guest:`；长期游客档有一次性认领码、冲突检查和迁移 |
 | eco 是 `eco_sessions` 单表，未描述其他 per-player 存档 | ciyuwu 使用两层 SQLite；7 个 vendor 与 workkk 使用 `data/vendor_saves/<game>/<player_id>/` |
-| eco 存档 30 天、测试 24/48 小时之外无生命周期 | 新增 180 天游客清理、03:50 全 data 备份、04:00 清理；账号 vendor 档无 TTL |
+| ECO 明确游客存档 30 天；注册账号永久；身份不明行保留；测试 24/48 小时之外无生命周期 | 其它长期游客存档 180 天清理、03:50 全 data 备份、04:00 清理；账号档无 inactivity TTL |
 | `account` 只有注册/登录/绑定/资料 | 已增加 guest_claim_code、claim、my_saves、delete_save、delete_account；网页有 `/api/auth/saves` |
 | 无防沉迷 | 已有绑定人类配置、跨适用小游戏共享 streak、提醒/锁定/rest/人工重置；workkk 尚未纳入 |
 | supervisord 只描述 cedartoy 和 turtle-soup | workkk 需要第三个 `cedartoy-workkk` uvicorn 进程；其余 vendor 每次调用起短命子进程 |

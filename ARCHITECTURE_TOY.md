@@ -384,7 +384,7 @@ handler 返回 JSON-RPC 结构。工具级错误会以 MCP tool result 的 `isEr
 - `save_data`：引擎状态 `engine._STATE` 的 JSON 文本（整局存档）。
 - `created_at` / `last_active`：`Asia/Shanghai` 时区的字符串时间戳。
 
-每次 `eco_*` 调用先 `_cleanup_expired`：删除 `last_active` 超过 30 天的存档；活跃存档达 `MAX_SESSIONS=500` 时拒绝新建（同 `player_id` 重开除外）。与 MBTI/DND 不同，eco 没有「结果表」，只有一张滚动存档表。
+每次会写存档的 `eco_*` 调用先 `_cleanup_expired`：只删除 `user_id IS NULL`、`player_id` 为严格 `guest:` 前缀且 `last_active` 超过 30 天的明确游客存档。`user_id` 非空的注册账号存档永久保存；身份不明的遗留行保守保留。全表硬上限为 `MAX_SESSIONS=3000`：达到上限时不淘汰注册档或身份不明档，只能由上述 30 天游客清理释放容量；无安全候选时拒绝新建池塘，已有池塘仍可访问。
 
 ### 4.3 cedartoy 平台账号表
 
@@ -919,11 +919,11 @@ DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；�
 | `eco_save` | `action`=export/import, `mode?`=full/lite/story, `save_data?` | `export [lite\|story]` / `import_save <base64>` |
 | `eco_play`（隐藏） | `command` | 万能文本指令，直接透传给 `engine.cmd(command)` |
 
-存档机制：engine 默认自己读写 `eco/eco_save.json`，handler 层在导入时把 `engine.save_state` 替换为 no-op，并用进程级 `threading.Lock` 串行化「装载 `engine._STATE` → `engine.cmd()` → 取回序列化」整段，存档以 JSON 文本存入 `data/sessions.db` 的 `eco_sessions` 表（`player_id` 主键），30 天未活动清理。`player_id` 同样限定 1-10 位字母数字。具体玩法见 `guides/eco.md`。
+存档机制：engine 默认自己读写 `eco/eco_save.json`，handler 层在导入时把 `engine.save_state` 替换为 no-op，并用进程级 `threading.Lock` 串行化「装载 `engine._STATE` → `engine.cmd()` → 取回序列化」整段，存档以 JSON 文本存入 `data/sessions.db` 的 `eco_sessions` 表（`player_id` 主键）。明确游客池塘 30 天不活跃清理；注册账号池塘永久保存；身份不明遗留行不自动删除。`player_id` 同样限定 1-10 位字母数字。具体玩法见 `guides/eco.md`。
 
 ### 6.9 `account`
 
-平台统一账号工具（存档用；不登录也可玩，但游客数据 1 小时后清理）。
+平台统一账号工具（存档用；不登录也可玩。游客临时数据按 1–48 小时清理，ECO 游客池塘按 30 天不活跃清理，其它长期游客存档按既有 180 天策略；注册账号存档永久保存）。
 
 | action | 参数 | 行为 |
 | --- | --- | --- |

@@ -66,7 +66,9 @@ def main():
             ).fetchone()
         state = json.loads(row[0])
         meta = json.loads(row[1])
-        assert state.get("phase") == "explore", f"当局层 phase 异常：{state.get('phase')}"
+        assert state.get("phase") in handler._PROGRESS_PHASES, (
+            f"当局层 phase 异常：{state.get('phase')}"
+        )
         assert "echoes" in meta and "runs" in meta, f"跨局层缺字段：{list(meta)}"
         assert row[2] is None, "user_id 预留列应为 NULL"
         print(f"[3] 两层持久化 OK（run 层 phase={state['phase']}，meta 层 keys={sorted(meta)[:4]}...）")

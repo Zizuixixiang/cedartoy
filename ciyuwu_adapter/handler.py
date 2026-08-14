@@ -72,7 +72,6 @@ _ENGINE_LOCK = threading.Lock()
 
 DB_PATH = "/opt/cedartoy/data/sessions.db"
 MAX_SESSIONS = 3000
-EVICT_IDLE_SECONDS = 7 * 24 * 60 * 60
 # 长事务尾部防护：engine 计算在 BEGIN IMMEDIATE 写事务内执行，给指令长度和
 # 分号串联条数设上限，避免超长输入把写锁持到同库邻居偶发 busy。
 # （批量指令如「前进5」引擎侧已限 20 步；engine 只按 ASCII 分号切分。）
@@ -252,29 +251,12 @@ def ciyuwu_new(arguments):
             "SELECT COUNT(*) FROM ciyuwu_sessions"
         ).fetchone()[0]
         if row is None and active_count >= MAX_SESSIONS:
-            need = active_count - MAX_SESSIONS + 1
-            eviction_cutoff = _now_iso(now - EVICT_IDLE_SECONDS)
-            conn.execute(
-                """
-                DELETE FROM ciyuwu_sessions
-                WHERE player_id IN (
-                    SELECT player_id
-                    FROM ciyuwu_sessions
-                    WHERE last_active < ?
-                    ORDER BY last_active ASC
-                    LIMIT ?
-                )
-                """,
-                (eviction_cutoff, need),
+            raise JsonRpcError(
+                -32000,
+                "词与物存档容量已满（3000/3000），且没有超过 30 天不活跃、"
+                "可安全回收的明确游客存档；当前无法新建存档。"
+                "注册账号存档不会因容量回收被删除，已有存档仍可正常访问。",
             )
-            active_count = conn.execute(
-                "SELECT COUNT(*) FROM ciyuwu_sessions"
-            ).fetchone()[0]
-            if active_count >= MAX_SESSIONS:
-                raise JsonRpcError(
-                    -32000,
-                    "当前会话已达上限且暂无可回收的旧会话，请稍后再试",
-                )
 
         meta = _parse_meta(row[0]) if row else {}
         state, intro = _engine_new(seed, meta)
@@ -379,7 +361,23 @@ def ciyuwu_save(arguments):
         ts = _now_iso(now)
         with _connect() as conn:
             _init_db(conn)
+            conn.commit()
+            conn.execute("BEGIN IMMEDIATE")
             _cleanup_expired(conn, now)
+            existing = conn.execute(
+                "SELECT 1 FROM ciyuwu_sessions WHERE player_id = ?",
+                (player_id,),
+            ).fetchone()
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM ciyuwu_sessions"
+            ).fetchone()[0]
+            if existing is None and active_count >= MAX_SESSIONS:
+                raise JsonRpcError(
+                    -32000,
+                    "词与物存档容量已满（3000/3000），且没有超过 30 天不活跃、"
+                    "可安全回收的明确游客存档；当前无法导入为新存档。"
+                    "注册账号存档不会因容量回收被删除，已有存档仍可正常访问。",
+                )
             conn.execute(
                 """
                 INSERT INTO ciyuwu_sessions (player_id, save_data, meta_data, created_at, last_active)
@@ -413,7 +411,8 @@ def _run_player_command(player_id, command):
         if row is None:
             raise JsonRpcError(
                 -32001,
-                "没有进行中的游戏（可能从未 ciyuwu_new，或超过 30 天未活动已被清理）。"
+                "没有进行中的游戏（可能从未 ciyuwu_new；明确游客存档超过 30 天"
+                "不活跃会被清理，注册账号存档永久保存、不因不活跃删除）。"
                 "请先 ciyuwu_new 开一局。",
             )
 
@@ -633,7 +632,14 @@ def _init_db(conn):
 def _cleanup_expired(conn, now):
     cutoff = _now_iso(now - SESSION_TTL_SECONDS)
     conn.execute(
-        "DELETE FROM ciyuwu_sessions WHERE last_active < ?",
+        """
+        DELETE FROM ciyuwu_sessions
+        WHERE user_id IS NULL
+          AND player_id GLOB 'guest:*'
+          AND length(player_id) > length('guest:')
+          AND last_active IS NOT NULL
+          AND last_active < ?
+        """,
         (cutoff,),
     )
 

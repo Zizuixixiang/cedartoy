@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Delete inactive guest saves and invalidate their claim codes.
 
-Defaults to deleting guest saves whose last activity, or vendor save directory
-mtime, is older than 180 days. Use --dry-run to list matches without deleting.
+ECO and Ciyuwu use their product retention of 30 inactive days. Other guest
+saves and vendor directories keep the existing 180-day default. Use --dry-run
+to list matches.
 """
 from __future__ import annotations
 
@@ -10,13 +11,19 @@ import argparse
 import os
 import shutil
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from eco_adapter import capacity_alerts
+
+
 SESSIONS_DB = Path(os.getenv("SESSIONS_DB", ROOT / "data" / "sessions.db"))
 PLATFORM_DB = Path(os.getenv("TURTLE_SOUP_DB", ROOT / "turtle-soup" / "backend" / "turtle_soup.db"))
 VENDOR_SAVE_ROOT = Path(os.getenv("VENDOR_SAVE_ROOT", ROOT / "data" / "vendor_saves"))
@@ -63,12 +70,14 @@ def epoch_cutoff(days: int) -> float:
     return time.time() - days * 24 * 60 * 60
 
 
-def collect_table_rows(days: int) -> list[dict]:
+def collect_table_rows(
+    days: int,
+    eco_days: int = 30,
+    ciyuwu_days: int = 30,
+) -> list[dict]:
     rows: list[dict] = []
     if not SESSIONS_DB.exists():
         return rows
-    cutoff_text = iso_cutoff(days)
-    cutoff_epoch = epoch_cutoff(days)
     with connect(SESSIONS_DB) as conn:
         for spec in SAVE_TABLE_SPECS:
             if not table_exists(conn, spec.table):
@@ -76,15 +85,32 @@ def collect_table_rows(days: int) -> list[dict]:
             columns = table_columns(conn, spec.table)
             if "player_id" not in columns or spec.timestamp_column not in columns:
                 continue
-            cutoff = cutoff_epoch if spec.timestamp_kind == "epoch" else cutoff_text
+            retention_days = {
+                "eco_sessions": eco_days,
+                "ciyuwu_sessions": ciyuwu_days,
+            }.get(spec.table, days)
+            cutoff = (
+                epoch_cutoff(retention_days)
+                if spec.timestamp_kind == "epoch"
+                else iso_cutoff(retention_days)
+            )
+            identity_sql = "player_id GLOB ?"
+            identity_params = [f"{GUEST_PREFIX}*"]
+            if spec.table in {"eco_sessions", "ciyuwu_sessions"}:
+                # Without the ownership column, historical rows cannot be safely
+                # classified. Be conservative and skip automatic deletion.
+                if "user_id" not in columns:
+                    continue
+                identity_sql += " AND user_id IS NULL AND length(player_id) > ?"
+                identity_params.append(len(GUEST_PREFIX))
             for row in conn.execute(
                 f"""
                 SELECT rowid, player_id, {spec.timestamp_column} AS last_seen
                 FROM {spec.table}
-                WHERE player_id LIKE ? AND {spec.timestamp_column} IS NOT NULL
+                WHERE {identity_sql} AND {spec.timestamp_column} IS NOT NULL
                   AND {spec.timestamp_column} < ?
                 """,
-                (f"{GUEST_PREFIX}%", cutoff),
+                (*identity_params, cutoff),
             ):
                 rows.append({
                     "table": spec.table,
@@ -132,6 +158,21 @@ def delete_table_rows(rows: list[dict]) -> int:
     return deleted
 
 
+def rearm_eco_capacity_alerts() -> None:
+    """Let a later upward threshold crossing alert again after daily cleanup."""
+    if not SESSIONS_DB.exists():
+        return
+    try:
+        with connect(SESSIONS_DB) as conn:
+            if not table_exists(conn, "eco_sessions"):
+                return
+            count = conn.execute("SELECT COUNT(*) FROM eco_sessions").fetchone()[0]
+            capacity_alerts.rearm_after_count_drop(conn, count)
+    except sqlite3.Error as exc:
+        # Cleanup already completed; alert-state maintenance must not undo it.
+        print(f"warning: unable to rearm ECO capacity alerts: {exc}")
+
+
 def delete_vendor_dirs(rows: list[dict]) -> int:
     deleted = 0
     for row in rows:
@@ -172,18 +213,38 @@ def print_plan(table_rows: list[dict], vendor_dirs: list[dict], claim_ids: set[s
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=180, help="inactive days threshold (default: 180)")
+    parser.add_argument(
+        "--eco-days",
+        type=int,
+        default=30,
+        help="ECO guest inactive days threshold (default: 30)",
+    )
+    parser.add_argument(
+        "--ciyuwu-days",
+        type=int,
+        default=30,
+        help="Ciyuwu guest inactive days threshold (default: 30)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="list matches without deleting")
     args = parser.parse_args()
 
-    if args.days <= 0:
-        parser.error("--days must be positive")
+    if args.days <= 0 or args.eco_days <= 0 or args.ciyuwu_days <= 0:
+        parser.error("--days, --eco-days, and --ciyuwu-days must be positive")
 
-    table_rows = collect_table_rows(args.days)
+    table_rows = collect_table_rows(
+        args.days,
+        eco_days=args.eco_days,
+        ciyuwu_days=args.ciyuwu_days,
+    )
     vendor_dirs = collect_vendor_dirs(args.days)
     claim_ids = {row["player_id"] for row in table_rows}
     claim_ids.update(row["player_id"] for row in vendor_dirs)
 
-    print(f"guest save cleanup threshold: {args.days} days")
+    print(
+        f"guest save cleanup thresholds: ECO={args.eco_days} days, "
+        f"Ciyuwu={args.ciyuwu_days} days, "
+        f"other saves={args.days} days"
+    )
     print_plan(table_rows, vendor_dirs, claim_ids)
 
     if args.dry_run:
@@ -191,6 +252,7 @@ def main() -> int:
         return 0
 
     deleted_rows = delete_table_rows(table_rows)
+    rearm_eco_capacity_alerts()
     deleted_dirs = delete_vendor_dirs(vendor_dirs)
     deleted_codes = delete_claim_codes(claim_ids)
     print(f"deleted database rows: {deleted_rows}")
