@@ -1421,6 +1421,18 @@
       line-height: 1.35;
     }
 
+    .platform-dist-ecr .platform-dist-label-main,
+    .platform-dist-ecr .platform-dist-label-sub {
+      display: block;
+    }
+
+    .platform-dist-ecr .platform-dist-label-sub {
+      margin-top: 2px;
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
     .platform-dist-track {
       height: 8px;
       overflow: hidden;
@@ -4349,9 +4361,18 @@
         ? sortedRows.map((row) => {
             const count = Number(row.count) || 0;
             const width = Math.max(4, (count / max) * 100);
+            const label = platformResultLabel(game, row.result);
+            const labelHtml = game === "ecr"
+              ? (() => {
+                  const match = label.match(/^([^（]+)(（.+）)$/);
+                  return match
+                    ? `<span class="platform-dist-label-main">${escapeHtml(match[1])}</span><span class="platform-dist-label-sub">${escapeHtml(match[2])}</span>`
+                    : escapeHtml(label);
+                })()
+              : escapeHtml(label);
             return `
               <div class="platform-dist-row">
-                <span class="platform-dist-label">${escapeHtml(platformResultLabel(game, row.result))}</span>
+                <span class="platform-dist-label">${labelHtml}</span>
                 <span class="platform-dist-track" aria-hidden="true"><span style="width:${width}%"></span></span>
                 <b>${count}</b>
               </div>
