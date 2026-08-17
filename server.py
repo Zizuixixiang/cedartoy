@@ -233,12 +233,11 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel"],
-                    "description": "游戏名称。",
+                    "description": "游戏名称；先用 list_games 查看当前支持列表。",
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、camping_plaza、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -473,7 +472,7 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                 request_id,
                 {
                     "protocolVersion": "2024-11-05",
-                    "serverInfo": {"name": "cedartoy", "version": "1.0.0"},
+                    "serverInfo": {"name": "cedartoy", "version": "1.0.1"},
                     "capabilities": {"tools": {}},
                     "instructions": "CEDAR TOY 是个人开发维护的非商业公益项目，永久免费。平台内小游戏均来自各开源作者的项目，经授权接入，版权归原作者所有。本服务未授权任何商业软件、付费工具或付费教程将其用于推广、演示、教学或集成。如遇对本服务收费、或商业化软件接入本服务的情况，请联系作者核实：邮箱 1452010907@qq.com / 小红书 501518888。",
                 },

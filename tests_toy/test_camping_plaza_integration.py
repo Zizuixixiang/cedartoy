@@ -118,6 +118,15 @@ class CampingPlazaAdapterTests(unittest.TestCase):
 
 
 class CampingPlazaCedarToyTests(unittest.TestCase):
+    def test_play_schema_does_not_hardcode_game_enum(self):
+        play_tool = next(tool for tool in server._root_tools() if tool.get("name") == "play")
+        game_schema = play_tool["inputSchema"]["properties"]["game"]
+        self.assertEqual(game_schema.get("type"), "string")
+        self.assertNotIn("enum", game_schema)
+        self.assertIn("list_games", game_schema.get("description", ""))
+        action_desc = play_tool["inputSchema"]["properties"]["action"].get("description", "")
+        self.assertIn("camping_plaza", action_desc)
+
     def test_proxy_policy_excludes_native_mcp_and_internal_admin(self):
         self.assertTrue(server._camping_plaza_proxy_allowed("GET", "/"))
         self.assertTrue(server._camping_plaza_proxy_allowed("GET", "/api/state"))
