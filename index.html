@@ -4038,10 +4038,10 @@
         CHAOTIC_EVIL: "混乱邪恶",
       },
       ecr: {
-        SECURE: "安全型",
-        FEARFUL: "恐惧型",
-        PREOCCUPIED: "迷恋型（专注型）",
-        DISMISSIVE: "冷漠型",
+        SECURE: "安全型（低焦虑+低回避）",
+        FEARFUL: "恐惧型（高焦虑+高回避）",
+        PREOCCUPIED: "迷恋型（高焦虑+低回避）",
+        DISMISSIVE: "冷漠型（低焦虑+高回避）",
       },
       humanity: {
         CERTIFIED_CARBON: "认证碳基",
@@ -4331,7 +4331,7 @@
       if (game === "enneagram" && /^[1-9]$/.test(String(result))) return `${result}号`;
       if (game === "dnd") return dndResultLabels[result] || result;
       if (game === "love") return ({A: "肯定言辞", B: "优质时间", C: "服务行动", D: "赠送礼物", E: "身体接触"})[result] || result;
-      if (game === "ecr") return ({secure: "安全型", fearful: "恐惧型", preoccupied: "迷恋型", dismissive: "冷漠型"})[result] || result;
+      if (game === "ecr") return ({secure: "安全型（低焦虑+低回避）", fearful: "恐惧型（高焦虑+高回避）", preoccupied: "迷恋型（高焦虑+低回避）", dismissive: "冷漠型（低焦虑+高回避）"})[result] || result;
       if (game === "humanity") return ({certified_carbon: "认证碳基", human_flavor: "人味充足", mixed_signal: "混合信号", cyber_infiltration: "赛博渗透中", check_cooling: "建议自查散热"})[result] || result;
       if (game === "sins_virtues_sins") return ({lust: "色欲", gluttony: "暴食", greed: "贪婪", sloth: "懒惰", wrath: "暴怒", envy: "嫉妒", pride: "傲慢"})[result] || result;
       if (game === "sins_virtues_virtues") return ({chastity: "贞洁", temperance: "节制", generosity: "慷慨", diligence: "勤勉", patience: "耐心", kindness: "仁爱", humility: "谦卑"})[result] || result;

@@ -1,8 +1,8 @@
 TYPE_NAMES = {
-    "secure": "安全型",
-    "fearful": "恐惧型",
-    "preoccupied": "迷恋型（专注型）",
-    "dismissive": "冷漠型",
+    "secure": "安全型（低焦虑+低回避）",
+    "fearful": "恐惧型（高焦虑+高回避）",
+    "preoccupied": "迷恋型（高焦虑+低回避）",
+    "dismissive": "冷漠型（低焦虑+高回避）",
 }
 
 TYPE_DESCRIPTIONS = {

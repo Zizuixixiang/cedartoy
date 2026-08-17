@@ -483,7 +483,7 @@ class LoveEcrTests(unittest.TestCase):
             {"player_id_a": players[0], "player_id_b": players[1]}
         )
         self.assertEqual(comparison["data"]["kind"], "ecr_compare")
-        self.assertIn("恐惧型 × 恐惧型", comparison["text"])
+        self.assertIn("恐惧型（高焦虑+高回避） × 恐惧型（高焦虑+高回避）", comparison["text"])
         self.assertNotIn("轴解读", comparison["text"])
 
     def test_love_and_ecr_compare_resolve_account_username_id_and_guest(self):
