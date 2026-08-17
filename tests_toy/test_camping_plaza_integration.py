@@ -223,6 +223,61 @@ class CampingPlazaCedarToyTests(unittest.TestCase):
         self.assertIn(b"/camping-plaza/api/actions", body)
         self.assertIn(b"/camping-plaza/assets/camp.png", body)
 
+    def test_browser_proxy_injects_mobile_layout_for_root_page(self):
+        class FakeResponse:
+            status = 200
+            reason = "OK"
+
+            @staticmethod
+            def read():
+                return b'<html><head><link rel="stylesheet" href="styles/main.css"></head><body><script src="scripts/overview.js"></script><img src="assets/camp.png"></body></html>'
+
+            @staticmethod
+            def getheaders():
+                return [("Content-Type", "text/html; charset=utf-8")]
+
+        class FakeConnection:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def request(self, *_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def getresponse():
+                return FakeResponse()
+
+            @staticmethod
+            def close():
+                pass
+
+        handler = object.__new__(server.CedarToyHandler)
+        handler.headers = {"Content-Length": "0"}
+        handler.rfile = BytesIO()
+        handler.wfile = BytesIO()
+        handler.client_address = ("127.0.0.9", 1)
+        handler.command = "GET"
+        handler.send_response = lambda *_args, **_kwargs: None
+        handler.send_header = lambda *_args, **_kwargs: None
+        handler.end_headers = lambda: None
+
+        with patch.object(server.http.client, "HTTPConnection", FakeConnection):
+            handler._proxy_to_camping_plaza("GET", "/", "", target={"player": "42"})
+
+        body = handler.wfile.getvalue()
+        self.assertIn(b'id="cedartoy-camping-mobile"', body)
+        self.assertIn(b'html { min-width: 0 !important;', body)
+        self.assertIn(b'.main-layout { grid-template-columns: minmax(0, 1fr);', body)
+        self.assertIn(b'href="/camping-plaza/styles/main.css"', body)
+        self.assertIn(b'src="/camping-plaza/scripts/overview.js"', body)
+        self.assertIn(b'src="/camping-plaza/assets/camp.png"', body)
+
+    def test_homepage_camping_picker_only_lists_existing_saves(self):
+        homepage = (Path(__file__).resolve().parents[1] / "index.html").read_text(encoding="utf-8")
+        self.assertIn('filter((machine) => machine.slots.length > 0)', homepage)
+        self.assertIn('暂无已有营地', homepage)
+        self.assertNotIn(': "新营地"', homepage)
+
     def test_homepage_and_guide_keep_author_and_repository_attribution(self):
         homepage = (Path(__file__).resolve().parents[1] / "index.html").read_text(encoding="utf-8")
         self.assertIn('id: "camping_plaza"', homepage)

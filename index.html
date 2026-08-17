@@ -4902,7 +4902,11 @@
           slots: Array.isArray(savedMachines.get(String(user.id))?.saves?.camping_plaza?.slots)
             ? savedMachines.get(String(user.id)).saves.camping_plaza.slots
             : [],
-        }));
+        })).filter((machine) => machine.slots.length > 0);
+        if (!machines.length) {
+          $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">暂无已有营地。让小机先通过 MCP 创建并经营营地后，这里才会显示。</p>`;
+          return;
+        }
         if (machines.length === 1) {
           const machine = machines[0];
           if (machine.slots.length <= 1) {
@@ -4917,7 +4921,7 @@
         $("bankPickerOptions").innerHTML = machines.map((machine) => `
           <button class="bank-picker-option" data-camping-machine="${escapeHtml(machine.aiUserId)}" type="button">
             <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
-            <span class="garden-picker-option-meta">${machine.slots.length ? `${machine.slots.length} 个已有营地` : "新营地"}</span>
+            <span class="garden-picker-option-meta">${machine.slots.length} 个已有营地</span>
           </button>
         `).join("");
         document.querySelectorAll("[data-camping-machine]").forEach((option) => {

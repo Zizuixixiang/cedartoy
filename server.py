@@ -9555,6 +9555,49 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             raw = raw.replace(b'href="styles/', b'href="/camping-plaza/styles/')
             raw = raw.replace(b'src="scripts/', b'src="/camping-plaza/scripts/')
             raw = raw.replace(b'src="assets/', b'src="/camping-plaza/assets/')
+            mobile_css = b"""
+<style id=\"cedartoy-camping-mobile\">
+@media (max-width: 760px) {
+  html { min-width: 0 !important; width: 100%; overflow-x: hidden; }
+  body { min-width: 0; width: 100%; padding: 8px; overflow-x: hidden; }
+  .app-shell { min-width: 0 !important; width: 100%; max-width: none; }
+  .top-dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-card { min-width: 0; min-height: 72px; padding: 10px; gap: 8px; }
+  .metric-icon { width: 30px; height: 30px; flex: 0 0 30px; }
+  .metric-card strong { font-size: 18px; overflow-wrap: anywhere; }
+  .achievement-card { grid-column: 1 / -1; }
+  .notice-strip { grid-template-columns: 22px minmax(0, 1fr); padding: 9px 10px; }
+  .notice-list { min-width: 0; }
+  .notice-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .main-layout { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .main-column, .side-column { min-width: 0; gap: 10px; }
+  .map-area, .panel-card { min-width: 0; padding: 10px; border-radius: 14px; }
+  .camp-map { width: 100%; min-height: 0 !important; aspect-ratio: 4 / 3; border-radius: 10px; }
+  .service-station-label, .anchor-label, .campsite-slot::after { font-size: 8px; }
+  .action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .morning-review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .morning-review-wide { grid-column: 1 / -1; }
+  .operations-heading { align-items: flex-start; }
+  .operations-hints { width: 100%; }
+  .hint-chip { white-space: normal; }
+  .overview-grid, .income-columns { min-width: 0; }
+  .achievement-modal, .temporary-event-modal, .onboarding-screen { padding: 10px; }
+  .achievement-dialog, .temporary-event-dialog, .onboarding-card { width: 100%; max-width: 100%; }
+  .achievement-dialog { max-height: calc(100dvh - 20px); padding: 14px; }
+  .onboarding-card { padding: 20px 16px; }
+  .temporary-event-choices { flex-direction: column; }
+  button, input { max-width: 100%; }
+  .btn-action, .onboarding-submit, .achievement-close { min-height: 42px; touch-action: manipulation; }
+}
+@media (max-width: 380px) {
+  .top-dashboard { grid-template-columns: 1fr; }
+  .achievement-card { grid-column: auto; }
+  .action-grid, .morning-review-grid, .overview-grid, .income-columns { grid-template-columns: 1fr; }
+  .morning-review-wide { grid-column: auto; }
+}
+</style>
+"""
+            raw = raw.replace(b"</head>", mobile_css + b"</head>", 1)
         # Upstream JS uses root-absolute /api URLs and relative asset URLs. Under
         # CedarToy it lives below /camping-plaza, so rewrite those literals at
         # the edge without changing the vendor checkout.
