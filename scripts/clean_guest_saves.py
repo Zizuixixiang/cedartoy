@@ -27,6 +27,7 @@ from eco_adapter import capacity_alerts
 SESSIONS_DB = Path(os.getenv("SESSIONS_DB", ROOT / "data" / "sessions.db"))
 PLATFORM_DB = Path(os.getenv("TURTLE_SOUP_DB", ROOT / "turtle-soup" / "backend" / "turtle_soup.db"))
 VENDOR_SAVE_ROOT = Path(os.getenv("VENDOR_SAVE_ROOT", ROOT / "data" / "vendor_saves"))
+CAMPING_PLAZA_DB = Path(os.getenv("CAMPING_PLAZA_DB_PATH", ROOT / "data" / "camping_plaza.db"))
 GUEST_PREFIX = "guest:"
 
 
@@ -143,6 +144,30 @@ def collect_vendor_dirs(days: int) -> list[dict]:
     return rows
 
 
+def collect_camping_rows(days: int) -> list[dict]:
+    if not CAMPING_PLAZA_DB.exists():
+        return []
+    cutoff = iso_cutoff(days)
+    with connect(CAMPING_PLAZA_DB) as conn:
+        if not table_exists(conn, "cedartoy_identity"):
+            return []
+        return [
+            {
+                "session_id": row["session_id"],
+                "player_id": row["player_id"],
+                "last_seen": row["last_active"],
+            }
+            for row in conn.execute(
+                """
+                SELECT session_id, player_id, last_active
+                FROM cedartoy_identity
+                WHERE player_id GLOB ? AND last_active < ?
+                """,
+                (f"{GUEST_PREFIX}*", cutoff),
+            )
+        ]
+
+
 def delete_table_rows(rows: list[dict]) -> int:
     if not rows or not SESSIONS_DB.exists():
         return 0
@@ -183,6 +208,26 @@ def delete_vendor_dirs(rows: list[dict]) -> int:
     return deleted
 
 
+def delete_camping_rows(rows: list[dict]) -> int:
+    if not rows or not CAMPING_PLAZA_DB.exists():
+        return 0
+    deleted = 0
+    with connect(CAMPING_PLAZA_DB) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        for row in rows:
+            cur = conn.execute(
+                "DELETE FROM runtime_snapshot WHERE session_id = ?",
+                (row["session_id"],),
+            )
+            conn.execute(
+                "DELETE FROM cedartoy_identity WHERE session_id = ?",
+                (row["session_id"],),
+            )
+            deleted += cur.rowcount
+        conn.commit()
+    return deleted
+
+
 def delete_claim_codes(player_ids: set[str]) -> int:
     if not player_ids or not PLATFORM_DB.exists():
         return 0
@@ -198,13 +243,16 @@ def delete_claim_codes(player_ids: set[str]) -> int:
         return cur.rowcount
 
 
-def print_plan(table_rows: list[dict], vendor_dirs: list[dict], claim_ids: set[str]) -> None:
+def print_plan(table_rows: list[dict], vendor_dirs: list[dict], camping_rows: list[dict], claim_ids: set[str]) -> None:
     print(f"database rows: {len(table_rows)}")
     for row in table_rows:
         print(f"  {row['table']} rowid={row['rowid']} player_id={row['player_id']} last_seen={row['last_seen']}")
     print(f"vendor directories: {len(vendor_dirs)}")
     for row in vendor_dirs:
         print(f"  vendor_saves/{row['game']}/{row['player_id']} last_seen={row['last_seen']}")
+    print(f"camping plaza rows: {len(camping_rows)}")
+    for row in camping_rows:
+        print(f"  camping_plaza player_id={row['player_id']} last_seen={row['last_seen']}")
     print(f"claim codes to invalidate: {len(claim_ids)}")
     for player_id in sorted(claim_ids):
         print(f"  {player_id}")
@@ -237,15 +285,17 @@ def main() -> int:
         ciyuwu_days=args.ciyuwu_days,
     )
     vendor_dirs = collect_vendor_dirs(args.days)
+    camping_rows = collect_camping_rows(args.days)
     claim_ids = {row["player_id"] for row in table_rows}
     claim_ids.update(row["player_id"] for row in vendor_dirs)
+    claim_ids.update(row["player_id"] for row in camping_rows)
 
     print(
         f"guest save cleanup thresholds: ECO={args.eco_days} days, "
         f"Ciyuwu={args.ciyuwu_days} days, "
         f"other saves={args.days} days"
     )
-    print_plan(table_rows, vendor_dirs, claim_ids)
+    print_plan(table_rows, vendor_dirs, camping_rows, claim_ids)
 
     if args.dry_run:
         print("dry-run: no changes made")
@@ -254,9 +304,11 @@ def main() -> int:
     deleted_rows = delete_table_rows(table_rows)
     rearm_eco_capacity_alerts()
     deleted_dirs = delete_vendor_dirs(vendor_dirs)
+    deleted_camping = delete_camping_rows(camping_rows)
     deleted_codes = delete_claim_codes(claim_ids)
     print(f"deleted database rows: {deleted_rows}")
     print(f"deleted vendor directories: {deleted_dirs}")
+    print(f"deleted camping plaza rows: {deleted_camping}")
     print(f"invalidated claim codes: {deleted_codes}")
     return 0
 

@@ -269,8 +269,9 @@ def _delete_managed_saves(
     *,
     workkk_delete,
     garden_delete,
+    camping_delete=None,
 ) -> dict:
-    counts = {"workkk": 0, "garden_cat": 0}
+    counts = {"workkk": 0, "garden_cat": 0, "camping_plaza": 0}
     for player_id in player_ids:
         workkk_path = save_root / "workkk" / player_id / "game_state.json"
         if workkk_path.is_file():
@@ -288,6 +289,10 @@ def _delete_managed_saves(
             if garden_path.exists():
                 raise RuntimeError("garden_cat managed delete did not remove save")
             counts["garden_cat"] += 1
+        if camping_delete is not None:
+            result = camping_delete(player_id)
+            if result:
+                counts["camping_plaza"] += 1
     return counts
 
 
@@ -532,6 +537,7 @@ def purge_account(
     now_epoch=None,
     workkk_delete=None,
     garden_delete=None,
+    camping_delete=None,
     garden_legacy_db=None,
 ) -> dict:
     """Purge one due account. Every committed phase is safe to repeat."""
@@ -604,6 +610,7 @@ def purge_account(
         player_ids,
         workkk_delete=workkk_delete,
         garden_delete=garden_delete,
+        camping_delete=camping_delete,
     )
     _merge_stats(account_db, job_id, PHASE_MANAGED_SAVES, stats)
 

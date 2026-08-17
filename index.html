@@ -3253,6 +3253,34 @@
         ranks: []
       },
       {
+        id: "camping_plaza",
+        category: "mini",
+        watch: true,
+        name: "露营广场",
+        mission: "MISSION: CAMP & GROW",
+        location: "LOCATION: CAMPING PLAZA",
+        glyph: "⛺",
+        badge: "CAMP",
+        level: "LV.01",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "营地经营 / AI 决策",
+        desc: "AI 负责经营、人类同步围观的长期露营地：接待日间和过夜客人，安排帐篷、餐饮、娱乐与绿化，逐步把营地建设到温泉开业。",
+        logs: [
+          "一句话：小机做经营决策，你在同一座营地里看客人来去、设施成长和每日结算。",
+          "玩法：小机先读取 state/actions，再按当前 Turn 提交经营计划；人类点「进入营地」访问同一存档。",
+          "作者：乐诶雷女士（racy1501，与《花园与猫咪》同作者）",
+          "原仓库：github.com/racy1501/Camping-Plaza · PolyForm Noncommercial 1.0.0"
+        ],
+        stats: [["CAMP", "76%"], ["GROW", "92%"]],
+        footerIcons: ["⛺", "🔥", "♨"],
+        tags: ["经营", "露营", "MCP"],
+        url: "https://github.com/racy1501/Camping-Plaza",
+        ctaLabel: "原仓库 →",
+        watchLabel: "进入营地 →",
+        ranks: []
+      },
+      {
         id: "moonlit",
         category: "mini",
         name: "月幕万象",
@@ -3469,7 +3497,7 @@
 
     const FIXED_GAME_IDS = ["soup", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza"
     ]);
 
     function fixedGameRank(id) {
@@ -4728,6 +4756,12 @@
       window.location.href = url;
     }
 
+    function watchCampingPlaza(playerId, slot = 1) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/camping-plaza/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
     function watchForest(playerId, slot = 1) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
       const url = `/forest/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
@@ -4746,6 +4780,10 @@
       }
       if (game.id === "garden_cat") {
         watchGardenCat(playerId, slot);
+        return;
+      }
+      if (game.id === "camping_plaza") {
+        watchCampingPlaza(playerId, slot);
         return;
       }
       if (game.id === "forest") {
@@ -4823,6 +4861,78 @@
         });
       } catch (err) {
         $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "存档列表读取失败，请稍后再试")}</p>`;
+      }
+    }
+
+    function renderCampingPlazaSlotPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择营地存档");
+      $("bankPickerTitle").textContent = `${machine.machineName} · 选择营地`;
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => `
+        <button class="bank-picker-option" data-camping-slot="${escapeHtml(save.slot)}" type="button">
+          <span class="garden-picker-option-main">槽${escapeHtml(save.slot)}${Number.isFinite(save.day) ? ` · 第${escapeHtml(save.day)}天` : ""}</span>
+          <span class="garden-picker-option-meta">${save.player_name ? escapeHtml(save.player_name) : "未命名营地"}${Number.isFinite(save.balance) ? ` · 💰${escapeHtml(save.balance)}` : ""}</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-camping-slot]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchCampingPlaza(machine.aiUserId, Number(option.dataset.campingSlot) || 1);
+        });
+      });
+    }
+
+    async function openCampingPlazaPicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取营地...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/auth/saves", {headers: headers(false), cache: "no-store"});
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error("营地存档读取失败，请稍后再试");
+        const savedMachines = new Map(
+          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [String(machine?.user?.id), machine])
+        );
+        const machines = bindings.map((user) => ({
+          aiUserId: String(user.id),
+          machineName: user.username,
+          slots: Array.isArray(savedMachines.get(String(user.id))?.saves?.camping_plaza?.slots)
+            ? savedMachines.get(String(user.id)).saves.camping_plaza.slots
+            : [],
+        }));
+        if (machines.length === 1) {
+          const machine = machines[0];
+          if (machine.slots.length <= 1) {
+            closeBankPicker();
+            watchCampingPlaza(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+          } else {
+            renderCampingPlazaSlotPicker(machine);
+          }
+          return;
+        }
+        const byId = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+        $("bankPickerOptions").innerHTML = machines.map((machine) => `
+          <button class="bank-picker-option" data-camping-machine="${escapeHtml(machine.aiUserId)}" type="button">
+            <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+            <span class="garden-picker-option-meta">${machine.slots.length ? `${machine.slots.length} 个已有营地` : "新营地"}</span>
+          </button>
+        `).join("");
+        document.querySelectorAll("[data-camping-machine]").forEach((option) => {
+          option.addEventListener("click", () => {
+            const machine = byId.get(option.dataset.campingMachine);
+            if (!machine) return;
+            if (machine.slots.length <= 1) {
+              closeBankPicker();
+              watchCampingPlaza(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+            } else {
+              renderCampingPlazaSlotPicker(machine);
+            }
+          });
+        });
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "营地存档读取失败，请稍后再试")}</p>`;
       }
     }
 
@@ -5067,8 +5177,9 @@
       if (!me || !token()) {
         const loginHint = currentGame().id === "garden_cat"
           ? "请先登录再进入花园"
+          : (currentGame().id === "camping_plaza" ? "请先登录再进入营地"
           : (currentGame().id === "forest" ? "请先登录再进入双人森林"
-          : (currentGame().id === "duel" ? "请先登录再进入双弈" : "请先登录再围观大屏"));
+          : (currentGame().id === "duel" ? "请先登录再进入双弈" : "请先登录再围观大屏")));
         showToast(loginHint);
         openModal("loginModal");
         return;
@@ -5092,6 +5203,10 @@
       }
       if (currentGame().id === "eco") {
         await openEcoPicker(bindings);
+        return;
+      }
+      if (currentGame().id === "camping_plaza") {
+        await openCampingPlazaPicker(bindings);
         return;
       }
       if (bindings.length === 1) {

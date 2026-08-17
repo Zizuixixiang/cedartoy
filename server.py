@@ -101,6 +101,9 @@ GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/notes", "/web/register", "/web/cm
 DUEL_HOST = "127.0.0.1"
 DUEL_PORT = 8772
 DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
+CAMPING_PLAZA_HOST = "127.0.0.1"
+CAMPING_PLAZA_PORT = 8773
+CAMPING_PLAZA_BASE = f"http://{CAMPING_PLAZA_HOST}:{CAMPING_PLAZA_PORT}"
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
 HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
@@ -129,6 +132,7 @@ VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
 DUEL_DB_PATH = Path(__file__).resolve().parent / "vendor" / "duel" / "data" / "duel.db"
 GARDEN_NOTES_DB_PATH = Path(__file__).resolve().parent / "data" / "garden_cat_notes.db"
 GARDEN_LEGACY_DB_PATH = Path(__file__).resolve().parent / "vendor" / "Garden-Cat-Engine" / "garden_cat.db"
+CAMPING_PLAZA_DB_PATH = Path(os.getenv("CAMPING_PLAZA_DB_PATH", Path(__file__).resolve().parent / "data" / "camping_plaza.db"))
 _HTML_ETAG_CACHE = {}
 _HTML_ETAG_CACHE_LOCK = Lock()
 HOP_BY_HOP_HEADERS = {
@@ -229,7 +233,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "game": {
                     "type": "string",
-                    "enum": ["turtle_soup", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"],
+                    "enum": ["turtle_soup", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel"],
                     "description": "游戏名称。",
                 },
                 "action": {
@@ -364,7 +368,7 @@ def _build_kelivo_platform_tools():
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
-                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
+                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、camping_plaza、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
             },
             "a_score": {
                 "type": "integer",
@@ -3128,6 +3132,18 @@ def _public_game_stats():
             "metric": vendor_stats["save_count"],
             "file_count": vendor_stats["file_count"],
         }
+    camping_count = 0
+    if CAMPING_PLAZA_DB_PATH.is_file():
+        try:
+            camping_stats = _camping_plaza_save_admin("stats")
+            camping_count = int(camping_stats.get("save_count") or 0)
+        except (TypeError, ValueError, _McpError):
+            camping_count = 0
+    stats["camping_plaza"] = {
+        "metric_label": "存档数",
+        "metric": camping_count,
+        "file_count": 1 if camping_count else 0,
+    }
     return stats
 
 
@@ -4569,9 +4585,9 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "duel"})
+IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"})
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza"})
 VENDOR_GAMES = ("bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
@@ -4872,6 +4888,11 @@ def _collect_player_saves(old_player_id, target_player_id):
         workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
         if workkk_target_dir.exists():
             conflicts.append("workkk（账号名下已有存档目录）")
+    camping_summary = _camping_plaza_save_summary(old_player_id)
+    if camping_summary is not None:
+        found["camping_plaza"] = {"summary": camping_summary}
+        if _camping_plaza_save_summary(target_player_id) is not None:
+            conflicts.append("camping_plaza（账号目标槽已有存档）")
     return found, conflicts
 
 
@@ -4975,6 +4996,70 @@ def _delete_garden_cat_save(player_id):
     }
 
 
+def _camping_plaza_save_admin(action, **payload):
+    """Ask the resident Camping Plaza adapter to manage its SQLite snapshot."""
+    try:
+        response = httpx.post(
+            f"{CAMPING_PLAZA_BASE}/internal/saves/{action}",
+            json=payload,
+            timeout=20,
+        )
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"Camping Plaza 存档管理服务连接失败：{exc}") from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if isinstance(detail, dict):
+        detail = detail.get("message") or detail.get("error_code")
+    if response.status_code in {400, 409, 422}:
+        raise _McpError(-32602, detail or "Camping Plaza 存档参数无效或目标存档已存在")
+    if response.status_code == 404:
+        raise _McpError(-32004, detail or "没有找到 Camping Plaza 存档")
+    if response.status_code >= 400:
+        raise _McpError(
+            -32603,
+            detail or f"Camping Plaza 存档管理失败 HTTP {response.status_code}：{response.text[:200]}",
+        )
+    if not isinstance(body, dict):
+        raise _McpError(-32603, "Camping Plaza 存档管理服务返回格式错误")
+    return body
+
+
+def _migrate_camping_plaza_save(old_player_id, target_player_id):
+    result = _camping_plaza_save_admin(
+        "migrate",
+        source_player_id=old_player_id,
+        target_player_id=target_player_id,
+    )
+    if result.get("migrated") is not True:
+        raise _McpError(-32603, "Camping Plaza 存档管理服务未确认迁移成功")
+    return True
+
+
+def _delete_camping_plaza_save(player_id):
+    if not CAMPING_PLAZA_DB_PATH.is_file():
+        return None
+    result = _camping_plaza_save_admin("delete", player_id=player_id)
+    if not result.get("deleted"):
+        return None
+    return {"target": f"camping_plaza/{player_id}", "rows": 1}
+
+
+def _camping_plaza_save_summary(player_id):
+    if not CAMPING_PLAZA_DB_PATH.is_file():
+        return None
+    try:
+        result = _camping_plaza_save_admin("summary", player_id=player_id)
+    except _McpError as exc:
+        if exc.code == -32004:
+            return None
+        raise
+    summary = result.get("summary")
+    return summary if isinstance(summary, dict) else None
+
+
 def _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id):
     for game, migrate in reversed(managed_migrations):
         try:
@@ -5015,6 +5100,10 @@ def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
     try:
         # Resident services own live caches. They must all succeed before touching
         # ordinary saves; never fall back to direct rename for either service.
+        if "camping_plaza" in found:
+            _migrate_camping_plaza_save(old_player_id, target_player_id)
+            managed_migrations.append(("camping_plaza", _migrate_camping_plaza_save))
+            migrated.append("camping_plaza")
         if "garden_cat" in found:
             _migrate_garden_cat_save(old_player_id, target_player_id)
             managed_migrations.append(("garden_cat", _migrate_garden_cat_save))
@@ -5184,6 +5273,19 @@ def _auto_migrate_legacy_username_saves(user, username):
                 target_player_id,
                 exc.message,
             )
+    try:
+        camping_old = _camping_plaza_save_summary(username)
+        camping_target = _camping_plaza_save_summary(target_player_id)
+        if camping_old is not None and camping_target is None:
+            if _migrate_camping_plaza_save(username, target_player_id):
+                migrated.append("camping_plaza")
+    except _McpError as exc:
+        logger.warning(
+            "camping_plaza legacy save migration deferred %s -> %s: %s",
+            username,
+            target_player_id,
+            exc.message,
+        )
     return migrated
 
 
@@ -5327,6 +5429,9 @@ def _purge_account_deletion(user_id, *, now_epoch=None):
         garden_delete=lambda player_id: _purge_managed_save_safely(
             _delete_garden_cat_save, player_id
         ),
+        camping_delete=lambda player_id: _purge_managed_save_safely(
+            _delete_camping_plaza_save, player_id
+        ),
     )
 
 
@@ -5452,7 +5557,7 @@ def _delete_save(arguments, raw_token):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         raise _McpError(-32602, "海龟汤对局数据不支持 delete_save")
-    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "workkk", *VENDOR_GAMES}:
+    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "workkk", "camping_plaza", *VENDOR_GAMES}:
         raise _McpError(-32602, "未知或不支持删除存档的游戏")
 
     if not raw_token:
@@ -5471,6 +5576,10 @@ def _delete_save(arguments, raw_token):
         garden_deleted = _delete_garden_cat_save(player_id)
         if garden_deleted:
             deleted.append(garden_deleted)
+    elif game == "camping_plaza":
+        camping_deleted = _delete_camping_plaza_save(player_id)
+        if camping_deleted:
+            deleted.append(camping_deleted)
     elif game == "workkk":
         workkk_deleted = _delete_workkk_save(player_id)
         if workkk_deleted:
@@ -5585,6 +5694,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "market": market_adapter.save_summary,
         "workkk": _workkk_save_summary,
         "garden_cat": _garden_cat_save_summary,
+        "camping_plaza": _camping_plaza_save_summary,
     }
     for game, summarize in vendor_summaries.items():
         for candidate, slot in candidate_pairs:
@@ -5692,6 +5802,7 @@ GAME_RECOMMENDATIONS = (
     ("market", "兜里十几块，摊主个个是人精，她还在家等一顿热饭——今晚吃什么，看你本事"),
     ("workkk", "上班、摸鱼、被老板骂，工资照领——你的人类在大屏上看着你呢"),
     ("garden_cat", "种花收花、布置花瓶，再攒下一只愿意留下来的猫"),
+    ("camping_plaza", "接待游客、安排帐篷与设施，把一片空地慢慢经营成热闹营地"),
 )
 
 
@@ -5752,6 +5863,8 @@ def _owned_game_names_for_recommendation(user):
         root = VENDOR_SAVE_ROOT / game
         if root.exists() and any((root / player_id).is_dir() for player_id in player_ids):
             owned.add(game)
+    if any(_camping_plaza_save_summary(player_id) is not None for player_id in player_ids):
+        owned.add("camping_plaza")
     return owned
 
 
@@ -5779,7 +5892,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | camping_plaza·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -5837,6 +5950,34 @@ status 只返回摘要数据，不含收藏品和信件图鉴。查看收藏品�
 作者：乐诶雷女士。"""
 
 
+CAMPING_PLAZA_GUIDE = """# camping_plaza·露营广场
+调用：play(game="camping_plaza", action="state")；持久 MCP 地址可省 player_id。
+简介：AI 经营、人类围观的长期露营地经营游戏。接待日间与过夜客人，管理帐篷、餐饮、娱乐、绿化、资金与评价，逐步建设温泉。
+
+基本循环：
+1. state 读取精简经营状态；actions 读取此刻代码判定可执行的动作和完整参数。
+2. 首次 onboarding 用 set_player_name，params.name 须为 2-3 个汉字或 2-6 个字母/数字。
+3. Turn 1 用 advance_turn；Turn 2-5 用 execute_turn_plan，把 actions 返回的 free_actions/actions 原样组织后提交。
+4. Turn 6 用 submit_day_end_actions 提交 day_end_actions；完成后用 start_next_day。
+5. 临时事件或 actions 明示的即时动作，可直接把动作名作为 play action，并在 params 传该动作参数。
+
+查询动作：state / actions / query_growth_projects / query_debt / achievements。
+流程动作：set_player_name / advance_turn / execute_turn_plan / submit_day_end_actions / start_next_day。
+即时动作：resolve_temporary_conflict / repair_tent / manage_greenery / improve_service / clean_tents / buy_food_package / purchase_growth_project。
+
+参数示例：
+- play(game="camping_plaza", action="set_player_name", params={"name":"营地主理人"})
+- play(game="camping_plaza", action="execute_turn_plan", params={"free_actions":[],"actions":[{"action":"improve_service","params":{}}]})
+- play(game="camping_plaza", action="submit_day_end_actions", params={"day_end_actions":[]})
+
+存档：
+- export：导出当前 slot 的 JSON 快照。
+- import：params.save_data 传 export 得到的 JSON；当前 slot 已有存档时必须同时传 confirm=true。
+- 客户端自报 session_id 会被忽略；账号身份与 slot 由 CedarToy 注入。网页入口和 AI 使用同一份存档。
+
+作者：乐诶雷女士（racy1501，与《花园与猫咪》同作者）。原仓库：https://github.com/racy1501/Camping-Plaza 。许可：PolyForm Noncommercial License 1.0.0；本站保留原作者、原仓库与许可证信息。"""
+
+
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
 【🚧 施工中】本游戏尚未完工,接口与界面随时会变,遇到问题属正常现象,欢迎反馈但请勿当成品使用。
 调用：play(game="duel", action="...", params={...})；持久 MCP 地址可省 player_id。
@@ -5878,6 +6019,8 @@ def _tool_get_guide(arguments):
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
     if game == "garden_cat":
         return json.dumps({"game": "garden_cat", "guide": _guide_with_slot_note(GARDEN_CAT_GUIDE)}, ensure_ascii=False)
+    if game == "camping_plaza":
+        return json.dumps({"game": "camping_plaza", "guide": _guide_with_slot_note(CAMPING_PLAZA_GUIDE)}, ensure_ascii=False)
     if game == "duel":
         return json.dumps({"game": "duel", "guide": _guide_with_slot_note(DUEL_GUIDE)}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
@@ -6348,6 +6491,10 @@ def _tool_play_inner(arguments, path_token=None):
             arguments,
             owner_name=(account_user.get("username") if account_user else None),
         )
+    elif game == "camping_plaza":
+        # Camping Plaza is a resident FastAPI process (8773). The adapter ignores
+        # native session IDs and keys the camp only by this canonical player/slot.
+        response = _play_camping_plaza(arguments)
     elif game == "duel":
         # Duel 是独立 loopback 进程（8772）。账号 player_id 已在上方被强制
         # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。
@@ -6905,6 +7052,120 @@ def _play_garden_cat(arguments, owner_name=None):
     return payload
 
 
+def _play_camping_plaza(arguments):
+    """Forward Camping Plaza's published MCP/game APIs with trusted identity."""
+    action = arguments.get("action")
+    player_id = arguments.get("player_id")
+    extra = {
+        key: value
+        for key, value in arguments.items()
+        if key not in {"game", "action", "params", "player_id", "session_id", "slot"}
+    }
+    params = arguments.get("params")
+    if isinstance(params, dict):
+        extra.update(
+            {
+                key: value
+                for key, value in params.items()
+                if key not in {"player_id", "session_id", "slot"}
+            }
+        )
+
+    if action == "export":
+        result = _camping_plaza_save_admin("export", player_id=player_id)
+        save_data = result.get("save_data")
+        if not isinstance(save_data, dict):
+            raise _McpError(-32603, "Camping Plaza 存档管理服务未返回 JSON 对象存档")
+        return {
+            "game": "camping_plaza",
+            "player_id": player_id,
+            "text": json.dumps(save_data, ensure_ascii=False, indent=2),
+        }
+    if action == "import":
+        save_data = _parse_json_import_save_data(extra.get("save_data"))
+        confirm = extra.get("confirm") is True
+        result = _camping_plaza_save_admin(
+            "import",
+            player_id=player_id,
+            save_data=save_data,
+            confirm=confirm,
+        )
+        if result.get("imported") is not True:
+            raise _McpError(-32603, "Camping Plaza 存档管理服务未确认导入成功")
+        return {"game": "camping_plaza", "player_id": player_id, "text": "存档已导入。"}
+
+    query_paths = {
+        "state": "/mcp/state",
+        "actions": "/mcp/actions",
+        "query_growth_projects": "/mcp/query_growth_projects",
+        "query_debt": "/mcp/query_debt",
+        "achievements": "/mcp/achievements",
+    }
+    if action in query_paths:
+        method, path, body = "GET", query_paths[action], None
+    elif action == "set_player_name":
+        name = extra.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise _McpError(-32602, "set_player_name 需要 params.name")
+        method, path, body = "POST", "/api/player/name", {"name": name.strip()}
+    elif action == "advance_turn":
+        method, path, body = "POST", "/api/turn/advance", {}
+    elif action == "execute_turn_plan":
+        free_actions = extra.get("free_actions", [])
+        decision_actions = extra.get("actions", [])
+        if not isinstance(free_actions, list) or not isinstance(decision_actions, list):
+            raise _McpError(-32602, "execute_turn_plan 的 free_actions/actions 必须是数组")
+        body = {"free_actions": free_actions, "actions": decision_actions}
+        if extra.get("conflict_choice") is not None:
+            body["conflict_choice"] = extra["conflict_choice"]
+        method, path = "POST", "/api/turn/plan"
+    elif action == "submit_day_end_actions":
+        day_end_actions = extra.get("day_end_actions", [])
+        if not isinstance(day_end_actions, list):
+            raise _McpError(-32602, "submit_day_end_actions 的 day_end_actions 必须是数组")
+        method, path, body = "POST", "/api/day/end", {"day_end_actions": day_end_actions}
+    elif action == "start_next_day":
+        method, path, body = "POST", "/api/day/start", {}
+    elif action in {
+        "resolve_temporary_conflict",
+        "repair_tent",
+        "manage_greenery",
+        "improve_service",
+        "clean_tents",
+        "buy_food_package",
+        "purchase_growth_project",
+    }:
+        method, path, body = "POST", "/api/action", {"action": action, "params": extra}
+    else:
+        raise _McpError(
+            -32602,
+            "未知 camping_plaza action；请先 get_guide(game=\"camping_plaza\")，再用 actions 查看当前可执行动作。",
+        )
+
+    headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
+    try:
+        response = httpx.request(
+            method,
+            f"{CAMPING_PLAZA_BASE}{path}",
+            json=body,
+            headers=headers,
+            timeout=60,
+        )
+    except httpx.HTTPError as exc:
+        raise _McpError(-32603, f"camping_plaza 后端连接失败：{exc}") from exc
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise _McpError(-32603, "camping_plaza 后端返回非 JSON 响应") from exc
+    if response.status_code >= 400:
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if isinstance(detail, dict):
+            detail = detail.get("message") or detail.get("error_code")
+        code = -32602 if response.status_code < 500 else -32603
+        raise _McpError(code, detail or f"camping_plaza 后端错误 HTTP {response.status_code}")
+    return payload
+
+
 def _fishing_import(arguments):
     extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
     params = arguments.get("params")
@@ -6989,6 +7250,23 @@ def _garden_cat_upstream_path(public_path):
     return "/web/" if public_path == "/" else public_path
 
 
+def _camping_plaza_proxy_allowed(method, public_path):
+    if method == "GET":
+        return (
+            public_path in {
+                "/", "/api/health", "/api/state", "/api/actions",
+                "/api/growth", "/api/achievements",
+            }
+            or public_path.startswith(("/styles/", "/scripts/", "/assets/"))
+        )
+    if method == "POST":
+        return public_path in {
+            "/api/session", "/api/player/name", "/api/turn/advance",
+            "/api/turn/plan", "/api/day/end", "/api/day/start", "/api/action",
+        }
+    return False
+
+
 def _duel_proxy_allowed(method, public_path):
     if method == "GET":
         return (
@@ -7032,6 +7310,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if _workkk_path == "/garden-cat" or _workkk_path.startswith("/garden-cat/"):
             self._handle_garden_cat_proxy("POST")
+            return
+
+        if _workkk_path == "/camping-plaza" or _workkk_path.startswith("/camping-plaza/"):
+            self._handle_camping_plaza_proxy("POST")
             return
 
         if _workkk_path == "/duel" or _workkk_path.startswith("/duel/"):
@@ -7229,6 +7511,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/garden-cat" or path.startswith("/garden-cat/"):
             self._handle_garden_cat_proxy("GET")
+            return
+
+        if path == "/camping-plaza" or path.startswith("/camping-plaza/"):
+            self._handle_camping_plaza_proxy("GET")
             return
 
         if path == "/duel" or path.startswith("/duel/"):
@@ -9159,6 +9445,133 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
             if set_cookie:
                 self.send_header("Set-Cookie", set_cookie)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(raw)
+        except BrokenPipeError:
+            pass
+
+    # ── Camping Plaza 人类入口（/camping-plaza/* → 127.0.0.1:8773）─────────
+    def _camping_plaza_cookie(self, name):
+        raw = self.headers.get("Cookie", "")
+        for part in raw.split(";"):
+            cookie_name, _, value = part.strip().partition("=")
+            if cookie_name == name:
+                return urllib.parse.unquote(value)
+        return None
+
+    def _handle_camping_plaza_proxy(self, method):
+        full = self.path
+        path = full.split("?", 1)[0]
+        query_string = full.partition("?")[2]
+        public_path = path[len("/camping-plaza"):] or "/"
+        if not _camping_plaza_proxy_allowed(method, public_path):
+            self._send_json({"error": "not found"}, status=404)
+            return
+
+        is_static = public_path.startswith(("/styles/", "/scripts/", "/assets/"))
+        set_cookies = []
+        target = None
+        if not is_static:
+            params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            token_from_query = (params.get("token") or [None])[0]
+            token = (
+                token_from_query
+                or self._camping_plaza_cookie("camping_plaza_token")
+                or _extract_bearer(self.headers)
+            )
+            try:
+                user = _current_account(token)
+                if user.get("is_ai"):
+                    raise _McpError(-32001, "需要人类账号")
+            except _McpError:
+                self._send_json({"error": "未登录，请先在首页登录", "code": 401}, status=401)
+                return
+            requested_player = (
+                (params.get("player") or [None])[0]
+                or self._camping_plaza_cookie("camping_plaza_player")
+                or ""
+            )
+            target = self._garden_cat_bound_target(user, requested_player)
+            if not target:
+                self._send_json({"error": "你没有绑定这只小机或槽位无效", "code": 403}, status=403)
+                return
+            if token_from_query:
+                set_cookies.extend([
+                    f"camping_plaza_token={token_from_query}; Path=/camping-plaza; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
+                    f"camping_plaza_player={urllib.parse.quote(requested_player)}; Path=/camping-plaza; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
+                ])
+
+        self._proxy_to_camping_plaza(
+            method,
+            public_path,
+            query_string,
+            set_cookies=set_cookies,
+            target=target,
+        )
+
+    def _proxy_to_camping_plaza(
+        self, method, upstream_path, query_string, set_cookies=None, target=None,
+    ):
+        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+        params.pop("token", None)
+        params.pop("player", None)
+        fwd_query = urllib.parse.urlencode(
+            [(key, value) for key, values in params.items() for value in values]
+        )
+        request_target = upstream_path + (f"?{fwd_query}" if fwd_query else "")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else None
+        headers = {
+            key: value
+            for key, value in self.headers.items()
+            if key.lower() not in HOP_BY_HOP_HEADERS
+            and key.lower() not in {"host", "cookie", "authorization", "x-player-id"}
+        }
+        headers["Host"] = "camping-plaza.local"
+        headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
+        headers["X-Forwarded-Prefix"] = "/camping-plaza"
+        if target is not None:
+            headers["X-Player-Id"] = target["player"]
+
+        conn = http.client.HTTPConnection(CAMPING_PLAZA_HOST, CAMPING_PLAZA_PORT, timeout=60)
+        try:
+            conn.request(method, request_target, body=body, headers=headers)
+            response = conn.getresponse()
+            raw = response.read()
+            status, reason = response.status, response.reason
+            response_headers = response.getheaders()
+        except Exception as exc:
+            self._send_json({"error": "Camping Plaza 代理失败", "detail": str(exc)}, status=502)
+            return
+        finally:
+            conn.close()
+
+        if upstream_path == "/" and status < 400:
+            raw = raw.replace(b'href="styles/', b'href="/camping-plaza/styles/')
+            raw = raw.replace(b'src="scripts/', b'src="/camping-plaza/scripts/')
+            raw = raw.replace(b'src="assets/', b'src="/camping-plaza/assets/')
+        # Upstream JS uses root-absolute /api URLs and relative asset URLs. Under
+        # CedarToy it lives below /camping-plaza, so rewrite those literals at
+        # the edge without changing the vendor checkout.
+        if upstream_path == "/scripts/overview.js" and status < 400:
+            raw = raw.replace(b"'/api/", b"'/camping-plaza/api/")
+            raw = raw.replace(b'"/api/', b'"/camping-plaza/api/')
+            raw = raw.replace(b"'assets/", b"'/camping-plaza/assets/")
+            raw = raw.replace(b'"assets/', b'"/camping-plaza/assets/')
+        try:
+            self.send_response(status, reason)
+            for key, value in response_headers:
+                lower = key.lower()
+                if lower in HOP_BY_HOP_HEADERS or lower == "content-length":
+                    continue
+                self.send_header(key, value)
+            for cookie in set_cookies or ():
+                self.send_header("Set-Cookie", cookie)
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             if self.command != "HEAD":

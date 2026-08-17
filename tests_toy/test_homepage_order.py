@@ -42,6 +42,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
                 "eco",
                 "forest",
                 "garden_cat",
+                "camping_plaza",
                 "duel",
                 "workkk",
                 "white_room",
