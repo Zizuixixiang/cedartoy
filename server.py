@@ -7278,7 +7278,8 @@ def _duel_proxy_allowed(method, public_path):
         return (
             public_path == "/api/rooms"
             or re.fullmatch(
-                r"/api/rooms/[A-Z0-9]{8}/(?:join|move|resign|messages)", public_path
+                r"/api/rooms/[A-Z0-9]{8}/(?:join|move|resign|messages|retention|delete)",
+                public_path,
             )
             is not None
         )

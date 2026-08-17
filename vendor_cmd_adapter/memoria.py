@@ -18,7 +18,7 @@ LEVELS = {
         "module": "detective",
         "save": "detective_save.json",
         "heartbeat": "_heartbeat_l1.json",
-        "difficulty": False,
+        "difficulty": True,
     },
     "2": {
         "title": "午夜特快",
@@ -78,7 +78,7 @@ command = re.sub(r'[\u3000\u00A0\u2002\u2003\u2009\u200A\uFEFF]+', ' ', command)
 extra = payload.get("extra") or {}
 
 levels = {
-    "1": {"title": "蓝玫瑰庄园", "dir": "第一关-蓝玫瑰庄园", "module": "detective", "save": "detective_save.json", "heartbeat": "_heartbeat_l1.json", "difficulty": False},
+    "1": {"title": "蓝玫瑰庄园", "dir": "第一关-蓝玫瑰庄园", "module": "detective", "save": "detective_save.json", "heartbeat": "_heartbeat_l1.json", "difficulty": True},
     "2": {"title": "午夜特快", "dir": "第二关-午夜特快", "module": "detective_l2", "save": "detective_save_l2.json", "heartbeat": "_heartbeat_l2.json", "difficulty": True},
     "3": {"title": "褪色车站", "dir": "第三关-褪色车站", "module": "detective_l3", "save": "detective_save_l3.json", "heartbeat": "_heartbeat_l3.json", "difficulty": True},
     "4": {"title": "循环车站", "dir": "第四关-循环车站", "module": "detective_l4", "save": "detective_save_l4.json", "heartbeat": "_heartbeat_l4.json", "difficulty": True},
