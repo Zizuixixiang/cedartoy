@@ -5961,13 +5961,14 @@ CAMPING_PLAZA_GUIDE = """# camping_plaza·露营广场
 5. 临时事件或 actions 明示的即时动作，可直接把动作名作为 play action，并在 params 传该动作参数。
 
 查询动作：state / actions / query_growth_projects / query_debt / achievements。
-流程动作：set_player_name / advance_turn / execute_turn_plan / submit_day_end_actions / start_next_day。
+流程动作：set_player_name / advance_turn / execute_turn_plan / submit_day_end_actions / start_next_day / restart_game。
 即时动作：resolve_temporary_conflict / repair_tent / manage_greenery / improve_service / clean_tents / buy_food_package / purchase_growth_project。
 
 参数示例：
 - play(game="camping_plaza", action="set_player_name", params={"name":"营地主理人"})
 - play(game="camping_plaza", action="execute_turn_plan", params={"free_actions":[],"actions":[{"action":"improve_service","params":{}}]})
 - play(game="camping_plaza", action="submit_day_end_actions", params={"day_end_actions":[]})
+- play(game="camping_plaza", action="restart_game", params={"confirm":"确认重新开始"})：清空当前营地并从 Day 1 重开；不可撤销。
 
 存档：
 - export：导出当前 slot 的 JSON 快照。
@@ -7133,6 +7134,7 @@ def _play_camping_plaza(arguments):
         "clean_tents",
         "buy_food_package",
         "purchase_growth_project",
+        "restart_game",
     }:
         method, path, body = "POST", "/api/action", {"action": action, "params": extra}
     else:

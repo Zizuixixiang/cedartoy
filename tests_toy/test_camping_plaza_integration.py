@@ -167,6 +167,32 @@ class CampingPlazaCedarToyTests(unittest.TestCase):
             {"free_actions": [], "actions": [{"action": "improve_service", "params": {}}]},
         )
 
+    def test_ai_forwarder_maps_confirmed_restart(self):
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"success": True, "restarted": True}
+
+        arguments = {
+            "game": "camping_plaza",
+            "action": "restart_game",
+            "player_id": "42",
+            "params": {"confirm": "确认重新开始"},
+        }
+        with patch.object(server.httpx, "request", return_value=FakeResponse()) as request_mock:
+            result = server._play_camping_plaza(arguments)
+
+        self.assertTrue(result["success"])
+        call = request_mock.call_args
+        self.assertEqual(call.args[:2], ("POST", f"{server.CAMPING_PLAZA_BASE}/api/action"))
+        self.assertEqual(call.kwargs["headers"], {"X-Player-Id": "42"})
+        self.assertEqual(
+            call.kwargs["json"],
+            {"action": "restart_game", "params": {"confirm": "确认重新开始"}},
+        )
+
     def test_browser_proxy_drops_identity_and_rewrites_root_api_js(self):
         captured = {}
 
