@@ -256,6 +256,7 @@ class CrucibleEchoesPlatformTests(unittest.TestCase):
         self.assertIn('id: "crucible_echoes"', homepage)
         self.assertIn('url: "https://github.com/megabaka404/crucible-echoes"', homepage)
         self.assertIn('watchLabel: "进入实验室 →"', homepage)
+        self.assertIn('ctaLabel: "完整玩法 →"', homepage)
         self.assertIn('window.location.href = "/crucible-echoes/"', homepage)
         self.assertIn("5583289470", homepage)
         self.assertIn('game: "crucible_echoes"', page)
