@@ -12,10 +12,18 @@ for d in "$VENDOR_DIR"/*/; do
   name=$(basename "$d")
   cd "$d"
   
-  git fetch origin 2>/dev/null
+  remote_name="origin"
+  if ! git fetch origin 2>/dev/null; then
+    # Some deployments cannot reach github.com directly.  A vendor may keep
+    # its canonical upstream as origin and add an explicitly configured mirror
+    # remote for read-only update checks.
+    if git remote get-url mirror >/dev/null 2>&1 && git fetch mirror 2>/dev/null; then
+      remote_name="mirror"
+    fi
+  fi
   
   # 找远端主分支
-  remote_ref=$(git rev-parse --verify origin/main 2>/dev/null || git rev-parse --verify origin/master 2>/dev/null)
+  remote_ref=$(git rev-parse --verify "$remote_name/main" 2>/dev/null || git rev-parse --verify "$remote_name/master" 2>/dev/null)
   [ -z "$remote_ref" ] && continue
   
   local_ref=$(git rev-parse HEAD 2>/dev/null)

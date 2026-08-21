@@ -3295,6 +3295,32 @@
         ranks: []
       },
       {
+        id: "crucible_echoes",
+        category: "mini",
+        name: "坩埚余响",
+        mission: "MISSION: ALCHEMY",
+        location: "LOCATION: CRUCIBLE LAB",
+        glyph: "坩",
+        badge: "ECHO",
+        level: "D1-D10",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "炼金构筑 / 确定性 Roguelike",
+        desc: "在4×5实验台上经营成分池，利用邻接、生成、移除与永久成长效果，在有限回合内支付不断上涨的炼金订单。",
+        logs: [
+          "一句话：每次旋转都会留下余响，真正的难题是该拿什么、该舍什么。",
+          "玩法：new 开局；spin 结算；按候选 choose/skip/reroll；用 remove 控池、use 启动道具。",
+          "作者：athok（联系方式 5583289470；仓库作者 megabaka404）",
+          "原仓库：github.com/megabaka404/crucible-echoes · MIT License"
+        ],
+        stats: [["BUILD", "82%"], ["RNG", "100%"]],
+        footerIcons: ["坩", "◇", "∞"],
+        tags: ["炼金", "构筑", "MCP"],
+        url: "/crucible-echoes/",
+        ctaLabel: "进入实验室 →",
+        ranks: []
+      },
+      {
         id: "moonlit",
         category: "mini",
         name: "月幕万象",
@@ -3511,7 +3537,7 @@
 
     const FIXED_GAME_IDS = ["soup", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "crucible_echoes"
     ]);
 
     function fixedGameRank(id) {

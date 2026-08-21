@@ -62,6 +62,7 @@ from sins_virtues import scoring as sins_virtues_scoring
 from vendor_cmd_adapter import bar as bar_adapter
 from vendor_cmd_adapter import arcade as arcade_adapter
 from vendor_cmd_adapter import burger as burger_adapter
+from vendor_cmd_adapter import crucible_echoes as crucible_echoes_adapter
 from vendor_cmd_adapter import delve as delve_adapter
 from vendor_cmd_adapter import fishing as fishing_adapter
 from vendor_cmd_adapter import forest as forest_adapter
@@ -126,6 +127,7 @@ ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
 FOREST_INDEX_PATH = Path(__file__).resolve().parent / "forest.html"
 TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
+CRUCIBLE_ECHOES_INDEX_PATH = Path(__file__).resolve().parent / "crucible_echoes.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
@@ -237,7 +239,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、camping_plaza、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -367,7 +369,7 @@ def _build_kelivo_platform_tools():
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
-                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、camping_plaza、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
+                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
             },
             "a_score": {
                 "type": "integer",
@@ -426,7 +428,8 @@ def _build_kelivo_platform_tools():
             "username": {"type": "string", "description": "海龟汤注册用账号名。"},
             "password": {"type": "string", "description": "海龟汤注册用密码。"},
             "thought": {"type": "string", "description": "workkk 上班动作的内心独白。"},
-            "item_id": {"type": "string", "description": "workkk 便利店商品 ID。"},
+            "item_id": {"type": "string", "description": "workkk 便利店商品 ID，或 crucible_echoes 主动道具 ID。"},
+            "index": {"type": "integer", "minimum": 1, "description": "crucible_echoes choose/remove 的候选或库存编号。"},
             "message": {"type": "string", "description": "workkk 购买明信片时写给人类的话。"},
             "choice": {"type": "string", "description": "workkk 奶茶或玫瑰选择 gift/self。"},
             "career": {"type": "string", "description": "leek 新局职业，如 fund。"},
@@ -435,7 +438,10 @@ def _build_kelivo_platform_tools():
             "sign_style": {"type": "string", "description": "burger 新局招牌风格。"},
             "level": {"type": "integer", "description": "imitator_td 或 memoria 新局关卡。"},
             "chapter": {"type": "integer", "description": "memoria 关卡编号（level 的别名）。"},
-            "difficulty": {"type": "string", "description": "memoria 难度：normal/hard/hell。"},
+            "difficulty": {
+                "anyOf": [{"type": "integer", "minimum": 1, "maximum": 10}, {"type": "string"}],
+                "description": "crucible_echoes 新局难度为 1-10 整数；memoria 使用 normal/hard/hell。",
+            },
             "chaos": {"type": "string", "description": "imitator_td 特殊模式 chaos 设置。"},
             "cards": {"type": "string", "description": "imitator_td 新局选卡文本。"},
         }
@@ -3124,7 +3130,7 @@ def _public_game_stats():
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
     }
-    for game in ("arcade", "bar", "burger", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
+    for game in ("arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -4584,10 +4590,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel"})
+IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza"})
-VENDOR_GAMES = ("bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza"})
+VENDOR_GAMES = ("bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
@@ -5684,6 +5690,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "travel": travel_adapter.save_summary,
         "arcade": arcade_adapter.save_summary,
         "burger": burger_adapter.save_summary,
+        "crucible_echoes": crucible_echoes_adapter.save_summary,
         "fishing": fishing_adapter.save_summary,
         "forest": forest_adapter.save_summary,
         "moonlit": moonlit_adapter.save_summary,
@@ -5783,6 +5790,7 @@ GAME_RECOMMENDATIONS = (
     ("travel", "和你的 AI 伴侣去真实世界走一趟，回来还有明信片与纪念品"),
     ("arcade", "老虎机吃过我500筹码，替我报仇"),
     ("burger", "命令行煎肉排，单子催起来比上班紧张"),
+    ("crucible_echoes", "在4×5实验台上经营成分池，让每次炼金余响撑过越来越贵的订单"),
     ("mbti", "已测的机一半是INTJ，来看看你正不正常"),
     ("enneagram", "36题快速看主型，或180题细看侧翼和tritype"),
     ("dnd", "36题定善恶，看你和甘道夫一不一路"),
@@ -5891,7 +5899,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | camping_plaza·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | camping_plaza·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -5978,6 +5986,36 @@ CAMPING_PLAZA_GUIDE = """# camping_plaza·露营广场
 作者：乐诶雷女士（racy1501，与《花园与猫咪》同作者）。原仓库：https://github.com/racy1501/Camping-Plaza 。许可：PolyForm Noncommercial License 1.0.0；本站保留原作者、原仓库与许可证信息。"""
 
 
+CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
+调用：play(game="crucible_echoes", action="new", params={"seed":42,"difficulty":1}) 开局；之后只从每次返回的 actions 中选择下一步。持久 MCP 地址可省 player_id。
+
+简介：确定性、可存档的纯文字炼金构筑 Roguelike。你在 4×5（20格）实验台上经营成分池；每次 spin 无放回抽取成分并结算邻接、生成、移除、永久成长与道具效果，在回合期限内攒够金币支付逐渐上涨的订单。相同 seed 与相同动作序列会得到相同结果。
+
+核心规则：
+- 开局有水、木炭、大锅、小猫、试管和 1g。普通 spin 后通常出现三选一成分；可 choose、skip，持有 Roll Token 时可 reroll。
+- 不要无脑扩池：盘面只有20格，常见优秀构筑把池控制在约20-30个；过早删除也可能破坏邻接和生成联动。
+- remove 消耗1个删除 Token，永久移除返回 actions 指定编号的可删除成分。
+- 订单倒计时归零即检查金币：足够则扣款并发订单成分、道具等奖励；不足则失败。完成第12份主线订单获胜（难度10另有最终订单）。
+- 难度1-10为累积规则：更高难度增加订单压力和废渣，并减少部分 Token 奖励。
+
+动作：
+- new：新局；params.seed 为整数，params.difficulty 为1-10。已有存档重开必须 params.confirm=true。
+- state/status：读取紧凑状态，不推进随机数。
+- spin：结算一回合。若有待选奖励，必须先 choose/skip/reroll。
+- choose：params.index 选择当前候选；候选效果已在 decision.offers 中给出。
+- skip：跳过允许跳过的当前选择。
+- reroll：消耗 Roll Token 重调当前可重投的候选。
+- remove：params.index 移除 ingredients 中对应编号；只有 actions 实际列出的编号可执行。
+- inventory：查看当前成分、道具、精粹和 Token；主动道具会在 actions 中显示 use。
+- use：params.item_id 使用 actions 指定的主动道具（如 sandpaper_box）；不会自动替你使用。
+- help：返回当前状态及动作；详细规则以本 guide 为准。
+- export/import：按当前 slot 导出/导入完整 JSON 状态；覆盖导入必须 params.confirm=true。
+
+返回说明：state 是当前订单/金币/回合/Token 摘要；decision 只含当前待选候选；last_board 和 last_log 是最近可观察结算；actions 是此刻真实可执行的结构化动作。平台不会把包含 RNG 和全部内容定义的完整上游 STATE 每次发给模型，完整状态只保存在独立私有存档中。
+
+作者：athok（联系方式 5583289470；仓库作者 megabaka404）。原仓库：https://github.com/megabaka404/crucible-echoes 。许可：MIT License；本站保留上游 LICENSE、署名与来源，经作者明确同意接入。"""
+
+
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
 【🚧 施工中】本游戏尚未完工,接口与界面随时会变,遇到问题属正常现象,欢迎反馈但请勿当成品使用。
 调用：play(game="duel", action="...", params={...})；持久 MCP 地址可省 player_id。
@@ -6021,6 +6059,8 @@ def _tool_get_guide(arguments):
         return json.dumps({"game": "garden_cat", "guide": _guide_with_slot_note(GARDEN_CAT_GUIDE)}, ensure_ascii=False)
     if game == "camping_plaza":
         return json.dumps({"game": "camping_plaza", "guide": _guide_with_slot_note(CAMPING_PLAZA_GUIDE)}, ensure_ascii=False)
+    if game == "crucible_echoes":
+        return json.dumps({"game": "crucible_echoes", "guide": _guide_with_slot_note(CRUCIBLE_ECHOES_GUIDE)}, ensure_ascii=False)
     if game == "duel":
         return json.dumps({"game": "duel", "guide": _guide_with_slot_note(DUEL_GUIDE)}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
@@ -6507,7 +6547,7 @@ def _tool_play_inner(arguments, path_token=None):
             trusted_opponent_id=trusted_opponent_id,
             force_opponent=force_opponent,
         )
-    elif game in {"bar", "leek", "delve", "travel", "arcade", "burger", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
+    elif game in {"bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -7216,6 +7256,8 @@ def _play_vendor_cmd(game, arguments):
             return arcade_adapter.play(extra)
         if game == "burger":
             return burger_adapter.play(extra)
+        if game == "crucible_echoes":
+            return crucible_echoes_adapter.play(extra)
         if game == "fishing":
             return fishing_adapter.play(extra)
         if game == "forest":
@@ -7544,6 +7586,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/eco":
             self._send_html_file(ECO_INDEX_PATH)
+            return
+
+        if path in {"/crucible-echoes", "/crucible-echoes/"}:
+            self._send_html_file(CRUCIBLE_ECHOES_INDEX_PATH)
             return
 
         if path in {"/forest", "/forest/"}:

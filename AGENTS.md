@@ -60,6 +60,7 @@
 - `eco/` 是独立仓库 cedareco，动了 eco 引擎本体才需要单独推
 
 ## vendor 更新检测（每日脚本报的"N个新commit"）
+- 每个 vendor 的 `origin` 必须保留原始 GitHub URL；直连不稳时可另配只用于 fetch 的 `mirror` remote。`scripts/check_vendor_updates.sh` 会在 origin fetch 失败后尝试已配置的 mirror，但不会改写 origin。
 - 报了不等于真有更新：上游 force-push / 重新 init 后，会出现本地领先 N、落后 N 的对称假象
 - 判定：`git diff HEAD origin/main --stat` —— 输出为空即内容一字不差，只是历史线分叉
   - 假警报处理：`git tag backup-realign-<日期>` 留底，再 `git reset --hard origin/main` 对齐，之后不再天天误报

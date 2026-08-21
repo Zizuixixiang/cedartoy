@@ -155,6 +155,16 @@ GAMES = [
         "save_files": ["fishing_save.json"],
     },
     {
+        "game": "crucible_echoes",
+        "label": "crucible_echoes",
+        "new_args": {"action": "new", "seed": 42, "difficulty": 1, "confirm": "true"},
+        "mutate_args": {"action": "spin"},
+        "mutate_expect": ["\"spin\": 1", "\"decision\""],
+        "query_args": {"action": "state"},
+        "query_expect": ["\"spin\": 1", "\"seed\": 42"],
+        "save_files": ["state.json"],
+    },
+    {
         "game": "forest",
         "label": "forest",
         "new_args": {"action": "new", "confirm": "true"},
@@ -210,7 +220,10 @@ payload = json.load(sys.stdin)
 sys.path.insert(0, payload["root"])
 mod = importlib.import_module("vendor_cmd_adapter." + payload["game"])
 result = mod.play(payload["args"])
-print(json.dumps({"text": result.get("text", "")}, ensure_ascii=False))
+text = result.get("text") if isinstance(result, dict) else None
+if not isinstance(text, str):
+    text = json.dumps(result, ensure_ascii=False)
+print(json.dumps({"text": text}, ensure_ascii=False))
 """
 
 SCALE_STEP_RUNNER = r"""

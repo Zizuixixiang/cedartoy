@@ -40,6 +40,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
                 "soup",
                 "fishing",
                 "eco",
+                "crucible_echoes",
                 "forest",
                 "garden_cat",
                 "camping_plaza",

@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>坩埚余响 · CEDAR TOY</title>
+  <style>
+    :root {
+      --bg: #08090d;
+      --panel: #11131a;
+      --panel-2: #181b24;
+      --line: #313644;
+      --text: #e8eaf0;
+      --muted: #969dab;
+      --pink: #e6a8b1;
+      --cyan: #91d8d3;
+      --gold: #e8c477;
+      --danger: #e98686;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 0%, rgba(230, 168, 177, .10), transparent 34rem),
+        radial-gradient(circle at 90% 20%, rgba(145, 216, 211, .08), transparent 30rem),
+        var(--bg);
+      font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      min-height: 100vh;
+    }
+    button, input, select, textarea { font: inherit; }
+    button, .link-button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 9px 13px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    button:hover, .link-button:hover { border-color: var(--pink); color: var(--pink); }
+    button:disabled { opacity: .45; cursor: wait; }
+    input, select, textarea {
+      border: 1px solid var(--line);
+      background: #0d0f15;
+      color: var(--text);
+      padding: 8px 10px;
+    }
+    textarea { width: 100%; min-height: 130px; resize: vertical; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 22px clamp(16px, 4vw, 48px);
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 9, 13, .82);
+    }
+    h1 { margin: 0; font-size: clamp(22px, 4vw, 34px); letter-spacing: .08em; }
+    h1 span { color: var(--pink); }
+    header p { margin: 4px 0 0; color: var(--muted); }
+    main { width: min(1180px, calc(100% - 28px)); margin: 24px auto 48px; }
+    .toolbar, .actions { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+    .toolbar { margin-bottom: 18px; }
+    .toolbar label { color: var(--muted); }
+    .toolbar input { width: 120px; }
+    .toolbar select { width: 62px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr); gap: 16px; }
+    .panel { border: 1px solid var(--line); background: rgba(17, 19, 26, .92); padding: 18px; }
+    .panel h2 { margin: 0 0 12px; color: var(--pink); font-size: 15px; letter-spacing: .08em; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(90px, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .metric { border: 1px solid var(--line); background: #0d0f15; padding: 10px; }
+    .metric small { color: var(--muted); display: block; }
+    .metric b { color: var(--gold); font-size: 17px; }
+    .notice { border-left: 3px solid var(--cyan); padding: 10px 12px; background: rgba(145, 216, 211, .06); margin: 12px 0; }
+    .notice.error { border-color: var(--danger); color: #ffc2c2; }
+    .choice-list, .inventory-list { display: grid; gap: 8px; }
+    .choice {
+      width: 100%;
+      text-align: left;
+      padding: 12px;
+    }
+    .choice b { color: var(--cyan); }
+    .choice small { display: block; color: var(--muted); margin-top: 4px; }
+    .board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    .slot { min-height: 74px; border: 1px solid var(--line); padding: 8px; background: #0d0f15; }
+    .slot b { display: block; color: var(--cyan); overflow-wrap: anywhere; }
+    .slot span { color: var(--gold); }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #c7cbd5; margin: 0; }
+    details { margin-top: 16px; }
+    summary { cursor: pointer; color: var(--muted); }
+    .muted { color: var(--muted); }
+    .footer-note { margin-top: 20px; color: var(--muted); font-size: 12px; }
+    .hidden { display: none !important; }
+    #loginGate { text-align: center; padding: 70px 20px; }
+    #loginGate p { color: var(--muted); }
+    @media (max-width: 760px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .grid { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, 1fr); }
+      .board { grid-template-columns: repeat(2, 1fr); }
+      .toolbar { align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1><span>坩埚余响</span> · CRUCIBLE ECHOES</h1>
+      <p>确定性文字炼金构筑 Roguelike · CEDAR TOY</p>
+    </div>
+    <a class="link-button" href="/">← 返回 4399</a>
+  </header>
+
+  <main>
+    <section id="loginGate" class="panel hidden">
+      <h2>需要登录</h2>
+      <p>请先返回 CEDAR TOY 首页登录，再进入实验室。网页和 MCP 使用同一套平台身份与五个独立存档槽。</p>
+      <a class="link-button" href="/">返回首页登录</a>
+    </section>
+
+    <div id="gameApp">
+      <div class="toolbar">
+        <label>存档槽
+          <select id="slotSelect">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+            <option value="4">4</option><option value="5">5</option>
+          </select>
+        </label>
+        <label>Seed <input id="seedInput" type="number" step="1" value="1"></label>
+        <label>难度
+          <select id="difficultySelect">
+            <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+            <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+          </select>
+        </label>
+        <button id="newButton" type="button">新开一局</button>
+        <button data-action="state" type="button">读取状态</button>
+        <button data-action="spin" type="button">SPIN</button>
+        <button data-action="inventory" type="button">库存</button>
+        <button id="guideButton" type="button">规则</button>
+      </div>
+
+      <div id="message" class="notice hidden"></div>
+      <div class="grid">
+        <section class="panel">
+          <h2>实验状态</h2>
+          <div id="summary" class="summary"></div>
+          <div id="decisionPanel" class="hidden">
+            <h2>当前决策</h2>
+            <p id="decisionHint" class="muted"></p>
+            <div id="choices" class="choice-list"></div>
+          </div>
+          <h2>可执行动作</h2>
+          <div id="dynamicActions" class="actions"></div>
+          <h2 style="margin-top:18px">最近盘面</h2>
+          <div id="board" class="board"></div>
+        </section>
+
+        <aside class="panel">
+          <h2>最近记录</h2>
+          <pre id="log">尚未读取存档。</pre>
+          <div id="inventoryPanel" class="hidden">
+            <h2 style="margin-top:18px">成分库存</h2>
+            <div id="inventory" class="inventory-list"></div>
+          </div>
+          <details>
+            <summary>存档导出 / 导入</summary>
+            <p class="muted">导出内容可自行备份；导入会校验完整上游状态。覆盖当前槽需要确认。</p>
+            <textarea id="saveData" placeholder="JSON 存档"></textarea>
+            <div class="actions" style="margin-top:8px">
+              <button id="exportButton" type="button">导出到文本框</button>
+              <button id="importButton" type="button">从文本框导入</button>
+            </div>
+          </details>
+        </aside>
+      </div>
+      <p class="footer-note">作者：athok（联系方式 5583289470；仓库作者 megabaka404） · 上游 megabaka404/crucible-echoes · MIT License。平台保留原始 LICENSE、署名与来源。</p>
+    </div>
+  </main>
+
+  <script>
+    const TOKEN_KEY = "cedartoy_token";
+    const token = () => localStorage.getItem(TOKEN_KEY) || "";
+    const $ = (id) => document.getElementById(id);
+    let current = null;
+    let busy = false;
+
+    function setBusy(value) {
+      busy = value;
+      document.querySelectorAll("button").forEach((button) => { button.disabled = value; });
+    }
+
+    function showMessage(text, error = false) {
+      const box = $("message");
+      box.textContent = text || "";
+      box.classList.toggle("hidden", !text);
+      box.classList.toggle("error", error);
+    }
+
+    async function toolCall(name, argumentsValue) {
+      const response = await fetch("/mcp", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", Authorization: `Bearer ${token()}`},
+        body: JSON.stringify({jsonrpc: "2.0", id: Date.now(), method: "tools/call", params: {name, arguments: argumentsValue}}),
+      });
+      const envelope = await response.json().catch(() => ({}));
+      const result = envelope.result || {};
+      const content = Array.isArray(result.content) ? result.content[0] : null;
+      const text = content && typeof content.text === "string" ? content.text : "";
+      if (!response.ok || envelope.error || result.isError) {
+        throw new Error(text || envelope.error?.message || `请求失败 HTTP ${response.status}`);
+      }
+      try { return JSON.parse(text); }
+      catch (_) { return text; }
+    }
+
+    async function play(action, params = {}) {
+      if (busy) return;
+      setBusy(true);
+      showMessage("");
+      try {
+        const data = await toolCall("play", {
+          game: "crucible_echoes",
+          action,
+          params: {slot: Number($("slotSelect").value), ...params},
+        });
+        if (data && typeof data === "object" && data.state) {
+          current = data;
+          render(data);
+          if (data.warning) showMessage(data.warning, true);
+        }
+        return data;
+      } catch (error) {
+        showMessage(error.message || "操作失败", true);
+        throw error;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function metric(label, value) {
+      const node = document.createElement("div");
+      node.className = "metric";
+      const small = document.createElement("small");
+      small.textContent = label;
+      const strong = document.createElement("b");
+      strong.textContent = value ?? "—";
+      node.append(small, strong);
+      return node;
+    }
+
+    function actionButton(label, action, params = {}) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", () => play(action, params).catch(() => {}));
+      return button;
+    }
+
+    function render(data) {
+      const state = data.state || {};
+      const tokens = state.tokens || {};
+      const summary = $("summary");
+      summary.replaceChildren(
+        metric("状态", state.status), metric("金币", `${state.gold ?? 0}g`),
+        metric("回合", state.spin), metric("订单", `${state.order ?? 1} / ${state.order_amount ?? "?"}g`),
+        metric("剩余旋转", state.spins_left), metric("成分池", `${state.pool_size ?? 0}/${state.board_capacity ?? 20}`),
+        metric("ROLL", tokens.roll ?? 0), metric("删除 / 精粹", `${tokens.remove ?? 0} / ${tokens.essence ?? 0}`)
+      );
+
+      const decision = data.decision;
+      $("decisionPanel").classList.toggle("hidden", !decision);
+      $("choices").replaceChildren();
+      if (decision) {
+        $("decisionHint").textContent = `${decision.kind || "奖励"} · 来源 ${decision.source || "未知"} · 队列 ${decision.queued_choices || 1}`;
+        (decision.offers || []).forEach((offer) => {
+          const button = actionButton(`${offer.index}. ${offer.name || offer.id}`, "choose", {index: offer.index});
+          button.className = "choice";
+          const detail = document.createElement("small");
+          detail.textContent = `${offer.rarity ? `${offer.rarity}级 · ` : ""}${offer.base !== undefined ? `基础 ${offer.base}g · ` : ""}${offer.description || ""}`;
+          button.append(detail);
+          $("choices").append(button);
+        });
+      }
+
+      const dynamic = $("dynamicActions");
+      dynamic.replaceChildren();
+      const actions = Array.isArray(data.actions) ? data.actions : [];
+      if (actions.some((item) => item.action === "skip")) dynamic.append(actionButton("跳过选择", "skip"));
+      if (actions.some((item) => item.action === "reroll")) dynamic.append(actionButton("消耗 ROLL 重调", "reroll"));
+      actions.filter((item) => item.action === "use").forEach((item) => {
+        const owned = (data.owned_items || []).find((row) => row.id === item.item_id);
+        dynamic.append(actionButton(`使用 ${owned?.name || item.item_id}`, "use", {item_id: item.item_id}));
+      });
+      actions.filter((item) => item.action === "remove").forEach((item) => {
+        const ingredient = (data.ingredients || []).find((row) => row.slot === item.index);
+        dynamic.append(actionButton(`删除 ${item.index}. ${ingredient?.name || item.id}`, "remove", {index: item.index}));
+      });
+      if (!dynamic.children.length) {
+        const muted = document.createElement("span");
+        muted.className = "muted";
+        muted.textContent = actions.some((item) => item.action === "spin") ? "当前可以继续 SPIN。" : "请先处理当前候选。";
+        dynamic.append(muted);
+      }
+
+      const board = $("board");
+      board.replaceChildren();
+      (data.last_board || []).forEach((row) => {
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        const title = document.createElement("b");
+        title.textContent = `${row.slot}. ${row.name || row.id}`;
+        const value = document.createElement("span");
+        value.textContent = `${Number(row.value) >= 0 ? "+" : ""}${row.value ?? 0}g`;
+        slot.append(title, value);
+        board.append(slot);
+      });
+      if (!board.children.length) board.textContent = "尚未旋转。";
+
+      $("log").textContent = (data.last_log || []).join("\n") || "暂无记录。";
+      const ingredients = Array.isArray(data.ingredients) ? data.ingredients : [];
+      $("inventoryPanel").classList.toggle("hidden", !ingredients.length);
+      const inventory = $("inventory");
+      inventory.replaceChildren();
+      ingredients.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "slot";
+        item.textContent = `${row.slot}. ${row.name || row.id} · ${row.rarity || "?"}级 · 基础${row.base ?? 0}g · 永久${row.permanent_bonus >= 0 ? "+" : ""}${row.permanent_bonus || 0} · ${row.description || ""}`;
+        inventory.append(item);
+      });
+    }
+
+    $("newButton").addEventListener("click", () => {
+      const overwrite = Boolean(current && current.state);
+      if (overwrite && !window.confirm("重开会永久覆盖当前槽存档，确定继续？")) return;
+      play("new", {
+        seed: Number($("seedInput").value),
+        difficulty: Number($("difficultySelect").value),
+        confirm: overwrite,
+      }).catch(() => {});
+    });
+    document.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", () => play(button.dataset.action).catch(() => {}));
+    });
+    $("slotSelect").addEventListener("change", () => { current = null; play("state").catch(() => {}); });
+    $("guideButton").addEventListener("click", async () => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const data = await toolCall("get_guide", {game: "crucible_echoes"});
+        showMessage(data.guide || "规则读取失败");
+      } catch (error) { showMessage(error.message, true); }
+      finally { setBusy(false); }
+    });
+    $("exportButton").addEventListener("click", () => play("export").then((data) => {
+      if (data && typeof data.text === "string") $("saveData").value = data.text;
+    }).catch(() => {}));
+    $("importButton").addEventListener("click", () => {
+      let parsed;
+      try { parsed = JSON.parse($("saveData").value); }
+      catch (_) { showMessage("文本框不是合法 JSON", true); return; }
+      if (!window.confirm("导入会覆盖当前槽存档，确定继续？")) return;
+      play("import", {save_data: parsed, confirm: true}).catch(() => {});
+    });
+
+    if (!token()) {
+      $("loginGate").classList.remove("hidden");
+      $("gameApp").classList.add("hidden");
+    } else {
+      play("state").catch(() => {});
+    }
+  </script>
+</body>
+</html>
