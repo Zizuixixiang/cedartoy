@@ -3297,6 +3297,7 @@
       {
         id: "crucible_echoes",
         category: "mini",
+        watch: true,
         iconFile: "crucible-echoes.png",
         name: "坩埚余响",
         mission: "MISSION: ALCHEMY",
@@ -3317,8 +3318,9 @@
         stats: [["BUILD", "82%"], ["RNG", "100%"]],
         footerIcons: ["坩", "◇", "∞"],
         tags: ["炼金", "构筑", "MCP"],
-        url: "/crucible-echoes/",
-        ctaLabel: "进入实验室 →",
+        url: "https://github.com/megabaka404/crucible-echoes",
+        ctaLabel: "原仓库 →",
+        watchLabel: "进入实验室 →",
         ranks: []
       },
       {
@@ -4836,6 +4838,10 @@
         watchCampingPlaza(playerId, slot);
         return;
       }
+      if (game.id === "crucible_echoes") {
+        window.location.href = "/crucible-echoes/";
+        return;
+      }
       if (game.id === "forest") {
         watchForest(playerId, slot);
         return;
@@ -5240,6 +5246,10 @@
       }
       if (currentGame().id === "garden_cat") {
         await openGardenCatPicker();
+        return;
+      }
+      if (currentGame().id === "crucible_echoes") {
+        window.location.href = "/crucible-echoes/";
         return;
       }
       if (currentGame().id === "forest") {
