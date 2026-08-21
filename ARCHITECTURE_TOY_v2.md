@@ -11,7 +11,7 @@
         |
         v
 server.py : 127.0.0.1:8002
-  |-- 静态页：/、/admin、/eco、/crucible-echoes/、/eco/assets/*
+  |-- 静态页：/、/admin、/eco、/eco/assets/*
   |-- 平台 API：/api/*、/eco/api/*
   |-- 根 MCP：POST /、POST /{platform_token}
   |     |-- 本进程 handler：MBTI、DND、love、ECR、humanity、BDSMTest、eco、ciyuwu
@@ -56,7 +56,7 @@ server.py : 127.0.0.1:8002
 | `vendor/` | 19 个带各自 `.git` 的第三方仓库 clone；根仓库整体忽略，不是 submodule |
 | `eco/` | 独立第三方/上游仓库 clone；根仓库忽略 |
 | `data/` | 运行数据；仅 `.gitkeep` 跟踪，数据库、备份和 `vendor_saves/` 均忽略 |
-| `index.html`、`admin.html`、`eco.html`、`crucible_echoes.html` | 当前平台实际使用的根页、平台管理页和独立游戏页 |
+| `index.html`、`admin.html`、`eco.html` | 当前平台实际使用的根页、平台管理页和独立游戏页 |
 | `toy-platform/` | 被 `.gitignore` 忽略的运行残留目录；当前没有前端源代码，只有空数据库文件 |
 
 第三方源码与平台适配代码刻意分离：升级 `vendor/*` 或 `eco/` 不会在 CedarToy 根仓库产生源码 diff；真正纳入平台版本的兼容逻辑必须放在 adapter 或 `server.py`。相应地，根仓库也没有记录这些 clone 的精确 commit，部署者必须另外保证第三方目录存在且版本兼容。
@@ -93,7 +93,6 @@ server.py : 127.0.0.1:8002
 | `GET /` | 无 | 返回 `index.html` |
 | `GET /admin` | 页面无；API 需管理员 token | 返回 `admin.html` |
 | `GET /eco` | 页面无；数据 API 需平台 token | 返回 `eco.html` |
-| `GET /crucible-echoes`、`GET /crucible-echoes/` | 页面无；游戏动作需平台 token | 返回 `crucible_echoes.html`，通过根 MCP `play` 读写当前登录账号的槽位存档 |
 | `GET /mbti`、`GET /enneagram`、`GET /dnd`、`GET /love`、`GET /ecr`、`GET /humanity` | 无 | 从共享 `test_game.html` 注入游戏配置，返回人类测试页；带旧 `action` query 时仍走兼容 GET 调用 |
 | `GET /eco/assets/*` | 无 | 限定在 `eco/assets/` 内的静态文件读取 |
 | `GET /health` | 无 | cedartoy 健康信息 |
@@ -382,11 +381,10 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 | `test_game.html` | MBTI/Enneagram/DND/love/ECR/humanity 共用的人类答题页；公开题目不下发量表权重/维度；Enneagram 页面展示中文题目并标注 MIT 题库来源 |
 | `admin.html` | 单文件平台账号管理页 |
 | `eco.html` | 单文件人类观察/协作页；读 `/eco/api/*`，六种小游戏只通过 `human_action` 改已绑定 AI 存档 |
-| `crucible_echoes.html` | 单文件人类操作页；复用根 MCP 和平台 Bearer 身份，支持 1–5 槽、动态 action、导入导出与 guide |
 | `turtle-soup/frontend/` | 独立 Vite/React 工程，构建物由 turtle-soup 服务 |
 | `vendor/workkk/main.py` | vendor 服务内嵌的大屏 HTML，由平台代理时改写路径 |
 
-首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片的“完整玩法”跳到上游 GitHub；`crucible_echoes` 卡片进入平台自有 `/crucible-echoes/` 页面，海龟汤进入 `/soup/`，eco/workkk 另有绑定后围观入口。MBTI、Enneagram、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，Enneagram/humanity 明确不提供。
+首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片（包括 `crucible_echoes`）的“完整玩法”跳到上游 GitHub；海龟汤进入 `/soup/`，eco/workkk 等有明确人类前端的游戏另提供绑定后入口。MBTI、Enneagram、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，Enneagram/humanity 明确不提供。
 
 `index.html` 通过 CDN 加载 `marked` 来渲染 Memoria 人类攻略；加载的 HTML 在前端做白名单式清理。平台统计同时调用自身 `/api/games/stats` 和 turtle-soup 的排行榜/平台统计 API。
 

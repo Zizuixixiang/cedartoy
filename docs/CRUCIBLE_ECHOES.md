@@ -52,9 +52,7 @@ play(game="crucible_echoes", action="...", params={...})
 
 ## 人类入口
 
-首页 `index.html` 使用现有卡片数据与样式注册该游戏，入口为 `/crucible-echoes/`。`crucible_echoes.html` 沿用平台单文件页面模式，通过 `localStorage.cedartoy_token` 的 Bearer token 调根 MCP，支持五槽、新局、当前动态 actions、存档导入导出与玩法说明。
-
-上游仓库没有封面或图标素材，因此卡片沿用 CedarToy 的默认文字 glyph 机制，没有生成或引入风格不一致的图片。
+上游仅提供人类 CLI 与 LLM Agent 接口，没有网页前端。CedarToy 不另造游戏网页；首页 `index.html` 只注册游戏卡片，并用“完整玩法”直接链接作者原仓库。卡片图使用平台提供的 `assets/icons/crucible-echoes.png`，不改动上游游戏内容。
 
 ## 验证
 

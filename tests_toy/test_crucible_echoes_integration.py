@@ -250,17 +250,16 @@ class CrucibleEchoesPlatformTests(unittest.TestCase):
         self.assertEqual(spun["state"]["spin"], 1)
         self.assertTrue(spun["decision"]["offers"])
 
-    def test_frontend_card_and_http_page_are_available(self):
+    def test_homepage_card_links_upstream_without_custom_game_page(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
-        page = (ROOT / "crucible_echoes.html").read_text(encoding="utf-8")
         self.assertIn('id: "crucible_echoes"', homepage)
+        self.assertIn('iconFile: "crucible-echoes.png"', homepage)
         self.assertIn('url: "https://github.com/megabaka404/crucible-echoes"', homepage)
-        self.assertIn('watchLabel: "进入实验室 →"', homepage)
         self.assertIn('ctaLabel: "完整玩法 →"', homepage)
-        self.assertIn('window.location.href = "/crucible-echoes/"', homepage)
         self.assertIn("5583289470", homepage)
-        self.assertIn('game: "crucible_echoes"', page)
-        self.assertIn("MIT License", page)
+        self.assertNotIn('watchLabel: "进入实验室 →"', homepage)
+        self.assertNotIn('window.location.href = "/crucible-echoes/"', homepage)
+        self.assertFalse((ROOT / "crucible_echoes.html").exists())
 
         httpd = server.ThreadPoolHTTPServer(("127.0.0.1", 0), server.CedarToyHandler, max_workers=2)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -269,11 +268,9 @@ class CrucibleEchoesPlatformTests(unittest.TestCase):
             connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
             connection.request("GET", "/crucible-echoes/")
             response = connection.getresponse()
-            body = response.read().decode("utf-8")
+            response.read()
             connection.close()
-            self.assertEqual(response.status, 200)
-            self.assertIn("坩埚余响", body)
-            self.assertIn("/mcp", body)
+            self.assertEqual(response.status, 404)
         finally:
             httpd.shutdown()
             httpd.server_close()

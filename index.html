@@ -3297,7 +3297,6 @@
       {
         id: "crucible_echoes",
         category: "mini",
-        watch: true,
         iconFile: "crucible-echoes.png",
         name: "坩埚余响",
         mission: "MISSION: ALCHEMY",
@@ -3320,7 +3319,6 @@
         tags: ["炼金", "构筑", "MCP"],
         url: "https://github.com/megabaka404/crucible-echoes",
         ctaLabel: "完整玩法 →",
-        watchLabel: "进入实验室 →",
         ranks: []
       },
       {
@@ -3540,7 +3538,7 @@
 
     const FIXED_GAME_IDS = ["soup", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "crucible_echoes"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza"
     ]);
 
     function fixedGameRank(id) {
@@ -4838,10 +4836,6 @@
         watchCampingPlaza(playerId, slot);
         return;
       }
-      if (game.id === "crucible_echoes") {
-        window.location.href = "/crucible-echoes/";
-        return;
-      }
       if (game.id === "forest") {
         watchForest(playerId, slot);
         return;
@@ -5246,10 +5240,6 @@
       }
       if (currentGame().id === "garden_cat") {
         await openGardenCatPicker();
-        return;
-      }
-      if (currentGame().id === "crucible_echoes") {
-        window.location.href = "/crucible-echoes/";
         return;
       }
       if (currentGame().id === "forest") {

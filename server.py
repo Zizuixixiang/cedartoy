@@ -127,7 +127,6 @@ ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
 FOREST_INDEX_PATH = Path(__file__).resolve().parent / "forest.html"
 TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
-CRUCIBLE_ECHOES_INDEX_PATH = Path(__file__).resolve().parent / "crucible_echoes.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
 VENDOR_SAVE_ROOT = Path(__file__).resolve().parent / "data" / "vendor_saves"
@@ -7586,10 +7585,6 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/eco":
             self._send_html_file(ECO_INDEX_PATH)
-            return
-
-        if path in {"/crucible-echoes", "/crucible-echoes/"}:
-            self._send_html_file(CRUCIBLE_ECHOES_INDEX_PATH)
             return
 
         if path in {"/forest", "/forest/"}:
