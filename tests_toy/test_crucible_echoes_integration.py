@@ -51,7 +51,10 @@ class CrucibleEchoesAdapterTests(unittest.TestCase):
         opened = self._play(player, "new", seed=42, difficulty=1)
         self.assertEqual(opened["state"]["spin"], 0)
         self.assertNotIn("rng_state", opened["state"])
-        self.assertNotIn("endless_mode", opened["state"])
+        self.assertFalse(opened["state"]["awaiting_mode_choice"])
+        self.assertFalse(opened["state"]["endless_mode"])
+        self.assertEqual(opened["state"]["endless_order"], 0)
+        self.assertEqual(opened["state"]["endless_target"], 0)
         self.assertLess(len(json.dumps(opened, ensure_ascii=False).encode("utf-8")), 5_000)
 
         spun = self._play(player, "spin")
@@ -90,6 +93,79 @@ class CrucibleEchoesAdapterTests(unittest.TestCase):
         self.assertEqual(resumed["state"]["pool_size"], used["state"]["pool_size"])
         persisted = json.loads(self._state_path(player).read_text(encoding="utf-8"))
         self.assertIn("rng_state", persisted)
+
+    def test_run_end_choices_are_readable_and_choose_enters_requested_mode(self):
+        def prepare_run_end(player_id: str):
+            self._play(player_id, "new", seed=90210, difficulty=1)
+
+            def mutate(state):
+                state.update({
+                    "status": "playing",
+                    "order_index": 12,
+                    "endless_mode": False,
+                    "endless_order": 0,
+                    "endless_target": 0,
+                    "pending": [{
+                        "kind": "run_end",
+                        "offers": ["end_run", "enter_endless"],
+                        "can_skip": False,
+                        "source": "mainline_complete",
+                        "minimum_rarity": None,
+                        "tag_filter": None,
+                    }],
+                })
+                state["stats"].update({
+                    "highest_endless_order": 4,
+                    "endless_orders_completed": 3,
+                    "highest_endless_single_turn_gold": 987,
+                    "highest_single_turn_gold": 1234,
+                })
+
+            self._edit_state(player_id, mutate)
+            return self._play(player_id, "state")
+
+        prompt = prepare_run_end("guest:crucibleendrun")
+        self.assertTrue(prompt["state"]["awaiting_mode_choice"])
+        self.assertFalse(prompt["state"]["endless_mode"])
+        self.assertEqual(prompt["state"]["endless_order"], 0)
+        self.assertEqual(prompt["state"]["endless_target"], 0)
+        self.assertEqual(prompt["state"]["highest_endless_order"], 4)
+        self.assertEqual(prompt["state"]["endless_orders_completed"], 3)
+        self.assertEqual(prompt["state"]["highest_endless_single_turn_gold"], 987)
+        self.assertEqual(prompt["state"]["highest_single_turn_gold"], 1234)
+        self.assertEqual(prompt["decision"]["kind"], "run_end")
+        self.assertEqual(prompt["decision"]["offers"], [
+            {
+                "index": 1,
+                "id": "end_run",
+                "name": "结束本局",
+                "description": "按正常通关处理，结束本局。",
+            },
+            {
+                "index": 2,
+                "id": "enter_endless",
+                "name": "进入无限模式",
+                "description": "保留当前状态，进入10回合的无限订单1。",
+            },
+        ])
+        self.assertEqual(
+            [(action.get("index"), action.get("id")) for action in prompt["actions"] if action.get("action") == "choose"],
+            [(1, "end_run"), (2, "enter_endless")],
+        )
+
+        ended = self._play("guest:crucibleendrun", "choose", index=1)
+        self.assertEqual(ended["state"]["status"], "won")
+        self.assertFalse(ended["state"]["endless_mode"])
+        self.assertFalse(ended["state"]["awaiting_mode_choice"])
+
+        prepare_run_end("guest:crucibleenterendless")
+        endless = self._play("guest:crucibleenterendless", "choose", index=2)
+        self.assertEqual(endless["state"]["status"], "playing")
+        self.assertTrue(endless["state"]["endless_mode"])
+        self.assertFalse(endless["state"]["awaiting_mode_choice"])
+        self.assertEqual(endless["state"]["endless_order"], 1)
+        self.assertEqual(endless["state"]["endless_target"], 1000)
+        self.assertEqual(endless["state"]["spins_left"], 10)
 
     def test_players_are_isolated_and_export_import_is_per_player(self):
         player_a = "guest:cruciblea"
@@ -150,6 +226,8 @@ class CrucibleEchoesPlatformTests(unittest.TestCase):
         self.assertIn("athok", guide["guide"])
         self.assertIn("MIT License", guide["guide"])
         self.assertIn("remove", guide["guide"])
+        self.assertIn("run_end", guide["guide"])
+        self.assertIn("无限模式", guide["guide"])
 
         play_tool = next(tool for tool in server._root_tools(user_agent="Kelivo/1") if tool["name"] == "play")
         properties = play_tool["inputSchema"]["properties"]["params"]["properties"]

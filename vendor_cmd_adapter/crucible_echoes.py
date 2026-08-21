@@ -230,11 +230,12 @@ def _compact_payload(raw: str, player_id: str, requested_action: str) -> dict[st
         for offer in current_choice.get("offers") or []:
             if not isinstance(offer, dict):
                 continue
-            compact_offer = {
-                "index": offer.get("index"),
-                "id": offer.get("id"),
-                **_definition_summary(offer.get("definition")),
-            }
+            definition = _definition_summary(offer.get("definition"))
+            compact_offer = {"index": offer.get("index"), **definition}
+            # The executable choice id belongs to the offer envelope.  Keep it
+            # authoritative while retaining the human-readable run_end name
+            # and description supplied by the definition.
+            compact_offer["id"] = offer.get("id", definition.get("id"))
             offers.append(compact_offer)
         decision = {
             "kind": current_choice.get("kind"),
@@ -261,6 +262,14 @@ def _compact_payload(raw: str, player_id: str, requested_action: str) -> dict[st
             "pool_size",
             "board_capacity",
             "tokens",
+            "awaiting_mode_choice",
+            "endless_mode",
+            "endless_order",
+            "endless_target",
+            "highest_endless_order",
+            "endless_orders_completed",
+            "highest_endless_single_turn_gold",
+            "highest_single_turn_gold",
         )
     }
 

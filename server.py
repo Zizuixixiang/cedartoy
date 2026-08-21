@@ -5995,14 +5995,14 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 - 开局有水、木炭、大锅、小猫、试管和 1g。普通 spin 后通常出现三选一成分；可 choose、skip，持有 Roll Token 时可 reroll。
 - 不要无脑扩池：盘面只有20格，常见优秀构筑把池控制在约20-30个；过早删除也可能破坏邻接和生成联动。
 - remove 消耗1个删除 Token，永久移除返回 actions 指定编号的可删除成分。
-- 订单倒计时归零即检查金币：足够则扣款并发订单成分、道具等奖励；不足则失败。完成第12份主线订单获胜（难度10另有最终订单）。
+- 订单倒计时归零即检查金币：足够则扣款并发订单成分、道具等奖励；不足则失败。完成主线（通常第12份，难度10另有最终订单）后会出现 run_end 选择：choose 1 结束本局，choose 2 保留当前构筑进入无限模式；无限订单每份限10回合，目标从1000g起逐次提高。
 - 难度1-10为累积规则：更高难度增加订单压力和废渣，并减少部分 Token 奖励。
 
 动作：
 - new：新局；params.seed 为整数，params.difficulty 为1-10。已有存档重开必须 params.confirm=true。
 - state/status：读取紧凑状态，不推进随机数。
 - spin：结算一回合。若有待选奖励，必须先 choose/skip/reroll。
-- choose：params.index 选择当前候选；候选效果已在 decision.offers 中给出。
+- choose：params.index 选择当前候选；候选效果已在 decision.offers 中给出，包括主线完成后的 run_end 去向。
 - skip：跳过允许跳过的当前选择。
 - reroll：消耗 Roll Token 重调当前可重投的候选。
 - remove：params.index 移除 ingredients 中对应编号；只有 actions 实际列出的编号可执行。
@@ -6011,7 +6011,7 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 - help：返回当前状态及动作；详细规则以本 guide 为准。
 - export/import：按当前 slot 导出/导入完整 JSON 状态；覆盖导入必须 params.confirm=true。
 
-返回说明：state 是当前订单/金币/回合/Token 摘要；decision 只含当前待选候选；last_board 和 last_log 是最近可观察结算；actions 是此刻真实可执行的结构化动作。平台不会把包含 RNG 和全部内容定义的完整上游 STATE 每次发给模型，完整状态只保存在独立私有存档中。
+返回说明：state 是当前订单/金币/回合/Token 摘要，也包含是否等待模式选择及无限模式进度/纪录；decision 只含当前待选候选；last_board 和 last_log 是最近可观察结算；actions 是此刻真实可执行的结构化动作。平台不会把包含 RNG 和全部内容定义的完整上游 STATE 每次发给模型，完整状态只保存在独立私有存档中。
 
 作者：athok（联系方式 5583289470；仓库作者 megabaka404）。原仓库：https://github.com/megabaka404/crucible-echoes 。许可：MIT License；本站保留上游 LICENSE、署名与来源，经作者明确同意接入。"""
 
