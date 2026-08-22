@@ -98,7 +98,14 @@ GARDEN_CAT_HOST = "127.0.0.1"
 GARDEN_CAT_PORT = 8771
 GARDEN_CAT_BASE = f"http://{GARDEN_CAT_HOST}:{GARDEN_CAT_PORT}"
 GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/api/catalog", "/web/status", "/web/notes"})
-GARDEN_CAT_PROXY_POST_PATHS = frozenset({"/web/notes", "/web/register", "/web/cmd", "/web/new_game", "/web/move_with_cat"})
+GARDEN_CAT_PROXY_POST_PATHS = frozenset({
+    "/web/notes",
+    "/web/register",
+    "/web/cmd",
+    "/web/new_game",
+    "/web/move_with_cat",
+    "/web/bouquets/read",
+})
 DUEL_HOST = "127.0.0.1"
 DUEL_PORT = 8772
 DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
