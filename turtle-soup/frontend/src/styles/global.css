@@ -1680,6 +1680,50 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   font-size: 14px;
 }
 
+.toy-modal .password-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.toy-modal .field .password-input-wrap input {
+  padding-right: 50px;
+}
+
+.toy-modal .password-visibility-toggle {
+  appearance: none;
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-grid;
+  width: 40px;
+  min-width: 40px;
+  height: 36px;
+  min-height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-left: 3px solid #d9cfe5;
+  border-radius: 0;
+  background: #f8f4fc;
+  color: var(--pixel-purple-dark);
+  transform: translateY(-50%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.toy-modal .password-visibility-toggle:hover,
+.toy-modal .password-visibility-toggle:focus-visible,
+.toy-modal .password-visibility-toggle[aria-pressed="true"] {
+  background: #eee5f5;
+  color: var(--pixel-pink-dark);
+  outline: 2px solid var(--pixel-pink);
+  outline-offset: -2px;
+}
+
+.toy-modal .password-visibility-toggle svg {
+  pointer-events: none;
+}
+
 .toy-modal .field-label {
   font-size: 16px;
   font-weight: 700;
@@ -1755,6 +1799,214 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
 .toy-modal #loginSubmit {
   min-width: 96px;
   text-transform: uppercase;
+}
+
+.toy-modal .auth-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.account-action-modal {
+  z-index: 90;
+}
+
+.history-modal .modal-box {
+  width: min(760px, 100%);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+}
+
+.history-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.history-tabs button {
+  min-width: 0;
+  border: 3px solid var(--pixel-purple);
+  border-radius: 0;
+  padding: 8px 10px;
+  color: var(--pixel-purple-darker);
+  background: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.history-tabs button.active {
+  color: #fff;
+  background: var(--pixel-pink);
+  border-color: var(--pixel-pink-dark);
+}
+
+.history-summary {
+  color: var(--pixel-purple-darker);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.history-stats,
+.mine-soup-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-stats {
+  margin-bottom: 18px;
+}
+
+.history-stats div,
+.mine-soup-stats div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 2px solid var(--pixel-purple-light);
+  background: rgba(255,255,255,0.7);
+  color: var(--pixel-purple-darker);
+  font-size: 11px;
+}
+
+.history-stats b,
+.mine-soup-stats b {
+  color: var(--pixel-pink-dark);
+  font-size: 20px;
+}
+
+.history-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.history-section-head h3 {
+  margin: 0;
+  color: var(--pixel-purple-dark);
+  font-size: 15px;
+}
+
+.history-section-head span,
+.history-empty,
+.history-error {
+  color: var(--pixel-purple-darker);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.history-room-list {
+  display: grid;
+  gap: 9px;
+}
+
+.history-room-card {
+  padding: 12px;
+  border: 2px solid var(--pixel-purple-light);
+  background: #fff;
+}
+
+.history-room-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.history-room-head h4 {
+  margin: 0 0 4px;
+  color: var(--pixel-text);
+  font-size: 14px;
+}
+
+.history-room-head > div > span,
+.history-room-meta {
+  color: var(--pixel-purple-darker);
+  font-size: 10px;
+}
+
+.history-status {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  color: var(--pixel-purple-darker);
+  background: rgba(190,177,209,0.22);
+  font-size: 10px;
+}
+
+.history-status.playing,
+.history-status.waiting {
+  color: #166534;
+  background: rgba(134,239,172,0.35);
+}
+
+.history-status.won {
+  color: #fff;
+  background: var(--pixel-pink);
+}
+
+.history-room-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin-top: 9px;
+}
+
+.mine-user-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mine-user-row .desc {
+  min-width: 0;
+}
+
+.mine-soup-stats {
+  margin: 0 0 16px;
+}
+
+.mine-soup-stats b {
+  font-size: 16px;
+}
+
+.mine-drawer-scrim .rank-list li > span:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mine-account-link {
+  display: block;
+  margin-top: 14px;
+  color: var(--pixel-purple-darker);
+  font-size: 10px;
+  line-height: 1.6;
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .history-modal {
+    padding: 10px;
+  }
+
+  .history-modal .modal-box {
+    max-height: 88dvh;
+    padding: 16px;
+  }
+
+  .history-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-room-head {
+    gap: 8px;
+  }
 }
 
 /* —— 对局页（/room/:id）—— */

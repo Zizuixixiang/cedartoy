@@ -3,11 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, History, House, ListPlus, LogOut, Plus, RefreshCw, Search, Shield, Trophy, UserRound } from 'lucide-react'
 import { api, ensureGuestToken, logoutToGuest, post } from '../api'
 import BindModal from '../components/BindModal.jsx'
+import AccountActionModal from '../components/AccountActionModal.jsx'
 import ColoredSurface from '../components/ColoredSurface.jsx'
+import HistoryModal from '../components/HistoryModal.jsx'
 import Leaderboard from '../components/Leaderboard.jsx'
 import LoginModal from '../components/LoginModal.jsx'
 import MineDrawer from '../components/MineDrawer.jsx'
-import PlaceholderModal from '../components/PlaceholderModal.jsx'
 import { stripSurfaceColorMarkers } from '../utils/display.js'
 
 const TITLE_MAX = 24
@@ -85,6 +86,8 @@ export default function Lobby() {
   const [bindOpen, setBindOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [cedartoyMe, setCedartoyMe] = useState(null)
+  const [mineSoupStats, setMineSoupStats] = useState(null)
+  const [accountAction, setAccountAction] = useState(null)
   const [spoilerConfirm, setSpoilerConfirm] = useState(null)
 
   const load = async () => {
@@ -106,12 +109,23 @@ export default function Lobby() {
 
   const loadCedartoyMe = async () => {
     const token = localStorage.getItem('cedartoy_token') || ''
-    if (!token) { setCedartoyMe(null); return }
+    if (!token) { setCedartoyMe(null); return null }
     try {
       const res = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error()
-      setCedartoyMe(await res.json())
-    } catch { setCedartoyMe(null) }
+      const data = await res.json()
+      setCedartoyMe(data)
+      return data
+    } catch { setCedartoyMe(null); return null }
+  }
+
+  const loadMineData = async () => {
+    await Promise.all([
+      loadCedartoyMe(),
+      api('/rooms/history')
+        .then((data) => setMineSoupStats(data.subjects?.find((subject) => subject.id === 'self')?.stats || null))
+        .catch(() => setMineSoupStats(null)),
+    ])
   }
 
   const unbindAi = async (aiUserId) => {
@@ -124,13 +138,53 @@ export default function Lobby() {
         body: JSON.stringify({ ai_user_id: Number(aiUserId) }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || '解绑失败') }
-      await loadCedartoyMe()
+      await loadMineData()
     } catch (e) { alert(e.message) }
+  }
+
+  const submitAccountAction = async (action, value) => {
+    const token = localStorage.getItem('cedartoy_token') || ''
+    if (!token) throw new Error('请先登录')
+    if (action.kind === 'rename') {
+      const body = {
+        action: action.target === 'machine' ? 'rename_bound_machine' : 'rename_self',
+        new_username: value,
+        ...(action.target === 'machine' ? { ai_user_id: Number(action.id) } : {}),
+      }
+      const res = await fetch('/api/auth/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '改名失败')
+    } else {
+      const res = await fetch('/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: `soup-account-${Date.now()}`,
+          method: 'tools/call',
+          params: {
+            name: 'account',
+            arguments: { action: 'reset_machine_password', ai_user_id: Number(action.id), new_password: value },
+          },
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      const text = data.result?.content?.find((item) => item.type === 'text')?.text || ''
+      if (!res.ok || data.error || data.result?.isError) {
+        throw new Error(data.error?.message || text.replace(/^【cedartoy】/, '') || '小机密码重置失败')
+      }
+    }
+    await loadMineData()
+    await load()
   }
 
   const openMine = () => {
     setMineOpen(true)
-    loadCedartoyMe()
+    loadMineData()
   }
   useEffect(() => {
     const tab = location.state?.tab
@@ -334,7 +388,7 @@ export default function Lobby() {
                   <Link className="enter-room profile-enter" to="/admin"><Shield size={16} />管理后台</Link>
                 </div>
               )}
-              <Link className="enter-room profile-enter" to="/profile">进入个人页 →</Link>
+              <Link className="enter-room profile-enter" to="/profile">查看历史 →</Link>
             </div>
           </section>
         )}
@@ -447,18 +501,20 @@ export default function Lobby() {
         onBind={() => setBindOpen(true)}
         onLogout={logout}
         onUnbind={unbindAi}
+        soupStats={mineSoupStats}
+        onAccountAction={setAccountAction}
       />
       <BindModal
         open={bindOpen}
         onClose={() => setBindOpen(false)}
-        onSuccess={loadCedartoyMe}
+        onSuccess={loadMineData}
       />
-      <PlaceholderModal
+      <HistoryModal
         open={historyOpen}
-        title="历史"
-        message="游玩历史筹备中，敬请期待。"
         onClose={() => setHistoryOpen(false)}
+        onLogin={() => setLoginOpen(true)}
       />
+      <AccountActionModal action={accountAction} onClose={() => setAccountAction(null)} onSubmit={submitAccountAction} />
       {spoilerConfirm && (
         <div className="modal-backdrop room-close-backdrop" onClick={() => setSpoilerConfirm(null)}>
           <div className="modal room-close-modal" role="dialog" aria-modal="true" aria-label="剧透提醒" onClick={(event) => event.stopPropagation()}>

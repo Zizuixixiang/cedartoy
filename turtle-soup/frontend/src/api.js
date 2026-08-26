@@ -32,15 +32,16 @@ export function validateLoginInput(username, password) {
   return ''
 }
 
-export async function loginOrRegister(username, password) {
+export async function loginAccount(username, password, mode = 'login') {
   return authLocked(async () => {
-    const res = await fetch('/api/auth/login_or_register', {
+    const registering = mode === 'register'
+    const res = await fetch(registering ? '/api/auth/register' : '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || data.detail || '登录失败')
+    if (!res.ok) throw new Error(data.error || data.detail || (registering ? '注册失败' : '登录失败'))
     const soupAuth = await exchangeSoupToken(data.user.id)
     localStorage.setItem(CEDARTOY_TOKEN_KEY, data.token)
     localStorage.setItem(CEDARTOY_USER_ID_KEY, String(data.user.id))

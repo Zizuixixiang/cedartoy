@@ -18,6 +18,131 @@ def _public_room(row: dict) -> dict:
     return out
 
 
+async def _history_subject(
+    *,
+    subject_id: str,
+    label: str,
+    username: str,
+    toy_user_id: int | None = None,
+    fallback_player_id: int | None = None,
+) -> dict:
+    if toy_user_id is not None:
+        players = await fetch_all(
+            """
+            SELECT id, ask_count, ask_count_y, ask_count_n, ask_count_u, ask_count_p,
+                   win_count, game_count
+            FROM players
+            WHERE user_id = ?
+            """,
+            (toy_user_id,),
+        )
+    elif fallback_player_id is not None:
+        row = await fetch_one(
+            """
+            SELECT id, ask_count, ask_count_y, ask_count_n, ask_count_u, ask_count_p,
+                   win_count, game_count
+            FROM players
+            WHERE id = ?
+            """,
+            (fallback_player_id,),
+        )
+        players = [row] if row else []
+    else:
+        players = []
+
+    stat_fields = (
+        "ask_count", "ask_count_y", "ask_count_n", "ask_count_u", "ask_count_p",
+        "win_count", "game_count",
+    )
+    stats = {field: sum(int(player.get(field) or 0) for player in players) for field in stat_fields}
+    player_ids = [int(player["id"]) for player in players]
+    rooms = []
+    if player_ids:
+        placeholders = ",".join("?" for _ in player_ids)
+        rooms = await fetch_all(
+            f"""
+            SELECT r.id,
+                   COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
+                   r.surface, r.status, r.created_at, r.finished_at,
+                   CASE WHEN r.created_by IN ({placeholders}) THEN 1 ELSE 0 END AS is_creator,
+                   CASE WHEN r.winner_id IN ({placeholders}) THEN 1 ELSE 0 END AS is_winner,
+                   winner.username AS winner_name,
+                   (SELECT COUNT(*) FROM game_logs own_ask
+                    WHERE own_ask.room_id = r.id
+                      AND own_ask.player_id IN ({placeholders})
+                      AND own_ask.type = 'ask') AS ask_count,
+                   (SELECT COUNT(*) FROM game_logs own_guess
+                    WHERE own_guess.room_id = r.id
+                      AND own_guess.player_id IN ({placeholders})
+                      AND own_guess.type = 'guess') AS guess_count,
+                   (SELECT COUNT(DISTINCT participants.player_id) FROM game_logs participants
+                    WHERE participants.room_id = r.id
+                      AND participants.player_id IS NOT NULL) AS participant_count,
+                   COALESCE(
+                       (SELECT MAX(activity.created_at) FROM game_logs activity WHERE activity.room_id = r.id),
+                       r.finished_at,
+                       r.created_at
+                   ) AS last_active_at
+            FROM rooms r
+            LEFT JOIN puzzles pz ON pz.id = r.puzzle_id
+            LEFT JOIN players winner ON winner.id = r.winner_id
+            WHERE r.created_by IN ({placeholders})
+               OR EXISTS (
+                   SELECT 1 FROM game_logs mine
+                   WHERE mine.room_id = r.id AND mine.player_id IN ({placeholders})
+               )
+            ORDER BY last_active_at DESC, r.created_at DESC
+            LIMIT 30
+            """,
+            (*player_ids, *player_ids, *player_ids, *player_ids, *player_ids, *player_ids),
+        )
+
+    # game_count 是跨房间清理长期保留的累计数；当前仍保留的房间可能包含尚未结算的对局。
+    stats["total_games"] = max(stats["game_count"], len(rooms))
+    return {
+        "id": subject_id,
+        "label": label,
+        "username": username,
+        "stats": stats,
+        "rooms": rooms,
+    }
+
+
+@router.get("/history")
+async def history(player: dict = Depends(current_player)):
+    if player.get("is_guest"):
+        raise HTTPException(status_code=401, detail="请先登录再查看历史")
+
+    toy_user_id = int(player["user_id"]) if player.get("user_id") is not None else None
+    subjects = [await _history_subject(
+        subject_id="self",
+        label="我",
+        username=player.get("username") or "我",
+        toy_user_id=toy_user_id,
+        fallback_player_id=int(player["id"]),
+    )]
+    if toy_user_id is not None and not player.get("is_ai"):
+        machines = await fetch_all(
+            """
+            SELECT ai.id, ai.username
+            FROM user_bindings binding
+            JOIN toy_users ai ON ai.id = binding.ai_user_id
+            WHERE binding.human_user_id = ?
+              AND ai.deleted_at IS NULL
+            ORDER BY binding.created_at DESC
+            """,
+            (toy_user_id,),
+        )
+        for machine in machines:
+            subjects.append(await _history_subject(
+                subject_id=f"machine-{machine['id']}",
+                label=machine["username"],
+                username=machine["username"],
+                toy_user_id=int(machine["id"]),
+            ))
+    return {"subjects": subjects}
+
+
 @router.get("/")
 async def list_rooms(player: dict = Depends(current_player)):
     del player

@@ -22,8 +22,13 @@
       --screen-bg: #2D2D2D;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --browser-bottom: 0px;
+      --visual-viewport-height: 100vh;
       --mobile-nav-height: 58px;
       --mobile-nav-total: calc(var(--mobile-nav-height) + var(--safe-bottom) + var(--browser-bottom));
+    }
+
+    @supports (height: 100dvh) {
+      :root { --visual-viewport-height: 100dvh; }
     }
 
     body {
@@ -124,6 +129,11 @@
       transform: translate(3px, 3px);
       border-right-width: 2px;
       border-bottom-width: 2px;
+    }
+
+    #forgotPasswordOpen[hidden],
+    #forgotPasswordModal [hidden] {
+      display: none !important;
     }
 
     .pixel-btn.secondary {
@@ -897,6 +907,14 @@
       text-transform: uppercase;
     }
 
+    .watch-btn:disabled {
+      background: #9ca3af;
+      border-right-color: #6b7280;
+      border-bottom-color: #6b7280;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
     .drawer-actions {
       display: flex;
       gap: 12px;
@@ -1017,6 +1035,11 @@
       font-size: 11px;
     }
 
+    .field[hidden],
+    .checkbox-field[hidden] {
+      display: none !important;
+    }
+
     .field input, .field textarea, .field select {
       font-family: "Courier New", Courier, monospace;
       width: 100%;
@@ -1026,6 +1049,52 @@
       color: var(--text);
       padding: 9px 10px;
       outline: 0;
+    }
+
+    .password-input-wrap {
+      position: relative;
+      display: block;
+    }
+
+    .field .password-input-wrap input {
+      padding-right: 50px;
+    }
+
+    .password-visibility-toggle {
+      appearance: none;
+      position: absolute;
+      top: 50%;
+      right: 4px;
+      display: inline-grid;
+      width: 40px;
+      min-width: 40px;
+      height: 36px;
+      min-height: 36px;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-left: 3px solid #D9CFE5;
+      border-radius: 0;
+      background: #F8F4FC;
+      color: var(--purple-dark);
+      transform: translateY(-50%);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .password-visibility-toggle:hover,
+    .password-visibility-toggle:focus-visible,
+    .password-visibility-toggle[aria-pressed="true"] {
+      background: #EEE5F5;
+      color: var(--pink-dark);
+      outline: 2px solid var(--pink);
+      outline-offset: -2px;
+    }
+
+    .password-visibility-toggle svg {
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
     }
 
     .auth-mode-tabs {
@@ -1062,10 +1131,124 @@
       accent-color: var(--pink);
     }
 
+    #machineTokenModal {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+    }
+
+    #machineTokenModal [hidden] {
+      display: none !important;
+    }
+
+    #machineTokenModal .modal-box {
+      max-height: calc(var(--visual-viewport-height) - 36px);
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
     .machine-token-result {
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 4px dashed #BEB1D1;
+      display: grid;
+      gap: 14px;
+    }
+
+    .machine-token-success {
+      padding: 13px 14px;
+      border: 3px solid #8FB296;
+      background: #F4FAF5;
+      color: #527858;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .machine-token-success strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .machine-token-output {
+      display: grid;
+      gap: 6px;
+    }
+
+    .machine-token-output-label {
+      color: var(--purple-dark);
+      font-size: 11px;
+    }
+
+    .machine-token-recommended {
+      margin-left: 5px;
+      padding: 2px 5px;
+      color: #fff;
+      background: var(--pink-dark);
+      font-size: 9px;
+    }
+
+    .machine-token-output-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 92px;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    #machineTokenModal .machine-token-result textarea {
+      width: 100%;
+      min-height: 0;
+      height: 52px;
+      max-height: 52px;
+      padding: 7px 8px;
+      border: 3px solid var(--purple);
+      background: #fff;
+      color: var(--text);
+      font-family: "Courier New", Courier, monospace;
+      resize: none;
+      line-height: 1.35;
+      outline: 0;
+      overflow: auto;
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    #machineTokenModal .machine-token-copy-button {
+      width: 92px;
+      min-height: 52px;
+      padding: 8px;
+      font-size: 11px;
+    }
+
+    #machineTokenModal .machine-token-copy-button.copied {
+      background: #729B78;
+      border-color: #527858;
+      color: #fff;
+    }
+
+    .machine-token-copy-msg {
+      min-height: 18px;
+      color: var(--pink-dark);
+      font-size: 11px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .machine-token-result-actions {
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0;
+    }
+
+    #machineTokenBack {
+      min-height: 32px;
+      padding: 4px 2px;
+      border: 0;
+      background: transparent;
+      color: var(--purple-darker);
+      font-size: 10px;
+      text-decoration: underline;
+      box-shadow: none;
     }
 
     .modal-hint {
@@ -1091,6 +1274,30 @@
     #loginModal .field input {
       border: 4px solid #BEB1D1;
       font-size: 14px;
+    }
+
+    #loginModal .forgot-password-link {
+      appearance: none;
+      display: block;
+      width: fit-content;
+      margin: -6px 0 0 auto;
+      padding: 2px 0;
+      border: 0;
+      background: transparent;
+      color: var(--purple-dark);
+      font: inherit;
+      font-size: 11px;
+      line-height: 1.5;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+      opacity: 0.78;
+    }
+
+    #loginModal .forgot-password-link:hover,
+    #loginModal .forgot-password-link:focus-visible {
+      color: var(--pink-dark);
+      opacity: 1;
     }
 
     #loginModal .modal-actions .pixel-btn.secondary {
@@ -2290,6 +2497,12 @@
         font-size: 20px;
       }
       .modal { align-items: start; padding-top: 78px; }
+      #machineTokenModal {
+        padding-bottom: calc(18px + var(--safe-bottom));
+      }
+      #machineTokenModal .modal-box {
+        max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
+      }
       .pixel-toast {
         left: 18px;
         right: 18px;
@@ -2453,10 +2666,14 @@
         <input id="loginPass" type="password" autocomplete="current-password">
         <span class="field-hint">至少 6 位</span>
       </label>
+      <label class="field" id="loginConfirmField" hidden>
+        <span class="field-label">确认密码</span>
+        <input id="loginConfirmPass" type="password" autocomplete="new-password">
+        <span class="field-hint">请再次输入相同密码</span>
+      </label>
+      <button class="forgot-password-link" id="forgotPasswordOpen" type="button" hidden>忘记密码？</button>
       <div class="modal-msg" id="loginMsg"></div>
       <div class="modal-actions">
-        <button class="pixel-btn secondary" id="forgotPasswordOpen" type="button" hidden>忘记密码？</button>
-        <button class="pixel-btn secondary" id="machineTokenFromLogin" type="button">小机 Token</button>
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="loginSubmit" type="button">登录</button>
       </div>
@@ -2523,38 +2740,54 @@
   <div class="modal" id="machineTokenModal" role="dialog" aria-modal="true" aria-labelledby="machineTokenTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="machineTokenTitle">获取小机 Token</h2>
-      <div class="auth-mode-tabs" aria-label="获取或更新小机 Token">
-        <button class="pixel-btn active" id="machineTokenModeGet" type="button">获取 Token</button>
-        <button class="pixel-btn secondary" id="machineTokenModeRotate" type="button">更新 Token</button>
-      </div>
-      <p class="modal-hint" id="machineTokenHint">仅登录已有小机账号，不会注册新账号，也不会改变当前网页登录。</p>
-      <label class="field" id="machineTokenBoundField" hidden>
-        <span class="field-label">已绑定小机</span>
-        <select id="machineTokenBound"></select>
-      </label>
-      <label class="field" id="machineTokenUserField">
-        <span class="field-label">小机账号</span>
-        <input id="machineTokenUser" type="text" maxlength="20" autocomplete="username">
-      </label>
-      <label class="field" id="machineTokenPassField">
-        <span class="field-label">小机密码</span>
-        <input id="machineTokenPass" type="password" autocomplete="current-password">
-      </label>
-      <label class="checkbox-field" id="machineTokenBindField" hidden>
-        <input id="machineTokenBind" type="checkbox">
-        <span>同时绑定到当前人类账号</span>
-      </label>
-      <div class="modal-msg" id="machineTokenMsg"></div>
-      <div class="machine-token-result" id="machineTokenResult" hidden>
-        <label class="field">
-          <span class="field-label">完整 Token</span>
-          <textarea id="machineTokenValue" rows="5" readonly spellcheck="false"></textarea>
+      <div id="machineTokenForm">
+        <p class="modal-hint" id="machineTokenHint">获取新 Token 后，该小机此前所有旧 Token 都会失效，请使用新 Token 重新设置 MCP 地址。</p>
+        <label class="field" id="machineTokenBoundField" hidden>
+          <span class="field-label">已绑定小机</span>
+          <select id="machineTokenBound"></select>
         </label>
-        <button class="pixel-btn secondary" id="machineTokenCopy" type="button">复制 Token</button>
+        <label class="field" id="machineTokenUserField">
+          <span class="field-label">小机账号</span>
+          <input id="machineTokenUser" type="text" maxlength="20" autocomplete="username">
+        </label>
+        <label class="field" id="machineTokenPassField">
+          <span class="field-label">小机密码</span>
+          <input id="machineTokenPass" type="password" autocomplete="current-password">
+        </label>
+        <label class="checkbox-field" id="machineTokenBindField" hidden>
+          <input id="machineTokenBind" type="checkbox">
+          <span>同时绑定到当前人类账号</span>
+        </label>
+        <div class="modal-msg" id="machineTokenMsg"></div>
+        <div class="modal-actions">
+          <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
+          <button class="pixel-btn" id="machineTokenSubmit" type="button">获取 Token</button>
+        </div>
       </div>
-      <div class="modal-actions">
-        <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
-        <button class="pixel-btn" id="machineTokenSubmit" type="button">获取 Token</button>
+      <div class="machine-token-result" id="machineTokenResult" hidden>
+        <div class="machine-token-success" role="status">
+          <strong id="machineTokenSuccessTitle">Token 已获取</strong>
+          <span id="machineTokenSuccessMsg"></span>
+        </div>
+        <section class="machine-token-output" aria-labelledby="machineTokenUrlLabel">
+          <div class="machine-token-output-label" id="machineTokenUrlLabel">完整 MCP 地址 <span class="machine-token-recommended">推荐</span></div>
+          <div class="machine-token-output-controls">
+            <textarea id="machineTokenUrlValue" rows="2" readonly spellcheck="false"></textarea>
+            <button class="pixel-btn secondary machine-token-copy-button" id="machineTokenUrlCopy" type="button">复制</button>
+          </div>
+        </section>
+        <section class="machine-token-output" aria-labelledby="machineTokenValueLabel">
+          <div class="machine-token-output-label" id="machineTokenValueLabel">仅 Token</div>
+          <div class="machine-token-output-controls">
+            <textarea id="machineTokenValue" rows="2" readonly spellcheck="false"></textarea>
+            <button class="pixel-btn secondary machine-token-copy-button" id="machineTokenCopy" type="button">复制</button>
+          </div>
+        </section>
+        <div class="machine-token-copy-msg" id="machineTokenCopyMsg" role="status" aria-live="polite"></div>
+        <div class="modal-actions machine-token-result-actions">
+          <button id="machineTokenBack" type="button">← 返回</button>
+          <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2932,9 +3165,9 @@
         badge: "DUEL",
         level: "LV.02",
         metricLabel: "棋种",
-        metric: "00002",
-        short: "人机对弈 / 井字棋五子棋",
-        desc: "双弈 · 和你的小机下棋(🚧施工中,还没做好)（井字棋/五子棋起步）。",
+        metric: "00006",
+        short: "人机对弈 / 6种棋类",
+        desc: "双弈 · 和你的小机下棋（🚧施工中，还没做好）（井字棋、五子棋、黑白棋、四子连珠、点格棋、斗兽棋）。",
         logs: [
           "一句话：和你绑定的小机，在同一张棋盘上认真下一局。",
           "玩法：支持 3×3 井字棋与 15×15 无禁手五子棋。",
@@ -3269,8 +3502,9 @@
         id: "camping_plaza",
         category: "mini",
         watch: true,
+        maintenance: true,
         iconFile: "camp.png",
-        name: "露营广场",
+        name: "露营广场（维护中）",
         mission: "MISSION: CAMP & GROW",
         location: "LOCATION: CAMPING PLAZA",
         glyph: "⛺",
@@ -3612,7 +3846,7 @@
     let machinePasswordTarget = null;
     let renameTarget = null;
     let loginMode = "login";
-    let machineTokenMode = "get";
+    let machineTokenCopyTimer = null;
 
     const platformSummaryLabels = {
       turtle_soup_accounts: "平台注册账号",
@@ -3644,6 +3878,48 @@
     };
 
     const $ = (id) => document.getElementById(id);
+
+    function passwordVisibilityIcon(visible) {
+      return visible
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c5 0 9 5.5 9 8a8.7 8.7 0 0 1-2 3.5"></path><path d="M6.6 6.6C4.4 8.1 3 10.5 3 12c0 2.5 4 8 9 8a9.7 9.7 0 0 0 3-.5"></path></svg>';
+    }
+
+    function setPasswordVisibility(input, visible) {
+      input.type = visible ? "text" : "password";
+      const button = input.parentElement?.querySelector(".password-visibility-toggle");
+      if (!button) return;
+      const label = visible ? "隐藏密码" : "显示密码";
+      button.setAttribute("aria-pressed", String(visible));
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      button.innerHTML = passwordVisibilityIcon(visible);
+    }
+
+    function initPasswordVisibility(root = document) {
+      root.querySelectorAll('input[type="password"]').forEach((input) => {
+        if (input.dataset.passwordVisibilityReady === "true") return;
+        const wrap = document.createElement("span");
+        wrap.className = "password-input-wrap";
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+
+        const button = document.createElement("button");
+        button.className = "password-visibility-toggle";
+        button.type = "button";
+        if (input.id) button.setAttribute("aria-controls", input.id);
+        button.addEventListener("click", () => setPasswordVisibility(input, input.type === "password"));
+        wrap.appendChild(button);
+        input.dataset.passwordVisibilityReady = "true";
+        setPasswordVisibility(input, false);
+      });
+    }
+
+    function resetPasswordVisibility(root = document) {
+      root.querySelectorAll('input[data-password-visibility-ready="true"]').forEach((input) => {
+        setPasswordVisibility(input, false);
+      });
+    }
     let toastTimer = null;
 
     function token() {
@@ -4732,11 +5008,12 @@
       if (guideEnter) guideEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "完整玩法 →");
       const drawerEnter = $("drawerEnter");
       if (drawerEnter) drawerEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
-      const watchLabel = game.watchLabel || "围观大屏 →";
+      const watchLabel = game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →");
       ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
         const btn = $(id);
         if (!btn) return;
         btn.style.display = game.watch ? "" : "none";
+        btn.disabled = Boolean(game.maintenance);
         btn.textContent = watchLabel;
       });
       renderRanks(game);
@@ -5228,6 +5505,10 @@
     }
 
     async function enterWatch() {
+      if (currentGame().maintenance) {
+        showToast("露营广场正在维护中，暂时无法进入游戏，请稍后再试。");
+        return;
+      }
       if (!me || !token()) {
         const loginHint = currentGame().id === "garden_cat"
           ? "请先登录再进入花园"
@@ -5308,7 +5589,11 @@
         ? "创建新的人类账号；已有用户名不会被登录或覆盖。"
         : "登录已有的人类账号；用户名不存在时不会自动注册。";
       $("loginSubmit").textContent = registering ? "注册" : "登录";
-      $("forgotPasswordOpen").hidden = registering || !EMAIL_SECURITY_UI_ENABLED;
+      $("forgotPasswordOpen").hidden = registering;
+      $("loginConfirmField").hidden = !registering;
+      $("loginConfirmPass").value = "";
+      $("loginPass").autocomplete = registering ? "new-password" : "current-password";
+      resetPasswordVisibility($("loginModal"));
       $("loginMsg").textContent = "";
     }
 
@@ -5321,14 +5606,16 @@
       forgotPasswordStep = "username";
       forgotPasswordUsername = "";
       $("forgotUsername").value = "";
-      $("forgotUsernameField").hidden = false;
+      $("forgotUsernameField").hidden = !EMAIL_SECURITY_UI_ENABLED;
       $("forgotCodeFields").hidden = true;
       $("forgotCode").value = "";
       $("forgotNewPassword").value = "";
       $("forgotConfirmPassword").value = "";
-      $("forgotPasswordHint").textContent = "输入账号名，系统会根据账号类型提供找回方式。";
+      $("forgotPasswordHint").textContent = EMAIL_SECURITY_UI_ENABLED
+        ? "输入账号名，系统会根据账号类型提供找回方式。"
+        : "暂不支持自助找回密码，请联系管理员处理。";
       $("forgotPasswordMsg").textContent = "";
-      $("forgotPasswordSubmit").textContent = "下一步";
+      $("forgotPasswordSubmit").textContent = EMAIL_SECURITY_UI_ENABLED ? "下一步" : "知道了";
       $("forgotPasswordSubmit").disabled = false;
     }
 
@@ -5343,6 +5630,10 @@
     async function submitForgotPassword() {
       const message = $("forgotPasswordMsg");
       const submit = $("forgotPasswordSubmit");
+      if (!EMAIL_SECURITY_UI_ENABLED) {
+        closeModals();
+        return;
+      }
       if (submit.disabled) return;
       message.textContent = "";
       if (forgotPasswordStep === "username") {
@@ -5581,46 +5872,102 @@
       `;
     }
 
-    function setMachineTokenMode(mode) {
-      machineTokenMode = mode === "rotate" ? "rotate" : "get";
-      const rotating = machineTokenMode === "rotate";
-      $("machineTokenModeGet").classList.toggle("active", !rotating);
-      $("machineTokenModeRotate").classList.toggle("active", rotating);
-      $("machineTokenTitle").textContent = rotating ? "更新小机 Token" : "获取小机 Token";
-      $("machineTokenHint").textContent = rotating
-        ? "更新后旧 Token 立即失效，需要替换 MCP 地址。已绑定小机无需密码。"
-        : "仅登录已有小机账号，不会注册新账号，也不会改变当前网页登录。";
-      const bindings = me && !me.user.is_ai && token() ? (me.bindings || []) : [];
-      $("machineTokenBoundField").hidden = !rotating || bindings.length === 0;
+    function machineTokenBindings() {
+      return me && !me.user.is_ai && token() ? (me.bindings || []) : [];
+    }
+
+    function selectedMachineTokenBinding() {
+      const selectedId = $("machineTokenBound").value;
+      return machineTokenBindings().find((machine) => String(machine.id) === selectedId) || null;
+    }
+
+    function resetMachineTokenCopyFeedback() {
+      if (machineTokenCopyTimer) {
+        clearTimeout(machineTokenCopyTimer);
+        machineTokenCopyTimer = null;
+      }
+      $("machineTokenUrlCopy").textContent = "复制";
+      $("machineTokenCopy").textContent = "复制";
+      $("machineTokenUrlCopy").classList.remove("copied");
+      $("machineTokenCopy").classList.remove("copied");
+      $("machineTokenCopyMsg").textContent = "";
+    }
+
+    function clearMachineTokenResult() {
+      $("machineTokenMsg").textContent = "";
+      $("machineTokenSuccessMsg").textContent = "";
+      $("machineTokenForm").hidden = false;
+      $("machineTokenResult").hidden = true;
+      $("machineTokenSubmit").hidden = false;
+      $("machineTokenValue").value = "";
+      $("machineTokenUrlValue").value = "";
+      resetMachineTokenCopyFeedback();
+    }
+
+    function showMachineTokenResult(machineToken, message) {
+      $("machineTokenValue").value = machineToken;
+      $("machineTokenUrlValue").value = `https://toy.cedarstar.org/${machineToken}`;
+      $("machineTokenSuccessTitle").textContent = "Token 已获取";
+      $("machineTokenSuccessMsg").textContent = message;
+      $("machineTokenTitle").textContent = "获取成功";
+      $("machineTokenForm").hidden = true;
+      $("machineTokenSubmit").hidden = true;
+      $("machineTokenResult").hidden = false;
+    }
+
+    function returnToMachineTokenForm() {
+      $("machineTokenUser").value = "";
+      $("machineTokenPass").value = "";
+      $("machineTokenBind").checked = false;
+      prepareMachineTokenForm();
+      focusMachineTokenInput();
+    }
+
+    function syncMachineTokenFields() {
+      const usingBoundMachine = Boolean(selectedMachineTokenBinding());
+      $("machineTokenUserField").hidden = usingBoundMachine;
+      $("machineTokenPassField").hidden = false;
+      $("machineTokenBindField").hidden = usingBoundMachine
+        || !(me && !me.user.is_ai && token());
+      clearMachineTokenResult();
+    }
+
+    function focusMachineTokenInput() {
+      const target = !$("machineTokenUserField").hidden
+        ? $("machineTokenUser")
+        : (!$("machineTokenPassField").hidden ? $("machineTokenPass") : $("machineTokenSubmit"));
+      try {
+        target.focus({preventScroll: true});
+      } catch (_err) {
+        target.focus();
+      }
+    }
+
+    function prepareMachineTokenForm() {
+      $("machineTokenTitle").textContent = "获取小机 Token";
+      $("machineTokenHint").textContent = "获取新 Token 后，该小机此前所有旧 Token 都会失效，请使用新 Token 重新设置 MCP 地址。";
+      const bindings = machineTokenBindings();
+      $("machineTokenBoundField").hidden = bindings.length === 0;
       $("machineTokenBound").innerHTML = bindings.map((machine) =>
         `<option value="${machine.id}">${escapeHtml(machine.username)}</option>`
       ).join("") + (bindings.length ? '<option value="">其他小机（使用账号密码）</option>' : "");
-      const usingBoundMachine = rotating && bindings.length > 0 && Boolean($("machineTokenBound").value);
-      $("machineTokenUserField").hidden = usingBoundMachine;
-      $("machineTokenPassField").hidden = usingBoundMachine;
-      $("machineTokenBindField").hidden = rotating || !(me && !me.user.is_ai && token());
-      $("machineTokenSubmit").textContent = rotating ? "更新 Token" : "获取 Token";
-      $("machineTokenMsg").textContent = "";
-      $("machineTokenResult").hidden = true;
-      $("machineTokenValue").value = "";
+      $("machineTokenSubmit").textContent = "获取 Token";
+      syncMachineTokenFields();
     }
 
     function resetMachineTokenModal() {
       $("machineTokenUser").value = "";
       $("machineTokenPass").value = "";
       $("machineTokenBind").checked = false;
-      $("machineTokenMsg").textContent = "";
-      $("machineTokenValue").value = "";
-      $("machineTokenResult").hidden = true;
       $("machineTokenSubmit").disabled = false;
-      setMachineTokenMode("get");
+      prepareMachineTokenForm();
     }
 
     function openMachineTokenModal() {
       closeDrawers();
       closeModals();
       openModal("machineTokenModal");
-      $("machineTokenUser").focus();
+      focusMachineTokenInput();
     }
 
     async function loadMachines() {
@@ -5795,6 +6142,7 @@
     function closeModals() {
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
+      resetLoginModal();
       resetBindModal();
       resetForgotPasswordModal();
       resetEmailSecurityModal();
@@ -5806,6 +6154,7 @@
       clearRenameModal();
       renameTarget = null;
       clearResetPasswordModal();
+      resetPasswordVisibility();
     }
 
     function renderAuth() {
@@ -6039,6 +6388,17 @@
         $("loginMsg").textContent = validationError;
         return;
       }
+      if (loginMode === "register") {
+        const confirmPassword = $("loginConfirmPass").value;
+        if (!confirmPassword) {
+          $("loginMsg").textContent = "请再次输入密码";
+          return;
+        }
+        if (password !== confirmPassword) {
+          $("loginMsg").textContent = "两次输入的密码不一致";
+          return;
+        }
+      }
       try {
         const endpoint = loginMode === "register" ? "/api/auth/register" : "/api/auth/login";
         const res = await fetch(endpoint, {
@@ -6097,27 +6457,22 @@
     }
 
     async function getMachineToken() {
-      const username = $("machineTokenUser").value.trim();
+      const boundMachine = selectedMachineTokenBinding();
+      const username = boundMachine
+        ? String(boundMachine.username)
+        : $("machineTokenUser").value.trim();
       const password = $("machineTokenPass").value;
       const bind = !$("machineTokenBindField").hidden && $("machineTokenBind").checked;
-      const rotating = machineTokenMode === "rotate";
-      const boundAiUserId = rotating && !$("machineTokenBoundField").hidden
-        ? $("machineTokenBound").value
-        : "";
+      const boundAiUserId = boundMachine ? String(boundMachine.id) : "";
       const message = $("machineTokenMsg");
       const submit = $("machineTokenSubmit");
       if (submit.disabled) return;
-      message.textContent = "";
-      $("machineTokenResult").hidden = true;
-      $("machineTokenValue").value = "";
-      if (!boundAiUserId) {
-        const validationError = validateLoginInput(username, password);
-        if (validationError) {
-          message.textContent = validationError;
-          return;
-        }
-      }
-      if (rotating && !confirm("更新后旧 Token 会立即失效。确认更新并准备替换 MCP 地址？")) {
+      clearMachineTokenResult();
+      const validationError = boundMachine
+        ? (!password ? "小机密码必填" : (password.length < 6 ? "密码至少 6 位" : ""))
+        : validateLoginInput(username, password);
+      if (validationError) {
+        message.textContent = validationError;
         return;
       }
       submit.disabled = true;
@@ -6132,15 +6487,22 @@
             username,
             password,
             bind,
-            rotate: rotating,
             ...(boundAiUserId ? {ai_user_id: Number(boundAiUserId)} : {}),
           }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "获取 Token 失败");
-        $("machineTokenValue").value = data.token || "";
-        $("machineTokenResult").hidden = false;
-        message.textContent = data.message || (bind ? "Token 已获取，小机也已绑定到当前账号。" : "Token 已获取。");
+        const machineToken = data.token;
+        if (typeof machineToken !== "string" || !/^ctai_v1_[A-Za-z0-9_-]+$/.test(machineToken)) {
+          throw new Error("接口未返回有效的完整 Token");
+        }
+        const successMessage = data.message || (bind ? "Token 已获取，小机也已绑定到当前账号。" : "Token 已获取。");
+        showMachineTokenResult(machineToken, successMessage);
+        try {
+          $("machineTokenUrlCopy").focus({preventScroll: true});
+        } catch (_err) {
+          $("machineTokenUrlCopy").focus();
+        }
         if (bind) {
           await loadMe();
           renderMine();
@@ -6149,24 +6511,78 @@
         message.textContent = err.message || "获取 Token 失败";
       } finally {
         submit.disabled = false;
-        submit.textContent = rotating ? "更新 Token" : "获取 Token";
+        submit.textContent = "获取 Token";
       }
     }
 
-    async function copyMachineToken() {
-      const value = $("machineTokenValue").value;
-      if (!value) return;
+    async function writeExactClipboardText(value) {
+      if (typeof value !== "string" || !value) return false;
       try {
-        await navigator.clipboard.writeText(value);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          await navigator.clipboard.writeText(value);
+          return true;
+        }
       } catch (_err) {
-        $("machineTokenValue").focus();
-        $("machineTokenValue").select();
-        if (!document.execCommand("copy")) {
-          $("machineTokenMsg").textContent = "复制失败，请手动选择完整 Token。";
-          return;
+        // Continue with the selection-based fallback below.
+      }
+
+      const fallback = document.createElement("textarea");
+      fallback.value = value;
+      fallback.setAttribute("readonly", "");
+      fallback.setAttribute("aria-hidden", "true");
+      fallback.style.position = "fixed";
+      fallback.style.top = "0";
+      fallback.style.left = "-9999px";
+      fallback.style.fontSize = "16px";
+      fallback.style.opacity = "0";
+      const previouslyFocused = document.activeElement;
+      document.body.appendChild(fallback);
+      try {
+        fallback.focus({preventScroll: true});
+      } catch (_err) {
+        fallback.focus();
+      }
+      fallback.select();
+      fallback.setSelectionRange(0, value.length);
+      let copied = false;
+      try {
+        copied = Boolean(document.execCommand && document.execCommand("copy"));
+      } catch (_err) {
+        copied = false;
+      }
+      fallback.remove();
+      if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+        try {
+          previouslyFocused.focus({preventScroll: true});
+        } catch (_err) {
+          previouslyFocused.focus();
         }
       }
-      $("machineTokenMsg").textContent = "完整 Token 已复制。";
+      return copied;
+    }
+
+    async function copyMachineTokenField(fieldId, buttonId, copiedLabel) {
+      const value = $(fieldId).value;
+      if (!value) return;
+      const copied = await writeExactClipboardText(value);
+      if (!copied) {
+        $("machineTokenCopyMsg").textContent = "自动复制失败，请重试或更换浏览器。";
+        return;
+      }
+      resetMachineTokenCopyFeedback();
+      const button = $(buttonId);
+      button.textContent = "✓ 已复制";
+      button.classList.add("copied");
+      $("machineTokenCopyMsg").textContent = `${copiedLabel}已复制，可直接粘贴。`;
+      machineTokenCopyTimer = setTimeout(resetMachineTokenCopyFeedback, 2200);
+    }
+
+    async function copyMachineToken() {
+      await copyMachineTokenField("machineTokenValue", "machineTokenCopy", "完整 Token");
+    }
+
+    async function copyMachineTokenUrl() {
+      await copyMachineTokenField("machineTokenUrlValue", "machineTokenUrlCopy", "完整 MCP 地址");
     }
 
     function resetChangePasswordModal() {
@@ -6626,23 +7042,21 @@
     $("mineClose").addEventListener("click", closeDrawers);
     $("gameDrawer").addEventListener("click", (event) => { if (event.target.id === "gameDrawer") closeDrawers(); });
     $("mineDrawer").addEventListener("click", (event) => { if (event.target.id === "mineDrawer") closeDrawers(); });
+    initPasswordVisibility();
     $("loginSubmit").addEventListener("click", login);
     $("loginModeLogin").addEventListener("click", () => setLoginMode("login"));
     $("loginModeRegister").addEventListener("click", () => setLoginMode("register"));
     $("forgotPasswordOpen").addEventListener("click", openForgotPasswordModal);
     $("forgotPasswordSubmit").addEventListener("click", submitForgotPassword);
     $("emailSecuritySubmit").addEventListener("click", submitEmailSecurity);
-    $("machineTokenFromLogin").addEventListener("click", openMachineTokenModal);
-    $("machineTokenModeGet").addEventListener("click", () => setMachineTokenMode("get"));
-    $("machineTokenModeRotate").addEventListener("click", () => setMachineTokenMode("rotate"));
     $("machineTokenBound").addEventListener("change", () => {
-      const usingBoundMachine = Boolean($("machineTokenBound").value);
-      $("machineTokenUserField").hidden = usingBoundMachine;
-      $("machineTokenPassField").hidden = usingBoundMachine;
-      $("machineTokenMsg").textContent = "";
-      $("machineTokenResult").hidden = true;
+      $("machineTokenPass").value = "";
+      syncMachineTokenFields();
+      focusMachineTokenInput();
     });
     $("machineTokenSubmit").addEventListener("click", getMachineToken);
+    $("machineTokenBack").addEventListener("click", returnToMachineTokenForm);
+    $("machineTokenUrlCopy").addEventListener("click", copyMachineTokenUrl);
     $("machineTokenCopy").addEventListener("click", copyMachineToken);
     $("bindSubmit").addEventListener("click", bindAccount);
     $("changePasswordSubmit").addEventListener("click", changePassword);
@@ -6692,7 +7106,8 @@
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
       if (event.key === "Enter" && $("forgotPasswordModal").classList.contains("show")) submitForgotPassword();
       if (event.key === "Enter" && $("emailSecurityModal").classList.contains("show")) submitEmailSecurity();
-      if (event.key === "Enter" && $("machineTokenModal").classList.contains("show") && event.target.id !== "machineTokenValue") getMachineToken();
+      if (event.key === "Enter" && $("machineTokenModal").classList.contains("show")
+          && ["machineTokenUser", "machineTokenPass"].includes(event.target.id)) getMachineToken();
       if (event.key === "Enter" && $("changePasswordModal").classList.contains("show")) changePassword();
       if (event.key === "Enter" && $("deleteAccountModal").classList.contains("show")) {
         if (!$("deleteAccountStepTwo").hidden) requestDeleteAccount();
@@ -6709,6 +7124,7 @@
       if (!vv) return;
       const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
       document.documentElement.style.setProperty("--browser-bottom", `${inset}px`);
+      document.documentElement.style.setProperty("--visual-viewport-height", `${Math.max(1, Math.round(vv.height))}px`);
     }
 
     if (window.visualViewport) {

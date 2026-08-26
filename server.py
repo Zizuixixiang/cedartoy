@@ -118,7 +118,6 @@ HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
 AI_OPAQUE_TOKEN_PREFIX = "ctai_v1_"
 AI_OPAQUE_TOKEN_BYTES = 32
 AI_OPAQUE_TOKEN_FORMAT_VERSION = 1
-AI_OPAQUE_TOKEN_MAX_ACTIVE = 5
 LEGACY_AI_JWT_COMPAT_ENABLED = os.getenv(
     "LEGACY_AI_JWT_COMPAT_ENABLED", "true"
 ).strip().lower() not in {"0", "false", "no", "off"}
@@ -141,6 +140,13 @@ DUEL_DB_PATH = Path(__file__).resolve().parent / "vendor" / "duel" / "data" / "d
 GARDEN_NOTES_DB_PATH = Path(__file__).resolve().parent / "data" / "garden_cat_notes.db"
 GARDEN_LEGACY_DB_PATH = Path(__file__).resolve().parent / "vendor" / "Garden-Cat-Engine" / "garden_cat.db"
 CAMPING_PLAZA_DB_PATH = Path(os.getenv("CAMPING_PLAZA_DB_PATH", Path(__file__).resolve().parent / "data" / "camping_plaza.db"))
+GAME_MAINTENANCE = {
+    "camping_plaza": {
+        "enabled": True,
+        "label": "维护中",
+        "message": "露营广场正在维护中，暂时无法进入游戏，请稍后再试。",
+    },
+}
 _HTML_ETAG_CACHE = {}
 _HTML_ETAG_CACHE_LOCK = Lock()
 HOP_BY_HOP_HEADERS = {
@@ -187,7 +193,7 @@ RATE_LIMIT_ERROR_CODE = -32029
 REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
 REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
 FAILED_LOGIN_RATE_LIMIT_MESSAGE = "登录失败次数过多，请稍后再试"
-RECENT_REGISTER_NOTICE = "检测到你近期已注册过账号，如是同一只小机请改用 login 登录旧账号，避免产生多个身份"
+RECENT_REGISTER_NOTICE = "检测到你近期已注册过账号；如是同一只小机且已没有旧账号的有效 Token，请改用 login 登录旧账号，避免产生多个身份"
 _REQUEST_RATE_LIMIT = {}
 _DUEL_WEB_REQUEST_RATE_LIMIT = {}
 _REGISTER_RATE_LIMIT = {}
@@ -260,7 +266,11 @@ _PLATFORM_TOOLS = [
     {
         "name": "account",
         "description": (
-            '注册账号用；游客也能玩，账号仅供存档和持久身份。'
+            '账号身份管理。已有有效 Token 的小机要重新获取/替换凭据时用 rotate_token：'
+            '当前鉴权即是身份凭据，无需 username/password，并会废止此前全部 Token、只保留新 Token。'
+            '仅当 Token 已丢失或没有有效 Token 时，才用 login + username/password 获取替代 Token；'
+            'login 同样会废止此前全部 Token、只保留新 Token。'
+            '新账号使用 login_or_register；游客也能玩。'
             '具体 action 和参数请调用 get_guide(game="account")。'
         ),
         "inputSchema": {
@@ -268,10 +278,10 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "login_or_register、login、rotate_token、generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account",
+                    "description": "rotate_token（当前已认证 AI 免账密替换 Token，全部旧 Token 失效）、login（无有效 Token 时用账密获取唯一替代 Token，全部旧 Token 失效）、login_or_register（仅注册），以及 generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account",
                 },
-                "username": {"type": "string", "description": "login/login_or_register 用账号名；my_saves human=true 且绑定多个人类时指定目标 username"},
-                "password": {"type": "string"},
+                "username": {"type": "string", "description": "仅 login/login_or_register 使用账号名；rotate_token 不需要；my_saves human=true 且绑定多个人类时指定目标 username"},
+                "password": {"type": "string", "description": "仅 login/login_or_register 使用；rotate_token 在当前已认证状态下不需要账密"},
                 "current_password": {"type": "string", "description": "人类账号申请注销时再次输入当前密码"},
                 "old_password": {"type": "string"},
                 "new_password": {"type": "string"},
@@ -1484,28 +1494,12 @@ def _opaque_ai_token_hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _issue_ai_token_in_transaction(conn, user, *, enforce_active_limit=True):
+def _issue_ai_token_in_transaction(conn, user):
     """Issue one opaque AI token; only its SHA-256 hash survives this call."""
     user_id = int(user["id"])
     if not user.get("is_ai") or user.get("deleted_at") is not None:
         raise _McpError(-32602, "目标账号不是有效的小机账号")
     generation = int(user.get("ai_token_version") or 0)
-    if enforce_active_limit:
-        active_count = int(conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM ai_access_tokens
-            WHERE user_id = ? AND generation = ? AND revoked_at_epoch IS NULL
-            """,
-            (user_id, generation),
-        ).fetchone()[0])
-        if active_count >= AI_OPAQUE_TOKEN_MAX_ACTIVE:
-            raise _McpError(
-                -32021,
-                f"该小机已有 {AI_OPAQUE_TOKEN_MAX_ACTIVE} 枚有效 Token。为避免自动踢掉仍在使用的 MCP，"
-                "普通登录不会继续签发；请使用网页“更新 Token”或 rotate_token 明确撤销旧 Token。",
-                {"reason": "active_token_limit", "max_active_tokens": AI_OPAQUE_TOKEN_MAX_ACTIVE},
-            )
     for _attempt in range(3):
         token = AI_OPAQUE_TOKEN_PREFIX + secrets.token_urlsafe(AI_OPAQUE_TOKEN_BYTES)
         try:
@@ -1530,8 +1524,19 @@ def _issue_ai_token_in_transaction(conn, user, *, enforce_active_limit=True):
     raise RuntimeError("failed to allocate a unique AI token")
 
 
-def _issue_current_account_token_in_transaction(conn, user):
+def _issue_initial_account_token_in_transaction(conn, user):
+    """Issue the first token for a newly-created account."""
     if user.get("is_ai"):
+        active_count = int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ai_access_tokens
+            WHERE user_id = ? AND revoked_at_epoch IS NULL
+            """,
+            (int(user["id"]),),
+        ).fetchone()[0])
+        if active_count:
+            raise RuntimeError("initial AI token already exists")
         return _issue_ai_token_in_transaction(conn, user)
     return _create_account_jwt(user)
 
@@ -1604,7 +1609,7 @@ def _create_account_jwt(user):
 
 
 def _create_account_token(user):
-    """Issue the current token format: opaque for AI, unchanged JWT for humans."""
+    """Create a human JWT or bootstrap/replace an internal AI credential."""
     if not user.get("is_ai"):
         return _create_account_jwt(user)
     with _db_connect() as conn:
@@ -1615,7 +1620,20 @@ def _create_account_token(user):
         ).fetchone())
         if not current_user:
             raise _McpError(-32004, "小机账号不存在或已删除")
-        token = _issue_ai_token_in_transaction(conn, current_user)
+        active_count = int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM ai_access_tokens
+            WHERE user_id = ? AND revoked_at_epoch IS NULL
+            """,
+            (current_user["id"],),
+        ).fetchone()[0])
+        if active_count:
+            current_user, token = _replace_ai_token_in_transaction(
+                conn, current_user["id"]
+            )
+        else:
+            token = _issue_ai_token_in_transaction(conn, current_user)
         conn.commit()
     return token
 
@@ -2070,11 +2088,23 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
             )
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
             _record_successful_registration(conn, user, client_ip)
-            token = _issue_current_account_token_in_transaction(conn, user)
+            token = _issue_initial_account_token_in_transaction(conn, user)
             conn.commit()
             result = {"token": token, "user": _public_user(user)}
             return _append_recent_registration_notice(result, had_recent_registration)
-        token = _issue_current_account_token_in_transaction(conn, user)
+        if user.get("is_ai"):
+            conn.execute("BEGIN IMMEDIATE")
+            user = _row_dict(conn.execute(
+                "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+                (user["id"],),
+            ).fetchone())
+            if not user or not _verify_password(password, user["password_hash"]):
+                _raise_failed_login(client_ip, username)
+            user, token = _replace_ai_token_in_transaction(
+                conn, user["id"], allow_pending_deletion=True
+            )
+        else:
+            token = _create_account_jwt(user)
         conn.commit()
     return {"token": token, "user": _public_user(user)}
 
@@ -2095,7 +2125,7 @@ def _login_or_register_ai(username, password, client_ip=None):
         )
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
         _record_successful_registration(conn, user, client_ip)
-        token = _issue_ai_token_in_transaction(conn, user)
+        token = _issue_initial_account_token_in_transaction(conn, user)
         conn.commit()
     return _append_recent_registration_notice({
         "token": token,
@@ -2124,12 +2154,20 @@ def _login_existing_account(username, password, client_ip=None):
                 "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
                 (user["id"],),
             ).fetchone())
-            if not user or not user.get("is_ai"):
+            if (
+                not user
+                or not user.get("is_ai")
+                or not _verify_password(password, user["password_hash"])
+            ):
                 raise _McpError(-32001, "用户名或密码错误")
-        if user.get("deletion_requested_at_epoch") is None:
-            conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user["id"],))
-        user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
-        token = _issue_current_account_token_in_transaction(conn, user)
+            user, token = _replace_ai_token_in_transaction(
+                conn, user["id"], allow_pending_deletion=True
+            )
+        else:
+            if user.get("deletion_requested_at_epoch") is None:
+                conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user["id"],))
+            user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
+            token = _create_account_jwt(user)
         conn.commit()
     result = {
         "token": token,
@@ -2138,7 +2176,12 @@ def _login_existing_account(username, password, client_ip=None):
     if user.get("deletion_requested_at_epoch") is not None:
         result["message"] = "账号处于待注销状态；当前 token 只能查询或取消注销。"
     else:
-        result["message"] = "登录成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份。"
+        result["message"] = (
+            "登录成功。此前全部旧 Token 已失效，只保留这枚新 Token；"
+            "请让你的人类替换 MCP 地址。"
+            if user.get("is_ai")
+            else "登录成功。"
+        )
     return result
 
 
@@ -2764,7 +2807,7 @@ def _bind_account(human_token, binding_token):
     return {"ok": True}
 
 
-def _rotate_ai_user_in_transaction(conn, user_id):
+def _rotate_ai_user_in_transaction(conn, user_id, *, allow_pending_deletion=False):
     user = _row_dict(conn.execute(
         "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
         (int(user_id),),
@@ -2773,7 +2816,10 @@ def _rotate_ai_user_in_transaction(conn, user_id):
         raise _McpError(-32004, "小机账号不存在或已删除")
     if not user.get("is_ai"):
         raise _McpError(-32602, "目标账号不是小机账号")
-    if user.get("deletion_requested_at_epoch") is not None:
+    if (
+        user.get("deletion_requested_at_epoch") is not None
+        and not allow_pending_deletion
+    ):
         raise _McpError(-32010, "待注销小机不能更新 Token")
     conn.execute(
         """
@@ -2799,23 +2845,35 @@ def _rotate_ai_user_in_transaction(conn, user_id):
     ).fetchone())
 
 
+def _replace_ai_token_in_transaction(
+    conn, user_id, *, allow_pending_deletion=False
+):
+    """Atomically revoke every old credential and issue exactly one replacement."""
+    user = _rotate_ai_user_in_transaction(
+        conn,
+        user_id,
+        allow_pending_deletion=allow_pending_deletion,
+    )
+    token = _issue_ai_token_in_transaction(conn, user)
+    return user, token
+
+
 def _rotate_ai_token(raw_token):
     user = _current_account(raw_token)
     if not user.get("is_ai"):
         raise _McpError(-32602, "只有小机账号可以更新 Token")
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        user = _rotate_ai_user_in_transaction(conn, user["id"])
-        token = _issue_ai_token_in_transaction(conn, user, enforce_active_limit=False)
+        user, token = _replace_ai_token_in_transaction(conn, user["id"])
         conn.commit()
     return {
         "token": token,
         "user": _public_user(user),
-        "message": "旧 Token 已失效，请让人类替换 MCP 地址。",
+        "message": "此前全部旧 Token 已失效，请让人类替换 MCP 地址。",
     }
 
 
-def _rotate_bound_machine_token(human_token, ai_user_id):
+def _rotate_bound_machine_token(human_token, ai_user_id, password, client_ip=None):
     human = _current_account(human_token)
     if human.get("is_ai"):
         raise _McpError(-32602, "只有人类账号可以更新绑定小机 Token")
@@ -2823,25 +2881,34 @@ def _rotate_bound_machine_token(human_token, ai_user_id):
         ai_user_id = int(ai_user_id)
     except (TypeError, ValueError):
         raise _McpError(-32602, "ai_user_id 必填") from None
+    password = _normalize_credential_field(password, "password")
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        binding = conn.execute(
+        user = _row_dict(conn.execute(
             """
-            SELECT 1 FROM user_bindings
-            WHERE human_user_id = ? AND ai_user_id = ?
+            SELECT u.*
+            FROM user_bindings AS b
+            JOIN toy_users AS u ON u.id = b.ai_user_id
+            WHERE b.human_user_id = ? AND b.ai_user_id = ?
             """,
             (int(human["id"]), ai_user_id),
-        ).fetchone()
-        if not binding:
+        ).fetchone())
+        if not user:
             raise _McpError(-32602, "该小机未绑定到你的账号")
-        user = _rotate_ai_user_in_transaction(conn, ai_user_id)
-        token = _issue_ai_token_in_transaction(conn, user, enforce_active_limit=False)
+        if not password:
+            raise _McpError(-32602, "小机密码必填")
+        if _failed_login_is_limited(client_ip, user["username"]):
+            raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
+        if not _verify_password(password, user["password_hash"]):
+            _raise_failed_login(client_ip, user["username"])
+        _clear_failed_login(client_ip, user["username"])
+        user, token = _replace_ai_token_in_transaction(conn, ai_user_id)
         conn.commit()
     return {
         "token": token,
         "user": _public_user(user),
         "rotated": True,
-        "message": "旧 Token 已失效，请替换 MCP 地址。",
+        "message": "此前全部旧 Token 已失效，请替换 MCP 地址。",
     }
 
 
@@ -2855,15 +2922,20 @@ def _machine_account_token(
     human_token="",
     client_ip=None,
 ):
-    """Return or rotate an AI token; bound machines can rotate passwordlessly."""
+    """Replace an AI token after bound-account or credential verification."""
     if not isinstance(bind, bool):
         raise _McpError(-32602, "bind 必须是布尔值")
     if not isinstance(rotate, bool):
         raise _McpError(-32602, "rotate 必须是布尔值")
-    if rotate and ai_user_id is not None:
+    if ai_user_id is not None:
         if not human_token:
             raise _McpError(-32001, "请先登录人类账号")
-        return _rotate_bound_machine_token(human_token, ai_user_id)
+        return _rotate_bound_machine_token(
+            human_token,
+            ai_user_id,
+            password,
+            client_ip=client_ip,
+        )
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
@@ -2893,30 +2965,16 @@ def _machine_account_token(
             raise _McpError(-32010, "该小机处于待注销状态，只能登录后查询或取消注销")
         if bind:
             _ensure_ai_binding(conn, human["id"], user["id"])
-        if rotate:
-            user = _rotate_ai_user_in_transaction(conn, user["id"])
-            token = _issue_ai_token_in_transaction(
-                conn, user, enforce_active_limit=False
-            )
-        else:
-            conn.execute(
-                "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
-                (user["id"],),
-            )
-            user = _row_dict(conn.execute(
-                "SELECT * FROM toy_users WHERE id = ?",
-                (user["id"],),
-            ).fetchone())
-            token = _issue_ai_token_in_transaction(conn, user)
+        user, token = _replace_ai_token_in_transaction(conn, user["id"])
         conn.commit()
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
 
-    result = {"token": token, "user": _public_user(user)}
-    if rotate:
-        result.update({
-            "rotated": True,
-            "message": "旧 Token 已失效，请替换 MCP 地址。",
-        })
+    result = {
+        "token": token,
+        "user": _public_user(user),
+        "rotated": True,
+        "message": "此前全部旧 Token 已失效，只保留这枚新 Token；请替换 MCP 地址。",
+    }
     if bind:
         result["bound"] = True
     return result
@@ -5901,11 +5959,15 @@ def _today_game_line(path_token=None, date_str=None):
 
 
 def _tool_list_games(path_token=None):
+    camping_maintenance = _game_maintenance("camping_plaza")
+    camping_label = "camping_plaza" + (
+        f"（{camping_maintenance['label']}）" if camping_maintenance else ""
+    )
     base = (
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        "小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | camping_plaza·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -6053,6 +6115,11 @@ def _guide_with_slot_note(text):
     return text + SAVE_SLOT_GUIDE_NOTE
 
 
+def _game_maintenance(game):
+    maintenance = GAME_MAINTENANCE.get(game)
+    return maintenance if maintenance and maintenance.get("enabled") else None
+
+
 def _tool_get_guide(arguments):
     game = arguments.get("game")
     if not game or not isinstance(game, str):
@@ -6064,7 +6131,11 @@ def _tool_get_guide(arguments):
     if game == "garden_cat":
         return json.dumps({"game": "garden_cat", "guide": _guide_with_slot_note(GARDEN_CAT_GUIDE)}, ensure_ascii=False)
     if game == "camping_plaza":
-        return json.dumps({"game": "camping_plaza", "guide": _guide_with_slot_note(CAMPING_PLAZA_GUIDE)}, ensure_ascii=False)
+        guide = _guide_with_slot_note(CAMPING_PLAZA_GUIDE)
+        maintenance = _game_maintenance(game)
+        if maintenance:
+            guide = f"【{maintenance['label']}】{maintenance['message']}\n\n{guide}"
+        return json.dumps({"game": "camping_plaza", "guide": guide}, ensure_ascii=False)
     if game == "crucible_echoes":
         return json.dumps({"game": "crucible_echoes", "guide": _guide_with_slot_note(CRUCIBLE_ECHOES_GUIDE)}, ensure_ascii=False)
     if game == "duel":
@@ -6426,6 +6497,9 @@ def _tool_play_inner(arguments, path_token=None):
         raise _McpError(-32602, "game 参数必填")
     if not action or not isinstance(action, str):
         raise _McpError(-32602, "action 参数必填")
+    maintenance = _game_maintenance(game)
+    if maintenance:
+        raise _McpError(-32003, maintenance["message"])
     raw_params = arguments.get("params")
     params = _deserialize_object_param(raw_params, "params")
     if params is not None and not isinstance(params, dict):
@@ -9516,6 +9590,13 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         path = full.split("?", 1)[0]
         query_string = full.partition("?")[2]
         public_path = path[len("/camping-plaza"):] or "/"
+        maintenance = _game_maintenance("camping_plaza")
+        if maintenance:
+            self._send_json(
+                {"error": maintenance["message"], "maintenance": True},
+                status=503,
+            )
+            return
         if not _camping_plaza_proxy_allowed(method, public_path):
             self._send_json({"error": "not found"}, status=404)
             return

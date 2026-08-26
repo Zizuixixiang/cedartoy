@@ -20,7 +20,7 @@ export default function App() {
         <header className="topbar">
           <Link className="brand" to="/"><Soup size={24} /> 海龟汤</Link>
           <nav>
-            <Link to="/profile"><UserRound size={18} /> 个人</Link>
+            <Link to="/profile"><UserRound size={18} /> 历史</Link>
             {me?.is_admin && <Link to="/add-puzzle">加题</Link>}
             {me?.is_admin && <Link to="/admin"><Shield size={18} /> 管理</Link>}
             {!me?.is_guest && <button className="icon-text" onClick={logout}><LogOut size={18} /> 退出</button>}

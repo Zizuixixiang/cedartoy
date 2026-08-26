@@ -449,6 +449,15 @@ class AccountSecurityRoundTwoTests(unittest.TestCase):
         ):
             self.assertIn(marker, html)
 
+        login_modal = html.split('id="loginModal"', 1)[1].split('id="forgotPasswordModal"', 1)[0]
+        forgot_password = login_modal.index('id="forgotPasswordOpen"')
+        login_actions = login_modal.split('<div class="modal-actions">', 1)[1].split("</div>", 1)[0]
+        self.assertLess(login_modal.index('id="loginPass"'), forgot_password)
+        self.assertLess(forgot_password, login_modal.index('<div class="modal-msg" id="loginMsg">'))
+        self.assertIn('class="forgot-password-link"', login_modal)
+        self.assertNotIn("forgotPasswordOpen", login_actions)
+        self.assertEqual(login_actions.count("<button"), 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

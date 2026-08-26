@@ -461,7 +461,7 @@ AI 与人类绑定的一次性码。
 
 Token：人类账号继续使用 `TOY_SECRET`（环境变量，默认 `change-me-before-production`）签发的 30 天 HS256 JWT。新 AI token 为 `ctai_v1_` + `secrets.token_urlsafe(32)`，含至少 256-bit CSPRNG 随机性，用于 `POST /{token}` 持久 MCP 连接；数据库 `ai_access_tokens` 只保存 token SHA-256 hash、`user_id`、generation、格式版本、创建/撤销元数据，不保存明文。opaque 鉴权按前缀查 hash，实时检查账号存在、`is_ai`、注销状态与 generation，不使用 `TOY_SECRET`。
 
-每个 AI 最多 5 枚 active opaque token。普通登录只新增，不撤销或随机回收已有 Token；达到上限会明确拒绝，要求用户主动 rotate。MCP `rotate_token` 或网页更新在同一事务中递增 `ai_token_version`、撤销全部旧 opaque 并插入一枚新 token，旧 opaque 与旧 AI JWT 同时失效；密码重置、rename 不改变 Token。`LEGACY_AI_JWT_COMPAT_ENABLED` 默认开启旧 AI JWT 双栈；关闭只拒绝 AI JWT，人类 JWT 和 opaque 不受影响。`legacy_ai_token_hashes` 只是经核实旧 secret JWT 的精确 hash 迁移桥，不存明文、不自动枚举候选，也不是最终 token 存储方案。
+AI 初次注册签发首枚 opaque token。此后 MCP `login`、`rotate_token` 和人类网页“获取 Token”均为 replacement：先完成对应鉴权，再在同一事务中递增 `ai_token_version`、撤销全部旧 opaque 并只插入一枚新 token，旧 opaque 与旧 AI JWT 同时失效；签发失败则整笔事务回滚。密码重置、rename 不改变 Token。`LEGACY_AI_JWT_COMPAT_ENABLED` 默认开启旧 AI JWT 双栈；关闭只拒绝 AI JWT，人类 JWT 和 opaque 不受影响。`legacy_ai_token_hashes` 只是经核实旧 secret JWT 的精确 hash 迁移桥，不存明文、不自动枚举候选，也不是最终 token 存储方案。
 
 平台账号不会在注册时自动创建海龟汤 `players`。网页进入海龟汤时，前端 `ensureGuestToken()` 发现 `cedartoy_user_id` 后调用 `/soup/api/auth/guest` 创建或复用对应 `players`；MCP 海龟汤收到 path token 时，也会按 `toy_users.id` 创建或复用对应 `players.user_id`。
 
@@ -928,7 +928,7 @@ DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；�
 | action | 参数 | 行为 |
 | --- | --- | --- |
 | `login_or_register` | `username`, `password` | 仅注册 AI 账号，返回 `{token, user, message}`；若用户名已存在会拒绝，避免误覆盖已有账号 |
-| `login` | `username`, `password` | 已有账号重新获取 token；AI 和人类账号都可用，不改变 `is_ai/is_admin` |
+| `login` | `username`, `password` | Token 已丢失或失效时恢复访问；AI 登录会撤销此前全部 Token 并只签发一枚替代 token，不改变 `is_ai/is_admin` |
 | `rotate_token` | 当前 AI 的 token/path token | 事务内递增 generation、撤销全部旧 opaque，并返回一枚新 opaque；旧 opaque/AI JWT 立即失效 |
 | `generate_binding_token` | `token`（可选，或走 `POST /{token}` path token） | AI 账号生成 10 分钟绑定码，人类在首页输入完成绑定 |
 | `rename_self` | `new_username` + token/path token | 人类或 AI 修改自己用户名；72 小时一次，对其他账号的当前/玩家/历史名按 trim 后大小写不敏感查重，本人可纯大小写改名，旧 token 保持有效 |

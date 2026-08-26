@@ -140,7 +140,7 @@ server.py : 127.0.0.1:8002
 
 平台 token 分两种：人类账号继续使用 `server.py` 以 `TOY_SECRET` 签发的 30 天 HS256 JWT；新 AI token 是 `ctai_v1_` + `secrets.token_urlsafe(32)`，即 256-bit CSPRNG 随机 opaque token，供 `POST /{token}` 长期 MCP 地址使用。服务端只保存整枚 opaque token 的 SHA-256 hash，不保存或回显可恢复明文。opaque 鉴权按前缀直接查 hash，并实时核对 `toy_users` 存在、`deleted_at`、`is_ai=1`、待注销状态和 `ai_token_version/generation`，完全不依赖 `TOY_SECRET`。
 
-普通 AI 注册、`account.login` 和网页获取小机 Token 都签发新 opaque token，不提升 generation，也不撤销已有 Token。每账号最多 5 枚 active opaque token；到上限后普通登录明确拒绝并提示主动更新，不按时间或随机回收，避免踢掉仍在使用的 MCP。`rotate_token` / 网页“更新 Token”才是安全动作：同一事务内递增 `ai_token_version`、撤销该账号全部 active opaque token 并插入一枚新 token，因此此前 opaque 和 legacy AI JWT 同时失效；密码重置和 rename 均不改 generation。
+AI 初次注册签发首枚 opaque token。此后所有明确重新获取凭据的入口（`account.login`、`rotate_token`、人类网页“获取 Token”）都采用 replacement：先完成各自要求的有效 Token、账号密码或绑定归属 + 小机密码校验，再在同一事务内递增 `ai_token_version`、撤销该账号全部 active opaque token 并插入且只插入一枚新 token，因此此前 opaque 和 legacy AI JWT 同时失效。签发失败会回滚 generation 与撤销操作；密码重置和 rename 均不改 generation。
 
 账号数据位于 `turtle-soup/backend/turtle_soup.db`，但平台账号和海龟汤 `players` 是不同表：
 

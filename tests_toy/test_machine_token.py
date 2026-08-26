@@ -78,14 +78,43 @@ class MachineTokenTests(unittest.TestCase):
             server._machine_account_token(username, password, **kwargs)
         return raised.exception
 
-    def test_correct_ai_credentials_return_existing_ai_token(self):
+    def _issue_parallel_machine_token(self):
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            user = dict(conn.execute(
+                "SELECT * FROM toy_users WHERE id = ?", (self.machine_id,)
+            ).fetchone())
+            token = server._issue_ai_token_in_transaction(conn, user)
+            conn.commit()
+        return token
+
+    def _active_machine_token_count(self):
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM ai_access_tokens WHERE user_id = ? AND revoked_at_epoch IS NULL",
+                (self.machine_id,),
+            ).fetchone()[0]
+
+    def _bind_machine(self, human_id=None):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO user_bindings (human_user_id, ai_user_id) VALUES (?, ?)",
+                (human_id or self.human_id, self.machine_id),
+            )
+
+    def test_manual_credentials_replace_existing_ai_token(self):
+        old_token = self.machine_token
         result = server._machine_account_token("MachineOne", self.password)
 
         self.assertEqual(result["user"]["id"], self.machine_id)
         self.assertTrue(result["user"]["is_ai"])
         self.assertNotIn("password_hash", result["user"])
         self.assertTrue(result["token"].startswith(server.AI_OPAQUE_TOKEN_PREFIX))
+        self.assertNotEqual(result["token"], old_token)
+        with self.assertRaises(server._McpError):
+            server._current_account(old_token)
         self.assertEqual(server._current_account(result["token"])["id"], self.machine_id)
+        self.assertEqual(self._active_machine_token_count(), 1)
 
     def test_wrong_credentials_are_rejected_without_registering(self):
         error = self._error("MachineOne", "wrong-pass")
@@ -96,6 +125,7 @@ class MachineTokenTests(unittest.TestCase):
         self.assertEqual(missing.message, "用户名或密码错误")
         with self._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM toy_users").fetchone()[0], 3)
+        self.assertEqual(server._current_account(self.machine_token)["id"], self.machine_id)
 
     def test_human_credentials_are_rejected(self):
         error = self._error("HumanOne", self.password)
@@ -142,6 +172,102 @@ class MachineTokenTests(unittest.TestCase):
         )
         self.assertIn("已被其他人类账号绑定", error.message)
 
+    def test_bound_get_rejects_missing_machine_password_without_revoking(self):
+        self._bind_machine()
+
+        error = self._error(
+            "",
+            "",
+            ai_user_id=self.machine_id,
+            human_token=self.human_token,
+        )
+
+        self.assertEqual(error.code, -32602)
+        self.assertEqual(error.message, "小机密码必填")
+        self.assertEqual(server._current_account(self.machine_token)["id"], self.machine_id)
+
+    def test_bound_get_rejects_wrong_machine_password_without_revoking(self):
+        self._bind_machine()
+
+        error = self._error(
+            "",
+            "wrong-pass",
+            ai_user_id=self.machine_id,
+            human_token=self.human_token,
+            client_ip="127.0.0.1",
+        )
+
+        self.assertEqual(error.code, -32001)
+        self.assertEqual(error.message, "用户名或密码错误")
+        self.assertEqual(server._current_account(self.machine_token)["id"], self.machine_id)
+
+    def test_bound_get_twice_replaces_previous_and_keeps_one_active_token(self):
+        self._bind_machine()
+
+        first = server._machine_account_token(
+            "",
+            self.password,
+            ai_user_id=self.machine_id,
+            human_token=self.human_token,
+            client_ip="127.0.0.1",
+        )
+        second = server._machine_account_token(
+            "",
+            self.password,
+            ai_user_id=self.machine_id,
+            human_token=self.human_token,
+            client_ip="127.0.0.1",
+        )
+
+        self.assertTrue(first["rotated"])
+        self.assertTrue(second["rotated"])
+        self.assertNotEqual(first["token"], second["token"])
+        with self.assertRaises(server._McpError):
+            server._current_account(self.machine_token)
+        with self.assertRaises(server._McpError):
+            server._current_account(first["token"])
+        self.assertEqual(server._current_account(second["token"])["id"], self.machine_id)
+        self.assertEqual(self._active_machine_token_count(), 1)
+
+    def test_bound_get_rejects_machine_not_owned_by_human(self):
+        self._bind_machine(self.other_human_id)
+
+        error = self._error(
+            "",
+            self.password,
+            ai_user_id=self.machine_id,
+            human_token=self.human_token,
+        )
+
+        self.assertEqual(error.message, "该小机未绑定到你的账号")
+        self.assertEqual(server._current_account(self.machine_token)["id"], self.machine_id)
+
+    def test_manual_get_revokes_all_legacy_parallel_tokens(self):
+        legacy_tokens = [self.machine_token]
+        legacy_tokens.extend(self._issue_parallel_machine_token() for _ in range(4))
+
+        result = server._machine_account_token("MachineOne", self.password)
+
+        for old_token in legacy_tokens:
+            with self.assertRaises(server._McpError):
+                server._current_account(old_token)
+        self.assertEqual(server._current_account(result["token"])["id"], self.machine_id)
+        self.assertEqual(self._active_machine_token_count(), 1)
+
+    def test_manual_get_issue_failure_rolls_back_existing_token(self):
+        old_token = self.machine_token
+
+        with patch.object(
+            server,
+            "_issue_ai_token_in_transaction",
+            side_effect=RuntimeError("simulated token allocation failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "simulated token allocation failure"):
+                server._machine_account_token("MachineOne", self.password)
+
+        self.assertEqual(server._current_account(old_token)["id"], self.machine_id)
+        self.assertEqual(self._active_machine_token_count(), 1)
+
     def test_existing_binding_token_flow_still_works(self):
         binding_token = "b" * 32
         with self._connect() as conn:
@@ -180,6 +306,8 @@ class MachineTokenTests(unittest.TestCase):
         self.assertEqual(sent[-1][0], 200)
         self.assertEqual(sent[-1][1]["user"]["id"], self.machine_id)
         self.assertNotIn(self.password, repr(sent[-1][1]))
+        with self.assertRaises(server._McpError):
+            server._current_account(self.machine_token)
 
     def test_post_route_dispatches_to_machine_token_handler(self):
         handler = object.__new__(server.CedarToyHandler)
@@ -194,14 +322,18 @@ class MachineTokenTests(unittest.TestCase):
 
         self.assertEqual(dispatched, [True])
 
-    def test_web_entry_has_optional_binding_full_token_and_copy_controls(self):
+    def test_web_mine_entry_has_optional_binding_full_token_and_copy_controls(self):
         html = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
-        self.assertIn('id="machineTokenFromLogin"', html)
         self.assertIn('id="mineMachineToken"', html)
         self.assertIn('id="machineTokenBindField" hidden', html)
+        self.assertIn('id="machineTokenBoundField" hidden', html)
+        self.assertIn('id="machineTokenUrlValue"', html)
+        self.assertIn('id="machineTokenUrlCopy"', html)
         self.assertIn('id="machineTokenValue"', html)
         self.assertIn('id="machineTokenCopy"', html)
         self.assertIn('fetch("/api/auth/machine-token"', html)
+        self.assertNotIn('id="machineTokenModeRotate"', html)
+        self.assertIn("获取新 Token 后，该小机此前所有旧 Token 都会失效，请使用新 Token 重新设置 MCP 地址。", html)
 
 
 if __name__ == "__main__":

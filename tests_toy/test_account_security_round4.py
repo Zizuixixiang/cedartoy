@@ -106,7 +106,11 @@ class AccountSecurityRoundFourTests(unittest.TestCase):
             ).fetchone())
 
     def _opaque(self, user_id):
-        return server._create_account_token(self._user(user_id))
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            token = server._issue_ai_token_in_transaction(conn, self._user(user_id))
+            conn.commit()
+        return token
 
     def _legacy(self, user_id):
         return server._create_account_jwt(self._user(user_id))
@@ -163,18 +167,31 @@ class AccountSecurityRoundFourTests(unittest.TestCase):
         with patch.object(server, "TOY_SECRET", "an-unrelated-secret"):
             self.assertEqual(server._current_account(opaque)["id"], ai_id)
 
-    def test_new_registration_login_and_web_fetch_issue_opaque_without_revoking_existing(self):
+    def test_registration_then_login_and_web_fetch_each_replace_previous_token(self):
         registered = server._login_or_register_ai(
             "FreshBot", "secret-pass", client_ip="10.0.0.1"
         )
         first = registered["token"]
+        self.assertEqual(server._current_account(first)["id"], registered["user"]["id"])
+        with self._connect() as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM ai_access_tokens WHERE user_id=? AND revoked_at_epoch IS NULL",
+                    (registered["user"]["id"],),
+                ).fetchone()[0],
+                1,
+            )
         logged_in = server._login_existing_account(
             "FreshBot", "secret-pass", client_ip="10.0.0.1"
         )
+        self._assert_rejected(first)
+        self.assertEqual(
+            server._current_account(logged_in["token"])["id"],
+            registered["user"]["id"],
+        )
         web = server._machine_account_token("FreshBot", "secret-pass")
-        for token in (first, logged_in["token"], web["token"]):
-            self.assertTrue(token.startswith(server.AI_OPAQUE_TOKEN_PREFIX))
-            self.assertEqual(server._current_account(token)["id"], registered["user"]["id"])
+        self._assert_rejected(logged_in["token"])
+        self.assertEqual(server._current_account(web["token"])["id"], registered["user"]["id"])
         self.assertEqual(len({first, logged_in["token"], web["token"]}), 3)
         with self._connect() as conn:
             self.assertEqual(
@@ -182,17 +199,24 @@ class AccountSecurityRoundFourTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM ai_access_tokens WHERE user_id=? AND revoked_at_epoch IS NULL",
                     (registered["user"]["id"],),
                 ).fetchone()[0],
-                3,
+                1,
             )
 
-    def test_active_token_limit_refuses_new_login_without_evicting_any_token(self):
+    def test_login_replaces_legacy_multiple_active_tokens_without_limit_error(self):
         user_id = self._add_user("LimitBot", is_ai=True)
-        tokens = [self._opaque(user_id) for _ in range(server.AI_OPAQUE_TOKEN_MAX_ACTIVE)]
-        with self.assertRaises(server._McpError) as limited:
-            server._login_existing_account("LimitBot", "secret-pass")
-        self.assertEqual(limited.exception.details["reason"], "active_token_limit")
+        tokens = [self._opaque(user_id) for _ in range(5)]
+        legacy = self._legacy(user_id)
+        replacement = server._login_existing_account("LimitBot", "secret-pass")
         for token in tokens:
-            self.assertEqual(server._current_account(token)["id"], user_id)
+            self._assert_rejected(token)
+        self._assert_rejected(legacy)
+        self.assertEqual(server._current_account(replacement["token"])["id"], user_id)
+        with self._connect() as conn:
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM ai_access_tokens WHERE user_id=? AND revoked_at_epoch IS NULL",
+                (user_id,),
+            ).fetchone()[0]
+        self.assertEqual(active_count, 1)
 
     def test_rotate_revokes_all_opaque_and_legacy_then_returns_one_new_opaque(self):
         user_id = self._add_user("RotateAllBot", is_ai=True)
@@ -200,12 +224,16 @@ class AccountSecurityRoundFourTests(unittest.TestCase):
         second = self._opaque(user_id)
         legacy = self._legacy(user_id)
 
-        rotated = server._rotate_ai_token(first)
+        rotated = json.loads(server._tool_account(
+            {"action": "rotate_token"},
+            path_token=first,
+        ))
 
         self._assert_rejected(first)
         self._assert_rejected(second)
         self._assert_rejected(legacy)
         self.assertEqual(server._current_account(rotated["token"])["id"], user_id)
+        self.assertIn("全部旧 Token 已失效", rotated["message"])
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT generation,revoked_at_epoch FROM ai_access_tokens WHERE user_id=?",
@@ -214,6 +242,104 @@ class AccountSecurityRoundFourTests(unittest.TestCase):
         self.assertEqual(self._user(user_id)["ai_token_version"], 1)
         self.assertEqual(sum(row["revoked_at_epoch"] is None for row in rows), 1)
         self.assertEqual(sum(row["revoked_at_epoch"] is not None for row in rows), 2)
+
+    def test_rotate_issue_failure_rolls_back_all_existing_tokens(self):
+        user_id = self._add_user("AtomicRotateBot", is_ai=True)
+        first = self._opaque(user_id)
+        second = self._opaque(user_id)
+        legacy = self._legacy(user_id)
+
+        with patch.object(
+            server,
+            "_issue_ai_token_in_transaction",
+            side_effect=RuntimeError("simulated token allocation failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "simulated token allocation failure"):
+                server._tool_account({"action": "rotate_token"}, path_token=first)
+
+        self.assertEqual(server._current_account(first)["id"], user_id)
+        self.assertEqual(server._current_account(second)["id"], user_id)
+        self.assertEqual(server._current_account(legacy)["id"], user_id)
+        self.assertEqual(self._user(user_id)["ai_token_version"], 0)
+        with self._connect() as conn:
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM ai_access_tokens WHERE user_id=? AND revoked_at_epoch IS NULL",
+                (user_id,),
+            ).fetchone()[0]
+        self.assertEqual(active_count, 2)
+
+    def test_login_requires_credentials_and_recovers_when_no_token_is_valid(self):
+        user_id = self._add_user("RecoverBot", is_ai=True, password="recover-pass")
+        lost_token = self._opaque(user_id)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE ai_access_tokens
+                SET revoked_at_epoch = CAST(strftime('%s', 'now') AS INTEGER),
+                    revoked_reason = 'test_lost'
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+        self._assert_rejected(lost_token)
+
+        for incomplete in (
+            {"action": "login"},
+            {"action": "login", "username": "RecoverBot"},
+            {"action": "login", "password": "recover-pass"},
+        ):
+            with self.subTest(incomplete=incomplete):
+                with self.assertRaises(server._McpError) as raised:
+                    server._tool_account(incomplete)
+                self.assertEqual(raised.exception.message, "username 和 password 必填")
+
+        recovered = json.loads(server._tool_account({
+            "action": "login",
+            "username": "RecoverBot",
+            "password": "recover-pass",
+        }))
+        self.assertEqual(server._current_account(recovered["token"])["id"], user_id)
+        with self._connect() as conn:
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM ai_access_tokens WHERE user_id=? AND revoked_at_epoch IS NULL",
+                (user_id,),
+            ).fetchone()[0]
+        self.assertEqual(active_count, 1)
+
+    def test_login_wrong_password_does_not_revoke_existing_tokens(self):
+        user_id = self._add_user("SafeLoginBot", is_ai=True, password="correct-pass")
+        existing = [self._opaque(user_id), self._opaque(user_id)]
+
+        with self.assertRaises(server._McpError):
+            server._login_existing_account("SafeLoginBot", "wrong-pass")
+
+        for token in existing:
+            self.assertEqual(server._current_account(token)["id"], user_id)
+
+    def test_account_tool_and_guide_explain_rotate_vs_login(self):
+        account_tool = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "account")
+        schema = account_tool["inputSchema"]["properties"]
+        combined_description = " ".join((
+            account_tool["description"],
+            schema["action"]["description"],
+            schema["username"]["description"],
+            schema["password"]["description"],
+        ))
+        self.assertIn("已有有效 Token", combined_description)
+        self.assertIn("rotate_token", combined_description)
+        self.assertIn("无需 username/password", combined_description)
+        self.assertIn("Token 已丢失或没有有效 Token", combined_description)
+        self.assertIn("login 同样会废止此前全部 Token", combined_description)
+
+        guide = json.loads(server._tool_get_guide({"game": "account"}))["guide"]
+        self.assertIn("当前 MCP 已能用有效 Token 鉴权", guide)
+        self.assertIn("不需要也不要传username/password", guide)
+        self.assertIn("此前全部旧 Token", guide)
+        self.assertIn("只签发并保留1枚新 Token", guide)
+        self.assertIn("只有 Token 已丢失、失效或没有有效 Token 时才用login", guide)
+        self.assertIn("当前AI可直接调用`rotate_token`免账密替换 Token", guide)
+        self.assertIn("login 成功后同样全部旧 Token 失效", guide)
+        self.assertNotIn("login：已有账号重获token", guide)
 
     def test_bound_human_rotate_keeps_experience_and_is_atomic(self):
         human_id = self._add_user("Owner", password="human-pass")
@@ -227,7 +353,7 @@ class AccountSecurityRoundFourTests(unittest.TestCase):
             )
 
         result = server._machine_account_token(
-            "", "", rotate=True, ai_user_id=ai_id, human_token=human_token
+            "", "machine-pass", rotate=True, ai_user_id=ai_id, human_token=human_token
         )
         self.assertTrue(result["rotated"])
         for token in old_tokens:

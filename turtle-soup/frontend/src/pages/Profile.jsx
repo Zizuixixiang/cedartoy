@@ -1,21 +1,23 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { formatDbDateTime } from '../utils/display.js'
+import { HistoryContent } from '../components/HistoryModal.jsx'
 
 export default function Profile() {
   const [data, setData] = useState(null)
-  useEffect(() => { api('/rooms/profile/me').then(setData) }, [])
+  const [activeId, setActiveId] = useState('self')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    api('/rooms/history').then(setData).catch((err) => setError(err.message || '历史读取失败'))
+  }, [])
+  if (error) return <div className="empty-state"><p>{error}</p></div>
   if (!data) return <div className="loading">加载中</div>
-  const p = data.player
   return (
     <section className="profile-page">
-      <h2>{p.username}</h2>
-      <div className="stats">
-        <div>对局 <b>{p.game_count}</b></div><div>答对 <b>{p.win_count}</b></div><div>提问 <b>{p.ask_count}</b></div>
-        <div>是 <b>{p.ask_count_y}</b></div><div>否 <b>{p.ask_count_n}</b></div><div>不相关 <b>{p.ask_count_u}</b></div>
+      <h2>历史</h2>
+      <p className="muted">海龟汤对局概况与已绑定小机记录</p>
+      <div className="panel history-page-panel">
+        <HistoryContent data={data} activeId={activeId} onActiveId={setActiveId} />
       </div>
-      <h3>历史对局</h3>
-      <div className="room-list">{data.rooms.map((r) => <div className="room-item" key={r.id}><b>{r.surface}</b><span>{r.status} · {formatDbDateTime(r.created_at)}</span></div>)}</div>
     </section>
   )
 }

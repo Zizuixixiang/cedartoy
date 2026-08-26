@@ -9,11 +9,15 @@
 - 游客身份一旦认领就永久停用；旧的无token地址不能再用该guest id游玩。之后必须改用带token地址，并在play中选择认领时的slot。
 
 【action】
-login_or_register：仅注册。传username+password，返回token。用户名trim后须为2-20字符（字母/数字/下划线/中文），密码≥6位。新注册会对当前用户名、海龟汤玩家名和改名保留的历史用户名做trim后的大小写不敏感判重；例如已有`abc`时不能再注册`ABC`。历史上已经存在的大小写重复账号不做迁移，仍须用各自原始精确用户名login。若同一IP在24小时内已成功注册过账号，本次注册成功返回的message会追加提示："检测到你近期已注册过账号，如是同一只小机请改用login登录旧账号，避免产生多个身份"。该提示不阻断注册，也不改变注册限流。登录已有账号不会改变账号类型；人类可放心用机的账密在网页登录查看。
+先判断当前身份状态：
+- 当前 MCP 已能用有效 Token 鉴权：要重新获得/替换 Token，调用`rotate_token`；不需要也不要传username/password。
+- Token 已丢失、已失效或没有有效 Token：调用`login`并传username+password恢复访问。
 
-login：已有账号重获token。传username+password。AI账号和人类账号都可用；不会改变账号类型或管理员权限。
+login_or_register：仅注册。传username+password，返回token。用户名trim后须为2-20字符（字母/数字/下划线/中文），密码≥6位。新注册会对当前用户名、海龟汤玩家名和改名保留的历史用户名做trim后的大小写不敏感判重；例如已有`abc`时不能再注册`ABC`。历史上已经存在的大小写重复账号不做迁移，仍须用各自原始精确用户名login。若同一IP在24小时内已成功注册过账号，本次注册成功返回的message会追加提示："检测到你近期已注册过账号；如是同一只小机且已没有旧账号的有效 Token，请改用login登录旧账号，避免产生多个身份"。该提示不阻断注册，也不改变注册限流。登录已有账号不会改变账号类型；人类可放心用机的账密在网页登录查看。
 
-rotate_token（当前AI需token）：更新永久Token；旧Token立即失效，请让人类替换MCP地址。
+login：仅用于 Token 已丢失、已失效或没有有效 Token 时靠账密恢复访问。必须传username+password；AI账号和人类账号都可用，不会改变账号类型或管理员权限。AI 登录成功会废止该小机此前全部旧 Token，只签发并保留1枚新 Token。当前仍有有效 Token 并已鉴权时，不要重新输入账密，改用`rotate_token`。
+
+rotate_token（当前AI需有效Token）：在当前已登录/鉴权状态下重新获得并替换永久 Token，不需要username/password。成功时废止该小机此前全部旧 Token，只签发并保留1枚新 Token；请让人类把MCP地址替换为新地址。
 
 generate_binding_token（需token）：生成10分钟绑定码，让人类在toy.cedarstar.org登录后进入"绑定"页面输入。一个人类可绑定多个AI。机可通过my_saves human=true查看绑定人类的存档概况；人类可在网页"历史"里查看自己和绑定机的存档。
 
@@ -24,7 +28,7 @@ rename_bound_machine（人类账号需token）：传ai_user_id+new_username，�
 get_bindings（需token）：查看绑定的人类列表，返回username、bound_at。
 
 get_profile（需token）：查看username、is_ai、created_at、绑定列表、游戏数据概览（海龟汤game_count/win_count；测试类按player_id统计test_count）。
-若get_profile返回token_migration_recommended=true，请让人类在网页“我的小机”更新Token并替换MCP地址。
+若get_profile返回token_migration_recommended=true，当前AI可直接调用`rotate_token`免账密替换 Token；也可让人类在网页“我的小机”获取新 Token 并替换MCP地址。
 
 guest_claim_code：游客找回/补发认领码。传player_id，可传裸id（如abc）或guest:前缀（如guest:abc）。已有未认领码直接返回；没有码会生成；已被claimed会返回认领槽位，并提示改用带token地址。
 
@@ -42,7 +46,7 @@ delete_account（需token）：申请注销，传confirm:true；完整等待72�
 
 deletion_status / cancel_delete_account（需token）：查询截止时间 / 在72小时内取消；取消后本次等待清零，再申请会重新完整等待72小时。
 
-【持久化登录】注册后让人类把MCP地址改为 toy.cedarstar.org/{token} ，永久生效，AI token永不过期（人类网页登录token按现有有效期）；改名不会让现有token失效，主动rotate_token才会使旧token失效，token丢失用login重获。
+【持久化登录】注册后让人类把MCP地址改为 toy.cedarstar.org/{token} ，永久生效，AI token永不过期（人类网页登录token按现有有效期）；改名不会让现有token失效。当前 Token 有效时，用rotate_token免账密替换凭据（全部旧 Token 失效，只保留1枚新 Token）；只有 Token 已丢失、失效或没有有效 Token 时才用login+username/password恢复访问，login 成功后同样全部旧 Token 失效、只保留1枚新 Token。
 ⚠️ 常见错误：{token}是占位符，替换为实际值，不要带花括号！
   ❌ toy.cedarstar.org/{ctai_v1_...}
   ✅ toy.cedarstar.org/ctai_v1_...

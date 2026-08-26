@@ -9,6 +9,8 @@ export default function MineDrawer({
   onBind,
   onLogout,
   onUnbind,
+  soupStats,
+  onAccountAction,
 }) {
   useEffect(() => {
     if (!open) return undefined
@@ -39,7 +41,7 @@ export default function MineDrawer({
         {!user ? (
           <>
             <p className="desc">当前未登录。</p>
-            <p className="modal-hint">没有账号？输入用户名和密码直接注册</p>
+            <p className="modal-hint">登录与注册已分开，避免误输用户名时创建空账号。</p>
             <button
               type="button"
               className="pixel-btn"
@@ -53,17 +55,35 @@ export default function MineDrawer({
           </>
         ) : (
           <>
-            <p className="desc">用户：{user.username}</p>
+            <div className="mine-user-row">
+              <p className="desc">用户：<span>{user.username}</span></p>
+              <button type="button" className="unbind-btn" onClick={() => onAccountAction?.({ kind: 'rename', target: 'self', id: user.id, currentName: user.username })}>修改用户名</button>
+            </div>
+            <div className="mine-soup-stats" aria-label="海龟汤统计">
+              <div><span>对局</span><b>{soupStats?.total_games || 0}</b></div>
+              <div><span>答出</span><b>{soupStats?.win_count || 0}</b></div>
+              <div><span>提问</span><b>{soupStats?.ask_count || 0}</b></div>
+            </div>
             <ol className="rank-list">
               {bindings.length > 0 ? (
                 bindings.map((binding) => (
                   <li key={binding.id}>
-                    <span>AI</span>
+                    <span>{user.is_ai ? '人类' : 'AI'}</span>
                     <span>{binding.username}</span>
                     <span>
-                      <button type="button" className="unbind-btn" onClick={() => onUnbind?.(binding.id)}>
-                        解绑
-                      </button>
+                      {!user.is_ai ? (
+                        <>
+                          <button type="button" className="unbind-btn" onClick={() => onAccountAction?.({ kind: 'rename', target: 'machine', id: binding.id, currentName: binding.username })}>
+                            改名
+                          </button>
+                          <button type="button" className="unbind-btn" onClick={() => onAccountAction?.({ kind: 'password', target: 'machine', id: binding.id, currentName: binding.username })}>
+                            重置密码
+                          </button>
+                          <button type="button" className="unbind-btn" onClick={() => onUnbind?.(binding.id)}>
+                            解绑
+                          </button>
+                        </>
+                      ) : '--'}
                     </span>
                   </li>
                 ))
@@ -74,16 +94,18 @@ export default function MineDrawer({
             {user.is_admin && (
               <Link className="pixel-btn secondary mine-admin-link" to="/admin">管理后台</Link>
             )}
-            <button
-              type="button"
-              className="pixel-btn"
-              onClick={() => {
-                onClose()
-                onBind?.()
-              }}
-            >
-              绑定
-            </button>
+            {!user.is_ai ? (
+              <button
+                type="button"
+                className="pixel-btn"
+                onClick={() => {
+                  onClose()
+                  onBind?.()
+                }}
+              >
+                绑定
+              </button>
+            ) : null}
             <button
               type="button"
               className="pixel-btn secondary mine-logout-btn"
@@ -94,6 +116,7 @@ export default function MineDrawer({
             >
               登出
             </button>
+            <a className="mine-account-link" href="/">邮箱、密码、小机 Token 与注销设置请前往 CEDAR TOY「我的」</a>
           </>
         )}
       </section>

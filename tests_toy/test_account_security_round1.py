@@ -194,7 +194,7 @@ class AccountSecurityRoundOneTests(unittest.TestCase):
         self.assertEqual(self._user(user_id)["password_hash"], old_password_hash)
         self.assertIn("旧 Token 已失效", rotated["message"])
 
-    def test_bound_human_can_rotate_without_machine_password(self):
+    def test_bound_human_can_rotate_with_machine_password(self):
         human_id = self._add_user("Owner", password="human-pass")
         machine_id = self._add_user("BoundBot", is_ai=True, password="machine-pass")
         human_token = server._create_account_token(self._user(human_id))
@@ -207,7 +207,7 @@ class AccountSecurityRoundOneTests(unittest.TestCase):
 
         result = server._machine_account_token(
             "",
-            "",
+            "machine-pass",
             rotate=True,
             ai_user_id=machine_id,
             human_token=human_token,
