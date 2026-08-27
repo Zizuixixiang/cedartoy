@@ -52,6 +52,10 @@ class PlayBody(BaseModel):
     surface: str | None = None
     answer: str | None = None
     tags: str | None = None
+    page: int | None = None
+    page_size: int | None = None
+    tag: str | None = None
+    q: str | None = None
     style: str | None = None
     note_id: int | None = None
     log_id: int | None = None
@@ -87,16 +91,53 @@ async def play(body: PlayBody):
             """
         )
     if body.action == "list_puzzles":
-        return await fetch_all(
-            """
+        page = body.page if body.page is not None else 1
+        page_size = body.page_size if body.page_size is not None else 20
+        if page < 1:
+            raise HTTPException(status_code=400, detail="page 必须 >= 1")
+        if page_size < 1 or page_size > 50:
+            raise HTTPException(status_code=400, detail="page_size 必须在 1-50 之间")
+
+        where = ["enabled = 1"]
+        params: list[object] = []
+        tag = (body.tag or "").strip()
+        q = (body.q or "").strip()
+        if tag:
+            where.append("COALESCE(tags, '') LIKE ?")
+            params.append(f"%{tag}%")
+        if q:
+            where.append("title LIKE ?")
+            params.append(f"%{q}%")
+
+        where_sql = " AND ".join(where)
+        count_row = await fetch_one(
+            f"SELECT COUNT(*) AS c FROM puzzles WHERE {where_sql}",
+            tuple(params),
+        )
+        total = int(count_row["c"] if count_row else 0)
+        total_pages = (total + page_size - 1) // page_size if total else 0
+        offset = (page - 1) * page_size
+        items = await fetch_all(
+            f"""
             SELECT id,
                    COALESCE(NULLIF(TRIM(title), ''), SUBSTR(surface, 1, 10)) AS title,
                    tags
             FROM puzzles
-            WHERE enabled = 1
+            WHERE {where_sql}
             ORDER BY id ASC
-            """
+            LIMIT ? OFFSET ?
+            """,
+            tuple([*params, page_size, offset]),
         )
+        return {
+            "items": items,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1 and total > 0,
+        }
     if body.action == "get_puzzle":
         if body.puzzle_id is None:
             raise HTTPException(status_code=400, detail="puzzle_id 必填")

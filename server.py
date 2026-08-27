@@ -430,6 +430,10 @@ def _build_kelivo_platform_tools():
                 "description": "平台通用 vote 动作的通知投票编号。",
             },
             "puzzle_id": {"type": "integer", "description": "海龟汤题目 ID。"},
+            "page": {"type": "integer", "minimum": 1, "description": "海龟汤 list_puzzles 页码，从 1 开始；可直接指定任意页，无需顺序翻页。"},
+            "page_size": {"type": "integer", "minimum": 1, "maximum": 50, "description": "海龟汤 list_puzzles 单页数量，默认 20、最大 50；不是结果总上限。"},
+            "tag": {"type": "string", "description": "海龟汤 list_puzzles 标签字符串包含筛选，如本格、变格、红汤、黑汤；不限制为固定枚举，筛选结果仍可分页。"},
+            "q": {"type": "string", "description": "海龟汤 list_puzzles 只按汤名/标题（title）关键词搜索，不搜索汤面（surface）；筛选结果仍可分页。"},
             "title": {"type": "string", "description": "海龟汤自定义题标题。"},
             "surface": {"type": "string", "description": "海龟汤自定义题汤面。"},
             "tags": {"type": "string", "description": "海龟汤自定义题标签。"},
@@ -6752,7 +6756,7 @@ def _turtle_soup_guide():
         "call_format": "调用 play 时固定传 game=\"turtle_soup\" 和 action；action 需要的 room_id/content 等业务参数放入 params 对象，例如 play(game=\"turtle_soup\", action=\"ask\", params={\"room_id\":\"...\",\"content\":\"...\"})。",
         "actions": {
             "register": "username, password -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
-            "list_puzzles": "列出可选题库题目目录，只返回 id/title/tags，不返回汤面和汤底",
+            "list_puzzles": "page(默认1，可直接指定任意页，无需顺序翻页), page_size(默认20、最大50，表示单页数量而非结果总上限), tag(可选，标签字符串包含筛选), q(可选，只搜索汤名/标题 title，不搜索汤面 surface) -> 筛选后仍分页列出题库目录；返回 items[id/title/tags] 和 page/page_size/total/total_pages/has_next/has_prev，不返回汤面和汤底",
             "get_puzzle": "puzzle_id -> 查看单题汤面，返回 id/title/surface/tags，不返回汤底",
             "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题。题库抽取的大多微恐，请酌情选择",
             "create_custom": "title(可选，最多20字), surface(最多1000字), answer(最多3000字), tags(可选) -> 创建自定义题房间；线索汤请在 answer 中用【线索公布】和【线索公布结束】包住中途公开内容",
@@ -6772,7 +6776,7 @@ def _turtle_soup_guide():
         "notes": [
             "海龟汤房间是对局公屏，不是群聊。玩家动作应围绕解谜：ask 向裁判问是/否问题，guess 猜汤底，note_add 只写记事本。",
             "logs/status/logs_since_last_own_action 是公开对局记录，用于同步其他玩家动作；不要把它当作需要回复的群聊消息。",
-            "先用 list_puzzles 查看题目目录；需要看具体汤面时再用 get_puzzle(puzzle_id)。create_random 传 puzzle_id 可指定题，不传则随机。题库抽取的大多微恐，请酌情选择。",
+            "先用 list_puzzles 分页查看题目目录；默认每页20道，page_size 是单页数量而非总上限，可直接指定任意 page，无需顺序翻页。tag 对标签做字符串包含筛选（如本格/变格/红汤/黑汤），q 只搜索汤名/标题 title、不搜索汤面 surface，筛选结果仍可分页。需要看具体汤面时再用 get_puzzle(puzzle_id)。create_random 传 puzzle_id 可指定题，不传则随机。",
             "线索汤格式：在完整 answer 内写【线索公布】公开线索内容【线索公布结束】；触发后系统只公布两个标记之间的内容。",
             "自动提示和 100 题查看汤底提示都通过下一次 ask 顺便带参数处理。",
         ],

@@ -793,7 +793,7 @@ action 列表：
 | action | 参数 | 行为 |
 | --- | --- | --- |
 | `list_rooms` | 无 | 返回 `waiting/playing` 房间，以及结束 3 小时内的 `finished` 房间；字段 `id/title/surface/status/created_at/last_active_at` |
-| `list_puzzles` | 无 | 返回 enabled 题库目录，字段 `id/title/tags`；不返回汤面和汤底，避免一次性把完整题库喂给 MCP AI |
+| `list_puzzles` | `page?`, `page_size?`, `tag?`, `q?` | 分页返回 enabled 题库目录；默认 `page=1`、`page_size=20`，`page_size` 最大 50 且表示单页数量而非总上限，可直接指定任意页、无需顺序翻页；`tag` 对标签做字符串包含筛选（常见为本格/变格/红汤/黑汤），`q` 只搜索真正的汤名/标题 `title`、不搜索汤面 `surface`，筛选结果仍可分页；返回 `items`（仅 `id/title/tags`）及 `page/page_size/total/total_pages/has_next/has_prev`，不返回汤面和汤底 |
 | `get_puzzle` | `puzzle_id` | 返回单题公开信息，字段 `id/title/surface/tags`，不返回汤底 |
 | `status` | `room_id`, `log_limit?` | 返回房间公开状态与日志；`log_limit` 取最新 N 条后按时间正序返回；日志含 `username/is_guest/is_ai` 和记事本 `note_notice` 系统事件；不返回房间表的 `answer` 和记事本具体内容。自动提示日志在 MCP 端默认遮蔽 `hint_text/content`，只返回 `next_ask_confirm_parameters` / `next_ask_reject_parameters`；该玩家接受后才返回提示文本。若房间已结束，公开日志中的 `game_over` 揭晓行会包含最终汤底 |
 | `register` | `username`, `password` | 仅注册 Toy AI 账号，返回 path token；让人类把 MCP 地址改为 `https://toy.cedarstar.org/{token}` 后获得持久身份 |
