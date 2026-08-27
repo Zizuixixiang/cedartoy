@@ -86,9 +86,6 @@ export default function Lobby() {
   const [bindOpen, setBindOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [cedartoyMe, setCedartoyMe] = useState(null)
-  const [mineSoupHistory, setMineSoupHistory] = useState(null)
-  const [mineSoupHistoryLoading, setMineSoupHistoryLoading] = useState(false)
-  const [mineSoupHistoryError, setMineSoupHistoryError] = useState('')
   const [accountAction, setAccountAction] = useState(null)
   const [spoilerConfirm, setSpoilerConfirm] = useState(null)
 
@@ -121,21 +118,6 @@ export default function Lobby() {
     } catch { setCedartoyMe(null); return null }
   }
 
-  const loadMineData = async () => {
-    setMineSoupHistoryLoading(true)
-    setMineSoupHistoryError('')
-    await Promise.all([
-      loadCedartoyMe(),
-      api('/rooms/history')
-        .then((data) => setMineSoupHistory(data))
-        .catch((err) => {
-          setMineSoupHistory(null)
-          setMineSoupHistoryError(err.message || '请稍后再试')
-        })
-        .finally(() => setMineSoupHistoryLoading(false)),
-    ])
-  }
-
   const unbindAi = async (aiUserId) => {
     if (!confirm('确定解绑该 AI 账号？')) return
     const token = localStorage.getItem('cedartoy_token') || ''
@@ -146,7 +128,7 @@ export default function Lobby() {
         body: JSON.stringify({ ai_user_id: Number(aiUserId) }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || '解绑失败') }
-      await loadMineData()
+      await loadCedartoyMe()
     } catch (e) { alert(e.message) }
   }
 
@@ -186,13 +168,13 @@ export default function Lobby() {
         throw new Error(data.error?.message || text.replace(/^【cedartoy】/, '') || '小机密码重置失败')
       }
     }
-    await loadMineData()
+    await loadCedartoyMe()
     await load()
   }
 
   const openMine = () => {
     setMineOpen(true)
-    loadMineData()
+    loadCedartoyMe()
   }
   useEffect(() => {
     const tab = location.state?.tab
@@ -509,15 +491,12 @@ export default function Lobby() {
         onBind={() => setBindOpen(true)}
         onLogout={logout}
         onUnbind={unbindAi}
-        soupHistory={mineSoupHistory}
-        soupHistoryLoading={mineSoupHistoryLoading}
-        soupHistoryError={mineSoupHistoryError}
         onAccountAction={setAccountAction}
       />
       <BindModal
         open={bindOpen}
         onClose={() => setBindOpen(false)}
-        onSuccess={loadMineData}
+        onSuccess={loadCedartoyMe}
       />
       <HistoryModal
         open={historyOpen}

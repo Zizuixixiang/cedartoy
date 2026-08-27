@@ -9,9 +9,6 @@ export default function MineDrawer({
   onBind,
   onLogout,
   onUnbind,
-  soupHistory,
-  soupHistoryLoading,
-  soupHistoryError,
   onAccountAction,
 }) {
   useEffect(() => {
@@ -27,7 +24,6 @@ export default function MineDrawer({
 
   const user = cedartoyMe?.user
   const bindings = cedartoyMe?.bindings || []
-  const soupSubjects = soupHistory?.subjects || []
 
   return (
     <div
@@ -62,30 +58,6 @@ export default function MineDrawer({
               <p className="desc">用户：<span>{user.username}</span></p>
               <button type="button" className="unbind-btn" onClick={() => onAccountAction?.({ kind: 'rename', target: 'self', id: user.id, currentName: user.username })}>修改用户名</button>
             </div>
-            {soupHistoryLoading ? (
-              <p className="history-empty">正在读取海龟汤统计…</p>
-            ) : soupHistoryError ? (
-              <p className="history-error">海龟汤统计加载失败：{soupHistoryError}</p>
-            ) : soupSubjects.length > 0 ? (
-              soupSubjects.map((subject) => {
-                const stats = subject.stats || {}
-                const subjectName = subject.username || subject.label
-                return (
-                  <section className="mine-soup-subject" key={subject.id}>
-                    <div className="history-summary">
-                      {subject.id === 'self' ? '我' : '小机'} · {subjectName}
-                    </div>
-                    <div className="mine-soup-stats" aria-label={`${subjectName}的海龟汤统计`}>
-                      <div><span>对局</span><b>{stats.total_games || 0}</b></div>
-                      <div><span>答出</span><b>{stats.win_count || 0}</b></div>
-                      <div><span>提问</span><b>{stats.ask_count || 0}</b></div>
-                    </div>
-                  </section>
-                )
-              })
-            ) : (
-              <p className="history-empty">当前账号及绑定小机暂无海龟汤数据。</p>
-            )}
             <ol className="rank-list">
               {bindings.length > 0 ? (
                 bindings.map((binding) => (
