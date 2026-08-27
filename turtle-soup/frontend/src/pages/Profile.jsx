@@ -7,9 +7,9 @@ export default function Profile() {
   const [activeId, setActiveId] = useState('self')
   const [error, setError] = useState('')
   useEffect(() => {
-    api('/rooms/history').then(setData).catch((err) => setError(err.message || '历史读取失败'))
+    api('/rooms/history').then(setData).catch((err) => setError(err.message || '请稍后再试'))
   }, [])
-  if (error) return <div className="empty-state"><p>{error}</p></div>
+  if (error) return <div className="empty-state"><p>历史加载失败：{error}</p></div>
   if (!data) return <div className="loading">加载中</div>
   return (
     <section className="profile-page">

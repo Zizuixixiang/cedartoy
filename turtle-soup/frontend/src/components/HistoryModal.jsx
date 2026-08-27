@@ -11,7 +11,7 @@ const STATUS_LABELS = {
 export function HistoryContent({ data, activeId, onActiveId }) {
   const subjects = data?.subjects || []
   const active = subjects.find((subject) => subject.id === activeId) || subjects[0]
-  if (!active) return <p className="history-empty">暂无历史数据。</p>
+  if (!active) return <p className="history-empty">当前账号及绑定小机暂无海龟汤数据。</p>
   const stats = active.stats || {}
   return (
     <>
@@ -36,7 +36,7 @@ export function HistoryContent({ data, activeId, onActiveId }) {
         <div><span>累计提问</span><b>{stats.ask_count || 0}</b></div>
       </div>
       <div className="history-section-head">
-        <h3>最近对局</h3>
+        <h3>最近仍保留的对局</h3>
         <span>最多显示 30 局</span>
       </div>
       {active.rooms?.length > 0 ? (
@@ -66,7 +66,7 @@ export function HistoryContent({ data, activeId, onActiveId }) {
           })}
         </div>
       ) : (
-        <p className="history-empty">还没有海龟汤对局记录。</p>
+        <p className="history-empty">暂无仍保留的房间详情；上方累计统计仍可查看。</p>
       )}
     </>
   )
@@ -91,7 +91,7 @@ export default function HistoryModal({ open, onClose, onLogin }) {
         setData(result)
         setActiveId('self')
       })
-      .catch((err) => setError(err.message || '历史读取失败'))
+      .catch((err) => setError(err.message || '请稍后再试'))
       .finally(() => setLoading(false))
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
@@ -108,7 +108,7 @@ export default function HistoryModal({ open, onClose, onLogin }) {
         {loading ? <p className="history-empty">正在读取对局历史…</p> : null}
         {!loading && error ? (
           <div className="history-error">
-            <p>{error}</p>
+            <p>历史加载失败：{error}</p>
             {needsLogin ? <button type="button" className="pixel-btn" onClick={() => { onClose(); onLogin?.() }}>登录</button> : null}
           </div>
         ) : null}

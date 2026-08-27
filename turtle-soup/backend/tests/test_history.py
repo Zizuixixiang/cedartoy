@@ -30,6 +30,21 @@ sys.modules.pop("judge", None)
 
 
 class HistorySubjectTests(unittest.IsolatedAsyncioTestCase):
+    def test_subject_visibility_requires_stats_or_retained_room(self):
+        empty = {
+            "stats": {"total_games": 0, "win_count": 0, "ask_count": 0},
+            "rooms": [],
+        }
+        self.assertFalse(rooms_router._history_subject_has_data(empty))
+        self.assertTrue(rooms_router._history_subject_has_data({
+            **empty,
+            "stats": {**empty["stats"], "ask_count": 1},
+        }))
+        self.assertTrue(rooms_router._history_subject_has_data({
+            **empty,
+            "rooms": [{"id": "ABCD1234"}],
+        }))
+
     async def test_subject_uses_long_term_stats_and_recent_room_details(self):
         players = [{
             "id": 7,
@@ -88,8 +103,16 @@ class HistoryEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 401)
 
     async def test_human_history_includes_bound_machines(self):
-        self_subject = {"id": "self"}
-        machine_subject = {"id": "machine-99"}
+        self_subject = {
+            "id": "self",
+            "stats": {"total_games": 1, "win_count": 0, "ask_count": 3},
+            "rooms": [],
+        }
+        machine_subject = {
+            "id": "machine-99",
+            "stats": {"total_games": 2, "win_count": 1, "ask_count": 8},
+            "rooms": [],
+        }
         with (
             patch.object(
                 rooms_router,
@@ -110,6 +133,46 @@ class HistoryEndpointTests(unittest.IsolatedAsyncioTestCase):
                 "is_ai": 0,
             })
         self.assertEqual(result["subjects"], [self_subject, machine_subject])
+
+    async def test_human_history_hides_empty_self_and_empty_machines(self):
+        empty_self = {
+            "id": "self",
+            "stats": {"total_games": 0, "win_count": 0, "ask_count": 0},
+            "rooms": [],
+        }
+        active_machine = {
+            "id": "machine-99",
+            "stats": {"total_games": 0, "win_count": 0, "ask_count": 0},
+            "rooms": [{"id": "ABCD1234"}],
+        }
+        empty_machine = {
+            "id": "machine-100",
+            "stats": {"total_games": 0, "win_count": 0, "ask_count": 0},
+            "rooms": [],
+        }
+        with (
+            patch.object(
+                rooms_router,
+                "_history_subject",
+                new=AsyncMock(side_effect=[empty_self, active_machine, empty_machine]),
+            ),
+            patch.object(
+                rooms_router,
+                "fetch_all",
+                new=AsyncMock(return_value=[
+                    {"id": 99, "username": "小机甲"},
+                    {"id": 100, "username": "小机乙"},
+                ]),
+            ),
+        ):
+            result = await rooms_router.history({
+                "id": 7,
+                "user_id": 42,
+                "username": "人类甲",
+                "is_guest": 0,
+                "is_ai": 0,
+            })
+        self.assertEqual(result["subjects"], [active_machine])
 
 
 if __name__ == "__main__":

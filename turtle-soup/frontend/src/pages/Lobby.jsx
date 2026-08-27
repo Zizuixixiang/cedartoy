@@ -86,7 +86,9 @@ export default function Lobby() {
   const [bindOpen, setBindOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [cedartoyMe, setCedartoyMe] = useState(null)
-  const [mineSoupStats, setMineSoupStats] = useState(null)
+  const [mineSoupHistory, setMineSoupHistory] = useState(null)
+  const [mineSoupHistoryLoading, setMineSoupHistoryLoading] = useState(false)
+  const [mineSoupHistoryError, setMineSoupHistoryError] = useState('')
   const [accountAction, setAccountAction] = useState(null)
   const [spoilerConfirm, setSpoilerConfirm] = useState(null)
 
@@ -120,11 +122,17 @@ export default function Lobby() {
   }
 
   const loadMineData = async () => {
+    setMineSoupHistoryLoading(true)
+    setMineSoupHistoryError('')
     await Promise.all([
       loadCedartoyMe(),
       api('/rooms/history')
-        .then((data) => setMineSoupStats(data.subjects?.find((subject) => subject.id === 'self')?.stats || null))
-        .catch(() => setMineSoupStats(null)),
+        .then((data) => setMineSoupHistory(data))
+        .catch((err) => {
+          setMineSoupHistory(null)
+          setMineSoupHistoryError(err.message || '请稍后再试')
+        })
+        .finally(() => setMineSoupHistoryLoading(false)),
     ])
   }
 
@@ -501,7 +509,9 @@ export default function Lobby() {
         onBind={() => setBindOpen(true)}
         onLogout={logout}
         onUnbind={unbindAi}
-        soupStats={mineSoupStats}
+        soupHistory={mineSoupHistory}
+        soupHistoryLoading={mineSoupHistoryLoading}
+        soupHistoryError={mineSoupHistoryError}
         onAccountAction={setAccountAction}
       />
       <BindModal

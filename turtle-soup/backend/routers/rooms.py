@@ -18,6 +18,14 @@ def _public_room(row: dict) -> dict:
     return out
 
 
+def _history_subject_has_data(subject: dict) -> bool:
+    stats = subject.get("stats") or {}
+    return bool(subject.get("rooms")) or any(
+        int(stats.get(field) or 0) > 0
+        for field in ("total_games", "win_count", "ask_count")
+    )
+
+
 async def _history_subject(
     *,
     subject_id: str,
@@ -140,7 +148,9 @@ async def history(player: dict = Depends(current_player)):
                 username=machine["username"],
                 toy_user_id=int(machine["id"]),
             ))
-    return {"subjects": subjects}
+    return {
+        "subjects": [subject for subject in subjects if _history_subject_has_data(subject)],
+    }
 
 
 @router.get("/")
