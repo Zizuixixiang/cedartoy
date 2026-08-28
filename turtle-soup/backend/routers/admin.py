@@ -7,8 +7,10 @@ from auth_utils import admin_player, verify_password
 from database import execute, fetch_all, fetch_one
 from judge import (
     get_config_runtime_status,
+    get_pool_runtime_status,
     list_models,
     mark_config_success,
+    register_config_runtime_node,
     reset_fail_counts,
     test_config,
 )
@@ -73,7 +75,7 @@ class BanBody(BaseModel):
     reason: str = ""
 
 
-API_CONFIG_PURPOSES = {"judge", "hint", "both"}
+API_CONFIG_PURPOSES = {"judge", "hint", "both", "npc", "all"}
 
 
 def normalize_api_config_purpose(value: str | None) -> str:
@@ -488,7 +490,9 @@ async def remove_ban(ban_id: int, admin: dict = Depends(admin_player)):
 async def api_configs(admin: dict = Depends(admin_player)):
     del admin
     rows = await fetch_all("SELECT * FROM judge_api_configs ORDER BY priority ASC, id ASC")
+    pool_runtime = get_pool_runtime_status()
     for row in rows:
+        register_config_runtime_node(row)
         key = row.get("api_key") or ""
         row["api_key"] = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
         row.update(
@@ -497,6 +501,8 @@ async def api_configs(admin: dict = Depends(admin_player)):
                 enabled=bool(row.get("enabled")),
             )
         )
+        if row.get("purpose") in {"npc", "all"}:
+            row["npc_pool_runtime"] = pool_runtime["npc"]
     return rows
 
 

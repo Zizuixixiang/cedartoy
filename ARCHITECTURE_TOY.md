@@ -272,7 +272,7 @@ Toy 平台账号和海龟汤 `players` 不是同一张表。网页端通过 `/au
 - `api_url`：OpenAI-compatible base URL 或 `/chat/completions` URL。
 - `api_key`：API Key。管理 API 列表返回时脱敏。
 - `model`：模型名。
-- `purpose`：用途池，`judge` 仅用于问答/猜底/生成题/扫描，`hint` 仅用于手动/自动提示，`both` 两边都可用。
+- `purpose`：用途池，`judge` 仅用于问答/猜底/生成题/扫描，`hint` 仅用于手动/自动提示，`both` 仍只代表前两池；`npc` 仅用于对局 NPC，`all` 才进入三池。
 - `enabled`：是否启用。
 - `priority`：优先级，数字越小越先用。
 
@@ -610,7 +610,7 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 - `GET /bans`：IP 封禁列表。
 - `POST /bans`：新增或替换 IP 封禁。body: `{ip, reason}`。
 - `DELETE /bans/{ban_id}`：解除封禁。
-- `GET /api-configs`：裁判 API 配置列表，`api_key` 脱敏。
+- `GET /api-configs`：裁判/NPC API 配置列表，`api_key` 脱敏；NPC 行还包含全局 NPC 池运行摘要。
 - `POST /api-configs`：新增裁判 API 配置。
 - `PUT /api-configs/{config_id}`：更新裁判 API 配置；`api_key` 为空时保留旧 key。
 - `DELETE /api-configs/{config_id}`：删除配置。
@@ -949,33 +949,34 @@ DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；�
 
 实现文件：`turtle-soup/backend/judge.py`
 
-配置来源：`judge_api_configs` 表，仅使用 `enabled=1` 的行，按 `priority ASC, id ASC` 排序（排序决定轮转列表顺序，非固定主备）。`purpose` 将同一张配置表拆成两个运行池：`judge` 池服务普通提问、猜底、生成题和内容扫描；`hint` 池服务手动/自动提示；`both` 同时进入两个池。
+配置来源：`judge_api_configs` 表，仅使用 `enabled=1` 的行，按 `priority ASC, id ASC` 排序。`purpose` 将同一张配置表拆成 `judge`、`hint`、`npc` 三个独立轮询池：`both` 只进入 judge+hint，保持历史语义；`all` 才进入三池。付费或免费供应商都不由代码按价格屏蔽，管理员自行决定哪些节点可用于 NPC。
 
 运行时状态：
 
 ```python
-fail_counts: dict[str, dict[int, int]] = {"judge": {}, "hint": {}}
-_rr_index: dict[str, int] = {"judge": 0, "hint": 0}
-_rr_locks: dict[str, asyncio.Lock] = {"judge": asyncio.Lock(), "hint": asyncio.Lock()}
+_rr_index = {"judge": {}, "hint": {}, "npc": {}}
+_rr_locks = {pool: asyncio.Lock() for pool in ("judge", "hint", "npc")}
 _config_locks: dict[str, asyncio.Lock] = {}
-FAIL_LIMIT = 5
+_runtime_states: dict[str, ConfigRuntimeState] = {}
+FAIL_LIMIT = 3
+NPC_API_MAX_CONCURRENCY = 4  # 环境变量可覆盖
 ```
 
 请求流程：
 
-1. `_configs(pool)` 读取启用配置，按 `purpose in {pool, "both"}` 过滤，并过滤掉该池内 `fail_counts[pool][id] >= 5` 的配置。
-2. `_chat(..., pool="judge")` 进入时用对应池的 `_rr_locks[pool]` 预占 `_rr_index[pool] % len(available)` 作为起点，并立即推进该池下标；`generate_hint` 显式传 `pool="hint"`。
-3. 每个配置调用前按物理目标 `api_url + api_key + model` 获取 `_config_locks`，避免同一个 key/model 被问答池与提示池或并发房间同时撞上。
+1. `_configs(pool)` 读取启用配置，按上述 purpose 规则过滤，并排除仍在 cooldown 或已有半开探测的物理节点。
+2. `_chat(..., pool=...)` 按 priority 分层；同层独立 Round Robin，整层失败后才进入下一层。`generate_hint` 显式使用 hint 池，内部 `npc_chat` 显式使用 npc 池。
+3. 每个配置调用前按物理目标 `chat/completions endpoint + api_key` 取得共享锁和健康状态；复制同一 key 为不同数据库行不能绕过节点级串行、失败计数或冷却。
 4. 每个配置调用 OpenAI-compatible `/chat/completions`：
    - 若 `api_url` 已以 `/chat/completions` 结尾，直接使用。
    - 否则拼接 `{api_url.rstrip("/")}/chat/completions`。
-5. 当前配置请求成功：`fail_counts[pool][id]=0`，返回文本。
-6. 当前配置异常：`fail_counts[pool][id]+=1`，立即尝试列表中下一配置；若全部失败，会记录包含各配置异常摘要的 warning 日志。
-7. 全部失败或无可用配置：返回 HTTP 503，`裁判暂时不可用，请稍后再试`。
+5. 当前配置成功会清除共享失败/冷却；异常会累计共享失败并继续下一节点。连续失败 3 次进入 60/120/300 秒分级冷却，429 至少冷却 120 秒并尊重更长 `Retry-After`，到期只允许一次半开探测。
+6. NPC 请求另受 `NPC_API_MAX_CONCURRENCY`（默认 4）与 `NPC_API_QUEUE_TIMEOUT_SECONDS`（默认 2 秒）保护。NPC 遇到忙节点直接跳过；judge/hint 有待处理请求时不再发起新的 NPC 节点请求，已发出的 NPC 请求不强杀。不同物理节点仍可供不同房间并行。
+7. 全部失败或无可用配置返回 HTTP 503；judge/hint 返回裁判暂不可用，npc 返回 NPC 通道繁忙。
 
-管理探测：`test_config(cfg)` 对单条配置发简短 chat 请求；`list_models(cfg)` 拉取 `/models`。均不修改运行池的 `fail_counts` 与 `_rr_index`。
+管理探测：`test_config(cfg)` 对单条配置发简短 chat 请求；`list_models(cfg)` 拉取 `/models`。均不走 NPC 公共入口。`npc_chat(messages, max_tokens, timeout)` 是仅供内部游戏控制器调用的 compact 接口，限制消息字段/条数/长度且没有公开聊天路由。
 
-生产 API 池现状应通过管理后台维护：只有 `enabled=1` 的配置参与轮询，`purpose` 可选「问答 / 提示 / 两边」。格式或语义不稳定的配置即使连通也会影响对应池；`judge_ask` 和 `generate_hint` 会通过 `_chat_validated` 按各自重试次数重新调用 `_chat()`，`judge_guess` 在独立猜底锁内要求 JSON 并最多重试 3 次，格式失败会记录 warning 日志。
+生产 API 池通过管理后台维护：只有 `enabled=1` 的配置参与轮询，`purpose` 可选「问答 / 提示 / 两边 / NPC / 全部」。列表继续脱敏 key，并展示健康、冷却和 NPC 全局并发摘要。格式或语义不稳定的配置即使连通也会影响对应池；`judge_ask` 和 `generate_hint` 会通过 `_chat_validated` 按各自重试次数重新调用 `_chat()`，`judge_guess` 在独立猜底锁内要求 JSON 并最多重试 3 次，格式失败会记录 warning 日志。
 
 系统 prompt 来源：
 
@@ -1269,7 +1270,7 @@ Room 移动端规则：顶部栏只保留房间状态（隐藏「游戏大厅」
 3. supervisord 当前只加载 `*.conf`。不要只复制 `turtle-soup.ini` 后期待生效；需要同步 `.conf`，或修改 supervisor include 规则。
 4. `TURTLE_SOUP_SECRET` 当前若未设置会使用默认值 `<your-secret-here>`。生产建议在环境中显式设置并保持稳定；变更会使旧海龟汤 JWT 失效。
 5. `TOY_SECRET` 继续用于人类平台 JWT和 legacy AI JWT 双栈，不用于 `ctai_v1_` opaque 鉴权。本轮不得切换现有 secret；未来关闭 `LEGACY_AI_JWT_COMPAT_ENABLED` 只停 AI JWT，不影响 opaque 或人类 JWT。`legacy_ai_token_hashes` 仅用于经核实的旧 secret JWT 精确 hash fallback。`SESSIONS_DB`（默认 `/opt/cedartoy/data/sessions.db`）供 `get_profile` 统计 MBTI/DND 完成次数；`TURTLE_SOUP_DB` 供平台账号与海龟汤 `players` 统计。
-6. 裁判 LLM 不配置可用 `judge_api_configs` 时，`ask/guess/generate/hint/AI扫描` 会返回裁判不可用或失败；普通登录、开房、房间列表不依赖 LLM。注意 `purpose='hint'` 只服务提示池，`purpose='judge'` 只服务问答/猜底/生成/扫描，`purpose='both'` 两边都用。
+6. 裁判 LLM 不配置可用 `judge_api_configs` 时，`ask/guess/generate/hint/AI扫描` 会返回裁判不可用或失败；普通登录、开房、房间列表不依赖 LLM。`purpose='both'` 只服务 judge+hint；NPC 必须由 `npc` 或 `all` 明确开放。NPC 并发上限用 `NPC_API_MAX_CONCURRENCY` 配置（默认 4），排队超时用 `NPC_API_QUEUE_TIMEOUT_SECONDS`（默认 2 秒）。
 7. `judge_api_configs.api_key` 存在 SQLite 中，管理 API 列表会脱敏，但数据库文件本身需要限制访问权限。启用配置前不只要测 HTTP 连通，还要用真实 `ask/guess/hint_request` 场景确认输出格式与语义；`guess` 现在要求严格 JSON，提示生成要求低剧透且不空回。连通但格式错误的节点会在后端内部重试，连续失败后玩家才会看到 `【系统提示】系统开小差了...` 或提示请求失败。
 8. `settings.judge_prompt`、`settings.generate_prompt`、`settings.judge_prompt_clue` 不走缓存；通过管理后台或直接改表后，下一次裁判/生成调用立即生效。提示生成另有房间级异步锁，同一房间内手动/自动提示会排队调用提示池 LLM；手动提示不重置自动提示周期。
 9. 汤底保护：普通 `/rooms/{room_id}`、MCP `join` 和进行中房间的 MCP `status` 不返回房间表 `answer`；管理员 `/admin/rooms` 会返回完整 answer；猜中后 SSE `game_over` 会下发纯 `answer`，同时写入含还原度和汤底的公开揭晓日志，因此结束后 MCP `status` 可通过日志看到最终汤底。100 题查看汤底是个人行为：网页端先显示页面内提示条，点“接受”后才进入最终确认弹窗；MCP 端在下一次 `ask` 顺便带 `confirm_reveal=true` 接受提示。确认后写入 `room_answer_reveals`，不结束房间、不广播答案，但该玩家不能继续答题、请求提示或操作记事板。若题目包含 `【隐藏后台设定】`，公开揭晓默认只使用该标记之前的汤底段，除非裁判 JSON 提供 `public_answer`。

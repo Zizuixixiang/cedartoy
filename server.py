@@ -6098,6 +6098,7 @@ DUEL_GUIDE = """# duel·双弈·人机对弈厅
   pending 的 confirmation_decision=pending 时用 accept 或 reject；其他房间正常无需再 join。
 - new：play(game="duel", action="new", params={"game_type":"tictactoe","mode":"human_first","stake":0})
   mode 为 human_first / ai_first；stake 必须是 >=0 的整数，默认 0。stake=0 直接开局；stake>0 创建 pending 邀请，另一方确认后才开始。身份由平台强制补齐，不要自报 player_id / opponent_id。
+  当前六棋严格双人且不接受 NPC。未来明确声明 max_players>2 且 supports_npcs 的插件可额外传 target_player_count=3|4、fill_with_npcs=true；平台仍强制至少包含当前绑定人类与当前 canonical 小机，NPC 最多补两个创建时空座，不会中途接管，也没有真实账号或永久钱包。
 - accept：play(game="duel", action="accept", params={"room_id":"ABCDEFGH"})，接受当前小机收到的 pending 邀请。
 - reject：play(game="duel", action="reject", params={"room_id":"ABCDEFGH"})，拒绝当前小机收到的 pending 邀请并取消该局。
 - join：仅用于旧式 waiting 房间；加入后若转为 playing，会返回完整 bootstrap。
@@ -6110,7 +6111,7 @@ DUEL_GUIDE = """# duel·双弈·人机对弈厅
 
 推荐流程：rooms -> accept/reject（如需）-> bootstrap -> move(wait=true) 增量循环；只有丢状态时 state。第一次进入 playing 的 new / accept / 必要 join 会返回一次完整 bootstrap（棋盘、规则、先手、stake、双方余额）；非零 pending 只返回紧凑邀请摘要。正常开局已含双方余额，不必额外 chips/status。
 
-增量协议：正常 move 不返回完整 room/棋盘/规则，只给 room_id、revision、turn、current_actor_id/current_actor_seat、status、your_move 和按 sequence 排列的 new_messages；其中事件含 actor_id/actor_seat，当前六棋的对方落子仍是原始坐标 payload，未来隐藏信息插件会先按当前 viewer 投影再返回。自动 pass / 保留行动权看 action_note 与当前行动者。终局增量另含 winner/result、筹码 delta 和结算后余额。筹码余额允许为负数；当前六棋的非零筹码局双方必须重新确认，多人筹码规则尚未开放。
+增量协议：正常 move 不返回完整 room/棋盘/规则，只给 room_id、revision、turn、current_actor_id/current_actor_seat、status、your_move 和按 sequence 排列的 new_messages；其中事件含 actor_id/actor_seat，当前六棋的对方落子仍是原始坐标 payload，未来隐藏信息插件会先按当前 viewer 投影再返回。自动 pass / 保留行动权看 action_note 与当前行动者。终局增量另含 winner/result、筹码 delta 和结算后余额。筹码余额允许为负数；当前六棋的非零筹码局双方必须重新确认。未来多人插件只有显式提供完整零和 settlement_deltas 才能启用非零 stake；系统 NPC 的 delta 留在房间结果中，不写全局钱包。
 
 wait=true 最多等待房间内其他参与者动作 50 秒；唤醒只返回对当前参与者可见的落子/发言增量。still_waiting 是极简正常结果，不要立刻用 state 轮询；到自己下一手继续 wait=true。等待容量繁忙会带 wait_downgraded=true，但落子已成功。move / state / resign 可附 message（最长 500 字）。
 
@@ -7070,6 +7071,8 @@ def _play_duel(
         "limit",
         "offset",
         "stake",
+        "target_player_count",
+        "fill_with_npcs",
         "op",
     }
     payload = {

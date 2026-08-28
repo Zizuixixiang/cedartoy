@@ -138,6 +138,37 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             },
         )
 
+    def test_future_multiplayer_shape_is_forwarded_without_identity_escape(self):
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"ok": True}
+
+        with patch.object(server.httpx, "post", return_value=FakeResponse()) as post:
+            server._play_duel(
+                {
+                    "action": "new",
+                    "player_id": "forged-npc",
+                    "opponent_id": "forged-human",
+                    "game_type": "future_game",
+                    "target_player_count": 4,
+                    "fill_with_npcs": True,
+                },
+                trusted_player_id="42:3",
+                trusted_opponent_id="trusted-human",
+                force_opponent=True,
+            )
+        self.assertEqual(post.call_args.kwargs["json"], {
+            "action": "new",
+            "player_id": "42:3",
+            "opponent_id": "trusted-human",
+            "game_type": "future_game",
+            "target_player_count": 4,
+            "fill_with_npcs": True,
+        })
+
     def test_chips_forwarder_forces_canonical_ai_and_bound_human(self):
         class FakeResponse:
             status_code = 200
@@ -257,6 +288,8 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             'action="reject"',
             "筹码余额允许为负数",
             "双方必须重新确认",
+            "NPC 最多补两个创建时空座",
+            "不写全局钱包",
         ):
             self.assertIn(expected, guide)
 

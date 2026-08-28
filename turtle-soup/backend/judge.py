@@ -1,7 +1,9 @@
 import asyncio
+import hashlib
 import json
 import logging
 import math
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -18,9 +20,14 @@ from database import DEFAULT_SETTINGS, fetch_all, fetch_one
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
-_rr_index: dict[str, dict[int, int]] = {"judge": {}, "hint": {}}
-_rr_locks: dict[str, asyncio.Lock] = {"judge": asyncio.Lock(), "hint": asyncio.Lock()}
-_config_locks: dict[int, asyncio.Lock] = {}
+POOL_NAMES = ("judge", "hint", "npc")
+_rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}
+_rr_locks: dict[str, asyncio.Lock] = {pool: asyncio.Lock() for pool in POOL_NAMES}
+# Locks and health belong to the physical API credential, not a database row.
+# This prevents an administrator from duplicating one key into several purpose
+# rows to evade node-level serialization or cooldown.
+_config_locks: dict[str, asyncio.Lock] = {}
+_config_node_keys: dict[int, str] = {}
 _guess_lock = asyncio.Lock()
 FAIL_LIMIT = 3
 COOLDOWN_SECONDS = (60, 120, 300)
@@ -28,6 +35,13 @@ RATE_LIMIT_MIN_COOLDOWN_SECONDS = 120
 DEEPSEEK_V4_NODE_TIMEOUT = 30.0
 DEEPSEEK_V4_MIN_MAX_TOKENS = 8192
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
+NPC_API_MAX_CONCURRENCY = max(1, int(os.getenv("NPC_API_MAX_CONCURRENCY", "4")))
+NPC_API_QUEUE_TIMEOUT_SECONDS = max(
+    0.1, float(os.getenv("NPC_API_QUEUE_TIMEOUT_SECONDS", "2"))
+)
+NPC_CHAT_MAX_MESSAGES = 20
+NPC_CHAT_MAX_CONTENT_LENGTH = 4000
+NPC_CHAT_MAX_TOTAL_CONTENT_LENGTH = 12000
 logger = logging.getLogger(__name__)
 
 
@@ -41,7 +55,12 @@ class ConfigRuntimeState:
     last_success_at: str | None = None
 
 
-_runtime_states: dict[int, ConfigRuntimeState] = {}
+_runtime_states: dict[str, ConfigRuntimeState] = {}
+_npc_semaphore: asyncio.Semaphore | None = None
+_npc_semaphore_loop: asyncio.AbstractEventLoop | None = None
+_npc_active = 0
+_npc_waiting = 0
+_priority_waiters = 0
 
 STYLE_DESCRIPTIONS = {
     "cozy": '主打"情感的错位与反转"。汤面必须看起来像是某种冷漠、奇怪甚至带有恶意的行为，但汤底揭晓时，其实是极致的保护、笨拙的爱意或温柔的成全。出题发力点参考：误解的善意、跨越时间的约定、隐秘的保护、无法开口的道别、用笨拙方式表达的爱。',
@@ -95,15 +114,56 @@ async def _get_judge_prompt_clue() -> str:
 
 
 def _pool_name(pool: str) -> str:
-    return pool if pool in _rr_index else "judge"
+    return pool if pool in POOL_NAMES else "judge"
+
+
+def _node_key(cfg: dict[str, Any]) -> str:
+    endpoint = _endpoint(str(cfg.get("api_url") or "").strip()).lower()
+    api_key = str(cfg.get("api_key") or "").strip()
+    material = f"{endpoint}\0{api_key}".encode("utf-8")
+    return "node:" + hashlib.sha256(material).hexdigest()
+
+
+def _merge_runtime_state(target: ConfigRuntimeState, source: ConfigRuntimeState) -> None:
+    target.consecutive_failures = max(
+        target.consecutive_failures, source.consecutive_failures
+    )
+    target.cooldown_stage = max(target.cooldown_stage, source.cooldown_stage)
+    target.cooldown_until = max(target.cooldown_until, source.cooldown_until)
+    target.probe_in_flight = target.probe_in_flight or source.probe_in_flight
+    target.last_error = source.last_error or target.last_error
+    target.last_success_at = source.last_success_at or target.last_success_at
+
+
+def register_config_runtime_node(cfg: dict[str, Any]) -> str:
+    """Bind one database row to shared physical-node runtime state."""
+    config_id = int(cfg["id"])
+    key = _node_key(cfg)
+    previous = _config_node_keys.get(config_id)
+    _config_node_keys[config_id] = key
+    legacy_key = f"config:{config_id}"
+    if legacy_key in _runtime_states:
+        legacy = _runtime_states.pop(legacy_key)
+        _merge_runtime_state(_runtime_states.setdefault(key, ConfigRuntimeState()), legacy)
+    if previous and previous != key and not any(
+        mapped == previous for cid, mapped in _config_node_keys.items()
+        if cid != config_id
+    ):
+        _config_locks.pop(previous, None)
+        _runtime_states.pop(previous, None)
+    return key
+
+
+def _runtime_key(config_id: int) -> str:
+    return _config_node_keys.get(int(config_id), f"config:{int(config_id)}")
 
 
 def _config_lock(cfg: dict[str, Any]) -> asyncio.Lock:
-    config_id = int(cfg["id"])
-    lock = _config_locks.get(config_id)
+    key = register_config_runtime_node(cfg)
+    lock = _config_locks.get(key)
     if lock is None:
         lock = asyncio.Lock()
-        _config_locks[config_id] = lock
+        _config_locks[key] = lock
     return lock
 
 
@@ -116,7 +176,7 @@ def _wall_now_iso() -> str:
 
 
 def _state(config_id: int) -> ConfigRuntimeState:
-    return _runtime_states.setdefault(int(config_id), ConfigRuntimeState())
+    return _runtime_states.setdefault(_runtime_key(config_id), ConfigRuntimeState())
 
 
 def _runtime_status(state: ConfigRuntimeState, now: float | None = None) -> str:
@@ -129,7 +189,7 @@ def _runtime_status(state: ConfigRuntimeState, now: float | None = None) -> str:
 
 
 def get_config_runtime_status(config_id: int, *, enabled: bool = True) -> dict[str, Any]:
-    state = _runtime_states.get(int(config_id), ConfigRuntimeState())
+    state = _runtime_states.get(_runtime_key(config_id), ConfigRuntimeState())
     now = _now()
     remaining = max(0, math.ceil(state.cooldown_until - now))
     return {
@@ -142,7 +202,7 @@ def get_config_runtime_status(config_id: int, *, enabled: bool = True) -> dict[s
 
 
 def _config_available(config_id: int, now: float | None = None) -> bool:
-    state = _runtime_states.get(int(config_id))
+    state = _runtime_states.get(_runtime_key(config_id))
     if state is None:
         return True
     now = _now() if now is None else now
@@ -229,7 +289,7 @@ def mark_config_success(config_id: int) -> None:
 
 
 def _release_probe(config_id: int) -> None:
-    state = _runtime_states.get(int(config_id))
+    state = _runtime_states.get(_runtime_key(config_id))
     if state is not None:
         state.probe_in_flight = False
 
@@ -245,18 +305,29 @@ async def _matching_configs(pool: str = "judge") -> list[dict[str, Any]]:
     rows = await fetch_all(
         "SELECT * FROM judge_api_configs WHERE enabled = 1 ORDER BY priority ASC, id ASC"
     )
-    return [
-        row for row in rows
-        if str(row.get("purpose") or "judge") in {pool, "both"}
-    ]
+    matching = [row for row in rows if _purpose_matches(row.get("purpose"), pool)]
+    for row in rows:
+        register_config_runtime_node(row)
+    return matching
+
+
+def _purpose_matches(config_purpose: Any, pool: str) -> bool:
+    purpose = str(config_purpose or "judge").strip().lower()
+    pool = _pool_name(pool)
+    if purpose == "all":
+        return True
+    if purpose == "both":
+        return pool in {"judge", "hint"}
+    return purpose == pool
 
 
 def reset_fail_counts(config_id: int | None = None, purpose: str | None = None) -> None:
     del purpose  # Runtime health belongs to the API node, not to its scheduling pool.
     if config_id is None:
         _runtime_states.clear()
+        _config_node_keys.clear()
     else:
-        _runtime_states.pop(int(config_id), None)
+        _runtime_states.pop(_runtime_key(config_id), None)
 
 
 def _endpoint(base: str) -> str:
@@ -324,6 +395,27 @@ async def _layer_start(pool: str, priority: int, size: int) -> int:
         return start
 
 
+def _npc_limit_semaphore() -> asyncio.Semaphore:
+    global _npc_semaphore, _npc_semaphore_loop
+    loop = asyncio.get_running_loop()
+    if _npc_semaphore is None or _npc_semaphore_loop is not loop:
+        _npc_semaphore = asyncio.Semaphore(NPC_API_MAX_CONCURRENCY)
+        _npc_semaphore_loop = loop
+    return _npc_semaphore
+
+
+def get_pool_runtime_status() -> dict[str, Any]:
+    return {
+        "npc": {
+            "active": _npc_active,
+            "waiting": _npc_waiting,
+            "max_concurrency": NPC_API_MAX_CONCURRENCY,
+            "queue_timeout_seconds": NPC_API_QUEUE_TIMEOUT_SECONDS,
+        },
+        "priority_waiters": _priority_waiters,
+    }
+
+
 async def _chat(
     messages: list[dict[str, str]],
     temperature: float = 0.1,
@@ -332,7 +424,53 @@ async def _chat(
     max_tokens: int | None = None,
     pool: str = "judge",
 ) -> str:
+    global _npc_active, _npc_waiting, _priority_waiters
     pool = _pool_name(pool)
+    if pool == "npc":
+        semaphore = _npc_limit_semaphore()
+        _npc_waiting += 1
+        try:
+            await asyncio.wait_for(
+                semaphore.acquire(), timeout=NPC_API_QUEUE_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(status_code=503, detail="NPC 通道繁忙，请稍后再试") from exc
+        finally:
+            _npc_waiting -= 1
+        _npc_active += 1
+        try:
+            return await _chat_from_pool(
+                messages,
+                temperature,
+                timeout=timeout,
+                max_tokens=max_tokens,
+                pool=pool,
+            )
+        finally:
+            _npc_active -= 1
+            semaphore.release()
+
+    _priority_waiters += 1
+    try:
+        return await _chat_from_pool(
+            messages,
+            temperature,
+            timeout=timeout,
+            max_tokens=max_tokens,
+            pool=pool,
+        )
+    finally:
+        _priority_waiters -= 1
+
+
+async def _chat_from_pool(
+    messages: list[dict[str, str]],
+    temperature: float,
+    *,
+    timeout: float,
+    max_tokens: int | None,
+    pool: str,
+) -> str:
     errors: list[str] = []
     available = await _configs(pool)
     if not available:
@@ -341,7 +479,12 @@ async def _chat(
             logger.warning("%s configs are cooling or already probing", pool)
         else:
             logger.warning("%s has no enabled API configs", pool)
-        raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
+        detail = (
+            "NPC 通道繁忙，请稍后再试"
+            if pool == "npc"
+            else "裁判暂时不可用，请稍后再试"
+        )
+        raise HTTPException(status_code=503, detail=detail)
     layers: dict[int, list[dict[str, Any]]] = {}
     for cfg in sorted(available, key=lambda item: (int(item.get("priority") or 0), int(item["id"]))):
         layers.setdefault(int(cfg.get("priority") or 0), []).append(cfg)
@@ -351,7 +494,13 @@ async def _chat(
         for i in range(len(candidates)):
             cfg = candidates[(start + i) % len(candidates)]
             cid = int(cfg["id"])
-            async with _config_lock(cfg):
+            config_lock = _config_lock(cfg)
+            # NPC work never queues behind a busy shared node and never starts
+            # while a judge/hint request is trying to acquire capacity. A
+            # request already in flight is allowed to finish normally.
+            if pool == "npc" and (_priority_waiters > 0 or config_lock.locked()):
+                continue
+            async with config_lock:
                 is_probe = _claim_attempt(cid)
                 if is_probe is None:
                     continue
@@ -392,7 +541,63 @@ async def _chat(
                 _record_success(cid)
                 return text.strip()
     logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
-    raise HTTPException(status_code=503, detail="裁判暂时不可用，请稍后再试")
+    detail = (
+        "NPC 通道繁忙，请稍后再试"
+        if pool == "npc"
+        else "裁判暂时不可用，请稍后再试"
+    )
+    raise HTTPException(status_code=503, detail=detail)
+
+
+async def npc_chat(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 512,
+    timeout: float = 20,
+) -> str:
+    """Internal compact NPC completion entry point; it is not an HTTP route."""
+    if (
+        not isinstance(messages, list)
+        or not 1 <= len(messages) <= NPC_CHAT_MAX_MESSAGES
+    ):
+        raise ValueError(f"messages 必须包含 1–{NPC_CHAT_MAX_MESSAGES} 条消息")
+    compact: list[dict[str, str]] = []
+    total_length = 0
+    for message in messages:
+        if not isinstance(message, dict) or set(message) != {"role", "content"}:
+            raise ValueError("每条 NPC message 只能包含 role 和 content")
+        role = message.get("role")
+        content = message.get("content")
+        if role not in {"system", "user", "assistant"}:
+            raise ValueError("NPC message role 无效")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("NPC message content 不能为空")
+        content = content.strip()
+        if len(content) > NPC_CHAT_MAX_CONTENT_LENGTH:
+            raise ValueError("单条 NPC message 过长")
+        total_length += len(content)
+        compact.append({"role": role, "content": content})
+    if total_length > NPC_CHAT_MAX_TOTAL_CONTENT_LENGTH:
+        raise ValueError("NPC messages 总长度过长")
+    if (
+        isinstance(max_tokens, bool)
+        or not isinstance(max_tokens, int)
+        or not 1 <= max_tokens <= 4096
+    ):
+        raise ValueError("max_tokens 必须是 1–4096 的整数")
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not 1 <= timeout <= 60
+    ):
+        raise ValueError("timeout 必须在 1–60 秒之间")
+    return await _chat(
+        compact,
+        temperature=0.3,
+        timeout=float(timeout),
+        max_tokens=max_tokens,
+        pool="npc",
+    )
 
 
 async def list_models(cfg: dict[str, Any]) -> dict[str, Any]:
