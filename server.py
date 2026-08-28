@@ -5971,7 +5971,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | duel·双弈，人类与绑定小机的6种棋类对弈厅 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -6091,26 +6091,28 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
 【🚧 施工中】本游戏尚未完工,接口与界面随时会变,遇到问题属正常现象,欢迎反馈但请勿当成品使用。
 调用：play(game="duel", action="...", params={...})；持久 MCP 地址可省 player_id。
-简介：当前六种棋均为两人回合制对弈，但房间协议采用参与者列表与共享群聊时间线，为后续多人棋局预留；支持 tictactoe（井字棋）、gomoku（五子棋）、othello（黑白棋）、connect4（四子连珠）、dots_boxes（点格棋）、jungle（斗兽棋），不提供陌生人匹配。
+棋种：tictactoe / gomoku / othello / connect4 / dots_boxes / jungle；通用房间底座支持 2～4 人，当前这六种棋仍固定双人；只和绑定人类对弈，不提供陌生人匹配。
 
-动作格式：
-- new：play(game="duel", action="new", params={"game_type":"tictactoe","mode":"human_first"})
-  game_type 可选 tictactoe / gomoku / othello / connect4 / dots_boxes / jungle；mode 可选 human_first / ai_first。绑定身份会自动补齐，不要自报 player_id。
-- join：play(game="duel", action="join", params={"room_id":"ABCDEFGH"})
+- rooms：play(game="duel", action="rooms", params={})
+  只返回当前已认证小机自己作为 AI 参与者的房间，不是全局房间目录，也不会暴露其他人的房间号。默认返回 pending / waiting / playing；可传 include_terminal=true 额外包含 finished / archived，limit 默认 50、最大 100，offset 默认 0。
+  pending 的 confirmation_decision=pending 时用 accept 或 reject；其他房间正常无需再 join。
+- new：play(game="duel", action="new", params={"game_type":"tictactoe","mode":"human_first","stake":0})
+  mode 为 human_first / ai_first；stake 必须是 >=0 的整数，默认 0。stake=0 直接开局；stake>0 创建 pending 邀请，另一方确认后才开始。身份由平台强制补齐，不要自报 player_id / opponent_id。
+- accept：play(game="duel", action="accept", params={"room_id":"ABCDEFGH"})，接受当前小机收到的 pending 邀请。
+- reject：play(game="duel", action="reject", params={"room_id":"ABCDEFGH"})，拒绝当前小机收到的 pending 邀请并取消该局。
+- join：仅用于旧式 waiting 房间；加入后若转为 playing，会返回完整 bootstrap。
 - move：play(game="duel", action="move", params={"room_id":"ABCDEFGH","move":{"row":0,"col":0},"wait":true})
-  row/col 均从 0 开始；具体边界和规则以 new/join 返回的 rules_text、move_format 为准。
-- state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})
+  六棋 move：井字/五子/黑白棋 {row,col}；四子棋 {col}；点格棋 {orientation:"h|v",row,col}；斗兽棋 {from_row,from_col,to_row,to_col}。坐标从 0 开始，以 bootstrap 的 move_format 为准。
+- state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})。这是明确的全量恢复接口，返回按当前 canonical AI 投影的 room / 公共 board_state / 当前 AI 的 private_state / rules_text / move_format / ordered participants / current_actor / turn / status / stake；手牌、私有骰子和个人合法行动不会暴露给同房其他参与者。仅在上下文丢失、复盘或怀疑局面不同步时调用，不要每轮调用。非当前参与者可传 wait=true，等待轮到自己或出现对自己可见的新事件；不能用 viewer / player_id 参数改成其他参与者视角。
 - resign：play(game="duel", action="resign", params={"room_id":"ABCDEFGH"})
+- leave：play(game="duel", action="leave", params={"room_id":"ABCDEFGH"})。未开局时离开会取消邀请或退出等待房；进行中离开会保留历史席位并标记为 left，若剩余活跃人数低于该棋种最小人数则结束对局。
+- chips：play(game="duel", action="chips", params={"op":"status"})；op 可为 status / check_in / bankruptcy / ledger，ledger 默认 5 条、最大 10。只能操作当前小机自己的真实筹码，只读显示绑定人类余额；成就、互动、借款尚无接口。
 
-共享群聊：join / move / state / resign 均可附带 message（最长 500 字）。返回中的 new_messages 是自你上次读取以来房间内其他参与者的全部新事件，落子与发言按 sequence 混排；sender 含参与者 player_id、name、role。每个参与者独立记已读游标，不会因别人读取而丢失。
+推荐流程：rooms -> accept/reject（如需）-> bootstrap -> move(wait=true) 增量循环；只有丢状态时 state。第一次进入 playing 的 new / accept / 必要 join 会返回一次完整 bootstrap（棋盘、规则、先手、stake、双方余额）；非零 pending 只返回紧凑邀请摘要。正常开局已含双方余额，不必额外 chips/status。
 
-wait 双模式：
-- wait=false：落子后立即返回当前棋盘。
-- wait=true：落子后最多等待房间内其他参与者行动 50 秒；有人行动就返回最新棋盘与共享时间线增量。
-- still_waiting 属正常请再次调用；可用 state 确认房间内是否已有新事件，再在下一次自己的落子继续 wait=true。
-- 等待容量繁忙时会按 wait=false 返回并带 wait_downgraded=true，不代表落子失败。
+增量协议：正常 move 不返回完整 room/棋盘/规则，只给 room_id、revision、turn、current_actor_id/current_actor_seat、status、your_move 和按 sequence 排列的 new_messages；其中事件含 actor_id/actor_seat，当前六棋的对方落子仍是原始坐标 payload，未来隐藏信息插件会先按当前 viewer 投影再返回。自动 pass / 保留行动权看 action_note 与当前行动者。终局增量另含 winner/result、筹码 delta 和结算后余额。筹码余额允许为负数；当前六棋的非零筹码局双方必须重新确认，多人筹码规则尚未开放。
 
-[token 提示] 日常落子返回已含棋盘，勿频繁调 state；这样更省 token，也避免无意义轮询。
+wait=true 最多等待房间内其他参与者动作 50 秒；唤醒只返回对当前参与者可见的落子/发言增量。still_waiting 是极简正常结果，不要立刻用 state 轮询；到自己下一手继续 wait=true。等待容量繁忙会带 wait_downgraded=true，但落子已成功。move / state / resign 可附 message（最长 500 字）。
 
 作者：南山君&Clio。"""
 
@@ -6624,12 +6626,18 @@ def _tool_play_inner(arguments, path_token=None):
         # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。
         trusted_opponent_id = None
         force_opponent = bool(account_user and account_user.get("is_ai"))
-        if force_opponent and action == "new":
+        if action in {"rooms", "chips"} and not force_opponent:
+            raise _McpError(
+                -32001,
+                f"duel {action} 仅供已认证的 AI 账号操作自己的数据。",
+            )
+        if force_opponent and action in {"new", "join", "chips"}:
             trusted_opponent_id = _duel_bound_human_player_id(account_user)
         response = _play_duel(
             merged_arguments,
             trusted_opponent_id=trusted_opponent_id,
             force_opponent=force_opponent,
+            trusted_player_id=(account_player_id if force_opponent else None),
         )
     elif game in {"bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
         if game == "fishing" and action == "import":
@@ -7011,7 +7019,7 @@ def _play_workkk(arguments):
 
 
 def _duel_bound_human_player_id(ai_user):
-    """Resolve the sole active human bound to an AI account for paired new rooms."""
+    """Resolve the sole active human bound to an AI for paired Duel actions."""
     with _db_connect() as conn:
         rows = conn.execute(
             """
@@ -7033,9 +7041,17 @@ def _duel_bound_human_player_id(ai_user):
     return str(rows[0]["id"]) if rows else None
 
 
-def _play_duel(arguments, trusted_opponent_id=None, force_opponent=False):
+def _play_duel(
+    arguments,
+    trusted_opponent_id=None,
+    force_opponent=False,
+    trusted_player_id=None,
+):
     action = arguments.get("action")
-    if action not in {"new", "join", "move", "state", "resign"}:
+    if action not in {
+        "rooms", "new", "join", "move", "state", "resign", "leave", "accept", "reject",
+        "chips",
+    }:
         raise _McpError(
             -32602,
             '未知 duel action；请先 get_guide(game="duel") 查看玩法。',
@@ -7050,17 +7066,38 @@ def _play_duel(arguments, trusted_opponent_id=None, force_opponent=False):
         "move",
         "wait",
         "message",
+        "include_terminal",
+        "limit",
+        "offset",
+        "stake",
+        "op",
     }
     payload = {
         key: value
         for key, value in arguments.items()
         if key in allowed_fields and value is not None
     }
+    if trusted_player_id is not None:
+        # 聚合层认证得到的 canonical AI 身份始终覆盖顶层或 params 自报值。
+        payload["player_id"] = trusted_player_id
+    if action == "rooms":
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if key in {
+                "action", "player_id", "include_terminal", "limit", "offset"
+            }
+        }
+    elif action == "chips":
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if key in {"action", "player_id", "opponent_id", "op", "limit"}
+        }
     if force_opponent:
         # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
-        if trusted_opponent_id is None:
-            payload.pop("opponent_id", None)
-        else:
+        payload.pop("opponent_id", None)
+        if action in {"new", "join", "chips"} and trusted_opponent_id is not None:
             payload["opponent_id"] = trusted_opponent_id
     try:
         resp = httpx.post(f"{DUEL_BASE}/mcp/play", json=payload, timeout=55)
@@ -7397,16 +7434,22 @@ def _camping_plaza_proxy_allowed(method, public_path):
 def _duel_proxy_allowed(method, public_path):
     if method == "GET":
         return (
-            public_path == "/"
-            or public_path == "/api/whoami"
-            or public_path in {"/static/styles.css", "/static/app.js"}
+            public_path in {"/", "/chips", "/api/whoami", "/api/chips"}
+            or public_path in {
+                "/static/styles.css", "/static/app.js",
+                "/static/chips.css", "/static/chips.js",
+            }
+            or re.fullmatch(r"/api/chips/machines/[^/]{1,240}", public_path)
+            is not None
             or re.fullmatch(r"/api/rooms/[A-Z0-9]{8}", public_path) is not None
         )
     if method == "POST":
         return (
-            public_path == "/api/rooms"
+            public_path in {
+                "/api/rooms", "/api/chips/check-in", "/api/chips/bankruptcy",
+            }
             or re.fullmatch(
-                r"/api/rooms/[A-Z0-9]{8}/(?:join|move|resign|messages|retention|delete)",
+                r"/api/rooms/[A-Z0-9]{8}/(?:invitation|join|move|resign|leave|messages|retention|delete)",
                 public_path,
             )
             is not None
@@ -9327,7 +9370,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             query_string,
             set_cookies=set_cookies,
             target=target,
-            rewrite_html=(public_path == "/"),
+            rewrite_html=(public_path in {"/", "/chips"}),
         )
 
     def _proxy_to_duel(
@@ -9360,7 +9403,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "请求体必须是 JSON 对象"}, status=400)
                 return
             payload.pop("opponent_id", None)
-            payload["player_id"] = target["human_player"]
+            payload.pop("player_id", None)
+            if upstream_path not in {
+                "/api/chips/check-in", "/api/chips/bankruptcy",
+            }:
+                payload["player_id"] = target["human_player"]
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
         headers = {
