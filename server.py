@@ -6091,14 +6091,14 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
 【🚧 施工中】本游戏尚未完工,接口与界面随时会变,遇到问题属正常现象,欢迎反馈但请勿当成品使用。
 调用：play(game="duel", action="...", params={...})；持久 MCP 地址可省 player_id。
-棋种：tictactoe / gomoku / othello / connect4 / dots_boxes / jungle；通用房间底座支持 2～4 人，当前这六种棋仍固定双人；只和绑定人类对弈，不提供陌生人匹配。
+棋种：tictactoe / gomoku / othello / connect4 / dots_boxes / jungle；通用房间底座绝对上限为 6 人，但每个插件以 allowed_player_counts 权威声明桌型，当前这六种棋仍固定双人；只和绑定人类对弈，不提供陌生人匹配。
 
 - rooms：play(game="duel", action="rooms", params={})
   只返回当前已认证小机自己作为 AI 参与者的房间，不是全局房间目录，也不会暴露其他人的房间号。默认返回 pending / waiting / playing；可传 include_terminal=true 额外包含 finished / archived，limit 默认 50、最大 100，offset 默认 0。
   pending 的 confirmation_decision=pending 时用 accept 或 reject；其他房间正常无需再 join。
 - new：play(game="duel", action="new", params={"game_type":"tictactoe","mode":"human_first","stake":0})
   mode 为 human_first / ai_first；stake 必须是 >=0 的整数，默认 0。stake=0 直接开局；stake>0 创建 pending 邀请，另一方确认后才开始。身份由平台强制补齐，不要自报 player_id / opponent_id。
-  当前六棋严格双人且不接受 NPC。未来明确声明 max_players>2 且 supports_npcs 的插件可额外传 target_player_count=3|4、fill_with_npcs=true；平台仍强制至少包含当前绑定人类与当前 canonical 小机，NPC 最多补两个创建时空座，不会中途接管，也没有真实账号或永久钱包。
+  当前六棋严格双人且不接受 NPC。未来明确声明多人 allowed_player_counts 且 supports_npcs 的插件可额外传 target_player_count=2..6、fill_with_npcs=true；目标人数必须属于该插件的离散桌型，不能靠绕过前端放宽。平台仍强制至少包含当前绑定人类与当前 canonical 小机，NPC 最多补四个创建时空座，不会中途接管，也没有真实账号或永久钱包；部署者未启用 NPC provider 时普通对局不受影响，NPC 补位会明确拒绝。
 - accept：play(game="duel", action="accept", params={"room_id":"ABCDEFGH"})，接受当前小机收到的 pending 邀请。
 - reject：play(game="duel", action="reject", params={"room_id":"ABCDEFGH"})，拒绝当前小机收到的 pending 邀请并取消该局。
 - join：仅用于旧式 waiting 房间；加入后若转为 playing，会返回完整 bootstrap。
@@ -7444,6 +7444,11 @@ def _duel_proxy_allowed(method, public_path):
             }
             or re.fullmatch(r"/api/chips/machines/[^/]{1,240}", public_path)
             is not None
+            or re.fullmatch(
+                r"/api/npc-avatars/[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.(?:png|jpe?g|webp|gif)",
+                public_path,
+                re.IGNORECASE,
+            ) is not None
             or re.fullmatch(r"/api/rooms/[A-Z0-9]{8}", public_path) is not None
         )
     if method == "POST":

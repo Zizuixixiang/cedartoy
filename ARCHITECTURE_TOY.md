@@ -8,7 +8,7 @@ Toy Platform 目前由两个本地服务组成：
 
 - `cedartoy`：Toy 聚合层，监听 `127.0.0.1:8002`。根路径 `POST /` 是统一 MCP 入口，直接实现 `list_games`、`get_guide`、`play`、`account`；MBTI、DND、BDSMTest、瓶中生态（eco）都在本进程处理（BDSMTest 内部再 HTTP 调 bdsmtest.org 官方接口），海龟汤动作按需转发到 `turtle-soup:8012`。`GET /` 返回 Toy 首页 `index.html`（含登录/绑定 UI）；`POST /{token}` 支持 AI 持久化 MCP 连接。
 - 瓶中生态引擎 `eco/` 是独立 GitHub 仓库（`Zizuixixiang/cedareco`）clone 进来的，单独 `git pull` 维护，不纳入 cedartoy 仓库版本控制（已 gitignore）；cedartoy 只提供 `eco/handler.py` 这层 MCP 适配。
-- `turtle-soup`：海龟汤服务，监听 `127.0.0.1:8012`，提供海龟汤 Web/API/SSE，以及只属于海龟汤自身的 `/mcp/play` 接口。
+- `turtle-soup`：海龟汤服务，监听 `127.0.0.1:8012`，提供海龟汤 Web/API/SSE、只属于海龟汤自身的 `/mcp/play`，以及带独立 Bearer 鉴权且不经公网代理的 Duel NPC loopback bridge。
 
 公网实际链路：
 
@@ -89,7 +89,8 @@ Cloudflare Tunnel
 │   │   ├── admin.py
 │   │   ├── leaderboard.py
 │   │   ├── notes.py
-│   │   └── report.py
+│   │   ├── report.py
+│   │   └── internal_duel.py       # 仅服务端可信调用的 NPC pool bridge
 │   ├── config/
 │   │   ├── judge_prompt.txt
 │   │   └── judge_llm.yaml.example
@@ -113,7 +114,7 @@ Cloudflare Tunnel
 | 服务 | 端口 | 监听地址 | 管理方式 | 职责 |
 | --- | --- | --- | --- | --- |
 | `cedartoy` | `8002` | `127.0.0.1` | supervisord | Toy 聚合层、根 MCP `POST /`、MBTI `/mbti`、Enneagram `/enneagram`、DND `/dnd`、本进程处理 BDSMTest/eco（仅经 `play`，无独立 HTTP 路由）、反代 `/soup*` 和 legacy `/mcp*` 到 `8012` |
-| `turtle-soup` | `8012` | `127.0.0.1` | supervisord | 海龟汤后端、静态前端、SSE、海龟汤自身 `/mcp/play` |
+| `turtle-soup` | `8012` | `127.0.0.1` | supervisord | 海龟汤后端、静态前端、SSE、海龟汤自身 `/mcp/play`、Duel NPC 内部 bridge |
 | nginx | `80` | public/local | system nginx | 本机 HTTP 反代，`toy.cedarstar.org` server 块 |
 | Cloudflare Tunnel | HTTPS | Cloudflare edge | systemd `cloudflared` | 公网 HTTPS 入口，当前直连本机 `cedartoy:8002` |
 
@@ -121,7 +122,7 @@ Cloudflare Tunnel
 
 `cedartoy` 是公网第一跳和聚合层，代码位于根目录 `server.py`。它使用标准库 `BaseHTTPRequestHandler` + `ThreadPoolHTTPServer`，不是 FastAPI；内部通过 `ThreadPoolExecutor(max_workers=50)` 和 `BoundedSemaphore` 控制并发，排队超过 `QUEUE_TIMEOUT_SECONDS=10` 会返回服务繁忙类错误。它直接处理 Toy 首页、平台账号 REST、根 MCP、MBTI/Enneagram/DND 等测试 MCP，并把 `/soup*` 与 legacy `/mcp*` 反代给 `turtle-soup`。
 
-`turtle-soup` 是海龟汤专用 FastAPI 服务，代码位于 `turtle-soup/backend`。它负责海龟汤自己的 JWT、房间、日志、SSE、裁判 LLM、管理后台 API 和静态前端；FastAPI docs/OpenAPI 入口关闭，CORS 仅允许 `https://toy.cedarstar.org`。除 legacy `/mcp/play` 外，新的聚合 MCP 不在该服务内实现。
+`turtle-soup` 是海龟汤专用 FastAPI 服务，代码位于 `turtle-soup/backend`。它负责海龟汤自己的 JWT、房间、日志、SSE、裁判 LLM、管理后台 API 和静态前端；FastAPI docs/OpenAPI 入口关闭，CORS 仅允许 `https://toy.cedarstar.org`。除 legacy `/mcp/play` 与带独立服务端 Bearer 鉴权的 Duel NPC loopback bridge 外，新的聚合 MCP 不在该服务内实现。
 
 ### 3.2 典型请求链路
 
@@ -975,6 +976,8 @@ NPC_API_MAX_CONCURRENCY = 4  # 环境变量可覆盖
 7. 全部失败或无可用配置返回 HTTP 503；judge/hint 返回裁判暂不可用，npc 返回 NPC 通道繁忙。
 
 管理探测：`test_config(cfg)` 对单条配置发简短 chat 请求；`list_models(cfg)` 拉取 `/models`。均不走 NPC 公共入口。`npc_chat(messages, max_tokens, timeout)` 是仅供内部游戏控制器调用的 compact 接口，限制消息字段/条数/长度且没有公开聊天路由。
+
+CedarDuet 通过独立 provider 边界接入：自部署可用服务端环境配置的标准 OpenAI-compatible `/chat/completions`；官方部署使用 `cedartoy_bridge` 向 loopback `/internal/duel/npc-decision` 发送带 `DUEL_NPC_BRIDGE_TOKEN` 的 Bearer 请求。该路由不在 `/soup/api` 或 CedarToy 公网代理白名单内，只返回上游文本并统一映射超时/格式/上游错误，不记录请求消息。CedarDuet 不 import 海龟汤代码，也不复制 `judge_api_configs` 的 key。Provider 请求已由 Duel 按当前 NPC viewer 投影，只含当前 persona、精简规则、公共状态/公开行动、自己的私有状态和权威合法行动；其他参与者隐藏状态与思维链不进入请求或数据库。
 
 生产 API 池通过管理后台维护：只有 `enabled=1` 的配置参与轮询，`purpose` 可选「问答 / 提示 / 两边 / NPC / 全部」。列表继续脱敏 key，并展示健康、冷却和 NPC 全局并发摘要。格式或语义不稳定的配置即使连通也会影响对应池；`judge_ask` 和 `generate_hint` 会通过 `_chat_validated` 按各自重试次数重新调用 `_chat()`，`judge_guess` 在独立猜底锁内要求 JSON 并最多重试 3 次，格式失败会记录 warning 日志。
 

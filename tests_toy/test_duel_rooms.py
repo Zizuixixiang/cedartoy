@@ -138,7 +138,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             },
         )
 
-    def test_future_multiplayer_shape_is_forwarded_without_identity_escape(self):
+    def test_future_six_player_shape_is_forwarded_without_identity_escape(self):
         class FakeResponse:
             status_code = 200
 
@@ -153,7 +153,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     "player_id": "forged-npc",
                     "opponent_id": "forged-human",
                     "game_type": "future_game",
-                    "target_player_count": 4,
+                    "target_player_count": 6,
                     "fill_with_npcs": True,
                 },
                 trusted_player_id="42:3",
@@ -165,7 +165,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "player_id": "42:3",
             "opponent_id": "trusted-human",
             "game_type": "future_game",
-            "target_player_count": 4,
+            "target_player_count": 6,
             "fill_with_npcs": True,
         })
 
@@ -288,7 +288,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             'action="reject"',
             "筹码余额允许为负数",
             "双方必须重新确认",
-            "NPC 最多补两个创建时空座",
+            "NPC 最多补四个创建时空座",
             "不写全局钱包",
         ):
             self.assertIn(expected, guide)
@@ -307,6 +307,9 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "不能用 viewer / player_id 参数",
             "非当前参与者可传 wait=true",
             "current_actor_id/current_actor_seat",
+            "allowed_player_counts",
+            "NPC 最多补四个",
+            "NPC provider",
             'action="chips"',
             "ledger 默认 5 条、最大 10",
             "正常开局已含双方余额，不必额外 chips/status",
@@ -320,6 +323,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                 "/static/styles.css", "/static/app.js",
                 "/static/chips.css", "/static/chips.js",
                 "/api/chips/machines/42%3A3", "/api/rooms/ABCDEFGH",
+                "/api/npc-avatars/example.webp",
             ),
             "POST": (
                 "/api/rooms", "/api/chips/check-in", "/api/chips/bankruptcy",
@@ -340,6 +344,8 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ("GET", "/api/chips/machines/"),
             ("GET", "/api/chips/machines/ai/extra"),
             ("GET", "/api/rooms/abcdefghi"),
+            ("GET", "/api/npc-avatars/../secret.png"),
+            ("GET", "/api/npc-avatars/example.svg"),
             ("POST", "/api/chips/machines/42%3A3/check-in"),
             ("POST", "/api/rooms/ABCDEFGH/arbitrary"),
             ("DELETE", "/api/rooms/ABCDEFGH"),
