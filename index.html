@@ -178,12 +178,24 @@
       flex: none;
       width: 30px;
       height: 30px;
+      padding: 0;
       border: 2px solid rgba(255, 255, 255, 0.72);
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.14);
+      color: inherit;
       font-family: system-ui, sans-serif;
       font-size: 18px;
       line-height: 1;
+    }
+
+    button.account-avatar {
+      cursor: pointer;
+    }
+
+    button.account-avatar:hover,
+    button.account-avatar:focus-visible {
+      background: rgba(255, 255, 255, 0.24);
+      outline: none;
     }
 
     .main {
@@ -4032,9 +4044,13 @@
       return user && user.is_ai ? "🤖" : "🙂";
     }
 
-    function authAvatarHtml(user) {
+    function authAvatarHtml(user, {clickable = false} = {}) {
       if (!avatarFeatureEnabled) return '<span aria-hidden="true">●</span>';
-      return `<span class="account-avatar" aria-hidden="true">${escapeHtml(accountAvatar(user))}</span>`;
+      const avatar = escapeHtml(accountAvatar(user));
+      if (clickable) {
+        return `<button class="account-avatar" id="topAvatarOpen" type="button" aria-label="设置 Emoji 头像" title="设置头像">${avatar}</button>`;
+      }
+      return `<span class="account-avatar" aria-hidden="true">${avatar}</span>`;
     }
 
     async function loadAvatarCapability() {
@@ -6299,7 +6315,7 @@
         return;
       }
       area.innerHTML = `
-        <span class="user-name">${authAvatarHtml(me.user)}<span class="username-text">${escapeHtml(me.user.username)}</span></span>
+        <span class="user-name">${authAvatarHtml(me.user, {clickable: true})}<span class="username-text">${escapeHtml(me.user.username)}</span></span>
         <span class="user-actions">
           ${me.user.is_admin ? '<a class="pixel-btn secondary desktop-only" href="/admin">管理</a>' : ''}
           ${me.user.is_admin ? '<a class="pixel-btn secondary mobile-only mobile-top-link" href="/admin">总管理</a>' : ''}
@@ -6317,10 +6333,12 @@
           <button class="pixel-btn secondary desktop-only" id="logoutBtn" type="button">登出</button>
         </span>
       `;
+      const topAvatarOpen = $("topAvatarOpen");
       const bindOpen = $("bindOpen");
       const historyOpen = $("historyOpen");
       const machinesOpen = $("machinesOpen");
       const changePasswordOpen = $("changePasswordOpen");
+      if (topAvatarOpen) topAvatarOpen.addEventListener("click", openAvatarModal);
       if (bindOpen) bindOpen.addEventListener("click", () => openModal("bindModal"));
       if (historyOpen) historyOpen.addEventListener("click", openHistory);
       if (changePasswordOpen) changePasswordOpen.addEventListener("click", () => openModal("changePasswordModal"));
@@ -6383,7 +6401,6 @@
           <span class="mine-profile-avatar" aria-hidden="true">${escapeHtml(accountAvatar(me.user))}</span>
           <div class="mine-profile-info">
             <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
-            <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>
           </div>
         </div>` : `<div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>`}
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
@@ -6408,8 +6425,6 @@
         mineEmailUnbind.addEventListener("click", () => openEmailSecurityModal("unbind"));
       }
       $("mineRenameSelf").addEventListener("click", () => openRenameModal("self", me.user.id, me.user.username));
-      const mineAvatarOpen = $("mineAvatarOpen");
-      if (mineAvatarOpen) mineAvatarOpen.addEventListener("click", openAvatarModal);
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");

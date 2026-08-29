@@ -80,9 +80,10 @@ async function main() {
     assert.equal(byId("loginAvatarField").hidden, true);
 
     window.renderMine();
-    assert.equal(byId("mineAvatarOpen").textContent, "设置 / 修改 Emoji 头像");
+    assert.equal(byId("mineAvatarOpen"), null);
     assert.equal(window.document.querySelector(".mine-profile-avatar").textContent, "🙂");
-    byId("mineAvatarOpen").click();
+    assert.equal(byId("topAvatarOpen").textContent, "🙂");
+    byId("topAvatarOpen").click();
     assert.equal(byId("avatarModal").classList.contains("show"), true);
     assert.equal(byId("avatarInput").value, "🙂");
     byId("avatarInput").value = "🐼";
