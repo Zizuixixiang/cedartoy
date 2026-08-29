@@ -604,7 +604,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
     def test_guide_is_compact_and_discovers_every_room_capability(self):
         guide = server.DUEL_GUIDE
-        self.assertLessEqual(len(guide), 1700)
+        self.assertLessEqual(len(guide), 4000)
         self.assertEqual(guide.count('play(game="duel"'), 1)
         self.assertNotIn("[存档槽]", guide)
         for expected in (
@@ -619,16 +619,19 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "leave 离席",
             "2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess",
             "dots_boxes=2/3/4",
-            "aeroplane_chess=2/3/4",
+            "aeroplane_chess/gandengyan=2/3/4",
             "chinese_checkers=2/3/4/6",
-            "liars_dice/yahtzee=2..6",
+            "liars_dice/yahtzee/uno/blackjack=2..6",
             "NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可",
             "target_player_count/fill_with_npcs",
-            "yahtzee无筹码，其余支持",
-            "liars_dice有私密骰子",
+            "yahtzee/blackjack 无筹码，其余支持",
+            "liars_dice 有私密骰子，uno/gandengyan/blackjack 有私密手牌",
             "bootstrap/catalog",
             "supports_npcs/supports_stakes",
             "bootstrap→move(wait=true)",
+            "full_state=true",
+            "之后 move/state 默认只返回",
+            "不会消费增量事件",
             "rules_text/move_format/legal_moves/legal_actions/private_state",
             "allowed_player_counts",
             "private_state 只含自己可见私密信息",
