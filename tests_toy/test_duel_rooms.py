@@ -202,6 +202,176 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             },
         )
 
+    def test_all_chips_operations_reach_backend_through_authenticated_play(self):
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"ok": True, "status": "ok"}
+
+        cases = (
+            ("status", {"op": "status"}),
+            ("check_in", {"op": "check_in"}),
+            ("bankruptcy", {"op": "bankruptcy"}),
+            ("ledger", {"op": "ledger", "limit": 7}),
+            ("achievements", {"op": "achievements"}),
+            ("loans_list", {"op": "loans", "loan_action": "list", "limit": 12}),
+            (
+                "loans_create",
+                {
+                    "op": "loans",
+                    "loan_action": "create",
+                    "principal": 20,
+                    "daily_rate_micro_percent": 125_000,
+                    "due_date": "2026-09-05",
+                    "interest_cap_enabled": True,
+                    "idempotency_key": "loan:create:0001",
+                },
+            ),
+            (
+                "loans_accept",
+                {
+                    "op": "loans",
+                    "loan_action": "accept",
+                    "loan_id": "ln_0123456789abcdef",
+                    "loan_revision": 2,
+                    "idempotency_key": "loan:accept:0001",
+                },
+            ),
+            (
+                "loans_reject",
+                {
+                    "op": "loans",
+                    "loan_action": "reject",
+                    "loan_id": "ln_0123456789abcdef",
+                    "loan_revision": 2,
+                    "idempotency_key": "loan:reject:0001",
+                },
+            ),
+            (
+                "loans_counter",
+                {
+                    "op": "loans",
+                    "loan_action": "counter",
+                    "loan_id": "ln_0123456789abcdef",
+                    "loan_revision": 2,
+                    "principal": 25,
+                    "daily_rate_micro_percent": 50_000,
+                    "due_date": "2026-09-06",
+                    "interest_cap_enabled": False,
+                    "idempotency_key": "loan:counter:0001",
+                },
+            ),
+            (
+                "loans_withdraw",
+                {
+                    "op": "loans",
+                    "loan_action": "withdraw",
+                    "loan_id": "ln_0123456789abcdef",
+                    "loan_revision": 2,
+                    "idempotency_key": "loan:withdraw:0001",
+                },
+            ),
+            (
+                "loans_repay",
+                {
+                    "op": "loans",
+                    "loan_action": "repay",
+                    "loan_id": "ln_0123456789abcdef",
+                    "amount": 9,
+                    "idempotency_key": "loan:repay:0001",
+                },
+            ),
+            ("exchange_catalog", {"op": "exchange", "exchange_action": "catalog"}),
+            (
+                "exchange_list",
+                {"op": "exchange", "exchange_action": "list", "limit": 17},
+            ),
+            (
+                "exchange_create",
+                {
+                    "op": "exchange",
+                    "exchange_action": "create",
+                    "item_key": "custom",
+                    "request_note": "完成约定后收取筹码",
+                    "custom_title": "自定义约定",
+                    "chip_amount": 20,
+                    "idempotency_key": "exchange:create:0001",
+                },
+            ),
+            (
+                "exchange_confirm",
+                {
+                    "op": "exchange",
+                    "exchange_action": "confirm",
+                    "request_id": "ex_0123456789abcdef",
+                    "idempotency_key": "exchange:confirm:0001",
+                },
+            ),
+            (
+                "exchange_reject",
+                {
+                    "op": "exchange",
+                    "exchange_action": "reject",
+                    "request_id": "ex_0123456789abcdef",
+                    "idempotency_key": "exchange:reject:0001",
+                },
+            ),
+            (
+                "exchange_withdraw",
+                {
+                    "op": "exchange",
+                    "exchange_action": "withdraw",
+                    "request_id": "ex_0123456789abcdef",
+                    "idempotency_key": "exchange:withdraw:0001",
+                },
+            ),
+        )
+        account = {"id": 42, "username": "machine", "is_ai": 1}
+        with (
+            patch.object(server, "_current_account", return_value=account),
+            patch.object(server, "_auto_migrate_legacy_account_saves"),
+            patch.object(server, "_anti_addiction_context", return_value=None),
+            patch.object(
+                server, "_duel_bound_human_player_id", return_value="trusted-human"
+            ),
+            patch.object(server.httpx, "post", return_value=FakeResponse()) as post,
+            patch.object(server, "_stamp_save_owner"),
+            patch.object(server, "_anti_addiction_record_success", return_value=""),
+            patch.object(server, "_play_announcements", return_value=""),
+        ):
+            for label, params in cases:
+                with self.subTest(operation=label):
+                    post.reset_mock()
+                    result = json.loads(server._tool_play_inner(
+                        {
+                            "game": "duel",
+                            "action": "chips",
+                            "player_id": "reported-top-level-ai",
+                            "opponent_id": "reported-top-level-human",
+                            "params": {
+                                **params,
+                                "player_id": "reported-params-ai",
+                                "opponent_id": "reported-params-human",
+                                "viewer": "victim-ai",
+                                "unknown_chips_field": "must-not-pass",
+                            },
+                        },
+                        path_token="trusted-token",
+                    ))
+
+                    self.assertTrue(result["ok"])
+                    self.assertEqual(
+                        post.call_args.kwargs["json"],
+                        {
+                            "action": "chips",
+                            "player_id": "42",
+                            "opponent_id": "trusted-human",
+                            **params,
+                        },
+                    )
+
     def test_authenticated_ai_params_player_id_cannot_select_another_ai(self):
         captured = {}
 
@@ -316,6 +486,35 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             'action="chips"',
             "ledger 默认 5 条、最大 10",
             "正常开局已含双方余额，不必额外 chips/status",
+        ):
+            self.assertIn(expected, guide)
+
+    def test_guide_documents_complete_machine_chip_center(self):
+        guide = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
+        self.assertNotIn("成就、互动、借款尚无接口", guide)
+        for expected in (
+            'params={"op":"status"}',
+            'params={"op":"check_in"}',
+            'params={"op":"bankruptcy"}',
+            'params={"op":"achievements"}',
+            'params={"op":"loans","loan_action":"list","limit":20}',
+            "小机向绑定人类借款",
+            "小机是借款人；只有借款方能发起",
+            '"loan_action":"create"',
+            '"loan_action":"accept"',
+            '"loan_action":"counter"',
+            "用户文案叫“改条件”",
+            '"loan_action":"reject"',
+            '"loan_action":"withdraw"',
+            '"loan_action":"repay"',
+            '"exchange_action":"catalog"',
+            '"exchange_action":"list"',
+            '"exchange_action":"create"',
+            '"exchange_action":"confirm"',
+            "发起方承诺完成约定并收取 chip_amount 筹码",
+            "审批方 confirm 后才支付筹码",
+            "confirm / reject / withdraw 均必填 request_id",
+            "8-128 位 idempotency_key",
         ):
             self.assertIn(expected, guide)
 

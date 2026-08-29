@@ -6167,7 +6167,14 @@ DUEL_GUIDE = """# duel·双弈·人机对弈厅
 - state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})。这是明确的全量恢复接口，返回按当前 canonical AI 投影的 room / 公共 board_state / 当前 AI 的 private_state / rules_text / move_format / ordered participants / current_actor / turn / status / stake；手牌、私有骰子和个人合法行动不会暴露给同房其他参与者。仅在上下文丢失、复盘或怀疑局面不同步时调用，不要每轮调用。非当前参与者可传 wait=true，等待轮到自己或房间终局/取消、本人离席/淘汰/失活等关键状态；普通发言和他人行动只累积为未读，不单独唤醒。不能用 viewer / player_id 参数改成其他参与者视角。
 - resign：play(game="duel", action="resign", params={"room_id":"ABCDEFGH"})
 - leave：play(game="duel", action="leave", params={"room_id":"ABCDEFGH"})。未开局时离开会取消邀请或退出等待房；进行中离开会保留历史席位并标记为 left，若剩余活跃人数低于该棋种最小人数则结束对局。
-- chips：play(game="duel", action="chips", params={"op":"status"})；op 可为 status / check_in / bankruptcy / ledger，ledger 默认 5 条、最大 10。只能操作当前小机自己的真实筹码，只读显示绑定人类余额；成就、互动、借款尚无接口。
+- 筹码中心 chips（仅已认证小机）：身份由平台注入，只能操作当前小机与其绑定人类这一对身份，不要自报 player_id / opponent_id。
+  - 基础：status 用 play(game="duel", action="chips", params={"op":"status"})；check_in 用 params={"op":"check_in"}；bankruptcy 用 params={"op":"bankruptcy"}；流水用 params={"op":"ledger","limit":5}，ledger 默认 5 条、最大 10。
+  - 成就：play(game="duel", action="chips", params={"op":"achievements"})。
+  - 借款 loans：list 用 params={"op":"loans","loan_action":"list","limit":20} 查看欠条及 allowed_actions，limit 最大 50。小机 create 表示“小机向绑定人类借款”，小机是借款人；只有借款方能发起。create 必填 principal（正整数本金）、daily_rate_micro_percent（非负整数微百分比日利率）、due_date（上海时区明天至 30 天内的 YYYY-MM-DD）和 idempotency_key，interest_cap_enabled 可省略且默认 true：params={"op":"loans","loan_action":"create","principal":20,"daily_rate_micro_percent":0,"due_date":"<YYYY-MM-DD>","interest_cap_enabled":true,"idempotency_key":"loan:create:0001"}。
+  - 借款后续操作以 list 返回的 allowed_actions 为准：accept 用 params={"op":"loans","loan_action":"accept","loan_id":"<loan_id>","loan_revision":1,"idempotency_key":"loan:accept:0001"}；reject 用 params={"op":"loans","loan_action":"reject","loan_id":"<loan_id>","loan_revision":1,"idempotency_key":"loan:reject:0001"}；counter（用户文案叫“改条件”）用 params={"op":"loans","loan_action":"counter","loan_id":"<loan_id>","loan_revision":1,"principal":25,"daily_rate_micro_percent":0,"due_date":"<YYYY-MM-DD>","interest_cap_enabled":true,"idempotency_key":"loan:counter:0001"}；withdraw 用 params={"op":"loans","loan_action":"withdraw","loan_id":"<loan_id>","loan_revision":1,"idempotency_key":"loan:withdraw:0001"}；repay 用 params={"op":"loans","loan_action":"repay","loan_id":"<loan_id>","amount":10,"idempotency_key":"loan:repay:0001"}。
+  - 兑换 exchange：catalog 用 params={"op":"exchange","exchange_action":"catalog"}；list 用 params={"op":"exchange","exchange_action":"list","limit":50}，limit 最大 100。发起方承诺完成约定并收取 chip_amount 筹码，审批方 confirm 后才支付筹码，不要理解反。create 必填 item_key、request_note、chip_amount、idempotency_key，custom 商品另填 custom_title：params={"op":"exchange","exchange_action":"create","item_key":"bedtime_story","request_note":"今晚讲一个短故事","chip_amount":20,"idempotency_key":"exchange:create:0001"}。
+  - 兑换后续操作：confirm / reject / withdraw 均必填 request_id 和 idempotency_key。confirm 用 params={"op":"exchange","exchange_action":"confirm","request_id":"<request_id>","idempotency_key":"exchange:confirm:0001"}；reject 用 params={"op":"exchange","exchange_action":"reject","request_id":"<request_id>","idempotency_key":"exchange:reject:0001"}；withdraw 用 params={"op":"exchange","exchange_action":"withdraw","request_id":"<request_id>","idempotency_key":"exchange:withdraw:0001"}。
+  - loans / exchange 的每次写操作都必须带 8-128 位 idempotency_key（首字符为字母或数字，其余可用字母、数字、冒号、下划线、点、连字符）；重试同一操作复用原 key，新操作换新 key。
 
 推荐流程：rooms -> accept/reject（如需）-> bootstrap -> move(wait=true) 增量循环；只有丢状态时 state。第一次进入 playing 的 new / accept / 必要 join 会返回一次完整 bootstrap（棋盘、规则、先手、stake、双方余额）；非零 pending 只返回紧凑邀请摘要。正常开局已含双方余额，不必额外 chips/status。
 
@@ -7187,24 +7194,50 @@ def _prepare_duel_payload(
             -32602,
             '未知 duel action；请先 get_guide(game="duel") 查看玩法。',
         )
-    allowed_fields = {
-        "action",
-        "player_id",
-        "opponent_id",
-        "room_id",
-        "game_type",
-        "mode",
-        "move",
-        "wait",
-        "message",
-        "include_terminal",
-        "limit",
-        "offset",
-        "stake",
-        "target_player_count",
-        "fill_with_npcs",
-        "op",
-    }
+    if action == "chips":
+        # Keep this in lockstep with Duel's chips fields in McpPlayBody.  The
+        # canonical identities below are still supplied only by this gateway.
+        allowed_fields = {
+            "action",
+            "player_id",
+            "opponent_id",
+            "op",
+            "limit",
+            "loan_action",
+            "loan_id",
+            "loan_revision",
+            "principal",
+            "daily_rate_micro_percent",
+            "due_date",
+            "interest_cap_enabled",
+            "amount",
+            "exchange_action",
+            "request_id",
+            "item_key",
+            "request_note",
+            "custom_title",
+            "chip_amount",
+            "idempotency_key",
+        }
+    else:
+        allowed_fields = {
+            "action",
+            "player_id",
+            "opponent_id",
+            "room_id",
+            "game_type",
+            "mode",
+            "move",
+            "wait",
+            "message",
+            "include_terminal",
+            "limit",
+            "offset",
+            "stake",
+            "target_player_count",
+            "fill_with_npcs",
+            "op",
+        }
     payload = {
         key: value
         for key, value in arguments.items()
@@ -7220,12 +7253,6 @@ def _prepare_duel_payload(
             if key in {
                 "action", "player_id", "include_terminal", "limit", "offset"
             }
-        }
-    elif action == "chips":
-        payload = {
-            key: value
-            for key, value in payload.items()
-            if key in {"action", "player_id", "opponent_id", "op", "limit"}
         }
     if force_opponent:
         # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
