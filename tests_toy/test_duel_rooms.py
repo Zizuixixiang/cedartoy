@@ -21,7 +21,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                 {"include_terminal": True, "limit": 7, "offset": 2,
                  "room_id": "must-drop"},
                 {"include_terminal": True, "limit": 7, "offset": 2},
-                "rooms(include_terminal=false,limit=50<=100,offset=0)",
+                "rooms 查房",
             ),
             (
                 "new",
@@ -42,14 +42,14 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     "target_player_count": 2,
                     "fill_with_npcs": False,
                 },
-                "new(game_type,mode=human_first|ai_first,stake=0",
+                "new 开房",
             ),
             (
                 "rematch",
                 {"room_id": "OLDROOM1", "game_type": "must-drop",
                  "stake": 99},
                 {"room_id": "OLDROOM1"},
-                "rematch(room_id)",
+                "rematch 再来一局",
             ),
             (
                 "join",
@@ -57,19 +57,19 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                  "revision": 3},
                 {"opponent_id": "trusted-human", "room_id": "ABCDEFGH",
                  "message": "我来了"},
-                "join(room_id,message?)",
+                "join 加 waiting 房",
             ),
             (
                 "accept",
                 {"room_id": "ABCDEFGH", "message": "must-drop"},
                 {"room_id": "ABCDEFGH"},
-                "accept(room_id)",
+                "accept/reject 处理邀请",
             ),
             (
                 "reject",
                 {"room_id": "ABCDEFGH", "wait": True},
                 {"room_id": "ABCDEFGH"},
-                "reject(room_id)",
+                "accept/reject 处理邀请",
             ),
             (
                 "move",
@@ -88,7 +88,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     "wait": True,
                     "message": "三个四",
                 },
-                "move(room_id,move,revision?,wait?,message?)",
+                "move 行动",
             ),
             (
                 "state",
@@ -103,21 +103,21 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     "wait": True,
                     "message": "还在吗",
                 },
-                "state(room_id,wait?,message?)",
+                "state 同步",
             ),
             (
                 "resign",
                 {"room_id": "ABCDEFGH", "message": "认输",
                  "wait": True},
                 {"room_id": "ABCDEFGH", "message": "认输"},
-                "resign(room_id,message?)",
+                "resign 认输",
             ),
             (
                 "leave",
                 {"room_id": "ABCDEFGH", "message": "先走了",
                  "revision": 5},
                 {"room_id": "ABCDEFGH", "message": "先走了"},
-                "leave(room_id,message?)",
+                "leave 离席",
             ),
         )
         account = {"id": 42, "username": "machine", "is_ai": 1}
@@ -385,27 +385,27 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ),
         )
         guide_markers = {
-            "default_status": "op=status",
-            "status": "op=status",
+            "default_status": "op=status|check_in|bankruptcy|ledger|achievements|loans|exchange",
+            "status": "op=status|check_in|bankruptcy|ledger|achievements|loans|exchange",
             "check_in": "check_in",
             "bankruptcy": "bankruptcy",
-            "ledger": "ledger(limit<=10)",
+            "ledger": "ledger",
             "achievements": "achievements",
-            "loans_default_list": "op=loans：list(limit<=50)",
-            "loans_list": "op=loans：list(limit<=50)",
-            "loans_create": "create(principal,rate,due,cap?,key)",
-            "loans_accept": "accept/reject/withdraw(id,rev,key)",
-            "loans_reject": "accept/reject/withdraw(id,rev,key)",
-            "loans_counter": "counter(id,rev,principal,rate,due,cap,key)",
-            "loans_withdraw": "accept/reject/withdraw(id,rev,key)",
-            "loans_repay": "repay(id,amount,key)",
-            "exchange_default_list": "op=exchange：catalog | list(limit<=100)",
-            "exchange_catalog": "op=exchange：catalog | list(limit<=100)",
-            "exchange_list": "op=exchange：catalog | list(limit<=100)",
-            "exchange_create": "create(item_key,request_note,chip_amount,custom_title?,key)",
-            "exchange_confirm": "confirm/reject/withdraw(request_id,key)",
-            "exchange_reject": "confirm/reject/withdraw(request_id,key)",
-            "exchange_withdraw": "confirm/reject/withdraw(request_id,key)",
+            "loans_default_list": "loan_action=list|create|accept|reject|counter|withdraw|repay",
+            "loans_list": "loan_action=list|create|accept|reject|counter|withdraw|repay",
+            "loans_create": "create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)",
+            "loans_accept": "accept/reject/withdraw(loan_id,loan_revision,idempotency_key)",
+            "loans_reject": "accept/reject/withdraw(loan_id,loan_revision,idempotency_key)",
+            "loans_counter": "counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)",
+            "loans_withdraw": "accept/reject/withdraw(loan_id,loan_revision,idempotency_key)",
+            "loans_repay": "repay(loan_id,amount,idempotency_key)",
+            "exchange_default_list": "exchange_action=catalog|list|create|confirm|reject|withdraw",
+            "exchange_catalog": "exchange_action=catalog|list|create|confirm|reject|withdraw",
+            "exchange_list": "exchange_action=catalog|list|create|confirm|reject|withdraw",
+            "exchange_create": "create(item_key,request_note,chip_amount,custom_title?,idempotency_key)",
+            "exchange_confirm": "confirm/reject/withdraw(request_id,idempotency_key)",
+            "exchange_reject": "confirm/reject/withdraw(request_id,idempotency_key)",
+            "exchange_withdraw": "confirm/reject/withdraw(request_id,idempotency_key)",
         }
         account = {"id": 42, "username": "machine", "is_ai": 1}
         with (
@@ -543,65 +543,61 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
     def test_guide_is_compact_and_discovers_every_room_capability(self):
         guide = server.DUEL_GUIDE
-        self.assertLessEqual(len(guide), 2500)
-        self.assertEqual(guide.count('play(game="duel"'), 2)
-        self.assertNotIn("AI", guide)
-        self.assertNotIn("当前六棋仍固定双人", guide)
-        self.assertNotIn("成就、互动、借款尚无接口", guide)
+        self.assertLessEqual(len(guide), 1700)
+        self.assertEqual(guide.count('play(game="duel"'), 1)
+        self.assertNotIn("[存档槽]", guide)
         for expected in (
-            "rooms(include_terminal=false,limit=50<=100,offset=0)",
-            "new(game_type,mode=human_first|ai_first,stake=0",
-            "rematch(room_id)",
-            "join(room_id,message?)",
-            "accept(room_id)/reject(room_id)",
-            "move(room_id,move,revision?,wait?,message?)",
-            "state(room_id,wait?,message?)",
-            "resign(room_id,message?)",
-            "leave(room_id,message?)",
-            "tictactoe",
-            "xiangqi",
-            "dots_boxes 允许 2/3/4 人",
-            "liars_dice 允许 2..6 人且有私密骰子",
-            "target_player_count?",
-            "fill_with_npcs?",
-            "后两种可用系统 NPC 补位并支持多人筹码局",
-            "rules_text/move_format/allowed_player_counts/private_state",
-            "private_state",
+            "rooms 查房",
+            "new 开房",
+            "accept/reject 处理邀请",
+            "join 加 waiting 房",
+            "rematch 再来一局",
+            "move 行动",
+            "state 同步",
+            "resign 认输",
+            "leave 离席",
+            "tictactoe/gomoku/othello/connect4/jungle/xiangqi=2人",
+            "dots_boxes=2/3/4人",
+            "liars_dice=2..6人且有私密骰子",
+            "target_player_count/fill_with_npcs",
+            "NPC 补位并支持多人筹码局",
+            "bootstrap→move(wait=true)",
+            "move_format",
+            "allowed_player_counts",
+            "private_state 只含自己可见私密信息",
+            "revision 用最新值",
             "winner/result/settlement",
             "player_id/opponent_id/viewer/participant_ids",
         ):
             self.assertIn(expected, guide)
 
+        delivered = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
+        self.assertEqual(delivered, guide)
+        self.assertNotIn("[存档槽]", delivered)
+
     def test_guide_discovers_chip_center_roles_fields_and_unread_entries(self):
         guide = server.DUEL_GUIDE
         for expected in (
-            'action="chips", params={"op":"status"}',
-            "op=status | check_in | bankruptcy | ledger(limit<=10) | achievements",
-            "op=loans：list(limit<=50)",
-            "create(principal,rate,due,cap?,key)",
-            "accept/reject/withdraw(id,rev,key)",
-            "counter(id,rev,principal,rate,due,cap,key)",
-            "repay(id,amount,key)",
-            "id=loan_id",
-            "rev=loan_revision",
-            "rate=daily_rate_micro_percent",
-            "due=due_date",
-            "cap=interest_cap_enabled",
-            "key=idempotency_key",
+            'action="chips"',
+            "op=status|check_in|bankruptcy|ledger|achievements|loans|exchange",
+            "loan_action=list|create|accept|reject|counter|withdraw|repay",
+            "create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)",
+            "accept/reject/withdraw(loan_id,loan_revision,idempotency_key)",
+            "counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)",
+            "repay(loan_id,amount,idempotency_key)",
             "小机向绑定人类借款",
-            "小机是借款人，只有借款方能发起",
-            "counter 的用户语义是“改条件”",
-            "op=exchange：catalog | list(limit<=100)",
-            "create(item_key,request_note,chip_amount,custom_title?,key)",
-            "confirm/reject/withdraw(request_id,key)",
-            "发起方履约并收筹码，审批方 confirm 后付筹码",
-            "8..128 位 idempotency_key",
+            "counter=改条件",
+            "list.allowed_actions",
+            "exchange_action=catalog|list|create|confirm|reject|withdraw",
+            "create(item_key,request_note,chip_amount,custom_title?,idempotency_key)",
+            "confirm/reject/withdraw(request_id,idempotency_key)",
+            "发起方履约收筹码，审批方 confirm 后付筹码",
+            "idempotency_key 必须 8..128 位",
             "unread/unread_hint",
             "对局→rooms",
             "借款→chips/loans",
             "兑换→chips/exchange",
             "成就→chips/achievements",
-            "loans list、exchange list、achievements 还可带并消费 notices",
         ):
             self.assertIn(expected, guide)
 

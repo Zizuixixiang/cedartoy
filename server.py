@@ -167,7 +167,7 @@ GARDEN_LEGACY_DB_PATH = Path(__file__).resolve().parent / "vendor" / "Garden-Cat
 CAMPING_PLAZA_DB_PATH = Path(os.getenv("CAMPING_PLAZA_DB_PATH", Path(__file__).resolve().parent / "data" / "camping_plaza.db"))
 GAME_MAINTENANCE = {
     "camping_plaza": {
-        "enabled": True,
+        "enabled": False,
         "label": "维护中",
         "message": "露营广场正在维护中，暂时无法进入游戏，请稍后再试。",
     },
@@ -6149,27 +6149,17 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 
 
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
-房间通式：play(game="duel", action="<rooms|new|rematch|join|accept|reject|move|state|resign|leave>", params={...})；持久 MCP 可省 player_id。只与绑定人类对弈；平台注入当前小机和绑定人类身份，自报 player_id/opponent_id/viewer/participant_ids 不能改身份或视角。
+调用：play(game="duel", action="...", params={...})；持久 MCP 可省 player_id。平台固定当前小机/绑定人类身份，自报 player_id/opponent_id/viewer/participant_ids 不能换人或视角。
 
-棋种/桌型：tictactoe、gomoku、othello、connect4、jungle、xiangqi 仅 2 人；dots_boxes 允许 2/3/4 人；liars_dice 允许 2..6 人且有私密骰子。后两种可用系统 NPC 补位并支持多人筹码局，其余无 NPC；八种均支持筹码局。
+游戏：tictactoe/gomoku/othello/connect4/jungle/xiangqi=2人；dots_boxes=2/3/4人；liars_dice=2..6人且有私密骰子。后两种可 NPC 补位并支持多人筹码局；全部支持筹码局。
 
-动作索引：
-- rooms(include_terminal=false,limit=50<=100,offset=0)：仅当前已认证小机的 pending/waiting/playing 房；include_terminal 再含 finished/archived，返回 pagination/notices。
-- new(game_type,mode=human_first|ai_first,stake=0,target_player_count?,fill_with_npcs?)：stake>0 需另一方确认；多人/NPC 参数仅适用 dots_boxes/liars_dice，小机端桌为绑定人机+NPC。
-- rematch(room_id)：仅 finished/archived、无系统 NPC 且只有一名人类的房；沿用棋种/阵容/stake、翻转先手，非零 stake 重新确认。
-- join(room_id,message?)：仅旧式 waiting 房；accept(room_id)/reject(room_id)：处理 pending 邀请。
-- move(room_id,move,revision?,wait?,message?)：revision 用于防止基于旧局面落子；move 格式以本房返回为准。
-- state(room_id,wait?,message?)：读取/等待当前可见状态，若本房唯一一次 bootstrap 尚未领取则返回它；resign(room_id,message?)：认输；leave(room_id,message?)：离席。wait=true 由主站续等到轮到自己或关键状态，不会重放 move/message。
+对局：rooms 查房；new 开房（game_type, mode=human_first|ai_first, stake=0；多人可加 target_player_count/fill_with_npcs）；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动（room_id,move，可带 revision/wait/message）；state 同步（room_id，可带 wait/message）；resign 认输；leave 离席。流程：rooms→开房/处理邀请→bootstrap→move(wait=true) 循环，需重同步才 state。规则、move_format、allowed_player_counts、private_state 以 bootstrap/state 为准，绝不自行猜合法动作；private_state 只含自己可见私密信息，revision 用最新值。终局看 winner/result/settlement。
 
-最短流程：rooms → accept/reject（如需）→ new/accept/join/state 返回的 bootstrap → move(wait=true) 增量循环；需同步时才 state。rules_text/move_format/allowed_player_counts/private_state 以 bootstrap/state 为准；private_state 只是当前小机投影。增量响应保留 revision/current_actor/participant_status/events/unlocks，终局保留 winner/result/settlement 等后端字段。
+筹码：action="chips"，op=status|check_in|bankruptcy|ledger|achievements|loans|exchange。
+loans 用 loan_action=list|create|accept|reject|counter|withdraw|repay。create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)；accept/reject/withdraw(loan_id,loan_revision,idempotency_key)；counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)；repay(loan_id,amount,idempotency_key)。create=小机向绑定人类借款，counter=改条件；以 list.allowed_actions 为准。
+exchange 用 exchange_action=catalog|list|create|confirm|reject|withdraw。create(item_key,request_note,chip_amount,custom_title?,idempotency_key)；confirm/reject/withdraw(request_id,idempotency_key)。发起方履约收筹码，审批方 confirm 后付筹码。借款/兑换写操作的 idempotency_key 必须 8..128 位，同一操作重试复用。
 
-筹码中心（仅已认证小机）通式：play(game="duel", action="chips", params={"op":"status"})。
-- 基础：op=status | check_in | bankruptcy | ledger(limit<=10) | achievements。
-- op=loans：list(limit<=50) | create(principal,rate,due,cap?,key) | accept/reject/withdraw(id,rev,key) | counter(id,rev,principal,rate,due,cap,key) | repay(id,amount,key)。别名：id=loan_id，rev=loan_revision，rate=daily_rate_micro_percent，due=due_date，cap=interest_cap_enabled，key=idempotency_key。小机 create 即“小机向绑定人类借款”，小机是借款人，只有借款方能发起；counter 的用户语义是“改条件”，操作以 list.allowed_actions 为准。create 的 cap 默认 true，counter 必填 cap。
-- op=exchange：catalog | list(limit<=100) | create(item_key,request_note,chip_amount,custom_title?,key) | confirm/reject/withdraw(request_id,key)。发起方履约并收筹码，审批方 confirm 后付筹码。
-- loans/exchange 的所有写操作需 8..128 位 idempotency_key；同一操作重试复用 key，新操作换 key。
-
-未读：任一响应可带 unread/unread_hint；对局→rooms，借款→chips/loans，兑换→chips/exchange，成就→chips/achievements。rooms、loans list、exchange list、achievements 还可带并消费 notices。
+未读看 unread/unread_hint：对局→rooms，借款→chips/loans，兑换→chips/exchange，成就→chips/achievements。
 
 作者：南山君&Clio。"""
 
@@ -6202,7 +6192,8 @@ def _tool_get_guide(arguments):
     if game == "crucible_echoes":
         return json.dumps({"game": "crucible_echoes", "guide": _guide_with_slot_note(CRUCIBLE_ECHOES_GUIDE)}, ensure_ascii=False)
     if game == "duel":
-        return json.dumps({"game": "duel", "guide": _guide_with_slot_note(DUEL_GUIDE)}, ensure_ascii=False)
+        # Duel has no save-slot/export/import surface; do not append SAVE_SLOT_GUIDE_NOTE.
+        return json.dumps({"game": "duel", "guide": DUEL_GUIDE}, ensure_ascii=False)
     if game in VENDOR_CMD_GUIDES:
         return json.dumps({"game": game, "guide": _guide_with_slot_note(VENDOR_CMD_GUIDES[game])}, ensure_ascii=False)
     if game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "account"}:
@@ -7816,6 +7807,7 @@ def _camping_plaza_proxy_allowed(method, public_path):
         return public_path in {
             "/api/session", "/api/player/name", "/api/turn/advance",
             "/api/turn/plan", "/api/day/end", "/api/day/start", "/api/action",
+            "/api/nature-observation/intro/seen",
         }
     return False
 
