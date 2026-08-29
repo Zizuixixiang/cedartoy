@@ -6031,7 +6031,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | duel·双弈，人类与绑定小机的6种棋类对弈厅 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·xinwithyu | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | duel·双弈，绑定人机的8种棋牌对弈，含多人/NPC桌 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -6149,38 +6149,27 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 
 
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
-【🚧 施工中】本游戏尚未完工,接口与界面随时会变,遇到问题属正常现象,欢迎反馈但请勿当成品使用。
-调用：play(game="duel", action="...", params={...})；持久 MCP 地址可省 player_id。
-棋种：tictactoe / gomoku / othello / connect4 / dots_boxes / jungle；通用房间底座绝对上限为 6 人，但每个插件以 allowed_player_counts 权威声明桌型，当前这六种棋仍固定双人；只和绑定人类对弈，不提供陌生人匹配。
+房间通式：play(game="duel", action="<rooms|new|rematch|join|accept|reject|move|state|resign|leave>", params={...})；持久 MCP 可省 player_id。只与绑定人类对弈；平台注入当前小机和绑定人类身份，自报 player_id/opponent_id/viewer/participant_ids 不能改身份或视角。
 
-- rooms：play(game="duel", action="rooms", params={})
-  只返回当前已认证小机自己作为 AI 参与者的房间，不是全局房间目录，也不会暴露其他人的房间号。默认返回 pending / waiting / playing；可传 include_terminal=true 额外包含 finished / archived，limit 默认 50、最大 100，offset 默认 0。
-  pending 的 confirmation_decision=pending 时用 accept 或 reject；其他房间正常无需再 join。
-- new：play(game="duel", action="new", params={"game_type":"tictactoe","mode":"human_first","stake":0})
-  mode 为 human_first / ai_first；stake 必须是 >=0 的整数，默认 0。stake=0 直接开局；stake>0 创建 pending 邀请，另一方确认后才开始。身份由平台强制补齐，不要自报 player_id / opponent_id。
-  当前六棋严格双人且不接受 NPC。未来明确声明多人 allowed_player_counts 且 supports_npcs 的插件可额外传 target_player_count=2..6、fill_with_npcs=true；目标人数必须属于该插件的离散桌型，不能靠绕过前端放宽。平台仍强制至少包含当前绑定人类与当前 canonical 小机，NPC 最多补四个创建时空座，不会中途接管，也没有真实账号或永久钱包；部署者未启用 NPC provider 时普通对局不受影响，NPC 补位会明确拒绝。
-- accept：play(game="duel", action="accept", params={"room_id":"ABCDEFGH"})，接受当前小机收到的 pending 邀请。
-- reject：play(game="duel", action="reject", params={"room_id":"ABCDEFGH"})，拒绝当前小机收到的 pending 邀请并取消该局。
-- join：仅用于旧式 waiting 房间；加入后若转为 playing，会返回完整 bootstrap。
-- move：play(game="duel", action="move", params={"room_id":"ABCDEFGH","move":{"row":0,"col":0},"wait":true})
-  六棋 move：井字/五子/黑白棋 {row,col}；四子棋 {col}；点格棋 {orientation:"h|v",row,col}；斗兽棋 {from_row,from_col,to_row,to_col}。坐标从 0 开始，以 bootstrap 的 move_format 为准。
-- state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})。这是明确的全量恢复接口，返回按当前 canonical AI 投影的 room / 公共 board_state / 当前 AI 的 private_state / rules_text / move_format / ordered participants / current_actor / turn / status / stake；手牌、私有骰子和个人合法行动不会暴露给同房其他参与者。仅在上下文丢失、复盘或怀疑局面不同步时调用，不要每轮调用。非当前参与者可传 wait=true，等待轮到自己或房间终局/取消、本人离席/淘汰/失活等关键状态；普通发言和他人行动只累积为未读，不单独唤醒。不能用 viewer / player_id 参数改成其他参与者视角。
-- resign：play(game="duel", action="resign", params={"room_id":"ABCDEFGH"})
-- leave：play(game="duel", action="leave", params={"room_id":"ABCDEFGH"})。未开局时离开会取消邀请或退出等待房；进行中离开会保留历史席位并标记为 left，若剩余活跃人数低于该棋种最小人数则结束对局。
-- 筹码中心 chips（仅已认证小机）：身份由平台注入，只能操作当前小机与其绑定人类这一对身份，不要自报 player_id / opponent_id。
-  - 基础：status 用 play(game="duel", action="chips", params={"op":"status"})；check_in 用 params={"op":"check_in"}；bankruptcy 用 params={"op":"bankruptcy"}；流水用 params={"op":"ledger","limit":5}，ledger 默认 5 条、最大 10。
-  - 成就：play(game="duel", action="chips", params={"op":"achievements"})。
-  - 借款 loans：list 用 params={"op":"loans","loan_action":"list","limit":20} 查看欠条及 allowed_actions，limit 最大 50。小机 create 表示“小机向绑定人类借款”，小机是借款人；只有借款方能发起。create 必填 principal（正整数本金）、daily_rate_micro_percent（非负整数微百分比日利率）、due_date（上海时区明天至 30 天内的 YYYY-MM-DD）和 idempotency_key，interest_cap_enabled 可省略且默认 true：params={"op":"loans","loan_action":"create","principal":20,"daily_rate_micro_percent":0,"due_date":"<YYYY-MM-DD>","interest_cap_enabled":true,"idempotency_key":"loan:create:0001"}。
-  - 借款后续操作以 list 返回的 allowed_actions 为准：accept 用 params={"op":"loans","loan_action":"accept","loan_id":"<loan_id>","loan_revision":1,"idempotency_key":"loan:accept:0001"}；reject 用 params={"op":"loans","loan_action":"reject","loan_id":"<loan_id>","loan_revision":1,"idempotency_key":"loan:reject:0001"}；counter（用户文案叫“改条件”）用 params={"op":"loans","loan_action":"counter","loan_id":"<loan_id>","loan_revision":1,"principal":25,"daily_rate_micro_percent":0,"due_date":"<YYYY-MM-DD>","interest_cap_enabled":true,"idempotency_key":"loan:counter:0001"}；withdraw 用 params={"op":"loans","loan_action":"withdraw","loan_id":"<loan_id>","loan_revision":1,"idempotency_key":"loan:withdraw:0001"}；repay 用 params={"op":"loans","loan_action":"repay","loan_id":"<loan_id>","amount":10,"idempotency_key":"loan:repay:0001"}。
-  - 兑换 exchange：catalog 用 params={"op":"exchange","exchange_action":"catalog"}；list 用 params={"op":"exchange","exchange_action":"list","limit":50}，limit 最大 100。发起方承诺完成约定并收取 chip_amount 筹码，审批方 confirm 后才支付筹码，不要理解反。create 必填 item_key、request_note、chip_amount、idempotency_key，custom 商品另填 custom_title：params={"op":"exchange","exchange_action":"create","item_key":"bedtime_story","request_note":"今晚讲一个短故事","chip_amount":20,"idempotency_key":"exchange:create:0001"}。
-  - 兑换后续操作：confirm / reject / withdraw 均必填 request_id 和 idempotency_key。confirm 用 params={"op":"exchange","exchange_action":"confirm","request_id":"<request_id>","idempotency_key":"exchange:confirm:0001"}；reject 用 params={"op":"exchange","exchange_action":"reject","request_id":"<request_id>","idempotency_key":"exchange:reject:0001"}；withdraw 用 params={"op":"exchange","exchange_action":"withdraw","request_id":"<request_id>","idempotency_key":"exchange:withdraw:0001"}。
-  - loans / exchange 的每次写操作都必须带 8-128 位 idempotency_key（首字符为字母或数字，其余可用字母、数字、冒号、下划线、点、连字符）；重试同一操作复用原 key，新操作换新 key。
+棋种/桌型：tictactoe、gomoku、othello、connect4、jungle、xiangqi 仅 2 人；dots_boxes 允许 2/3/4 人；liars_dice 允许 2..6 人且有私密骰子。后两种可用系统 NPC 补位并支持多人筹码局，其余无 NPC；八种均支持筹码局。
 
-推荐流程：rooms -> accept/reject（如需）-> bootstrap -> move(wait=true) 增量循环；只有丢状态时 state。第一次进入 playing 的 new / accept / 必要 join 会返回一次完整 bootstrap（棋盘、规则、先手、stake、双方余额）；非零 pending 只返回紧凑邀请摘要。正常开局已含双方余额，不必额外 chips/status。
+动作索引：
+- rooms(include_terminal=false,limit=50<=100,offset=0)：仅当前已认证小机的 pending/waiting/playing 房；include_terminal 再含 finished/archived，返回 pagination/notices。
+- new(game_type,mode=human_first|ai_first,stake=0,target_player_count?,fill_with_npcs?)：stake>0 需另一方确认；多人/NPC 参数仅适用 dots_boxes/liars_dice，小机端桌为绑定人机+NPC。
+- rematch(room_id)：仅 finished/archived、无系统 NPC 且只有一名人类的房；沿用棋种/阵容/stake、翻转先手，非零 stake 重新确认。
+- join(room_id,message?)：仅旧式 waiting 房；accept(room_id)/reject(room_id)：处理 pending 邀请。
+- move(room_id,move,revision?,wait?,message?)：revision 用于防止基于旧局面落子；move 格式以本房返回为准。
+- state(room_id,wait?,message?)：读取/等待当前可见状态，若本房唯一一次 bootstrap 尚未领取则返回它；resign(room_id,message?)：认输；leave(room_id,message?)：离席。wait=true 由主站续等到轮到自己或关键状态，不会重放 move/message。
 
-增量协议：正常 move 不返回完整 room/棋盘/规则，只给 room_id、revision、turn、current_actor_id/current_actor_seat、status、your_move 和按 sequence 排列的 new_messages；其中事件含 actor_id/actor_seat，当前六棋的对方落子仍是原始坐标 payload，未来隐藏信息插件会先按当前 viewer 投影再返回。自动 pass / 保留行动权看 action_note 与当前行动者。终局增量另含 winner/result、筹码 delta 和结算后余额。筹码余额允许为负数；当前六棋的非零筹码局双方必须重新确认。未来多人插件只有显式提供完整零和 settlement_deltas 才能启用非零 stake；系统 NPC 的 delta 留在房间结果中，不写全局钱包。
+最短流程：rooms → accept/reject（如需）→ new/accept/join/state 返回的 bootstrap → move(wait=true) 增量循环；需同步时才 state。rules_text/move_format/allowed_player_counts/private_state 以 bootstrap/state 为准；private_state 只是当前小机投影。增量响应保留 revision/current_actor/participant_status/events/unlocks，终局保留 winner/result/settlement 等后端字段。
 
-官方 toy.cedarstar.org 的 async gateway 会在程序内吞掉 Duel 后端每 30 秒的 still_waiting 短心跳，并自动用受信的 state(wait=true) 续等；模型不需要自己续杯，外层请求只在轮到自己、淘汰/离席/失活、终局/取消、错误等有意义结果时返回。默认服务端最多连续等待 10 分钟，到上限才会向模型返回一次 still_waiting。只有绕过官方网关直连 8772 时，调用方才需要自行续等内部心跳。等待容量繁忙会带 wait_downgraded=true，但落子已成功。move / state / resign 可附 message（最长 500 字）。
+筹码中心（仅已认证小机）通式：play(game="duel", action="chips", params={"op":"status"})。
+- 基础：op=status | check_in | bankruptcy | ledger(limit<=10) | achievements。
+- op=loans：list(limit<=50) | create(principal,rate,due,cap?,key) | accept/reject/withdraw(id,rev,key) | counter(id,rev,principal,rate,due,cap,key) | repay(id,amount,key)。别名：id=loan_id，rev=loan_revision，rate=daily_rate_micro_percent，due=due_date，cap=interest_cap_enabled，key=idempotency_key。小机 create 即“小机向绑定人类借款”，小机是借款人，只有借款方能发起；counter 的用户语义是“改条件”，操作以 list.allowed_actions 为准。create 的 cap 默认 true，counter 必填 cap。
+- op=exchange：catalog | list(limit<=100) | create(item_key,request_note,chip_amount,custom_title?,key) | confirm/reject/withdraw(request_id,key)。发起方履约并收筹码，审批方 confirm 后付筹码。
+- loans/exchange 的所有写操作需 8..128 位 idempotency_key；同一操作重试复用 key，新操作换 key。
+
+未读：任一响应可带 unread/unread_hint；对局→rooms，借款→chips/loans，兑换→chips/exchange，成就→chips/achievements。rooms、loans list、exchange list、achievements 还可带并消费 notices。
 
 作者：南山君&Clio。"""
 
@@ -7186,58 +7175,77 @@ def _prepare_duel_payload(
     trusted_player_id=None,
 ):
     action = arguments.get("action")
-    if action not in {
-        "rooms", "new", "join", "move", "state", "resign", "leave", "accept", "reject",
-        "chips",
-    }:
+    action_fields = {
+        "rooms": {"include_terminal", "limit", "offset"},
+        "new": {
+            "game_type", "mode", "stake",
+            "target_player_count", "fill_with_npcs",
+        },
+        "rematch": {"room_id"},
+        "join": {"room_id", "message"},
+        "accept": {"room_id"},
+        "reject": {"room_id"},
+        "move": {"room_id", "move", "revision", "wait", "message"},
+        "state": {"room_id", "wait", "message"},
+        "resign": {"room_id", "message"},
+        "leave": {"room_id", "message"},
+    }
+    if action not in {*action_fields, "chips"}:
         raise _McpError(
             -32602,
             '未知 duel action；请先 get_guide(game="duel") 查看玩法。',
         )
     if action == "chips":
-        # Keep this in lockstep with Duel's chips fields in McpPlayBody.  The
-        # canonical identities below are still supplied only by this gateway.
-        allowed_fields = {
-            "action",
-            "player_id",
-            "opponent_id",
-            "op",
-            "limit",
-            "loan_action",
-            "loan_id",
-            "loan_revision",
-            "principal",
-            "daily_rate_micro_percent",
-            "due_date",
-            "interest_cap_enabled",
-            "amount",
-            "exchange_action",
-            "request_id",
-            "item_key",
-            "request_note",
-            "custom_title",
-            "chip_amount",
-            "idempotency_key",
+        # Split McpPlayBody by chips operation so fields valid for one operation
+        # cannot hitchhike on another one. Identities are injected below.
+        op = arguments.get("op") or "status"
+        chips_fields = {
+            "status": set(),
+            "check_in": set(),
+            "bankruptcy": set(),
+            "ledger": {"limit"},
+            "achievements": set(),
+            "loans": {"loan_action"},
+            "exchange": {"exchange_action"},
         }
+        allowed_fields = {"action", "player_id", "op"} | chips_fields.get(
+            op, set()
+        )
+        if op == "loans":
+            loan_action = arguments.get("loan_action") or "list"
+            loan_fields = {
+                "list": {"limit"},
+                "create": {
+                    "principal", "daily_rate_micro_percent", "due_date",
+                    "interest_cap_enabled", "idempotency_key",
+                },
+                "accept": {"loan_id", "loan_revision", "idempotency_key"},
+                "reject": {"loan_id", "loan_revision", "idempotency_key"},
+                "counter": {
+                    "loan_id", "loan_revision", "principal",
+                    "daily_rate_micro_percent", "due_date",
+                    "interest_cap_enabled", "idempotency_key",
+                },
+                "withdraw": {"loan_id", "loan_revision", "idempotency_key"},
+                "repay": {"loan_id", "amount", "idempotency_key"},
+            }
+            allowed_fields |= loan_fields.get(loan_action, set())
+        elif op == "exchange":
+            exchange_action = arguments.get("exchange_action") or "list"
+            exchange_fields = {
+                "catalog": set(),
+                "list": {"limit"},
+                "create": {
+                    "item_key", "request_note", "custom_title", "chip_amount",
+                    "idempotency_key",
+                },
+                "confirm": {"request_id", "idempotency_key"},
+                "reject": {"request_id", "idempotency_key"},
+                "withdraw": {"request_id", "idempotency_key"},
+            }
+            allowed_fields |= exchange_fields.get(exchange_action, set())
     else:
-        allowed_fields = {
-            "action",
-            "player_id",
-            "opponent_id",
-            "room_id",
-            "game_type",
-            "mode",
-            "move",
-            "wait",
-            "message",
-            "include_terminal",
-            "limit",
-            "offset",
-            "stake",
-            "target_player_count",
-            "fill_with_npcs",
-            "op",
-        }
+        allowed_fields = {"action", "player_id"} | action_fields[action]
     payload = {
         key: value
         for key, value in arguments.items()
@@ -7246,14 +7254,6 @@ def _prepare_duel_payload(
     if trusted_player_id is not None:
         # 聚合层认证得到的 canonical AI 身份始终覆盖顶层或 params 自报值。
         payload["player_id"] = trusted_player_id
-    if action == "rooms":
-        payload = {
-            key: value
-            for key, value in payload.items()
-            if key in {
-                "action", "player_id", "include_terminal", "limit", "offset"
-            }
-        }
     if force_opponent:
         # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
         payload.pop("opponent_id", None)

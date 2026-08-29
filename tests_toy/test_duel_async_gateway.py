@@ -44,8 +44,16 @@ class DuelGatewayPrepareTests(unittest.TestCase):
             params={
                 "player_id": "forged-ai",
                 "opponent_id": "forged-human",
+                "participant_ids": ["victim", "forged-ai"],
+                "viewer": "victim",
                 "game_type": "liars_dice",
+                "mode": "ai_first",
+                "stake": 4,
+                "target_player_count": 4,
+                "fill_with_npcs": True,
+                # These are valid McpPlayBody fields, but not for new.
                 "wait": True,
+                "revision": 9,
             },
         )
         with (
@@ -69,7 +77,10 @@ class DuelGatewayPrepareTests(unittest.TestCase):
             "player_id": "42",
             "opponent_id": "7",
             "game_type": "liars_dice",
-            "wait": True,
+            "mode": "ai_first",
+            "stake": 4,
+            "target_player_count": 4,
+            "fill_with_npcs": True,
         })
         sync_post.assert_not_called()
         return prepared, current
@@ -166,6 +177,62 @@ class DuelGatewayPrepareTests(unittest.TestCase):
                     expected,
                     finalized["body"]["result"]["content"][0]["text"],
                 )
+
+    def test_finalize_preserves_private_terminal_notices_and_unread_fields(self):
+        prepared = server._DeferredDuelCall(
+            backend_payload={
+                "action": "state",
+                "player_id": "42",
+                "room_id": "ABCDEFGH",
+                "wait": True,
+            },
+            game="duel",
+            action="state",
+            account_user=None,
+            account_player_id=None,
+            guest_player_id=None,
+            slot=1,
+            anti_context=None,
+            announce_player_id=None,
+        )
+        ticket = server._store_duel_gateway_ticket(81, prepared)
+        backend_payload = {
+            "ok": True,
+            "status": "finished",
+            "room_id": "ABCDEFGH",
+            "revision": 14,
+            "private_state": {"dice": [1, 6]},
+            "participant_status": "eliminated",
+            "events": [{"sequence": 11, "type": "move"}],
+            "unlocks": [{"key": "first_win"}],
+            "winner_player_id": "42",
+            "game_result": {"reason": "last_active"},
+            "settlement": {"deltas": {"42": 3, "7": -3}},
+            "notices": [{"event": "exchange_confirmed"}],
+            "unread": {
+                "total": 2,
+                "categories": {
+                    "game": 0,
+                    "loan": 1,
+                    "exchange": 1,
+                    "achievement": 0,
+                },
+            },
+            "unread_hint": "借款（未读1）→chips/loans；兑换（未读1）→chips/exchange",
+        }
+        with (
+            patch.object(server, "_anti_addiction_record_success", return_value=""),
+            patch.object(server, "_play_announcements", return_value=""),
+        ):
+            finalized = server._finalize_duel_gateway_rpc(
+                ticket,
+                {"kind": "response", "status_code": 200, "data": backend_payload},
+            )
+
+        decoded = json.loads(
+            finalized["body"]["result"]["content"][0]["text"]
+        )
+        self.assertEqual(decoded, backend_payload)
 
     def test_internal_prepare_requires_loopback_and_shared_secret(self):
         handler = object.__new__(server.CedarToyHandler)
