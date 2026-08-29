@@ -6401,6 +6401,7 @@
           <span class="mine-profile-avatar" aria-hidden="true">${escapeHtml(accountAvatar(me.user))}</span>
           <div class="mine-profile-info">
             <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
+            <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>
           </div>
         </div>` : `<div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>`}
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
@@ -6425,6 +6426,8 @@
         mineEmailUnbind.addEventListener("click", () => openEmailSecurityModal("unbind"));
       }
       $("mineRenameSelf").addEventListener("click", () => openRenameModal("self", me.user.id, me.user.username));
+      const mineAvatarOpen = $("mineAvatarOpen");
+      if (mineAvatarOpen) mineAvatarOpen.addEventListener("click", openAvatarModal);
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");

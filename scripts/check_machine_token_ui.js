@@ -80,7 +80,7 @@ async function main() {
     assert.equal(byId("loginAvatarField").hidden, true);
 
     window.renderMine();
-    assert.equal(byId("mineAvatarOpen"), null);
+    assert.equal(byId("mineAvatarOpen").textContent, "设置 / 修改 Emoji 头像");
     assert.equal(window.document.querySelector(".mine-profile-avatar").textContent, "🙂");
     assert.equal(byId("topAvatarOpen").textContent, "🙂");
     byId("topAvatarOpen").click();
