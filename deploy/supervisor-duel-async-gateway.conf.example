@@ -6,7 +6,7 @@
 [program:cedartoy-duel-gateway]
 command=python3 -m uvicorn duel_async_gateway:app --host 127.0.0.1 --port 8003 --workers 1
 directory=/opt/cedartoy
-environment=DUEL_GATEWAY_SHARED_SECRET="REPLACE_WITH_64_RANDOM_HEX",DUEL_GATEWAY_MAX_CONCURRENCY="200"
+environment=DUEL_GATEWAY_SHARED_SECRET="REPLACE_WITH_64_RANDOM_HEX",DUEL_GATEWAY_CEDARTOY_ORIGIN="http://127.0.0.1:8004",DUEL_GATEWAY_MAX_CONCURRENCY="200",DUEL_GATEWAY_MAX_WAIT_SECONDS="600",DUEL_GATEWAY_KEEPALIVE_SECONDS="12"
 autostart=true
 autorestart=true
 startsecs=3
@@ -16,5 +16,6 @@ stderr_logfile=/var/log/cedartoy-duel-gateway.err.log
 stdout_logfile=/var/log/cedartoy-duel-gateway.out.log
 user=root
 
-; Add this to the existing [program:cedartoy] block as well:
-; environment=DUEL_GATEWAY_SHARED_SECRET="REPLACE_WITH_THE_SAME_64_RANDOM_HEX"
+; Merge these into the existing [program:cedartoy] environment (do not add a
+; second environment= line):
+; CEDARTOY_PORT="8004",DUEL_GATEWAY_SHARED_SECRET="REPLACE_WITH_THE_SAME_64_RANDOM_HEX",DUEL_GATEWAY_MAX_WAIT_SECONDS="600",DUEL_GATEWAY_TICKET_TTL_SECONDS="720"

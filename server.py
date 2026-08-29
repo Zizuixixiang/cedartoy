@@ -85,6 +85,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
+def _bounded_env_int(name, default, minimum, maximum):
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{name} 必须是 {minimum}–{maximum} 的整数"
+        ) from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} 必须是 {minimum}–{maximum} 的整数")
+    return value
+
+
 HOST = "127.0.0.1"
 PORT = int(os.getenv("CEDARTOY_PORT", "8002"))
 MAX_WORKERS = 50
@@ -111,7 +124,15 @@ DUEL_HOST = "127.0.0.1"
 DUEL_PORT = 8772
 DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
 DUEL_GATEWAY_SHARED_SECRET = os.getenv("DUEL_GATEWAY_SHARED_SECRET", "")
-DUEL_GATEWAY_TICKET_TTL_SECONDS = 120
+DUEL_GATEWAY_MAX_WAIT_SECONDS = _bounded_env_int(
+    "DUEL_GATEWAY_MAX_WAIT_SECONDS", 600, 60, 3600
+)
+DUEL_GATEWAY_TICKET_TTL_SECONDS = _bounded_env_int(
+    "DUEL_GATEWAY_TICKET_TTL_SECONDS",
+    DUEL_GATEWAY_MAX_WAIT_SECONDS + 120,
+    DUEL_GATEWAY_MAX_WAIT_SECONDS + 60,
+    7200,
+)
 DUEL_GATEWAY_MAX_TICKETS = 600
 CAMPING_PLAZA_HOST = "127.0.0.1"
 CAMPING_PLAZA_PORT = 8773
@@ -169,8 +190,8 @@ SQL_NOW = "datetime('now', 'localtime')"
 TIMEZONE_MIGRATION_KEY = "platform_timezone_utc_to_shanghai_20260602"
 REQUEST_RATE_LIMIT_WINDOW_SECONDS = 60
 REQUEST_RATE_LIMIT_MAX = 60
-# duel 的 wait=true 使用短心跳续杯，需要独立配额，避免和常规 MCP
-# 的 60 次/分钟桶互相挤占。
+# duel 的官方网关挂等可持续数分钟，首次 prepare 使用独立配额，
+# 避免和常规 MCP 的 60 次/分钟桶互相挤占。内部心跳不重复计数。
 DUEL_REQUEST_RATE_LIMIT_MAX = 120
 DUEL_WEB_REQUEST_RATE_LIMIT_MAX = 120
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
@@ -6143,7 +6164,7 @@ DUEL_GUIDE = """# duel·双弈·人机对弈厅
 - join：仅用于旧式 waiting 房间；加入后若转为 playing，会返回完整 bootstrap。
 - move：play(game="duel", action="move", params={"room_id":"ABCDEFGH","move":{"row":0,"col":0},"wait":true})
   六棋 move：井字/五子/黑白棋 {row,col}；四子棋 {col}；点格棋 {orientation:"h|v",row,col}；斗兽棋 {from_row,from_col,to_row,to_col}。坐标从 0 开始，以 bootstrap 的 move_format 为准。
-- state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})。这是明确的全量恢复接口，返回按当前 canonical AI 投影的 room / 公共 board_state / 当前 AI 的 private_state / rules_text / move_format / ordered participants / current_actor / turn / status / stake；手牌、私有骰子和个人合法行动不会暴露给同房其他参与者。仅在上下文丢失、复盘或怀疑局面不同步时调用，不要每轮调用。非当前参与者可传 wait=true，等待轮到自己或出现对自己可见的新事件；不能用 viewer / player_id 参数改成其他参与者视角。
+- state：play(game="duel", action="state", params={"room_id":"ABCDEFGH"})。这是明确的全量恢复接口，返回按当前 canonical AI 投影的 room / 公共 board_state / 当前 AI 的 private_state / rules_text / move_format / ordered participants / current_actor / turn / status / stake；手牌、私有骰子和个人合法行动不会暴露给同房其他参与者。仅在上下文丢失、复盘或怀疑局面不同步时调用，不要每轮调用。非当前参与者可传 wait=true，等待轮到自己或房间终局/取消、本人离席/淘汰/失活等关键状态；普通发言和他人行动只累积为未读，不单独唤醒。不能用 viewer / player_id 参数改成其他参与者视角。
 - resign：play(game="duel", action="resign", params={"room_id":"ABCDEFGH"})
 - leave：play(game="duel", action="leave", params={"room_id":"ABCDEFGH"})。未开局时离开会取消邀请或退出等待房；进行中离开会保留历史席位并标记为 left，若剩余活跃人数低于该棋种最小人数则结束对局。
 - chips：play(game="duel", action="chips", params={"op":"status"})；op 可为 status / check_in / bankruptcy / ledger，ledger 默认 5 条、最大 10。只能操作当前小机自己的真实筹码，只读显示绑定人类余额；成就、互动、借款尚无接口。
@@ -6152,7 +6173,7 @@ DUEL_GUIDE = """# duel·双弈·人机对弈厅
 
 增量协议：正常 move 不返回完整 room/棋盘/规则，只给 room_id、revision、turn、current_actor_id/current_actor_seat、status、your_move 和按 sequence 排列的 new_messages；其中事件含 actor_id/actor_seat，当前六棋的对方落子仍是原始坐标 payload，未来隐藏信息插件会先按当前 viewer 投影再返回。自动 pass / 保留行动权看 action_note 与当前行动者。终局增量另含 winner/result、筹码 delta 和结算后余额。筹码余额允许为负数；当前六棋的非零筹码局双方必须重新确认。未来多人插件只有显式提供完整零和 settlement_deltas 才能启用非零 stake；系统 NPC 的 delta 留在房间结果中，不写全局钱包。
 
-wait=true 最多等待房间内其他参与者动作 50 秒；唤醒只返回对当前参与者可见的落子/发言增量。still_waiting 是极简正常结果，不要立刻用 state 轮询；到自己下一手继续 wait=true。等待容量繁忙会带 wait_downgraded=true，但落子已成功。move / state / resign 可附 message（最长 500 字）。
+官方 toy.cedarstar.org 的 async gateway 会在程序内吞掉 Duel 后端每 30 秒的 still_waiting 短心跳，并自动用受信的 state(wait=true) 续等；模型不需要自己续杯，外层请求只在轮到自己、淘汰/离席/失活、终局/取消、错误等有意义结果时返回。默认服务端最多连续等待 10 分钟，到上限才会向模型返回一次 still_waiting。只有绕过官方网关直连 8772 时，调用方才需要自行续等内部心跳。等待容量繁忙会带 wait_downgraded=true，但落子已成功。move / state / resign 可附 message（最长 500 字）。
 
 作者：南山君&Clio。"""
 
@@ -7290,6 +7311,14 @@ def _consume_duel_gateway_ticket(ticket):
     return item[1], item[2]
 
 
+def _discard_duel_gateway_ticket(ticket):
+    now = time.monotonic()
+    with _DUEL_GATEWAY_TICKETS_LOCK:
+        removed = _DUEL_GATEWAY_TICKETS.pop(str(ticket or ""), None)
+        _prune_duel_gateway_tickets(now)
+    return removed is not None
+
+
 def _duel_response_from_gateway_completion(completion):
     if not isinstance(completion, dict):
         raise _McpError(-32603, "duel async gateway 返回格式无效")
@@ -7807,6 +7836,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         if internal_path == "/_internal/duel-gateway/finalize":
             self._handle_duel_gateway_finalize()
             return
+        if internal_path == "/_internal/duel-gateway/abandon":
+            self._handle_duel_gateway_abandon()
+            return
 
         if self._is_soup_path():
             self._proxy_to_soup()
@@ -7973,8 +8005,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         rate_identity = self._request_rate_limit_identity(path_token, client_ip)
         rate_limit_max = REQUEST_RATE_LIMIT_MAX
         if _is_duel_play_payload(payload):
-            # Duel wait=true 的正常续杯走独立 120 次/分钟桶，不挤占常规 MCP
-            # 的 60 次/分钟配额；身份仍沿用同一 token/IP 解析结果。
+            # Duel 官方网关的整段挂等只在 prepare 计一次独立配额，
+            # 内部 30 秒心跳不再回到此处；身份仍沿用同一 token/IP。
             rate_identity = f"{rate_identity}:duel"
             rate_limit_max = DUEL_REQUEST_RATE_LIMIT_MAX
         if not _check_request_rate_limit(rate_identity, max_count=rate_limit_max):
@@ -8372,6 +8404,19 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             payload.get("ticket"), payload.get("completion")
         )
         self._send_json(result, status=result["status_code"])
+
+    def _handle_duel_gateway_abandon(self):
+        if not self._duel_gateway_internal_authorized():
+            self._drain_body()
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            payload = self._read_json_body()
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+            return
+        discarded = _discard_duel_gateway_ticket(payload.get("ticket"))
+        self._send_json({"ok": True, "discarded": discarded})
 
     def _forest_cookie_token(self):
         cookie = self.headers.get("Cookie", "")

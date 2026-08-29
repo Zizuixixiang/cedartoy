@@ -12,9 +12,11 @@
 
 ## 双弈 async MCP gateway
 
-双弈的 `wait=true` 请求可通过一个独立的 ASGI 网关承接，避免长期占用
-`server.py` 的同步 worker。外部 MCP URL、路径 token、Bearer token 和
-`tools/call -> play(game="duel")` 均不变；部署与回滚步骤见
+双弈的 `wait=true` 请求由独立 ASGI 网关承接，避免长期占用
+`server.py` 的同步 worker。网关会吞掉 8772 的 30 秒 `still_waiting`
+心跳并自动续等，只把有意义的对局结果（或默认 10 分钟上限）返回模型。
+外部 MCP URL、路径 token、Bearer token 和 `tools/call -> play(game="duel")`
+均不变；部署与回滚步骤见
 [`docs/DUEL_ASYNC_GATEWAY.md`](docs/DUEL_ASYNC_GATEWAY.md)。
 
 ## License

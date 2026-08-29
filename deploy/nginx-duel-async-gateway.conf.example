@@ -1,7 +1,7 @@
 # Put the map in nginx's http {} block. GET and every non-POST method keep using
 # CedarToy directly. Only candidate root/path-token MCP POSTs enter port 8003.
 map $request_method $cedartoy_mcp_candidate_origin {
-    default http://127.0.0.1:8002;
+    default http://127.0.0.1:8004;
     POST    http://127.0.0.1:8003;
 }
 
@@ -17,6 +17,8 @@ location = / {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    gzip off;
+    proxy_buffering off;
     proxy_read_timeout 70s;
     proxy_pass $cedartoy_mcp_candidate_origin$request_uri;
 }
@@ -26,6 +28,8 @@ location = /mcp {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    gzip off;
+    proxy_buffering off;
     proxy_read_timeout 70s;
     proxy_pass $cedartoy_mcp_candidate_origin$request_uri;
 }
@@ -35,17 +39,21 @@ location = /mcp/ {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    gzip off;
+    proxy_buffering off;
     proxy_read_timeout 70s;
     proxy_pass $cedartoy_mcp_candidate_origin$request_uri;
 }
 
 # Current persistent AI tokens are opaque ctai_v1_* tokens or legacy JWTs.
-# GET remains on 8002, so homepage/static/admin/browser routes gain no extra hop.
+# GET goes straight to CedarToy 8004, so it never enters the 8003 gateway.
 location ~ ^/(?:ctai_v1_[A-Za-z0-9_-]{40,}|eyJ[A-Za-z0-9_.%~-]+)/?$ {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    gzip off;
+    proxy_buffering off;
     proxy_read_timeout 70s;
     proxy_pass $cedartoy_mcp_candidate_origin$request_uri;
 }
