@@ -6287,18 +6287,17 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 
 
 DUEL_GUIDE = """# duel·双弈·人机对弈厅
-调用：play(game="duel", action="...", params={...})；持久 MCP 可省 player_id。平台固定当前小机/绑定人类身份，自报 player_id/opponent_id/viewer/participant_ids 不能换人或视角。
+调用：play(game="duel",action="...",params={...})。平台固定当前小机/绑定人类身份，自报 player_id/opponent_id/viewer/participant_ids 不能换人或视角。
 
-游戏：tictactoe/gomoku/othello/connect4/jungle/xiangqi=2人；dots_boxes=2/3/4人；liars_dice=2..6人且有私密骰子。后两种可 NPC 补位并支持多人筹码局；全部支持筹码局。
+游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess；dots_boxes=2/3/4；liars_dice/yahtzee=2..6。可 NPC：checkers/banqi/chess/dots_boxes/liars_dice/yahtzee；多人补位用 target_player_count/fill_with_npcs。yahtzee 不支持筹码，其余支持；liars_dice 有私密骰子。人数/NPC/筹码以 bootstrap/catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
 
-对局：rooms 查房；new 开房（game_type, mode=human_first|ai_first, stake=0；多人可加 target_player_count/fill_with_npcs）；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动（room_id,move，可带 revision/wait/message）；state 同步（room_id，可带 wait/message）；resign 认输；leave 离席。流程：rooms→开房/处理邀请→bootstrap→move(wait=true) 循环，需重同步才 state。规则、move_format、allowed_player_counts、private_state 以 bootstrap/state 为准，绝不自行猜合法动作；private_state 只含自己可见私密信息，revision 用最新值。终局看 winner/result/settlement。
+对局：rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动（room_id,move,revision?/wait?/message?）；state 同步；resign 认输；leave 离席。流程：rooms→开房/处理邀请→bootstrap→move(wait=true) 循环，必要时 state。规则与动作看 rules_text/move_format/legal_moves/legal_actions/private_state，绝不猜合法动作；private_state 只含自己可见私密信息，revision 用最新值。终局看 winner/result/settlement。
 
 筹码：action="chips"，op=status|check_in|bankruptcy|ledger|achievements|loans|exchange。
-loans 用 loan_action=list|create|accept|reject|counter|withdraw|repay。create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)；accept/reject/withdraw(loan_id,loan_revision,idempotency_key)；counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)；repay(loan_id,amount,idempotency_key)。create=小机向绑定人类借款，counter=改条件；以 list.allowed_actions 为准。
-exchange 用 exchange_action=catalog|list|create|confirm|reject|withdraw。create(item_key,request_note,chip_amount,custom_title?,idempotency_key)；confirm/reject/withdraw(request_id,idempotency_key)。发起方履约收筹码，审批方 confirm 后付筹码。借款/兑换写操作的 idempotency_key 必须 8..128 位，同一操作重试复用。
+loans：loan_action=list|create|accept|reject|counter|withdraw|repay。create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)；accept/reject/withdraw(loan_id,loan_revision,idempotency_key)；counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)；repay(loan_id,amount,idempotency_key)。create=小机向绑定人类借款，counter=改条件；以 list.allowed_actions 为准。
+exchange：exchange_action=catalog|list|create|confirm|reject|withdraw。create(item_key,request_note,chip_amount,custom_title?,idempotency_key)；confirm/reject/withdraw(request_id,idempotency_key)。发起方履约收筹码，审批方 confirm 后付筹码。借款/兑换写操作 idempotency_key 必须 8..128 位，同一操作重试复用。
 
 未读看 unread/unread_hint：对局→rooms，借款→chips/loans，兑换→chips/exchange，成就→chips/achievements。
-
 作者：南山君&Clio。"""
 
 
@@ -7984,8 +7983,13 @@ def _duel_proxy_allowed(method, public_path):
             }
             or public_path in {
                 "/static/styles.css", "/static/app.js",
+                "/static/game_ui_registry.js",
                 "/static/chips.css", "/static/chips.js",
             }
+            or re.fullmatch(
+                r"/static/games/[a-z0-9][a-z0-9_-]{0,63}\.(?:js|css)",
+                public_path,
+            ) is not None
             or re.fullmatch(
                 r"/static/assets/exchange-shop/items/"
                 r"[A-Za-z0-9][A-Za-z0-9_-]{0,126}\.png",
