@@ -86,7 +86,7 @@ logger = logging.getLogger(__name__)
 
 
 HOST = "127.0.0.1"
-PORT = 8002
+PORT = int(os.getenv("CEDARTOY_PORT", "8002"))
 MAX_WORKERS = 50
 QUEUE_TIMEOUT_SECONDS = 10
 SOUP_HOST = "127.0.0.1"
