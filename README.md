@@ -10,6 +10,13 @@
 - **坩埚余响**（`vendor/crucible-echoes`）：athok / megabaka404 创作的确定性文字炼金构筑 Roguelike；平台保留上游 MIT License、署名与来源，并提供独立存档与 MCP 单步决策接口；首页卡片的“完整玩法”直接链接作者原仓库。接入与更新说明见 [`docs/CRUCIBLE_ECHOES.md`](docs/CRUCIBLE_ECHOES.md)。
 - **vendor/**：小机们自己写的游戏投稿合集。
 
+## 双弈 async MCP gateway
+
+双弈的 `wait=true` 请求可通过一个独立的 ASGI 网关承接，避免长期占用
+`server.py` 的同步 worker。外部 MCP URL、路径 token、Bearer token 和
+`tools/call -> play(game="duel")` 均不变；部署与回滚步骤见
+[`docs/DUEL_ASYNC_GATEWAY.md`](docs/DUEL_ASYNC_GATEWAY.md)。
+
 ## License
 
 平台代码采用 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)（© 2026 南山君）：个人、教育、研究与非营利用途可自由使用、修改和分发，**禁止任何商业用途**。

@@ -16,6 +16,7 @@ import sqlite3
 import ssl
 import time
 import urllib.parse
+from dataclasses import dataclass
 from email.message import EmailMessage
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -109,6 +110,9 @@ GARDEN_CAT_PROXY_POST_PATHS = frozenset({
 DUEL_HOST = "127.0.0.1"
 DUEL_PORT = 8772
 DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
+DUEL_GATEWAY_SHARED_SECRET = os.getenv("DUEL_GATEWAY_SHARED_SECRET", "")
+DUEL_GATEWAY_TICKET_TTL_SECONDS = 120
+DUEL_GATEWAY_MAX_TICKETS = 600
 CAMPING_PLAZA_HOST = "127.0.0.1"
 CAMPING_PLAZA_PORT = 8773
 CAMPING_PLAZA_BASE = f"http://{CAMPING_PLAZA_HOST}:{CAMPING_PLAZA_PORT}"
@@ -165,8 +169,8 @@ SQL_NOW = "datetime('now', 'localtime')"
 TIMEZONE_MIGRATION_KEY = "platform_timezone_utc_to_shanghai_20260602"
 REQUEST_RATE_LIMIT_WINDOW_SECONDS = 60
 REQUEST_RATE_LIMIT_MAX = 60
-# duel 的 wait=true 最长挂起 50 秒，续杯/查局面需要更宽的独立窗口，
-# 避免和常规 MCP 的 60 次/分钟桶互相挤占。
+# duel 的 wait=true 使用短心跳续杯，需要独立配额，避免和常规 MCP
+# 的 60 次/分钟桶互相挤占。
 DUEL_REQUEST_RATE_LIMIT_MAX = 120
 DUEL_WEB_REQUEST_RATE_LIMIT_MAX = 120
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
@@ -479,19 +483,30 @@ def _is_kelivo_user_agent(user_agent):
     return "kelivo" in normalized or normalized.startswith("dart/") or "dart:io" in normalized or "ktor" in normalized
 
 
+def _blocked_mcp_client_message(user_agent):
+    normalized = (user_agent or "").lower()
+    if normalized.startswith("evolia/") or "evolia" in normalized:
+        return (
+            "本服务 CEDAR TOY 为个人维护的非商业公益项目，未授权任何商业软件接入或集成。"
+            "检测到你正在通过未授权的第三方商业软件连接本服务，连接已被拒绝。"
+            "如有疑问请联系：邮箱 1452010907@qq.com / 小红书 501518888。"
+        )
+    return None
+
+
 def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, bearer_token=None):
     request_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params") or {}
 
     try:
-        normalized_user_agent = (user_agent or "").lower()
-        if normalized_user_agent.startswith("evolia/") or "evolia" in normalized_user_agent:
+        blocked_message = _blocked_mcp_client_message(user_agent)
+        if blocked_message:
             logger.info("Blocked evolia client, UA: %s", user_agent)
             return _json_rpc_error(
                 request_id,
                 -32000,
-                "本服务 CEDAR TOY 为个人维护的非商业公益项目，未授权任何商业软件接入或集成。检测到你正在通过未授权的第三方商业软件连接本服务，连接已被拒绝。如有疑问请联系：邮箱 1452010907@qq.com / 小红书 501518888。",
+                blocked_message,
             )
         if method == "initialize":
             return _json_rpc_result(
@@ -1852,6 +1867,30 @@ def _is_duel_play_payload(payload):
         return False
     arguments = params.get("arguments")
     return isinstance(arguments, dict) and arguments.get("game") == "duel"
+
+
+def _mcp_path_and_token(request_target):
+    path = str(request_target or "").split("?", 1)[0]
+    if (
+        path in (
+            *_ROOT_MCP_PATHS,
+            "/mbti", "/enneagram", "/dnd", "/love", "/ecr",
+            "/humanity", "/sins_virtues",
+        )
+        or path.startswith("/api/")
+    ):
+        return path, None
+    token = urllib.parse.unquote(path.strip("/"))
+    if token and "/" not in token:
+        return path, token
+    return path, None
+
+
+def _request_rate_limit_identity(path_token, client_ip):
+    user_id = _path_token_user_id(path_token)
+    if user_id is not None:
+        return f"user:{user_id}"
+    return f"ip:{client_ip or 'unknown'}"
 
 
 def _check_register_rate_limit(ip):
@@ -6460,7 +6499,34 @@ def _anti_addiction_record_success(context):
     return _anti_addiction_notice(streak, settings)
 
 
-def _tool_play(arguments, path_token=None):
+@dataclass
+class _DeferredDuelCall:
+    backend_payload: dict
+    game: str
+    action: str
+    account_user: dict | None
+    account_player_id: str | None
+    guest_player_id: str | None
+    slot: int
+    anti_context: dict | None
+    announce_player_id: str | None
+    slot_hint: int | None = None
+
+
+def _apply_play_slot_hint(text, slot_hint):
+    if slot_hint is None:
+        return text
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and "slot" not in obj:
+            obj["slot"] = slot_hint
+            return json.dumps(obj, ensure_ascii=False)
+    except Exception:
+        pass
+    return text
+
+
+def _tool_play(arguments, path_token=None, *, defer_duel=False):
     slot_hint = None
     try:
         game = arguments.get("game") if isinstance(arguments, dict) else None
@@ -6468,16 +6534,15 @@ def _tool_play(arguments, path_token=None):
             slot_hint = _save_slot_from_arguments(arguments)
     except _McpError:
         slot_hint = None  # 非法 slot 交给内部逻辑报错
-    text = _tool_play_inner(arguments, path_token=path_token)
-    if slot_hint is not None:
-        try:
-            obj = json.loads(text)
-            if isinstance(obj, dict) and "slot" not in obj:
-                obj["slot"] = slot_hint
-                text = json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
-    return text
+    result = _tool_play_inner(
+        arguments,
+        path_token=path_token,
+        defer_duel=defer_duel,
+    )
+    if isinstance(result, _DeferredDuelCall):
+        result.slot_hint = slot_hint
+        return result
+    return _apply_play_slot_hint(result, slot_hint)
 
 
 def _deserialize_object_param(value, param_name):
@@ -6497,7 +6562,7 @@ def _deserialize_object_param(value, param_name):
     return parsed
 
 
-def _tool_play_inner(arguments, path_token=None):
+def _tool_play_inner(arguments, path_token=None, *, defer_duel=False):
     game = arguments.get("game")
     action = arguments.get("action")
     if not game or not isinstance(game, str):
@@ -6634,12 +6699,30 @@ def _tool_play_inner(arguments, path_token=None):
             )
         if force_opponent and action in {"new", "join", "chips"}:
             trusted_opponent_id = _duel_bound_human_player_id(account_user)
-        response = _play_duel(
-            merged_arguments,
-            trusted_opponent_id=trusted_opponent_id,
-            force_opponent=force_opponent,
-            trusted_player_id=(account_player_id if force_opponent else None),
-        )
+        duel_kwargs = {
+            "trusted_opponent_id": trusted_opponent_id,
+            "force_opponent": force_opponent,
+            "trusted_player_id": (
+                account_player_id if force_opponent else None
+            ),
+        }
+        if defer_duel:
+            return _DeferredDuelCall(
+                backend_payload=_prepare_duel_payload(
+                    merged_arguments, **duel_kwargs
+                ),
+                game=game,
+                action=action,
+                account_user=(
+                    {"id": account_user["id"]} if account_user else None
+                ),
+                account_player_id=account_player_id,
+                guest_player_id=guest_player_id,
+                slot=slot,
+                anti_context=anti_context,
+                announce_player_id=announce_player_id,
+            )
+        response = _play_duel(merged_arguments, **duel_kwargs)
     elif game in {"bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
@@ -6648,6 +6731,32 @@ def _tool_play_inner(arguments, path_token=None):
     else:
         raise _McpError(-32602, "未知游戏")
 
+    response = _finalize_play_response(
+        response,
+        game=game,
+        action=action,
+        account_user=account_user,
+        account_player_id=account_player_id,
+        guest_player_id=guest_player_id,
+        slot=slot,
+        anti_context=anti_context,
+        announce_player_id=announce_player_id,
+    )
+    return json.dumps(response, ensure_ascii=False)
+
+
+def _finalize_play_response(
+    response,
+    *,
+    game,
+    action,
+    account_user,
+    account_player_id,
+    guest_player_id,
+    slot,
+    anti_context,
+    announce_player_id,
+):
     succeeded = True
     if isinstance(response, dict):
         result = response.get("result")
@@ -6676,7 +6785,7 @@ def _tool_play_inner(arguments, path_token=None):
         # 只在成功时取通知：check_announcements 一取就标已读，而通知只弹一次。
         # 拼在报错响应上，玩家多半看不到，这条通知就永远丢了。
         response = _prepend_play_text(response, _play_announcements(announce_player_id, game, action))
-    return json.dumps(response, ensure_ascii=False)
+    return response
 
 
 def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
@@ -7042,7 +7151,7 @@ def _duel_bound_human_player_id(ai_user):
     return str(rows[0]["id"]) if rows else None
 
 
-def _play_duel(
+def _prepare_duel_payload(
     arguments,
     trusted_opponent_id=None,
     force_opponent=False,
@@ -7102,6 +7211,10 @@ def _play_duel(
         payload.pop("opponent_id", None)
         if action in {"new", "join", "chips"} and trusted_opponent_id is not None:
             payload["opponent_id"] = trusted_opponent_id
+    return payload
+
+
+def _request_duel_backend(payload):
     try:
         resp = httpx.post(f"{DUEL_BASE}/mcp/play", json=payload, timeout=55)
     except httpx.HTTPError as exc:
@@ -7115,6 +7228,223 @@ def _play_duel(
         code = -32602 if resp.status_code < 500 else -32603
         raise _McpError(code, detail or f"duel 后端错误 HTTP {resp.status_code}")
     return data
+
+
+def _play_duel(
+    arguments,
+    trusted_opponent_id=None,
+    force_opponent=False,
+    trusted_player_id=None,
+):
+    payload = _prepare_duel_payload(
+        arguments,
+        trusted_opponent_id=trusted_opponent_id,
+        force_opponent=force_opponent,
+        trusted_player_id=trusted_player_id,
+    )
+    return _request_duel_backend(payload)
+
+
+_DUEL_GATEWAY_TICKETS = {}
+_DUEL_GATEWAY_TICKETS_LOCK = Lock()
+
+
+def _mcp_tool_text_result(request_id, text, *, is_error=False):
+    return _json_rpc_result(
+        request_id,
+        {
+            "content": [{"type": "text", "text": text}],
+            "isError": is_error,
+        },
+    )
+
+
+def _prune_duel_gateway_tickets(now):
+    expired = [
+        ticket
+        for ticket, item in _DUEL_GATEWAY_TICKETS.items()
+        if now - item[0] >= DUEL_GATEWAY_TICKET_TTL_SECONDS
+    ]
+    for ticket in expired:
+        _DUEL_GATEWAY_TICKETS.pop(ticket, None)
+
+
+def _store_duel_gateway_ticket(request_id, prepared):
+    now = time.monotonic()
+    with _DUEL_GATEWAY_TICKETS_LOCK:
+        _prune_duel_gateway_tickets(now)
+        if len(_DUEL_GATEWAY_TICKETS) >= DUEL_GATEWAY_MAX_TICKETS:
+            raise _McpError(-32603, "duel async gateway 暂时繁忙，请稍后重试")
+        ticket = secrets.token_urlsafe(32)
+        _DUEL_GATEWAY_TICKETS[ticket] = (now, request_id, prepared)
+    return ticket
+
+
+def _consume_duel_gateway_ticket(ticket):
+    now = time.monotonic()
+    with _DUEL_GATEWAY_TICKETS_LOCK:
+        item = _DUEL_GATEWAY_TICKETS.pop(str(ticket or ""), None)
+        _prune_duel_gateway_tickets(now)
+    if item is None or now - item[0] >= DUEL_GATEWAY_TICKET_TTL_SECONDS:
+        raise _McpError(-32603, "duel async gateway 请求凭据已失效")
+    return item[1], item[2]
+
+
+def _duel_response_from_gateway_completion(completion):
+    if not isinstance(completion, dict):
+        raise _McpError(-32603, "duel async gateway 返回格式无效")
+    kind = completion.get("kind")
+    if kind == "transport_error":
+        detail = str(completion.get("message") or "unknown transport error")
+        raise _McpError(-32603, f"duel 后端连接失败：{detail}")
+    if kind == "invalid_json":
+        raise _McpError(-32603, "duel 后端返回非 JSON 响应")
+    if kind != "response":
+        raise _McpError(-32603, "duel async gateway 返回格式无效")
+    try:
+        status_code = int(completion.get("status_code"))
+    except (TypeError, ValueError):
+        raise _McpError(-32603, "duel async gateway 返回状态无效") from None
+    data = completion.get("data")
+    if status_code >= 400:
+        detail = data.get("message") if isinstance(data, dict) else None
+        code = -32602 if status_code < 500 else -32603
+        raise _McpError(
+            code, detail or f"duel 后端错误 HTTP {status_code}"
+        )
+    return data
+
+
+def _finalize_deferred_duel_call(prepared, response):
+    response = _finalize_play_response(
+        response,
+        game=prepared.game,
+        action=prepared.action,
+        account_user=prepared.account_user,
+        account_player_id=prepared.account_player_id,
+        guest_player_id=prepared.guest_player_id,
+        slot=prepared.slot,
+        anti_context=prepared.anti_context,
+        announce_player_id=prepared.announce_player_id,
+    )
+    text = json.dumps(response, ensure_ascii=False)
+    return _apply_play_slot_hint(text, prepared.slot_hint)
+
+
+def _prepare_duel_gateway_rpc(payload, *, user_agent="", auth_token=None):
+    request_id = payload.get("id")
+    blocked_message = _blocked_mcp_client_message(user_agent)
+    if blocked_message:
+        logger.info("Blocked evolia client, UA: %s", user_agent)
+        return {
+            "kind": "response",
+            "status_code": 200,
+            "body": _json_rpc_error(request_id, -32000, blocked_message),
+        }
+    try:
+        params = payload.get("params") or {}
+        prepared = _tool_play(
+            params.get("arguments") or {},
+            path_token=auth_token,
+            defer_duel=True,
+        )
+        if not isinstance(prepared, _DeferredDuelCall):
+            return {
+                "kind": "response",
+                "status_code": 200,
+                "body": _mcp_tool_text_result(request_id, prepared),
+            }
+        ticket = _store_duel_gateway_ticket(request_id, prepared)
+        return {
+            "kind": "ready",
+            "ticket": ticket,
+            "backend_payload": prepared.backend_payload,
+        }
+    except _McpError as exc:
+        return {
+            "kind": "response",
+            "status_code": 200,
+            "body": _mcp_tool_text_result(
+                request_id,
+                f"【cedartoy】{exc.message}",
+                is_error=True,
+            ),
+        }
+    except Exception as exc:
+        return {
+            "kind": "response",
+            "status_code": 200,
+            "body": _mcp_tool_text_result(
+                request_id,
+                f"【cedartoy服务错误】{exc}",
+                is_error=True,
+            ),
+        }
+
+
+def _prepare_duel_gateway_request(
+    payload,
+    *,
+    original_path,
+    user_agent="",
+    bearer_token=None,
+    client_ip=None,
+):
+    path, path_token = _mcp_path_and_token(original_path)
+    if path not in _ROOT_MCP_PATHS and not path_token:
+        return {
+            "kind": "response",
+            "status_code": 404,
+            "body": {"error": "not found"},
+        }
+    if "id" not in payload:
+        return {"kind": "response", "status_code": 202, "body": None}
+    rate_identity = f"{_request_rate_limit_identity(path_token, client_ip)}:duel"
+    if not _check_request_rate_limit(
+        rate_identity, max_count=DUEL_REQUEST_RATE_LIMIT_MAX
+    ):
+        return {
+            "kind": "response",
+            "status_code": 429,
+            "body": _json_rpc_error(
+                payload.get("id"),
+                RATE_LIMIT_ERROR_CODE,
+                REQUEST_RATE_LIMIT_MESSAGE,
+            ),
+        }
+    return _prepare_duel_gateway_rpc(
+        payload,
+        user_agent=user_agent,
+        auth_token=path_token or bearer_token,
+    )
+
+
+def _finalize_duel_gateway_rpc(ticket, completion):
+    try:
+        request_id, prepared = _consume_duel_gateway_ticket(ticket)
+    except _McpError as exc:
+        return {
+            "ok": False,
+            "status_code": 410,
+            "message": exc.message,
+        }
+    try:
+        response = _duel_response_from_gateway_completion(completion)
+        text = _finalize_deferred_duel_call(prepared, response)
+        body = _mcp_tool_text_result(request_id, text)
+    except _McpError as exc:
+        body = _mcp_tool_text_result(
+            request_id,
+            f"【cedartoy】{exc.message}",
+            is_error=True,
+        )
+    except Exception as exc:
+        body = _mcp_tool_text_result(
+            request_id,
+            f"【cedartoy服务错误】{exc}",
+            is_error=True,
+        )
+    return {"ok": True, "status_code": 200, "body": body}
 
 
 def _play_garden_cat(arguments, owner_name=None):
@@ -7470,6 +7800,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_POST(self):
+        internal_path = self.path.split("?", 1)[0]
+        if internal_path == "/_internal/duel-gateway/prepare":
+            self._handle_duel_gateway_prepare()
+            return
+        if internal_path == "/_internal/duel-gateway/finalize":
+            self._handle_duel_gateway_finalize()
+            return
+
         if self._is_soup_path():
             self._proxy_to_soup()
             return
@@ -7884,13 +8222,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _request_path_and_token(self):
-        path = self.path.split("?", 1)[0]
-        if path in (*_ROOT_MCP_PATHS, "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues") or path.startswith("/api/"):
-            return path, None
-        token = urllib.parse.unquote(path.strip("/"))
-        if token and "/" not in token:
-            return path, token
-        return path, None
+        return _mcp_path_and_token(self.path)
 
     def _client_ip(self):
         forwarded_for = self.headers.get("X-Forwarded-For", "")
@@ -7906,10 +8238,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         return "unknown"
 
     def _request_rate_limit_identity(self, path_token, client_ip):
-        user_id = _path_token_user_id(path_token)
-        if user_id is not None:
-            return f"user:{user_id}"
-        return f"ip:{client_ip or 'unknown'}"
+        return _request_rate_limit_identity(path_token, client_ip)
 
     def _is_mcp_event_stream_get(self, path):
         accept = self.headers.get("Accept", "")
@@ -7995,6 +8324,54 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("Invalid JSON object")
         return payload
+
+    def _duel_gateway_internal_authorized(self):
+        client_host = self.client_address[0] if self.client_address else ""
+        provided = self.headers.get("X-CedarToy-Gateway-Secret", "")
+        return bool(
+            DUEL_GATEWAY_SHARED_SECRET
+            and client_host in {"127.0.0.1", "::1"}
+            and hmac.compare_digest(provided, DUEL_GATEWAY_SHARED_SECRET)
+        )
+
+    def _handle_duel_gateway_prepare(self):
+        if not self._duel_gateway_internal_authorized():
+            self._drain_body()
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            payload = self._read_json_body()
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+            return
+        if not _is_duel_play_payload(payload):
+            self._send_json({"error": "not a duel play request"}, status=400)
+            return
+        result = _prepare_duel_gateway_request(
+            payload,
+            original_path=self.headers.get(
+                "X-CedarToy-Original-Path", "/mcp"
+            ),
+            user_agent=self.headers.get("User-Agent", ""),
+            bearer_token=_extract_bearer(self.headers),
+            client_ip=self.headers.get("X-CedarToy-Client-IP", "unknown"),
+        )
+        self._send_json(result)
+
+    def _handle_duel_gateway_finalize(self):
+        if not self._duel_gateway_internal_authorized():
+            self._drain_body()
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            payload = self._read_json_body()
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+            return
+        result = _finalize_duel_gateway_rpc(
+            payload.get("ticket"), payload.get("completion")
+        )
+        self._send_json(result, status=result["status_code"])
 
     def _forest_cookie_token(self):
         cookie = self.headers.get("Cookie", "")
