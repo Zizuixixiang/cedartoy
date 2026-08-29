@@ -172,6 +172,20 @@
       white-space: nowrap;
     }
 
+    .account-avatar {
+      display: inline-grid;
+      place-items: center;
+      flex: none;
+      width: 30px;
+      height: 30px;
+      border: 2px solid rgba(255, 255, 255, 0.72);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      font-family: system-ui, sans-serif;
+      font-size: 18px;
+      line-height: 1;
+    }
+
     .main {
       display: grid;
       grid-template-columns: minmax(300px, 32%) 1fr;
@@ -2018,6 +2032,34 @@
       overflow-wrap: anywhere;
     }
 
+    .mine-profile-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding: 10px;
+      background: #fff;
+      border: 3px solid var(--purple-light);
+    }
+
+    .mine-profile-avatar {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 52px;
+      height: 52px;
+      border: 3px solid var(--purple);
+      border-radius: 999px;
+      background: var(--purple-light);
+      font-family: system-ui, sans-serif;
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .mine-profile-info { min-width: 0; flex: 1; }
+    .mine-profile-info .mine-user-row { margin-bottom: 0; }
+    .inline-avatar { margin-right: 5px; font-family: system-ui, sans-serif; }
+
     .machine-name {
       min-width: 0;
       overflow: hidden;
@@ -2671,11 +2713,33 @@
         <input id="loginConfirmPass" type="password" autocomplete="new-password">
         <span class="field-hint">请再次输入相同密码</span>
       </label>
+      <label class="field" id="loginAvatarField" hidden>
+        <span class="field-label">Emoji 头像（可选）</span>
+        <input id="loginAvatar" type="text" maxlength="64" autocomplete="off" placeholder="🙂">
+        <span class="field-hint">为空默认 🙂；只接受 Emoji，最多 16 个 Unicode 字符</span>
+      </label>
       <button class="forgot-password-link" id="forgotPasswordOpen" type="button" hidden>忘记密码？</button>
       <div class="modal-msg" id="loginMsg"></div>
       <div class="modal-actions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="loginSubmit" type="button">登录</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="avatarModal" role="dialog" aria-modal="true" aria-labelledby="avatarTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="avatarTitle">设置 Emoji 头像</h2>
+      <p class="modal-hint">可填写一个或几个简短 Emoji；不支持普通文字、图片地址或上传。</p>
+      <label class="field">
+        <span class="field-label">头像</span>
+        <input id="avatarInput" type="text" maxlength="64" autocomplete="off" placeholder="🙂">
+        <span class="field-hint">最多 16 个 Unicode 字符</span>
+      </label>
+      <div class="modal-msg" id="avatarMsg"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="avatarSubmit" type="button">保存头像</button>
       </div>
     </div>
   </div>
@@ -3796,6 +3860,7 @@
     let selected = "soup";
     let filter = "mini";
     let me = null;
+    let avatarFeatureEnabled = false;
     let loadMeAbort = null;
     const EMAIL_SECURITY_UI_ENABLED = false;
     let emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
@@ -3955,6 +4020,39 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    function accountAvatar(user) {
+      const avatar = user && user.avatar;
+      if (avatar && avatar.type === "emoji" && typeof avatar.value === "string" && avatar.value.trim()) {
+        return avatar.value.trim();
+      }
+      return user && user.is_ai ? "🤖" : "🙂";
+    }
+
+    function authAvatarHtml(user) {
+      if (!avatarFeatureEnabled) return '<span aria-hidden="true">●</span>';
+      return `<span class="account-avatar" aria-hidden="true">${escapeHtml(accountAvatar(user))}</span>`;
+    }
+
+    async function loadAvatarCapability() {
+      try {
+        const res = await fetch("/api/auth/avatar", {cache: "no-store"});
+        const data = await res.json().catch(() => ({}));
+        avatarFeatureEnabled = Boolean(res.ok && data.supported && data.type === "emoji");
+      } catch (_err) {
+        avatarFeatureEnabled = false;
+      }
+      setLoginMode(loginMode);
+      renderAuth();
+      if ($("mineDrawer").classList.contains("show")) renderMine();
+    }
+
+    function validateAvatarInput(value, {allowEmpty = false} = {}) {
+      const avatar = String(value || "").trim();
+      if (!avatar) return allowEmpty ? "" : "请选择或输入 Emoji 头像";
+      if (Array.from(avatar).length > 16) return "头像过长，最多 16 个 Unicode 字符";
+      return "";
     }
 
     function renderNotificationBell() {
@@ -5591,6 +5689,7 @@
       $("loginSubmit").textContent = registering ? "注册" : "登录";
       $("forgotPasswordOpen").hidden = registering;
       $("loginConfirmField").hidden = !registering;
+      $("loginAvatarField").hidden = !registering || !avatarFeatureEnabled;
       $("loginConfirmPass").value = "";
       $("loginPass").autocomplete = registering ? "new-password" : "current-password";
       resetPasswordVisibility($("loginModal"));
@@ -5599,7 +5698,22 @@
 
     function resetLoginModal() {
       setLoginMode("login");
+      $("loginAvatar").value = "";
       $("loginMsg").textContent = "";
+    }
+
+    function resetAvatarModal() {
+      $("avatarInput").value = me ? accountAvatar(me.user) : "";
+      $("avatarMsg").textContent = "";
+      $("avatarSubmit").disabled = false;
+      $("avatarSubmit").textContent = "保存头像";
+    }
+
+    function openAvatarModal() {
+      closeDrawers();
+      openModal("avatarModal");
+      $("avatarInput").focus();
+      $("avatarInput").select();
     }
 
     function resetForgotPasswordModal() {
@@ -6002,7 +6116,7 @@
             return `
               <section class="machine-card ${enabled ? "enabled" : ""}" data-machine-id="${machine.id}">
                 <div class="machine-head">
-                  <span class="machine-name username-text">${escapeHtml(machine.username)}</span>
+                  <span class="machine-name username-text">${avatarFeatureEnabled ? `<span class="inline-avatar" aria-hidden="true">${escapeHtml(accountAvatar(machine))}</span>` : ""}${escapeHtml(machine.username)}</span>
 
                   <span class="machine-head-actions">
                     <label class="machine-toggle">
@@ -6127,6 +6241,7 @@
 
     function openModal(id) {
       if (id === "loginModal") resetLoginModal();
+      if (id === "avatarModal") resetAvatarModal();
       if (id === "forgotPasswordModal") resetForgotPasswordModal();
       if (id === "emailSecurityModal") resetEmailSecurityModal();
       if (id === "bindModal") resetBindModal();
@@ -6143,6 +6258,7 @@
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
       resetLoginModal();
+      resetAvatarModal();
       resetBindModal();
       resetForgotPasswordModal();
       resetEmailSecurityModal();
@@ -6167,7 +6283,7 @@
       if (me.pending_deletion || me.user.deletion) {
         const when = me.user.deletion?.scheduled_delete_at || "待后台确认";
         area.innerHTML = `
-          <span class="user-name"><span aria-hidden="true">●</span><span class="username-text">${escapeHtml(me.user.username)}（待注销）</span></span>
+          <span class="user-name">${authAvatarHtml(me.user)}<span class="username-text">${escapeHtml(me.user.username)}（待注销）</span></span>
           <span class="user-actions">
             <button class="pixel-btn secondary" id="pendingDeletionOpen" type="button">查看 / 取消注销</button>
             <button class="pixel-btn secondary" id="logoutBtn" type="button">登出</button>
@@ -6181,7 +6297,7 @@
         return;
       }
       area.innerHTML = `
-        <span class="user-name"><span aria-hidden="true">●</span><span class="username-text">${escapeHtml(me.user.username)}</span></span>
+        <span class="user-name">${authAvatarHtml(me.user)}<span class="username-text">${escapeHtml(me.user.username)}</span></span>
         <span class="user-actions">
           ${me.user.is_admin ? '<a class="pixel-btn secondary desktop-only" href="/admin">管理</a>' : ''}
           ${me.user.is_admin ? '<a class="pixel-btn secondary mobile-only mobile-top-link" href="/admin">总管理</a>' : ''}
@@ -6258,10 +6374,16 @@
         loadEmailSecurity().then(renderMine);
       }
       const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
-      const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username}));
-      const bindings = bindingUsers.map((user) => `<li><span>AI</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
+      const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username, is_ai: user.is_ai, avatar: user.avatar}));
+      const bindings = bindingUsers.map((user) => `<li><span>${avatarFeatureEnabled ? escapeHtml(accountAvatar(user)) : "AI"}</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
-        <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
+        ${avatarFeatureEnabled ? `<div class="mine-profile-row">
+          <span class="mine-profile-avatar" aria-hidden="true">${escapeHtml(accountAvatar(me.user))}</span>
+          <div class="mine-profile-info">
+            <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
+            <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>
+          </div>
+        </div>` : `<div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>`}
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
         ${renderMachinePanel()}
         ${renderEmailSecurityCard()}
@@ -6284,6 +6406,8 @@
         mineEmailUnbind.addEventListener("click", () => openEmailSecurityModal("unbind"));
       }
       $("mineRenameSelf").addEventListener("click", () => openRenameModal("self", me.user.id, me.user.username));
+      const mineAvatarOpen = $("mineAvatarOpen");
+      if (mineAvatarOpen) mineAvatarOpen.addEventListener("click", openAvatarModal);
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");
@@ -6398,13 +6522,20 @@
           $("loginMsg").textContent = "两次输入的密码不一致";
           return;
         }
+        const avatarError = validateAvatarInput($("loginAvatar").value, {allowEmpty: true});
+        if (avatarError) {
+          $("loginMsg").textContent = avatarError;
+          return;
+        }
       }
       try {
         const endpoint = loginMode === "register" ? "/api/auth/register" : "/api/auth/login";
+        const payload = {username, password};
+        if (loginMode === "register" && avatarFeatureEnabled) payload.avatar = $("loginAvatar").value.trim();
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({username, password})
+          body: JSON.stringify(payload)
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || (loginMode === "register" ? "注册失败" : "登录失败"));
@@ -6428,6 +6559,40 @@
         if (currentGame().id === "arcade") loadArcadeBankStatus();
       } catch (err) {
         $("loginMsg").textContent = err.message;
+      }
+    }
+
+    async function saveAvatar() {
+      const avatar = $("avatarInput").value.trim();
+      const message = $("avatarMsg");
+      const submit = $("avatarSubmit");
+      const validationError = validateAvatarInput(avatar);
+      if (validationError) {
+        message.textContent = validationError;
+        return;
+      }
+      if (submit.disabled) return;
+      submit.disabled = true;
+      submit.textContent = "保存中...";
+      message.textContent = "";
+      try {
+        const res = await fetch("/api/auth/avatar", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({avatar}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "头像保存失败");
+        if (me && data.user) me.user = data.user;
+        closeModals();
+        renderAuth();
+        renderMine();
+        $("mineDrawer").classList.add("show");
+        showToast("头像已更新");
+      } catch (err) {
+        message.textContent = err.message || "头像保存失败";
+        submit.disabled = false;
+        submit.textContent = "保存头像";
       }
     }
 
@@ -7046,6 +7211,7 @@
     $("loginSubmit").addEventListener("click", login);
     $("loginModeLogin").addEventListener("click", () => setLoginMode("login"));
     $("loginModeRegister").addEventListener("click", () => setLoginMode("register"));
+    $("avatarSubmit").addEventListener("click", saveAvatar);
     $("forgotPasswordOpen").addEventListener("click", openForgotPasswordModal);
     $("forgotPasswordSubmit").addEventListener("click", submitForgotPassword);
     $("emailSecuritySubmit").addEventListener("click", submitEmailSecurity);
@@ -7104,6 +7270,7 @@
         closeDrawers();
       }
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
+      if (event.key === "Enter" && $("avatarModal").classList.contains("show")) saveAvatar();
       if (event.key === "Enter" && $("forgotPasswordModal").classList.contains("show")) submitForgotPassword();
       if (event.key === "Enter" && $("emailSecurityModal").classList.contains("show")) submitEmailSecurity();
       if (event.key === "Enter" && $("machineTokenModal").classList.contains("show")
@@ -7138,6 +7305,7 @@
     renderDetail();
     renderAuth();
     openResetPasswordFromUrl();
+    loadAvatarCapability();
     loadMe();
     loadRoomCount();
     loadGameStats();

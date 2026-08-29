@@ -32,6 +32,10 @@ JWT_ALGORITHM = "HS256"
 AI_OPAQUE_TOKEN_PREFIX = "ctai_v1_"
 AI_OPAQUE_TOKEN_BYTES = 32
 AI_OPAQUE_TOKEN_FORMAT_VERSION = 1
+DEFAULT_HUMAN_AVATAR = "🙂"
+DEFAULT_AI_AVATAR = "🤖"
+AVATAR_MAX_CODEPOINTS = 16
+AVATAR_MAX_UTF8_BYTES = 64
 LEGACY_AI_JWT_COMPAT_ENABLED = os.getenv(
     "LEGACY_AI_JWT_COMPAT_ENABLED", "true"
 ).strip().lower() not in {"0", "false", "no", "off"}
@@ -45,6 +49,7 @@ class PlayBody(BaseModel):
     path_token: str | None = None
     username: str | None = None
     password: str | None = None
+    avatar: str | None = None
     room_id: str | None = None
     content: str | None = None
     puzzle_id: int | None = None
@@ -161,7 +166,7 @@ async def play(body: PlayBody):
         player = await _mcp_player(body.path_token) if body.path_token else None
         return await _room_context(body.room_id, body.log_limit, player)
     if body.action == "register":
-        return await _register_toy_user(body.username, body.password)
+        return await _register_toy_user(body.username, body.password, body.avatar)
     if body.action == "join":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
@@ -593,7 +598,65 @@ async def get_player_from_token(db, path_token: str | None):
         return dict(await cur.fetchone())
 
 
-async def _register_toy_user(username: str | None, password: str | None) -> dict:
+def _is_emoji_base_codepoint(codepoint: int) -> bool:
+    return (
+        0x1F300 <= codepoint <= 0x1FAFF
+        or 0x1F1E6 <= codepoint <= 0x1F1FF
+        or 0x1F170 <= codepoint <= 0x1F251
+        or 0x2600 <= codepoint <= 0x27BF
+        or 0x2194 <= codepoint <= 0x2199
+        or 0x21A9 <= codepoint <= 0x21AA
+        or 0x23E9 <= codepoint <= 0x23F3
+        or 0x23F8 <= codepoint <= 0x23FA
+        or 0x25AA <= codepoint <= 0x25AB
+        or 0x25FB <= codepoint <= 0x25FE
+        or codepoint in {
+            0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139,
+            0x231A, 0x231B, 0x25B6, 0x25C0,
+            0x2B05, 0x2B06, 0x2B07, 0x2B1B, 0x2B1C, 0x2B50, 0x2B55,
+            0x3030, 0x303D, 0x3297, 0x3299, 0x1F004, 0x1F0CF,
+        }
+    )
+
+
+def _normalize_emoji_avatar(value: str | None) -> str:
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="avatar 需为字符串")
+    avatar = " ".join(value.strip().split())
+    if not avatar:
+        return DEFAULT_AI_AVATAR
+    if len(avatar) > AVATAR_MAX_CODEPOINTS or len(avatar.encode("utf-8")) > AVATAR_MAX_UTF8_BYTES:
+        raise HTTPException(status_code=400, detail="头像过长，最多 16 个 Unicode 字符")
+    has_emoji_base = False
+    for index, char in enumerate(avatar):
+        codepoint = ord(char)
+        if char == " ":
+            continue
+        if _is_emoji_base_codepoint(codepoint):
+            has_emoji_base = True
+            continue
+        if (
+            codepoint in {0x200D, 0x20E3, 0xFE0E, 0xFE0F}
+            or 0x1F3FB <= codepoint <= 0x1F3FF
+            or 0xE0020 <= codepoint <= 0xE007F
+        ):
+            continue
+        if char in "#*0123456789" and "\u20e3" in avatar[index:]:
+            has_emoji_base = True
+            continue
+        raise HTTPException(status_code=400, detail="头像只接受 Emoji/简短 Emoji 字符串")
+    if not has_emoji_base:
+        raise HTTPException(status_code=400, detail="头像只接受 Emoji/简短 Emoji 字符串")
+    return avatar
+
+
+async def _register_toy_user(
+    username: str | None,
+    password: str | None,
+    avatar: str | None = None,
+) -> dict:
     username = clean_content(username or "", 32).strip()
     password = password or ""
     if len(username) < 2 or len(username) > 20:
@@ -603,6 +666,7 @@ async def _register_toy_user(username: str | None, password: str | None) -> dict
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="密码至少 6 位")
     password_hash = hash_password(password)
+    avatar_value = _normalize_emoji_avatar(avatar)
     db = await get_db()
     try:
         await db.execute("BEGIN IMMEDIATE")
@@ -623,8 +687,11 @@ async def _register_toy_user(username: str | None, password: str | None) -> dict
         if conflict:
             raise HTTPException(status_code=400, detail="用户名已存在")
         cur = await db.execute(
-            "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
-            (username, password_hash),
+            """
+            INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
+            VALUES (?, ?, 1, 'emoji', ?)
+            """,
+            (username, password_hash, avatar_value),
         )
         user_id = int(cur.lastrowid)
         async with db.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)) as cur:
@@ -644,11 +711,19 @@ async def _register_toy_user(username: str | None, password: str | None) -> dict
 
 
 def _public_toy_user(user: dict) -> dict:
+    avatar_type = str(user.get("avatar_type") or "").strip()
+    avatar_value = str(user.get("avatar_value") or "").strip()
+    default_avatar = DEFAULT_AI_AVATAR if user.get("is_ai") else DEFAULT_HUMAN_AVATAR
     return {
         "id": user["id"],
         "username": user["username"],
         "is_ai": bool(user.get("is_ai")),
         "is_admin": bool(user.get("is_admin")),
+        "avatar": {
+            "type": avatar_type or "emoji",
+            "value": avatar_value or default_avatar,
+            "is_default": not bool(avatar_type and avatar_value),
+        },
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }

@@ -359,6 +359,13 @@ async def init_db() -> None:
             player_cols = {row[1] for row in await cur.fetchall()}
         if "user_id" not in player_cols:
             await db.execute("ALTER TABLE players ADD COLUMN user_id INTEGER")
+        if await _table_exists(db, "toy_users"):
+            async with db.execute("PRAGMA table_info(toy_users)") as cur:
+                toy_user_cols = {row[1] for row in await cur.fetchall()}
+            if "avatar_type" not in toy_user_cols:
+                await db.execute("ALTER TABLE toy_users ADD COLUMN avatar_type TEXT")
+            if "avatar_value" not in toy_user_cols:
+                await db.execute("ALTER TABLE toy_users ADD COLUMN avatar_value TEXT")
         async with db.execute("PRAGMA table_info(puzzles)") as cur:
             puzzle_cols = {row[1] for row in await cur.fetchall()}
         if "title" not in puzzle_cols:

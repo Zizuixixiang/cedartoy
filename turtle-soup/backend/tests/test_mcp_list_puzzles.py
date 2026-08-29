@@ -82,7 +82,6 @@ class ListPuzzlesTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(arbitrary["has_next"])
         self.assertTrue(arbitrary["has_prev"])
         self.assertEqual(arbitrary_fetch.await_args.args[1], (10, 40))
-
     async def test_tag_uses_string_contains_filter_and_remains_paginated(self):
         result, fetch_one, fetch_all = await self.call(
             count=12, page=2, page_size=5, tag="红汤",
@@ -136,6 +135,29 @@ class ListPuzzlesTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(raised.exception.status_code, 400)
                 fetch_one.assert_not_awaited()
                 fetch_all.assert_not_awaited()
+
+
+class AccountAvatarCompatibilityTests(unittest.TestCase):
+    def test_old_account_fallback_depends_on_account_type(self):
+        common = {
+            "id": 1,
+            "username": "旧账号",
+            "is_admin": 0,
+            "avatar_type": None,
+            "avatar_value": None,
+        }
+
+        human = mcp_app._public_toy_user({**common, "is_ai": 0})
+        machine = mcp_app._public_toy_user({**common, "is_ai": 1})
+
+        self.assertEqual(
+            human["avatar"],
+            {"type": "emoji", "value": "🙂", "is_default": True},
+        )
+        self.assertEqual(
+            machine["avatar"],
+            {"type": "emoji", "value": "🤖", "is_default": True},
+        )
 
 
 if __name__ == "__main__":

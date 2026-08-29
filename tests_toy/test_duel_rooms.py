@@ -1,3 +1,4 @@
+import base64
 import json
 import unittest
 from io import BytesIO
@@ -7,6 +8,66 @@ import server
 
 
 class DuelRoomsPlatformTests(unittest.TestCase):
+    def test_human_context_uses_account_avatars_and_shared_fallbacks(self):
+        class FakeConnection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            @staticmethod
+            def execute(*_args, **_kwargs):
+                return FakeConnection()
+
+            @staticmethod
+            def fetchall():
+                return [
+                    {
+                        "id": 42,
+                        "username": "小紫",
+                        "is_ai": 1,
+                        "avatar_type": "emoji",
+                        "avatar_value": "🌌",
+                    },
+                    {
+                        "id": 43,
+                        "username": "小蓝",
+                        "is_ai": 1,
+                        "avatar_type": None,
+                        "avatar_value": None,
+                    },
+                ]
+
+        handler = object.__new__(server.CedarToyHandler)
+        with (
+            patch.object(
+                server,
+                "_current_account",
+                return_value={
+                    "id": 7,
+                    "username": "南山",
+                    "is_ai": 0,
+                    "avatar_type": None,
+                    "avatar_value": None,
+                },
+            ),
+            patch.object(server, "_db_connect", return_value=FakeConnection()),
+        ):
+            context = handler._duel_human_context("trusted-token")
+
+        self.assertEqual(
+            context["human_avatar"],
+            {"type": "emoji", "value": "🙂", "is_default": True},
+        )
+        self.assertEqual(
+            [machine["avatar"] for machine in context["machines"]],
+            [
+                {"type": "emoji", "value": "🌌", "is_default": False},
+                {"type": "emoji", "value": "🤖", "is_default": True},
+            ],
+        )
+
     def test_all_room_actions_use_minimum_backend_field_matrix(self):
         class FakeResponse:
             status_code = 200
@@ -704,7 +765,18 @@ class DuelRoomsPlatformTests(unittest.TestCase):
         target = {
             "human_player": "trusted-human",
             "human_name": "南山",
-            "machines": [{"id": "42:3", "name": "小紫"}],
+            "human_avatar": {
+                "type": "emoji", "value": "🐼", "is_default": False,
+            },
+            "machines": [
+                {
+                    "id": "42:3",
+                    "name": "小紫",
+                    "avatar": {
+                        "type": "emoji", "value": "🌌", "is_default": False,
+                    },
+                },
+            ],
         }
 
         paths = (
@@ -739,6 +811,14 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     captured["headers"]["X-Duel-Human-Player"],
                     "trusted-human",
                 )
+                human_avatar = json.loads(base64.urlsafe_b64decode(
+                    captured["headers"]["X-Duel-Human-Avatar"] + "=="
+                ))
+                machines = json.loads(base64.urlsafe_b64decode(
+                    captured["headers"]["X-Duel-Bound-Ais"] + "=="
+                ))
+                self.assertEqual(human_avatar, target["human_avatar"])
+                self.assertEqual(machines, target["machines"])
 
     def test_chips_page_proxy_rewrites_static_asset_prefix(self):
         handler = object.__new__(server.CedarToyHandler)

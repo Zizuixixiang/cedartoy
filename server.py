@@ -219,6 +219,10 @@ REQUEST_RATE_LIMIT_MESSAGE = "操作太快了，请稍等片刻再试"
 REGISTER_RATE_LIMIT_MESSAGE = "注册太频繁了，请稍后再试"
 FAILED_LOGIN_RATE_LIMIT_MESSAGE = "登录失败次数过多，请稍后再试"
 RECENT_REGISTER_NOTICE = "检测到你近期已注册过账号；如是同一只小机且已没有旧账号的有效 Token，请改用 login 登录旧账号，避免产生多个身份"
+DEFAULT_HUMAN_AVATAR = "🙂"
+DEFAULT_AI_AVATAR = "🤖"
+AVATAR_MAX_CODEPOINTS = 16
+AVATAR_MAX_UTF8_BYTES = 64
 _REQUEST_RATE_LIMIT = {}
 _DUEL_WEB_REQUEST_RATE_LIMIT = {}
 _REGISTER_RATE_LIMIT = {}
@@ -303,10 +307,11 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "rotate_token（当前已认证 AI 免账密替换 Token，全部旧 Token 失效）、login（无有效 Token 时用账密获取唯一替代 Token，全部旧 Token 失效）、login_or_register（仅注册），以及 generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account",
+                    "description": "rotate_token（当前已认证 AI 免账密替换 Token，全部旧 Token 失效）、login（无有效 Token 时用账密获取唯一替代 Token，全部旧 Token 失效）、login_or_register（仅注册），以及 set_avatar、generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account",
                 },
                 "username": {"type": "string", "description": "仅 login/login_or_register 使用账号名；rotate_token 不需要；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string", "description": "仅 login/login_or_register 使用；rotate_token 在当前已认证状态下不需要账密"},
+                "avatar": {"type": "string", "maxLength": AVATAR_MAX_CODEPOINTS, "description": "login_or_register 可选、set_avatar 必填；只接受 Emoji/简短 Emoji 字符串，最多 16 个 Unicode 字符。注册时为空：小机默认 🤖，人类网页默认 🙂"},
                 "current_password": {"type": "string", "description": "人类账号申请注销时再次输入当前密码"},
                 "old_password": {"type": "string"},
                 "new_password": {"type": "string"},
@@ -951,6 +956,10 @@ def _init_account_security_schema(conn):
             "ai_token_version",
             "INTEGER NOT NULL DEFAULT 0",
         )
+        # Separate representation from value so a future image-backed avatar
+        # can be added without replacing the account field.
+        _add_column_if_missing(conn, "toy_users", "avatar_type", "TEXT")
+        _add_column_if_missing(conn, "toy_users", "avatar_value", "TEXT")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS legacy_ai_token_hashes (
@@ -1678,12 +1687,29 @@ def _create_account_token(user):
     return token
 
 
+def _default_avatar_value(user):
+    return DEFAULT_AI_AVATAR if user.get("is_ai") else DEFAULT_HUMAN_AVATAR
+
+
+def _public_avatar(user):
+    avatar_type = str(user.get("avatar_type") or "").strip()
+    avatar_value = str(user.get("avatar_value") or "").strip()
+    if not avatar_type or not avatar_value:
+        return {
+            "type": "emoji",
+            "value": _default_avatar_value(user),
+            "is_default": True,
+        }
+    return {"type": avatar_type, "value": avatar_value, "is_default": False}
+
+
 def _public_user(user):
     result = {
         "id": user["id"],
         "username": user["username"],
         "is_ai": bool(user.get("is_ai")),
         "is_admin": bool(user.get("is_admin")),
+        "avatar": _public_avatar(user),
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }
@@ -2110,7 +2136,69 @@ def _validate_credentials(username, password):
         raise _McpError(-32602, "密码至少 6 位")
 
 
-def _login_or_register(username, password, *, is_ai, client_ip=None):
+def _is_emoji_base_codepoint(codepoint):
+    return (
+        0x1F300 <= codepoint <= 0x1FAFF
+        or 0x1F1E6 <= codepoint <= 0x1F1FF
+        or 0x1F170 <= codepoint <= 0x1F251
+        or 0x2600 <= codepoint <= 0x27BF
+        or 0x2194 <= codepoint <= 0x2199
+        or 0x21A9 <= codepoint <= 0x21AA
+        or 0x23E9 <= codepoint <= 0x23F3
+        or 0x23F8 <= codepoint <= 0x23FA
+        or 0x25AA <= codepoint <= 0x25AB
+        or 0x25FB <= codepoint <= 0x25FE
+        or codepoint in {
+            0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139,
+            0x231A, 0x231B, 0x25B6, 0x25C0,
+            0x2B05, 0x2B06, 0x2B07, 0x2B1B, 0x2B1C, 0x2B50, 0x2B55,
+            0x3030, 0x303D, 0x3297, 0x3299, 0x1F004, 0x1F0CF,
+        }
+    )
+
+
+def _normalize_emoji_avatar(value, *, default=None):
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise _McpError(-32602, "avatar 需为字符串")
+    avatar = " ".join(value.strip().split())
+    if not avatar:
+        if default is not None:
+            return default
+        raise _McpError(-32602, "头像不能为空")
+    if len(avatar) > AVATAR_MAX_CODEPOINTS or len(avatar.encode("utf-8")) > AVATAR_MAX_UTF8_BYTES:
+        raise _McpError(-32602, "头像过长，最多 16 个 Unicode 字符")
+
+    has_emoji_base = False
+    for index, char in enumerate(avatar):
+        codepoint = ord(char)
+        if char == " ":
+            continue
+        if _is_emoji_base_codepoint(codepoint):
+            has_emoji_base = True
+            continue
+        if (
+            codepoint in {0x200D, 0x20E3, 0xFE0E, 0xFE0F}
+            or 0x1F3FB <= codepoint <= 0x1F3FF
+            or 0xE0020 <= codepoint <= 0xE007F
+        ):
+            continue
+        if char in "#*0123456789" and "\u20e3" in avatar[index:]:
+            has_emoji_base = True
+            continue
+        raise _McpError(-32602, "头像只接受 Emoji/简短 Emoji 字符串")
+    if not has_emoji_base:
+        raise _McpError(-32602, "头像只接受 Emoji/简短 Emoji 字符串")
+    return avatar
+
+
+def _avatar_registration_values(value, *, is_ai):
+    default = DEFAULT_AI_AVATAR if is_ai else DEFAULT_HUMAN_AVATAR
+    return "emoji", _normalize_emoji_avatar(value, default=default)
+
+
+def _login_or_register(username, password, *, is_ai, client_ip=None, avatar=None):
     """Shared login/register; callers set is_ai (MCP=1, REST human=0)."""
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
@@ -2146,9 +2234,13 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
                     "用户名已存在",
                 )
             had_recent_registration = _recent_registration_exists(conn, client_ip)
+            avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=bool(is_ai))
             cur = conn.execute(
-                "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, ?)",
-                (username, _hash_password(password), is_ai),
+                """
+                INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (username, _hash_password(password), is_ai, avatar_type, avatar_value),
             )
             user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
             _record_successful_registration(conn, user, client_ip)
@@ -2173,7 +2265,7 @@ def _login_or_register(username, password, *, is_ai, client_ip=None):
     return {"token": token, "user": _public_user(user)}
 
 
-def _login_or_register_ai(username, password, client_ip=None):
+def _login_or_register_ai(username, password, client_ip=None, avatar=None):
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
@@ -2183,9 +2275,13 @@ def _login_or_register_ai(username, password, client_ip=None):
         if _username_conflict(conn, username):
             raise _McpError(-32602, "用户名已存在")
         had_recent_registration = _recent_registration_exists(conn, client_ip)
+        avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=True)
         cur = conn.execute(
-            "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 1)",
-            (username, _hash_password(password)),
+            """
+            INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
+            VALUES (?, ?, 1, ?, ?)
+            """,
+            (username, _hash_password(password), avatar_type, avatar_value),
         )
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
         _record_successful_registration(conn, user, client_ip)
@@ -2249,8 +2345,14 @@ def _login_existing_account(username, password, client_ip=None):
     return result
 
 
-def _login_or_register_human(username, password, client_ip=None):
-    return _login_or_register(username, password, is_ai=0, client_ip=client_ip)
+def _login_or_register_human(username, password, client_ip=None, avatar=None):
+    return _login_or_register(
+        username,
+        password,
+        is_ai=0,
+        client_ip=client_ip,
+        avatar=avatar,
+    )
 
 
 def _login_human(username, password, client_ip=None):
@@ -2292,7 +2394,7 @@ def _login_human(username, password, client_ip=None):
     return result
 
 
-def _register_human(username, password, client_ip=None):
+def _register_human(username, password, client_ip=None, avatar=None):
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
@@ -2302,9 +2404,13 @@ def _register_human(username, password, client_ip=None):
         if _username_conflict(conn, username):
             raise _McpError(-32602, "用户名已存在，请直接登录")
         had_recent_registration = _recent_registration_exists(conn, client_ip)
+        avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=False)
         cur = conn.execute(
-            "INSERT INTO toy_users (username, password_hash, is_ai) VALUES (?, ?, 0)",
-            (username, _hash_password(password)),
+            """
+            INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
+            VALUES (?, ?, 0, ?, ?)
+            """,
+            (username, _hash_password(password), avatar_type, avatar_value),
         )
         user = _row_dict(conn.execute(
             "SELECT * FROM toy_users WHERE id = ?",
@@ -2316,6 +2422,26 @@ def _register_human(username, password, client_ip=None):
         {"token": _create_account_token(user), "user": _public_user(user)},
         had_recent_registration,
     )
+
+
+def _set_avatar(raw_token, avatar):
+    user = _current_account(raw_token)
+    avatar_value = _normalize_emoji_avatar(avatar)
+    with _db_connect() as conn:
+        conn.execute(
+            """
+            UPDATE toy_users
+            SET avatar_type = 'emoji', avatar_value = ?
+            WHERE id = ? AND deleted_at IS NULL
+            """,
+            (avatar_value, int(user["id"])),
+        )
+        conn.commit()
+        updated = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE id = ?",
+            (int(user["id"]),),
+        ).fetchone())
+    return {"ok": True, "user": _public_user(updated)}
 
 
 def _rename_next_allowed_at(epoch):
@@ -3065,7 +3191,8 @@ def _binding_rows(conn, user):
     if user.get("is_ai"):
         return conn.execute(
             """
-            SELECT u.username, b.created_at AS bound_at
+            SELECT u.username, u.is_ai, u.avatar_type, u.avatar_value,
+                   b.created_at AS bound_at
             FROM user_bindings b
             JOIN toy_users u ON u.id = b.human_user_id
             WHERE b.ai_user_id = ? AND u.deleted_at IS NULL
@@ -3075,7 +3202,8 @@ def _binding_rows(conn, user):
         ).fetchall()
     return conn.execute(
         """
-        SELECT u.username, b.created_at AS bound_at
+        SELECT u.username, u.is_ai, u.avatar_type, u.avatar_value,
+               b.created_at AS bound_at
         FROM user_bindings b
         JOIN toy_users u ON u.id = b.ai_user_id
         WHERE b.human_user_id = ? AND u.deleted_at IS NULL
@@ -3086,7 +3214,11 @@ def _binding_rows(conn, user):
 
 
 def _public_binding(row):
-    return {"username": row["username"], "bound_at": row["bound_at"]}
+    return {
+        "username": row["username"],
+        "avatar": _public_avatar(row),
+        "bound_at": row["bound_at"],
+    }
 
 
 def _bound_human_user_for_saves(raw_token, username):
@@ -3316,6 +3448,7 @@ def _get_profile(raw_token):
     return {
         "username": user["username"],
         "is_ai": bool(user.get("is_ai")),
+        "avatar": _public_avatar(user),
         "token_format": user.get("_auth_token_format", "unknown"),
         "token_migration_recommended": bool(
             user.get("is_ai") and user.get("_auth_token_format") == "legacy_jwt"
@@ -3339,7 +3472,9 @@ def _account_me(raw_token):
         if user.get("is_ai"):
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.is_ai, u.is_admin, u.created_at, u.last_active_at
+                SELECT u.id, u.username, u.is_ai, u.is_admin,
+                       u.avatar_type, u.avatar_value,
+                       u.created_at, u.last_active_at
                 FROM user_bindings b
                 JOIN toy_users u ON u.id = b.human_user_id
                 WHERE b.ai_user_id = ? AND u.deleted_at IS NULL
@@ -3350,7 +3485,9 @@ def _account_me(raw_token):
         else:
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.is_ai, u.is_admin, u.created_at, u.last_active_at
+                SELECT u.id, u.username, u.is_ai, u.is_admin,
+                       u.avatar_type, u.avatar_value,
+                       u.created_at, u.last_active_at
                 FROM user_bindings b
                 JOIN toy_users u ON u.id = b.ai_user_id
                 WHERE b.human_user_id = ? AND u.deleted_at IS NULL
@@ -3899,7 +4036,8 @@ def _anti_addiction_machines(raw_token):
         rows = conn.execute(
             """
             SELECT
-                u.id, u.username, u.is_ai, u.is_admin, u.created_at, u.last_active_at,
+                u.id, u.username, u.is_ai, u.is_admin,
+                u.avatar_type, u.avatar_value, u.created_at, u.last_active_at,
                 b.created_at AS bound_at,
                 s.enabled, s.remind_threshold, s.force_threshold, s.lock_minutes, s.allow_self_reset
             FROM user_bindings b
@@ -6799,7 +6937,12 @@ def _finalize_play_response(
 def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
     action = arguments.get("action")
     if action == "login_or_register":
-        result = _login_or_register_ai(arguments.get("username"), arguments.get("password"), client_ip=client_ip)
+        result = _login_or_register_ai(
+            arguments.get("username"),
+            arguments.get("password"),
+            client_ip=client_ip,
+            avatar=arguments.get("avatar"),
+        )
         return json.dumps(result, ensure_ascii=False)
     if action == "login":
         result = _login_existing_account(
@@ -6821,6 +6964,9 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         return json.dumps(result, ensure_ascii=False)
     if action == "rename_self":
         result = _rename_self(raw_token, arguments.get("new_username"))
+        return json.dumps(result, ensure_ascii=False)
+    if action == "set_avatar":
+        result = _set_avatar(raw_token, arguments.get("avatar"))
         return json.dumps(result, ensure_ascii=False)
     if action == "rename_bound_machine":
         result = _rename_bound_machine(
@@ -6881,7 +7027,7 @@ def _turtle_soup_guide():
         "game": "turtle_soup",
         "call_format": "调用 play 时固定传 game=\"turtle_soup\" 和 action；action 需要的 room_id/content 等业务参数放入 params 对象，例如 play(game=\"turtle_soup\", action=\"ask\", params={\"room_id\":\"...\",\"content\":\"...\"})。",
         "actions": {
-            "register": "username, password -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
+            "register": "username, password, avatar(可选 Emoji；为空默认🤖) -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
             "list_puzzles": "page(默认1，可直接指定任意页，无需顺序翻页), page_size(默认20、最大50，表示单页数量而非结果总上限), tag(可选，标签字符串包含筛选), q(可选，只搜索汤名/标题 title，不搜索汤面 surface) -> 筛选后仍分页列出题库目录；返回 items[id/title/tags] 和 page/page_size/total/total_pages/has_next/has_prev，不返回汤面和汤底",
             "get_puzzle": "puzzle_id -> 查看单题汤面，返回 id/title/surface/tags，不返回汤底",
             "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题。题库抽取的大多微恐，请酌情选择",
@@ -7931,6 +8077,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_register()
             return
 
+        if path == "/api/auth/avatar":
+            self._handle_api_avatar()
+            return
+
         if path == "/api/auth/login_or_register":
             self._handle_api_login_or_register()
             return
@@ -8167,6 +8317,16 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/me":
             self._handle_api_me()
+            return
+
+        if path == "/api/auth/avatar":
+            self._send_json({
+                "supported": True,
+                "type": "emoji",
+                "max_codepoints": AVATAR_MAX_CODEPOINTS,
+                "max_utf8_bytes": AVATAR_MAX_UTF8_BYTES,
+                "defaults": {"human": DEFAULT_HUMAN_AVATAR, "ai": DEFAULT_AI_AVATAR},
+            })
             return
 
         if path == "/api/auth/deletion":
@@ -8591,6 +8751,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 body.get("username"),
                 body.get("password"),
                 client_ip=self._client_ip(),
+                avatar=body.get("avatar"),
             )
             self._send_json(result)
         except _McpError as exc:
@@ -8629,11 +8790,23 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 body.get("username"),
                 body.get("password"),
                 client_ip=self._client_ip(),
+                avatar=body.get("avatar"),
             )
             self._send_json(result, status=201)
         except _McpError as exc:
             status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else 400
             self._send_json({"error": exc.message}, status=status)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_avatar(self):
+        try:
+            body = self._read_json_body()
+            self._send_json(_set_avatar(_extract_bearer(self.headers), body.get("avatar")))
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
@@ -9766,7 +9939,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         with _db_connect() as conn:
             rows = conn.execute(
                 """
-                SELECT ai.id, ai.username
+                SELECT ai.id, ai.username, ai.is_ai,
+                       ai.avatar_type, ai.avatar_value
                 FROM user_bindings AS binding
                 JOIN toy_users AS ai ON ai.id = binding.ai_user_id
                 WHERE binding.human_user_id = ?
@@ -9779,10 +9953,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         return {
             "human_player": str(int(human["id"])),
             "human_name": str(human["username"]),
+            "human_avatar": _public_avatar(human),
             "machines": [
                 {
                     "id": _account_slot_player_id(row["id"], MIN_SAVE_SLOT),
                     "name": str(row["username"]),
+                    "avatar": _public_avatar(dict(row)),
                 }
                 for row in rows
             ],
@@ -9889,7 +10065,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 "host", "cookie", "authorization", "content-length",
                 "x-player-id", "x-duel-human-player", "x-duel-ai-player",
                 "x-duel-human-name", "x-duel-ai-name", "x-duel-bound-ais",
-                "x-forwarded-prefix",
+                "x-duel-human-avatar", "x-forwarded-prefix",
             }
         }
         headers["Host"] = "duel.local"
@@ -9902,6 +10078,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             # Header values must remain latin-1 safe; names are percent/base64 encoded.
             headers["X-Duel-Human-Name"] = urllib.parse.quote(
                 target["human_name"], safe=""
+            )
+            human_avatar_json = json.dumps(
+                target["human_avatar"], ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+            headers["X-Duel-Human-Avatar"] = (
+                base64.urlsafe_b64encode(human_avatar_json)
+                .decode("ascii")
+                .rstrip("=")
             )
             machine_json = json.dumps(
                 target["machines"], ensure_ascii=False, separators=(",", ":")

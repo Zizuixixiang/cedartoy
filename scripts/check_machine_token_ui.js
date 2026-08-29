@@ -32,9 +32,18 @@ async function main() {
         requests.push({url, options});
         if (url === "/api/auth/me") {
           return response({
-            user: {id: 1, username: "Human", is_ai: false},
-            bindings: [{id: 7, username: "BoundBot"}],
+            user: {id: 1, username: "Human", is_ai: false, avatar: {type: "emoji", value: "🙂", is_default: true}},
+            bindings: [{id: 7, username: "BoundBot", is_ai: true, avatar: {type: "emoji", value: "🤖", is_default: true}}],
           });
+        }
+        if (url === "/api/auth/avatar") {
+          if (options.method === "POST") {
+            return response({
+              ok: true,
+              user: {id: 1, username: "Human", is_ai: false, avatar: {type: "emoji", value: "🐼", is_default: false}},
+            });
+          }
+          return response({supported: true, type: "emoji"});
         }
         if (url === "/api/auth/machine-token") {
           return response({token: issuedToken});
@@ -54,7 +63,8 @@ async function main() {
 
     assert.match(html, /id="mineMachineToken"/);
     assert.equal(byId("loginPass").closest("label").nextElementSibling.id, "loginConfirmField");
-    assert.equal(byId("loginConfirmField").nextElementSibling.id, "forgotPasswordOpen");
+    assert.equal(byId("loginConfirmField").nextElementSibling.id, "loginAvatarField");
+    assert.equal(byId("loginAvatarField").nextElementSibling.id, "forgotPasswordOpen");
     assert.equal(byId("forgotPasswordOpen").className, "forgot-password-link");
     assert.deepEqual(
       [...byId("loginModal").querySelectorAll(".modal-actions button")].map((button) =>
@@ -64,8 +74,25 @@ async function main() {
     );
     window.setLoginMode("register");
     assert.equal(byId("forgotPasswordOpen").hidden, true);
+    assert.equal(byId("loginAvatarField").hidden, false);
     window.setLoginMode("login");
     assert.equal(byId("forgotPasswordOpen").hidden, false);
+    assert.equal(byId("loginAvatarField").hidden, true);
+
+    window.renderMine();
+    assert.equal(byId("mineAvatarOpen").textContent, "设置 / 修改 Emoji 头像");
+    assert.equal(window.document.querySelector(".mine-profile-avatar").textContent, "🙂");
+    byId("mineAvatarOpen").click();
+    assert.equal(byId("avatarModal").classList.contains("show"), true);
+    assert.equal(byId("avatarInput").value, "🙂");
+    byId("avatarInput").value = "🐼";
+    await window.saveAvatar();
+    const avatarRequest = requests.filter(({url, options}) =>
+      url === "/api/auth/avatar" && options.method === "POST"
+    ).at(-1);
+    assert.deepEqual(JSON.parse(avatarRequest.options.body), {avatar: "🐼"});
+    assert.equal(avatarRequest.options.headers.Authorization, "Bearer human-token");
+    assert.equal(window.document.querySelector(".mine-profile-avatar").textContent, "🐼");
 
     window.openMachineTokenModal();
     assert.equal(byId("machineTokenModeGet"), null);
