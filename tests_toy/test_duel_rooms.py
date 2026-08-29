@@ -325,11 +325,22 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                 "/", "/chips", "/api/whoami", "/api/chips",
                 "/static/styles.css", "/static/app.js",
                 "/static/chips.css", "/static/chips.js",
+                "/static/assets/exchange-shop/items/good_life.png",
                 "/api/chips/machines/42%3A3", "/api/rooms/ABCDEFGH",
+                "/api/chips/exchanges", "/api/chips/exchanges/catalog",
                 "/api/npc-avatars/example.webp",
             ),
             "POST": (
                 "/api/rooms", "/api/chips/check-in", "/api/chips/bankruptcy",
+                "/api/chips/exchanges", "/api/chips/loans",
+                "/api/chips/exchanges/ex_0123456789abcdef/confirm",
+                "/api/chips/exchanges/ex_0123456789abcdef/reject",
+                "/api/chips/exchanges/ex_0123456789abcdef/withdraw",
+                "/api/chips/loans/ln_0123456789abcdef/accept",
+                "/api/chips/loans/ln_0123456789abcdef/reject",
+                "/api/chips/loans/ln_0123456789abcdef/counter",
+                "/api/chips/loans/ln_0123456789abcdef/withdraw",
+                "/api/chips/loans/ln_0123456789abcdef/repay",
                 "/api/rooms/ABCDEFGH/invitation",
                 "/api/rooms/ABCDEFGH/join", "/api/rooms/ABCDEFGH/move",
                 "/api/rooms/ABCDEFGH/resign", "/api/rooms/ABCDEFGH/leave",
@@ -346,10 +357,21 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ("GET", "/health"),
             ("GET", "/api/chips/machines/"),
             ("GET", "/api/chips/machines/ai/extra"),
+            ("GET", "/api/chips/loans"),
             ("GET", "/api/rooms/abcdefghi"),
             ("GET", "/api/npc-avatars/../secret.png"),
             ("GET", "/api/npc-avatars/example.svg"),
+            ("GET", "/static/assets/exchange-shop/items/../good_life.png"),
+            ("GET", "/static/assets/exchange-shop/items/%2e%2e/good_life.png"),
+            ("GET", "/static/assets/exchange-shop/items/good_life.svg"),
+            ("GET", "/static/assets/exchange-shop/item/good_life.png"),
+            ("GET", "/static/assets/exchange-shop/items/nested/good_life.png"),
             ("POST", "/api/chips/machines/42%3A3/check-in"),
+            ("POST", "/api/chips/exchanges/ex_0123456789abcdef/accept"),
+            ("POST", "/api/chips/exchanges/ex_0123456789abcde/confirm"),
+            ("POST", "/api/chips/exchanges/ex_0123456789abcdef/confirm/extra"),
+            ("POST", "/api/chips/loans/ln_0123456789abcdef/confirm"),
+            ("POST", "/api/chips/loan/ln_0123456789abcdef/repay"),
             ("POST", "/api/rooms/ABCDEFGH/arbitrary"),
             ("DELETE", "/api/rooms/ABCDEFGH"),
         )
@@ -391,14 +413,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             def close():
                 pass
 
-        raw_body = b'{"player_id":"reported-human"}'
         handler = object.__new__(server.CedarToyHandler)
-        handler.headers = {
-            "Content-Length": str(len(raw_body)),
-            "Content-Type": "application/json",
-        }
-        handler.rfile = BytesIO(raw_body)
-        handler.wfile = BytesIO()
         handler.client_address = ("127.0.0.1", 12345)
         handler.command = "POST"
         handler.send_response = lambda *_args, **_kwargs: None
@@ -410,15 +425,38 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "machines": [{"id": "42:3", "name": "小紫"}],
         }
 
-        with patch.object(server.http.client, "HTTPConnection", FakeConnection):
-            handler._proxy_to_duel(
-                "POST", "/api/chips/check-in", "", target=target
-            )
-
-        self.assertEqual(json.loads(captured["body"]), {})
-        self.assertEqual(
-            captured["headers"]["X-Duel-Human-Player"], "trusted-human"
+        paths = (
+            "/api/chips/check-in", "/api/chips/bankruptcy",
+            "/api/chips/exchanges", "/api/chips/loans",
+            "/api/chips/exchanges/ex_0123456789abcdef/confirm",
+            "/api/chips/exchanges/ex_0123456789abcdef/reject",
+            "/api/chips/exchanges/ex_0123456789abcdef/withdraw",
+            "/api/chips/loans/ln_0123456789abcdef/accept",
+            "/api/chips/loans/ln_0123456789abcdef/reject",
+            "/api/chips/loans/ln_0123456789abcdef/counter",
+            "/api/chips/loans/ln_0123456789abcdef/withdraw",
+            "/api/chips/loans/ln_0123456789abcdef/repay",
         )
+        for path in paths:
+            with self.subTest(path=path):
+                captured.clear()
+                raw_body = b'{"player_id":"reported-human"}'
+                handler.headers = {
+                    "Content-Length": str(len(raw_body)),
+                    "Content-Type": "application/json",
+                }
+                handler.rfile = BytesIO(raw_body)
+                handler.wfile = BytesIO()
+                with patch.object(
+                    server.http.client, "HTTPConnection", FakeConnection
+                ):
+                    handler._proxy_to_duel("POST", path, "", target=target)
+
+                self.assertEqual(json.loads(captured["body"]), {})
+                self.assertEqual(
+                    captured["headers"]["X-Duel-Human-Player"],
+                    "trusted-human",
+                )
 
     def test_chips_page_proxy_rewrites_static_asset_prefix(self):
         handler = object.__new__(server.CedarToyHandler)

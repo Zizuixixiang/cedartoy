@@ -7793,14 +7793,39 @@ def _camping_plaza_proxy_allowed(method, public_path):
     return False
 
 
+def _duel_chip_proxy_post_allowed(public_path):
+    return (
+        public_path in {
+            "/api/chips/check-in", "/api/chips/bankruptcy",
+            "/api/chips/exchanges", "/api/chips/loans",
+        }
+        or re.fullmatch(
+            r"/api/chips/exchanges/ex_[0-9a-f]{16}/(?:confirm|reject|withdraw)",
+            public_path,
+        ) is not None
+        or re.fullmatch(
+            r"/api/chips/loans/ln_[0-9a-f]{16}/(?:accept|reject|counter|withdraw|repay)",
+            public_path,
+        ) is not None
+    )
+
+
 def _duel_proxy_allowed(method, public_path):
     if method == "GET":
         return (
-            public_path in {"/", "/chips", "/api/whoami", "/api/chips"}
+            public_path in {
+                "/", "/chips", "/api/whoami", "/api/chips",
+                "/api/chips/exchanges", "/api/chips/exchanges/catalog",
+            }
             or public_path in {
                 "/static/styles.css", "/static/app.js",
                 "/static/chips.css", "/static/chips.js",
             }
+            or re.fullmatch(
+                r"/static/assets/exchange-shop/items/"
+                r"[A-Za-z0-9][A-Za-z0-9_-]{0,126}\.png",
+                public_path,
+            ) is not None
             or re.fullmatch(r"/api/chips/machines/[^/]{1,240}", public_path)
             is not None
             or re.fullmatch(
@@ -7812,9 +7837,8 @@ def _duel_proxy_allowed(method, public_path):
         )
     if method == "POST":
         return (
-            public_path in {
-                "/api/rooms", "/api/chips/check-in", "/api/chips/bankruptcy",
-            }
+            public_path == "/api/rooms"
+            or _duel_chip_proxy_post_allowed(public_path)
             or re.fullmatch(
                 r"/api/rooms/[A-Z0-9]{8}/(?:invitation|join|move|resign|leave|messages|retention|delete)",
                 public_path,
@@ -9834,9 +9858,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 return
             payload.pop("opponent_id", None)
             payload.pop("player_id", None)
-            if upstream_path not in {
-                "/api/chips/check-in", "/api/chips/bankruptcy",
-            }:
+            if not _duel_chip_proxy_post_allowed(upstream_path):
                 payload["player_id"] = target["human_player"]
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
