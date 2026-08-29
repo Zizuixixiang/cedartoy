@@ -8263,6 +8263,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_camping_plaza_proxy("GET")
             return
 
+        if path.startswith("/static/games/") and _duel_proxy_allowed("GET", path):
+            self._proxy_to_duel("GET", path, query_string)
+            return
+
         if path == "/duel" or path.startswith("/duel/"):
             self._handle_duel_proxy("GET")
             return
