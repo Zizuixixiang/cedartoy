@@ -626,7 +626,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6",
             "NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可",
             "target_player_count/fill_with_npcs",
-            "无全局筹码：yahtzee/blackjack/train_cards/doudizhu/guandan/zhajinhua/junqi/texas_holdem/go/mahjong",
+            "无全局筹码：yahtzee/blackjack。其余按 catalog 支持 stake",
             "liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手",
             "bootstrap/catalog",
             "supports_npcs/supports_stakes",
