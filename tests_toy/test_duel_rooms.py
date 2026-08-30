@@ -677,6 +677,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
         allowed = {
             "GET": (
                 "/", "/chips", "/api/whoami", "/api/chips",
+                "/api/notifications/unread",
                 "/static/styles.css", "/static/app.js",
                 "/static/game_ui_registry.js",
                 "/static/games/checkers.js", "/static/games/checkers.css",
@@ -690,6 +691,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ),
             "POST": (
                 "/api/rooms", "/api/chips/check-in", "/api/chips/bankruptcy",
+                "/api/notifications/read",
                 "/api/chips/exchanges", "/api/chips/loans",
                 "/api/chips/exchanges/ex_0123456789abcdef/confirm",
                 "/api/chips/exchanges/ex_0123456789abcdef/reject",
@@ -713,6 +715,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
         denied = (
             ("GET", "/health"),
+            ("GET", "/api/notifications/read"),
             ("GET", "/static/games/Checkers.js"),
             ("GET", "/static/games/checkers.svg"),
             ("GET", "/static/games/../app.js"),
@@ -728,6 +731,8 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ("GET", "/static/assets/exchange-shop/item/good_life.png"),
             ("GET", "/static/assets/exchange-shop/items/nested/good_life.png"),
             ("POST", "/api/chips/machines/42%3A3/check-in"),
+            ("POST", "/api/notifications/unread"),
+            ("POST", "/api/notifications/read/all"),
             ("POST", "/api/chips/exchanges/ex_0123456789abcdef/accept"),
             ("POST", "/api/chips/exchanges/ex_0123456789abcde/confirm"),
             ("POST", "/api/chips/exchanges/ex_0123456789abcdef/confirm/extra"),
@@ -740,7 +745,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             with self.subTest(method=method, path=path):
                 self.assertFalse(server._duel_proxy_allowed(method, path))
 
-    def test_chip_actions_use_trusted_header_without_forbidden_body_identity(self):
+    def test_strict_body_actions_use_trusted_header_without_forbidden_body_identity(self):
         captured = {}
 
         class FakeResponse:
@@ -799,6 +804,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
         paths = (
             "/api/chips/check-in", "/api/chips/bankruptcy",
+            "/api/notifications/read",
             "/api/chips/exchanges", "/api/chips/loans",
             "/api/chips/exchanges/ex_0123456789abcdef/confirm",
             "/api/chips/exchanges/ex_0123456789abcdef/reject",
@@ -812,7 +818,15 @@ class DuelRoomsPlatformTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path):
                 captured.clear()
-                raw_body = b'{"player_id":"reported-human"}'
+                payload = {"player_id": "reported-human"}
+                expected_payload = {}
+                if path == "/api/notifications/read":
+                    payload.update(category="achievement", reference_id="achievement-1")
+                    expected_payload = {
+                        "category": "achievement",
+                        "reference_id": "achievement-1",
+                    }
+                raw_body = json.dumps(payload).encode("utf-8")
                 handler.headers = {
                     "Content-Length": str(len(raw_body)),
                     "Content-Type": "application/json",
@@ -824,7 +838,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                 ):
                     handler._proxy_to_duel("POST", path, "", target=target)
 
-                self.assertEqual(json.loads(captured["body"]), {})
+                self.assertEqual(json.loads(captured["body"]), expected_payload)
                 self.assertEqual(
                     captured["headers"]["X-Duel-Human-Player"],
                     "trusted-human",

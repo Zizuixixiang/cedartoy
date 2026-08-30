@@ -7976,11 +7976,20 @@ def _duel_chip_proxy_post_allowed(public_path):
     )
 
 
+def _duel_trusted_header_post_allowed(public_path):
+    """POST routes whose strict bodies must not receive a proxy-added player_id."""
+    return (
+        public_path == "/api/notifications/read"
+        or _duel_chip_proxy_post_allowed(public_path)
+    )
+
+
 def _duel_proxy_allowed(method, public_path):
     if method == "GET":
         return (
             public_path in {
                 "/", "/chips", "/api/whoami", "/api/chips",
+                "/api/notifications/unread",
                 "/api/chips/exchanges", "/api/chips/exchanges/catalog",
             }
             or public_path in {
@@ -8009,7 +8018,7 @@ def _duel_proxy_allowed(method, public_path):
     if method == "POST":
         return (
             public_path == "/api/rooms"
-            or _duel_chip_proxy_post_allowed(public_path)
+            or _duel_trusted_header_post_allowed(public_path)
             or re.fullmatch(
                 r"/api/rooms/[A-Z0-9]{8}/(?:invitation|join|move|resign|leave|messages|retention|delete)",
                 public_path,
@@ -10063,7 +10072,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 return
             payload.pop("opponent_id", None)
             payload.pop("player_id", None)
-            if not _duel_chip_proxy_post_allowed(upstream_path):
+            if not _duel_trusted_header_post_allowed(upstream_path):
                 payload["player_id"] = target["human_player"]
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
