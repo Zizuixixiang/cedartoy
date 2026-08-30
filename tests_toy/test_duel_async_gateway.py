@@ -115,6 +115,33 @@ class DuelGatewayPrepareTests(unittest.TestCase):
                 content = finalized["body"]["result"]["content"][0]["text"]
                 self.assertEqual(json.loads(content)["slot"], 1)
 
+    def test_state_full_state_survives_cedartoy_play_aggregation(self):
+        account = {"id": 42, "username": "Sirius", "is_ai": 1}
+        payload = duel_rpc(
+            78,
+            params={"room_id": "ABCDEFGH", "full_state": True},
+        )
+        with (
+            patch.object(server, "_path_token_user_id", return_value=42),
+            patch.object(server, "_check_request_rate_limit", return_value=True),
+            patch.object(server, "_current_account", return_value=account),
+            patch.object(server, "_auto_migrate_legacy_account_saves"),
+            patch.object(server, "_anti_addiction_context", return_value=None),
+        ):
+            prepared = server._prepare_duel_gateway_request(
+                payload,
+                original_path="/trusted-token",
+                client_ip="203.0.113.9",
+            )
+
+        self.assertEqual(prepared["kind"], "ready")
+        self.assertEqual(prepared["backend_payload"], {
+            "action": "state",
+            "player_id": "42",
+            "room_id": "ABCDEFGH",
+            "full_state": True,
+        })
+
     def test_rate_limit_and_blocked_client_keep_json_rpc_error_contracts(self):
         payload = duel_rpc(19)
         with (

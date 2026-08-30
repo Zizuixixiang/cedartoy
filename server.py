@@ -7399,7 +7399,7 @@ def _prepare_duel_payload(
         "accept": {"room_id"},
         "reject": {"room_id"},
         "move": {"room_id", "move", "revision", "wait", "message"},
-        "state": {"room_id", "wait", "message"},
+        "state": {"room_id", "wait", "full_state", "message"},
         "resign": {"room_id", "message"},
         "leave": {"room_id", "message"},
     }
