@@ -180,6 +180,12 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
         cases = (
             (
+                "catalog",
+                {"room_id": "must-drop"},
+                {},
+                "catalog 查游戏能力",
+            ),
+            (
                 "rooms",
                 {"include_terminal": True, "limit": 7, "offset": 2,
                  "room_id": "must-drop"},
@@ -730,26 +736,23 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "target_player_count/fill_with_npcs",
             "无全局筹码：yahtzee/blackjack。其余按 catalog 支持 stake",
             "liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手",
-            "bootstrap/catalog",
+            "开房能力以 catalog",
             "supports_npcs/supports_stakes",
-            "bootstrap→move(wait=true)",
+            "bootstrap 后也按上述方式继续挂等",
             "挂等不是后台订阅或推送",
             "不能主动唤醒 ChatGPT/MCP 客户端",
             "next_call",
             "full_state=true",
             "之后 move/state 默认只返回",
             "不会消费增量事件",
-            "rules_text/move_format/legal_moves/legal_actions/private_state",
+            "按 rules_text/move_format 行动",
+            "有 legal_moves/legal_actions 时只从中选",
             "allowed_player_counts",
-            "private_state 只含自己可见私密信息",
-            "revision 用最新值",
+            "private_state 只含己方私密信息",
+            "写操作带最新 revision",
             "winner/result/settlement",
             "player_id/opponent_id/viewer/participant_ids",
-            "move 的 message 可选",
-            "自然桌边话",
-            "禁止用它复述动作",
-            "Yellow rolls.",
-            "无话就省略",
+            "message：可选，可放本次想说的话。",
         ):
             self.assertIn(expected, guide)
 
