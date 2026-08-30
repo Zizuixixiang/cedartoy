@@ -6289,7 +6289,7 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 DUEL_GUIDE = """# duel·双弈
 调用：play(game="duel",action="...",params={...})。身份固定；player_id/opponent_id/viewer/participant_ids 不能换人或视角。
 
-游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess；dots_boxes=2/3/4；aeroplane_chess/gandengyan=2/3/4；chinese_checkers=2/3/4/6；liars_dice/yahtzee/uno/blackjack=2..6。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。yahtzee/blackjack 无筹码，其余支持；liars_dice 有私密骰子，uno/gandengyan/blackjack 有私密手牌。能力以 bootstrap/catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
+游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go；3人=doudizhu；4人=guandan/mahjong；dots_boxes=2/3/4；aeroplane_chess/gandengyan=2/3/4；chinese_checkers=2/3/4/6；liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。无全局筹码：yahtzee/blackjack/train_cards/doudizhu/guandan/zhajinhua/junqi/texas_holdem/go/mahjong。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手；junqi 敌方暗子；train_cards 牌堆顺序隐藏。能力以 bootstrap/catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
 
 对局：rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。进入 playing 后第一次返回 bootstrap=true 的完整安全 room（棋盘、规则、动作和自己的 private_state）；推荐 bootstrap→move(wait=true) 循环。之后 move/state 默认只返回 revision、轮到谁及新发生的公开/本人可见增量，省 token。需要重新核对当前完整局面时用 action="state",full_state=true；它可重复调用，不会消费增量事件，也不会泄露别人的私密信息。
 
