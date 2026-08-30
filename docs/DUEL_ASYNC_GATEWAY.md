@@ -18,6 +18,17 @@ Cloudflare -> Nginx 127.0.0.1:8002
 
 ## Duel 自动挂等
 
+这里的“挂等”严格指**同一个尚未结束的 MCP POST 长响应**，不是后台任务、订阅或
+server-push。客户端/ChatGPT 一旦结束或取消这次工具请求，CedarToy 没有协议通道替它
+创建下一轮对话，也不能把 SQLite 未读状态主动送进已经休眠的会话。官方 OpenAI 文档中
+与 MCP 工具有关的流式事件也属于正在生成的同一个 Response；本服务的 initialize 只声明
+`tools` capability，且明确不提供 GET event stream。
+
+因此 AI 主动 `new`/`rematch`/`join` 得到 `pending`/`waiting` 后，必须在**当前模型回复内**
+立刻根据返回的 `next_call` 发起 `state(wait=true)`；每次行动优先用
+`move(wait=true)`。若宿主已经结束工具链，只能等下一次任意已认证工具调用到达时，由
+平台查询持久未读并强提醒先 `rooms`，这仍是 pull-time 检查而不是推送。
+
 1. 8003 先向 8004 发一次短 prepare。8004 使用原有 token、账号类型、slot、
    AI↔human 绑定、防沉迷预检与 Duel 独立限流逻辑，覆盖模型自报的
    `player_id`，并按绑定表决定 `opponent_id`。
@@ -27,7 +38,9 @@ Cloudflare -> Nginx 127.0.0.1:8002
    payload，因此 `move(wait=true)` 的落子和附言只执行一次。
 4. 如果 8772 返回内部 `still_waiting`，8003 不完成外层 MCP 请求，而是改用只含
    canonical `player_id`、`room_id`、`action=state`、`wait=true` 的无副作用 payload
-   继续等待。后续心跳绝不重放 move、message、resign 等动作。
+   继续等待。后续心跳绝不重放 move、message、resign 等动作。若 8772 因等待槽瞬时
+   满载返回 `wait_downgraded=true`，8003 也会短暂退避后继续 `state(wait=true)`，不会
+   提前结束外层挂等或形成热循环。
 5. 只有轮到当前 AI、本人淘汰/离席/失活、房间终局/归档/取消、后端错误等
    有意义结果才 finalize 并向模型返回。到达服务端连续等待上限时，才会
    finalize 最后一个 `still_waiting`。prepare/finalize 在整段等待中各只执行一次。
@@ -43,6 +56,9 @@ coroutine 取消会取消当前 8772 请求，并 best-effort 调用 abandon 立
 
 > 8772 自身仍是 30 秒短心跳。只有绕过 8003 直连 8772 时，调用方才可能看到
 > `still_waiting` 并需自行续等；官方 toy.cedarstar.org MCP 地址不会每 30 秒把它返回模型。
+> 8003 的 `MAX_CONTINUOUS_WAIT_SECONDS` 默认是 600 秒：它把多个 30 秒短轮询隐藏在
+> 一次外层 POST 内，并不是请求结束后仍运行 600 秒的后台 watcher。到时返回
+> `still_waiting` 和新的 `next_call`；宿主若仍允许同一回复继续，可再发一次挂等请求。
 
 ## 安全与生命周期
 

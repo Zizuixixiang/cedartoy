@@ -561,6 +561,100 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decoded["id"], 101)
         self.assertEqual(response.content.count(b'"jsonrpc"'), 1)
 
+    async def test_wait_slot_downgrade_retries_instead_of_ending_outer_wait(self):
+        backend_payloads = []
+        finalizations = []
+
+        async def cedartoy_upstream(request):
+            if request.url.path.endswith("/prepare"):
+                return httpx.Response(200, json={
+                    "kind": "ready",
+                    "ticket": "capacity-ticket",
+                    "backend_payload": {
+                        "action": "state",
+                        "player_id": "42",
+                        "room_id": "ABCDEFGH",
+                        "wait": True,
+                    },
+                })
+            if request.url.path.endswith("/finalize"):
+                submitted = json.loads(request.content)
+                finalizations.append(submitted)
+                data = submitted["completion"]["data"]
+                return httpx.Response(200, json={
+                    "ok": True,
+                    "status_code": 200,
+                    "body": {
+                        "jsonrpc": "2.0",
+                        "id": 105,
+                        "result": {
+                            "content": [{
+                                "type": "text",
+                                "text": json.dumps(data, ensure_ascii=False),
+                            }],
+                            "isError": False,
+                        },
+                    },
+                })
+            self.fail(f"unexpected CedarToy request: {request.url}")
+
+        async def duel_upstream(request):
+            backend_payloads.append(json.loads(request.content))
+            if len(backend_payloads) == 1:
+                return httpx.Response(200, json={
+                    "ok": True,
+                    "status": "playing",
+                    "room_id": "ABCDEFGH",
+                    "revision": 9,
+                    "your_turn": False,
+                    "wait_downgraded": True,
+                })
+            return httpx.Response(200, json={
+                "ok": True,
+                "status": "playing",
+                "room_id": "ABCDEFGH",
+                "revision": 10,
+                "your_turn": True,
+            })
+
+        cedartoy_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(cedartoy_upstream)
+        )
+        duel_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(duel_upstream)
+        )
+        app = duel_async_gateway.create_app(
+            cedartoy_client=cedartoy_client,
+            duel_client=duel_client,
+            shared_secret="secret",
+            max_wait_seconds=1,
+            keepalive_seconds=0.003,
+        )
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://gateway.test",
+        )
+        try:
+            with patch.object(
+                duel_async_gateway, "WAIT_SLOT_RETRY_SECONDS", 0.001
+            ):
+                response = await client.post("/mcp", json=duel_rpc(105))
+        finally:
+            await client.aclose()
+            await cedartoy_client.aclose()
+            await duel_client.aclose()
+
+        expected_state = {
+            "action": "state",
+            "player_id": "42",
+            "room_id": "ABCDEFGH",
+            "wait": True,
+        }
+        self.assertEqual(backend_payloads, [expected_state, expected_state])
+        self.assertEqual(len(finalizations), 1)
+        self.assertTrue(finalizations[0]["completion"]["data"]["your_turn"])
+        self.assertEqual(json.loads(response.content)["id"], 105)
+
     async def test_max_wait_returns_only_last_still_waiting_and_cancels_backend(self):
         backend_payloads = []
         finalizations = []

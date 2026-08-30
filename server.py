@@ -550,6 +550,17 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
         if method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}
+            is_duel_call = (
+                name == "play"
+                and isinstance(arguments, dict)
+                and arguments.get("game") == "duel"
+            )
+            duel_reminder = ""
+            if not is_duel_call:
+                ai_player_id = _authenticated_ai_player_id(
+                    path_token or bearer_token
+                )
+                duel_reminder = _duel_unread_request_reminder(ai_player_id)
             try:
                 if name == "list_games":
                     text = _tool_list_games(path_token=path_token or bearer_token)
@@ -566,16 +577,29 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                     )
                 else:
                     raise _McpError(-32601, f"未知工具：{name}")
+                content = [{"type": "text", "text": text}]
+                if duel_reminder:
+                    content.append({"type": "text", "text": duel_reminder})
                 return _json_rpc_result(
-                    request_id, {"content": [{"type": "text", "text": text}], "isError": False}
+                    request_id, {"content": content, "isError": False}
                 )
             except _McpError as exc:
+                content = [
+                    {"type": "text", "text": f"【cedartoy】{exc.message}"}
+                ]
+                if duel_reminder:
+                    content.append({"type": "text", "text": duel_reminder})
                 return _json_rpc_result(
-                    request_id, {"content": [{"type": "text", "text": f"【cedartoy】{exc.message}"}], "isError": True}
+                    request_id, {"content": content, "isError": True}
                 )
             except Exception as exc:
+                content = [
+                    {"type": "text", "text": f"【cedartoy服务错误】{exc}"}
+                ]
+                if duel_reminder:
+                    content.append({"type": "text", "text": duel_reminder})
                 return _json_rpc_result(
-                    request_id, {"content": [{"type": "text", "text": f"【cedartoy服务错误】{exc}"}], "isError": True}
+                    request_id, {"content": content, "isError": True}
                 )
         raise _McpError(-32601, f"Method not found: {method}")
     except _McpError as exc:
@@ -6291,7 +6315,7 @@ DUEL_GUIDE = """# duel·双弈
 
 游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go；3人=doudizhu；4人=guandan/mahjong；dots_boxes=2/3/4；aeroplane_chess/gandengyan=2/3/4；chinese_checkers=2/3/4/6；liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。无全局筹码：yahtzee/blackjack。其余按 catalog 支持 stake；斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手；junqi 敌方暗子；train_cards 牌堆顺序隐藏。能力以 bootstrap/catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
 
-对局：rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。挂等：不轮到自己时用 state(wait=true)；自己的回合用 move(wait=true)，落子后会继续等待。开房、加入或确认后若尚未轮到自己，也立即进入挂等；服务器会自动续接等待，无需手动轮询。进入 playing 后第一次返回 bootstrap=true 的完整安全 room（棋盘、规则、动作和自己的 private_state）。之后 move/state 默认只返回 revision、轮到谁及新发生的公开/本人可见增量，省 token。需要重新核对当前完整局面时用 action="state",full_state=true；它可重复调用，不会消费增量事件，也不会泄露别人的私密信息。
+对局：rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。挂等：不轮到自己时用 state(wait=true)；自己的回合用 move(wait=true)，落子后会继续等待；首次 bootstrap 后按 bootstrap→move(wait=true) 衔接。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；若返回 next_call，应在当前回复继续调用。开房、加入或确认后若尚未轮到自己，也立即进入挂等。进入 playing 后第一次返回 bootstrap=true 的完整安全 room（棋盘、规则、动作和自己的 private_state）。之后 move/state 默认只返回 revision、轮到谁及新发生的公开/本人可见增量，省 token。需要重新核对当前完整局面时用 action="state",full_state=true；它可重复调用，不会消费增量事件，也不会泄露别人的私密信息。
 
 行动只从服务端给出的 rules_text/move_format/legal_moves/legal_actions/private_state 选择，绝不自行猜合法动作；private_state 只含自己可见私密信息，revision 用最新值并随写操作带回。随机或暗信息游戏的公开结果也会通过增量返回；终局看 winner/result/settlement。
 
@@ -6615,6 +6639,56 @@ def _play_announcements(player_id, game, action):
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该玩游戏还是玩游戏。
         return ""
+
+
+def _authenticated_ai_player_id(raw_token):
+    """Resolve an authenticated AI without mutating account activity state."""
+    user_id = _path_token_user_id(raw_token)
+    if user_id is None:
+        return None
+    try:
+        with _db_connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id
+                FROM toy_users
+                WHERE id = ? AND is_ai = 1 AND deleted_at IS NULL
+                """,
+                (int(user_id),),
+            ).fetchone()
+    except (TypeError, ValueError, sqlite3.Error):
+        return None
+    return str(row["id"]) if row else None
+
+
+def _duel_unread_request_reminder(player_id):
+    """Best-effort pull-time reminder; never claim that this is server push."""
+    if player_id in {None, ""}:
+        return ""
+    try:
+        uri = f"file:{DUEL_DB_PATH}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM notifications
+                WHERE subject_type = 'ai'
+                  AND subject_id = ?
+                  AND category = 'game'
+                  AND read_at IS NULL
+                """,
+                (str(player_id),),
+            ).fetchone()
+    except sqlite3.Error:
+        return ""
+    count = int(row[0]) if row else 0
+    if not count:
+        return ""
+    return (
+        f"【双弈提醒（非主动推送）】本次请求到达时检查到 {count} 条未读对局变化。"
+        '请先调用 play(game="duel",action="rooms") 读取；若已轮到你，再按返回的 '
+        "revision/合法动作继续。服务端无法在上一条 MCP 请求结束后自行唤醒宿主。"
+    )
 
 
 def _anti_addiction_record_success(context):
@@ -7400,6 +7474,59 @@ def _prepare_duel_payload(
     return payload
 
 
+def _annotate_duel_wait_followup(response, *, action):
+    """Make request-bound wait continuation explicit without pretending to push."""
+    if not isinstance(response, dict):
+        return response
+    room_id = response.get("room_id")
+    if room_id is None and isinstance(response.get("room"), dict):
+        room_id = response["room"].get("room_id")
+    if room_id in {None, ""}:
+        return response
+
+    status = response.get("status")
+    pending = (
+        action in {"new", "rematch", "join", "accept"}
+        and status in {"pending", "waiting"}
+    )
+    wait_ended = status == "still_waiting"
+    wait_downgraded = response.get("wait_downgraded") is True
+    opponent_turn = (
+        action in {"move", "state"}
+        and status == "playing"
+        and response.get("your_turn") is False
+    )
+    if not (pending or wait_ended or wait_downgraded or opponent_turn):
+        return response
+
+    annotated = dict(response)
+    annotated["wait_scope"] = "current_request_only"
+    annotated["next_call"] = {
+        "game": "duel",
+        "action": "state",
+        "params": {"room_id": str(room_id), "wait": True},
+    }
+    if pending:
+        annotated["wait_hint"] = (
+            "房间尚未轮到你；请不要结束当前回复，立即执行 next_call 开始请求内挂等。"
+            "本次请求结束后服务端不能主动唤醒宿主。"
+        )
+    elif wait_ended:
+        annotated["wait_hint"] = (
+            "本次请求内挂等已到上限。当前回复若仍可继续，请立即再次执行 next_call；"
+            "否则只能等宿主下一次请求时检查未读状态。"
+        )
+    elif wait_downgraded:
+        annotated["wait_hint"] = (
+            "等待容量暂满，动作结果已保留；请执行 next_call 重试挂等。"
+        )
+    else:
+        annotated["wait_hint"] = (
+            "当前轮到对方；请执行 next_call，在同一工具请求内等待对方行动。"
+        )
+    return annotated
+
+
 def _request_duel_backend(payload):
     try:
         resp = httpx.post(f"{DUEL_BASE}/mcp/play", json=payload, timeout=55)
@@ -7428,7 +7555,10 @@ def _play_duel(
         force_opponent=force_opponent,
         trusted_player_id=trusted_player_id,
     )
-    return _request_duel_backend(payload)
+    response = _request_duel_backend(payload)
+    return _annotate_duel_wait_followup(
+        response, action=payload.get("action")
+    )
 
 
 _DUEL_GATEWAY_TICKETS = {}
@@ -7510,6 +7640,9 @@ def _duel_response_from_gateway_completion(completion):
 
 
 def _finalize_deferred_duel_call(prepared, response):
+    response = _annotate_duel_wait_followup(
+        response, action=prepared.action
+    )
     response = _finalize_play_response(
         response,
         game=prepared.game,

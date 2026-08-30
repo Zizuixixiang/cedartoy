@@ -1,13 +1,115 @@
 import base64
 import json
+import sqlite3
 import unittest
 from io import BytesIO
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import server
 
 
 class DuelRoomsPlatformTests(unittest.TestCase):
+    def test_pending_and_expired_wait_responses_expose_request_bound_next_call(self):
+        pending = server._annotate_duel_wait_followup(
+            {
+                "ok": True,
+                "status": "pending",
+                "room_id": "ABCDEFGH",
+            },
+            action="new",
+        )
+        self.assertEqual(pending["wait_scope"], "current_request_only")
+        self.assertEqual(pending["next_call"], {
+            "game": "duel",
+            "action": "state",
+            "params": {"room_id": "ABCDEFGH", "wait": True},
+        })
+        self.assertIn("不能主动唤醒", pending["wait_hint"])
+
+        expired = server._annotate_duel_wait_followup(
+            {
+                "ok": True,
+                "status": "still_waiting",
+                "room_id": "ABCDEFGH",
+                "revision": 9,
+            },
+            action="state",
+        )
+        self.assertEqual(expired["next_call"], pending["next_call"])
+        self.assertIn("挂等已到上限", expired["wait_hint"])
+
+        finished = {"ok": True, "status": "finished", "room_id": "ABCDEFGH"}
+        self.assertIs(
+            server._annotate_duel_wait_followup(finished, action="state"),
+            finished,
+        )
+
+    def test_unread_duel_reminder_is_pull_time_and_does_not_acknowledge(self):
+        with TemporaryDirectory() as temp_dir:
+            db_path = f"{temp_dir}/duel.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE notifications (
+                        subject_type TEXT NOT NULL,
+                        subject_id TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        read_at TEXT
+                    )
+                    """
+                )
+                conn.executemany(
+                    "INSERT INTO notifications VALUES ('ai', '42', ?, ?)",
+                    (("game", None), ("game", None), ("loan", None)),
+                )
+
+            with patch.object(server, "DUEL_DB_PATH", db_path):
+                reminder = server._duel_unread_request_reminder("42")
+                self.assertIn("2 条未读对局变化", reminder)
+                self.assertIn("非主动推送", reminder)
+                with sqlite3.connect(db_path) as conn:
+                    unread = conn.execute(
+                        "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL"
+                    ).fetchone()[0]
+                self.assertEqual(unread, 3)
+
+    def test_next_authenticated_non_duel_tool_call_appends_duel_reminder(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 91,
+            "method": "tools/call",
+            "params": {"name": "list_games", "arguments": {}},
+        }
+        with (
+            patch.object(server, "_tool_list_games", return_value="games"),
+            patch.object(server, "_authenticated_ai_player_id", return_value="42"),
+            patch.object(
+                server,
+                "_duel_unread_request_reminder",
+                return_value="pull-time duel reminder",
+            ),
+        ):
+            result = server._handle_root_mcp(payload, path_token="trusted")
+            error_result = server._handle_root_mcp(
+                {
+                    **payload,
+                    "id": 92,
+                    "params": {"name": "unknown", "arguments": {}},
+                },
+                path_token="trusted",
+            )
+
+        self.assertEqual(
+            [item["text"] for item in result["result"]["content"]],
+            ["games", "pull-time duel reminder"],
+        )
+        self.assertTrue(error_result["result"]["isError"])
+        self.assertEqual(
+            error_result["result"]["content"][-1]["text"],
+            "pull-time duel reminder",
+        )
+
     def test_human_context_uses_account_avatars_and_shared_fallbacks(self):
         class FakeConnection:
             def __enter__(self):
@@ -631,6 +733,9 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "bootstrap/catalog",
             "supports_npcs/supports_stakes",
             "bootstrap→move(wait=true)",
+            "挂等不是后台订阅或推送",
+            "不能主动唤醒 ChatGPT/MCP 客户端",
+            "next_call",
             "full_state=true",
             "之后 move/state 默认只返回",
             "不会消费增量事件",

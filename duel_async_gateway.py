@@ -45,6 +45,8 @@ MAX_CONTINUOUS_WAIT_SECONDS = _bounded_int_env(
 KEEPALIVE_INTERVAL_SECONDS = _bounded_int_env(
     "DUEL_GATEWAY_KEEPALIVE_SECONDS", 12, 5, 30
 )
+WAIT_SLOT_RETRY_SECONDS = 0.25
+WAIT_SLOT_MAX_RETRY_SECONDS = 2.0
 
 HOP_BY_HOP_HEADERS = {
     b"connection",
@@ -291,6 +293,36 @@ def _is_still_waiting_completion(completion):
     )
 
 
+def _is_wait_slot_downgrade_completion(completion):
+    """A full backend wait queue is temporary, not a completed outer wait."""
+    if not isinstance(completion, dict) or completion.get("kind") != "response":
+        return False
+    try:
+        status_code = int(completion.get("status_code"))
+    except (TypeError, ValueError):
+        return False
+    data = completion.get("data")
+    return (
+        status_code < 400
+        and isinstance(data, dict)
+        and data.get("wait_downgraded") is True
+        and data.get("your_turn") is not True
+        and data.get("status") not in {
+            "finished", "archived", "cancelled", "left"
+        }
+        and data.get("room_status") not in {
+            "finished", "archived", "cancelled"
+        }
+    )
+
+
+def _is_retryable_wait_completion(completion):
+    return (
+        _is_still_waiting_completion(completion)
+        or _is_wait_slot_downgrade_completion(completion)
+    )
+
+
 def _canonical_state_wait_payload(initial_payload):
     if not isinstance(initial_payload, dict):
         return None
@@ -401,6 +433,7 @@ async def _duel_response_stream(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + application.state.max_wait_seconds
     next_keepalive = loop.time() + application.state.keepalive_seconds
+    wait_slot_retry_seconds = WAIT_SLOT_RETRY_SECONDS
 
     try:
         while True:
@@ -455,11 +488,24 @@ async def _duel_response_stream(
             if not (
                 auto_wait
                 and canonical_wait_payload is not None
-                and _is_still_waiting_completion(completion)
+                and _is_retryable_wait_completion(completion)
             ):
                 break
             last_waiting_completion = completion
             current_payload = canonical_wait_payload
+            if _is_wait_slot_downgrade_completion(completion):
+                # The backend deliberately returns immediately when all of its
+                # wait slots are occupied. Keep the outer coroutine alive, but
+                # back off so a capacity mismatch cannot become a hot loop.
+                remaining = deadline - loop.time()
+                if remaining > 0:
+                    await asyncio.sleep(min(wait_slot_retry_seconds, remaining))
+                    wait_slot_retry_seconds = min(
+                        wait_slot_retry_seconds * 2,
+                        WAIT_SLOT_MAX_RETRY_SECONDS,
+                    )
+            else:
+                wait_slot_retry_seconds = WAIT_SLOT_RETRY_SECONDS
 
         try:
             async with application.state.internal_slots:
