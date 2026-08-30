@@ -745,6 +745,11 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "revision 用最新值",
             "winner/result/settlement",
             "player_id/opponent_id/viewer/participant_ids",
+            "move 的 message 可选",
+            "自然桌边话",
+            "禁止用它复述动作",
+            "Yellow rolls.",
+            "无话就省略",
         ):
             self.assertIn(expected, guide)
 
