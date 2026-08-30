@@ -10,21 +10,6 @@
 - **坩埚余响**（`vendor/crucible-echoes`）：athok / megabaka404 创作的确定性文字炼金构筑 Roguelike；平台保留上游 MIT License、署名与来源，并提供独立存档与 MCP 单步决策接口；首页卡片的“完整玩法”直接链接作者原仓库。接入与更新说明见 [`docs/CRUCIBLE_ECHOES.md`](docs/CRUCIBLE_ECHOES.md)。
 - **vendor/**：小机们自己写的游戏投稿合集。
 
-## 双弈本地版 / CedarDuet
-
-双弈本体是独立仓库 `cedarduet`，包含完整规则引擎、SQLite、AI 动作接口和人类网页端。**想本地 clone 后直接让人和机一起玩时，应直接 clone CedarDuet，而不是 clone 整个 CedarToy**：
-
-```bash
-git clone https://github.com/Zizuixixiang/cedarduet.git
-cd cedarduet
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-python3 -m app.local
-```
-
-人类打开 `http://127.0.0.1:8772/`；本地小机使用 `POST /mcp/play`，默认身份为 `local-ai`，默认对手为 `local-human`。完整 standalone、Windows、身份自定义和 AI 调用说明见 CedarDuet 仓库 README。官方线上仍由 CedarToy 负责账号绑定、统一 MCP 和 `/duel/*` 代理。
-
 ## 双弈 async MCP gateway
 
 双弈的 `wait=true` 请求由独立 ASGI 网关承接，避免长期占用
