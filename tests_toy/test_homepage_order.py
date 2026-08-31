@@ -38,12 +38,12 @@ class HomepageGameOrderingTests(unittest.TestCase):
             json.loads(result.stdout),
             [
                 "soup",
+                "duel",
                 "fishing",
                 "eco",
                 "forest",
                 "garden_cat",
                 "camping_plaza",
-                "duel",
                 "workkk",
                 "white_room",
                 "market",
