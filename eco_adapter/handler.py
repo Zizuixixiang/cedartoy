@@ -483,6 +483,10 @@ _ECO_VOTE_HINT = (
     '（多选）/ options=[0] 跳过。不回也没关系，这条通知不会再弹。'
 )
 
+_ECO_MORE_HINT = (
+    '另有 {count} 条旧公告；action="announcements" 可查看。'
+)
+
 
 def _record_vote(player_id, announcement_id, arguments):
     """回复系统投票。options 缺省时兼容单选的 option。"""
@@ -514,7 +518,10 @@ def _with_announcements(player_id, text):
     """把未读的系统通知拼在指令输出前面。通知只弹一次，取走即标记已读。"""
     try:
         notice = announcements.check_announcements(
-            player_id, GAME, vote_hint=_ECO_VOTE_HINT
+            player_id,
+            GAME,
+            vote_hint=_ECO_VOTE_HINT,
+            more_hint=_ECO_MORE_HINT,
         )
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该看池塘还是看池塘。

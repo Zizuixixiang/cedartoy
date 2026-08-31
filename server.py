@@ -280,7 +280,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；另有两个跨游戏通用 action：rest（防沉迷休息）、vote（回复系统通知里的投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -460,6 +460,7 @@ def _build_kelivo_platform_tools():
                 "description": "平台通用 vote 动作的通知投票编号。",
             },
             "puzzle_id": {"type": "integer", "description": "海龟汤题目 ID。"},
+            "before": {"type": "string", "description": "公告游标。"},
             "page": {"type": "integer", "minimum": 1, "description": "海龟汤 list_puzzles 页码，从 1 开始；可直接指定任意页，无需顺序翻页。"},
             "page_size": {"type": "integer", "minimum": 1, "maximum": 50, "description": "海龟汤 list_puzzles 单页数量，默认 20、最大 50；不是结果总上限。"},
             "tag": {"type": "string", "description": "海龟汤 list_puzzles 标签字符串包含筛选，如本格、变格、红汤、黑汤；不限制为固定枚举，筛选结果仍可分页。"},
@@ -6603,6 +6604,10 @@ def _announcement_vote_hint(game):
     return hint
 
 
+def _announcement_more_hint(game):
+    return lambda count: f'另有 {count} 条旧公告；action="announcements" 可查看。'
+
+
 def _tool_play_vote(game, player_id, params):
     """平台级投票动作：play(game=..., action="vote", params={announcement_id, options})。"""
     if not player_id:
@@ -6625,6 +6630,40 @@ def _tool_play_vote(game, player_id, params):
     return {"ok": True, "text": message}
 
 
+def _tool_play_announcement_history(game, player_id, params):
+    """平台级公告历史：首次取最新十条，后续用 before 游标向前翻。"""
+    if not player_id:
+        raise _McpError(-32602, "announcements 需要 player_id（或带 token 的账号身份）")
+    if isinstance(player_id, str) and player_id.startswith(GUEST_PREFIX):
+        return {"ok": False, "text": "游客身份不记录公告，注册后可查看"}
+
+    before = params.get("before")
+
+    try:
+        result = announcements.list_announcements(
+            player_id,
+            game,
+            before=before,
+            vote_hint=_announcement_vote_hint(game),
+        )
+    except announcements.AnnouncementError as exc:
+        raise _McpError(-32602, str(exc))
+
+    blocks = result.pop("blocks")
+    if blocks:
+        text = "公告（最新在前）\n\n" + "\n\n".join(blocks)
+    else:
+        text = "没有更早的有效公告。" if before is not None else "暂无有效公告。"
+    if result["has_more"]:
+        next_params = json.dumps(
+            {"before": result["next_before"]},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        text += f"\n\n还有更早公告：params={next_params}"
+    return {"ok": True, "text": text}
+
+
 def _play_announcements(player_id, game, action):
     """取该玩家在这个游戏下的未读通知；顺带标记已读。"""
     # 游客身份不持久，公告与投票对其无意义，也会徒增 token。
@@ -6634,7 +6673,10 @@ def _play_announcements(player_id, game, action):
         return ""
     try:
         return announcements.check_announcements(
-            player_id, game, vote_hint=_announcement_vote_hint(game)
+            player_id,
+            game,
+            vote_hint=_announcement_vote_hint(game),
+            more_hint=_announcement_more_hint(game),
         )
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该玩游戏还是玩游戏。
@@ -6860,6 +6902,12 @@ def _tool_play_inner(arguments, path_token=None, *, defer_duel=False):
     if action == "vote":
         # 投票是在回复系统通知，不是玩游戏：不进各游戏引擎，也不计防沉迷。
         return json.dumps(_tool_play_vote(game, announce_player_id, merged_arguments), ensure_ascii=False)
+    if action == "announcements":
+        # 主动查看公告同样不进入游戏引擎、不累计防沉迷；查看本页会建立投票所需的 seen 记录。
+        return json.dumps(
+            _tool_play_announcement_history(game, announce_player_id, merged_arguments),
+            ensure_ascii=False,
+        )
     blocked_response = _anti_addiction_preflight(game, anti_context)
     if blocked_response:
         return json.dumps(blocked_response, ensure_ascii=False)

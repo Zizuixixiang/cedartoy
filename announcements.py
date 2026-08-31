@@ -1,11 +1,13 @@
 """系统通知 / 投票模块（跨游戏通用）。
 
 运营侧往 `announcements` 表里塞一条通知或投票，玩家下一次执行常用指令
-（eco 的 observe/status 之类）时，通知会被拼在指令输出的最前面。
+（eco 的 observe/status 之类）时，最近三条未读通知会被拼在指令输出的最前面。
 
 约定：
-* 通知只弹一次。展示的瞬间就往 `announcement_reads` 写一行标记已读，
-  玩家投不投票都不再弹。
+* 普通动作只自动展示最近三条未读；同批更早的通知会写入归档读状态，不会在
+  后续动作里继续刷屏，但仍可通过主动查看公告入口查询。
+* `announcement_reads.read_at` 以 `archived:` 开头表示「自动归档但尚未展示」；
+  历史查询真正展示后会改成普通时间。这样旧投票不会因防刷屏归档而失去入口。
 * 投票是可选的后续动作：`announcement_reads.votes` 初始为 NULL（没回应），
   玩家回复后写成 JSON 数组；显式跳过写成 `[]`，以便和「压根没回」区分。
 * `target_game` 为具体游戏名（eco/fishing/...）或 `all`（所有游戏都弹）。
@@ -25,6 +27,9 @@ from zoneinfo import ZoneInfo
 # 跟 server.SESSIONS_DB_PATH 认同一个环境变量；server 启动时还会再赋一次，
 # 保证两边指向同一个库（这两张表属于 sessions.db，不是 turtle_soup.db）。
 DB_PATH = os.getenv("SESSIONS_DB", "/opt/cedartoy/data/sessions.db")
+AUTO_PUSH_LIMIT = 3
+HISTORY_PAGE_LIMIT = 10
+_ARCHIVED_READ_PREFIX = "archived:"
 
 # 通知只弹一次，所以文案里必须把「怎么投票」讲清楚，玩家没有第二次机会看到。
 DEFAULT_VOTE_HINT = (
@@ -96,7 +101,8 @@ def parse_option_list(raw):
 
 def init_db(conn):
     """建表。这是两张表 DDL 的唯一定义处——server.py 启动时调它，
-    check_announcements/record_vote 也会兜底调一次（`IF NOT EXISTS` 幂等）。
+    check_announcements/list_announcements/record_vote 也会兜底调一次
+    （`IF NOT EXISTS` 幂等）。
 
     注意别在别处再抄一份 `CREATE TABLE IF NOT EXISTS`：谁先跑谁的列定义生效，
     另一份会变成永远不报错的死代码。
@@ -160,6 +166,14 @@ def _resolve_vote_hint(vote_hint, ann_id, multiple):
     return vote_hint.format(id=ann_id)
 
 
+def _resolve_more_hint(more_hint, game_name, count):
+    if callable(more_hint):
+        return more_hint(count)
+    if more_hint is None:
+        return f'另有 {count} 条旧公告；action="announcements" 可查看。'
+    return more_hint.format(game=game_name, count=count)
+
+
 def _format(row, vote_hint):
     ann_id, ann_type, title, content, options_raw, multiple = row
     lines = ["【系统通知】" + (title or "")]
@@ -177,13 +191,16 @@ def _format(row, vote_hint):
     return "\n".join(lines)
 
 
-def check_announcements(player_id, game_name, vote_hint=None):
-    """返回该玩家在 game_name 下所有未读通知的文案，并就地标记已读。
+def check_announcements(player_id, game_name, vote_hint=None, more_hint=None):
+    """自动展示最近三条未读，并归档同批更早公告。
 
     没有未读时返回空字符串，调用方可以直接 `if text:` 判断要不要拼进输出。
+    超过三条时只展示按 created_at 最新的三条，并追加较早条数提醒；较早条目
+    不会在下次普通动作继续弹，但 list_announcements 仍可查到。
 
     `vote_hint` 用来覆盖投票指引文案（各游戏的指令语法不一样，比如 eco 走的是
     MCP 结构化参数而不是裸文本），模板里用 `{id}` 占位通知编号。
+    `more_hint` 是较早公告提醒模板（可用 `{game}` / `{count}`）或接收 count 的函数。
     """
     if not player_id:
         return ""
@@ -193,6 +210,25 @@ def check_announcements(player_id, game_name, vote_hint=None):
     blocks = []
     with _connect() as conn:
         init_db(conn)
+        # 先拿写锁再查未读并整批标记，确保并发普通动作不会各自弹到同一条。
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        unread_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM announcements AS a
+            WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.expires_at IS NULL OR a.expires_at > ?)
+              AND NOT EXISTS (
+                    SELECT 1 FROM announcement_reads AS r
+                    WHERE r.player_id = ? AND r.announcement_id = a.id
+              )
+            """,
+            (game_name, now, player_id),
+        ).fetchone()[0]
+        if not unread_count:
+            return ""
+
         rows = conn.execute(
             """
             SELECT a.id, a.type, a.title, a.content, a.options, a.multiple
@@ -203,29 +239,126 @@ def check_announcements(player_id, game_name, vote_hint=None):
                     SELECT 1 FROM announcement_reads AS r
                     WHERE r.player_id = ? AND r.announcement_id = a.id
               )
-            ORDER BY a.created_at ASC, a.id ASC
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT ?
             """,
-            (game_name, now, player_id),
+            (game_name, now, player_id, AUTO_PUSH_LIMIT),
         ).fetchall()
 
-        for row in rows:
-            # 用 INSERT OR IGNORE 的 rowcount 当「认领」用：并发下同一条通知
-            # 只有抢到插入的那次调用会展示，另一次静默跳过，不会弹两遍。
-            claimed = conn.execute(
+        conn.executemany(
+            "INSERT OR IGNORE INTO announcement_reads"
+            " (player_id, announcement_id, votes, read_at) VALUES (?, ?, NULL, ?)",
+            ((player_id, row[0], now) for row in rows),
+        )
+        # 未展示的旧公告只做防重复归档；历史查询真正展示它时会把 archived:
+        # 状态提升成普通 read_at，随后才允许投票。
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO announcement_reads
+                (player_id, announcement_id, votes, read_at)
+            SELECT ?, a.id, NULL, ?
+            FROM announcements AS a
+            WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.expires_at IS NULL OR a.expires_at > ?)
+              AND NOT EXISTS (
+                    SELECT 1 FROM announcement_reads AS r
+                    WHERE r.player_id = ? AND r.announcement_id = a.id
+              )
+            """,
+            (
+                player_id,
+                _ARCHIVED_READ_PREFIX + now,
+                game_name,
+                now,
+                player_id,
+            ),
+        )
+
+        blocks.extend(_format(row, vote_hint) for row in rows)
+
+    older_count = unread_count - len(rows)
+    if older_count:
+        blocks.append(_resolve_more_hint(more_hint, game_name, older_count))
+
+    return "\n\n".join(blocks)
+
+
+def list_announcements(
+    player_id,
+    game_name,
+    before=None,
+    vote_hint=None,
+):
+    """按游标返回 game_name 相关的十条有效公告，并把本页标为确实已展示。
+
+    查询包含已读和自动归档公告，因此自动推送中未展开的较早条目不会永久丢失。
+    `before` 使用上一页最后一条公告的 id；排序同时使用 created_at / id，避免同秒
+    创建的公告造成跳页或重复。
+    """
+    if not player_id:
+        return {"blocks": [], "has_more": False, "next_before": None}
+    player_id = _announcement_identity(player_id)
+    now = _now_iso()
+
+    with _connect() as conn:
+        init_db(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        cursor_clause = ""
+        cursor_args = []
+        if before is not None:
+            if not isinstance(before, str) or not before.strip():
+                raise AnnouncementError("before 须为公告游标。")
+            before = before.strip()
+            cursor = conn.execute(
+                "SELECT created_at, id FROM announcements WHERE id = ?",
+                (before,),
+            ).fetchone()
+            if cursor is None:
+                raise AnnouncementError("before 公告游标无效。")
+            cursor_clause = (
+                " AND (a.created_at < ? OR (a.created_at = ? AND a.id < ?))"
+            )
+            cursor_args = [cursor[0], cursor[0], cursor[1]]
+        rows = conn.execute(
+            f"""
+            SELECT a.id, a.type, a.title, a.content, a.options, a.multiple
+            FROM announcements AS a
+            WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.expires_at IS NULL OR a.expires_at > ?)
+              {cursor_clause}
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT ?
+            """,
+            (game_name, now, *cursor_args, HISTORY_PAGE_LIMIT + 1),
+        ).fetchall()
+        visible = rows[:HISTORY_PAGE_LIMIT]
+        for row in visible:
+            conn.execute(
+                "UPDATE announcement_reads SET read_at = ?"
+                " WHERE player_id = ? AND announcement_id = ? AND read_at LIKE ?",
+                (now, player_id, row[0], _ARCHIVED_READ_PREFIX + "%"),
+            )
+            conn.execute(
                 "INSERT OR IGNORE INTO announcement_reads"
                 " (player_id, announcement_id, votes, read_at) VALUES (?, ?, NULL, ?)",
                 (player_id, row[0], now),
-            ).rowcount
-            if claimed:
-                blocks.append(_format(row, vote_hint))
+            )
 
-    return "\n\n".join(blocks)
+    return {
+        "blocks": [_format(row, vote_hint) for row in visible],
+        "has_more": len(rows) > HISTORY_PAGE_LIMIT,
+        "next_before": visible[-1][0]
+        if len(rows) > HISTORY_PAGE_LIMIT and visible
+        else None,
+    }
 
 
 def record_vote(player_id, announcement_id, options):
     """记录一次投票。`options` 为选项序号列表，`[0]` 或 `[]` 表示跳过。
 
-    只有弹过（announcement_reads 里有行）的投票才能回复；重复投票以最后一次为准。
+    只有实际展示过（read_at 不是 archived: 状态）的投票才能回复；重复投票以
+    最后一次为准。
     """
     if not player_id:
         raise AnnouncementError("缺少 player_id。")
@@ -259,8 +392,9 @@ def record_vote(player_id, announcement_id, options):
             raise AnnouncementError(f"投票 {announcement_id} 已经结束了。")
 
         seen = conn.execute(
-            "SELECT 1 FROM announcement_reads WHERE player_id = ? AND announcement_id = ?",
-            (player_id, announcement_id),
+            "SELECT 1 FROM announcement_reads"
+            " WHERE player_id = ? AND announcement_id = ? AND read_at NOT LIKE ?",
+            (player_id, announcement_id, _ARCHIVED_READ_PREFIX + "%"),
         ).fetchone()
         if seen is None:
             raise AnnouncementError(f"投票 {announcement_id} 还没推送给你。")
