@@ -128,8 +128,10 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         judge.reset_fail_counts()
         judge._config_locks.clear()
-        judge._rr_index = {"judge": {}, "hint": {}}
-        judge._rr_locks = {"judge": asyncio.Lock(), "hint": asyncio.Lock()}
+        judge._rr_index = {pool: {} for pool in judge.POOL_NAMES}
+        judge._rr_locks = {
+            pool: asyncio.Lock() for pool in judge.POOL_NAMES
+        }
         FakeClient.outcomes = []
         FakeClient.timeouts = []
         FakeClient.payloads = []
@@ -177,23 +179,33 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(status["last_error"])
         self.assertIsNotNone(status["last_success_at"])
 
-    async def test_half_open_failures_advance_to_120_then_300_seconds(self):
+    async def test_half_open_failures_advance_through_ladder_and_cap_at_two_hours(self):
+        self.assertEqual(
+            judge.COOLDOWN_SECONDS,
+            (60, 120, 300, 600, 1800, 3600, 7200),
+        )
         state = judge._state(CONFIG["id"])
         state.consecutive_failures = 3
         state.cooldown_stage = 0
         state.cooldown_until = self.clock
 
-        with self.assertRaises(HTTPException):
-            await self._chat_with(httpx.ReadTimeout("slow"))
-        status = judge.get_config_runtime_status(CONFIG["id"])
-        self.assertEqual(status["cooldown_remaining_seconds"], 120)
-        self.assertTrue(status["last_error"].startswith("timeout: ReadTimeout"))
+        for expected_seconds in judge.COOLDOWN_SECONDS[1:]:
+            with self.assertRaises(HTTPException):
+                await self._chat_with(httpx.ReadTimeout("slow"))
+            status = judge.get_config_runtime_status(CONFIG["id"])
+            self.assertEqual(
+                status["cooldown_remaining_seconds"], expected_seconds
+            )
+            self.assertTrue(
+                status["last_error"].startswith("timeout: ReadTimeout")
+            )
+            self.clock += expected_seconds
 
-        self.clock += 120
         with self.assertRaises(HTTPException):
             await self._chat_with(httpx.ConnectError("offline"))
         status = judge.get_config_runtime_status(CONFIG["id"])
-        self.assertEqual(status["cooldown_remaining_seconds"], 300)
+        self.assertEqual(status["cooldown_remaining_seconds"], 7200)
+        self.assertEqual(judge._state(CONFIG["id"]).cooldown_stage, 6)
         self.assertTrue(status["last_error"].startswith("connect: ConnectError"))
 
     async def test_429_cools_immediately_and_honors_longer_retry_after(self):
@@ -212,6 +224,14 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             judge.get_config_runtime_status(CONFIG["id"])["cooldown_remaining_seconds"],
             120,
+        )
+
+        judge.reset_fail_counts(CONFIG["id"])
+        with self.assertRaises(HTTPException):
+            await self._chat_with(response(429, headers={"Retry-After": "9000"}))
+        self.assertEqual(
+            judge.get_config_runtime_status(CONFIG["id"])["cooldown_remaining_seconds"],
+            9000,
         )
 
     async def test_only_one_request_can_use_a_half_open_probe(self):
@@ -504,14 +524,143 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(judge._purpose_matches("judge", "judge"))
         self.assertTrue(judge._purpose_matches("hint", "hint"))
         self.assertTrue(judge._purpose_matches("npc", "npc"))
+        self.assertTrue(judge._purpose_matches("npc", "npc_decision"))
+        self.assertTrue(judge._purpose_matches("npc", "npc_speech"))
+        self.assertTrue(
+            judge._purpose_matches("npc_decision", "npc_decision")
+        )
+        self.assertTrue(judge._purpose_matches("npc_speech", "npc_speech"))
+        self.assertFalse(
+            judge._purpose_matches("npc_decision", "npc_speech")
+        )
         self.assertTrue(judge._purpose_matches("both", "judge"))
         self.assertTrue(judge._purpose_matches("both", "hint"))
-        self.assertFalse(judge._purpose_matches("both", "npc"))
+        self.assertFalse(judge._purpose_matches("both", "npc_decision"))
+        self.assertFalse(judge._purpose_matches("both", "npc_speech"))
         self.assertTrue(all(
             judge._purpose_matches("all", pool) for pool in judge.POOL_NAMES
         ))
         self.assertEqual(admin_router.normalize_api_config_purpose("npc"), "npc")
+        self.assertEqual(
+            admin_router.normalize_api_config_purpose("npc_decision"),
+            "npc_decision",
+        )
+        self.assertEqual(
+            admin_router.normalize_api_config_purpose("npc_speech"),
+            "npc_speech",
+        )
         self.assertEqual(admin_router.normalize_api_config_purpose("all"), "all")
+
+    def test_all_covers_both_npc_tasks_but_exact_purpose_stays_preferred(self):
+        all_config = {**CONFIG, "id": 39, "purpose": "all"}
+        decision_config = {**CONFIG, "id": 40, "purpose": "npc_decision"}
+        legacy_config = {**CONFIG, "id": 41, "purpose": "npc"}
+        rows = [all_config, decision_config, legacy_config]
+        self.assertEqual(
+            judge._select_configs_for_pool(rows, "npc_decision"),
+            [decision_config],
+        )
+        self.assertEqual(
+            judge._select_configs_for_pool(rows, "npc_speech"),
+            [all_config],
+        )
+
+    async def test_decision_prefers_dedicated_while_speech_falls_back_to_legacy(self):
+        configs = [
+            {
+                **CONFIG,
+                "id": 41,
+                "name": "decision",
+                "purpose": "npc_decision",
+                "api_url": "https://decision.test/v1",
+            },
+            {
+                **CONFIG,
+                "id": 42,
+                "name": "legacy",
+                "purpose": "npc",
+                "api_url": "https://legacy.test/v1",
+            },
+        ]
+        FakeClient.outcomes = [
+            response(200, content="decision-result"),
+            response(200, content="speech-result"),
+        ]
+        with (
+            patch.object(judge, "fetch_all", AsyncMock(return_value=configs)),
+            patch.object(judge.httpx, "AsyncClient", FakeClient),
+        ):
+            self.assertEqual(
+                await judge.npc_decision_chat(MESSAGES), "decision-result"
+            )
+            self.assertEqual(
+                await judge.npc_speech_chat(MESSAGES), "speech-result"
+            )
+        self.assertEqual(
+            FakeClient.urls,
+            [
+                "https://decision.test/v1/chat/completions",
+                "https://legacy.test/v1/chat/completions",
+            ],
+        )
+
+    async def test_only_legacy_npc_config_still_serves_both_tasks(self):
+        legacy = {
+            **CONFIG,
+            "id": 43,
+            "purpose": "npc",
+            "api_url": "https://legacy-only.test/v1",
+        }
+        FakeClient.outcomes = [
+            response(200, content="decision-result"),
+            response(200, content="speech-result"),
+        ]
+        with (
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[legacy])),
+            patch.object(judge.httpx, "AsyncClient", FakeClient),
+        ):
+            self.assertEqual(
+                await judge.npc_decision_chat(MESSAGES), "decision-result"
+            )
+            self.assertEqual(
+                await judge.npc_speech_chat(MESSAGES), "speech-result"
+            )
+        self.assertEqual(
+            FakeClient.urls,
+            ["https://legacy-only.test/v1/chat/completions"] * 2,
+        )
+
+    async def test_cooling_dedicated_config_falls_back_to_available_legacy(self):
+        dedicated = {
+            **CONFIG,
+            "id": 44,
+            "purpose": "npc_decision",
+            "api_url": "https://cooling-decision.test/v1",
+        }
+        legacy = {
+            **CONFIG,
+            "id": 45,
+            "purpose": "npc",
+            "api_url": "https://available-legacy.test/v1",
+        }
+        judge.register_config_runtime_node(dedicated)
+        state = judge._state(dedicated["id"])
+        state.cooldown_stage = 0
+        state.cooldown_until = judge._now() + 60
+        FakeClient.outcomes = [response(200, content="legacy-result")]
+        with (
+            patch.object(
+                judge, "fetch_all", AsyncMock(return_value=[dedicated, legacy])
+            ),
+            patch.object(judge.httpx, "AsyncClient", FakeClient),
+        ):
+            self.assertEqual(
+                await judge.npc_decision_chat(MESSAGES), "legacy-result"
+            )
+        self.assertEqual(
+            FakeClient.urls,
+            ["https://available-legacy.test/v1/chat/completions"],
+        )
 
     async def test_duplicate_rows_share_health_and_node_serialization_identity(self):
         npc_cfg = {**CONFIG, "id": 1, "purpose": "npc"}

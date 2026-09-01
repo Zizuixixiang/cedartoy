@@ -75,7 +75,15 @@ class BanBody(BaseModel):
     reason: str = ""
 
 
-API_CONFIG_PURPOSES = {"judge", "hint", "both", "npc", "all"}
+API_CONFIG_PURPOSES = {
+    "judge",
+    "hint",
+    "both",
+    "npc",
+    "npc_decision",
+    "npc_speech",
+    "all",
+}
 
 
 def normalize_api_config_purpose(value: str | None) -> str:
@@ -501,7 +509,12 @@ async def api_configs(admin: dict = Depends(admin_player)):
                 enabled=bool(row.get("enabled")),
             )
         )
-        if row.get("purpose") in {"npc", "all"}:
+        if row.get("purpose") in {
+            "npc",
+            "npc_decision",
+            "npc_speech",
+            "all",
+        }:
             row["npc_pool_runtime"] = pool_runtime["npc"]
     return rows
 

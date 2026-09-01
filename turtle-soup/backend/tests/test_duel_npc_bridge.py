@@ -15,7 +15,8 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 judge_stub = types.ModuleType("judge")
-judge_stub.npc_chat = AsyncMock()
+judge_stub.npc_decision_chat = AsyncMock()
+judge_stub.npc_speech_chat = AsyncMock()
 module_name = "duel_internal_bridge_under_test"
 module_path = BACKEND_DIR / "routers" / "internal_duel.py"
 spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -34,6 +35,7 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
             base_url="http://bridge.test",
         )
         self.payload = {
+            "task": "decision",
             "messages": [
                 {"role": "system", "content": "只返回合法行动 JSON"},
                 {"role": "user", "content": "private-test-state"},
@@ -46,10 +48,10 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
         await self.client.aclose()
 
     async def test_unconfigured_or_wrong_token_never_reaches_shared_pool(self):
-        npc_chat = AsyncMock()
+        decision_chat = AsyncMock()
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch.object(internal_duel, "npc_chat", npc_chat),
+            patch.object(internal_duel, "npc_decision_chat", decision_chat),
         ):
             missing = await self.client.post(
                 "/internal/duel/npc-decision", json=self.payload
@@ -60,7 +62,7 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
             patch.dict(
                 "os.environ", {"DUEL_NPC_BRIDGE_TOKEN": "server-only-token"}
             ),
-            patch.object(internal_duel, "npc_chat", npc_chat),
+            patch.object(internal_duel, "npc_decision_chat", decision_chat),
         ):
             wrong = await self.client.post(
                 "/internal/duel/npc-decision",
@@ -68,28 +70,48 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
                 json=self.payload,
             )
         self.assertEqual(wrong.status_code, 401)
-        npc_chat.assert_not_awaited()
+        decision_chat.assert_not_awaited()
 
-    async def test_authorized_request_forwards_only_bounded_pool_arguments(self):
-        npc_chat = AsyncMock(return_value='{"action_id":"a_step"}')
+    async def test_task_routes_to_separate_bounded_internal_entries(self):
+        decision_chat = AsyncMock(return_value='{"action_id":"a_step"}')
+        speech_chat = AsyncMock(return_value='{"message":"落子了"}')
         with (
             patch.dict(
                 "os.environ", {"DUEL_NPC_BRIDGE_TOKEN": "server-only-token"}
             ),
-            patch.object(internal_duel, "npc_chat", npc_chat),
+            patch.object(
+                internal_duel, "npc_decision_chat", decision_chat
+            ),
+            patch.object(internal_duel, "npc_speech_chat", speech_chat),
         ):
-            response = await self.client.post(
+            decision_response = await self.client.post(
                 "/internal/duel/npc-decision",
                 headers={"Authorization": "Bearer server-only-token"},
                 json=self.payload,
             )
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json(), {"content": '{"action_id":"a_step"}'})
-        npc_chat.assert_awaited_once_with(
+            speech_response = await self.client.post(
+                "/internal/duel/npc-decision",
+                headers={"Authorization": "Bearer server-only-token"},
+                json={**self.payload, "task": "speech"},
+            )
+        self.assertEqual(
+            decision_response.status_code, 200, decision_response.text
+        )
+        self.assertEqual(
+            decision_response.json(), {"content": '{"action_id":"a_step"}'}
+        )
+        self.assertEqual(speech_response.status_code, 200, speech_response.text)
+        self.assertEqual(
+            speech_response.json(), {"content": '{"message":"落子了"}'}
+        )
+        decision_chat.assert_awaited_once_with(
             self.payload["messages"], max_tokens=123, timeout=7.0
         )
-        self.assertNotIn("server-only-token", response.text)
-        self.assertNotIn("private-test-state", response.text)
+        speech_chat.assert_awaited_once_with(
+            self.payload["messages"], max_tokens=123, timeout=7.0
+        )
+        self.assertNotIn("server-only-token", decision_response.text)
+        self.assertNotIn("private-test-state", decision_response.text)
 
     async def test_timeout_and_upstream_errors_are_safely_mapped(self):
         cases = (
@@ -106,7 +128,9 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
                         {"DUEL_NPC_BRIDGE_TOKEN": "server-only-token"},
                     ),
                     patch.object(
-                        internal_duel, "npc_chat", AsyncMock(side_effect=error)
+                        internal_duel,
+                        "npc_decision_chat",
+                        AsyncMock(side_effect=error),
                     ),
                 ):
                     response = await self.client.post(
@@ -120,24 +144,48 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("private invalid detail", response.text)
 
     async def test_schema_rejects_unbounded_messages_before_pool_call(self):
-        npc_chat = AsyncMock()
+        decision_chat = AsyncMock()
         with (
             patch.dict(
                 "os.environ", {"DUEL_NPC_BRIDGE_TOKEN": "server-only-token"}
             ),
-            patch.object(internal_duel, "npc_chat", npc_chat),
+            patch.object(internal_duel, "npc_decision_chat", decision_chat),
         ):
             response = await self.client.post(
                 "/internal/duel/npc-decision",
                 headers={"Authorization": "Bearer server-only-token"},
                 json={
+                    "task": "decision",
                     "messages": [{"role": "user", "content": "x" * 4001}],
                     "max_tokens": 5000,
                     "timeout": 61,
                 },
             )
         self.assertEqual(response.status_code, 422)
-        npc_chat.assert_not_awaited()
+        decision_chat.assert_not_awaited()
+
+    async def test_schema_requires_strict_task_enum(self):
+        decision_chat = AsyncMock()
+        speech_chat = AsyncMock()
+        with (
+            patch.dict(
+                "os.environ", {"DUEL_NPC_BRIDGE_TOKEN": "server-only-token"}
+            ),
+            patch.object(internal_duel, "npc_decision_chat", decision_chat),
+            patch.object(internal_duel, "npc_speech_chat", speech_chat),
+        ):
+            for payload in (
+                {key: value for key, value in self.payload.items() if key != "task"},
+                {**self.payload, "task": "npc"},
+            ):
+                response = await self.client.post(
+                    "/internal/duel/npc-decision",
+                    headers={"Authorization": "Bearer server-only-token"},
+                    json=payload,
+                )
+                self.assertEqual(response.status_code, 422, response.text)
+        decision_chat.assert_not_awaited()
+        speech_chat.assert_not_awaited()
 
 
 if __name__ == "__main__":

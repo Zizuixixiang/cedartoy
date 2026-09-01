@@ -20,7 +20,8 @@ from database import DEFAULT_SETTINGS, fetch_all, fetch_one
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
-POOL_NAMES = ("judge", "hint", "npc")
+NPC_POOL_NAMES = ("npc_decision", "npc_speech")
+POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
 _rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}
 _rr_locks: dict[str, asyncio.Lock] = {pool: asyncio.Lock() for pool in POOL_NAMES}
 # Locks and health belong to the physical API credential, not a database row.
@@ -30,7 +31,7 @@ _config_locks: dict[str, asyncio.Lock] = {}
 _config_node_keys: dict[int, str] = {}
 _guess_lock = asyncio.Lock()
 FAIL_LIMIT = 3
-COOLDOWN_SECONDS = (60, 120, 300)
+COOLDOWN_SECONDS = (60, 120, 300, 600, 1800, 3600, 7200)
 RATE_LIMIT_MIN_COOLDOWN_SECONDS = 120
 DEEPSEEK_V4_NODE_TIMEOUT = 30.0
 DEEPSEEK_V4_MIN_MAX_TOKENS = 8192
@@ -114,6 +115,8 @@ async def _get_judge_prompt_clue() -> str:
 
 
 def _pool_name(pool: str) -> str:
+    if pool == "npc":
+        return "npc_decision"
     return pool if pool in POOL_NAMES else "judge"
 
 
@@ -295,20 +298,54 @@ def _release_probe(config_id: int) -> None:
 
 
 async def _configs(pool: str = "judge") -> list[dict[str, Any]]:
-    rows = await _matching_configs(pool)
+    pool = _pool_name(pool)
+    rows = await _enabled_configs()
     now = _now()
-    return [row for row in rows if _config_available(int(row["id"]), now)]
+    available = [row for row in rows if _config_available(int(row["id"]), now)]
+    return _select_configs_for_pool(available, pool)
 
 
 async def _matching_configs(pool: str = "judge") -> list[dict[str, Any]]:
     pool = _pool_name(pool)
+    rows = await _enabled_configs()
+    return _select_configs_for_pool(rows, pool)
+
+
+async def _enabled_configs() -> list[dict[str, Any]]:
     rows = await fetch_all(
         "SELECT * FROM judge_api_configs WHERE enabled = 1 ORDER BY priority ASC, id ASC"
     )
-    matching = [row for row in rows if _purpose_matches(row.get("purpose"), pool)]
     for row in rows:
         register_config_runtime_node(row)
-    return matching
+    return rows
+
+
+def _select_configs_for_pool(
+    rows: list[dict[str, Any]], pool: str
+) -> list[dict[str, Any]]:
+    """Prefer exact NPC purpose, then ``all``, then available legacy ``npc``."""
+    pool = _pool_name(pool)
+    if pool in NPC_POOL_NAMES:
+        dedicated = [
+            row
+            for row in rows
+            if str(row.get("purpose") or "judge").strip().lower() == pool
+        ]
+        if dedicated:
+            return dedicated
+        all_purpose = [
+            row
+            for row in rows
+            if str(row.get("purpose") or "judge").strip().lower() == "all"
+        ]
+        if all_purpose:
+            return all_purpose
+        return [
+            row
+            for row in rows
+            if str(row.get("purpose") or "judge").strip().lower() == "npc"
+        ]
+    return [row for row in rows if _purpose_matches(row.get("purpose"), pool)]
 
 
 def _purpose_matches(config_purpose: Any, pool: str) -> bool:
@@ -318,6 +355,8 @@ def _purpose_matches(config_purpose: Any, pool: str) -> bool:
         return True
     if purpose == "both":
         return pool in {"judge", "hint"}
+    if purpose == "npc":
+        return pool in NPC_POOL_NAMES
     return purpose == pool
 
 
@@ -426,7 +465,7 @@ async def _chat(
 ) -> str:
     global _npc_active, _npc_waiting, _priority_waiters
     pool = _pool_name(pool)
-    if pool == "npc":
+    if pool in NPC_POOL_NAMES:
         semaphore = _npc_limit_semaphore()
         _npc_waiting += 1
         try:
@@ -481,7 +520,7 @@ async def _chat_from_pool(
             logger.warning("%s has no enabled API configs", pool)
         detail = (
             "NPC 通道繁忙，请稍后再试"
-            if pool == "npc"
+            if pool in NPC_POOL_NAMES
             else "裁判暂时不可用，请稍后再试"
         )
         raise HTTPException(status_code=503, detail=detail)
@@ -498,7 +537,9 @@ async def _chat_from_pool(
             # NPC work never queues behind a busy shared node and never starts
             # while a judge/hint request is trying to acquire capacity. A
             # request already in flight is allowed to finish normally.
-            if pool == "npc" and (_priority_waiters > 0 or config_lock.locked()):
+            if pool in NPC_POOL_NAMES and (
+                _priority_waiters > 0 or config_lock.locked()
+            ):
                 continue
             async with config_lock:
                 is_probe = _claim_attempt(cid)
@@ -543,17 +584,18 @@ async def _chat_from_pool(
     logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
     detail = (
         "NPC 通道繁忙，请稍后再试"
-        if pool == "npc"
+        if pool in NPC_POOL_NAMES
         else "裁判暂时不可用，请稍后再试"
     )
     raise HTTPException(status_code=503, detail=detail)
 
 
-async def npc_chat(
+async def _npc_chat(
     messages: list[dict[str, str]],
     *,
     max_tokens: int = 512,
     timeout: float = 20,
+    pool: str,
 ) -> str:
     """Internal compact NPC completion entry point; it is not an HTTP route."""
     if (
@@ -596,7 +638,51 @@ async def npc_chat(
         temperature=0.3,
         timeout=float(timeout),
         max_tokens=max_tokens,
-        pool="npc",
+        pool=pool,
+    )
+
+
+async def npc_decision_chat(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 512,
+    timeout: float = 20,
+) -> str:
+    """Internal compact NPC decision completion entry point."""
+    return await _npc_chat(
+        messages,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        pool="npc_decision",
+    )
+
+
+async def npc_speech_chat(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 512,
+    timeout: float = 20,
+) -> str:
+    """Internal compact NPC speech completion entry point."""
+    return await _npc_chat(
+        messages,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        pool="npc_speech",
+    )
+
+
+async def npc_chat(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 512,
+    timeout: float = 20,
+) -> str:
+    """Backward-compatible alias for the former generic NPC decision entry."""
+    return await npc_decision_chat(
+        messages,
+        max_tokens=max_tokens,
+        timeout=timeout,
     )
 
 

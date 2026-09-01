@@ -79,7 +79,7 @@ const tabDescriptions = {
   bans: '按 IP 封禁访问，命中后会阻止继续使用海龟汤。',
   reports: '玩家对房间发言或用户的举报记录。',
   flags: '系统或管理员标记的风险内容，用于后续处理。',
-  'api-configs': '裁判与对局 NPC 共用的 LLM 节点配置。both 仍只进入裁判+提示池，npc 只进入 NPC 池，all 才进入三种用途。裁判/提示优先于尚未发出的 NPC 请求；同一接口密钥共享串行、健康与冷却状态，NPC 另受全局并发上限保护。优先尝试 priority 数值最低的一层，同层轮询且整层失败后才使用下一层。',
+  'api-configs': '裁判与对局 NPC 共用的 LLM 节点配置。both 仍只进入裁判+提示池；npc_decision 与 npc_speech 分别用于 NPC 操作和独立发言；旧 npc 在对应专用用途没有可用配置时兼容回退；all 覆盖全部用途。裁判/提示优先于尚未发出的 NPC 请求；同一接口密钥共享串行、健康与冷却状态，NPC 另受全局并发上限保护。优先尝试 priority 数值最低的一层，同层轮询且整层失败后才使用下一层。',
   settings: '运行参数。修改后会影响新请求或后续流程。',
 }
 
@@ -110,7 +110,9 @@ const statusText = {
   judge: '问答',
   hint: '提示',
   both: '两边',
-  npc: 'NPC',
+  npc: 'NPC（旧版回退）',
+  npc_decision: 'NPC 操作',
+  npc_speech: 'NPC 发言',
   all: '全部',
   healthy: '健康',
   cooling: '冷却中',
@@ -179,7 +181,7 @@ const formFields = {
     { key: 'api_url', label: '接口地址', required: true },
     { key: 'api_key', label: '密钥', secretOnEdit: true },
     { key: 'model', label: '模型', required: true },
-    { key: 'purpose', label: '用途', type: 'select', options: ['judge', 'hint', 'both', 'npc', 'all'] },
+    { key: 'purpose', label: '用途', type: 'select', options: ['judge', 'hint', 'both', 'npc_decision', 'npc_speech', 'npc', 'all'] },
     { key: 'enabled', label: '启用', type: 'checkbox' },
     { key: 'priority', label: '优先级', type: 'number' },
   ],

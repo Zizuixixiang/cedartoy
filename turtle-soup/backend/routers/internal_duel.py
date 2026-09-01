@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from judge import npc_chat
+from judge import npc_decision_chat, npc_speech_chat
 
 
 router = APIRouter()
@@ -26,6 +26,7 @@ class BridgeMessage(BaseModel):
 class DuelNpcBridgeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    task: Literal["decision", "speech"]
     messages: list[BridgeMessage] = Field(min_length=1, max_length=20)
     max_tokens: int = Field(default=512, ge=1, le=4096)
     timeout: float = Field(default=20, ge=1, le=60)
@@ -49,9 +50,10 @@ async def duel_npc_decision(
 ):
     _authorize(authorization)
     messages = [message.model_dump() for message in body.messages]
+    chat = npc_decision_chat if body.task == "decision" else npc_speech_chat
     try:
         content = await asyncio.wait_for(
-            npc_chat(
+            chat(
                 messages,
                 max_tokens=body.max_tokens,
                 timeout=body.timeout,
