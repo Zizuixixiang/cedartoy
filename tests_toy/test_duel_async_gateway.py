@@ -51,8 +51,7 @@ class DuelGatewayPrepareTests(unittest.TestCase):
                 "stake": 4,
                 "target_player_count": 4,
                 "fill_with_npcs": True,
-                # These are valid McpPlayBody fields, but not for new.
-                "wait": True,
+                # revision is a backend-wide field, but not valid for new.
                 "revision": 9,
             },
         )
@@ -168,26 +167,81 @@ class DuelGatewayPrepareTests(unittest.TestCase):
     def test_backend_failures_match_existing_tool_error_shape(self):
         cases = (
             (
-                {"kind": "response", "status_code": 422,
-                 "data": {"message": "revision 已变化"}},
-                "revision 已变化",
+                {
+                    "kind": "response",
+                    "status_code": 422,
+                    "data": {
+                        "message": "请求参数不符合接口格式，请检查字段、类型与必填项。",
+                        "details": [{
+                            "field": "move.action_id",
+                            "message": "Field required",
+                        }],
+                    },
+                },
+                {
+                    "action": "move",
+                    "room_id": "ABCDEFGH",
+                    "move": {"action": "act"},
+                    "revision": 7,
+                },
+                "move.action_id: Field required",
+                "missing_move_fields",
+            ),
+            (
+                {
+                    "kind": "response",
+                    "status_code": 409,
+                    "data": {"message": "局面 revision 已变化（期望 7，当前 8）"},
+                },
+                {
+                    "action": "move",
+                    "room_id": "ABCDEFGH",
+                    "move": {"action": "roll"},
+                    "revision": 7,
+                },
+                "别重放旧 move",
+                "stale_revision",
+            ),
+            (
+                {
+                    "kind": "response",
+                    "status_code": 409,
+                    "data": {"message": "当前行动权属于另一名参与者"},
+                },
+                {
+                    "action": "move",
+                    "room_id": "ABCDEFGH",
+                    "move": {"action": "act", "action_id": "m_1"},
+                    "revision": 8,
+                },
+                "state(wait=true)",
+                "not_your_turn",
             ),
             (
                 {"kind": "response", "status_code": 503, "data": {}},
+                {"action": "state"},
                 "duel 后端错误 HTTP 503",
+                None,
             ),
-            ({"kind": "invalid_json"}, "duel 后端返回非 JSON 响应"),
+            (
+                {"kind": "invalid_json"},
+                {"action": "state"},
+                "duel 后端返回非 JSON 响应",
+                None,
+            ),
             (
                 {"kind": "transport_error", "message": "timed out"},
+                {"action": "state"},
                 "duel 后端连接失败：timed out",
+                None,
             ),
         )
-        for index, (completion, expected) in enumerate(cases):
+        for index, (completion, backend_payload, expected, error_type) in enumerate(cases):
             with self.subTest(completion=completion):
                 prepared = server._DeferredDuelCall(
-                    backend_payload={"action": "state"},
+                    backend_payload=backend_payload,
                     game="duel",
-                    action="state",
+                    action=backend_payload["action"],
                     account_user=None,
                     account_player_id=None,
                     guest_player_id=None,
@@ -204,6 +258,31 @@ class DuelGatewayPrepareTests(unittest.TestCase):
                     expected,
                     finalized["body"]["result"]["content"][0]["text"],
                 )
+                text = finalized["body"]["result"]["content"][0]["text"]
+                if error_type is None:
+                    self.assertNotIn("retry_hint", text)
+                else:
+                    self.assertIn(f'"error_type":"{error_type}"', text)
+                    self.assertIn('"retry_hint"', text)
+                    self.assertLess(len(text), 500)
+
+    def test_async_prepare_renders_preflight_retry_metadata(self):
+        error = server._duel_mcp_error(
+            'duel 外层 action="pass" 无效',
+            error_type="outer_action",
+            retry_hint='外层 action 改为 "move"；游戏动作放 params.move.action。',
+            retry_example=server._duel_move_retry_example("pass"),
+        )
+        with patch.object(server, "_tool_play", side_effect=error):
+            result = server._prepare_duel_gateway_rpc(
+                duel_rpc(88, action="pass", params={"room_id": "ABCDEFGH"})
+            )
+
+        text = result["body"]["result"]["content"][0]["text"]
+        self.assertEqual(result["kind"], "response")
+        self.assertTrue(result["body"]["result"]["isError"])
+        self.assertIn('"error_type":"outer_action"', text)
+        self.assertIn('"retry_example"', text)
 
     def test_finalize_preserves_private_terminal_notices_and_unread_fields(self):
         prepared = server._DeferredDuelCall(

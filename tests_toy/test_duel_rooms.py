@@ -10,6 +10,345 @@ import server
 
 
 class DuelRoomsPlatformTests(unittest.TestCase):
+    def test_play_schema_documents_duel_move_siblings_for_all_clients(self):
+        for tools in (server._PLATFORM_TOOLS, server._KELIVO_PLATFORM_TOOLS):
+            with self.subTest(tools=tools):
+                play = next(tool for tool in tools if tool["name"] == "play")
+                properties = play["inputSchema"]["properties"]["params"][
+                    "properties"
+                ]
+                self.assertTrue({
+                    "room_id", "move", "revision", "wait", "full_state",
+                    "message",
+                } <= properties.keys())
+                self.assertIn("与 move 同级", properties["message"]["description"])
+                self.assertIn("只放游戏动作字段", properties["move"]["description"])
+                self.assertIn("不要提到 duel 外层", properties["move"]["description"])
+                self.assertIn(
+                    "join/move/state/resign/leave",
+                    properties["message"]["description"],
+                )
+                self.assertIn("最近成功响应", properties["revision"]["description"])
+                self.assertIn("409", properties["revision"]["description"])
+                self.assertIn("仅 duel state 使用", properties["full_state"]["description"])
+
+    def test_duel_move_message_is_lifted_without_loosening_game_actions(self):
+        strict_game_moves = (
+            (
+                "aeroplane_chess roll",
+                {"action": "roll", "message": "起飞"},
+                {"action": "roll"},
+            ),
+            (
+                "aeroplane_chess move",
+                {
+                    "action": "move",
+                    "plane_id": "red-0",
+                    "plane_index": 0,
+                    "message": "走你",
+                },
+                {"action": "move", "plane_id": "red-0", "plane_index": 0},
+            ),
+            (
+                "connect4",
+                {"col": 3, "message": "这一列"},
+                {"col": 3},
+            ),
+        )
+        for label, move, expected_move in strict_game_moves:
+            with self.subTest(game=label):
+                original = dict(move)
+                payload = server._prepare_duel_payload({
+                    "action": "move",
+                    "player_id": "ai-1",
+                    "room_id": "ABCDEFGH",
+                    "move": move,
+                    "revision": 4,
+                })
+                self.assertEqual(payload["move"], expected_move)
+                self.assertEqual(payload["message"], original["message"])
+                self.assertEqual(move, original)
+
+        top_level_wins = server._prepare_duel_payload({
+            "action": "move",
+            "player_id": "ai-1",
+            "room_id": "ABCDEFGH",
+            "move": {"action": "roll", "message": "内部消息"},
+            "message": "同级消息",
+            "revision": 4,
+        })
+        self.assertEqual(top_level_wins["move"], {"action": "roll"})
+        self.assertEqual(top_level_wins["message"], "同级消息")
+
+        top_level_only = server._prepare_duel_payload({
+            "action": "move",
+            "player_id": "ai-1",
+            "room_id": "ABCDEFGH",
+            "move": {"action": "roll"},
+            "message": "原本就在同级",
+            "revision": 4,
+        })
+        self.assertEqual(top_level_only["move"], {"action": "roll"})
+        self.assertEqual(top_level_only["message"], "原本就在同级")
+
+        unknown_stays_in_move = server._prepare_duel_payload({
+            "action": "move",
+            "player_id": "ai-1",
+            "room_id": "ABCDEFGH",
+            "move": {
+                "action": "roll",
+                "message": "只提升这个",
+                "unexpected": "must-still-fail-game-validation",
+            },
+            "revision": 4,
+        })
+        self.assertEqual(unknown_stays_in_move["move"], {
+            "action": "roll",
+            "unexpected": "must-still-fail-game-validation",
+        })
+        self.assertIn("与 move 同级", server.DUEL_GUIDE)
+
+    def test_duel_prepare_errors_are_targeted_and_self_repairing(self):
+        cases = (
+            (
+                {"action": "roll", "room_id": "ABCDEFGH"},
+                "outer_action",
+                "params.move.action",
+            ),
+            (
+                {
+                    "action": "move",
+                    "room_id": "ABCDEFGH",
+                    "revision": 4,
+                    "move": {
+                        "action": "roll",
+                        "room_id": "ABCDEFGH",
+                        "revision": 4,
+                        "wait": True,
+                    },
+                },
+                "misplaced_common_fields",
+                "与 move 同级",
+            ),
+            (
+                {
+                    "action": "move",
+                    "room_id": "ABCDEFGH",
+                    "move": {"action": "roll"},
+                },
+                "missing_revision",
+                "最近成功响应",
+            ),
+            (
+                {
+                    "action": "move",
+                    "room_id": "ABCDEFGH",
+                    "move": {"action": "roll"},
+                    "revision": 4,
+                    "full_state": True,
+                },
+                "full_state_action",
+                "只用于 state",
+            ),
+            (
+                {"action": "new", "game_type": "connect4", "wait": True},
+                "wait_usage",
+                "仅 state/move",
+            ),
+        )
+        for arguments, error_type, hint_fragment in cases:
+            with self.subTest(error_type=error_type):
+                with self.assertRaises(server._McpError) as raised:
+                    server._prepare_duel_payload(arguments)
+                details = raised.exception.details
+                self.assertEqual(details["error_type"], error_type)
+                self.assertIn(hint_fragment, details["retry_hint"])
+                self.assertIn("retry_example", details)
+                self.assertLess(len(server._duel_mcp_error_text(raised.exception)), 500)
+
+        with self.assertRaises(server._McpError) as nested_fields:
+            server._prepare_duel_payload({
+                "action": "move",
+                "room_id": "ABCDEFGH",
+                "revision": 4,
+                "move": {"action": "roll", "full_state": True},
+            })
+        self.assertEqual(
+            nested_fields.exception.details["field_errors"],
+            ["move.full_state: 应与 move 同级"],
+        )
+
+    def test_sync_duel_backend_errors_preserve_fields_and_classify_retries(self):
+        class FakeResponse:
+            def __init__(self, status_code, data):
+                self.status_code = status_code
+                self._data = data
+
+            def json(self):
+                return self._data
+
+        def mapped_error(status_code, data, payload):
+            with (
+                patch.object(
+                    server.httpx,
+                    "post",
+                    return_value=FakeResponse(status_code, data),
+                ),
+                self.assertRaises(server._McpError) as raised,
+            ):
+                server._request_duel_backend(payload)
+            return raised.exception
+
+        base = {
+            "action": "move",
+            "room_id": "ABCDEFGH",
+            "move": {"action": "move"},
+            "revision": 4,
+        }
+        missing = mapped_error(
+            422,
+            {
+                "message": "请求参数不符合接口格式，请检查字段、类型与必填项。",
+                "details": [
+                    {"field": "move.plane_id", "message": "Field required"},
+                    {"field": "move.plane_index", "message": "Field required"},
+                ],
+            },
+            base,
+        )
+        self.assertEqual(missing.details["error_type"], "missing_move_fields")
+        self.assertEqual(missing.details["field_errors"], [
+            "move.plane_id: Field required",
+            "move.plane_index: Field required",
+        ])
+        self.assertIn("完整动作", missing.details["retry_hint"])
+
+        alternative = mapped_error(
+            400,
+            {"message": "无效落子：move 必须提供 plane_id 或 plane_index"},
+            base,
+        )
+        self.assertEqual(
+            alternative.details["field_errors"],
+            ["move.plane_id/plane_index: 至少一个必填"],
+        )
+
+        coordinates = mapped_error(
+            400,
+            {
+                "message": (
+                    "无效落子：走法只接受 from_row、from_col、to_row、to_col 四个字段"
+                )
+            },
+            {**base, "move": {"from_row": 5}},
+        )
+        self.assertEqual(coordinates.details["error_type"], "missing_move_fields")
+        self.assertEqual(coordinates.details["field_errors"], [
+            "move.from_col: 缺失",
+            "move.to_col: 缺失",
+            "move.to_row: 缺失",
+        ])
+
+        extra_payload = {**base, "move": {"action": "roll", "trace": "x"}}
+        extra = mapped_error(
+            400,
+            {"message": "无效落子：roll 只接受 action 字段"},
+            extra_payload,
+        )
+        self.assertEqual(extra.details["error_type"], "extra_move_fields")
+        self.assertEqual(extra.details["field_errors"], ["move.trace: 不接受"])
+        self.assertIn("只接受 action", extra.message)
+
+        authoritative = mapped_error(
+            400,
+            {"message": "无效落子：action_id 不在当前权威 legal_actions 中"},
+            {**base, "move": {"action": "act", "action_id": "made-up"}},
+        )
+        self.assertEqual(
+            authoritative.details["error_type"], "not_authoritative"
+        )
+        self.assertIn("不要推理未发布动作", authoritative.details["retry_hint"])
+
+        stale = mapped_error(
+            409,
+            {"message": "局面 revision 已变化（期望 4，当前 5）"},
+            base,
+        )
+        self.assertEqual(stale.details["error_type"], "stale_revision")
+        self.assertIn("别重放旧 move", stale.details["retry_hint"])
+
+        other_turn = mapped_error(
+            409,
+            {"message": "还没轮到你落子"},
+            base,
+        )
+        self.assertEqual(other_turn.details["error_type"], "not_your_turn")
+        self.assertEqual(
+            other_turn.details["retry_example"]["params"]["wait"], True
+        )
+
+        loan_conflict = mapped_error(
+            409,
+            {"message": "欠条 revision 已变化，当前为 3"},
+            {"action": "chips", "op": "loans", "loan_action": "accept"},
+        )
+        self.assertEqual(loan_conflict.details, {})
+
+    def test_sync_mcp_adds_duel_retry_metadata_only_on_errors(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 51,
+            "method": "tools/call",
+            "params": {
+                "name": "play",
+                "arguments": {
+                    "game": "duel",
+                    "action": "roll",
+                    "params": {"room_id": "ABCDEFGH"},
+                },
+            },
+        }
+        error = server._duel_mcp_error(
+            'duel 外层 action="roll" 无效',
+            error_type="outer_action",
+            retry_hint='外层 action 改为 "move"；游戏动作放 params.move.action。',
+            retry_example=server._duel_move_retry_example("roll"),
+        )
+        with patch.object(server, "_tool_play", side_effect=error):
+            failed = server._handle_root_mcp(payload)
+        failed_text = failed["result"]["content"][0]["text"]
+        self.assertTrue(failed["result"]["isError"])
+        self.assertIn('"error_type":"outer_action"', failed_text)
+        self.assertIn('"retry_example"', failed_text)
+
+        with patch.object(server, "_tool_play", return_value='{"ok":true}'):
+            succeeded = server._handle_root_mcp(payload)
+        success_text = succeeded["result"]["content"][0]["text"]
+        self.assertFalse(succeeded["result"]["isError"])
+        self.assertNotIn("retry_hint", success_text)
+        self.assertNotIn("retry_example", success_text)
+
+        non_duel = {
+            **payload,
+            "id": 52,
+            "params": {
+                "name": "play",
+                "arguments": {"game": "workkk", "action": "state"},
+            },
+        }
+        with (
+            patch.object(server, "_authenticated_ai_player_id", return_value=None),
+            patch.object(server, "_duel_unread_request_reminder", return_value=""),
+            patch.object(server, "_tool_play", side_effect=error),
+        ):
+            unchanged = server._handle_root_mcp(non_duel)
+        unchanged_text = unchanged["result"]["content"][0]["text"]
+        self.assertEqual(
+            unchanged_text,
+            '【cedartoy】duel 外层 action="roll" 无效',
+        )
+        self.assertNotIn("retry_hint", unchanged_text)
+
     def test_pending_and_expired_wait_responses_expose_request_bound_next_call(self):
         pending = server._annotate_duel_wait_followup(
             {
@@ -201,7 +540,6 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     "target_player_count": 2,
                     "fill_with_npcs": False,
                     "room_id": "must-drop",
-                    "wait": True,
                 },
                 {
                     "opponent_id": "trusted-human",
@@ -236,7 +574,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ),
             (
                 "reject",
-                {"room_id": "ABCDEFGH", "wait": True},
+                {"room_id": "ABCDEFGH", "revision": 3},
                 {"room_id": "ABCDEFGH"},
                 "accept/reject 处理邀请",
             ),
@@ -276,8 +614,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             ),
             (
                 "resign",
-                {"room_id": "ABCDEFGH", "message": "认输",
-                 "wait": True},
+                {"room_id": "ABCDEFGH", "message": "认输"},
                 {"room_id": "ABCDEFGH", "message": "认输"},
                 "resign 认输",
             ),
@@ -734,7 +1071,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6",
             "NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可",
             "target_player_count/fill_with_npcs",
-            "无全局筹码：yahtzee/blackjack。其余按 catalog 支持 stake",
+            "yahtzee 固定娱乐局；其余按 catalog 支持 stake",
             "liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手",
             "开房能力以 catalog",
             "supports_npcs/supports_stakes",
@@ -746,15 +1083,24 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "之后 move/state 默认只返回",
             "不会消费增量事件",
             "按 rules_text/move_format 行动",
-            "有 legal_moves/legal_actions 时只从中选",
+            '外层 duel action 固定为 "move"',
+            "游戏动作对象放 params.move",
+            "内部 action 提到外层",
+            "room_id/revision/wait/full_state/message 均在 params 内与 move 同级",
+            "message 仅 join/move/state/resign/leave 支持",
+            "列表型 legal_actions/legal_moves 的选中对象直接作为 move",
+            "紧凑/参数化规格按 legal_action_spec 或 submit 构造",
             "allowed_player_counts",
             "private_state 只含己方私密信息",
-            "写操作带最新 revision",
+            "revision 优先用最近成功响应值",
+            "仅缺失、409 或疑似过期时 state",
+            "不要每步先 state",
             "winner/result/settlement",
             "player_id/opponent_id/viewer/participant_ids",
-            "message：可选，可放本次想说的话。",
         ):
             self.assertIn(expected, guide)
+
+        self.assertNotIn("写操作带最新 revision", guide)
 
         delivered = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
         self.assertEqual(delivered, guide)

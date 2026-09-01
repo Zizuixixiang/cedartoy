@@ -284,7 +284,35 @@ _PLATFORM_TOOLS = [
                 },
                 "params": {
                     "type": "object",
-                    "description": "该 action 需要的业务参数；例如 turtle_soup join 用 {\"room_id\":\"...\"}，ask 用 {\"room_id\":\"...\",\"content\":\"...\"}；vote 用 {\"announcement_id\":\"...\",\"options\":\"1,3,5\"}。",
+                    "description": "该 action 的业务参数；duel 的 room_id/move/revision/wait/full_state/message，turtle_soup 的 room_id/content，投票的 announcement_id/options 均放这里；其他以 guide 为准。",
+                    "properties": {
+                        "room_id": {
+                            "type": "string",
+                            "description": "房间 ID（duel、turtle_soup 等）。",
+                        },
+                        "move": {
+                            "type": "object",
+                            "description": "duel 的游戏动作对象；只放游戏动作字段，内部 action 不要提到 duel 外层；room_id/message/revision/wait 等与 move 同级。",
+                            "additionalProperties": True,
+                        },
+                        "revision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "duel move 优先使用最近成功响应的版本；缺失、409 或怀疑过期时再 state。",
+                        },
+                        "wait": {
+                            "type": "boolean",
+                            "description": "duel move/state 是否在本次请求内继续等待。",
+                        },
+                        "full_state": {
+                            "type": "boolean",
+                            "description": "仅 duel state 使用：是否返回完整安全局面。",
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "可选消息；duel 仅 join/move/state/resign/leave 支持，且 move 时必须与 move 同级；workkk 明信片也使用此字段。",
+                        },
+                    },
                     "additionalProperties": True,
                 },
             },
@@ -338,7 +366,10 @@ def _build_kelivo_platform_tools():
     play_tool["inputSchema"]["properties"]["params"].setdefault("properties", {}).update(
         {
             "command": {"type": "string", "description": "命令文本"},
-            "room_id": {"type": "string", "description": "房间 ID"},
+            "room_id": {
+                "type": "string",
+                "description": "房间 ID（duel、turtle_soup 等）。",
+            },
             "content": {"type": "string", "description": "内容文本"},
             "action": {
                 "type": "string",
@@ -481,7 +512,6 @@ def _build_kelivo_platform_tools():
             "thought": {"type": "string", "description": "workkk 上班动作的内心独白。"},
             "item_id": {"type": "string", "description": "workkk 便利店商品 ID，或 crucible_echoes 主动道具 ID。"},
             "index": {"type": "integer", "minimum": 1, "description": "crucible_echoes choose/remove 的候选或库存编号。"},
-            "message": {"type": "string", "description": "workkk 购买明信片时写给人类的话。"},
             "choice": {"type": "string", "description": "workkk 奶茶或玫瑰选择 gift/self。"},
             "career": {"type": "string", "description": "leek 新局职业，如 fund。"},
             "shop_name": {"type": "string", "description": "burger 新局店名。"},
@@ -585,8 +615,12 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                     request_id, {"content": content, "isError": False}
                 )
             except _McpError as exc:
+                error_text = (
+                    _duel_mcp_error_text(exc)
+                    if is_duel_call else f"【cedartoy】{exc.message}"
+                )
                 content = [
-                    {"type": "text", "text": f"【cedartoy】{exc.message}"}
+                    {"type": "text", "text": error_text}
                 ]
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
@@ -615,6 +649,23 @@ class _McpError(Exception):
         self.code = code
         self.message = message
         self.details = details or {}
+
+
+def _duel_mcp_error_text(exc):
+    """Render only Duel retry metadata into the existing MCP text shape."""
+    text = f"【cedartoy】{exc.message}"
+    if not isinstance(exc.details, dict) or "error_type" not in exc.details:
+        return text
+    visible = {
+        key: exc.details[key]
+        for key in (
+            "error_type", "field_errors", "retry_hint", "retry_example",
+        )
+        if key in exc.details and exc.details[key] not in (None, [], {})
+    }
+    return text + "\n" + json.dumps(
+        visible, ensure_ascii=False, separators=(",", ":")
+    )
 
 
 def _db_connect():
@@ -6315,9 +6366,9 @@ DUEL_GUIDE = """# duel·双弈
 调用：play(game="duel",action="...",params={...})。身份固定；player_id/opponent_id/viewer/participant_ids 不能换人或视角。
 游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go；3人=doudizhu；4人=guandan/mahjong；dots_boxes=2/3/4；aeroplane_chess/gandengyan=2/3/4；chinese_checkers=2/3/4/6；liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。yahtzee 固定娱乐局；其余按 catalog 支持 stake；斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手；junqi 敌方暗子；train_cards 牌堆顺序隐藏。开房能力以 catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
 
-对局：catalog 查游戏能力；rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。挂等：不轮到自己时用 state(wait=true)；自己的回合用 move(wait=true)，落子后会继续等待；bootstrap 后也按上述方式继续挂等。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；若返回 next_call，应在当前回复继续调用。开房、加入或确认后若尚未轮到自己，也立即进入挂等。进入 playing 后第一次返回 bootstrap=true 的完整安全 room（棋盘、规则、动作和自己的 private_state）。之后 move/state 默认只返回 revision、轮到谁及新发生的公开/本人可见增量，省 token。需要重新核对当前完整局面时用 action="state",full_state=true；它可重复调用，不会消费增量事件，也不会泄露别人的私密信息。
+对局：catalog 查游戏能力；rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。挂等：非己方回合 state(wait=true)，己方 move(wait=true)，落子后继续等待；bootstrap 后也按上述方式继续挂等。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；返回 next_call 就在当前回复继续调用。开房/加入/确认后未轮到自己也立即挂等。首次进入 playing 返回 bootstrap=true 的完整安全 room（棋盘、规则、动作、己方 private_state）；之后 move/state 默认只返回 revision、轮次与可见增量。仅需重核完整局面时用 action="state",full_state=true；可重复调用，不会消费增量事件或泄露私密信息。
 
-按 rules_text/move_format 行动；有 legal_moves/legal_actions/legal_action_spec 时严格按返回的权威动作或紧凑动作规格选择/构造，绝不自行猜合法动作；private_state 只含己方私密信息；写操作带最新 revision。随机或暗信息游戏的公开结果也会通过增量返回；终局看 winner/result/settlement。message：可选，可放本次想说的话。
+提交：外层 duel action 固定为 "move"，游戏动作对象放 params.move，别把其内部 action 提到外层。room_id/revision/wait/full_state/message 均在 params 内与 move 同级；full_state 仅 state 使用，message 仅 join/move/state/resign/leave 支持。列表型 legal_actions/legal_moves 的选中对象直接作为 move；紧凑/参数化规格按 legal_action_spec 或 submit 构造，别猜。revision 优先用最近成功响应值；仅缺失、409 或疑似过期时 state，不要每步先 state；按 rules_text/move_format 行动；private_state 只含己方私密信息；随机或暗信息结果通过增量返回；终局看 winner/result/settlement。
 
 筹码：action="chips"，op=status|check_in|bankruptcy|ledger|achievements|loans|exchange。
 loans：loan_action=list|create|accept|reject|counter|withdraw|repay。create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)；accept/reject/withdraw(loan_id,loan_revision,idempotency_key)；counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)；repay(loan_id,amount,idempotency_key)。create=小机向绑定人类借款，counter=改条件；以 list.allowed_actions 为准。
@@ -7427,12 +7478,319 @@ def _duel_bound_human_player_id(ai_user):
     return str(rows[0]["id"]) if rows else None
 
 
+_DUEL_MOVE_SIBLING_FIELDS = (
+    "room_id", "revision", "wait", "full_state", "message",
+)
+_DUEL_KNOWN_MOVE_FIELDS = (
+    "action", "action_id", "amount", "card_id", "card_ids", "category",
+    "col", "color", "cost", "face", "from", "from_col", "from_row",
+    "held_mask", "hold_indices", "kind", "max_amount", "min_amount",
+    "orientation", "path", "pattern_label", "pattern_type", "plane_id",
+    "plane_index", "promotion", "quantity", "row", "score",
+    "target_player_id", "to", "to_col", "to_row", "unit", "uno", "zero",
+)
+
+
+def _duel_state_retry_example(*, wait=False, full_state=False):
+    params = {"room_id": "..."}
+    if wait:
+        params["wait"] = True
+    if full_state:
+        params["full_state"] = True
+    return {"action": "state", "params": params}
+
+
+def _duel_move_retry_example(inner_action="roll", **siblings):
+    params = {
+        "room_id": "...",
+        "move": {"action": str(inner_action or "roll")},
+        "revision": 12,
+    }
+    params.update(siblings)
+    return {"action": "move", "params": params}
+
+
+def _duel_mcp_error(
+    message,
+    *,
+    error_type,
+    retry_hint,
+    retry_example=None,
+    field_errors=None,
+    code=-32602,
+):
+    details = {"error_type": error_type, "retry_hint": retry_hint}
+    if field_errors:
+        details["field_errors"] = list(field_errors)
+    if retry_example:
+        details["retry_example"] = retry_example
+    return _McpError(code, message, details)
+
+
+def _duel_compact_field_errors(data):
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("details")
+    if raw is None:
+        raw = data.get("detail")
+    if raw is None:
+        return []
+    items = raw if isinstance(raw, list) else [raw]
+    compact = []
+    for item in items:
+        if isinstance(item, dict):
+            field = item.get("field")
+            if not field and isinstance(item.get("loc"), (list, tuple)):
+                field = ".".join(
+                    str(part) for part in item["loc"] if part != "body"
+                )
+            message = item.get("message") or item.get("msg") or item.get("type")
+            if field and message:
+                value = f"{field}: {message}"
+            elif field:
+                value = str(field)
+            elif message:
+                value = str(message)
+            else:
+                value = json.dumps(
+                    item, ensure_ascii=False, separators=(",", ":")
+                )
+        else:
+            value = str(item)
+        if value and value not in compact:
+            compact.append(value)
+    return compact
+
+
+def _duel_backend_message(status_code, data, field_errors):
+    if isinstance(data, dict):
+        message = data.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+        detail = data.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+    if field_errors:
+        return "duel 请求字段无效"
+    return f"duel 后端错误 HTTP {status_code}"
+
+
+def _duel_move_field_diagnostics(message, payload, field_errors):
+    move = payload.get("move") if isinstance(payload, dict) else None
+    if not isinstance(move, dict):
+        return field_errors, [], []
+    mentioned = {
+        field for field in _DUEL_KNOWN_MOVE_FIELDS
+        if re.search(
+            rf"(?<![A-Za-z0-9_]){re.escape(field)}(?![A-Za-z0-9_])",
+            message,
+        )
+    }
+    if "牌型提示" in message:
+        mentioned.update({"pattern_type", "pattern_label"})
+    required_alternative = "必须提供" in message and bool(mentioned)
+    if not mentioned or not (
+        required_alternative
+        or any(
+            marker in message for marker in (
+                "只接受", "只能提交", "包含未知字段", "未发布的字段",
+            )
+        )
+    ):
+        return field_errors, [], []
+    actual = set(move)
+    if required_alternative:
+        alternatives = sorted(mentioned - actual)
+        enriched = list(field_errors)
+        if alternatives:
+            value = f"move.{'/'.join(alternatives)}: 至少一个必填"
+            if value not in enriched:
+                enriched.append(value)
+        return enriched, alternatives, []
+    optional = {
+        field for field in mentioned
+        if re.search(rf"可选[^\u3002；]*{re.escape(field)}", message)
+    }
+    missing = sorted(mentioned - actual - optional)
+    extra = sorted(actual - mentioned)
+    enriched = list(field_errors)
+    for field in missing:
+        value = f"move.{field}: 缺失"
+        if value not in enriched:
+            enriched.append(value)
+    for field in extra:
+        value = f"move.{field}: 不接受"
+        if value not in enriched:
+            enriched.append(value)
+    return enriched, missing, extra
+
+
+def _duel_backend_mcp_error(status_code, data, payload):
+    field_errors = _duel_compact_field_errors(data)
+    message = _duel_backend_message(status_code, data, field_errors)
+    field_errors, missing_move_fields, extra_move_fields = (
+        _duel_move_field_diagnostics(message, payload, field_errors)
+    )
+    combined = " ".join([message, *field_errors]).lower()
+    action = payload.get("action") if isinstance(payload, dict) else None
+    is_move = action == "move"
+    room_id = payload.get("room_id") if isinstance(payload, dict) else None
+    state_example = _duel_state_retry_example(full_state=True)
+    if room_id:
+        state_example["params"]["room_id"] = room_id
+
+    if is_move and status_code == 409 and (
+        "revision" in combined
+        or "版本" in combined
+        or "已变化" in combined
+        or "过期" in combined
+    ):
+        return _duel_mcp_error(
+            message,
+            error_type="stale_revision",
+            field_errors=field_errors,
+            retry_hint="先 state 取最新局面和 revision，重新决策；别重放旧 move。",
+            retry_example=state_example,
+        )
+
+    if is_move and any(marker in combined for marker in (
+        "还没轮到你", "当前不是", "行动权属于", "当前行动者",
+        "not your turn",
+    )):
+        wait_example = _duel_state_retry_example(wait=True)
+        if room_id:
+            wait_example["params"]["room_id"] = room_id
+        return _duel_mcp_error(
+            message,
+            error_type="not_your_turn",
+            field_errors=field_errors,
+            retry_hint="用 state(wait=true) 等待；别重试同一 move。",
+            retry_example=wait_example,
+        )
+
+    if "full_state" in combined:
+        return _duel_mcp_error(
+            message,
+            error_type="full_state_action",
+            field_errors=field_errors,
+            retry_hint="full_state 只用于 state，放 params.full_state。",
+            retry_example=state_example,
+        )
+
+    if "wait" in combined:
+        wait_example = _duel_state_retry_example(wait=True)
+        if room_id:
+            wait_example["params"]["room_id"] = room_id
+        return _duel_mcp_error(
+            message,
+            error_type="wait_usage",
+            field_errors=field_errors,
+            retry_hint="wait 放 params，与 move 同级；仅 state/move 使用 true/false。",
+            retry_example=wait_example,
+        )
+
+    revision_missing = any(
+        "revision" in item.lower()
+        and any(marker in item.lower() for marker in ("required", "必填", "缺失"))
+        for item in field_errors
+    ) or any(marker in combined for marker in (
+        "必须携带 revision", "revision 必填", "缺少 revision",
+    ))
+    if is_move and revision_missing:
+        inner_action = (
+            payload.get("move", {}).get("action", "roll")
+            if isinstance(payload.get("move"), dict) else "roll"
+        )
+        return _duel_mcp_error(
+            message,
+            error_type="missing_revision",
+            field_errors=field_errors,
+            retry_hint="优先用最近成功响应的 revision；没有时才 state，别每步先 state。",
+            retry_example=_duel_move_retry_example(inner_action),
+        )
+
+    if is_move and (
+        extra_move_fields
+        or any(marker in combined for marker in (
+            "未知字段", "未发布的字段", "不得提交", "不接受此字段",
+            "extra inputs are not permitted",
+        ))
+    ):
+        return _duel_mcp_error(
+            message,
+            error_type="extra_move_fields",
+            field_errors=field_errors,
+            retry_hint="move 不要附加服务端未发布字段；按最新 legal_actions/legal_moves 原样选。",
+            retry_example=state_example,
+        )
+
+    required_move_error = any(
+        item.lower().startswith("move")
+        and any(
+            marker in item.lower() for marker in ("required", "必填", "缺失")
+        )
+        for item in field_errors
+    )
+    if is_move and (
+        missing_move_fields
+        or required_move_error
+        or any(
+            marker in combined for marker in ("缺少字段", "需要 move 对象")
+        )
+    ):
+        return _duel_mcp_error(
+            message,
+            error_type="missing_move_fields",
+            field_errors=field_errors,
+            retry_hint="从最新 legal_actions/legal_moves 选完整动作，不要自行删字段。",
+            retry_example=state_example,
+        )
+
+    if is_move and any(marker in combined for marker in (
+        "legal_actions", "legal_moves", "authoritative", "权威动作",
+        "权威合法行动", "该动作不在", "该行动不在", "该走法不合法",
+        "服务端当前未发布", "服务端本次发布", "当前必须先",
+        "当前没有待执行", "无效落子",
+    )):
+        return _duel_mcp_error(
+            message,
+            error_type="not_authoritative",
+            field_errors=field_errors,
+            retry_hint="按最新 legal_actions/legal_moves 重新选；不要推理未发布动作。",
+            retry_example=state_example,
+        )
+
+    if is_move and status_code in {400, 409, 422}:
+        return _duel_mcp_error(
+            message,
+            error_type="invalid_request",
+            field_errors=field_errors,
+            retry_hint="按错误信息修正后重试。",
+        )
+    code = -32602 if status_code < 500 else -32603
+    return _McpError(code, message)
+
+
 def _prepare_duel_payload(
     arguments,
     trusted_opponent_id=None,
     force_opponent=False,
     trusted_player_id=None,
 ):
+    # Models sometimes attach the optional table message to the game action.
+    # Keep game validators authoritative: lift only this known MCP field and
+    # leave every other move key untouched so malformed actions still fail.
+    if arguments.get("action") == "move":
+        move = arguments.get("move")
+        if isinstance(move, dict) and "message" in move:
+            normalized_arguments = dict(arguments)
+            normalized_move = dict(move)
+            nested_message = normalized_move.pop("message")
+            normalized_arguments["move"] = normalized_move
+            # An explicit sibling value wins on conflict; never send both.
+            if "message" not in normalized_arguments:
+                normalized_arguments["message"] = nested_message
+            arguments = normalized_arguments
     action = arguments.get("action")
     action_fields = {
         "catalog": set(),
@@ -7451,10 +7809,76 @@ def _prepare_duel_payload(
         "leave": {"room_id", "message"},
     }
     if action not in {*action_fields, "chips"}:
-        raise _McpError(
-            -32602,
-            '未知 duel action；请先 get_guide(game="duel") 查看玩法。',
+        inner_action = action if isinstance(action, str) and action else "roll"
+        raise _duel_mcp_error(
+            f'duel 外层 action="{inner_action}" 无效',
+            error_type="outer_action",
+            retry_hint='外层 action 改为 "move"；游戏动作放 params.move.action。',
+            retry_example=_duel_move_retry_example(inner_action),
         )
+    if "full_state" in arguments and action != "state":
+        raise _duel_mcp_error(
+            "full_state 不适用于当前 duel action",
+            error_type="full_state_action",
+            field_errors=["full_state: 仅 state 支持"],
+            retry_hint="full_state 只用于 state，放 params.full_state。",
+            retry_example=_duel_state_retry_example(full_state=True),
+        )
+    if "wait" in arguments and action not in {"move", "state"}:
+        raise _duel_mcp_error(
+            "wait 不适用于当前 duel action",
+            error_type="wait_usage",
+            field_errors=["wait: 仅 state/move 支持"],
+            retry_hint="wait 放 params，与 move 同级；仅 state/move 使用。",
+            retry_example=_duel_state_retry_example(wait=True),
+        )
+    if action == "move":
+        move = arguments.get("move")
+        if move is None:
+            raise _duel_mcp_error(
+                "move 动作缺少 move 对象",
+                error_type="missing_move_fields",
+                field_errors=["move: 必填对象"],
+                retry_hint="从最新 legal_actions/legal_moves 选完整动作，不要自行删字段。",
+                retry_example=_duel_state_retry_example(full_state=True),
+            )
+        if isinstance(move, dict):
+            misplaced = [
+                field for field in _DUEL_MOVE_SIBLING_FIELDS
+                if field != "message" and field in move
+            ]
+            if misplaced:
+                field_errors = [
+                    f"move.{field}: 应与 move 同级"
+                    for field in misplaced
+                ]
+                if "full_state" in misplaced:
+                    hint = "full_state 只用于 state 的 params.full_state；其他通用字段与 move 同级。"
+                    example = _duel_state_retry_example(full_state=True)
+                else:
+                    hint = "room_id/revision/wait/message 放 params，与 move 同级；move 只留游戏动作。"
+                    example = _duel_move_retry_example(
+                        move.get("action", "roll"),
+                        **({"wait": True} if "wait" in misplaced else {}),
+                    )
+                raise _duel_mcp_error(
+                    "move 含有层级错误的通用字段",
+                    error_type="misplaced_common_fields",
+                    field_errors=field_errors,
+                    retry_hint=hint,
+                    retry_example=example,
+                )
+        if arguments.get("revision") is None:
+            inner_action = (
+                move.get("action", "roll") if isinstance(move, dict) else "roll"
+            )
+            raise _duel_mcp_error(
+                "move 缺少 revision",
+                error_type="missing_revision",
+                field_errors=["revision: 必填"],
+                retry_hint="优先用最近成功响应的 revision；没有时才 state，别每步先 state。",
+                retry_example=_duel_move_retry_example(inner_action),
+            )
     if action == "chips":
         # Split McpPlayBody by chips operation so fields valid for one operation
         # cannot hitchhike on another one. Identities are injected below.
@@ -7585,9 +8009,7 @@ def _request_duel_backend(payload):
     except ValueError as exc:
         raise _McpError(-32603, "duel 后端返回非 JSON 响应") from exc
     if resp.status_code >= 400:
-        detail = data.get("message") if isinstance(data, dict) else None
-        code = -32602 if resp.status_code < 500 else -32603
-        raise _McpError(code, detail or f"duel 后端错误 HTTP {resp.status_code}")
+        raise _duel_backend_mcp_error(resp.status_code, data, payload)
     return data
 
 
@@ -7662,7 +8084,7 @@ def _discard_duel_gateway_ticket(ticket):
     return removed is not None
 
 
-def _duel_response_from_gateway_completion(completion):
+def _duel_response_from_gateway_completion(completion, backend_payload=None):
     if not isinstance(completion, dict):
         raise _McpError(-32603, "duel async gateway 返回格式无效")
     kind = completion.get("kind")
@@ -7679,10 +8101,8 @@ def _duel_response_from_gateway_completion(completion):
         raise _McpError(-32603, "duel async gateway 返回状态无效") from None
     data = completion.get("data")
     if status_code >= 400:
-        detail = data.get("message") if isinstance(data, dict) else None
-        code = -32602 if status_code < 500 else -32603
-        raise _McpError(
-            code, detail or f"duel 后端错误 HTTP {status_code}"
+        raise _duel_backend_mcp_error(
+            status_code, data, backend_payload or {}
         )
     return data
 
@@ -7741,7 +8161,7 @@ def _prepare_duel_gateway_rpc(payload, *, user_agent="", auth_token=None):
             "status_code": 200,
             "body": _mcp_tool_text_result(
                 request_id,
-                f"【cedartoy】{exc.message}",
+                _duel_mcp_error_text(exc),
                 is_error=True,
             ),
         }
@@ -7804,13 +8224,15 @@ def _finalize_duel_gateway_rpc(ticket, completion):
             "message": exc.message,
         }
     try:
-        response = _duel_response_from_gateway_completion(completion)
+        response = _duel_response_from_gateway_completion(
+            completion, prepared.backend_payload
+        )
         text = _finalize_deferred_duel_call(prepared, response)
         body = _mcp_tool_text_result(request_id, text)
     except _McpError as exc:
         body = _mcp_tool_text_result(
             request_id,
-            f"【cedartoy】{exc.message}",
+            _duel_mcp_error_text(exc),
             is_error=True,
         )
     except Exception as exc:
