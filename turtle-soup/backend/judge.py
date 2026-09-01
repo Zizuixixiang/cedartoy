@@ -24,11 +24,11 @@ NPC_POOL_NAMES = ("npc_decision", "npc_speech")
 POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
 _rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}
 _rr_locks: dict[str, asyncio.Lock] = {pool: asyncio.Lock() for pool in POOL_NAMES}
-# Locks and health belong to the physical API credential, not a database row.
-# This prevents an administrator from duplicating one key into several purpose
-# rows to evade node-level serialization or cooldown.
+# Locks belong to the physical API credential; health belongs to one model on
+# that credential. Duplicate rows cannot evade either shared identity.
 _config_locks: dict[str, asyncio.Lock] = {}
 _config_node_keys: dict[int, str] = {}
+_config_lock_keys: dict[int, str] = {}
 _guess_lock = asyncio.Lock()
 FAIL_LIMIT = 3
 COOLDOWN_SECONDS = (60, 120, 300, 600, 1800, 3600, 7200)
@@ -120,10 +120,18 @@ def _pool_name(pool: str) -> str:
     return pool if pool in POOL_NAMES else "judge"
 
 
-def _node_key(cfg: dict[str, Any]) -> str:
+def _credential_key(cfg: dict[str, Any]) -> str:
     endpoint = _endpoint(str(cfg.get("api_url") or "").strip()).lower()
     api_key = str(cfg.get("api_key") or "").strip()
     material = f"{endpoint}\0{api_key}".encode("utf-8")
+    return "credential:" + hashlib.sha256(material).hexdigest()
+
+
+def _node_key(cfg: dict[str, Any]) -> str:
+    endpoint = _endpoint(str(cfg.get("api_url") or "").strip()).lower()
+    api_key = str(cfg.get("api_key") or "").strip()
+    model = str(cfg.get("model") or "").strip()
+    material = f"{endpoint}\0{api_key}\0{model}".encode("utf-8")
     return "node:" + hashlib.sha256(material).hexdigest()
 
 
@@ -139,11 +147,14 @@ def _merge_runtime_state(target: ConfigRuntimeState, source: ConfigRuntimeState)
 
 
 def register_config_runtime_node(cfg: dict[str, Any]) -> str:
-    """Bind one database row to shared physical-node runtime state."""
+    """Bind one row to model health and physical-credential lock identities."""
     config_id = int(cfg["id"])
     key = _node_key(cfg)
+    lock_key = _credential_key(cfg)
     previous = _config_node_keys.get(config_id)
+    previous_lock = _config_lock_keys.get(config_id)
     _config_node_keys[config_id] = key
+    _config_lock_keys[config_id] = lock_key
     legacy_key = f"config:{config_id}"
     if legacy_key in _runtime_states:
         legacy = _runtime_states.pop(legacy_key)
@@ -152,8 +163,12 @@ def register_config_runtime_node(cfg: dict[str, Any]) -> str:
         mapped == previous for cid, mapped in _config_node_keys.items()
         if cid != config_id
     ):
-        _config_locks.pop(previous, None)
         _runtime_states.pop(previous, None)
+    if previous_lock and previous_lock != lock_key and not any(
+        mapped == previous_lock for cid, mapped in _config_lock_keys.items()
+        if cid != config_id
+    ):
+        _config_locks.pop(previous_lock, None)
     return key
 
 
@@ -162,7 +177,8 @@ def _runtime_key(config_id: int) -> str:
 
 
 def _config_lock(cfg: dict[str, Any]) -> asyncio.Lock:
-    key = register_config_runtime_node(cfg)
+    register_config_runtime_node(cfg)
+    key = _config_lock_keys[int(cfg["id"])]
     lock = _config_locks.get(key)
     if lock is None:
         lock = asyncio.Lock()
@@ -365,6 +381,7 @@ def reset_fail_counts(config_id: int | None = None, purpose: str | None = None) 
     if config_id is None:
         _runtime_states.clear()
         _config_node_keys.clear()
+        _config_lock_keys.clear()
     else:
         _runtime_states.pop(_runtime_key(config_id), None)
 

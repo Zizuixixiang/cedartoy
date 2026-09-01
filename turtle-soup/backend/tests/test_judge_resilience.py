@@ -234,6 +234,48 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
             9000,
         )
 
+    async def test_429_health_is_independent_between_models_on_same_credential(self):
+        gemini_35 = {
+            **CONFIG,
+            "id": 71,
+            "name": "gemini-3.5",
+            "model": "gemini-3.5-flash",
+        }
+        gemini_3 = {
+            **CONFIG,
+            "id": 72,
+            "name": "gemini-3",
+            "model": "gemini-3-flash-preview",
+        }
+
+        result = await self._chat_with_configs(
+            [gemini_35, gemini_3],
+            [
+                response(429, headers={"Retry-After": "240"}),
+                response(200, content="gemini-3-ok"),
+            ],
+        )
+
+        self.assertEqual(result, "gemini-3-ok")
+        self.assertEqual(
+            [payload["model"] for payload in FakeClient.payloads],
+            ["gemini-3.5-flash", "gemini-3-flash-preview"],
+        )
+        self.assertEqual(
+            judge.get_config_runtime_status(gemini_35["id"])["runtime_status"],
+            "cooling",
+        )
+        self.assertEqual(
+            judge.get_config_runtime_status(gemini_35["id"])[
+                "cooldown_remaining_seconds"
+            ],
+            240,
+        )
+        self.assertEqual(
+            judge.get_config_runtime_status(gemini_3["id"])["runtime_status"],
+            "healthy",
+        )
+
     async def test_only_one_request_can_use_a_half_open_probe(self):
         state = judge._state(CONFIG["id"])
         state.consecutive_failures = 3
@@ -662,18 +704,59 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             ["https://available-legacy.test/v1/chat/completions"],
         )
 
-    async def test_duplicate_rows_share_health_and_node_serialization_identity(self):
+    async def test_duplicate_rows_with_same_model_share_health_and_lock(self):
         npc_cfg = {**CONFIG, "id": 1, "purpose": "npc"}
         judge_cfg = {**CONFIG, "id": 2, "purpose": "judge"}
         self.assertEqual(
             judge.register_config_runtime_node(npc_cfg),
             judge.register_config_runtime_node(judge_cfg),
         )
-        judge._record_failure(1, httpx.ReadTimeout("shared"), was_probe=False)
+        rate_limited = response(429)
+        with self.assertRaises(httpx.HTTPStatusError) as caught:
+            rate_limited.raise_for_status()
+        judge._record_failure(1, caught.exception, was_probe=False)
         self.assertEqual(
             judge.get_config_runtime_status(2)["consecutive_failures"], 1
         )
+        self.assertEqual(
+            judge.get_config_runtime_status(2)["runtime_status"], "cooling"
+        )
+        self.assertEqual(
+            judge.get_config_runtime_status(2)["cooldown_remaining_seconds"],
+            120,
+        )
         self.assertIs(judge._config_lock(npc_cfg), judge._config_lock(judge_cfg))
+
+    async def test_different_models_share_credential_lock_but_not_health(self):
+        npc_cfg = {
+            **CONFIG,
+            "id": 3,
+            "purpose": "npc",
+            "model": "gemini-3.5-flash",
+        }
+        judge_cfg = {
+            **CONFIG,
+            "id": 4,
+            "purpose": "judge",
+            "model": "gemini-3-flash-preview",
+        }
+        self.assertNotEqual(
+            judge.register_config_runtime_node(npc_cfg),
+            judge.register_config_runtime_node(judge_cfg),
+        )
+        npc_lock = judge._config_lock(npc_cfg)
+        judge_lock = judge._config_lock(judge_cfg)
+        self.assertIs(npc_lock, judge_lock)
+        async with npc_lock:
+            self.assertTrue(judge_lock.locked())
+
+        judge._record_failure(3, httpx.ReadTimeout("model-specific"), was_probe=False)
+        self.assertEqual(
+            judge.get_config_runtime_status(3)["consecutive_failures"], 1
+        )
+        self.assertEqual(
+            judge.get_config_runtime_status(4)["consecutive_failures"], 0
+        )
 
     async def test_paid_deepseek_npc_node_is_allowed_without_real_request(self):
         paid = {
