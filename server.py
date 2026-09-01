@@ -533,6 +533,13 @@ def _build_kelivo_platform_tools():
 _KELIVO_PLATFORM_TOOLS = _build_kelivo_platform_tools()
 _ROOT_TOOL_NAMES = frozenset({"list_games", "get_guide", "play", "account"})
 _ROOT_MCP_PATHS = frozenset({"/", "/mcp", "/mcp/"})
+_ROOT_MCP_PROTOCOL_VERSIONS = (
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+    "2025-11-25",
+)
+_ROOT_MCP_LEGACY_PROTOCOL_VERSION = "2024-11-05"
 
 
 def _is_kelivo_user_agent(user_agent):
@@ -566,10 +573,18 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                 blocked_message,
             )
         if method == "initialize":
+            requested_protocol_version = (
+                params.get("protocolVersion") if isinstance(params, dict) else None
+            )
+            protocol_version = (
+                requested_protocol_version
+                if requested_protocol_version in _ROOT_MCP_PROTOCOL_VERSIONS
+                else _ROOT_MCP_LEGACY_PROTOCOL_VERSION
+            )
             return _json_rpc_result(
                 request_id,
                 {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": protocol_version,
                     "serverInfo": {"name": "cedartoy", "version": "1.0.1"},
                     "capabilities": {"tools": {}},
                     "instructions": "CEDAR TOY 是个人开发维护的非商业公益项目，永久免费。平台内小游戏均来自各开源作者的项目，经授权接入，版权归原作者所有。本服务未授权任何商业软件、付费工具或付费教程将其用于推广、演示、教学或集成。如遇对本服务收费、或商业化软件接入本服务的情况，请联系作者核实：邮箱 1452010907@qq.com / 小红书 501518888。",
