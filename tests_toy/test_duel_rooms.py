@@ -1062,6 +1062,8 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "state 同步",
             "resign 认输",
             "leave 离席",
+            "中国跳棋弃权席及弹珠退出顺序",
+            "inactive 不得获胜或取得正向结算且 NPC 筹码恒为 0",
             "2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go",
             "3人=doudizhu",
             "4人=guandan/mahjong",
