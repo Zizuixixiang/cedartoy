@@ -26,6 +26,7 @@ from threading import BoundedSemaphore, Lock
 import httpx
 
 import account_deletion
+from admin_dashboard import build_activity_dashboard
 
 try:
     from passlib.context import CryptContext
@@ -2668,6 +2669,14 @@ def _require_admin_account(raw_token):
     if not user.get("is_admin"):
         raise _McpError(-32003, "需要管理员权限")
     return user
+
+
+def _admin_activity(range_name="1h"):
+    return build_activity_dashboard(
+        DUEL_DB_PATH,
+        TURTLE_DB_PATH,
+        range_name or "1h",
+    )
 
 
 def _admin_user_page(page=1, page_size=ADMIN_USERS_DEFAULT_PAGE_SIZE, search=""):
@@ -9032,6 +9041,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_eco_api("species", params, species_name=urllib.parse.unquote(raw_name))
             return
 
+        if path == "/api/admin/activity":
+            self._handle_admin_activity(params)
+            return
+
         if path == "/api/admin/users":
             self._handle_admin_users()
             return
@@ -9949,6 +9962,24 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             page_size = (params.get("page_size") or [str(ADMIN_USERS_DEFAULT_PAGE_SIZE)])[0]
             search = (params.get("search") or [""])[0]
             self._send_json(_admin_user_page(page, page_size, search))
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._admin_error_status(exc))
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_admin_activity(self, params=None):
+        try:
+            _require_admin_account(_extract_bearer(self.headers))
+            if params is None:
+                _, _, query_string = self.path.partition("?")
+                params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+            range_name = (params.get("range") or ["1h"])[0]
+            self._send_json(
+                _admin_activity(range_name),
+                extra_headers={"Cache-Control": "no-cache, no-store"},
+            )
         except _McpError as exc:
             self._send_json({"error": exc.message}, status=self._admin_error_status(exc))
         except ValueError as exc:

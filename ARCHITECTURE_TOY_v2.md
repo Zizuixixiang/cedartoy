@@ -56,7 +56,7 @@ server.py : 127.0.0.1:8002
 | `vendor/` | 19 个带各自 `.git` 的第三方仓库 clone；根仓库整体忽略，不是 submodule |
 | `eco/` | 独立第三方/上游仓库 clone；根仓库忽略 |
 | `data/` | 运行数据；仅 `.gitkeep` 跟踪，数据库、备份和 `vendor_saves/` 均忽略 |
-| `index.html`、`admin.html`、`eco.html` | 当前平台实际使用的根页、平台管理页和独立游戏页 |
+| `index.html`、`admin.html`、`eco.html` | 当前平台实际使用的根页、账号管理/运营看板页和独立游戏页 |
 | `toy-platform/` | 被 `.gitignore` 忽略的运行残留目录；当前没有前端源代码，只有空数据库文件 |
 
 第三方源码与平台适配代码刻意分离：升级 `vendor/*` 或 `eco/` 不会在 CedarToy 根仓库产生源码 diff；真正纳入平台版本的兼容逻辑必须放在 adapter 或 `server.py`。相应地，根仓库也没有记录这些 clone 的精确 commit，部署者必须另外保证第三方目录存在且版本兼容。
@@ -121,6 +121,7 @@ server.py : 127.0.0.1:8002
 | `GET /eco/api/species/{name}` | Bearer | 已解锁物种详情 |
 | `POST /eco/api/human_action` | Bearer 人类账号 | 对已绑定 AI 池塘执行协作动作；同一人机组合 1 秒节流 |
 | `/api/admin/users*` | Bearer 管理员 | `page/page_size/search` 服务端分页搜索，以及修改、重置密码、释放账号 |
+| `GET /api/admin/activity?range=` | Bearer 管理员 | 双弈、海龟汤、NPC、筹码/互动的只读聚合运营数据；range 仅允许 `10m/1h/6h/12h/24h`，默认 `1h` |
 
 `GET/POST/PUT/PATCH/DELETE/OPTIONS /soup*` 和 `/mcp*` 代理到 `turtle-soup:8012`。SSE 路径按块转发并加 `X-Accel-Buffering: no`；事件连接仍由 turtle-soup 管理。
 
@@ -311,13 +312,14 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 
 ## 6. 存档体系
 
-### 6.1 三个存储域
+### 6.1 四个存储域
 
 | 存储 | 数据 |
 | --- | --- |
 | `turtle-soup/backend/turtle_soup.db` | 海龟汤业务、平台账号/绑定、游客认领码、注册事件、防沉迷 |
 | `data/sessions.db` | 测试会话/结果、eco、ciyuwu、平台通知/已读/投票 |
 | `data/vendor_saves/<game>/<player_id>/` | 通用命令型游戏（含 `crucible_echoes`）、workkk 与 Garden-Cat 的 per-player 文件存档 |
+| `vendor/duel/data/duel.db` | 双弈房间/参与者、NPC、筹码钱包与流水、互动请求、借款和成就；运营看板只读访问 |
 
 `data/soup.db`、`data/toy.db`、`toy-platform/*.db` 不是当前代码的读写目标。
 
@@ -379,12 +381,14 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 | --- | --- |
 | `index.html` | 单文件 HTML/CSS/JS；游戏卡、登录/绑定、存档概览、防沉迷、街机筹码、平台统计（含三款新测试聚合分布）、eco/workkk 围观入口 |
 | `test_game.html` | MBTI/Enneagram/DND/love/ECR/humanity 共用的人类答题页；公开题目不下发量表权重/维度；Enneagram 页面展示中文题目并标注 MIT 题库来源 |
-| `admin.html` | 单文件平台账号管理页 |
+| `admin.html` | 单文件平台账号管理与运营看板页；看板可见时每 30 秒刷新，隐藏时停刷 |
 | `eco.html` | 单文件人类观察/协作页；读 `/eco/api/*`，六种小游戏只通过 `human_action` 改已绑定 AI 存档 |
 | `turtle-soup/frontend/` | 独立 Vite/React 工程，构建物由 turtle-soup 服务 |
 | `vendor/workkk/main.py` | vendor 服务内嵌的大屏 HTML，由平台代理时改写路径 |
 
 首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片（包括 `crucible_echoes`）的“完整玩法”跳到上游 GitHub；海龟汤进入 `/soup/`，eco/workkk 等有明确人类前端的游戏另提供绑定后入口。MBTI、Enneagram、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，Enneagram/humanity 明确不提供。
+
+平台管理员运营看板调用 `GET /api/admin/activity`，复用平台 Bearer 管理员鉴权。顶部统计区间固定为 `10m/1h/6h/12h/24h` 五档且默认 `1h`，统一控制双弈、海龟汤两个一级模块的活跃及全部范围统计；NPC、筹码与互动归入双弈，不存在独立固定 10 分钟窗口。后端以只读 SQLite 连接分别聚合 Duel 与 turtle-soup，单库失败只把对应模块标为不可用；响应不选择聊天、汤面/答案/题名、互动备注、借款条款、用户名、个人余额排行或逐房明细。完整字段与运维检查见 [`docs/ADMIN_DASHBOARD.md`](docs/ADMIN_DASHBOARD.md)。
 
 `index.html` 通过 CDN 加载 `marked` 来渲染 Memoria 人类攻略；加载的 HTML 在前端做白名单式清理。平台统计同时调用自身 `/api/games/stats` 和 turtle-soup 的排行榜/平台统计 API。
 

@@ -1,6 +1,6 @@
 # CedarToy 运维速查（AGENTS）
 
-单体 Python 服务：`server.py`（无框架 http.server），前端 `index.html`（玩家）/ `admin.html`（管理，路由 `/admin`）。
+单体 Python 服务：`server.py`（无框架 http.server），前端 `index.html`（玩家）/ `admin.html`（账号管理与运营看板，路由 `/admin`）。
 
 ## 服务管理
 - supervisor 配置不在默认位置，必须带 `-c`：`supervisorctl -c /etc/supervisor/supervisord.conf status|restart cedartoy`（cedar-remote 的 shell_exec 里不带 `-c` 也能用，报 refused 再加）
@@ -30,6 +30,7 @@
 - 捞档：解包对应日期 tar，注意覆盖发生在当天 3:50 之前还是之后
 
 ## 常见工单
+- 运营看板：`/admin` 的「运营看板」页签调用管理员专用 `GET /api/admin/activity?range=`；页面只有“双弈”和“海龟汤”两个一级数据模块，顶部 range 统一控制两模块的活跃及全部范围统计，双弈模块同时包含 NPC、筹码与互动，不存在独立固定 10 分钟窗口；range 只允许按顺序 `10m/1h/6h/12h/24h`，默认 `1h`。接口只返回聚合，不提供逐房明细。聚合实现与只读 smoke 见 `docs/ADMIN_DASHBOARD.md`
 - 用户称"存档/绑定全没了"：先查 toy_users 是否有同名不同大小写的新账号——login_or_register 大小写敏感且查无此人会静默注册新号
 - 小机忘密码：人类登录前端，绑定列表里小机条目有「重置密码」按钮（后端 account action `reset_machine_password`）；管理员也可在 /admin 生成重置链接
 - MCP 鉴权双通道：路径带 token 和 Authorization: Bearer 等效；改 tools/call 分发时每个工具都要 `path_token or bearer_token`，漏了 bearer 用户就会报"缺少或无效的塘子玩家身份"（2026-07-31 修过 play/list_games）

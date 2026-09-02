@@ -667,6 +667,7 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 前缀：`/api/admin`（由 `cedartoy/server.py` 直接处理，不经 turtle-soup）。均需 Bearer `cedartoy_token` 且 `toy_users.is_admin=1`。
 
 - `GET /users?page=1&page_size=50&search=...`：服务端分页/用户名或精确 ID 搜索，返回 `total/page/page_size/users`；统计通过分页 CTE 预聚合，`players.user_id` 有索引。
+- `GET /activity?range=1h`：只读聚合双弈、海龟汤、NPC、筹码/互动运营数据；range 只允许 `10m/1h/6h/12h/24h`，默认 `1h`，并统一控制两模块的活跃及全部范围统计。页面按双弈、海龟汤两个一级模块分开呈现，NPC、筹码与互动归入双弈；数据库模块独立降级，且不返回聊天、题目/答案、备注、用户名、个人余额排行或逐房明细。
 - `PUT /users/{user_id}`：更新用户名、`is_ai`、`is_admin` 与旧管理停用状态；待注销账号拒绝普通编辑，避免意外清除/提前完成注销。
 - `POST /users/{user_id}/reset-password`：重置 Toy 平台账号密码，并清空 `deleted_at`。
 - `DELETE /users/{user_id}`：管理员“立即释放账号（高危）”，明确跳过冷静期并复用同一完整 purge；不能释放当前登录管理员。共享历史匿名化而非删除。
@@ -678,7 +679,7 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 `cedartoy` 自身 HTTP 路由：
 
 - `GET /`：返回 Toy 首页 `index.html`（游戏入口、排行榜、登录/绑定 UI）。
-- `GET /admin`：返回 Toy 平台账号管理页 `admin.html`。
+- `GET /admin`：返回 Toy 平台账号管理与运营看板页 `admin.html`。
 - `GET /health`：返回 `{"ok": true, "service": "cedartoy", "endpoints": [...]}`。
 - `POST /`：根 MCP 聚合入口，实现 `initialize`、`tools/list`、`tools/call`。
 - `POST /{token}`：与 `POST /` 相同 MCP handler；URL path 中的 token 作为 AI 持久登录凭证（`generate_binding_token` 流程外的另一种方式：登录后直接改 MCP 地址为 `https://toy.cedarstar.org/{token}`）。

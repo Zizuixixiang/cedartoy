@@ -187,6 +187,236 @@
       color: var(--muted);
       text-align: center;
     }
+    .admin-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      background: #e9e2da;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .admin-tabs button {
+      flex: 0 1 180px;
+      background: transparent;
+      border-color: transparent;
+      font-weight: 700;
+    }
+    .admin-tabs button[aria-selected="true"] {
+      background: var(--panel);
+      border-color: var(--line);
+      color: var(--accent-dark);
+      box-shadow: 0 1px 3px rgba(39, 35, 31, .08);
+    }
+    .tab-panel[hidden] { display: none; }
+    .tab-panel {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+    .dashboard-toolbar {
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .dashboard-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .dashboard-control select {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 9px;
+      background: #fff;
+      color: var(--text);
+    }
+    .last-refresh {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .dashboard-section {
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .section-head h2, .section-head h3, .subsection-head h3 {
+      margin: 0;
+      font-size: 19px;
+    }
+    .dashboard-subsection {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    .dashboard-subsection + .dashboard-subsection {
+      padding-top: 12px;
+      border-top: 1px solid #e8ded4;
+    }
+    .subsection-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .subsection-head h3 { font-size: 16px; }
+    .section-note {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+      gap: 9px;
+      min-width: 0;
+    }
+    .dashboard-content {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .metric-card {
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid #e8ded4;
+      border-radius: 7px;
+      background: #fff;
+    }
+    .metric-card .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .metric-card .metric-value {
+      margin-top: 5px;
+      font-size: 24px;
+      line-height: 1.15;
+      font-weight: 750;
+      color: var(--accent-dark);
+      overflow-wrap: anywhere;
+    }
+    .metric-card .metric-detail {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .module-error {
+      border: 1px solid #e7b3b3;
+      background: #fff7f7;
+      color: var(--danger);
+      border-radius: 7px;
+      padding: 12px;
+    }
+    .dashboard-split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .subpanel {
+      min-width: 0;
+      border: 1px solid #e8ded4;
+      border-radius: 7px;
+      background: #fff;
+      padding: 11px;
+    }
+    .subpanel h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+    .bar-list {
+      display: grid;
+      gap: 8px;
+    }
+    .bar-row {
+      display: grid;
+      grid-template-columns: minmax(92px, 1fr) minmax(90px, 3fr) auto;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      min-width: 0;
+    }
+    .bar-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bar-track {
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #eee7df;
+    }
+    .bar-fill {
+      height: 100%;
+      min-width: 2px;
+      border-radius: inherit;
+      background: var(--accent);
+    }
+    .bar-value {
+      min-width: 22px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .aggregate-list {
+      display: grid;
+      gap: 7px;
+    }
+    .aggregate-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      padding: 8px 9px;
+      border-radius: 6px;
+      background: #f7f2ed;
+    }
+    .aggregate-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .aggregate-title, .aggregate-key {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .aggregate-title { font-size: 13px; }
+    .aggregate-key {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .aggregate-value {
+      color: var(--accent-dark);
+      font-size: 15px;
+      font-variant-numeric: tabular-nums;
+    }
+    .dashboard-empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 10px 0;
+    }
     .modal {
       position: fixed;
       inset: 0;
@@ -258,12 +488,84 @@
       flex-wrap: wrap;
     }
     @media (max-width: 760px) {
-      .shell { width: min(100vw - 20px, 1180px); padding-top: 10px; }
-      .topbar { align-items: stretch; flex-direction: column; }
-      .top-actions { width: 100%; }
-      .top-actions > * { flex: 1 1 auto; }
+      .shell {
+        width: min(calc(100vw - 16px), 1180px);
+        padding: 8px 0 22px;
+        gap: 10px;
+      }
+      .topbar {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+      }
+      h1 { font-size: 21px; }
+      .sub { font-size: 12.5px; line-height: 1.4; }
+      .top-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+        gap: 6px;
+      }
+      .top-actions > * {
+        width: 100%;
+        min-width: 0;
+        min-height: 34px;
+        padding: 6px 7px;
+        overflow: hidden;
+        font-size: 13px;
+        text-overflow: ellipsis;
+      }
       .toolbar { display: grid; grid-template-columns: 1fr 1fr; }
       .toolbar .search, .toolbar .count, .toolbar button { width: 100%; margin-left: 0; }
+      .admin-tabs { gap: 4px; padding: 4px; }
+      .admin-tabs button { flex: 1 1 0; min-width: 0; min-height: 34px; padding: 5px 7px; }
+      .tab-panel { gap: 10px; }
+      .dashboard-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 7px;
+        padding: 8px;
+      }
+      .dashboard-control {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 6px;
+        min-width: 0;
+      }
+      .dashboard-control select { width: 100%; min-width: 0; min-height: 34px; }
+      .dashboard-toolbar > button { width: auto; min-height: 34px; padding: 6px 9px; }
+      .last-refresh {
+        grid-column: 1 / -1;
+        width: 100%;
+        margin-left: 0;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .dashboard-section { padding: 10px; gap: 9px; }
+      .dashboard-content { gap: 9px; }
+      .section-head, .subsection-head { gap: 4px 8px; }
+      .section-head h2, .section-head h3 { font-size: 17px; }
+      .subsection-head h3 { font-size: 15px; }
+      .dashboard-subsection { gap: 7px; }
+      .dashboard-subsection + .dashboard-subsection { padding-top: 9px; }
+      .section-note { font-size: 12px; line-height: 1.4; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .metric-card { padding: 9px; }
+      .metric-card .metric-label { font-size: 11.5px; }
+      .metric-card .metric-value { margin-top: 4px; font-size: 20px; }
+      .metric-card .metric-detail { margin-top: 4px; font-size: 11.5px; line-height: 1.35; }
+      .dashboard-split { grid-template-columns: 1fr; }
+      .subpanel { padding: 9px; }
+      .subpanel h3 { margin-bottom: 8px; font-size: 14px; }
+      .bar-list { gap: 6px; }
+      .bar-row {
+        grid-template-columns: minmax(0, 86px) minmax(42px, 1fr) auto;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .aggregate-item { padding: 7px 8px; }
       .table-wrap { background: transparent; border: 0; overflow: visible; }
       table, tbody, tr, td { display: block; min-width: 0; width: 100%; }
       thead { display: none; }
@@ -275,6 +577,22 @@
       .checks { grid-template-columns: 1fr; }
       .modal { align-items: end; padding: 10px; }
     }
+    @media (max-width: 420px) {
+      .shell { width: calc(100vw - 12px); }
+      .topbar { padding: 10px; }
+      .section-head .section-note, .subsection-head .section-note { width: 100%; }
+      .metric-card .metric-value { font-size: 19px; }
+      .bar-row { grid-template-columns: minmax(0, 78px) minmax(38px, 1fr) auto; }
+    }
+    @media (max-width: 370px) {
+      .shell { width: calc(100vw - 8px); }
+      .top-actions { grid-template-columns: .85fr 1.25fr .7fr; gap: 4px; }
+      .top-actions > * { padding-inline: 4px; font-size: 12px; }
+      .dashboard-section { padding: 8px; }
+      .metric-card { padding: 8px; }
+      .metric-card .metric-value { font-size: 18px; }
+      .bar-row { grid-template-columns: minmax(0, 70px) minmax(34px, 1fr) auto; gap: 5px; }
+    }
   </style>
 </head>
 <body>
@@ -282,7 +600,7 @@
     <header class="topbar">
       <div>
         <h1>CEDAR TOY 管理后台</h1>
-        <p class="sub">统一账号管理：查账号、旧停用状态、待注销期限与高危立即清理。</p>
+        <p class="sub">账号管理与聚合运营数据；不展示对话、题目答案或私人备注。</p>
       </div>
       <div class="top-actions">
         <a class="button-link" href="/">开始页</a>
@@ -291,45 +609,118 @@
       </div>
     </header>
 
-    <section class="toolbar" aria-label="工具栏">
-      <input class="search" id="searchInput" type="search" placeholder="搜索用户名 / 精确 ID">
-      <button id="refreshBtn" type="button">刷新</button>
-      <span class="count" id="countText">未加载</span>
-    </section>
-
-    <p class="status" id="statusText"></p>
-
-    <section class="panel table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>用户名</th>
-            <th>类型</th>
-            <th>管理员</th>
-            <th>状态</th>
-            <th>海龟汤身份</th>
-            <th>绑定</th>
-            <th>创建时间</th>
-            <th>活跃时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="userRows"></tbody>
-      </table>
-      <div class="empty" id="emptyState" hidden>暂无账号</div>
-    </section>
-    <nav class="panel pagination" aria-label="账号分页">
-      <label for="pageSize">每页</label>
-      <select id="pageSize">
-        <option value="25">25</option>
-        <option value="50" selected>50</option>
-        <option value="100">100</option>
-      </select>
-      <button id="prevPage" type="button">上一页</button>
-      <span id="pageText">第 1 / 1 页</span>
-      <button id="nextPage" type="button">下一页</button>
+    <nav class="admin-tabs" aria-label="管理后台页面">
+      <button id="usersTab" type="button" role="tab" aria-selected="true" aria-controls="usersPanel">用户管理</button>
+      <button id="dashboardTab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">运营看板</button>
     </nav>
+
+    <div class="tab-panel" id="usersPanel" role="tabpanel" aria-labelledby="usersTab">
+      <section class="toolbar" aria-label="用户管理工具栏">
+        <input class="search" id="searchInput" type="search" placeholder="搜索用户名 / 精确 ID">
+        <button id="refreshBtn" type="button">刷新</button>
+        <span class="count" id="countText">未加载</span>
+      </section>
+
+      <p class="status" id="statusText"></p>
+
+      <section class="panel table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>用户名</th>
+              <th>类型</th>
+              <th>管理员</th>
+              <th>状态</th>
+              <th>海龟汤身份</th>
+              <th>绑定</th>
+              <th>创建时间</th>
+              <th>活跃时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="userRows"></tbody>
+        </table>
+        <div class="empty" id="emptyState" hidden>暂无账号</div>
+      </section>
+      <nav class="panel pagination" aria-label="账号分页">
+        <label for="pageSize">每页</label>
+        <select id="pageSize">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+        </select>
+        <button id="prevPage" type="button">上一页</button>
+        <span id="pageText">第 1 / 1 页</span>
+        <button id="nextPage" type="button">下一页</button>
+      </nav>
+    </div>
+
+    <div class="tab-panel" id="dashboardPanel" role="tabpanel" aria-labelledby="dashboardTab" hidden>
+      <section class="panel dashboard-toolbar" aria-label="运营看板工具栏">
+        <label class="dashboard-control" for="dashboardRange">
+          统计范围
+          <select id="dashboardRange">
+            <option value="10m">10分钟</option>
+            <option value="1h" selected>1小时</option>
+            <option value="6h">6小时</option>
+            <option value="12h">12小时</option>
+            <option value="24h">24小时</option>
+          </select>
+        </label>
+        <button id="dashboardRefreshBtn" type="button">立即刷新</button>
+        <span class="last-refresh" id="dashboardLastRefresh">尚未刷新 · 看板可见时每30秒自动刷新</span>
+      </section>
+
+      <p class="status" id="dashboardStatus" aria-live="polite"></p>
+
+      <section class="panel dashboard-section" id="duelDashboard" aria-labelledby="duelTitle">
+        <div class="section-head">
+          <h2 id="duelTitle">双弈</h2>
+        </div>
+        <div class="dashboard-subsection" aria-labelledby="duelActivityTitle">
+          <div class="subsection-head">
+            <h3 id="duelActivityTitle">双弈 · 所选范围活跃</h3>
+            <span class="section-note" id="duelActivityRangeLabel"></span>
+          </div>
+          <div class="metric-grid" id="duelActivityMetrics"></div>
+        </div>
+        <div class="dashboard-subsection" aria-labelledby="duelRangeTitle">
+          <div class="subsection-head">
+            <h3 id="duelRangeTitle">双弈 · 所选范围统计</h3>
+            <span class="section-note" id="duelRangeLabel"></span>
+          </div>
+          <div class="dashboard-content" id="duelContent"><div class="dashboard-empty">切换到运营看板后加载</div></div>
+        </div>
+        <div class="dashboard-subsection" aria-labelledby="chipsTitle">
+          <div class="subsection-head">
+            <h3 id="chipsTitle">筹码 / 互动</h3>
+            <span class="section-note" id="chipsRangeLabel"></span>
+          </div>
+          <div class="dashboard-content" id="chipsContent"><div class="dashboard-empty">切换到运营看板后加载</div></div>
+        </div>
+      </section>
+
+      <section class="panel dashboard-section" id="turtleDashboard" aria-labelledby="turtleTitle">
+        <div class="section-head">
+          <h2 id="turtleTitle">海龟汤</h2>
+        </div>
+        <div class="dashboard-subsection" aria-labelledby="turtleActivityTitle">
+          <div class="subsection-head">
+            <h3 id="turtleActivityTitle">海龟汤 · 所选范围活跃</h3>
+            <span class="section-note" id="turtleActivityRangeLabel"></span>
+          </div>
+          <div class="metric-grid" id="turtleActivityMetrics"></div>
+        </div>
+        <div class="dashboard-subsection" aria-labelledby="turtleRangeTitle">
+          <div class="subsection-head">
+            <h3 id="turtleRangeTitle">海龟汤 · 所选范围统计</h3>
+            <span class="section-note" id="turtleRangeLabel"></span>
+          </div>
+          <div class="dashboard-content" id="turtleContent"><div class="dashboard-empty">切换到运营看板后加载</div></div>
+        </div>
+      </section>
+    </div>
   </main>
 
   <div class="modal" id="editModal">
@@ -368,6 +759,44 @@
     let totalUsers = 0;
     let searchQuery = "";
     let searchTimer = null;
+    let usersLoaded = false;
+    let activeTab = "users";
+    let dashboardData = null;
+    let dashboardLoading = false;
+    let dashboardTimer = null;
+    let dashboardLastLoadedAt = 0;
+    const DASHBOARD_REFRESH_MS = 30000;
+    const DUEL_GAME_LABELS = Object.freeze({
+      tictactoe: "井字棋",
+      gomoku: "五子棋",
+      othello: "黑白棋",
+      connect4: "四子连珠",
+      dots_boxes: "点格棋",
+      jungle: "斗兽棋",
+      xiangqi: "象棋",
+      checkers: "西洋跳棋",
+      banqi: "翻翻棋",
+      chess: "国际象棋",
+      junqi: "军棋",
+      go: "围棋",
+      aeroplane_chess: "飞行棋",
+      chinese_checkers: "中国跳棋",
+      liars_dice: "吹牛骰子",
+      yahtzee: "快艇骰子",
+      uno: "UNO",
+      blackjack: "21点",
+      train_cards: "开火车",
+      doudizhu: "斗地主",
+      guandan: "掼蛋",
+      gandengyan: "干瞪眼",
+      zhajinhua: "炸金花",
+      texas_holdem: "德州扑克",
+      mahjong: "麻将",
+    });
+
+    function duelGameLabel(gameType) {
+      return DUEL_GAME_LABELS[String(gameType || "")] || String(gameType || "未知游戏");
+    }
 
     function token() {
       return localStorage.getItem(TOKEN_KEY) || "";
@@ -482,6 +911,252 @@
       }[char]));
     }
 
+    function setDashboardStatus(message, isError = false) {
+      $("dashboardStatus").textContent = message || "";
+      $("dashboardStatus").classList.toggle("error", Boolean(isError));
+    }
+
+    function number(value) {
+      return new Intl.NumberFormat("zh-CN").format(Number(value || 0));
+    }
+
+    function decimal(value) {
+      return new Intl.NumberFormat("zh-CN", {maximumFractionDigits: 1}).format(Number(value || 0));
+    }
+
+    function percent(value) {
+      return `${decimal(Number(value || 0) * 100)}%`;
+    }
+
+    function formatApiDateTime(value) {
+      if (!value) return "—";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString("zh-CN", {hour12: false});
+    }
+
+    function metricCard(label, value, detail = "") {
+      return `
+        <div class="metric-card">
+          <div class="metric-label">${escapeHtml(label)}</div>
+          <div class="metric-value">${escapeHtml(value)}</div>
+          ${detail ? `<div class="metric-detail">${escapeHtml(detail)}</div>` : ""}
+        </div>
+      `;
+    }
+
+    function barList(items, labelKey, valueKey, emptyText = "暂无数据") {
+      if (!items || !items.length) return `<div class="dashboard-empty">${escapeHtml(emptyText)}</div>`;
+      const max = Math.max(...items.map((item) => Number(item[valueKey] || 0)), 1);
+      return `<div class="bar-list">${items.map((item) => {
+        const value = Number(item[valueKey] || 0);
+        return `
+          <div class="bar-row" title="${escapeHtml(item[labelKey])}: ${number(value)}">
+            <span class="bar-label">${escapeHtml(item[labelKey])}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${Math.max(0, value / max * 100)}%"></span></span>
+            <span class="bar-value">${number(value)}</span>
+          </div>
+        `;
+      }).join("")}</div>`;
+    }
+
+    function statusBars(counts, labels) {
+      return barList(Object.entries(counts || {}).map(([key, value]) => ({
+        label: labels[key] || key,
+        value,
+      })), "label", "value");
+    }
+
+    function renderDuel(data, rangeLabel) {
+      const activity = data?.realtime || {};
+      $("duelActivityRangeLabel").textContent = rangeLabel;
+      $("duelActivityMetrics").innerHTML = [
+        metricCard("活跃房间", data?.ok ? number(activity.active_rooms) : "—", data?.ok ? "所选时段有活动且仍在进行或等待" : "模块暂时不可用"),
+        metricCard("活跃人类", data?.ok ? number(activity.active_humans) : "—", "活跃房间内实际加入的人类"),
+        metricCard("活跃小机", data?.ok ? number(activity.active_bound_machines) : "—", "活跃房间内实际加入的绑定小机"),
+        metricCard("NPC 活跃桌", data?.ok ? number(activity.active_npc_rooms) : "—", "活跃房间内的系统 NPC"),
+      ].join("");
+      $("duelRangeLabel").textContent = rangeLabel;
+      if (!data || !data.ok) {
+        $("duelContent").innerHTML = `<div class="module-error">${escapeHtml(data?.error || "双弈数据暂时不可用")}</div>`;
+        return;
+      }
+      const summary = data.range || {};
+      const participants = summary.participants || {};
+      const npc = data.npc || {};
+      $("duelContent").innerHTML = `
+        <div class="metric-grid">
+          ${metricCard("新开房", number(summary.new_rooms))}
+          ${metricCard("真正开始过", number(summary.started_rooms), "有实际对局动作或已经结束")}
+          ${metricCard("完成房", number(summary.completed_rooms), "在所选时间内完成")}
+          ${metricCard("参与人类", number(participants.human), "开始房内去重")}
+          ${metricCard("参与小机", number(participants.bound_machine), "不含系统 NPC")}
+          ${metricCard("NPC 房间", number(npc.rooms), `占开始房 ${percent(npc.started_room_share)}`)}
+        </div>
+        <div class="dashboard-split">
+          <div class="subpanel">
+            <h3>实际开始游戏分布</h3>
+            ${barList((summary.game_distribution || []).map((item) => ({...item, game_label: duelGameLabel(item.game_type)})), "game_label", "rooms")}
+          </div>
+          <div class="subpanel">
+            <h3>NPC 使用</h3>
+            <div class="metric-grid">
+              ${metricCard("NPC 参与次数", number(npc.participant_occurrences), "按每桌实际参与记录统计")}
+              ${metricCard("不同 NPC 角色", number(npc.distinct_personas))}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTurtle(data, rangeLabel) {
+      const activity = data?.realtime || {};
+      $("turtleActivityRangeLabel").textContent = rangeLabel;
+      $("turtleActivityMetrics").innerHTML = [
+        metricCard("活跃房间", data?.ok ? number(activity.active_rooms) : "—", "仍未结束且在所选时段有活动"),
+        metricCard("活跃人类", data?.ok ? number(activity.active_humans) : "—", "有在场或游戏操作记录的人类"),
+        metricCard("活跃小机", data?.ok ? number(activity.active_ai) : "—", "有在场或游戏操作记录的小机"),
+      ].join("");
+      $("turtleRangeLabel").textContent = rangeLabel;
+      if (!data || !data.ok) {
+        $("turtleContent").innerHTML = `<div class="module-error">${escapeHtml(data?.error || "海龟汤数据暂时不可用")}</div>`;
+        return;
+      }
+      const summary = data.range || {};
+      const participants = summary.participants || {};
+      const duration = summary.finished_duration_minutes || {};
+      $("turtleContent").innerHTML = `
+        <div class="metric-grid">
+          ${metricCard("新开房", number(summary.new_rooms))}
+          ${metricCard("完成房", number(summary.completed_rooms), "在所选时间内完成")}
+          ${metricCard("答出", number(summary.solved_rooms), "有胜者记录")}
+          ${metricCard("提问次数", number(summary.question_count), "所选时间内提交的问题")}
+          ${metricCard("无胜者结束", number(summary.ended_without_winner))}
+          ${metricCard("参与人类", number(participants.human), "按直接活动证据去重")}
+          ${metricCard("参与小机", number(participants.ai), "按参与者类型区分")}
+          ${metricCard("完成平均时长", `${decimal(duration.average)} 分钟`, `样本 ${number(duration.sample)}`)}
+          ${metricCard("完成中位时长", `${decimal(duration.median)} 分钟`)}
+        </div>
+        <div class="subpanel">
+          <h3>新开房当前状态</h3>
+          ${barList(summary.status_distribution, "status", "rooms")}
+        </div>
+      `;
+    }
+
+    function renderChips(duel, rangeLabel) {
+      $("chipsRangeLabel").textContent = rangeLabel;
+      if (!duel || !duel.ok) {
+        $("chipsContent").innerHTML = `<div class="module-error">${escapeHtml(duel?.error || "筹码与互动数据暂时不可用")}</div>`;
+        return;
+      }
+      const chips = duel.chips || {};
+      const checkIns = chips.daily_check_ins || {};
+      const checksByType = checkIns.by_subject_type || {};
+      const settlements = chips.settlements || {};
+      const settlementPeople = settlements.participants || {};
+      const exchange = chips.exchange || {};
+      const loans = chips.loans || {};
+      const achievements = chips.achievements || {};
+      const exchangeLabels = {completed: "已完成", pending: "待处理", withdrawn: "已撤回", rejected: "已拒绝", expired: "已过期"};
+      const loanLabels = {negotiating: "协商中", active: "进行中", overdue: "逾期", repaid: "已还清", rejected: "已拒绝", withdrawn: "已撤回", expired: "已过期"};
+      const itemRows = (exchange.items || []).map((item) => `
+        <div class="aggregate-item" title="${escapeHtml(item.item_title)} · ${escapeHtml(item.item_key)}">
+          <span class="aggregate-copy">
+            <span class="aggregate-title">${escapeHtml(item.item_title)}</span>
+            <span class="aggregate-key">${escapeHtml(item.item_key)}</span>
+          </span>
+          <strong class="aggregate-value">${number(item.requests)}</strong>
+        </div>
+      `).join("");
+      $("chipsContent").innerHTML = `
+        <div class="metric-grid">
+          ${metricCard("每日签到", number(checkIns.count), `去重主体 ${number(checkIns.distinct_subjects)} · 人 ${number(checksByType.human?.count)} / 机 ${number(checksByType.ai?.count)}`)}
+          ${metricCard("筹码结算房", number(settlements.rooms), `人 ${number(settlementPeople.human)} / 机 ${number(settlementPeople.bound_machine)}`)}
+          ${metricCard("结算下注总量", number(settlements.total_stake), `每桌下注中位数 ${decimal(settlements.median_stake)}`)}
+          ${metricCard("互动商店请求", number(exchange.requests), `不同人机组合 ${number(exchange.distinct_pairs)}`)}
+          ${metricCard("新建借款", number(loans.created), `成交 ${number(loans.accepted)} · 还清 ${number(loans.repaid)}`)}
+          ${metricCard("成就自动解锁", number(achievements.unlocks), `覆盖 ${number(achievements.distinct_subjects)} · 奖励 ${number(achievements.reward_chips)}`)}
+        </div>
+        <div class="dashboard-split">
+          <div class="subpanel">
+            <h3>互动请求状态</h3>
+            ${statusBars(exchange.status_counts, exchangeLabels)}
+          </div>
+          <div class="subpanel">
+            <h3>借款状态</h3>
+            ${statusBars(loans.status_counts, loanLabels)}
+          </div>
+        </div>
+        <div class="subpanel">
+          <h3>互动商品（最多10项）</h3>
+          ${itemRows ? `<div class="aggregate-list">${itemRows}</div>` : `<div class="dashboard-empty">该范围暂无互动请求</div>`}
+        </div>
+      `;
+    }
+
+    function renderDashboard(data) {
+      const rangeLabel = `${data.range?.label || "所选范围"} · ${formatApiDateTime(data.range?.start_at)} 至 ${formatApiDateTime(data.range?.end_at)}`;
+      renderDuel(data.duel, rangeLabel);
+      renderTurtle(data.turtle, rangeLabel);
+      renderChips(data.duel, rangeLabel);
+    }
+
+    async function loadDashboard({silent = false} = {}) {
+      if (dashboardLoading) return;
+      if (!token()) {
+        setDashboardStatus("请先在开始页登录管理员账号", true);
+        return;
+      }
+      dashboardLoading = true;
+      $("dashboardRefreshBtn").disabled = true;
+      if (!silent) setDashboardStatus("看板加载中...");
+      const requestedRange = $("dashboardRange").value;
+      try {
+        const data = await request(`/api/admin/activity?range=${encodeURIComponent(requestedRange)}`);
+        dashboardData = data;
+        dashboardLastLoadedAt = Date.now();
+        renderDashboard(data);
+        $("dashboardLastRefresh").textContent = `最后刷新：${formatApiDateTime(data.generated_at)} · 看板可见时每30秒自动刷新`;
+        const moduleErrors = [data.duel, data.turtle].filter((module) => module && !module.ok).map((module) => module.error);
+        setDashboardStatus(moduleErrors.length ? `部分数据不可用：${moduleErrors.join("；")}` : "", moduleErrors.length > 0);
+      } catch (err) {
+        const suffix = dashboardData ? "；已保留上次成功数据" : "";
+        setDashboardStatus(`刷新失败：${err.message}${suffix}`, true);
+      } finally {
+        dashboardLoading = false;
+        $("dashboardRefreshBtn").disabled = false;
+        if (activeTab === "dashboard" && $("dashboardRange").value !== requestedRange) {
+          loadDashboard();
+        }
+      }
+    }
+
+    function updateDashboardTimer() {
+      if (dashboardTimer) clearInterval(dashboardTimer);
+      dashboardTimer = null;
+      if (activeTab !== "dashboard" || document.hidden) return;
+      dashboardTimer = setInterval(() => {
+        if (activeTab === "dashboard" && !document.hidden) loadDashboard({silent: true});
+      }, DASHBOARD_REFRESH_MS);
+    }
+
+    function switchTab(tab) {
+      activeTab = tab === "dashboard" ? "dashboard" : "users";
+      const dashboardActive = activeTab === "dashboard";
+      $("usersPanel").hidden = dashboardActive;
+      $("dashboardPanel").hidden = !dashboardActive;
+      $("usersTab").setAttribute("aria-selected", String(!dashboardActive));
+      $("dashboardTab").setAttribute("aria-selected", String(dashboardActive));
+      history.replaceState(null, "", dashboardActive ? "#dashboard" : "#users");
+      if (dashboardActive) {
+        if (!dashboardData || Date.now() - dashboardLastLoadedAt >= DASHBOARD_REFRESH_MS) loadDashboard();
+      } else if (!usersLoaded) {
+        loadUsers();
+      }
+      updateDashboardTimer();
+    }
+
     async function loadUsers() {
       if (!token()) {
         setStatus("请先在开始页登录管理员账号", true);
@@ -506,6 +1181,7 @@
           return loadUsers();
         }
         render();
+        usersLoaded = true;
         setStatus("");
       } catch (err) {
         users = [];
@@ -600,6 +1276,10 @@
     }
 
     $("refreshBtn").addEventListener("click", loadUsers);
+    $("usersTab").addEventListener("click", () => switchTab("users"));
+    $("dashboardTab").addEventListener("click", () => switchTab("dashboard"));
+    $("dashboardRefreshBtn").addEventListener("click", () => loadDashboard());
+    $("dashboardRange").addEventListener("change", () => loadDashboard());
     $("searchInput").addEventListener("input", () => {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
@@ -645,8 +1325,16 @@
       if (button.dataset.action === "reset-link") generateResetLink(user);
       if (button.dataset.action === "release") releaseUser(user);
     });
+    document.addEventListener("visibilitychange", () => {
+      updateDashboardTimer();
+      if (
+        activeTab === "dashboard"
+        && !document.hidden
+        && Date.now() - dashboardLastLoadedAt >= DASHBOARD_REFRESH_MS
+      ) loadDashboard({silent: Boolean(dashboardData)});
+    });
 
-    loadUsers();
+    switchTab(location.hash === "#dashboard" ? "dashboard" : "users");
   </script>
 </body>
 </html>
