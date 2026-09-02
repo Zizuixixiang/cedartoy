@@ -2158,6 +2158,116 @@
       padding-top: 0;
     }
 
+    .history-duel-card {
+      gap: 10px;
+    }
+
+    .history-duel-count {
+      flex: none;
+      color: var(--purple-dark);
+      font-size: 10px;
+    }
+
+    .history-duel-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .history-duel-match {
+      display: grid;
+      gap: 7px;
+      border-top: 2px solid var(--purple-light);
+      padding: 10px 0;
+    }
+
+    .history-duel-match:first-child {
+      border-top: 0;
+      padding-top: 2px;
+    }
+
+    .history-duel-match:last-child {
+      padding-bottom: 0;
+    }
+
+    .history-duel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .history-duel-game {
+      min-width: 0;
+      color: var(--purple-darker);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .history-duel-result {
+      flex: none;
+      border: 2px solid var(--purple);
+      background: var(--purple-light);
+      color: var(--purple-darker);
+      padding: 4px 7px;
+      font-size: 9px;
+      line-height: 1;
+    }
+
+    .history-duel-result.win {
+      border-color: var(--pink-dark);
+      background: var(--pink);
+      color: #fff;
+    }
+
+    .history-duel-result.loss {
+      background: #f3eff7;
+      color: var(--purple-dark);
+    }
+
+    .history-duel-result.playing,
+    .history-duel-result.pending,
+    .history-duel-result.waiting {
+      border-color: #62907f;
+      background: #e5f3ed;
+      color: #315f50;
+    }
+
+    .history-duel-meta {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) max-content;
+      gap: 6px 14px;
+      color: var(--purple-dark);
+      font-size: 10px;
+      line-height: 1.55;
+    }
+
+    .history-duel-field {
+      display: flex;
+      min-width: 0;
+      gap: 5px;
+    }
+
+    .history-duel-field b {
+      flex: none;
+      color: var(--pink-dark);
+      font-weight: 700;
+    }
+
+    .history-duel-field span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .history-duel-time {
+      white-space: nowrap;
+    }
+
+    .history-duel-detail {
+      color: var(--purple-dark);
+      font-size: 9px;
+      line-height: 1.5;
+    }
+
     .history-achievements {
       color: var(--purple-darker);
       font-size: 10px;
@@ -2575,8 +2685,13 @@
       #announcementModal .modal-box { max-height: calc(100dvh - 102px); }
       .announcement-list { max-height: calc(100dvh - 220px); }
       .announcement-item { padding: 12px; }
+      #historyModal .modal-box { max-height: calc(100dvh - 102px); }
+      #historyModal .history-content { max-height: calc(100dvh - 245px); }
       #historyModal .history-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #historyModal .history-tabs[data-tab-count="1"] { grid-template-columns: minmax(0, 1fr); }
+      #historyModal .history-card { padding: 11px; }
+      #historyModal .history-duel-meta { grid-template-columns: minmax(0, 1fr); }
+      #historyModal .history-duel-time { white-space: normal; }
       .field-hint { font-size: 11px; font-weight: 400; }
       #loginModal .field-label { font-size: 16px; font-weight: 700; }
       #loginModal .field input { min-height: 38px; border: 4px solid #BEB1D1; font-size: 14px; }
@@ -4385,6 +4500,45 @@
       bdsmtest: "倾向测试最近结果。",
     };
 
+    const duelGameNames = {
+      aeroplane_chess: "飞行棋",
+      banqi: "翻翻棋",
+      blackjack: "21点",
+      checkers: "西洋跳棋",
+      chess: "国际象棋",
+      chinese_checkers: "中国跳棋",
+      connect4: "四子连珠",
+      dots_boxes: "点格棋",
+      doudizhu: "斗地主",
+      gandengyan: "干瞪眼",
+      go: "围棋",
+      gomoku: "五子棋",
+      guandan: "掼蛋",
+      jungle: "斗兽棋",
+      junqi: "军棋",
+      liars_dice: "吹牛骰子",
+      mahjong: "麻将",
+      othello: "黑白棋",
+      texas_holdem: "德州扑克",
+      tictactoe: "井字棋",
+      train_cards: "开火车",
+      uno: "UNO",
+      xiangqi: "象棋",
+      yahtzee: "快艇骰子",
+      zhajinhua: "炸金花",
+    };
+
+    const duelOutcomeLabels = {
+      win: "胜利",
+      loss: "失败",
+      draw: "平局",
+      playing: "进行中",
+      pending: "待确认",
+      waiting: "等待加入",
+      archived: "已归档",
+      finished: "已结束",
+    };
+
     const saveFieldLabels = {
       slot: "槽",
       game_count: "局数",
@@ -4555,6 +4709,14 @@
       return match ? `${match[1]}-${match[2]}-${match[3]}` : text;
     }
 
+    function historyTimestamp(value) {
+      if (!value) return "未知";
+      const date = new Date(String(value));
+      if (Number.isNaN(date.getTime())) return historyDate(value);
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
     function saveValue(key, value, gameName = "") {
       if (value == null) return "";
       if (key === "latest_result") return testResultLabel(gameName, value);
@@ -4635,14 +4797,71 @@
       `;
     }
 
+    function renderDuelHistory(history) {
+      if (history?.available === false) {
+        return `
+          <article class="history-card history-duel-card">
+            <div class="history-card-title">双弈对局</div>
+            <p class="history-empty">双弈记录暂时无法读取。</p>
+          </article>
+        `;
+      }
+      const matches = Array.isArray(history?.matches) ? history.matches : [];
+      if (!matches.length) return "";
+      const total = Number.isFinite(Number(history?.total)) ? Number(history.total) : matches.length;
+      const countText = total > matches.length ? `最近 ${matches.length} / 共 ${total} 局` : `共 ${total} 局`;
+      const rows = matches.map((match) => {
+        const gameName = duelGameNames[match?.game_type] || match?.game_type || "未知游戏";
+        const outcome = duelOutcomeLabels[match?.outcome] ? match.outcome : "finished";
+        const opponents = Array.isArray(match?.opponents)
+          ? match.opponents.filter((name) => typeof name === "string" && name.trim())
+          : [];
+        const participantCount = Array.isArray(match?.participants) ? match.participants.length : opponents.length + 1;
+        const opponentLabel = participantCount > 2 ? "同桌" : "对手";
+        const detail = match?.result_detail
+          ? `<div class="history-duel-detail">${escapeHtml(match.result_detail)}</div>`
+          : "";
+        return `
+          <div class="history-duel-match">
+            <div class="history-duel-head">
+              <div class="history-duel-game">${escapeHtml(gameName)}</div>
+              <span class="history-duel-result ${outcome}">${escapeHtml(duelOutcomeLabels[outcome])}</span>
+            </div>
+            <div class="history-duel-meta">
+              <div class="history-duel-field"><b>${opponentLabel}</b><span>${escapeHtml(opponents.join(" / ") || "暂无")}</span></div>
+              <div class="history-duel-field history-duel-time"><b>时间</b><span>${escapeHtml(historyTimestamp(match?.time))}</span></div>
+            </div>
+            ${detail}
+          </div>
+        `;
+      }).join("");
+      return `
+        <article class="history-card history-duel-card">
+          <div class="history-card-head">
+            <div class="history-card-title">双弈对局</div>
+            <div class="history-duel-count">${escapeHtml(countText)}</div>
+          </div>
+          <div class="history-card-desc">真实房间对局记录，不占用存档槽。</div>
+          <div class="history-duel-list">${rows}</div>
+        </article>
+      `;
+    }
+
     function historySubjects(data) {
       return [
-        {id: "self", label: "我", username: data?.self?.username || data?.user?.username || "", saves: data?.self?.saves || {}},
+        {
+          id: "self",
+          label: "我",
+          username: data?.self?.username || data?.user?.username || "",
+          saves: data?.self?.saves || {},
+          duelHistory: data?.self?.duel_history || null,
+        },
         ...(Array.isArray(data?.machines) ? data.machines.map((machine, index) => ({
           id: `machine-${index}`,
           label: machine.username || machine.user?.username || `小机${index + 1}`,
           username: machine.username || machine.user?.username || "",
           saves: machine.saves || {},
+          duelHistory: machine.duel_history || null,
         })) : []),
       ];
     }
@@ -4659,12 +4878,22 @@
         </button>
       `).join("");
       const tabColumns = Math.min(Math.max(subjects.length, 1), 5);
-      const cards = entries.length
-        ? `<div class="history-card-list">${entries.map(([gameName, item]) => renderHistoryGameCard(gameName, item)).join("")}</div>`
-        : `<p class="history-empty">${active.id === "self" ? "你还没有存档记录。开始游玩后会在这里出现。" : "这只小机还没有存档记录。"}</p>`;
+      const duelHistory = active?.duelHistory;
+      const duelMatches = Array.isArray(duelHistory?.matches) ? duelHistory.matches : [];
+      const duelTotal = Number.isFinite(Number(duelHistory?.total)) ? Number(duelHistory.total) : duelMatches.length;
+      const sections = [];
+      const duelSection = renderDuelHistory(duelHistory);
+      if (duelSection) sections.push(duelSection);
+      if (entries.length) {
+        sections.push(entries.map(([gameName, item]) => renderHistoryGameCard(gameName, item)).join(""));
+      }
+      const cards = sections.length
+        ? `<div class="history-card-list">${sections.join("")}</div>`
+        : `<p class="history-empty">${active.id === "self" ? "你还没有游戏记录。开始游玩后会在这里出现。" : "这只小机还没有游戏记录。"}</p>`;
+      const duelCountText = duelHistory?.available === false ? "--" : duelTotal;
       return `
         <div class="history-tabs" data-tab-count="${subjects.length}" style="--history-tab-columns: ${tabColumns}">${tabs}</div>
-        <div class="history-summary">${escapeHtml(active.username || active.label)} · 共 ${entries.length} 个存档</div>
+        <div class="history-summary">${escapeHtml(active.username || active.label)} · ${entries.length} 个存档 · 双弈 ${escapeHtml(duelCountText)} 局</div>
         ${cards}
       `;
     }
@@ -4686,10 +4915,10 @@
       }
       closeDrawers();
       $("historyMsg").textContent = "读取中...";
-      $("historyContent").innerHTML = `<p class="history-empty">正在读取存档概况。</p>`;
+      $("historyContent").innerHTML = `<p class="history-empty">正在读取游戏历史。</p>`;
       openModal("historyModal");
       try {
-        const res = await fetch("/api/auth/saves", {
+        const res = await fetch("/api/auth/history", {
           headers: headers(false),
           cache: "no-store",
         });
