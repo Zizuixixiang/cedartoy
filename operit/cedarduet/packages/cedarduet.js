@@ -41,6 +41,25 @@
     {"name": "session_status", "description": {"zh": "查看当前角色卡的 Operit 小机会话。", "en": "Inspect this card's machine session."}, "parameters": []},
     {"name": "session_logout", "description": {"zh": "只注销当前角色卡的 Operit 会话，不影响 MCP Token。", "en": "Revoke only this card's Operit session."}, "parameters": []},
     {
+      "name": "human_login",
+      "description": {"zh": "供双弈页面登录现有 CedarToy 人类账号，并在插件配置中保存人类会话。", "en": "Sign the Duel page into an existing CedarToy human account and save the session in plugin config."},
+      "parameters": [
+        {"name": "username", "description": {"zh": "人类账号用户名", "en": "Human account username"}, "type": "string", "required": true},
+        {"name": "password", "description": {"zh": "人类账号密码；仅用于本次登录，不会保存", "en": "Human account password; used only for this request and never saved"}, "type": "string", "required": true}
+      ]
+    },
+    {
+      "name": "human_register",
+      "description": {"zh": "供双弈页面按 CedarToy 既有规则注册人类账号，并在插件配置中保存人类会话。", "en": "Register a CedarToy human account under the existing rules and save the session in plugin config."},
+      "parameters": [
+        {"name": "username", "description": {"zh": "新的人类账号用户名", "en": "New human account username"}, "type": "string", "required": true},
+        {"name": "password", "description": {"zh": "新的人类账号密码；仅用于本次注册，不会保存", "en": "New human account password; used only for this request and never saved"}, "type": "string", "required": true}
+      ]
+    },
+    {"name": "human_session_status", "description": {"zh": "供双弈页面恢复并校验插件中保存的人类登录会话。", "en": "Restore and verify the saved human login session for the Duel page."}, "parameters": []},
+    {"name": "human_logout", "description": {"zh": "清除插件中保存的人类登录会话；不改变服务端既有登录语义。", "en": "Clear the saved human login session without changing existing server login semantics."}, "parameters": []},
+    {"name": "human_duel_entry", "description": {"zh": "供已登录人类从页面进入双弈；点击进入即确认本次网页登录。", "en": "Open Duel for the signed-in human; clicking enter confirms this web sign-in."}, "parameters": []},
+    {
       "name": "bind_human",
       "description": {"zh": "由已登录人类明确确认，把当前角色卡的小机直接绑定到自己。", "en": "Directly bind this card's machine after explicit confirmation by a logged-in human."},
       "parameters": [
@@ -207,6 +226,10 @@ async function sessionPath(context) {
   return (await configDir()) + "/session-" + fingerprint(context.client_id) + ".json";
 }
 
+async function humanSessionPath() {
+  return (await configDir()) + "/human-session.json";
+}
+
 async function loadSession(context) {
   const path = await sessionPath(context);
   const exists = await Tools.Files.exists(path, "android");
@@ -240,6 +263,59 @@ async function saveSession(context, response) {
   return stored;
 }
 
+async function loadHumanSession() {
+  const path = await humanSessionPath();
+  const exists = await Tools.Files.exists(path, "android");
+  if (!exists || exists.exists !== true) return { path: path, stored: null };
+  const file = await Tools.Files.read({
+    path: path,
+    environment: "android",
+    intent: "读取双弈页面的人类登录会话",
+  });
+  let stored;
+  try {
+    stored = JSON.parse(file.content);
+  } catch (_) {
+    throw new Error("本地登录信息已损坏，请退出后重新登录");
+  }
+  if (
+    !stored
+    || stored.version !== 1
+    || typeof stored.human_token !== "string"
+    || !stored.human_token
+    || typeof stored.username !== "string"
+    || !stored.username
+  ) {
+    throw new Error("本地登录信息已损坏，请退出后重新登录");
+  }
+  return { path: path, stored: stored };
+}
+
+async function saveHumanSession(user, humanToken) {
+  if (!user || user.is_ai === true || !user.username || !humanToken) {
+    throw new Error("CedarToy 未返回有效的人类账号信息");
+  }
+  const path = await humanSessionPath();
+  const stored = {
+    version: 1,
+    user_id: user.id,
+    username: String(user.username),
+    human_token: String(humanToken),
+  };
+  // Passwords are deliberately absent. Only the server-issued human session
+  // and the minimum account identity required by the UI are persisted.
+  await Tools.Files.write(path, JSON.stringify(stored), false, "android");
+  return stored;
+}
+
+async function clearHumanSession() {
+  const path = await humanSessionPath();
+  const exists = await Tools.Files.exists(path, "android");
+  if (exists && exists.exists === true) {
+    await Tools.Files.deleteFile(path, false, "android");
+  }
+}
+
 function responseJson(response) {
   if (!response) throw new Error("CedarToy 未返回响应");
   let payload = response.content;
@@ -268,6 +344,22 @@ async function postJson(path, body, bearer) {
     method: "POST",
     headers: headers,
     body: JSON.stringify(body),
+    connect_timeout: 15000,
+    read_timeout: 65000,
+    follow_redirects: false,
+    responseType: "text",
+    validateStatus: false,
+  });
+  return responseJson(response);
+}
+
+async function getJson(path, bearer) {
+  const headers = { "Accept": "application/json" };
+  if (bearer) headers.Authorization = "Bearer " + bearer;
+  const response = await Tools.Net.http({
+    url: baseUrl() + path,
+    method: "GET",
+    headers: headers,
     connect_timeout: 15000,
     read_timeout: 65000,
     follow_redirects: false,
@@ -357,6 +449,74 @@ async function sessionLogout() {
   return { success: true, message: "当前角色卡的 Operit 会话已注销；MCP Token 未受影响。" };
 }
 
+async function humanLoginOrRegister(action, params) {
+  const rawUsername = params && params.username;
+  const username = typeof rawUsername === "string" ? rawUsername.trim() : rawUsername;
+  const password = params && params.password;
+  const endpoint = action === "register" ? "/api/auth/register" : "/api/auth/login";
+  const response = await postJson(endpoint, { username: username, password: password }, "");
+  if (!response.user || response.user.is_ai === true || !response.token) {
+    throw new Error("登录失败，请稍后重试");
+  }
+  await saveHumanSession(response.user, response.token);
+  const successMessage = action === "register" ? "注册并登录成功" : "登录成功";
+  return {
+    success: true,
+    message: response.message ? successMessage + "。" + response.message : successMessage,
+    data: {
+      logged_in: true,
+      user: response.user,
+      pending_deletion: response.pending_deletion === true,
+    },
+  };
+}
+
+async function humanSessionStatus() {
+  const loaded = await loadHumanSession();
+  if (!loaded.stored) {
+    return {
+      success: true,
+      message: "当前未登录",
+      data: { logged_in: false },
+    };
+  }
+  let response;
+  try {
+    response = await getJson("/api/auth/me", loaded.stored.human_token);
+  } catch (cause) {
+    if (cause && cause.statusCode === 401) {
+      await clearHumanSession();
+      return {
+        success: true,
+        message: "登录已失效，请重新登录",
+        data: { logged_in: false, expired: true },
+      };
+    }
+    throw cause;
+  }
+  if (!response.user || response.user.is_ai === true) {
+    await clearHumanSession();
+    throw new Error("保存的账号不是人类账号，请重新登录");
+  }
+  await saveHumanSession(response.user, loaded.stored.human_token);
+  return {
+    success: true,
+    message: "登录状态正常",
+    data: {
+      logged_in: true,
+      user: response.user,
+      pending_deletion: response.pending_deletion === true,
+    },
+  };
+}
+
+async function humanLogout() {
+  // Human JWTs have no server-side revoke endpoint. Logging out therefore
+  // clears only the ToolPkg copy and deliberately makes no network request.
+  await clearHumanSession();
+  return { success: true, message: "已退出登录", data: { logged_in: false } };
+}
+
 async function bindHuman(params) {
   const context = callerContext();
   if (!params || params.confirm !== true) throw new Error("bind_human 必须明确 confirm=true");
@@ -382,6 +542,12 @@ async function duelWebTicket(params) {
   if (!params || params.confirm !== true) throw new Error("duel_web_ticket 必须明确 confirm=true");
   const humanToken = String(params.human_token || "").trim();
   if (!humanToken) throw new Error("human_token 必填");
+  return issueDuelWebTicket(humanToken, context, {
+    successMessage: "单次网页登录票据已创建，请立即打开",
+  });
+}
+
+async function issueDuelWebTicket(humanToken, context, options) {
   const response = await postJson(
     "/api/operit/web-ticket",
     { confirm: true, client_id: context.client_id, client_name: context.client_name, chat_id: context.chat_id },
@@ -390,14 +556,38 @@ async function duelWebTicket(params) {
   if (!response.ticket_path || String(response.ticket_path).indexOf("web_ticket=") < 0) {
     throw new Error("CedarToy 未返回有效 Web ticket URL");
   }
+  const webUrl = baseUrl() + response.ticket_path;
+  if (webUrl.indexOf(humanToken) >= 0) {
+    throw new Error("CedarToy 返回的网页登录地址不安全");
+  }
   return {
     success: true,
-    message: "单次网页登录票据已创建，请立即打开",
+    message: options && options.successMessage
+      ? options.successMessage
+      : "双弈已准备好",
     data: {
-      web_url: baseUrl() + response.ticket_path,
+      web_url: webUrl,
       expires_in: response.expires_in,
     },
   };
+}
+
+async function humanDuelEntry() {
+  const loaded = await loadHumanSession();
+  if (!loaded.stored) throw new Error("请先登录 CedarToy 人类账号");
+  try {
+    return await issueDuelWebTicket(
+      loaded.stored.human_token,
+      callerContext(),
+      { successMessage: "双弈已准备好" }
+    );
+  } catch (cause) {
+    if (cause && cause.statusCode === 401) {
+      await clearHumanSession();
+      throw new Error("登录已失效，请重新登录");
+    }
+    throw cause;
+  }
 }
 
 function extraParams(value) {
@@ -531,6 +721,15 @@ exports.session_login = function (params) {
 };
 exports.session_status = function (params) { return runAndComplete(sessionStatus, params); };
 exports.session_logout = function (params) { return runAndComplete(sessionLogout, params); };
+exports.human_login = function (params) {
+  return runAndComplete(function (value) { return humanLoginOrRegister("login", value); }, params);
+};
+exports.human_register = function (params) {
+  return runAndComplete(function (value) { return humanLoginOrRegister("register", value); }, params);
+};
+exports.human_session_status = function (params) { return runAndComplete(humanSessionStatus, params); };
+exports.human_logout = function (params) { return runAndComplete(humanLogout, params); };
+exports.human_duel_entry = function (params) { return runAndComplete(humanDuelEntry, params); };
 exports.bind_human = function (params) { return runAndComplete(bindHuman, params); };
 exports.duel_web_ticket = function (params) { return runAndComplete(duelWebTicket, params); };
 exports.rooms = duelTool("rooms");

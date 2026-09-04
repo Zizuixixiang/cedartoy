@@ -51,9 +51,12 @@ const modulePath = path.resolve(__dirname, "../packages/cedarduet.js");
 const duel = require(modulePath);
 const REQUIRED_TOOLS = [
   "session_register", "session_login", "session_status", "session_logout",
-  "bind_human", "duel_web_ticket", "rooms", "new", "join", "accept",
-  "reject", "state", "move", "resign", "leave", "rematch", "chips",
+  "human_login", "human_register", "human_session_status", "human_logout",
+  "human_duel_entry", "bind_human", "duel_web_ticket", "rooms", "new",
+  "join", "accept", "reject", "state", "move", "resign", "leave",
+  "rematch", "chips",
 ];
+const HUMAN_SESSION_PATH = "/mock/cedarduet/human-session.json";
 
 async function invoke(exported, params) {
   completed.length = 0;
@@ -181,6 +184,160 @@ async function testAmbiguousLogoutRetainsLocalSessionForRetry() {
   assert.strictEqual(memoryFiles.size, before);
 }
 
+async function testHumanLoginAndSessionPersistence() {
+  const humanToken = "human-login-session-secret";
+  httpHandler = async function (options) {
+    assert.strictEqual(options.url, "https://toy.example.test/api/auth/login");
+    assert.strictEqual(options.method, "POST");
+    assert.strictEqual(options.headers.Authorization, undefined);
+    assert.deepStrictEqual(JSON.parse(options.body), {
+      username: "HumanAlice",
+      password: "human-pass",
+    });
+    return {
+      body: {
+        token: humanToken,
+        user: { id: 101, username: "HumanAlice", is_ai: false },
+      },
+    };
+  };
+
+  const loginResult = await invoke(duel.human_login, {
+    username: " HumanAlice ",
+    password: "human-pass",
+  });
+  assert.strictEqual(loginResult.success, true);
+  assert.strictEqual(loginResult.data.logged_in, true);
+  assert.strictEqual(JSON.stringify(loginResult).includes(humanToken), false);
+  assert.strictEqual(JSON.stringify(loginResult).includes("human-pass"), false);
+
+  const storedSource = memoryFiles.get(HUMAN_SESSION_PATH);
+  assert.ok(storedSource, "human login session must be persisted in ToolPkg config");
+  const stored = JSON.parse(storedSource);
+  assert.deepStrictEqual(Object.keys(stored).sort(), [
+    "human_token", "user_id", "username", "version",
+  ]);
+  assert.strictEqual(stored.human_token, humanToken);
+  assert.strictEqual(stored.username, "HumanAlice");
+  assert.strictEqual(storedSource.includes("human-pass"), false, "password must never be persisted");
+
+  httpHandler = async function (options) {
+    assert.strictEqual(options.url, "https://toy.example.test/api/auth/me");
+    assert.strictEqual(options.method, "GET");
+    assert.strictEqual(options.body, undefined);
+    assert.strictEqual(options.headers.Authorization, "Bearer " + humanToken);
+    return {
+      body: {
+        user: { id: 101, username: "HumanAlice", is_ai: false },
+        bindings: [],
+      },
+    };
+  };
+  const statusResult = await invoke(duel.human_session_status, {});
+  assert.strictEqual(statusResult.success, true);
+  assert.strictEqual(statusResult.data.logged_in, true);
+  assert.strictEqual(statusResult.data.user.username, "HumanAlice");
+}
+
+async function testHumanRegistrationUsesExistingEndpoint() {
+  const registrationToken = "human-registration-session-secret";
+  httpHandler = async function (options) {
+    assert.strictEqual(options.url, "https://toy.example.test/api/auth/register");
+    assert.strictEqual(options.method, "POST");
+    assert.deepStrictEqual(JSON.parse(options.body), {
+      username: "NewHuman",
+      password: "new-human-pass",
+    });
+    return {
+      statusCode: 201,
+      body: {
+        token: registrationToken,
+        user: { id: 202, username: "NewHuman", is_ai: false },
+      },
+    };
+  };
+
+  const result = await invoke(duel.human_register, {
+    username: "NewHuman",
+    password: "new-human-pass",
+  });
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.data.logged_in, true);
+  const storedSource = memoryFiles.get(HUMAN_SESSION_PATH);
+  assert.strictEqual(JSON.parse(storedSource).human_token, registrationToken);
+  assert.strictEqual(storedSource.includes("new-human-pass"), false);
+  assert.strictEqual(JSON.stringify(result).includes(registrationToken), false);
+}
+
+async function testHumanDuelEntryAndLocalLogout() {
+  const storedToken = JSON.parse(memoryFiles.get(HUMAN_SESSION_PATH)).human_token;
+  httpHandler = async function (options) {
+    assert.strictEqual(options.url, "https://toy.example.test/api/operit/web-ticket");
+    assert.strictEqual(options.method, "POST");
+    assert.strictEqual(options.headers.Authorization, "Bearer " + storedToken);
+    const body = JSON.parse(options.body);
+    assert.strictEqual(body.confirm, true, "entering Duel must automatically confirm");
+    assert.strictEqual(body.client_id, currentCaller.card);
+    return {
+      body: {
+        ticket_path: "/duel/?web_ticket=ctow_v1_one_use_60s",
+        expires_in: 60,
+      },
+    };
+  };
+
+  const entryResult = await invoke(duel.human_duel_entry, {});
+  assert.strictEqual(entryResult.success, true);
+  assert.strictEqual(
+    entryResult.data.web_url,
+    "https://toy.example.test/duel/?web_ticket=ctow_v1_one_use_60s",
+  );
+  assert.strictEqual(entryResult.data.web_url.includes(storedToken), false);
+
+  const callsBeforeRejectedLegacyRequest = httpCalls.length;
+  const rejectedLegacyRequest = await invoke(duel.duel_web_ticket, {
+    human_token: "legacy-human-token",
+    confirm: false,
+  });
+  assert.strictEqual(rejectedLegacyRequest.success, false);
+  assert.strictEqual(httpCalls.length, callsBeforeRejectedLegacyRequest);
+
+  httpHandler = async function (options) {
+    assert.strictEqual(options.url, "https://toy.example.test/api/operit/web-ticket");
+    assert.strictEqual(options.headers.Authorization, "Bearer legacy-human-token");
+    assert.strictEqual(JSON.parse(options.body).confirm, true);
+    return {
+      body: {
+        ticket_path: "/duel/?web_ticket=legacy-compatible-one-use",
+        expires_in: 60,
+      },
+    };
+  };
+  const legacyResult = await invoke(duel.duel_web_ticket, {
+    human_token: "legacy-human-token",
+    confirm: true,
+  });
+  assert.deepStrictEqual(legacyResult, {
+    success: true,
+    message: "单次网页登录票据已创建，请立即打开",
+    data: {
+      web_url: "https://toy.example.test/duel/?web_ticket=legacy-compatible-one-use",
+      expires_in: 60,
+    },
+  });
+
+  const callsBeforeLogout = httpCalls.length;
+  const logoutResult = await invoke(duel.human_logout, {});
+  assert.strictEqual(logoutResult.success, true);
+  assert.strictEqual(memoryFiles.has(HUMAN_SESSION_PATH), false);
+  assert.strictEqual(httpCalls.length, callsBeforeLogout, "human logout must remain local-only");
+
+  const statusResult = await invoke(duel.human_session_status, {});
+  assert.strictEqual(statusResult.success, true);
+  assert.strictEqual(statusResult.data.logged_in, false);
+  assert.strictEqual(httpCalls.length, callsBeforeLogout);
+}
+
 function testSidebarRegistration() {
   const routes = [];
   const navigation = [];
@@ -206,6 +363,9 @@ async function main() {
   await testCardIsolation();
   await testMoveIsNeverReplayedByWaitLoop();
   await testAmbiguousLogoutRetainsLocalSessionForRetry();
+  await testHumanLoginAndSessionPersistence();
+  await testHumanRegistrationUsesExistingEndpoint();
+  await testHumanDuelEntryAndLocalLogout();
   testSidebarRegistration();
   process.stdout.write("ToolPkg tests passed\n");
 }

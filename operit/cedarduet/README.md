@@ -12,12 +12,12 @@ Requirements: Python 3 and Node.js. No npm dependencies are downloaded.
 cd /opt/cedartoy/operit/cedarduet
 npm test
 npm run build
-python3 -m zipfile -l dist/cedarduet-operit-0.1.1.toolpkg
+python3 -m zipfile -l dist/cedarduet-operit-0.1.2.toolpkg
 ```
 
 The build is deterministic and creates
-`dist/cedarduet-operit-0.1.1.toolpkg` and
-`dist/cedarduet-operit-test-installer-0.1.1.js`. The `.toolpkg` follows the
+`dist/cedarduet-operit-0.1.2.toolpkg` and
+`dist/cedarduet-operit-test-installer-0.1.2.js`. The `.toolpkg` follows the
 current official packer layout: it is a deterministic ZIP_STORED archive whose
 first root entry is `manifest.json`. The generated `.js` is a normal Operit
 sandbox package with the exact `.toolpkg` archive embedded in it.
@@ -26,7 +26,7 @@ sandbox package with the exact `.toolpkg` archive embedded in it.
 
 Current Operit accepts `.toolpkg` files directly from the Plugins tab:
 
-1. Put `dist/cedarduet-operit-0.1.1.toolpkg` anywhere selectable on the phone,
+1. Put `dist/cedarduet-operit-0.1.2.toolpkg` anywhere selectable on the phone,
    such as Downloads.
 2. Open the Plugins tab, tap `+`, and select the `.toolpkg` file.
 3. Enable the `cedarduet` subpackage and call `cedarduet:session_status`.
@@ -34,7 +34,7 @@ Current Operit accepts `.toolpkg` files directly from the Plugins tab:
 For test devices that need an overwrite/debug-install path without ADB, use the
 self-contained installer instead:
 
-1. Put `dist/cedarduet-operit-test-installer-0.1.1.js` anywhere selectable on
+1. Put `dist/cedarduet-operit-test-installer-0.1.2.js` anywhere selectable on
    the phone, such as Downloads.
 2. In Operit's Packages tab, tap the bottom-right `+` and select that `.js`.
 3. Make sure `cedarduet_test_installer` is enabled.
@@ -82,9 +82,15 @@ initial action is sent once. Every continuation is a fresh `state` request
 containing only `room_id` and `wait=true`, so a move or message is never replayed
 by the package.
 
-The main-sidebar “双弈” UI obtains a 60-second, one-use web ticket and embeds the
-existing `/duel/` site in a restricted WebView. The long-lived human token is
-kept out of the URL and is cleared from UI state after ticket creation.
+The main-sidebar “双弈” UI has the normal CedarToy human account flow: username
+and password login, new-account registration, saved login state, local logout,
+and an “进入双弈” button. It calls the existing `/api/auth/login`,
+`/api/auth/register`, and `/api/auth/me` endpoints. Only the server-issued human
+session is stored in ToolPkg config; passwords are never persisted. Clicking
+“进入双弈” is the explicit confirmation that obtains a 60-second, one-use web
+ticket and embeds the existing `/duel/` site in a restricted WebView. The
+long-lived human session never enters the WebView URL. Since existing human
+JWTs have no revoke endpoint, UI logout only clears the ToolPkg-local copy.
 
 ## Upstream format references
 

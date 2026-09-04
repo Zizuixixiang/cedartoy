@@ -53,8 +53,10 @@ def validate_sources(manifest):
     declared_tools = {tool.get("name") for tool in metadata.get("tools", [])}
     required_tools = {
         "session_register", "session_login", "session_status", "session_logout",
-        "bind_human", "duel_web_ticket", "rooms", "new", "join", "accept",
-        "reject", "state", "move", "resign", "leave", "rematch", "chips",
+        "human_login", "human_register", "human_session_status", "human_logout",
+        "human_duel_entry", "bind_human", "duel_web_ticket", "rooms", "new",
+        "join", "accept", "reject", "state", "move", "resign", "leave",
+        "rematch", "chips",
     }
     missing = sorted(required_tools - declared_tools)
     if missing:

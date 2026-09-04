@@ -157,7 +157,7 @@ function testManifestAgainstCurrentOperitModel() {
   assert.deepStrictEqual(Object.keys(manifest).sort(), PACKAGE_MANIFEST_FIELDS);
   assert.strictEqual(manifest.schema_version, 1);
   assert.strictEqual(manifest.toolpkg_id, "org.cedarstar.cedarduet");
-  assert.strictEqual(manifest.version, "0.1.1");
+  assert.strictEqual(manifest.version, "0.1.2");
   assert.strictEqual(manifest.main, "main.js");
   assert.strictEqual(typeof manifest.display_name, "string");
   assert.ok(manifest.display_name.trim());

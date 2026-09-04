@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "toolpkg_id": "org.cedarstar.cedarduet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "main.js",
   "display_name": "CedarDuet 双弈",
   "description": "按 Operit 角色卡隔离小机会话，并安全接入 CedarDuet。",

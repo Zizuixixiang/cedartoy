@@ -1,9 +1,9 @@
 {
   "name": "cedarduet-operit-toolpkg",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "scripts": {
-    "test": "python3 scripts/build.py && node tests/operit-parser-compat.test.js && node tests/toolpkg.test.js && node tests/installer.test.js",
+    "test": "python3 scripts/build.py && node tests/operit-parser-compat.test.js && node tests/toolpkg.test.js && node tests/ui.test.js && node tests/installer.test.js",
     "build": "python3 scripts/build.py"
   }
 }

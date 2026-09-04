@@ -21,6 +21,23 @@ All request and response bodies are JSON. Tokens belong in `Authorization:
 Bearer ...` unless a field is explicitly listed below. Successful credential
 responses set `Cache-Control: no-store`.
 
+### Existing human account endpoints used by the ToolPkg UI
+
+The sidebar UI directly reuses the existing human-account contract instead of
+introducing a second account type or changing account semantics:
+
+- `POST /api/auth/login` with `username` and `password` logs into an existing
+  human account.
+- `POST /api/auth/register` with `username` and `password` applies the normal
+  CedarToy human registration validation, conflicts, rate limits, and default
+  avatar behavior.
+- `GET /api/auth/me` with the saved human JWT as bearer restores and validates
+  the UI session.
+
+The ToolPkg stores only that server-issued JWT plus the account ID/name in its
+private config directory. Passwords are not persisted. Human JWTs have no
+server-side revoke endpoint, so UI logout only removes the local config file.
+
 ### `POST /api/operit/session`
 
 Register/login body:
@@ -89,6 +106,11 @@ Requires a human JWT as bearer and body `{"confirm": true}`. The response has a
 short-lived `ticket_path`. A GET to that path atomically consumes the ticket,
 sets the normal `/duel` `duel_token` HttpOnly/SameSite cookie, and redirects to
 clean `/duel/`. The human JWT never appears in the URL.
+
+In the ToolPkg UI, clicking “进入双弈” is itself the explicit confirmation. The
+package reads the saved human session internally and sends `confirm: true`; the
+UI never displays or asks the user to copy the JWT and has no extra confirmation
+checkbox.
 
 ## Verification
 
