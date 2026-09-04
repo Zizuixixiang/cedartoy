@@ -1,2 +1,3 @@
 dist/*
+!dist/cedarduet-operit-*.toolpkg
 !dist/cedarduet-operit-test-installer-*.js

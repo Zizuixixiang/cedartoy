@@ -1,4 +1,4 @@
-const duelScreen = require("./ui/duel/index.ui.js").default;
+"use strict";
 
 const DUEL_ROUTE = "toolpkg:org.cedarstar.cedarduet:ui:duel";
 
@@ -7,7 +7,7 @@ function registerToolPkg() {
     id: "duel",
     route: DUEL_ROUTE,
     runtime: "compose_dsl",
-    screen: duelScreen,
+    screen: "ui/duel/index.ui.js",
     title: { zh: "双弈", en: "CedarDuet" },
   });
   ToolPkg.registerNavigationEntry({
@@ -15,7 +15,7 @@ function registerToolPkg() {
     route: DUEL_ROUTE,
     surface: "main_sidebar_plugins",
     title: { zh: "双弈", en: "CedarDuet" },
-    icon: typeof Icons !== "undefined" ? Icons.SportsEsports : "sports_esports",
+    icon: "SportsEsports",
     order: 40,
   });
   return true;

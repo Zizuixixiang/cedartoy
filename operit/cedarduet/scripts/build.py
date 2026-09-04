@@ -5,7 +5,8 @@ import base64
 import hashlib
 import json
 import re
-import zipfile
+import struct
+import zlib
 from pathlib import Path
 
 
@@ -63,14 +64,86 @@ def validate_sources(manifest):
         raise SystemExit(f"missing installer template: {INSTALLER_TEMPLATE}")
 
 
+def _zip_local_header(file_name, data):
+    encoded_name = file_name.encode("utf-8")
+    checksum = zlib.crc32(data) & 0xFFFFFFFF
+    return struct.pack(
+        "<IHHHHHIIIHH",
+        0x04034B50,
+        20,
+        0,
+        0,
+        0,
+        0,
+        checksum,
+        len(data),
+        len(data),
+        len(encoded_name),
+        0,
+    ) + encoded_name
+
+
+def _zip_central_header(file_name, data, local_header_offset):
+    encoded_name = file_name.encode("utf-8")
+    checksum = zlib.crc32(data) & 0xFFFFFFFF
+    return struct.pack(
+        "<IHHHHHHIIIHHHHHII",
+        0x02014B50,
+        20,
+        20,
+        0,
+        0,
+        0,
+        0,
+        checksum,
+        len(data),
+        len(data),
+        len(encoded_name),
+        0,
+        0,
+        0,
+        0,
+        0,
+        local_header_offset,
+    ) + encoded_name
+
+
+def _zip_end(entry_count, central_size, central_offset):
+    return struct.pack(
+        "<IHHHHIIH",
+        0x06054B50,
+        0,
+        0,
+        entry_count,
+        entry_count,
+        central_size,
+        central_offset,
+        0,
+    )
+
+
 def build_toolpkg(manifest, output_dir):
     output = output_dir / f"cedarduet-operit-{manifest['version']}.toolpkg"
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for relative in RUNTIME_FILES:
-            info = zipfile.ZipInfo(relative, date_time=(2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
-            archive.writestr(info, (ROOT / relative).read_bytes())
+    local_parts = []
+    records = []
+    offset = 0
+    for relative in RUNTIME_FILES:
+        data = (ROOT / relative).read_bytes()
+        header = _zip_local_header(relative, data)
+        records.append((relative, data, offset))
+        local_parts.extend((header, data))
+        offset += len(header) + len(data)
+
+    central_parts = [
+        _zip_central_header(relative, data, local_offset)
+        for relative, data, local_offset in records
+    ]
+    central_directory = b"".join(central_parts)
+    output.write_bytes(
+        b"".join(local_parts)
+        + central_directory
+        + _zip_end(len(records), len(central_directory), offset)
+    )
     return output
 
 
@@ -99,6 +172,18 @@ def build_installer(manifest, toolpkg_output, output_dir):
     return output
 
 
+def remove_stale_outputs(output_dir, current_outputs):
+    keep = {path.resolve() for path in current_outputs}
+    patterns = (
+        "cedarduet-operit-*.toolpkg",
+        "cedarduet-operit-test-installer-*.js",
+    )
+    for pattern in patterns:
+        for candidate in output_dir.glob(pattern):
+            if candidate.resolve() not in keep:
+                candidate.unlink()
+
+
 def main():
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     validate_sources(manifest)
@@ -106,6 +191,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
     toolpkg_output = build_toolpkg(manifest, output_dir)
     installer_output = build_installer(manifest, toolpkg_output, output_dir)
+    remove_stale_outputs(output_dir, (toolpkg_output, installer_output))
     print(toolpkg_output)
     print(installer_output)
 

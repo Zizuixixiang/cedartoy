@@ -12,24 +12,31 @@ Requirements: Python 3 and Node.js. No npm dependencies are downloaded.
 cd /opt/cedartoy/operit/cedarduet
 npm test
 npm run build
-python3 -m zipfile -l dist/cedarduet-operit-0.1.0.toolpkg
+python3 -m zipfile -l dist/cedarduet-operit-0.1.1.toolpkg
 ```
 
 The build is deterministic and creates
-`dist/cedarduet-operit-0.1.0.toolpkg` and
-`dist/cedarduet-operit-test-installer-0.1.0.js`. The `.toolpkg` is a standard
-ZIP whose root contains `manifest.json`. The generated `.js` is a normal Operit
+`dist/cedarduet-operit-0.1.1.toolpkg` and
+`dist/cedarduet-operit-test-installer-0.1.1.js`. The `.toolpkg` follows the
+current official packer layout: it is a deterministic ZIP_STORED archive whose
+first root entry is `manifest.json`. The generated `.js` is a normal Operit
 sandbox package with the exact `.toolpkg` archive embedded in it.
 
-## Install on a phone without ADB
+## Install on a phone
 
-The package-manager `+` picker in current Operit imports plain `.hjson`, `.js`,
-or `.ts` sandbox packages; it is not a direct `.toolpkg` picker. Use the
-generated JavaScript installer instead:
+Current Operit accepts `.toolpkg` files directly from the Plugins tab:
 
-1. Put `dist/cedarduet-operit-test-installer-0.1.0.js` anywhere selectable on
+1. Put `dist/cedarduet-operit-0.1.1.toolpkg` anywhere selectable on the phone,
+   such as Downloads.
+2. Open the Plugins tab, tap `+`, and select the `.toolpkg` file.
+3. Enable the `cedarduet` subpackage and call `cedarduet:session_status`.
+
+For test devices that need an overwrite/debug-install path without ADB, use the
+self-contained installer instead:
+
+1. Put `dist/cedarduet-operit-test-installer-0.1.1.js` anywhere selectable on
    the phone, such as Downloads.
-2. In Operit Package Manager, tap the bottom-right `+` and select that `.js`.
+2. In Operit's Packages tab, tap the bottom-right `+` and select that `.js`.
 3. Make sure `cedarduet_test_installer` is enabled.
 4. In a chat, ask Operit: `加载 cedarduet_test_installer，然后调用
    cedarduet_test_installer:install_cedarduet_test。`

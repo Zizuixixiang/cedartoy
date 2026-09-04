@@ -193,8 +193,10 @@ function testSidebarRegistration() {
   assert.strictEqual(main.registerToolPkg(), true);
   assert.strictEqual(routes.length, 1);
   assert.strictEqual(navigation.length, 1);
+  assert.strictEqual(routes[0].screen, "ui/duel/index.ui.js");
   assert.strictEqual(navigation[0].surface, "main_sidebar_plugins");
   assert.strictEqual(navigation[0].title.zh, "双弈");
+  assert.strictEqual(navigation[0].icon, "SportsEsports");
 }
 
 async function main() {
