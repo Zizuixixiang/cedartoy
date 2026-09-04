@@ -16,12 +16,43 @@ python3 -m zipfile -l dist/cedarduet-operit-0.1.0.toolpkg
 ```
 
 The build is deterministic and creates
-`dist/cedarduet-operit-0.1.0.toolpkg`. It is a standard ZIP whose root contains
-`manifest.json`.
+`dist/cedarduet-operit-0.1.0.toolpkg` and
+`dist/cedarduet-operit-test-installer-0.1.0.js`. The `.toolpkg` is a standard
+ZIP whose root contains `manifest.json`. The generated `.js` is a normal Operit
+sandbox package with the exact `.toolpkg` archive embedded in it.
 
-For on-device testing, import the `.toolpkg` through Operit, or use the Operit
-repository's `tools/toolpkg/debug_toolpkg.py` workflow. This repository's build
-script does not install the package or contact a device.
+## Install on a phone without ADB
+
+The package-manager `+` picker in current Operit imports plain `.hjson`, `.js`,
+or `.ts` sandbox packages; it is not a direct `.toolpkg` picker. Use the
+generated JavaScript installer instead:
+
+1. Put `dist/cedarduet-operit-test-installer-0.1.0.js` anywhere selectable on
+   the phone, such as Downloads.
+2. In Operit Package Manager, tap the bottom-right `+` and select that `.js`.
+3. Make sure `cedarduet_test_installer` is enabled.
+4. In a chat, ask Operit: `加载 cedarduet_test_installer，然后调用
+   cedarduet_test_installer:install_cedarduet_test。`
+5. A successful result says that ToolPkg `org.cedarstar.cedarduet` was
+   installed and subpackage `cedarduet` was enabled. The main sidebar should
+   then show “双弈”.
+6. Call `cedarduet:session_status` to confirm the tools load. A first-time
+   tester should get the expected “not logged in” result, then use
+   `session_register` or `session_login`.
+
+The installer uses the same current official flow as
+`operit_editor:debug_install_toolpkg`: it writes the archive with
+`Tools.Files.writeBinary`, verifies the bytes with `readBinary`, dispatches the
+explicit `DEBUG_INSTALL_TOOLPKG` broadcast, enables the `cedarduet` subpackage,
+and loads it with `usePackage`. It does not use a guessed marketplace API,
+download code, ADB, or user-managed Android/data access. Older Operit builds
+without these APIs or the debug-install receiver are rejected with an upgrade
+message. After installation, the installer sandbox package can be disabled or
+removed without removing CedarDuet.
+
+The raw `.toolpkg` remains available for the Operit repository's
+`tools/toolpkg/debug_toolpkg.py` developer workflow. This repository's build
+script does not install the package, contact a device, or contact production.
 
 ## Setup and tools
 
@@ -51,6 +82,8 @@ kept out of the URL and is cleared from UI state after ticket creation.
 ## Upstream format references
 
 - [Operit ToolPkg format guide](https://github.com/AAswordman/Operit/blob/main/docs/TOOLPKG_FORMAT_GUIDE.md)
+- [Operit package examples and JS/TS/HJSON formats](https://github.com/AAswordman/Operit/tree/main/examples)
+- [Official `operit_editor` in-app ToolPkg installer](https://github.com/AAswordman/Operit/blob/main/examples/operit_editor.ts)
 - [Operit Compose DSL types](https://github.com/AAswordman/Operit/blob/main/examples/types/compose-dsl.d.ts)
 - [Operit network types](https://github.com/AAswordman/Operit/blob/main/examples/types/network.d.ts)
 - [Operit file API types](https://github.com/AAswordman/Operit/blob/main/examples/types/files.d.ts)

@@ -1,1 +1,2 @@
-dist/
+dist/*
+!dist/cedarduet-operit-test-installer-*.js
