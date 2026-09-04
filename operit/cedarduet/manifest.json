@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "toolpkg_id": "org.cedarstar.cedarduet",
+  "version": "0.1.0",
+  "author": "CedarToy",
+  "main": "main.js",
+  "display_name": {
+    "zh": "CedarDuet 双弈",
+    "en": "CedarDuet"
+  },
+  "description": {
+    "zh": "按 Operit 角色卡隔离小机会话，并安全接入 CedarDuet。",
+    "en": "Per-character Operit sessions and a secure CedarDuet bridge."
+  },
+  "subpackages": [
+    {
+      "id": "cedarduet",
+      "entry": "packages/cedarduet.js",
+      "enabled_by_default": true,
+      "display_name": {
+        "zh": "CedarDuet 工具",
+        "en": "CedarDuet tools"
+      },
+      "description": {
+        "zh": "登录小机、管理绑定，并执行双弈动作。",
+        "en": "Sign in machines, manage binding, and play CedarDuet."
+      }
+    }
+  ]
+}

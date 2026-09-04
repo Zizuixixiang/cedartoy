@@ -144,6 +144,13 @@ HUMAN_TOKEN_SECONDS = 30 * 24 * 60 * 60
 AI_OPAQUE_TOKEN_PREFIX = "ctai_v1_"
 AI_OPAQUE_TOKEN_BYTES = 32
 AI_OPAQUE_TOKEN_FORMAT_VERSION = 1
+OPERIT_SESSION_TOKEN_PREFIX = "ctop_v1_"
+OPERIT_SESSION_TOKEN_BYTES = 32
+OPERIT_SESSION_FORMAT_VERSION = 1
+OPERIT_SESSION_SECONDS = 90 * 24 * 60 * 60
+OPERIT_WEB_TICKET_PREFIX = "ctow_v1_"
+OPERIT_WEB_TICKET_BYTES = 24
+OPERIT_WEB_TICKET_SECONDS = 60
 LEGACY_AI_JWT_COMPAT_ENABLED = os.getenv(
     "LEGACY_AI_JWT_COMPAT_ENABLED", "true"
 ).strip().lower() not in {"0", "false", "no", "off"}
@@ -1095,6 +1102,72 @@ def _init_account_security_schema(conn):
         )
 
 
+def _init_operit_schema(conn):
+    """Create credentials that are deliberately separate from MCP AI tokens."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS operit_ai_sessions (
+            token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
+            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
+            client_id_hash TEXT NOT NULL CHECK (length(client_id_hash) = 64),
+            format_version INTEGER NOT NULL DEFAULT 1 CHECK (format_version = 1),
+            created_at_epoch INTEGER NOT NULL,
+            expires_at_epoch INTEGER NOT NULL,
+            last_used_at_epoch INTEGER NOT NULL,
+            revoked_at_epoch INTEGER
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_operit_ai_sessions_user_active
+        ON operit_ai_sessions(user_id, revoked_at_epoch, expires_at_epoch)
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_operit_ai_sessions_client_active
+        ON operit_ai_sessions(client_id_hash)
+        WHERE revoked_at_epoch IS NULL
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS operit_web_tickets (
+            ticket_hash TEXT PRIMARY KEY CHECK (length(ticket_hash) = 64),
+            human_user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
+            created_at_epoch INTEGER NOT NULL,
+            expires_at_epoch INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_operit_web_tickets_expiry
+        ON operit_web_tickets(expires_at_epoch)
+        """
+    )
+
+
+def _invalidate_operit_credentials_in_transaction(conn, user_id, *, now_epoch=None):
+    """Invalidate only the new credential family after a password/security reset."""
+    now_epoch = int(time.time() if now_epoch is None else now_epoch)
+    if _table_exists(conn, "operit_ai_sessions"):
+        conn.execute(
+            """
+            UPDATE operit_ai_sessions
+            SET revoked_at_epoch = COALESCE(revoked_at_epoch, ?)
+            WHERE user_id = ?
+            """,
+            (now_epoch, int(user_id)),
+        )
+    if _table_exists(conn, "operit_web_tickets"):
+        conn.execute(
+            "DELETE FROM operit_web_tickets WHERE human_user_id = ?",
+            (int(user_id),),
+        )
+
+
 def _init_account_email_schema(conn):
     """Create the optional, human-only email recovery schema idempotently."""
     conn.execute(
@@ -1387,6 +1460,7 @@ def _migrate_platform_timestamps():
         _init_password_reset_tokens_table(conn)
         _init_username_changes_table(conn)
         _init_account_security_schema(conn)
+        _init_operit_schema(conn)
         _init_account_email_schema(conn)
         _init_anti_addiction_tables(conn)
         # New voluntary-deletion fields are independent from legacy deleted_at.
@@ -2358,6 +2432,44 @@ def _login_or_register(username, password, *, is_ai, client_ip=None, avatar=None
     return {"token": token, "user": _public_user(user)}
 
 
+def _register_ai_user_in_transaction(conn, username, password, client_ip, avatar):
+    """Shared AI row creation; credential families are issued by the caller."""
+    if _username_conflict(conn, username):
+        raise _McpError(-32602, "用户名已存在")
+    had_recent_registration = _recent_registration_exists(conn, client_ip)
+    avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=True)
+    cur = conn.execute(
+        """
+        INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
+        VALUES (?, ?, 1, ?, ?)
+        """,
+        (username, _hash_password(password), avatar_type, avatar_value),
+    )
+    user = _row_dict(conn.execute(
+        "SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)
+    ).fetchone())
+    _record_successful_registration(conn, user, client_ip)
+    return user, had_recent_registration
+
+
+def _verified_existing_account(conn, username, password, client_ip, *, require_ai=None):
+    """Shared password/rate-limit check without issuing or rotating any token."""
+    if _failed_login_is_limited(client_ip, username):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
+    user = _row_dict(conn.execute(
+        "SELECT * FROM toy_users WHERE username = ? AND deleted_at IS NULL",
+        (username,),
+    ).fetchone())
+    type_mismatch = (
+        require_ai is not None
+        and bool(user and user.get("is_ai")) is not bool(require_ai)
+    )
+    if not user or type_mismatch or not _verify_password(password, user["password_hash"]):
+        _raise_failed_login(client_ip, username)
+    _clear_failed_login(client_ip, username)
+    return user
+
+
 def _login_or_register_ai(username, password, client_ip=None, avatar=None):
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
@@ -2365,19 +2477,9 @@ def _login_or_register_ai(username, password, client_ip=None, avatar=None):
     with _db_connect() as conn:
         _enforce_register_rate_limit(username, client_ip)
         conn.execute("BEGIN IMMEDIATE")
-        if _username_conflict(conn, username):
-            raise _McpError(-32602, "用户名已存在")
-        had_recent_registration = _recent_registration_exists(conn, client_ip)
-        avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=True)
-        cur = conn.execute(
-            """
-            INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
-            VALUES (?, ?, 1, ?, ?)
-            """,
-            (username, _hash_password(password), avatar_type, avatar_value),
+        user, had_recent_registration = _register_ai_user_in_transaction(
+            conn, username, password, client_ip, avatar
         )
-        user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
-        _record_successful_registration(conn, user, client_ip)
         token = _issue_initial_account_token_in_transaction(conn, user)
         conn.commit()
     return _append_recent_registration_notice({
@@ -2391,16 +2493,8 @@ def _login_existing_account(username, password, client_ip=None):
     username = _normalize_credential_field(username, "username").strip()
     password = _normalize_credential_field(password, "password")
     _validate_credentials(username, password)
-    if _failed_login_is_limited(client_ip, username):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
     with _db_connect() as conn:
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE username = ? AND deleted_at IS NULL",
-            (username,),
-        ).fetchone())
-        if not user or not _verify_password(password, user["password_hash"]):
-            _raise_failed_login(client_ip, username)
-        _clear_failed_login(client_ip, username)
+        user = _verified_existing_account(conn, username, password, client_ip)
         if user.get("is_ai"):
             conn.execute("BEGIN IMMEDIATE")
             user = _row_dict(conn.execute(
@@ -2436,6 +2530,312 @@ def _login_existing_account(username, password, client_ip=None):
             else "登录成功。"
         )
     return result
+
+
+def _operit_token_hash(raw_token):
+    return hashlib.sha256(str(raw_token).encode("utf-8")).hexdigest()
+
+
+def _operit_client_id(client_id):
+    if not isinstance(client_id, str):
+        raise _McpError(-32602, "client_id 必须是字符串")
+    if client_id != client_id.strip() or not 1 <= len(client_id) <= 200:
+        raise _McpError(-32602, "client_id 长度须为 1-200，且不能有首尾空白")
+    if any(ord(char) < 32 or ord(char) == 127 for char in client_id):
+        raise _McpError(-32602, "client_id 不能包含控制字符")
+    if len(client_id.encode("utf-8")) > 512:
+        raise _McpError(-32602, "client_id 过长")
+    return client_id
+
+
+def _operit_client_id_hash(client_id):
+    normalized = _operit_client_id(client_id)
+    return hashlib.sha256(
+        b"cedartoy-operit-client-v1\0" + normalized.encode("utf-8")
+    ).hexdigest()
+
+
+def _reject_pending_operit_user(user):
+    if user.get("deletion_requested_at_epoch") is not None:
+        raise _McpError(
+            -32010,
+            "账号处于待注销状态，不能创建或使用 Operit 会话",
+            {"reason": "pending_deletion"},
+        )
+
+
+def _issue_operit_session_in_transaction(conn, user, client_id, *, now_epoch=None):
+    """Issue only an Operit credential; never reads or mutates ai_access_tokens."""
+    _init_operit_schema(conn)
+    _reject_pending_operit_user(user)
+    raw_token = OPERIT_SESSION_TOKEN_PREFIX + secrets.token_urlsafe(
+        OPERIT_SESSION_TOKEN_BYTES
+    )
+    now_epoch = int(time.time() if now_epoch is None else now_epoch)
+    client_hash = _operit_client_id_hash(client_id)
+    # One caller card maps to one active machine. Re-login replaces only that
+    # caller's Operit session, even when the card switches machines. It cannot
+    # touch MCP tokens or sessions belonging to another caller.
+    conn.execute(
+        """
+        UPDATE operit_ai_sessions SET revoked_at_epoch = ?
+        WHERE client_id_hash = ? AND revoked_at_epoch IS NULL
+        """,
+        (now_epoch, client_hash),
+    )
+    conn.execute(
+        """
+        INSERT INTO operit_ai_sessions (
+            token_hash, user_id, client_id_hash, format_version,
+            created_at_epoch, expires_at_epoch, last_used_at_epoch
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            _operit_token_hash(raw_token), int(user["id"]),
+            client_hash, OPERIT_SESSION_FORMAT_VERSION,
+            now_epoch, now_epoch + OPERIT_SESSION_SECONDS, now_epoch,
+        ),
+    )
+    return raw_token, now_epoch + OPERIT_SESSION_SECONDS
+
+
+def _operit_confirmed_human(human_token, confirm):
+    if confirm is not True:
+        raise _McpError(-32602, "必须由已登录人类显式确认")
+    human = _current_account(human_token)
+    if human.get("is_ai"):
+        raise _McpError(-32602, "只有人类账号可以确认绑定或网页登录")
+    return human
+
+
+def _create_operit_ai_session(
+    action,
+    username,
+    password,
+    client_id,
+    *,
+    client_ip=None,
+    avatar=None,
+    bind_to_human=False,
+    confirm_binding=False,
+    human_token="",
+):
+    """Register/login an AI without creating, rotating, or revoking MCP tokens."""
+    if action not in {"register", "login"}:
+        raise _McpError(-32602, "action 只支持 register 或 login")
+    username = _normalize_credential_field(username, "username").strip()
+    password = _normalize_credential_field(password, "password")
+    _validate_credentials(username, password)
+    client_id = _operit_client_id(client_id)
+    human = None
+    if bind_to_human is True:
+        human = _operit_confirmed_human(human_token, confirm_binding)
+    elif bind_to_human is not False and bind_to_human is not None:
+        raise _McpError(-32602, "bind_to_human 必须是布尔值")
+
+    with _db_connect() as conn:
+        _init_operit_schema(conn)
+        if action == "register":
+            _enforce_register_rate_limit(username, client_ip)
+            conn.execute("BEGIN IMMEDIATE")
+            user, had_recent_registration = _register_ai_user_in_transaction(
+                conn, username, password, client_ip, avatar
+            )
+        else:
+            user = _verified_existing_account(
+                conn, username, password, client_ip, require_ai=True
+            )
+            _reject_pending_operit_user(user)
+            conn.execute("BEGIN IMMEDIATE")
+            # Lock and recheck the same account before issuing the sidecar session.
+            user = _row_dict(conn.execute(
+                "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
+                (int(user["id"]),),
+            ).fetchone())
+            if (
+                not user
+                or not user.get("is_ai")
+                or not _verify_password(password, user["password_hash"])
+            ):
+                raise _McpError(-32001, "用户名或密码错误")
+            _reject_pending_operit_user(user)
+            had_recent_registration = False
+
+        if human is not None:
+            _ensure_ai_binding(conn, human["id"], user["id"])
+        raw_token, expires_at = _issue_operit_session_in_transaction(
+            conn, user, client_id
+        )
+        conn.execute(
+            "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
+            (int(user["id"]),),
+        )
+        user = _row_dict(conn.execute(
+            "SELECT * FROM toy_users WHERE id = ?", (int(user["id"]),)
+        ).fetchone())
+        conn.commit()
+
+    result = {
+        "session_token": raw_token,
+        "expires_at_epoch": expires_at,
+        "user": _public_user(user),
+        "bound": human is not None,
+        "credential_family": "operit_v1",
+        "message": "Operit 小机会话已创建；现有 MCP Token 未改变。",
+    }
+    return _append_recent_registration_notice(result, had_recent_registration)
+
+
+def _current_operit_ai(raw_token, client_id, *, touch=True, now_epoch=None):
+    raw_token = str(raw_token or "")
+    if not raw_token.startswith(OPERIT_SESSION_TOKEN_PREFIX):
+        raise _McpError(-32001, "Operit 会话不存在或已失效")
+    client_hash = _operit_client_id_hash(client_id)
+    now_epoch = int(time.time() if now_epoch is None else now_epoch)
+    with _db_connect() as conn:
+        _init_operit_schema(conn)
+        row = _row_dict(conn.execute(
+            """
+            SELECT s.user_id, s.format_version, s.expires_at_epoch, u.*
+            FROM operit_ai_sessions AS s
+            JOIN toy_users AS u ON u.id = s.user_id
+            WHERE s.token_hash = ?
+              AND s.client_id_hash = ?
+              AND s.revoked_at_epoch IS NULL
+              AND s.expires_at_epoch > ?
+              AND u.deleted_at IS NULL
+            """,
+            (_operit_token_hash(raw_token), client_hash, now_epoch),
+        ).fetchone())
+        if (
+            not row
+            or int(row["format_version"]) != OPERIT_SESSION_FORMAT_VERSION
+            or not row.get("is_ai")
+        ):
+            raise _McpError(-32001, "Operit 会话不存在、已失效或不属于当前 callerCardId")
+        _reject_pending_operit_user(row)
+        if touch:
+            conn.execute(
+                """
+                UPDATE operit_ai_sessions SET last_used_at_epoch = ?
+                WHERE token_hash = ?
+                """,
+                (now_epoch, _operit_token_hash(raw_token)),
+            )
+            conn.execute(
+                "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
+                (int(row["user_id"]),),
+            )
+            conn.commit()
+    return row
+
+
+def _operit_session_status(raw_token, client_id):
+    user = _current_operit_ai(raw_token, client_id)
+    with _db_connect() as conn:
+        expires_at = int(conn.execute(
+            "SELECT expires_at_epoch FROM operit_ai_sessions WHERE token_hash = ?",
+            (_operit_token_hash(raw_token),),
+        ).fetchone()[0])
+    return {
+        "authenticated": True,
+        "credential_family": "operit_v1",
+        "expires_at_epoch": expires_at,
+        "user": _public_user(user),
+    }
+
+
+def _revoke_operit_session(raw_token, client_id):
+    _current_operit_ai(raw_token, client_id, touch=False)
+    now_epoch = int(time.time())
+    with _db_connect() as conn:
+        conn.execute(
+            """
+            UPDATE operit_ai_sessions SET revoked_at_epoch = ?
+            WHERE token_hash = ? AND revoked_at_epoch IS NULL
+            """,
+            (now_epoch, _operit_token_hash(raw_token)),
+        )
+        conn.commit()
+    return {"ok": True, "authenticated": False}
+
+
+def _bind_operit_ai(human_token, operit_token, client_id, *, confirm=False):
+    human = _operit_confirmed_human(human_token, confirm)
+    ai = _current_operit_ai(operit_token, client_id)
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _ensure_ai_binding(conn, human["id"], ai["id"])
+        conn.commit()
+    return {
+        "ok": True,
+        "bound": True,
+        "human": _public_user(human),
+        "machine": _public_user(ai),
+    }
+
+
+def _issue_operit_web_ticket(human_token, *, confirm=False, now_epoch=None):
+    human = _operit_confirmed_human(human_token, confirm)
+    now_epoch = int(time.time() if now_epoch is None else now_epoch)
+    raw_ticket = OPERIT_WEB_TICKET_PREFIX + secrets.token_urlsafe(
+        OPERIT_WEB_TICKET_BYTES
+    )
+    expires_at = now_epoch + OPERIT_WEB_TICKET_SECONDS
+    with _db_connect() as conn:
+        _init_operit_schema(conn)
+        conn.execute(
+            "DELETE FROM operit_web_tickets WHERE expires_at_epoch <= ?",
+            (now_epoch,),
+        )
+        conn.execute(
+            """
+            INSERT INTO operit_web_tickets (
+                ticket_hash, human_user_id, created_at_epoch, expires_at_epoch
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (_operit_token_hash(raw_ticket), int(human["id"]), now_epoch, expires_at),
+        )
+        conn.commit()
+    return {
+        "ticket": raw_ticket,
+        "ticket_path": "/duel/?web_ticket=" + urllib.parse.quote(raw_ticket, safe=""),
+        "expires_in": OPERIT_WEB_TICKET_SECONDS,
+        "expires_at_epoch": expires_at,
+    }
+
+
+def _consume_operit_web_ticket(raw_ticket, *, now_epoch=None):
+    raw_ticket = str(raw_ticket or "")
+    if not raw_ticket.startswith(OPERIT_WEB_TICKET_PREFIX):
+        raise _McpError(-32001, "网页登录票据不存在或已失效")
+    now_epoch = int(time.time() if now_epoch is None else now_epoch)
+    ticket_hash = _operit_token_hash(raw_ticket)
+    with _db_connect() as conn:
+        _init_operit_schema(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        row = _row_dict(conn.execute(
+            """
+            SELECT t.expires_at_epoch, u.*
+            FROM operit_web_tickets AS t
+            JOIN toy_users AS u ON u.id = t.human_user_id
+            WHERE t.ticket_hash = ?
+              AND t.expires_at_epoch > ?
+              AND u.deleted_at IS NULL
+              AND u.is_ai = 0
+            """,
+            (ticket_hash, now_epoch),
+        ).fetchone())
+        # Consumption is atomic and irreversible, including a race with a second GET.
+        deleted = conn.execute(
+            "DELETE FROM operit_web_tickets WHERE ticket_hash = ?",
+            (ticket_hash,),
+        ).rowcount
+        conn.commit()
+    if not row or deleted != 1:
+        raise _McpError(-32001, "网页登录票据不存在或已失效")
+    _reject_pending_operit_user(row)
+    return row
 
 
 def _login_or_register_human(username, password, client_ip=None, avatar=None):
@@ -2846,6 +3246,7 @@ def _admin_reset_user_password(user_id, body):
             "UPDATE toy_users SET password_hash = ?, deleted_at = NULL WHERE id = ?",
             (_hash_password(password), user_id),
         )
+        _invalidate_operit_credentials_in_transaction(conn, user_id)
         conn.commit()
     return {"ok": True}
 
@@ -2943,6 +3344,7 @@ def _reset_machine_password(raw_token, ai_user_id, new_password):
             "UPDATE toy_users SET password_hash = ? WHERE id = ?",
             (_hash_password(new_password), ai_user_id),
         )
+        _invalidate_operit_credentials_in_transaction(conn, ai_user_id)
         conn.commit()
 
     return {"ok": True, "message": "已为小机重置密码"}
@@ -2978,6 +3380,9 @@ def _reset_password_by_token(reset_token, new_password):
         conn.execute(
             "UPDATE toy_users SET password_hash = ? WHERE id = ?",
             (_hash_password(new_password), int(reset["user_id"])),
+        )
+        _invalidate_operit_credentials_in_transaction(
+            conn, int(reset["user_id"])
         )
         conn.execute(
             "UPDATE password_reset_tokens SET used = 1 WHERE id = ?",
@@ -4031,6 +4436,7 @@ def _reset_human_password_by_email(username, code, new_password, client_ip=None)
             "UPDATE toy_users SET password_hash = ? WHERE id = ?",
             (_hash_password(new_password), int(user["id"])),
         )
+        _invalidate_operit_credentials_in_transaction(conn, int(user["id"]))
         conn.commit()
     return {"ok": True, "message": "密码已重置，请用新密码登录"}
 
@@ -5718,6 +6124,7 @@ def _change_password(raw_token, old_password, new_password):
             "UPDATE toy_users SET password_hash = ? WHERE id = ?",
             (_hash_password(new_password), int(user["id"])),
         )
+        _invalidate_operit_credentials_in_transaction(conn, int(user["id"]))
         conn.commit()
     return {"ok": True, "message": "密码已修改"}
 
@@ -7050,11 +7457,15 @@ def _apply_play_slot_hint(text, slot_hint):
     return text
 
 
-def _tool_play(arguments, path_token=None, *, defer_duel=False):
+def _tool_play(
+    arguments, path_token=None, *, defer_duel=False, authenticated_account=None
+):
     slot_hint = None
     try:
         game = arguments.get("game") if isinstance(arguments, dict) else None
-        if path_token and (game in IDENTITY_GAMES or game == "turtle_soup"):
+        if (path_token or authenticated_account is not None) and (
+            game in IDENTITY_GAMES or game == "turtle_soup"
+        ):
             slot_hint = _save_slot_from_arguments(arguments)
     except _McpError:
         slot_hint = None  # 非法 slot 交给内部逻辑报错
@@ -7062,11 +7473,47 @@ def _tool_play(arguments, path_token=None, *, defer_duel=False):
         arguments,
         path_token=path_token,
         defer_duel=defer_duel,
+        authenticated_account=authenticated_account,
     )
     if isinstance(result, _DeferredDuelCall):
         result.slot_hint = slot_hint
         return result
     return _apply_play_slot_hint(result, slot_hint)
+
+
+_OPERIT_DUEL_ACTIONS = frozenset({
+    "rooms", "new", "join", "accept", "reject", "state", "move",
+    "resign", "leave", "rematch", "chips",
+})
+
+
+def _operit_duel_call(raw_token, client_id, action, params):
+    """Run one Duel action under the AI resolved from an Operit session."""
+    user = _current_operit_ai(raw_token, client_id)
+    if not isinstance(action, str) or action not in _OPERIT_DUEL_ACTIONS:
+        raise _McpError(-32602, "不支持的 duel action")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise _McpError(-32602, "params 必须是对象")
+    rate_identity = f"operit:{int(user['id'])}:duel"
+    if not _check_request_rate_limit(
+        rate_identity, max_count=DUEL_REQUEST_RATE_LIMIT_MAX
+    ):
+        raise _McpError(RATE_LIMIT_ERROR_CODE, REQUEST_RATE_LIMIT_MESSAGE)
+    # Only game/action/params cross this boundary. _tool_play then overwrites every
+    # reported player_id with the canonical account id before Duel normalization.
+    raw_result = _tool_play(
+        {"game": "duel", "action": action, "params": dict(params)},
+        authenticated_account=user,
+    )
+    try:
+        result = json.loads(raw_result)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise _McpError(-32603, "duel 返回格式异常") from exc
+    if not isinstance(result, dict):
+        raise _McpError(-32603, "duel 返回格式异常")
+    return result
 
 
 def _deserialize_object_param(value, param_name):
@@ -7086,7 +7533,9 @@ def _deserialize_object_param(value, param_name):
     return parsed
 
 
-def _tool_play_inner(arguments, path_token=None, *, defer_duel=False):
+def _tool_play_inner(
+    arguments, path_token=None, *, defer_duel=False, authenticated_account=None
+):
     game = arguments.get("game")
     action = arguments.get("action")
     if not game or not isinstance(game, str):
@@ -7109,9 +7558,14 @@ def _tool_play_inner(arguments, path_token=None, *, defer_duel=False):
     account_player_id = None
     guest_player_id = None
     slot = MIN_SAVE_SLOT
+    has_account_identity = bool(path_token or authenticated_account is not None)
     if game in IDENTITY_GAMES:
-        if path_token:
-            account_user = _current_account(path_token)
+        if has_account_identity:
+            account_user = (
+                authenticated_account
+                if authenticated_account is not None
+                else _current_account(path_token)
+            )
             _auto_migrate_legacy_account_saves(account_user)
             slot = _save_slot_from_arguments(arguments)
             account_player_id = _account_slot_player_id(account_user["id"], slot)
@@ -7135,7 +7589,7 @@ def _tool_play_inner(arguments, path_token=None, *, defer_duel=False):
 
     # A claimed guest id is a permanent tombstone. Check the canonical guest id
     # before anti-addiction, announcements, or any concrete game/satellite call.
-    if not path_token:
+    if not has_account_identity:
         canonical_guest_id = guest_player_id
         if canonical_guest_id is None:
             candidate = _guest_player_id(_reported_player_id(arguments))
@@ -8898,6 +9352,22 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         path, path_token = self._request_path_and_token()
         client_ip = self._client_ip()
 
+        if path == "/api/operit/session":
+            self._handle_api_operit_session()
+            return
+
+        if path == "/api/operit/bind":
+            self._handle_api_operit_bind()
+            return
+
+        if path == "/api/operit/duel":
+            self._handle_api_operit_duel()
+            return
+
+        if path == "/api/operit/web-ticket":
+            self._handle_api_operit_web_ticket()
+            return
+
         if path == "/api/auth/login":
             self._handle_api_login()
             return
@@ -9603,6 +10073,131 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    @staticmethod
+    def _operit_http_status(exc):
+        if exc.code == RATE_LIMIT_ERROR_CODE:
+            return 429
+        if exc.code == -32001:
+            return 401
+        if exc.code == -32003:
+            return 403
+        if exc.code == -32010:
+            return 409
+        return 400
+
+    def _handle_api_operit_session(self):
+        try:
+            body = self._read_json_body()
+            action = body.get("action")
+            operit_token = _extract_bearer(self.headers)
+            if action in {"register", "login"}:
+                result = _create_operit_ai_session(
+                    action,
+                    body.get("username"),
+                    body.get("password"),
+                    body.get("client_id"),
+                    client_ip=self._client_ip(),
+                    avatar=body.get("avatar"),
+                    bind_to_human=body.get("bind_to_human", False),
+                    confirm_binding=body.get("confirm_binding", False),
+                    human_token=operit_token,
+                )
+                status = 201 if action == "register" else 200
+            elif action == "status":
+                result = _operit_session_status(
+                    operit_token, body.get("client_id")
+                )
+                status = 200
+            elif action == "logout":
+                result = _revoke_operit_session(
+                    operit_token, body.get("client_id")
+                )
+                status = 200
+            else:
+                raise _McpError(
+                    -32602,
+                    "action 只支持 register、login、status 或 logout",
+                )
+            self._send_json(
+                result, status=status, extra_headers={"Cache-Control": "no-store"}
+            )
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=self._operit_http_status(exc),
+                extra_headers={"Cache-Control": "no-store"},
+            )
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("Operit session request failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_operit_bind(self):
+        try:
+            body = self._read_json_body()
+            result = _bind_operit_ai(
+                _extract_bearer(self.headers),
+                body.get("session_token"),
+                body.get("client_id"),
+                confirm=body.get("confirm", False),
+            )
+            self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=self._operit_http_status(exc),
+                extra_headers={"Cache-Control": "no-store"},
+            )
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("Operit binding request failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_operit_duel(self):
+        try:
+            body = self._read_json_body()
+            result = _operit_duel_call(
+                _extract_bearer(self.headers),
+                body.get("client_id"),
+                body.get("action"),
+                body.get("params"),
+            )
+            self._send_json(
+                result, extra_headers={"Cache-Control": "no-cache, no-store"}
+            )
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=self._operit_http_status(exc),
+                extra_headers={"Cache-Control": "no-store"},
+            )
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("Operit Duel request failed")
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_operit_web_ticket(self):
+        try:
+            body = self._read_json_body()
+            result = _issue_operit_web_ticket(
+                _extract_bearer(self.headers), confirm=body.get("confirm", False)
+            )
+            self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message, **exc.details},
+                status=self._operit_http_status(exc),
+                extra_headers={"Cache-Control": "no-store"},
+            )
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("Operit web ticket request failed")
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
     def _handle_api_login(self):
@@ -10850,6 +11445,33 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
 
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+        web_ticket_values = params.get("web_ticket") or []
+        if web_ticket_values:
+            if method != "GET" or public_path != "/" or len(web_ticket_values) != 1:
+                self._send_json({"error": "网页登录票据只能用于 /duel/"}, status=400)
+                return
+            try:
+                human = _consume_operit_web_ticket(web_ticket_values[0])
+            except _McpError as exc:
+                self._send_json(
+                    {"error": exc.message, "code": 401},
+                    status=401,
+                    extra_headers={"Cache-Control": "no-store"},
+                )
+                return
+            human_token = _create_account_jwt(human)
+            cookie = (
+                f"duel_token={urllib.parse.quote(human_token, safe='')}; "
+                f"Path=/duel; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+            )
+            self.send_response(303)
+            self.send_header("Location", "/duel/")
+            self.send_header("Set-Cookie", cookie)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         token_from_query = (params.get("token") or [None])[0]
         token = (
             token_from_query
@@ -10903,7 +11525,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         target=None, rewrite_html=False,
     ):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
-        for untrusted in ("token", "player", "player_id", "opponent_id"):
+        for untrusted in (
+            "token", "web_ticket", "player", "player_id", "opponent_id"
+        ):
             params.pop(untrusted, None)
         if target is not None and method == "GET" and upstream_path.startswith("/api/"):
             params["player_id"] = [target["human_player"]]
@@ -11344,8 +11968,9 @@ _JWT_LOG_VALUE_RE = re.compile(
     r"eyJ[A-Za-z0-9_-]*(?:\.|%2[eE])[A-Za-z0-9_-]+(?:\.|%2[eE])[A-Za-z0-9_-]+"
 )
 _OPAQUE_AI_LOG_VALUE_RE = re.compile(r"ctai_v1_[A-Za-z0-9_-]{40,}")
+_OPERIT_LOG_VALUE_RE = re.compile(r"cto(?:p|w)_v1_[A-Za-z0-9_-]{30,}")
 _SENSITIVE_QUERY_LOG_RE = re.compile(
-    r"([?&](?:token|reset_token|access_token)=)[^&#\s\"]+",
+    r"([?&](?:token|web_ticket|reset_token|access_token)=)[^&#\s\"]+",
     re.IGNORECASE,
 )
 
@@ -11353,6 +11978,7 @@ _SENSITIVE_QUERY_LOG_RE = re.compile(
 def _redact_http_log_text(value):
     text = str(value)
     text = _OPAQUE_AI_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
+    text = _OPERIT_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
     text = _JWT_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
     return _SENSITIVE_QUERY_LOG_RE.sub(r"\1<TOKEN_REDACTED>", text)
 

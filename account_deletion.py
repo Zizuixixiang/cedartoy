@@ -489,6 +489,8 @@ def _purge_main_private(
             ("email_verification_codes", "user_id = ?", (user_id,)),
             ("account_emails", "user_id = ?", (user_id,)),
             ("password_reset_tokens", "user_id = ?", (user_id,)),
+            ("operit_ai_sessions", "user_id = ?", (user_id,)),
+            ("operit_web_tickets", "human_user_id = ?", (user_id,)),
             ("ai_access_tokens", "user_id = ?", (user_id,)),
             ("legacy_ai_token_hashes", "user_id = ?", (user_id,)),
             ("binding_tokens", "ai_user_id = ?", (user_id,)),
@@ -675,6 +677,8 @@ def dry_run_summary(
         for table, column in (
             ("players", "user_id"),
             ("password_reset_tokens", "user_id"),
+            ("operit_ai_sessions", "user_id"),
+            ("operit_web_tickets", "human_user_id"),
             ("ai_access_tokens", "user_id"),
             ("legacy_ai_token_hashes", "user_id"),
             ("account_registration_events", "user_id"),
