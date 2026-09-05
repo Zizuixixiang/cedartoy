@@ -6,10 +6,12 @@ const fs = require("fs");
 const path = require("path");
 
 const version = require("../manifest.json").version;
+const installerVersionTag = version.toLowerCase().replace(/[^a-z0-9]+/g, "");
+const installerPackageName = `cedarduet_test_installer_${installerVersionTag}`;
 const toolpkgPath = path.resolve(__dirname, `../dist/cedarduet-operit-${version}.toolpkg`);
 const installerPath = path.resolve(
   __dirname,
-  `../dist/cedarduet-operit-test-installer-${version}.js`,
+  `../dist/cedarduet-operit-test-installer-${version}-v2.js`,
 );
 const expectedArchive = fs.readFileSync(toolpkgPath);
 const completed = [];
@@ -76,10 +78,14 @@ const installerSource = fs.readFileSync(installerPath, "utf8");
 const metadataMatch = /\/\* METADATA\s*\n([\s\S]*?)\n\*\//.exec(installerSource);
 assert.ok(metadataMatch, "installer is missing METADATA");
 const metadata = JSON.parse(metadataMatch[1]);
-assert.strictEqual(metadata.name, "cedarduet_test_installer");
+assert.strictEqual(metadata.name, installerPackageName);
 assert.deepStrictEqual(
   metadata.tools.map(function (tool) { return tool.name; }),
   ["install_cedarduet_test"],
+);
+assert.strictEqual(
+  `${metadata.name}:${metadata.tools[0].name}`,
+  `${installerPackageName}:install_cedarduet_test`,
 );
 assert.ok(!installerSource.includes("__CEDARDUET_TOOLPKG_"), "installer has unresolved build tokens");
 

@@ -19,12 +19,24 @@ RUNTIME_FILES = (
 )
 METADATA_PATTERN = re.compile(r"/\* METADATA\s*\n(.*?)\n\*/", re.DOTALL)
 INSTALLER_TEMPLATE = "installer/cedarduet_test_installer.js.in"
+INSTALLER_OUTPUT_REVISION = "v2"
+INSTALLER_PACKAGE_PREFIX = "cedarduet_test_installer_"
+INSTALLER_TOOL_NAME = "install_cedarduet_test"
 INSTALLER_TOKENS = {
+    "__CEDARDUET_INSTALLER_PACKAGE_NAME__",
     "__CEDARDUET_TOOLPKG_VERSION__",
     "__CEDARDUET_TOOLPKG_SIZE__",
     "__CEDARDUET_TOOLPKG_SHA256__",
     "__CEDARDUET_TOOLPKG_BASE64_CHUNKS__",
 }
+
+
+def installer_package_name(version):
+    """Return the version-scoped name used by Operit's standalone JS loader."""
+    version_tag = re.sub(r"[^a-z0-9]+", "", str(version).lower())
+    if not version_tag:
+        raise SystemExit("manifest version cannot produce an installer package name")
+    return INSTALLER_PACKAGE_PREFIX + version_tag
 
 
 def validate_sources(manifest):
@@ -157,6 +169,7 @@ def build_installer(manifest, toolpkg_output, output_dir):
         for offset in range(0, len(payload), 100)
     )
     replacements = {
+        "__CEDARDUET_INSTALLER_PACKAGE_NAME__": installer_package_name(manifest["version"]),
         "__CEDARDUET_TOOLPKG_VERSION__": str(manifest["version"]),
         "__CEDARDUET_TOOLPKG_SIZE__": str(len(archive)),
         "__CEDARDUET_TOOLPKG_SHA256__": hashlib.sha256(archive).hexdigest(),
@@ -169,7 +182,19 @@ def build_installer(manifest, toolpkg_output, output_dir):
     if unresolved:
         raise SystemExit("unresolved installer tokens: " + ", ".join(unresolved))
 
-    output = output_dir / f"cedarduet-operit-test-installer-{manifest['version']}.js"
+    metadata_match = METADATA_PATTERN.search(source)
+    if not metadata_match:
+        raise SystemExit("generated installer is missing METADATA")
+    metadata = json.loads(metadata_match.group(1))
+    if metadata.get("name") != installer_package_name(manifest["version"]):
+        raise SystemExit("generated installer has an unexpected package name")
+    declared_installer_tools = [tool.get("name") for tool in metadata.get("tools", [])]
+    if declared_installer_tools != [INSTALLER_TOOL_NAME]:
+        raise SystemExit("generated installer has an unexpected tool name")
+
+    output = output_dir / (
+        f"cedarduet-operit-test-installer-{manifest['version']}-{INSTALLER_OUTPUT_REVISION}.js"
+    )
     output.write_text(source, encoding="utf-8", newline="\n")
     return output
 

@@ -1,6 +1,6 @@
 /* METADATA
 {
-  "name": "cedarduet_test_installer",
+  "name": "cedarduet_test_installer_012",
   "display_name": {
     "zh": "CedarDuet 测试安装器",
     "en": "CedarDuet Test Installer"

@@ -13,6 +13,13 @@ const archivePath = path.join(
   "dist",
   `cedarduet-operit-${manifest.version}.toolpkg`,
 );
+const installerVersionTag = manifest.version.toLowerCase().replace(/[^a-z0-9]+/g, "");
+const installerPackageName = `cedarduet_test_installer_${installerVersionTag}`;
+const installerPath = path.join(
+  root,
+  "dist",
+  `cedarduet-operit-test-installer-${manifest.version}-v2.js`,
+);
 
 // ToolPkgManifest and ToolPkgManifestSubpackage in Operit's current
 // ToolPkgParser.kt. Unknown top-level keys are tolerated by Operit, but this
@@ -202,6 +209,31 @@ function testSubpackageAgainstCurrentOperitParser() {
   });
 }
 
+function testInstallerAgainstCurrentOperitParser() {
+  const source = fs.readFileSync(installerPath, "utf8");
+
+  // This is the METADATA extraction used by Operit's current parseJsPackage.
+  const metadataMatch = /\/\*\s*METADATA\s*([\s\S]*?)\*\//.exec(source);
+  assert.ok(metadataMatch, "installer must have the METADATA block read by parseJsPackage");
+  const metadata = JSON.parse(metadataMatch[1].trim());
+
+  assert.strictEqual(metadata.name, installerPackageName);
+  assert.match(metadata.name, /^[A-Za-z_][A-Za-z0-9_]*$/);
+  assert.ok(metadata.description, "ToolPackage.description is required");
+  assert.strictEqual(metadata.enabledByDefault, true);
+  assert.ok(Array.isArray(metadata.tools));
+  assert.deepStrictEqual(
+    metadata.tools.map(function (tool) { return tool.name; }),
+    ["install_cedarduet_test"],
+  );
+  assert.strictEqual(
+    `${metadata.name}:${metadata.tools[0].name}`,
+    `${installerPackageName}:install_cedarduet_test`,
+  );
+  assert.match(source, /async\s+function\s+install_cedarduet_test\s*\(/);
+  assert.match(source, /exports\.install_cedarduet_test\s*=\s*install_cedarduet_test\s*;/);
+}
+
 function testMainRegistrationAgainstCurrentOperitBridge(entryNames, packagedMain) {
   const routes = [];
   const navigation = [];
@@ -281,5 +313,6 @@ function testArchiveAgainstCurrentOperitLoader() {
 
 testManifestAgainstCurrentOperitModel();
 testSubpackageAgainstCurrentOperitParser();
+testInstallerAgainstCurrentOperitParser();
 testArchiveAgainstCurrentOperitLoader();
 process.stdout.write("Operit parser compatibility tests passed\n");
