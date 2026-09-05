@@ -19,12 +19,13 @@ RUNTIME_FILES = (
 )
 METADATA_PATTERN = re.compile(r"/\* METADATA\s*\n(.*?)\n\*/", re.DOTALL)
 INSTALLER_TEMPLATE = "installer/cedarduet_test_installer.js.in"
-INSTALLER_OUTPUT_REVISION = "v2"
+INSTALLER_OUTPUT_REVISION = "v3"
 INSTALLER_PACKAGE_PREFIX = "cedarduet_test_installer_"
 INSTALLER_TOOL_NAME = "install_cedarduet_test"
 INSTALLER_TOKENS = {
     "__CEDARDUET_INSTALLER_PACKAGE_NAME__",
     "__CEDARDUET_TOOLPKG_VERSION__",
+    "__CEDARDUET_SUBPACKAGE_TOOL_COUNT__",
     "__CEDARDUET_TOOLPKG_SIZE__",
     "__CEDARDUET_TOOLPKG_SHA256__",
     "__CEDARDUET_TOOLPKG_BASE64_CHUNKS__",
@@ -36,7 +37,7 @@ def installer_package_name(version):
     version_tag = re.sub(r"[^a-z0-9]+", "", str(version).lower())
     if not version_tag:
         raise SystemExit("manifest version cannot produce an installer package name")
-    return INSTALLER_PACKAGE_PREFIX + version_tag
+    return INSTALLER_PACKAGE_PREFIX + version_tag + "_" + INSTALLER_OUTPUT_REVISION
 
 
 def validate_sources(manifest):
@@ -168,9 +169,19 @@ def build_installer(manifest, toolpkg_output, output_dir):
         f'  "{payload[offset:offset + 100]}",'
         for offset in range(0, len(payload), 100)
     )
+    package_source = (ROOT / "packages/cedarduet.js").read_text(encoding="utf-8")
+    package_metadata_match = METADATA_PATTERN.search(package_source)
+    if not package_metadata_match:
+        raise SystemExit("packages/cedarduet.js is missing METADATA")
+    package_metadata = json.loads(package_metadata_match.group(1))
+    subpackage_tool_count = len(package_metadata.get("tools") or [])
+    if subpackage_tool_count < 1:
+        raise SystemExit("cedarduet subpackage must expose at least one tool")
+
     replacements = {
         "__CEDARDUET_INSTALLER_PACKAGE_NAME__": installer_package_name(manifest["version"]),
         "__CEDARDUET_TOOLPKG_VERSION__": str(manifest["version"]),
+        "__CEDARDUET_SUBPACKAGE_TOOL_COUNT__": str(subpackage_tool_count),
         "__CEDARDUET_TOOLPKG_SIZE__": str(len(archive)),
         "__CEDARDUET_TOOLPKG_SHA256__": hashlib.sha256(archive).hexdigest(),
         "__CEDARDUET_TOOLPKG_BASE64_CHUNKS__": chunks,

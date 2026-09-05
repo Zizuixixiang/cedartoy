@@ -1,6 +1,6 @@
 /* METADATA
 {
-  "name": "cedarduet_test_installer_012",
+  "name": "cedarduet_test_installer_012_v3",
   "display_name": {
     "zh": "CedarDuet 测试安装器",
     "en": "CedarDuet Test Installer"
@@ -32,6 +32,7 @@
 const TOOLPKG_ID = "org.cedarstar.cedarduet";
 const TOOLPKG_SUBPACKAGE_ID = "cedarduet";
 const TOOLPKG_VERSION = "0.1.2";
+const TOOLPKG_SUBPACKAGE_TOOL_COUNT = 22;
 const TOOLPKG_SIZE = 45692;
 const TOOLPKG_SHA256 = "3ef164ee3bf7b0bbf0f5fd47a170c7a905b3272dce26c0e61902a0b7f8ae57b8";
 const TOOLPKG_ARCHIVE_BASE64 = [
@@ -652,7 +653,11 @@ const TARGET_PATH = EXTERNAL_PACKAGES_DIR + "/org.cedarstar.cedarduet.toolpkg";
 const INSTALL_ACTION = "com.ai.assistance.operit.DEBUG_INSTALL_TOOLPKG";
 const INSTALL_COMPONENT =
   "com.ai.assistance.operit/.core.tools.packTool.ToolPkgDebugInstallReceiver";
-const INSTALL_WAIT_MS = 5000;
+const INSTALL_WAIT_MS = 15000;
+const INSTALL_RECEIVER_HEAD_START_MS = 1200;
+const INSTALL_POST_SIGNAL_SETTLE_MS = 600;
+const INSTALL_POLL_MS = 300;
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 function requireCurrentOperitApis() {
   if (typeof Tools === "undefined" || !Tools.Files || !Tools.System || !Tools.SoftwareSettings) {
@@ -660,6 +665,8 @@ function requireCurrentOperitApis() {
   }
   [
     [Tools.Files, "mkdir"],
+    [Tools.Files, "list"],
+    [Tools.Files, "deleteFile"],
     [Tools.Files, "writeBinary"],
     [Tools.Files, "readBinary"],
     [Tools.System, "sendBroadcast"],
@@ -674,6 +681,10 @@ function requireCurrentOperitApis() {
   });
 }
 
+function normalizePackageKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function findExternalPackage(snapshot, packageName) {
   const normalized = String(packageName).trim().toLowerCase();
   const packages = snapshot && Array.isArray(snapshot.packages) ? snapshot.packages : [];
@@ -686,16 +697,220 @@ function findExternalPackage(snapshot, packageName) {
   return null;
 }
 
-async function waitForExternalPackage(packageName, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  let snapshot = null;
-  let entry = null;
-  while (true) {
-    snapshot = await Tools.SoftwareSettings.listSandboxPackages();
-    entry = findExternalPackage(snapshot, packageName);
-    if (entry || Date.now() >= deadline) return { snapshot: snapshot, entry: entry };
-    await Tools.System.sleep(Math.min(300, Math.max(50, deadline - Date.now())));
+function decodeBase64Bytes(base64Text) {
+  const source = String(base64Text || "").replace(/\s+/g, "");
+  if (!source || source.length % 4 !== 0) {
+    throw new Error("invalid Base64 length");
   }
+  const bytes = [];
+  for (let offset = 0; offset < source.length; offset += 4) {
+    const char0 = BASE64_ALPHABET.indexOf(source.charAt(offset));
+    const char1 = BASE64_ALPHABET.indexOf(source.charAt(offset + 1));
+    const raw2 = source.charAt(offset + 2);
+    const raw3 = source.charAt(offset + 3);
+    const char2 = raw2 === "=" ? 0 : BASE64_ALPHABET.indexOf(raw2);
+    const char3 = raw3 === "=" ? 0 : BASE64_ALPHABET.indexOf(raw3);
+    if (char0 < 0 || char1 < 0 || char2 < 0 || char3 < 0) {
+      throw new Error("invalid Base64 character");
+    }
+    bytes.push((char0 << 2) | (char1 >> 4));
+    if (raw2 !== "=") bytes.push(((char1 & 15) << 4) | (char2 >> 2));
+    if (raw3 !== "=") bytes.push(((char2 & 3) << 6) | char3);
+  }
+  return bytes;
+}
+
+function readUint16LE(bytes, offset) {
+  if (offset < 0 || offset + 2 > bytes.length) throw new Error("truncated ZIP field");
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readUint32LE(bytes, offset) {
+  if (offset < 0 || offset + 4 > bytes.length) throw new Error("truncated ZIP field");
+  return (
+    bytes[offset]
+    | (bytes[offset + 1] << 8)
+    | (bytes[offset + 2] << 16)
+    | (bytes[offset + 3] << 24)
+  ) >>> 0;
+}
+
+function bytesToAscii(bytes, start, end) {
+  let result = "";
+  for (let offset = start; offset < end; offset += 4096) {
+    result += String.fromCharCode.apply(null, bytes.slice(offset, Math.min(end, offset + 4096)));
+  }
+  return result;
+}
+
+function extractToolPkgIdFromJsonManifest(manifestText) {
+  const manifest = JSON.parse(String(manifestText || ""));
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return "";
+  return typeof manifest.toolpkg_id === "string" ? manifest.toolpkg_id.trim() : "";
+}
+
+// Operit's official ToolPkg packer emits ZIP_STORED entries. Reading only a
+// root manifest lets the installer prove package identity before deleting an
+// archive; unsupported/corrupt archives are preserved instead of guessed at.
+function inspectStoredToolPkgId(base64Text) {
+  const bytes = decodeBase64Bytes(base64Text);
+  const manifests = [];
+  let offset = 0;
+  while (offset + 4 <= bytes.length) {
+    const signature = readUint32LE(bytes, offset);
+    if (signature === 0x02014b50 || signature === 0x06054b50) break;
+    if (signature !== 0x04034b50 || offset + 30 > bytes.length) {
+      throw new Error("unsupported ZIP layout");
+    }
+    const flags = readUint16LE(bytes, offset + 6);
+    const method = readUint16LE(bytes, offset + 8);
+    const compressedSize = readUint32LE(bytes, offset + 18);
+    const nameLength = readUint16LE(bytes, offset + 26);
+    const extraLength = readUint16LE(bytes, offset + 28);
+    if ((flags & 8) !== 0) throw new Error("ZIP data descriptors are unsupported");
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + nameLength;
+    const dataStart = nameEnd + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    if (dataEnd > bytes.length) throw new Error("truncated ZIP entry");
+    const entryName = bytesToAscii(bytes, nameStart, nameEnd).replace(/\\/g, "/").toLowerCase();
+    if (entryName === "manifest.json" || entryName === "manifest.hjson") {
+      if (method !== 0) throw new Error("compressed root manifest is unsupported");
+      manifests.push({
+        name: entryName,
+        text: bytesToAscii(bytes, dataStart, dataEnd),
+      });
+    }
+    offset = dataEnd;
+  }
+  if (manifests.length !== 1) throw new Error("expected exactly one root manifest");
+  if (manifests[0].name !== "manifest.json") {
+    throw new Error("HJSON identity verification is unsupported");
+  }
+  return extractToolPkgIdFromJsonManifest(manifests[0].text);
+}
+
+function isSafePackageArchiveName(name) {
+  const value = String(name || "");
+  return Boolean(value)
+    && value !== "."
+    && value !== ".."
+    && value.indexOf("/") < 0
+    && value.indexOf("\\") < 0
+    && /\.toolpkg$/i.test(value);
+}
+
+async function cleanupDuplicateToolPkgArchives() {
+  const listing = await Tools.Files.list(EXTERNAL_PACKAGES_DIR, "android");
+  const entries = listing && Array.isArray(listing.entries) ? listing.entries : [];
+  const removedPaths = [];
+  const preservedUnverifiedPaths = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index] || {};
+    const name = String(entry.name || "");
+    if (entry.isDirectory === true || !isSafePackageArchiveName(name)) continue;
+    const candidatePath = EXTERNAL_PACKAGES_DIR + "/" + name;
+    if (candidatePath === TARGET_PATH) continue;
+    let packageId = "";
+    try {
+      const archive = await Tools.Files.readBinary(candidatePath, "android");
+      packageId = inspectStoredToolPkgId(archive && archive.contentBase64);
+    } catch (error) {
+      preservedUnverifiedPaths.push({
+        path: candidatePath,
+        reason: String(error && error.message ? error.message : error),
+      });
+      continue;
+    }
+    if (normalizePackageKey(packageId) !== normalizePackageKey(TOOLPKG_ID)) continue;
+    const deleteResult = await Tools.Files.deleteFile(candidatePath, false, "android");
+    if (!deleteResult || deleteResult.successful !== true) {
+      throw new Error(
+        "无法删除重复 CedarDuet ToolPkg: " + candidatePath + ": " +
+          String(deleteResult && deleteResult.details ? deleteResult.details : "unknown error"),
+      );
+    }
+    removedPaths.push(candidatePath);
+  }
+
+  if (removedPaths.length > 0) {
+    const verification = await Tools.Files.list(EXTERNAL_PACKAGES_DIR, "android");
+    const remainingNames = verification && Array.isArray(verification.entries)
+      ? verification.entries.map(function (entry) { return String(entry && entry.name || ""); })
+      : [];
+    for (let index = 0; index < removedPaths.length; index += 1) {
+      const removedName = removedPaths[index].slice(EXTERNAL_PACKAGES_DIR.length + 1);
+      if (remainingNames.indexOf(removedName) >= 0) {
+        throw new Error("重复 CedarDuet ToolPkg 删除后仍然存在: " + removedPaths[index]);
+      }
+    }
+  }
+
+  return {
+    removedPaths: removedPaths,
+    preservedUnverifiedPaths: preservedUnverifiedPaths,
+  };
+}
+
+function relatedLoadErrors(snapshot) {
+  const errors = snapshot && snapshot.packageLoadErrors ? snapshot.packageLoadErrors : {};
+  const related = {};
+  Object.keys(errors).forEach(function (key) {
+    const value = String(errors[key] || "");
+    const searchable = (String(key) + "\n" + value).toLowerCase();
+    if (
+      searchable.indexOf(TOOLPKG_ID.toLowerCase()) >= 0
+      || searchable.indexOf(TARGET_PATH.toLowerCase()) >= 0
+    ) {
+      related[key] = value;
+    }
+  });
+  return related;
+}
+
+function inspectInstalledSnapshot(snapshot) {
+  const container = findExternalPackage(snapshot, TOOLPKG_ID);
+  const subpackage = findExternalPackage(snapshot, TOOLPKG_SUBPACKAGE_ID);
+  const loadErrors = relatedLoadErrors(snapshot);
+  return {
+    container: container,
+    subpackage: subpackage,
+    loadErrors: loadErrors,
+    ready: Boolean(
+      container
+      && subpackage
+      && container.enabled === true
+      && subpackage.enabled === true
+      && Number(subpackage.toolCount) === TOOLPKG_SUBPACKAGE_TOOL_COUNT
+      && Object.keys(loadErrors).length === 0
+    ),
+  };
+}
+
+async function waitForInstalledRuntime(timeoutMs) {
+  // BroadcastReceiver.onReceive launches installDebugToolPkg in an IO
+  // coroutine. Never let a pre-existing package satisfy the first check.
+  await Tools.System.sleep(INSTALL_RECEIVER_HEAD_START_MS);
+  const maxAttempts = Math.max(2, Math.ceil(timeoutMs / INSTALL_POLL_MS) + 1);
+  let snapshot = null;
+  let inspection = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    snapshot = await Tools.SoftwareSettings.listSandboxPackages();
+    inspection = inspectInstalledSnapshot(snapshot);
+    if (inspection.ready) {
+      return { snapshot: snapshot, inspection: inspection, attempts: attempt };
+    }
+    if (attempt < maxAttempts) await Tools.System.sleep(INSTALL_POLL_MS);
+  }
+  return { snapshot: snapshot, inspection: inspection, attempts: maxAttempts };
+}
+
+function verifyActivationResult(result) {
+  const text = String(result || "");
+  return text.indexOf("Using package: " + TOOLPKG_SUBPACKAGE_ID) >= 0
+    && text.indexOf(TOOLPKG_SUBPACKAGE_ID + ":human_login") >= 0
+    && text.indexOf(TOOLPKG_SUBPACKAGE_ID + ":human_register") >= 0
+    && text.indexOf(TOOLPKG_SUBPACKAGE_ID + ":human_duel_entry") >= 0;
 }
 
 async function install_cedarduet_test() {
@@ -706,6 +921,20 @@ async function install_cedarduet_test() {
     if (directoryResult && directoryResult.successful === false) {
       throw new Error("无法准备 Operit 外部包目录: " + String(directoryResult.details || "unknown error"));
     }
+
+    const initialSnapshot = await Tools.SoftwareSettings.listSandboxPackages();
+    const existingContainer = findExternalPackage(initialSnapshot, TOOLPKG_ID);
+    let invalidateResult = null;
+    if (existingContainer) {
+      // Disabling the container is the upgrade sentinel and also destroys the
+      // old ToolPkg execution engine before the archive is replaced.
+      invalidateResult = await Tools.SoftwareSettings.setSandboxPackageEnabled(TOOLPKG_ID, false);
+      if (!invalidateResult || invalidateResult.currentEnabled !== false) {
+        throw new Error("无法停用旧 CedarDuet runtime，拒绝覆盖安装");
+      }
+    }
+
+    const duplicateCleanup = await cleanupDuplicateToolPkgArchives();
 
     const writeResult = await Tools.Files.writeBinary(
       TARGET_PATH,
@@ -734,14 +963,24 @@ async function install_cedarduet_test() {
       },
     });
 
-    const refresh = await waitForExternalPackage(TOOLPKG_ID, INSTALL_WAIT_MS);
-    if (!refresh.entry) {
-      const loadErrors = refresh.snapshot && refresh.snapshot.packageLoadErrors
-        ? refresh.snapshot.packageLoadErrors
-        : {};
+    const refresh = await waitForInstalledRuntime(INSTALL_WAIT_MS);
+    if (!refresh.inspection || !refresh.inspection.ready) {
       throw new Error(
-        "Operit 未在刷新后识别 CedarDuet ToolPkg；请确认使用当前正式版。加载错误: " +
-          JSON.stringify(loadErrors),
+        "Operit 未在等待窗口内完成 CedarDuet 0.1.2 runtime 刷新；未启用旧 runtime。加载错误: " +
+          JSON.stringify(refresh.inspection ? refresh.inspection.loadErrors : {}),
+      );
+    }
+
+    // The enabled transition is emitted by installDebugToolPkg before it
+    // destroys stale engines. Leave a final settle window, then force one more
+    // public refresh and require the 0.1.2 tool surface again.
+    await Tools.System.sleep(INSTALL_POST_SIGNAL_SETTLE_MS);
+    const settledSnapshot = await Tools.SoftwareSettings.listSandboxPackages();
+    const settledInspection = inspectInstalledSnapshot(settledSnapshot);
+    if (!settledInspection.ready) {
+      throw new Error(
+        "CedarDuet runtime 刷新信号后未稳定；未继续激活。加载错误: " +
+          JSON.stringify(settledInspection.loadErrors),
       );
     }
 
@@ -749,11 +988,17 @@ async function install_cedarduet_test() {
       TOOLPKG_SUBPACKAGE_ID,
       true,
     );
+    if (!enableResult || enableResult.currentEnabled !== true) {
+      throw new Error("CedarDuet 0.1.2 子包未能启用");
+    }
     const activateResult = await Tools.System.usePackage(TOOLPKG_SUBPACKAGE_ID);
+    if (!verifyActivationResult(activateResult)) {
+      throw new Error("CedarDuet runtime 激活校验失败：未看到 0.1.2 人类登录工具集");
+    }
 
     complete({
       success: true,
-      message: "CedarDuet ToolPkg 测试版已安装并启用。现在可调用 cedarduet:session_login 或 cedarduet:session_register。",
+      message: "CedarDuet ToolPkg 0.1.2 已可靠升级并启用；侧边栏“双弈”现在应显示用户名/密码登录与注册。",
       data: {
         toolpkg_id: TOOLPKG_ID,
         subpackage_id: TOOLPKG_SUBPACKAGE_ID,
@@ -762,7 +1007,13 @@ async function install_cedarduet_test() {
         archive_sha256: TOOLPKG_SHA256,
         archive_path: TARGET_PATH,
         broadcast_result: broadcastResult,
-        package: refresh.entry,
+        invalidated_previous_runtime: Boolean(existingContainer),
+        invalidate_result: invalidateResult,
+        removed_duplicate_archives: duplicateCleanup.removedPaths,
+        preserved_unverified_archives: duplicateCleanup.preservedUnverifiedPaths,
+        refresh_attempts: refresh.attempts,
+        package: settledInspection.container,
+        subpackage: settledInspection.subpackage,
         enable_result: enableResult,
         activate_result: activateResult,
       },

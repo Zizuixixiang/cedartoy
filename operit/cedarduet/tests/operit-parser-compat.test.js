@@ -14,11 +14,11 @@ const archivePath = path.join(
   `cedarduet-operit-${manifest.version}.toolpkg`,
 );
 const installerVersionTag = manifest.version.toLowerCase().replace(/[^a-z0-9]+/g, "");
-const installerPackageName = `cedarduet_test_installer_${installerVersionTag}`;
+const installerPackageName = `cedarduet_test_installer_${installerVersionTag}_v3`;
 const installerPath = path.join(
   root,
   "dist",
-  `cedarduet-operit-test-installer-${manifest.version}-v2.js`,
+  `cedarduet-operit-test-installer-${manifest.version}-v3.js`,
 );
 
 // ToolPkgManifest and ToolPkgManifestSubpackage in Operit's current
@@ -305,6 +305,12 @@ function testArchiveAgainstCurrentOperitLoader() {
     );
   });
   assert.deepStrictEqual(JSON.parse(byName.get("manifest.json").toString("utf8")), manifest);
+  const packagedUi = byName.get("ui/duel/index.ui.js").toString("utf8");
+  assert.match(packagedUi, /label:\s*["']用户名["']/);
+  assert.match(packagedUi, /label:\s*["']密码["']/);
+  assert.strictEqual(packagedUi.includes('"注册"'), true);
+  assert.strictEqual(packagedUi.includes("人类 Token"), false);
+  assert.strictEqual(/ctx\.UI\.Checkbox/.test(packagedUi), false);
   testMainRegistrationAgainstCurrentOperitBridge(
     new Set(lowerNames),
     byName.get(manifest.main).toString("utf8"),

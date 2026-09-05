@@ -17,7 +17,7 @@ python3 -m zipfile -l dist/cedarduet-operit-0.1.2.toolpkg
 
 The build is deterministic and creates
 `dist/cedarduet-operit-0.1.2.toolpkg` and
-`dist/cedarduet-operit-test-installer-0.1.2-v2.js`. The `.toolpkg` follows the
+`dist/cedarduet-operit-test-installer-0.1.2-v3.js`. The `.toolpkg` follows the
 current official packer layout: it is a deterministic ZIP_STORED archive whose
 first root entry is `manifest.json`. The generated `.js` is a normal Operit
 sandbox package with the exact `.toolpkg` archive embedded in it.
@@ -34,12 +34,12 @@ Current Operit accepts `.toolpkg` files directly from the Plugins tab:
 For test devices that need an overwrite/debug-install path without ADB, use the
 self-contained installer instead:
 
-1. Put `dist/cedarduet-operit-test-installer-0.1.2-v2.js` anywhere selectable on
+1. Put `dist/cedarduet-operit-test-installer-0.1.2-v3.js` anywhere selectable on
    the phone, such as Downloads.
 2. In Operit's Packages tab, tap the bottom-right `+` and select that `.js`.
-3. Make sure `cedarduet_test_installer_012` is enabled.
-4. In a chat, ask Operit: `加载 cedarduet_test_installer_012，然后调用
-   cedarduet_test_installer_012:install_cedarduet_test。`
+3. Make sure `cedarduet_test_installer_012_v3` is enabled.
+4. In a chat, ask Operit: `加载 cedarduet_test_installer_012_v3，然后调用
+   cedarduet_test_installer_012_v3:install_cedarduet_test。`
 5. A successful result says that ToolPkg `org.cedarstar.cedarduet` was
    installed and subpackage `cedarduet` was enabled. The main sidebar should
    then show “双弈”.
@@ -49,18 +49,31 @@ self-contained installer instead:
 
 The installer uses the same current official flow as
 `operit_editor:debug_install_toolpkg`: it writes the archive with
-`Tools.Files.writeBinary`, verifies the bytes with `readBinary`, dispatches the
-explicit `DEBUG_INSTALL_TOOLPKG` broadcast, enables the `cedarduet` subpackage,
-and loads it with `usePackage`. It does not use a guessed marketplace API,
-download code, ADB, or user-managed Android/data access. Older Operit builds
-without these APIs or the debug-install receiver are rejected with an upgrade
-message. After installation, the installer sandbox package can be disabled or
-removed without removing CedarDuet.
+`Tools.Files.writeBinary`, verifies the bytes with `readBinary`, and dispatches
+the explicit `DEBUG_INSTALL_TOOLPKG` broadcast. Before replacement it disables
+an existing CedarDuet container, which destroys the old execution engine and
+creates an observable upgrade sentinel. It also lists external `.toolpkg`
+archives and deletes only non-target archives whose stored root manifest proves
+`toolpkg_id == org.cedarstar.cedarduet`; unrelated or unverified archives remain
+untouched.
 
-The standalone installer's package name includes the ToolPkg version with
-punctuation removed (`0.1.2` becomes `cedarduet_test_installer_012`). Future
-builds therefore import under a new Operit package identity instead of
-colliding with a stale installer file that has the same `METADATA.name`.
+The broadcast receiver starts `installDebugToolPkg` asynchronously, so package
+name presence alone is not accepted as completion. V3 waits before its first
+poll, requires the receiver to re-enable both the container and subpackage,
+requires the expected 0.1.2 tool count, leaves a final settle window, forces one
+more public package refresh, then activates `cedarduet` and verifies the
+activation prompt contains the 0.1.2 human login/register tool surface. A stale
+0.1.1 runtime therefore cannot complete the installer early. It does not use a
+guessed marketplace API, download code, ADB, or user-managed Android/data
+access. Older Operit builds without these APIs or the debug-install receiver are
+rejected with an upgrade message. After installation, the installer sandbox
+package can be disabled or removed without removing CedarDuet.
+
+The standalone installer's package name includes the ToolPkg version and
+installer revision (`0.1.2` v3 becomes `cedarduet_test_installer_012_v3`). Each
+installer revision therefore imports under a new Operit package identity
+instead of colliding with a stale installer file that has the same
+`METADATA.name`.
 
 The raw `.toolpkg` remains available for the Operit repository's
 `tools/toolpkg/debug_toolpkg.py` developer workflow. This repository's build
