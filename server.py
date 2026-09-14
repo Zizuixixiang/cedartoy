@@ -10052,8 +10052,13 @@ a{{color:#c9afff}}
 
         try:
             snapshot = moonlit_adapter.ensure_table(target["player"])
-        except VendorCmdError as exc:
-            self._send_moonlit_message("无法查看牌桌", str(exc), status=400)
+        except VendorCmdError:
+            logger.exception("moonlit table snapshot rendering failed")
+            self._send_moonlit_message(
+                "牌桌暂时不可用",
+                "牌桌生成失败，请稍后刷新重试。",
+                status=500,
+            )
             return
         except Exception:
             logger.exception("moonlit table snapshot failed")

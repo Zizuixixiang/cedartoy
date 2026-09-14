@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import sqlite3
@@ -133,6 +134,39 @@ class MoonlitAdapterTests(unittest.TestCase):
         self.assertIn(b'<meta http-equiv="refresh" content="5">', snapshot["body"])
         for path, expected in before.items():
             self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), expected)
+
+    def test_old_empty_command_log_auto_renders_without_touching_real_saves(self):
+        moonlit.play({"action": "new", "player_id": "42"})
+        save_dir = self.save_root / "moonlit" / "42"
+        main_save = save_dir / moonlit.SAVE_NAME
+        backup_save = save_dir / f"{moonlit.SAVE_NAME}.bak"
+        old_save = json.loads(main_save.read_text(encoding="utf-8"))
+        old_save["_cmd_log"] = []
+        main_save.write_text(
+            json.dumps(old_save, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        backup_save.write_bytes(main_save.read_bytes())
+        before = {
+            path: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
+            for path in (main_save, backup_save)
+        }
+        handler = make_handler()
+        handler._moonlit_human_target = Mock(
+            return_value=({"id": 1}, {"player": "42", "slot": 1})
+        )
+
+        handler._handle_moonlit_page({"player": ["42"]})
+
+        self.assertEqual(handler.response_statuses, [200])
+        self.assertIn(
+            b'<meta http-equiv="refresh" content="5">',
+            handler.wfile.getvalue(),
+        )
+        self.assertTrue(self.view_path("42").is_file())
+        for path, expected in before.items():
+            actual = (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
+            self.assertEqual(actual, expected)
 
     def test_unchanged_save_reuses_snapshot_and_changed_save_refreshes_it(self):
         moonlit.play({"action": "new", "player_id": "42"})
@@ -324,6 +358,32 @@ class MoonlitRouteTests(unittest.TestCase):
         self.assertEqual(headers["Vary"], "Cookie")
         self.assertEqual(headers["X-Frame-Options"], "SAMEORIGIN")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+
+    def test_render_error_is_logged_but_page_does_not_leak_traceback(self):
+        handler = self.handler()
+        handler._moonlit_human_target = Mock(
+            return_value=({"id": 1}, {"player": "42"})
+        )
+        internal_error = (
+            "Traceback (most recent call last): TypeError: unhashable type: 'dict' "
+            "at /tmp/cedartoy-moonlit-view-secret/牌桌.py:464"
+        )
+
+        with self.assertLogs(server.logger, level="ERROR") as captured:
+            with patch.object(
+                server.moonlit_adapter,
+                "ensure_table",
+                side_effect=VendorCmdError(internal_error),
+            ):
+                handler._handle_moonlit_page({"player": ["42"]})
+
+        self.assertEqual(handler.response_statuses, [500])
+        page = handler.wfile.getvalue().decode("utf-8")
+        self.assertIn("牌桌生成失败，请稍后刷新重试。", page)
+        self.assertNotIn("Traceback", page)
+        self.assertNotIn("TypeError", page)
+        self.assertNotIn("cedartoy-moonlit-view-secret", page)
+        self.assertIn(internal_error, "\n".join(captured.output))
 
     def test_snapshot_returns_etag_and_matching_request_returns_304_after_reauth(self):
         etag = '"0123456789abcdef"'

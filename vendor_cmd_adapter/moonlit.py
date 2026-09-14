@@ -1,6 +1,7 @@
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -27,6 +28,9 @@ SAVE_FILES = {
     f"{SAVE_NAME}.bak": f"{SAVE_NAME}.bak",
 }
 VIEW_RELATIVE_PATH = ".view/月幕万象.html"
+
+
+logger = logging.getLogger(__name__)
 
 
 RUNNER_CODE = r'''
@@ -84,6 +88,9 @@ if not (save_dir / "moonlit_v3_save.json").is_file():
 
 import moonlit_cards
 moonlit_cards.SAVE_PATH = save_dir / "moonlit_v3_save.json"
+# 旧存档可能没有前端所需的命令日志；仅在临时副本中通过作者公开
+# 命令补齐，再让牌桌渲染器读取。真实主档和备份不会暴露给这个进程。
+moonlit_cards.cmd("状态")
 result = moonlit_cards.cmd("牌桌 " + str(output_path))
 if not output_path.is_file():
     raise RuntimeError("月幕牌桌没有生成 HTML")
@@ -173,12 +180,17 @@ def _render_snapshot_in_sandbox(save_dir):
                 check=False,
             )
         except subprocess.TimeoutExpired:
+            logger.exception("moonlit sandbox renderer timed out for %s", save_dir)
             raise VendorCmdError("月幕牌桌生成超时，请稍后再试") from None
         if process.returncode != 0:
             detail = (process.stderr or process.stdout or "").strip()
-            raise VendorCmdError(
-                detail or f"moonlit table renderer exited with code {process.returncode}"
+            logger.error(
+                "moonlit sandbox renderer failed for %s (exit=%s): %s",
+                save_dir,
+                process.returncode,
+                detail or "no subprocess output",
             )
+            raise VendorCmdError("月幕牌桌生成失败，请稍后刷新重试") from None
         try:
             body = output_path.read_bytes()
         except FileNotFoundError:
