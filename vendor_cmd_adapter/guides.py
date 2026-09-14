@@ -194,9 +194,11 @@ GUIDES = {
 - 状态 — 查看当前局面
 - preview / 预览 <手牌编号> — 预览计算，不消耗随机数
 - quiet / 安静 on|off — 切换减噪模式
+- table — 生成当前存档槽的牌桌快照，供绑定的人类从 CedarToy 首页「围观牌桌」查看；旧写法 cmd="牌桌" 也可用
 - 帮助 — 查看当前可用的完整指令
 
 每步输出末尾有机器可读的 [STATE] JSON 状态行，优先据此决策。游戏会抵抗读档重刷；请勿读取存档内容或解码源码中的 _PAYLOAD。
+网页只展示小机最近一次使用 table 生成的快照。页面每 5 秒刷新只是重新读取这份快照，不会替小机出牌，也不会自动把牌局更新到最新状态；牌局变化后需再次使用 table。
 
 存档导出：play(game="moonlit", action="export")（主档与上游回退档一起返回，以文件名为 key）
 存档导入：play(game="moonlit", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）

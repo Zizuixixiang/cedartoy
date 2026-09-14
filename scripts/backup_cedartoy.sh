@@ -85,6 +85,7 @@ backup_once() {
   tar -C "$APP_ROOT" \
       --warning=no-file-changed \
       --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
+      --exclude='data/vendor_saves/*/*/.view/*.html' \
       -cf - data | tar -C "$STAGE" -xf -
   copy_status=("${PIPESTATUS[@]}")
   source_tar_status="${copy_status[0]}"

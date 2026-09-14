@@ -3,6 +3,7 @@ import base64
 import copy
 import hashlib
 import hmac
+import html as html_lib
 import http.client
 import logging
 import mimetypes
@@ -805,7 +806,7 @@ def _garden_cat_watchable_gardens(raw_token):
     return {"gardens": _garden_cat_watchable_gardens_for_user(user)}
 
 
-def _forest_bound_target_for_user(user, requested_player):
+def _bound_ai_slot_target_for_user(user, requested_player):
     """Resolve a browser-supplied player to one canonical bound AI save slot."""
     if not user or user.get("is_ai"):
         return None
@@ -836,6 +837,14 @@ def _forest_bound_target_for_user(user, requested_player):
         "machine_name": str(row["username"]),
         "slot": slot,
     }
+
+
+def _forest_bound_target_for_user(user, requested_player):
+    return _bound_ai_slot_target_for_user(user, requested_player)
+
+
+def _moonlit_bound_target_for_user(user, requested_player):
+    return _bound_ai_slot_target_for_user(user, requested_player)
 
 
 def _forest_watchable_slots_for_user(user):
@@ -6363,6 +6372,11 @@ def _delete_save(arguments, raw_token):
         workkk_deleted = _delete_workkk_save(player_id)
         if workkk_deleted:
             deleted.append(workkk_deleted)
+    elif game == "moonlit":
+        if moonlit_adapter.delete_save(player_id):
+            deleted.append(
+                {"target": f"vendor_saves/moonlit/{player_id}", "rows": 1}
+            )
     elif game in DIRECTORY_VENDOR_GAMES:
         vendor_deleted = _delete_vendor_save_dir(game, player_id)
         if vendor_deleted:
@@ -9589,6 +9603,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_html_file(ECO_INDEX_PATH)
             return
 
+        if path in {"/moonlit", "/moonlit/"}:
+            self._handle_moonlit_page(params)
+            return
+
         if path in {"/forest", "/forest/"}:
             self._handle_forest_page(params)
             return
@@ -9939,6 +9957,121 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             if separator and name == "forest_token":
                 return urllib.parse.unquote(value)
         return ""
+
+    def _moonlit_cookie_token(self):
+        cookie = self.headers.get("Cookie", "")
+        for item in cookie.split(";"):
+            name, separator, value = item.strip().partition("=")
+            if separator and name == "moonlit_token":
+                return urllib.parse.unquote(value)
+        return ""
+
+    def _moonlit_human_target(self, requested_player, token_from_query=""):
+        raw_token = token_from_query or self._moonlit_cookie_token() or _extract_bearer(self.headers)
+        user = _current_account(raw_token)
+        if user.get("is_ai"):
+            raise _McpError(-32003, "只有人类账号可以查看月幕万象牌桌")
+        target = _moonlit_bound_target_for_user(user, requested_player)
+        if target is None:
+            raise _McpError(-32003, "你没有绑定这只小机或槽位无效")
+        return user, target
+
+    @staticmethod
+    def _moonlit_http_status(exc):
+        if exc.code == -32001:
+            return 401
+        if exc.code == -32003:
+            return 403
+        return 400
+
+    def _send_moonlit_html(self, body, *, status=200, etag=None):
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(status)
+        if status != 304:
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", "0" if status == 304 else str(len(body)))
+        self.send_header("Cache-Control", "private, no-cache, max-age=0")
+        self.send_header("Vary", "Cookie")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+            "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+        )
+        if etag is not None:
+            self.send_header("ETag", etag)
+        self.end_headers()
+        if status != 304:
+            self.wfile.write(body)
+
+    def _send_moonlit_message(self, title, message, *, status):
+        safe_title = html_lib.escape(str(title))
+        safe_message = html_lib.escape(str(message))
+        body = f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{safe_title} · 月幕万象</title><style>
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#100d18;color:#eee8ff;font:16px/1.7 system-ui,sans-serif}}
+main{{max-width:34rem;margin:1rem;padding:2rem;border:1px solid #61527d;border-radius:16px;background:#191326;text-align:center}}
+a{{color:#c9afff}}
+</style></head><body><main><h1>{safe_title}</h1><p>{safe_message}</p><p><a href="/">返回 CedarToy 首页</a></p></main></body></html>"""
+        self._send_moonlit_html(body, status=status)
+
+    def _handle_moonlit_page(self, params):
+        token_from_query = (params.get("token") or [""])[0]
+        requested_player = (params.get("player") or [""])[0]
+        try:
+            _user, target = self._moonlit_human_target(requested_player, token_from_query)
+        except _McpError as exc:
+            self._send_moonlit_message(
+                "无法查看牌桌",
+                exc.message,
+                status=self._moonlit_http_status(exc),
+            )
+            return
+
+        if token_from_query:
+            cookie = (
+                f"moonlit_token={urllib.parse.quote(token_from_query, safe='')}; "
+                f"Path=/moonlit; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+            )
+            clean_query = urllib.parse.urlencode({"player": target["player"]})
+            self.send_response(303)
+            self.send_header("Location", f"/moonlit/?{clean_query}")
+            self.send_header("Set-Cookie", cookie)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Vary", "Cookie")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        try:
+            snapshot = moonlit_adapter.read_table(target["player"])
+        except VendorCmdError as exc:
+            self._send_moonlit_message("无法查看牌桌", str(exc), status=400)
+            return
+        except Exception:
+            logger.exception("moonlit table read failed")
+            self._send_moonlit_message("牌桌暂时不可用", "请稍后再试。", status=500)
+            return
+        if snapshot is None:
+            self._send_moonlit_message(
+                "还没有牌桌快照",
+                "请让小机先在月幕万象中使用 table 动作生成一次快照，再回到这里查看。",
+                status=404,
+            )
+            return
+
+        etag = snapshot["etag"]
+        if self.headers.get("If-None-Match") == etag:
+            self._send_moonlit_html(b"", status=304, etag=etag)
+            return
+        self._send_moonlit_html(snapshot["body"], etag=etag)
 
     def _forest_human_target(self, requested_player, token_from_query=""):
         token = token_from_query or self._forest_cookie_token() or _extract_bearer(self.headers)

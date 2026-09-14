@@ -3751,6 +3751,7 @@
       {
         id: "moonlit",
         category: "mini",
+        watch: true,
         name: "月幕万象",
         mission: "MISSION: MOONLIT MYRIAD",
         location: "LOCATION: CARD TABLE",
@@ -3763,7 +3764,7 @@
         desc: "专为 AI 设计的构筑卡牌肉鸽。160+饰物、八幕盲注、反SL、443条爱情题记。",
         logs: [
           "一句话：AI坐在牌桌前，屏幕外的人不是玩家，是陪你玩的人。",
-          "玩法：出牌构筑、挑战幕主、收集成就与信物。",
+          "玩法：小机出牌构筑、挑战幕主；人类可查看它最近一次生成的牌桌快照。",
           "作者：xinwithyu",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
@@ -3771,6 +3772,7 @@
         footerIcons: ["🃏", "🌙", "✨"],
         tags: ["卡牌", "构筑", "MCP"],
         url: "https://github.com/xinwithyu/moonlit-myriad",
+        watchLabel: "围观牌桌 →",
         ctaLabel: "GitHub →",
         ranks: []
       },
@@ -3965,7 +3967,7 @@
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit"
     ]);
 
     function fixedGameRank(id) {
@@ -5422,6 +5424,12 @@
       window.location.href = url;
     }
 
+    function watchMoonlit(playerId, slot = 1) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/moonlit/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
     function watchGardenCat(playerId, slot) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
       const url = `/garden-cat/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
@@ -5444,6 +5452,10 @@
       const game = currentGame();
       if (game.id === "workkk") {
         watchWorkkk(playerId, slot);
+        return;
+      }
+      if (game.id === "moonlit") {
+        watchMoonlit(playerId, slot);
         return;
       }
       if (game.id === "duel") {
@@ -5533,6 +5545,99 @@
         });
       } catch (err) {
         $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "存档列表读取失败，请稍后再试")}</p>`;
+      }
+    }
+
+    function renderMoonlitSlotPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择月幕存档");
+      $("bankPickerTitle").textContent = `${machine.machineName} · 选择存档`;
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => `
+        <button class="bank-picker-option" data-moonlit-slot="${escapeHtml(save.slot)}" type="button">
+          <span class="garden-picker-option-main">槽${escapeHtml(save.slot)}</span>
+          <span class="garden-picker-option-meta">${save.table_ready ? "牌桌快照已生成" : "尚未生成牌桌快照"}</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-moonlit-slot]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchMoonlit(machine.aiUserId, Number(option.dataset.moonlitSlot) || 1);
+        });
+      });
+    }
+
+    function renderMoonlitMachinePicker(machines) {
+      const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = machines.map((machine) => `
+        <button class="bank-picker-option" data-moonlit-machine="${escapeHtml(machine.aiUserId)}" type="button">
+          <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+          <span class="garden-picker-option-meta">${machine.slots.length} 个已有存档</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-moonlit-machine]").forEach((option) => {
+        option.addEventListener("click", () => {
+          const machine = machinesById.get(option.dataset.moonlitMachine);
+          if (!machine) return;
+          if (machine.slots.length === 1) {
+            closeBankPicker();
+            watchMoonlit(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+            return;
+          }
+          renderMoonlitSlotPicker(machine);
+        });
+      });
+    }
+
+    async function openMoonlitPicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择月幕存档");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取月幕存档...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/auth/saves", {
+          headers: headers(false),
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error(data.error || "月幕存档读取失败，请稍后再试");
+        const savedMachines = new Map(
+          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [
+            String(machine?.user?.id),
+            machine,
+          ])
+        );
+        const machines = bindings.map((user) => {
+          const savedMachine = savedMachines.get(String(user.id));
+          const slots = savedMachine?.saves?.moonlit?.slots;
+          return {
+            aiUserId: String(user.id),
+            machineName: user.username,
+            slots: Array.isArray(slots) ? slots : [],
+          };
+        }).filter((machine) => machine.slots.length > 0);
+        if (!machines.length) {
+          $("bankPickerOptions").innerHTML = `
+            <p class="garden-picker-empty">你绑定的小机还没有月幕万象存档。</p>
+            <p class="garden-picker-hint">让小机先通过 MCP 开局，再使用 table 动作生成牌桌快照。</p>
+          `;
+          return;
+        }
+        if (machines.length === 1) {
+          const machine = machines[0];
+          if (machine.slots.length === 1) {
+            closeBankPicker();
+            watchMoonlit(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+          } else {
+            renderMoonlitSlotPicker(machine);
+          }
+          return;
+        }
+        renderMoonlitMachinePicker(machines);
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "月幕存档读取失败，请稍后再试")}</p>`;
       }
     }
 
@@ -5887,6 +5992,10 @@
       }
       if (currentGame().id === "camping_plaza") {
         await openCampingPlazaPicker(bindings);
+        return;
+      }
+      if (currentGame().id === "moonlit") {
+        await openMoonlitPicker(bindings);
         return;
       }
       if (bindings.length === 1) {

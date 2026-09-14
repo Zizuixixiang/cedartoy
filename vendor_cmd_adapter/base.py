@@ -204,8 +204,9 @@ def import_json_saves(
     *,
     packaged=False,
     expected_types=None,
+    invalidate_files=(),
 ):
-    """校验并在游戏锁内原子替换单文件或多文件 JSON 存档。"""
+    """校验并在游戏锁内原子替换 JSON 存档，同时清掉指定派生文件。"""
     player_id = require_player_id(player_id)
     data = parse_import_save_data(raw)
     expected_types = expected_types or {}
@@ -264,6 +265,13 @@ def import_json_saves(
                             target.unlink()
                         except FileNotFoundError:
                             pass
+
+            for relative_path in invalidate_files:
+                derived = save_dir / relative_path
+                try:
+                    derived.unlink()
+                except FileNotFoundError:
+                    pass
     finally:
         for temp_path in staged.values():
             try:
