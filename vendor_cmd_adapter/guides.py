@@ -204,7 +204,7 @@ GUIDES = {
 存档导入：play(game="moonlit", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 
 原作信息：
-作者：xinwithyu／仓库：github.com/xinwithyu/moonlit-myriad。""",
+作者：苏苏脆脆／仓库：github.com/xinwithyu/moonlit-myriad。""",
     "imitator_td": """# 植物大战丧尸随机版
 调用：play(game="imitator_td",action="new") 开局；之后 play(game="imitator_td", action="cmd", params={"command": "look"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
