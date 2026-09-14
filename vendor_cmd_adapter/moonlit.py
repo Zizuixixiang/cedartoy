@@ -1,6 +1,12 @@
 import fcntl
 import hashlib
+import json
+import os
 import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 from command_text import normalize_command_spaces
 
@@ -52,37 +58,35 @@ if payload.get("reset"):
         except FileNotFoundError:
             pass
 
-if extra.get("render_view") and not (Path(save_dir) / "moonlit_v3_save.json").is_file():
+import moonlit_cards
+moonlit_cards.SAVE_PATH = Path(save_dir) / "moonlit_v3_save.json"
+result = moonlit_cards.cmd("开始" if payload.get("reset") else command)
+print(result, end="")
+'''
+
+
+TABLE_RUNNER_CODE = r'''
+import json
+import os
+import sys
+from pathlib import Path
+
+payload = json.load(sys.stdin)
+save_dir = Path(payload["save_dir"])
+vendor_dir = payload["vendor_dir"]
+output_path = Path(payload["output_path"])
+
+os.chdir(save_dir)
+sys.path.insert(0, vendor_dir)
+
+if not (save_dir / "moonlit_v3_save.json").is_file():
     raise RuntimeError("还没有月幕万象存档，请先开局")
 
 import moonlit_cards
-moonlit_cards.SAVE_PATH = Path(save_dir) / "moonlit_v3_save.json"
-
-if extra.get("render_view"):
-    if view_path is None:
-        raise RuntimeError("月幕牌桌输出路径未配置")
-    view_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_view = view_path.with_name(
-        "." + view_path.name + "." + str(os.getpid()) + ".tmp.html"
-    )
-    try:
-        result = moonlit_cards.cmd("牌桌 " + str(temporary_view))
-        if not temporary_view.is_file():
-            raise RuntimeError("月幕牌桌没有生成 HTML")
-        os.replace(temporary_view, view_path)
-    finally:
-        try:
-            temporary_view.unlink()
-        except FileNotFoundError:
-            pass
-    state_lines = [
-        line for line in str(result).splitlines() if line.startswith("[STATE]")
-    ]
-    result = "🖥 月幕万象牌桌快照已更新。人类可从 CedarToy 首页「围观牌桌」进入。"
-    if state_lines:
-        result += "\n" + state_lines[-1]
-else:
-    result = moonlit_cards.cmd("开始" if payload.get("reset") else command)
+moonlit_cards.SAVE_PATH = save_dir / "moonlit_v3_save.json"
+result = moonlit_cards.cmd("牌桌 " + str(output_path))
+if not output_path.is_file():
+    raise RuntimeError("月幕牌桌没有生成 HTML")
 print(result, end="")
 '''
 
@@ -112,7 +116,7 @@ def save_summary(player_id):
     """只报告存档存在，不读取卡牌游戏的存档内容。"""
     if not _save_path(player_id).exists():
         return None
-    return {"saved": True, "table_ready": _view_path(player_id).is_file()}
+    return {"saved": True}
 
 
 def read_table(player_id):
@@ -137,6 +141,122 @@ def read_table(player_id):
     return {"body": body, "etag": etag}
 
 
+def _render_snapshot_in_sandbox(save_dir):
+    """只在临时副本中调用作者牌桌接口，返回 HTML 和作者命令输出。"""
+    with tempfile.TemporaryDirectory(prefix="cedartoy-moonlit-view-") as raw_dir:
+        sandbox = Path(raw_dir)
+        for relative_path in dict.fromkeys(SAVE_FILES.values()):
+            source = save_dir / relative_path
+            if not source.is_file():
+                continue
+            target = sandbox / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+        output_path = sandbox / "月幕万象.html"
+        payload = {
+            "save_dir": str(sandbox),
+            "vendor_dir": str(GAME.vendor_dir),
+            "output_path": str(output_path),
+        }
+        environment = os.environ.copy()
+        environment["PYTHONIOENCODING"] = "utf-8"
+        try:
+            process = subprocess.run(
+                [sys.executable, "-c", TABLE_RUNNER_CODE],
+                input=json.dumps(payload, ensure_ascii=False),
+                text=True,
+                capture_output=True,
+                cwd=str(sandbox),
+                env=environment,
+                timeout=GAME.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise VendorCmdError("月幕牌桌生成超时，请稍后再试") from None
+        if process.returncode != 0:
+            detail = (process.stderr or process.stdout or "").strip()
+            raise VendorCmdError(
+                detail or f"moonlit table renderer exited with code {process.returncode}"
+            )
+        try:
+            body = output_path.read_bytes()
+        except FileNotFoundError:
+            raise VendorCmdError("月幕牌桌没有生成 HTML") from None
+        if not body:
+            raise VendorCmdError("月幕牌桌生成了空 HTML")
+        return body, process.stdout.rstrip("\n")
+
+
+def _atomic_replace_view(view_path, body):
+    view_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{view_path.name}.",
+        suffix=".tmp",
+        dir=str(view_path.parent),
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as temporary_file:
+            temporary_file.write(body)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, view_path)
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def ensure_table(player_id, *, force=False):
+    """按真实存档 mtime 生成或复用快照；作者渲染器只接触临时副本。"""
+    player_id = require_player_id(player_id)
+    save_dir = _save_path(player_id).parent
+    if not save_dir.is_dir():
+        return None
+    lock_path = save_dir / ".lock"
+    try:
+        with lock_path.open("a", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            main_save = _save_path(player_id)
+            if not main_save.is_file():
+                return None
+            source_paths = [
+                save_dir / relative_path
+                for relative_path in dict.fromkeys(SAVE_FILES.values())
+                if (save_dir / relative_path).is_file()
+            ]
+            newest_save_mtime = max(path.stat().st_mtime_ns for path in source_paths)
+            view_path = _view_path(player_id)
+            try:
+                view_stat = view_path.stat()
+                refresh = (
+                    force
+                    or view_stat.st_size == 0
+                    or view_stat.st_mtime_ns < newest_save_mtime
+                )
+            except FileNotFoundError:
+                refresh = True
+
+            renderer_text = ""
+            if refresh:
+                body, renderer_text = _render_snapshot_in_sandbox(save_dir)
+                _atomic_replace_view(view_path, body)
+            else:
+                body = view_path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+    etag = f'"{hashlib.sha256(body).hexdigest()[:16]}"'
+    return {
+        "body": body,
+        "etag": etag,
+        "refreshed": refresh,
+        "renderer_text": renderer_text,
+    }
+
+
 def delete_save(player_id):
     """在同一玩家锁内删除整槽存档及派生牌桌，避免并发生成把快照复活。"""
     player_id = require_player_id(player_id)
@@ -157,17 +277,18 @@ def delete_save(player_id):
 
 
 def _render_table(player_id):
-    player_id = require_player_id(player_id)
-    if not _has_save(player_id):
+    snapshot = ensure_table(player_id, force=True)
+    if snapshot is None:
         raise VendorCmdError("还没有月幕万象存档，请先开局")
-    return GAME.run(
-        player_id,
-        "",
-        extra={
-            "render_view": True,
-            "view_path": str(_view_path(player_id)),
-        },
-    )
+    result = "🖥 月幕万象牌桌快照已更新。人类可从 CedarToy 首页「围观牌桌」进入。"
+    state_lines = [
+        line
+        for line in snapshot["renderer_text"].splitlines()
+        if line.startswith("[STATE]")
+    ]
+    if state_lines:
+        result += "\n" + state_lines[-1]
+    return result
 
 
 def play(arguments):

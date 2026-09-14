@@ -4,6 +4,7 @@ import io
 import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -14,6 +15,18 @@ from vendor_cmd_adapter.base import VendorCmdError
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def make_handler(headers=None):
+    current = object.__new__(server.CedarToyHandler)
+    current.headers = headers or {}
+    current.wfile = io.BytesIO()
+    current.response_statuses = []
+    current.response_headers = []
+    current.send_response = lambda status, *_args: current.response_statuses.append(status)
+    current.send_header = lambda key, value: current.response_headers.append((key, value))
+    current.end_headers = lambda: None
+    return current
 
 
 class MoonlitAdapterTests(unittest.TestCase):
@@ -87,7 +100,8 @@ class MoonlitAdapterTests(unittest.TestCase):
 
     def test_table_snapshots_are_isolated_by_machine_and_slot(self):
         for player_id in ("42", "42:2", "43"):
-            self.new_and_render(player_id)
+            moonlit.play({"action": "new", "player_id": player_id})
+            self.assertTrue(moonlit.ensure_table(player_id)["refreshed"])
 
         snapshots = {player_id: moonlit.read_table(player_id) for player_id in ("42", "42:2", "43")}
         self.assertTrue(all(snapshot and snapshot["body"] for snapshot in snapshots.values()))
@@ -102,6 +116,65 @@ class MoonlitAdapterTests(unittest.TestCase):
         self.assertEqual(moonlit.read_table("42")["body"], b"<html>only machine 42 slot 1</html>")
         self.assertEqual(moonlit.read_table("42:2")["body"], slot_two_before)
 
+    def test_auto_render_uses_sandbox_and_preserves_real_main_and_backup(self):
+        moonlit.play({"action": "new", "player_id": "42"})
+        save_dir = self.save_root / "moonlit" / "42"
+        main_save = save_dir / moonlit.SAVE_NAME
+        backup_save = save_dir / f"{moonlit.SAVE_NAME}.bak"
+        backup_save.write_bytes(main_save.read_bytes())
+        before = {
+            path: (path.read_bytes(), path.stat().st_mtime_ns)
+            for path in (main_save, backup_save)
+        }
+
+        snapshot = moonlit.ensure_table("42")
+
+        self.assertTrue(snapshot["refreshed"])
+        self.assertIn(b'<meta http-equiv="refresh" content="5">', snapshot["body"])
+        for path, expected in before.items():
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), expected)
+
+    def test_unchanged_save_reuses_snapshot_and_changed_save_refreshes_it(self):
+        moonlit.play({"action": "new", "player_id": "42"})
+        main_save = self.save_root / "moonlit" / "42" / moonlit.SAVE_NAME
+        original_renderer = moonlit._render_snapshot_in_sandbox
+        with patch.object(
+            moonlit,
+            "_render_snapshot_in_sandbox",
+            wraps=original_renderer,
+        ) as renderer:
+            first = moonlit.ensure_table("42")
+            second = moonlit.ensure_table("42")
+            self.assertTrue(first["refreshed"])
+            self.assertFalse(second["refreshed"])
+            self.assertEqual(first["etag"], second["etag"])
+            self.assertEqual(renderer.call_count, 1)
+
+            original_body = main_save.read_bytes()
+            original_mtime = main_save.stat().st_mtime_ns
+            time.sleep(0.02)
+            main_save.write_bytes(original_body)
+            self.assertGreater(main_save.stat().st_mtime_ns, original_mtime)
+
+            third = moonlit.ensure_table("42")
+            self.assertTrue(third["refreshed"])
+            self.assertEqual(renderer.call_count, 2)
+
+    def test_get_with_save_and_no_snapshot_generates_and_returns_page(self):
+        moonlit.play({"action": "new", "player_id": "42"})
+        self.assertFalse(self.view_path("42").exists())
+        handler = make_handler()
+        handler._moonlit_human_target = Mock(
+            return_value=({"id": 1}, {"player": "42", "slot": 1})
+        )
+
+        handler._handle_moonlit_page({"player": ["42"]})
+
+        self.assertEqual(handler.response_statuses, [200])
+        self.assertIn("月幕万象".encode("utf-8"), handler.wfile.getvalue())
+        self.assertTrue(self.view_path("42").is_file())
+        self.assertIn("ETag", dict(handler.response_headers))
+
     def test_read_table_does_not_parse_the_game_save(self):
         save_dir = self.save_root / "moonlit" / "42"
         save_dir.mkdir(parents=True)
@@ -110,7 +183,7 @@ class MoonlitAdapterTests(unittest.TestCase):
         self.view_path("42").write_bytes(b"<html>snapshot</html>")
 
         self.assertEqual(moonlit.read_table("42")["body"], b"<html>snapshot</html>")
-        self.assertEqual(moonlit.save_summary("42"), {"saved": True, "table_ready": True})
+        self.assertEqual(moonlit.save_summary("42"), {"saved": True})
 
     def test_new_import_and_delete_invalidate_snapshot_and_export_omits_html(self):
         self.new_and_render("42")
@@ -206,15 +279,7 @@ class MoonlitAuthorizationTests(unittest.TestCase):
 class MoonlitRouteTests(unittest.TestCase):
     @staticmethod
     def handler(headers=None):
-        current = object.__new__(server.CedarToyHandler)
-        current.headers = headers or {}
-        current.wfile = io.BytesIO()
-        current.response_statuses = []
-        current.response_headers = []
-        current.send_response = lambda status, *_args: current.response_statuses.append(status)
-        current.send_header = lambda key, value: current.response_headers.append((key, value))
-        current.end_headers = lambda: None
-        return current
+        return make_handler(headers)
 
     def test_get_route_dispatches_without_adding_a_moonlit_post_handler(self):
         handler = self.handler()
@@ -243,14 +308,17 @@ class MoonlitRouteTests(unittest.TestCase):
         self.assertIn("SameSite=Lax", headers["Set-Cookie"])
         self.assertEqual(headers["Referrer-Policy"], "no-referrer")
 
-    def test_missing_snapshot_is_friendly_and_keeps_private_security_headers(self):
+    def test_missing_save_is_friendly_and_keeps_private_security_headers(self):
         handler = self.handler()
         handler._moonlit_human_target = Mock(return_value=({"id": 1}, {"player": "42"}))
-        with patch.object(server.moonlit_adapter, "read_table", return_value=None):
+        with patch.object(server.moonlit_adapter, "ensure_table", return_value=None):
             handler._handle_moonlit_page({"player": ["42"]})
 
         self.assertEqual(handler.response_statuses, [404])
-        self.assertIn("还没有牌桌快照", handler.wfile.getvalue().decode("utf-8"))
+        message = handler.wfile.getvalue().decode("utf-8")
+        self.assertIn("还没有月幕存档", message)
+        self.assertNotIn("table", message)
+        self.assertNotIn("生成快照", message)
         headers = dict(handler.response_headers)
         self.assertEqual(headers["Cache-Control"], "private, no-cache, max-age=0")
         self.assertEqual(headers["Vary"], "Cookie")
@@ -263,7 +331,7 @@ class MoonlitRouteTests(unittest.TestCase):
 
         first = self.handler({"Cookie": "moonlit_token=valid"})
         first._moonlit_human_target = Mock(return_value=({"id": 1}, {"player": "42"}))
-        with patch.object(server.moonlit_adapter, "read_table", return_value=snapshot):
+        with patch.object(server.moonlit_adapter, "ensure_table", return_value=snapshot):
             first._handle_moonlit_page({"player": ["42"]})
         first_headers = dict(first.response_headers)
         self.assertEqual(first.response_statuses, [200])
@@ -276,7 +344,7 @@ class MoonlitRouteTests(unittest.TestCase):
             {"Cookie": "moonlit_token=valid", "If-None-Match": etag}
         )
         cached._moonlit_human_target = Mock(return_value=({"id": 1}, {"player": "42"}))
-        with patch.object(server.moonlit_adapter, "read_table", return_value=snapshot):
+        with patch.object(server.moonlit_adapter, "ensure_table", return_value=snapshot):
             cached._handle_moonlit_page({"player": ["42"]})
         cached_headers = dict(cached.response_headers)
         self.assertEqual(cached.response_statuses, [304])
@@ -296,7 +364,8 @@ class MoonlitHomepageAndDocsTests(unittest.TestCase):
         picker = self.home[start:end]
         self.assertIn("savedMachine?.saves?.moonlit?.slots", picker)
         self.assertNotIn("saves?.workkk", picker)
-        self.assertIn("table_ready", picker)
+        self.assertNotIn("table_ready", picker)
+        self.assertNotIn("使用 table", picker)
         self.assertIn("/moonlit/?player=", self.home)
 
     def test_desktop_and_mobile_watch_buttons_share_the_moonlit_entry(self):
@@ -315,11 +384,13 @@ class MoonlitHomepageAndDocsTests(unittest.TestCase):
         self.assertIn("await openMoonlitPicker(bindings);", self.home)
         self.assertIn('url: "https://github.com/xinwithyu/moonlit-myriad"', moonlit_card)
 
-    def test_guide_explains_manual_snapshot_refresh_without_server_path(self):
+    def test_guide_explains_automatic_snapshot_refresh_without_server_path(self):
         guide = (ROOT / "vendor_cmd_adapter" / "guides.py").read_text(encoding="utf-8")
         moonlit_guide = guide[guide.index('    "moonlit":'):guide.index('    "imitator_td":')]
-        self.assertIn('table — 生成当前存档槽的牌桌快照', moonlit_guide)
-        self.assertIn("每 5 秒刷新只是重新读取这份快照", moonlit_guide)
+        self.assertIn('table — 可选兼容动作', moonlit_guide)
+        self.assertIn("人类前端不要求小机先执行它", moonlit_guide)
+        self.assertIn("快照不存在或存档更新后", moonlit_guide)
+        self.assertIn("每 5 秒刷新会检查存档是否变化", moonlit_guide)
         self.assertIn("不会替小机出牌", moonlit_guide)
         self.assertNotIn(".view", moonlit_guide)
         self.assertNotIn("月幕万象.html", moonlit_guide)

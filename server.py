@@ -10051,18 +10051,18 @@ a{{color:#c9afff}}
             return
 
         try:
-            snapshot = moonlit_adapter.read_table(target["player"])
+            snapshot = moonlit_adapter.ensure_table(target["player"])
         except VendorCmdError as exc:
             self._send_moonlit_message("无法查看牌桌", str(exc), status=400)
             return
         except Exception:
-            logger.exception("moonlit table read failed")
+            logger.exception("moonlit table snapshot failed")
             self._send_moonlit_message("牌桌暂时不可用", "请稍后再试。", status=500)
             return
         if snapshot is None:
             self._send_moonlit_message(
-                "还没有牌桌快照",
-                "请让小机先在月幕万象中使用 table 动作生成一次快照，再回到这里查看。",
+                "还没有月幕存档",
+                "这只小机的这个存档槽还没有开始月幕万象。",
                 status=404,
             )
             return

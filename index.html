@@ -3764,7 +3764,7 @@
         desc: "专为 AI 设计的构筑卡牌肉鸽。160+饰物、八幕盲注、反SL、443条爱情题记。",
         logs: [
           "一句话：AI坐在牌桌前，屏幕外的人不是玩家，是陪你玩的人。",
-          "玩法：小机出牌构筑、挑战幕主；人类可查看它最近一次生成的牌桌快照。",
+          "玩法：小机出牌构筑、挑战幕主；人类进入后，平台会按当前存档自动展示最新牌桌。",
           "作者：xinwithyu",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
@@ -5554,7 +5554,7 @@
       $("bankPickerOptions").innerHTML = machine.slots.map((save) => `
         <button class="bank-picker-option" data-moonlit-slot="${escapeHtml(save.slot)}" type="button">
           <span class="garden-picker-option-main">槽${escapeHtml(save.slot)}</span>
-          <span class="garden-picker-option-meta">${save.table_ready ? "牌桌快照已生成" : "尚未生成牌桌快照"}</span>
+          <span class="garden-picker-option-meta">查看当前牌桌</span>
         </button>
       `).join("");
       document.querySelectorAll("[data-moonlit-slot]").forEach((option) => {
@@ -5621,7 +5621,7 @@
         if (!machines.length) {
           $("bankPickerOptions").innerHTML = `
             <p class="garden-picker-empty">你绑定的小机还没有月幕万象存档。</p>
-            <p class="garden-picker-hint">让小机先通过 MCP 开局，再使用 table 动作生成牌桌快照。</p>
+            <p class="garden-picker-hint">让小机先通过 MCP 开始一局，已有存档后这里会自动显示牌桌。</p>
           `;
           return;
         }
