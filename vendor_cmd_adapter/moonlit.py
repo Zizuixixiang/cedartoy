@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,67 @@ SAVE_FILES = {
     f"{SAVE_NAME}.bak": f"{SAVE_NAME}.bak",
 }
 VIEW_RELATIVE_PATH = ".view/月幕万象.html"
+SNAPSHOT_PATCH_ID = "cedartoy-moonlit-patch-v1"
+
+
+_META_REFRESH_RE = re.compile(
+    r"<meta\b(?=[^>]*\bhttp-equiv\s*=\s*['\"]?refresh['\"]?)[^>]*>",
+    re.IGNORECASE,
+)
+_SNAPSHOT_VERSION_RE = re.compile(
+    rb'<meta name="cedartoy-moonlit-version" content="([0-9a-f]{16})">'
+)
+_SNAPSHOT_SOURCE_VERSION_RE = re.compile(
+    rb'<meta name="cedartoy-moonlit-source-version" content="([0-9a-f]{16})">'
+)
+_JOKER_ROW_RE = re.compile(
+    r'(<div class="panel"><div class="ptitle">饰物\b[^<]*</div>)\s*'
+    r'<div style="display:flex;gap:9px">'
+)
+
+
+_MOBILE_PATCH_CSS = """
+@media (max-width:420px){
+  .tablegrid > *{min-width:0!important}
+  .cedartoy-joker-row,
+  .tabpage[data-page="牌桌"] .tablegrid > div:first-child > .panel:first-child > div:nth-child(2){
+    display:grid!important;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:clamp(3px,2vw,9px)!important;
+    max-width:100%
+  }
+  .cedartoy-joker-row > .joker,
+  .tabpage[data-page="牌桌"] .tablegrid > div:first-child > .panel:first-child > div:nth-child(2) > .joker{
+    box-sizing:border-box;
+    min-width:0!important;
+    width:100%!important
+  }
+}
+""".strip()
+
+
+_FRESHNESS_SCRIPT = """
+<script id="cedartoy-moonlit-freshness">
+(function(){
+  const marker=document.querySelector('meta[name="cedartoy-moonlit-version"]');
+  const player=new URLSearchParams(window.location.search).get('player');
+  if(!marker||!player)return;
+  let checking=false;
+  async function checkFreshness(){
+    if(checking||document.visibilityState==='hidden')return;
+    checking=true;
+    try{
+      const response=await fetch('/moonlit/freshness?player='+encodeURIComponent(player),{
+        credentials:'same-origin',cache:'no-store',
+        headers:{'If-None-Match':'"moonlit-'+marker.content+'"'}
+      });
+      if(response.status===204)window.location.reload();
+    }catch(_error){}finally{checking=false}
+  }
+  window.setInterval(checkFreshness,5000);
+})();
+</script>
+""".strip()
 
 
 logger = logging.getLogger(__name__)
@@ -221,6 +283,68 @@ def _atomic_replace_view(view_path, body):
             pass
 
 
+def _source_version(source_paths):
+    """用文件元数据标识真实存档版本，不读取或解析游戏存档。"""
+    digest = hashlib.sha256()
+    for path in source_paths:
+        stat = path.stat()
+        digest.update(
+            f"{path.name}\0{stat.st_size}\0{stat.st_mtime_ns}\0{stat.st_ctime_ns}\n".encode()
+        )
+    return digest.hexdigest()[:16]
+
+
+def _snapshot_version(body):
+    match = _SNAPSHOT_VERSION_RE.search(body)
+    return match.group(1).decode("ascii") if match else None
+
+
+def _snapshot_source_version(body):
+    match = _SNAPSHOT_SOURCE_VERSION_RE.search(body)
+    return match.group(1).decode("ascii") if match else None
+
+
+def _postprocess_table_html(body, source_version):
+    """移除作者定时整页刷新，并注入 CedarToy 的窄屏与按需刷新薄补丁。"""
+    try:
+        document = body.decode("utf-8")
+    except UnicodeDecodeError:
+        raise VendorCmdError("月幕牌桌生成了无法读取的 HTML") from None
+
+    document = _META_REFRESH_RE.sub("", document)
+    encoded_document = document.encode("utf-8")
+    if (
+        f'id="{SNAPSHOT_PATCH_ID}"' in document
+        and _snapshot_version(encoded_document) is not None
+        and _snapshot_source_version(encoded_document) is not None
+    ):
+        return encoded_document
+    if "</head>" not in document or "</body>" not in document:
+        raise VendorCmdError("月幕牌桌生成了不完整的 HTML")
+
+    document, replacements = _JOKER_ROW_RE.subn(
+        r'\1<div class="cedartoy-joker-row" style="display:flex;gap:9px">',
+        document,
+        count=1,
+    )
+    if replacements == 0:
+        logger.warning("moonlit table joker row was not found during post-processing")
+
+    snapshot_digest = hashlib.sha256()
+    snapshot_digest.update(body)
+    snapshot_digest.update(source_version.encode("ascii"))
+    snapshot_digest.update(SNAPSHOT_PATCH_ID.encode("ascii"))
+    snapshot_version = snapshot_digest.hexdigest()[:16]
+    head_patch = (
+        f'<meta name="cedartoy-moonlit-version" content="{snapshot_version}">'
+        f'<meta name="cedartoy-moonlit-source-version" content="{source_version}">'
+        f'<style id="{SNAPSHOT_PATCH_ID}">{_MOBILE_PATCH_CSS}</style>'
+    )
+    document = document.replace("</head>", f"{head_patch}</head>", 1)
+    document = document.replace("</body>", f"{_FRESHNESS_SCRIPT}</body>", 1)
+    return document.encode("utf-8")
+
+
 def ensure_table(player_id, *, force=False):
     """按真实存档 mtime 生成或复用快照；作者渲染器只接触临时副本。"""
     player_id = require_player_id(player_id)
@@ -239,8 +363,10 @@ def ensure_table(player_id, *, force=False):
                 for relative_path in dict.fromkeys(SAVE_FILES.values())
                 if (save_dir / relative_path).is_file()
             ]
+            source_version = _source_version(source_paths)
             newest_save_mtime = max(path.stat().st_mtime_ns for path in source_paths)
             view_path = _view_path(player_id)
+            existing_body = None
             try:
                 view_stat = view_path.stat()
                 refresh = (
@@ -248,22 +374,37 @@ def ensure_table(player_id, *, force=False):
                     or view_stat.st_size == 0
                     or view_stat.st_mtime_ns < newest_save_mtime
                 )
+                if not refresh:
+                    existing_body = view_path.read_bytes()
+                    existing_source_version = _snapshot_source_version(existing_body)
+                    if (
+                        existing_source_version is not None
+                        and existing_source_version != source_version
+                    ):
+                        refresh = True
             except FileNotFoundError:
                 refresh = True
 
             renderer_text = ""
             if refresh:
                 body, renderer_text = _render_snapshot_in_sandbox(save_dir)
+                body = _postprocess_table_html(body, source_version)
                 _atomic_replace_view(view_path, body)
             else:
-                body = view_path.read_bytes()
+                body = existing_body
+                processed_body = _postprocess_table_html(body, source_version)
+                if processed_body != body:
+                    body = processed_body
+                    _atomic_replace_view(view_path, body)
     except FileNotFoundError:
         return None
 
     etag = f'"{hashlib.sha256(body).hexdigest()[:16]}"'
+    snapshot_version = _snapshot_version(body)
     return {
         "body": body,
         "etag": etag,
+        "freshness_etag": f'"moonlit-{snapshot_version}"',
         "refreshed": refresh,
         "renderer_text": renderer_text,
     }

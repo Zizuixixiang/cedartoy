@@ -106,7 +106,7 @@ class MoonlitAdapterTests(unittest.TestCase):
 
         snapshots = {player_id: moonlit.read_table(player_id) for player_id in ("42", "42:2", "43")}
         self.assertTrue(all(snapshot and snapshot["body"] for snapshot in snapshots.values()))
-        self.assertTrue(all(b'<meta http-equiv="refresh" content="5">' in snapshot["body"] for snapshot in snapshots.values()))
+        self.assertTrue(all(b'http-equiv="refresh"' not in snapshot["body"] for snapshot in snapshots.values()))
         self.assertEqual(
             {path.parent.parent.name + "/" + path.parent.name for path in map(self.view_path, snapshots)},
             {"42/.view", "42:2/.view", "43/.view"},
@@ -131,9 +131,52 @@ class MoonlitAdapterTests(unittest.TestCase):
         snapshot = moonlit.ensure_table("42")
 
         self.assertTrue(snapshot["refreshed"])
-        self.assertIn(b'<meta http-equiv="refresh" content="5">', snapshot["body"])
+        self.assertNotIn(b'http-equiv="refresh"', snapshot["body"])
         for path, expected in before.items():
             self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), expected)
+
+    def test_generated_html_gets_mobile_layout_and_on_change_refresh_patch(self):
+        moonlit.play({"action": "new", "player_id": "42"})
+
+        snapshot = moonlit.ensure_table("42")
+        page = snapshot["body"].decode("utf-8")
+
+        self.assertNotIn('http-equiv="refresh"', page)
+        self.assertEqual(page.count(f'id="{moonlit.SNAPSHOT_PATCH_ID}"'), 1)
+        self.assertIn(".tablegrid > *{min-width:0!important}", page)
+        self.assertIn("grid-template-columns:repeat(5,minmax(0,1fr))", page)
+        self.assertIn('class="cedartoy-joker-row"', page)
+        self.assertIn("width:100%!important", page)
+        self.assertIn("/moonlit/freshness?player=", page)
+        self.assertIn("if(response.status===204)window.location.reload()", page)
+        self.assertIn("window.setInterval(checkFreshness,5000)", page)
+
+        processed_again = moonlit._postprocess_table_html(
+            snapshot["body"],
+            moonlit._snapshot_source_version(snapshot["body"]),
+        )
+        self.assertEqual(processed_again, snapshot["body"])
+
+    def test_existing_unpatched_snapshot_is_upgraded_without_rerendering(self):
+        moonlit.play({"action": "new", "player_id": "42"})
+        view_path = self.view_path("42")
+        view_path.parent.mkdir()
+        view_path.write_text(
+            """<!doctype html><html><head><meta http-equiv="refresh" content="5"></head>
+<body><div class="tabpage" data-page="牌桌"><div class="tablegrid"><div>
+<div class="panel"><div class="ptitle">饰物 0/5</div><div style="display:flex;gap:9px">
+<div class="joker empty"></div></div></div></div></div></div></body></html>""",
+            encoding="utf-8",
+        )
+
+        with patch.object(moonlit, "_render_snapshot_in_sandbox") as renderer:
+            snapshot = moonlit.ensure_table("42")
+
+        renderer.assert_not_called()
+        self.assertFalse(snapshot["refreshed"])
+        self.assertNotIn(b'http-equiv="refresh"', snapshot["body"])
+        self.assertIn(b'grid-template-columns:repeat(5,minmax(0,1fr))', snapshot["body"])
+        self.assertEqual(view_path.read_bytes(), snapshot["body"])
 
     def test_old_empty_command_log_auto_renders_without_touching_real_saves(self):
         moonlit.play({"action": "new", "player_id": "42"})
@@ -159,10 +202,7 @@ class MoonlitAdapterTests(unittest.TestCase):
         handler._handle_moonlit_page({"player": ["42"]})
 
         self.assertEqual(handler.response_statuses, [200])
-        self.assertIn(
-            b'<meta http-equiv="refresh" content="5">',
-            handler.wfile.getvalue(),
-        )
+        self.assertNotIn(b'http-equiv="refresh"', handler.wfile.getvalue())
         self.assertTrue(self.view_path("42").is_file())
         for path, expected in before.items():
             actual = (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
@@ -182,6 +222,7 @@ class MoonlitAdapterTests(unittest.TestCase):
             self.assertTrue(first["refreshed"])
             self.assertFalse(second["refreshed"])
             self.assertEqual(first["etag"], second["etag"])
+            self.assertEqual(first["freshness_etag"], second["freshness_etag"])
             self.assertEqual(renderer.call_count, 1)
 
             original_body = main_save.read_bytes()
@@ -192,6 +233,7 @@ class MoonlitAdapterTests(unittest.TestCase):
 
             third = moonlit.ensure_table("42")
             self.assertTrue(third["refreshed"])
+            self.assertNotEqual(first["freshness_etag"], third["freshness_etag"])
             self.assertEqual(renderer.call_count, 2)
 
     def test_get_with_save_and_no_snapshot_generates_and_returns_page(self):
@@ -323,6 +365,12 @@ class MoonlitRouteTests(unittest.TestCase):
         handler._handle_moonlit_page.assert_called_once_with({"player": ["42"]})
         self.assertFalse(hasattr(server.CedarToyHandler, "_handle_moonlit_post"))
 
+        freshness = self.handler()
+        freshness.path = "/moonlit/freshness?player=42"
+        freshness._handle_moonlit_freshness = Mock()
+        freshness.do_GET()
+        freshness._handle_moonlit_freshness.assert_called_once_with({"player": ["42"]})
+
     def test_query_token_is_exchanged_for_scoped_httponly_cookie_and_clean_url(self):
         handler = self.handler()
         handler._moonlit_human_target = Mock(
@@ -358,6 +406,7 @@ class MoonlitRouteTests(unittest.TestCase):
         self.assertEqual(headers["Vary"], "Cookie")
         self.assertEqual(headers["X-Frame-Options"], "SAMEORIGIN")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("connect-src 'self'", headers["Content-Security-Policy"])
 
     def test_render_error_is_logged_but_page_does_not_leak_traceback(self):
         handler = self.handler()
@@ -413,6 +462,44 @@ class MoonlitRouteTests(unittest.TestCase):
         self.assertEqual(cached.wfile.getvalue(), b"")
         cached._moonlit_human_target.assert_called_once_with("42", "")
 
+    def test_freshness_returns_304_unchanged_and_204_when_changed(self):
+        old_etag = '"moonlit-aaaaaaaaaaaaaaaa"'
+        new_etag = '"moonlit-bbbbbbbbbbbbbbbb"'
+
+        unchanged = self.handler(
+            {"Cookie": "moonlit_token=valid", "If-None-Match": old_etag}
+        )
+        unchanged._moonlit_human_target = Mock(
+            return_value=({"id": 1}, {"player": "42"})
+        )
+        with patch.object(
+            server.moonlit_adapter,
+            "ensure_table",
+            return_value={"freshness_etag": old_etag},
+        ):
+            unchanged._handle_moonlit_freshness({"player": ["42"]})
+        self.assertEqual(unchanged.response_statuses, [304])
+        self.assertEqual(dict(unchanged.response_headers)["ETag"], old_etag)
+        self.assertEqual(unchanged.wfile.getvalue(), b"")
+        unchanged._moonlit_human_target.assert_called_once_with("42")
+
+        changed = self.handler(
+            {"Cookie": "moonlit_token=valid", "If-None-Match": old_etag}
+        )
+        changed._moonlit_human_target = Mock(
+            return_value=({"id": 1}, {"player": "42"})
+        )
+        with patch.object(
+            server.moonlit_adapter,
+            "ensure_table",
+            return_value={"freshness_etag": new_etag},
+        ):
+            changed._handle_moonlit_freshness({"player": ["42"]})
+        self.assertEqual(changed.response_statuses, [204])
+        self.assertEqual(dict(changed.response_headers)["ETag"], new_etag)
+        self.assertEqual(changed.wfile.getvalue(), b"")
+        changed._moonlit_human_target.assert_called_once_with("42")
+
 
 class MoonlitHomepageAndDocsTests(unittest.TestCase):
     def setUp(self):
@@ -450,7 +537,8 @@ class MoonlitHomepageAndDocsTests(unittest.TestCase):
         self.assertIn('table — 可选兼容动作', moonlit_guide)
         self.assertIn("人类前端不要求小机先执行它", moonlit_guide)
         self.assertIn("快照不存在或存档更新后", moonlit_guide)
-        self.assertIn("每 5 秒刷新会检查存档是否变化", moonlit_guide)
+        self.assertIn("每 5 秒轻量检查一次存档与快照版本", moonlit_guide)
+        self.assertIn("未变化不会整页刷新", moonlit_guide)
         self.assertIn("不会替小机出牌", moonlit_guide)
         self.assertNotIn(".view", moonlit_guide)
         self.assertNotIn("月幕万象.html", moonlit_guide)

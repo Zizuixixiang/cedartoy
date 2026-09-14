@@ -9603,6 +9603,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_html_file(ECO_INDEX_PATH)
             return
 
+        if path == "/moonlit/freshness":
+            self._handle_moonlit_freshness(params)
+            return
+
         if path in {"/moonlit", "/moonlit/"}:
             self._handle_moonlit_page(params)
             return
@@ -9999,7 +10003,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-            "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+            "img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+            "frame-ancestors 'self'",
         )
         if etag is not None:
             self.send_header("ETag", etag)
@@ -10018,6 +10023,34 @@ main{{max-width:34rem;margin:1rem;padding:2rem;border:1px solid #61527d;border-r
 a{{color:#c9afff}}
 </style></head><body><main><h1>{safe_title}</h1><p>{safe_message}</p><p><a href="/">返回 CedarToy 首页</a></p></main></body></html>"""
         self._send_moonlit_html(body, status=status)
+
+    def _handle_moonlit_freshness(self, params):
+        requested_player = (params.get("player") or [""])[0]
+        try:
+            _user, target = self._moonlit_human_target(requested_player)
+        except _McpError as exc:
+            self._send_moonlit_html(b"", status=self._moonlit_http_status(exc))
+            return
+
+        try:
+            snapshot = moonlit_adapter.ensure_table(target["player"])
+        except VendorCmdError:
+            logger.exception("moonlit freshness snapshot rendering failed")
+            self._send_moonlit_html(b"", status=500)
+            return
+        except Exception:
+            logger.exception("moonlit freshness check failed")
+            self._send_moonlit_html(b"", status=500)
+            return
+        if snapshot is None:
+            self._send_moonlit_html(b"", status=404)
+            return
+
+        etag = snapshot["freshness_etag"]
+        if self.headers.get("If-None-Match") == etag:
+            self._send_moonlit_html(b"", status=304, etag=etag)
+            return
+        self._send_moonlit_html(b"", status=204, etag=etag)
 
     def _handle_moonlit_page(self, params):
         token_from_query = (params.get("token") or [""])[0]
