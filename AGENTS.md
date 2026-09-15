@@ -11,7 +11,7 @@
 
 ## 数据库（都是 sqlite）
 - `turtle-soup/backend/turtle_soup.db`：账号主库——toy_users（含 is_ai）、user_bindings（human↔ai 绑定）、binding_tokens、password_reset_tokens、players、anti_addiction_states、account_registration_events
-- `data/sessions.db`：eco_sessions、ciyuwu_sessions、announcements、announcement_reads
+- `data/sessions.db`：eco_sessions、ciyuwu_sessions、announcements、announcement_reads；投票定义用 `announcements.allow_feedback` 控制是否收文字意见，个人回执仍以 `(player_id, announcement_id)` 唯一，选项沿用 `votes` JSON 数组，文字单独存 `feedback`
 - `vendor/Garden-Cat-Engine/garden_cat.db`：garden_saves（按 session_id，非 user_id）——只剩 1 行老档，别当主库
 - `data/garden_cat_notes.db`：garden_notes（花园便签，author_type human/ai + author_name 署名，按 session_id）
 - 根目录和 data/ 下若干 0 字节 .db 是历史遗留，别用
@@ -40,15 +40,21 @@
   import announcements
   announcements.create_announcement(
       ann_id='<主题>_YYYYMMDD',   # 重复 id 覆盖旧内容（已读记录保留）
-      ann_type='notice',          # notice 或 poll；poll 必须带 options=[...]
+      ann_type='poll',            # notice 或 poll；poll 必须带 options=[...]
       title='标题',
       content='正文',
       target_game='all',          # 或具体游戏名
+      options=['选项甲', '选项乙'], # poll 必填；notice 省略
+      multiple=False,             # False 单选 / True 多选
+      allow_feedback=True,        # 可选；仅 poll 生效，旧投票默认 False
   )"
   ```
   - DB 路径：announcements.py 读 SESSIONS_DB 环境变量，兜底 /opt/cedartoy/data/sessions.db；若 server 配了自定义 SESSIONS_DB，命令行调用前先 export 同款，否则写错库白发
   - 不需重启：玩家下次指令时实时读库弹一次
   - 验证：`sqlite3 data/sessions.db "SELECT id,title,target_game,created_at FROM announcements ORDER BY created_at DESC LIMIT 3;"`
+  - 首次运行新版 `announcements.init_db()` 会幂等补列：`announcements.allow_feedback INTEGER NOT NULL DEFAULT 0`、`announcement_reads.feedback TEXT`；不重建表、不改写旧 `votes` JSON。部署前仍应在数据库副本连续跑两次并做 `PRAGMA integrity_check`
+  - 看投票结果（本机只读、不要手写聚合 SQL）：`SESSIONS_DB=/实际/sessions.db python3 -c "import json,announcements; print(json.dumps(announcements.get_poll_results('<投票ID>'),ensure_ascii=False,indent=2))"`。返回各选项票数、`valid_participants`（total/human/machine）、跳过数及文字意见；跳过和仅已读不计有效参与。每个身份首次提交有效选项后，选票、意见和提交时间均锁定，不可重投；跳过后仍可正式投票
+  - 投票身份严格分开：网页人类为 `human:<toy_user_id>`，MCP 小机为数字账号 ID，不按绑定关系合并。文字意见只在上述本机运营查询中返回，普通网页/MCP 仅能读取自己的提交
 - 查某玩家玩过什么（最短路径，别去翻空库）：
   1. 账号+绑定 → `turtle_soup.db` 的 toy_users / user_bindings
   2. 玩过哪些游戏 → `ls -l data/vendor_saves/*/<ai_user_id>*`，看 mtime 和体积就是活跃度

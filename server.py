@@ -294,7 +294,7 @@ _PLATFORM_TOOLS = [
                 },
                 "params": {
                     "type": "object",
-                    "description": "该 action 的业务参数；duel 的 room_id/move/revision/wait/full_state/message，turtle_soup 的 room_id/content，投票的 announcement_id/options 均放这里；其他以 guide 为准。",
+                    "description": "该 action 的业务参数；duel 的 room_id/move/revision/wait/full_state/message，turtle_soup 的 room_id/content，投票的 announcement_id/options/feedback 均放这里；其他以 guide 为准。",
                     "properties": {
                         "room_id": {
                             "type": "string",
@@ -321,6 +321,25 @@ _PLATFORM_TOOLS = [
                         "message": {
                             "type": "string",
                             "description": "可选消息；duel 仅 join/move/state/resign/leave 支持，且 move 时必须与 move 同级；workkk 明信片也使用此字段。",
+                        },
+                        "announcement_id": {
+                            "type": "string",
+                            "description": "平台通用 vote 动作的投票编号。",
+                        },
+                        "options": {
+                            "anyOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "array",
+                                    "items": {"type": "integer", "minimum": 0},
+                                },
+                            ],
+                            "description": "投票选项序号；单选如 \"1\"，多选如 \"1,2\" 或 [1,2]，\"0\"/[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
+                        },
+                        "feedback": {
+                            "type": "string",
+                            "maxLength": announcements.FEEDBACK_MAX_LENGTH,
+                            "description": "投票开放文字反馈时可选的补充意见；所有选项均可附带，随有效选票提交后不可修改。",
                         },
                     },
                     "additionalProperties": True,
@@ -409,7 +428,12 @@ def _build_kelivo_platform_tools():
             "options": {
                 "type": "array",
                 "items": {"type": "integer", "minimum": 0},
-                "description": "投票选项序号；多选如 [1,3,5]，[0] 表示跳过。",
+                "description": "投票选项序号；多选如 [1,2]，[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
+            },
+            "feedback": {
+                "type": "string",
+                "maxLength": announcements.FEEDBACK_MAX_LENGTH,
+                "description": "投票开放文字反馈时可选的补充意见；所有选项均可附带，随有效选票提交后不可修改。",
             },
             "settler": {
                 "type": "string",
@@ -1346,6 +1370,19 @@ def _human_announcement_identity(user):
     return f"human:{int(user['id'])}"
 
 
+def _current_human_account(raw_token):
+    user = _current_account(raw_token)
+    if user.get("is_ai"):
+        raise _McpError(-32001, "此网页接口仅供已登录的人类账号使用")
+    return user
+
+
+def _account_announcement_identity(user, account_player_id):
+    if user and not user.get("is_ai"):
+        return _human_announcement_identity(user)
+    return account_player_id
+
+
 def _announcement_options_for_web(raw):
     if not raw:
         return []
@@ -1358,8 +1395,34 @@ def _announcement_options_for_web(raw):
     return [str(option) for option in options]
 
 
+def _announcement_vote_for_web(votes_raw, feedback):
+    if votes_raw is None:
+        return None
+    try:
+        parsed = json.loads(votes_raw)
+    except (TypeError, ValueError):
+        parsed = []
+    options = []
+    if isinstance(parsed, list):
+        for item in parsed:
+            if isinstance(item, bool):
+                continue
+            try:
+                option = int(item)
+            except (TypeError, ValueError):
+                continue
+            if option >= 1 and option not in options:
+                options.append(option)
+    return {
+        "options": options,
+        "skipped": not options,
+        "feedback": feedback if isinstance(feedback, str) else None,
+        "locked": bool(options),
+    }
+
+
 def _web_announcements(raw_token):
-    user = _current_account(raw_token) if raw_token else None
+    user = _current_human_account(raw_token) if raw_token else None
     identity = _human_announcement_identity(user) if user else None
     now = announcements._now_iso()
     with _sessions_db_connect() as conn:
@@ -1373,10 +1436,14 @@ def _web_announcements(raw_token):
                 a.content,
                 a.options,
                 a.multiple,
+                a.allow_feedback,
                 a.target_game,
                 a.created_at,
                 a.expires_at,
-                CASE WHEN r.announcement_id IS NULL THEN 1 ELSE 0 END AS unread
+                r.votes,
+                r.feedback,
+                CASE WHEN r.announcement_id IS NULL OR r.read_at LIKE 'archived:%'
+                     THEN 1 ELSE 0 END AS unread
             FROM announcements AS a
             LEFT JOIN announcement_reads AS r
               ON r.player_id = ? AND r.announcement_id = a.id
@@ -1397,21 +1464,26 @@ def _web_announcements(raw_token):
                 "content": row["content"],
                 "options": _announcement_options_for_web(row["options"]),
                 "multiple": bool(row["multiple"]),
+                "allow_feedback": bool(row["allow_feedback"]),
                 "target_game": row["target_game"],
                 "created_at": row["created_at"],
                 "expires_at": row["expires_at"],
                 "unread": unread,
+                "my_vote": _announcement_vote_for_web(
+                    row["votes"], row["feedback"]
+                ) if identity else None,
             }
         )
     return {
         "authenticated": bool(user),
         "announcements": items,
         "unread_count": sum(1 for item in items if item["unread"]),
+        "feedback_max_length": announcements.FEEDBACK_MAX_LENGTH,
     }
 
 
 def _mark_web_announcements_read(raw_token, announcement_ids):
-    user = _current_account(raw_token)
+    user = _current_human_account(raw_token)
     if not isinstance(announcement_ids, list):
         raise _McpError(-32602, "announcement_ids 必须是数组")
     normalized_ids = list(
@@ -1443,8 +1515,43 @@ def _mark_web_announcements_read(raw_token, announcement_ids):
             """,
             (identity, now, *normalized_ids, now),
         )
+        conn.execute(
+            f"""
+            UPDATE announcement_reads
+            SET read_at = ?
+            WHERE player_id = ?
+              AND announcement_id IN ({placeholders})
+              AND read_at LIKE 'archived:%'
+            """,
+            (now, identity, *normalized_ids),
+        )
         marked = conn.total_changes - before
     return {"marked": marked}
+
+
+def _submit_web_announcement_vote(
+    raw_token,
+    announcement_id,
+    options,
+    feedback=None,
+):
+    """Submit under the authenticated human identity; ignore all client identities."""
+    user = _current_human_account(raw_token)
+    if options is None:
+        raise _McpError(-32602, "options 必填；选择投票项，或用 [0] 明确跳过")
+    identity = _human_announcement_identity(user)
+    announcements.DB_PATH = str(SESSIONS_DB_PATH)
+    try:
+        vote = announcements.submit_vote(
+            identity,
+            announcement_id,
+            options,
+            feedback=feedback,
+            mark_seen=True,
+        )
+    except announcements.AnnouncementError as exc:
+        raise _McpError(-32602, str(exc))
+    return {"ok": True, "vote": vote}
 
 
 def _add_column_if_missing(conn, table, column, column_sql):
@@ -7010,8 +7117,18 @@ exchange：exchange_action=catalog|list|create|confirm|reject|withdraw。create(
 作者：南山君&Clio。"""
 
 
+PLATFORM_ANNOUNCEMENT_GUIDE_NOTE = (
+    "\n\n[平台公告] action=\"announcements\" 查看历史。投票用 action=\"vote\"："
+    'params 传 announcement_id；单选 options="1"，多选 options="1,2"，跳过 options="0"。'
+    '仅当通知明确开放补充意见时可再传 feedback="我的意见"（最多 '
+    f"{announcements.FEEDBACK_MAX_LENGTH} 字）。有效选项和意见提交后不可修改；"
+    "跳过不算有效票，之后仍可投。"
+)
+DUEL_GUIDE += PLATFORM_ANNOUNCEMENT_GUIDE_NOTE
+
+
 def _guide_with_slot_note(text):
-    return text + SAVE_SLOT_GUIDE_NOTE
+    return text + SAVE_SLOT_GUIDE_NOTE + PLATFORM_ANNOUNCEMENT_GUIDE_NOTE
 
 
 def _game_maintenance(game):
@@ -7024,7 +7141,16 @@ def _tool_get_guide(arguments):
     if not game or not isinstance(game, str):
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
-        return json.dumps(_turtle_soup_guide(), ensure_ascii=False)
+        guide = _turtle_soup_guide()
+        guide["platform_announcements"] = {
+            "history": 'play(game="turtle_soup", action="announcements")',
+            "single": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":"1"})',
+            "multiple": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":"1,2"})',
+            "skip": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":"0"})',
+            "feedback": '仅开放文字反馈的投票可在 params 加 feedback="我的意见"。',
+            "submission_rule": "有效选项和补充意见提交后不可修改；跳过后仍可正式投票。",
+        }
+        return json.dumps(guide, ensure_ascii=False)
     if game == "workkk":
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
     if game == "garden_cat":
@@ -7273,14 +7399,26 @@ _ANNOUNCEMENT_META_ACTIONS = frozenset({"initialize", "tools/list", "tools/call"
 def _announcement_vote_hint(game):
     """生成该游戏的投票指引。通知只弹一次，示例参数必须是能直接照抄的。"""
 
-    def hint(ann_id, multiple):
-        example = "1,3,5" if multiple else "2"
+    def hint(ann_id, multiple, option_count=2):
+        example = "1,2" if multiple and option_count >= 2 else "1"
         kind = "多选，逗号分隔" if multiple else "单选，只填一个"
         return (
             f'投票请调用 play(game="{game}", action="vote", '
             f'params={{"announcement_id": "{ann_id}", "options": "{example}"}})'
             f'（{kind}）；options="0" 表示跳过。'
+            "有效选项提交后不可修改；跳过后仍可再投。"
             "不回也没关系，这条通知不会再弹。"
+        )
+
+    return hint
+
+
+def _announcement_feedback_hint(game):
+    def hint(ann_id, _multiple, _option_count):
+        return (
+            "本投票可附补充意见，例如："
+            f'play(game="{game}", action="vote", params={{"announcement_id": '
+            f'"{ann_id}", "options": "1", "feedback": "我的意见"}})'
         )
 
     return hint
@@ -7291,7 +7429,7 @@ def _announcement_more_hint(game):
 
 
 def _tool_play_vote(game, player_id, params):
-    """平台级投票动作：play(game=..., action="vote", params={announcement_id, options})。"""
+    """平台级投票动作：params={announcement_id, options, feedback?}。"""
     if not player_id:
         raise _McpError(-32602, "vote 需要 player_id（或带 token 的账号身份）")
     if isinstance(player_id, str) and player_id.startswith(GUEST_PREFIX):
@@ -7304,9 +7442,14 @@ def _tool_play_vote(game, player_id, params):
     except announcements.AnnouncementError as exc:
         raise _McpError(-32602, str(exc))
     if not options:
-        raise _McpError(-32602, 'vote 需要 options：多选如 "1,3,5"，跳过填 "0"')
+        raise _McpError(-32602, 'vote 需要 options：多选如 "1,2"，跳过填 "0"')
     try:
-        message = announcements.record_vote(player_id, announcement_id.strip(), options)
+        message = announcements.record_vote(
+            player_id,
+            announcement_id.strip(),
+            options,
+            feedback=params.get("feedback"),
+        )
     except announcements.AnnouncementError as exc:
         raise _McpError(-32602, str(exc))
     return {"ok": True, "text": message}
@@ -7327,6 +7470,7 @@ def _tool_play_announcement_history(game, player_id, params):
             game,
             before=before,
             vote_hint=_announcement_vote_hint(game),
+            feedback_hint=_announcement_feedback_hint(game),
         )
     except announcements.AnnouncementError as exc:
         raise _McpError(-32602, str(exc))
@@ -7359,6 +7503,7 @@ def _play_announcements(player_id, game, action):
             game,
             vote_hint=_announcement_vote_hint(game),
             more_hint=_announcement_more_hint(game),
+            feedback_hint=_announcement_feedback_hint(game),
         )
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该玩游戏还是玩游戏。
@@ -7625,11 +7770,22 @@ def _tool_play_inner(
     anti_context = _anti_addiction_context(game, account_user, account_player_id)
     # 通知按「人」而不是按存档槽记已读，用的就是各游戏看到的那个 player_id
     # （announcements 内部会把 "12:3" 这类槽后缀削掉）。
-    announce_player_id = account_player_id or guest_player_id or _reported_player_id(arguments)
+    announce_player_id = (
+        _account_announcement_identity(account_user, account_player_id)
+        or guest_player_id
+        or _reported_player_id(arguments)
+    )
+    if account_user is None:
+        announce_player_id = _guest_player_id(announce_player_id)
     if action == "rest":
         return json.dumps(_anti_addiction_rest(anti_context, account_player_id), ensure_ascii=False)
     if action == "vote":
         # 投票是在回复系统通知，不是玩游戏：不进各游戏引擎，也不计防沉迷。
+        if account_user is None:
+            return json.dumps(
+                {"ok": False, "text": "游客身份不参与投票，注册认领存档后可参与"},
+                ensure_ascii=False,
+            )
         return json.dumps(_tool_play_vote(game, announce_player_id, merged_arguments), ensure_ascii=False)
     if action == "announcements":
         # 主动查看公告同样不进入游戏引擎、不累计防沉迷；查看本页会建立投票所需的 seen 记录。
@@ -9442,6 +9598,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_announcements_read()
             return
 
+        if path == "/api/announcements/vote":
+            self._handle_api_announcement_vote()
+            return
+
         if path == "/api/auth/reset-password":
             self._handle_api_reset_password()
             return
@@ -10699,6 +10859,29 @@ a{{color:#c9afff}}
             result = _mark_web_announcements_read(
                 _extract_bearer(self.headers),
                 body.get("announcement_ids"),
+            )
+            self._send_json(
+                result,
+                extra_headers={"Cache-Control": "no-cache, no-store"},
+            )
+        except _McpError as exc:
+            self._send_json(
+                {"error": exc.message},
+                status=401 if exc.code == -32001 else 400,
+            )
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_announcement_vote(self):
+        try:
+            body = self._read_json_body()
+            result = _submit_web_announcement_vote(
+                _extract_bearer(self.headers),
+                body.get("announcement_id"),
+                body.get("options"),
+                feedback=body.get("feedback"),
             )
             self._send_json(
                 result,

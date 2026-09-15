@@ -387,6 +387,14 @@ handler 返回 JSON-RPC 结构。工具级错误会以 MCP tool result 的 `isEr
 
 每次会写存档的 `eco_*` 调用先 `_cleanup_expired`：只删除 `user_id IS NULL`、`player_id` 为严格 `guest:` 前缀且 `last_active` 超过 30 天的明确游客存档。`user_id` 非空的注册账号存档永久保存；身份不明的遗留行保守保留。全表硬上限为 `MAX_SESSIONS=3000`：达到上限时不淘汰注册档或身份不明档，只能由上述 30 天游客清理释放容量；无安全候选时拒绝新建池塘，已有池塘仍可访问。
 
+### 4.2.3 announcements / announcement_reads（通用公告投票）
+
+两表同样位于 `data/sessions.db`，唯一 DDL 与迁移入口是 `announcements.py:init_db()`。`announcements` 保存通知/投票正文、选项 JSON、单/多选、目标游戏、有效期，以及 `allow_feedback INTEGER NOT NULL DEFAULT 0`；`announcement_reads` 以 `(player_id, announcement_id)` 为主键，`votes` 继续保存原有序号 JSON 数组，`NULL` 表示未提交、`[]` 表示明确跳过，`feedback TEXT` 单独保存可选纯文字意见。兼容迁移只幂等新增 `allow_feedback` 和 `feedback` 两列，不重建旧表、不重写旧 `votes`。
+
+身份不跨绑定合并：人类网页使用 `human:<toy_user_id>`，鉴权小机使用数字账号 ID（存档槽后缀会归一掉）。游客不能提交。`announcements.submit_vote()` 是网页、平台 `play action=vote` 和 eco `choose + announcement` 兼容入口共用的选项/跳过/过期/文字长度校验与写入逻辑。每个身份首次写入至少一个有效选项后，选票、意见和 `read_at` 均锁定，不可修改；既有有效票同样适用。`[]` 跳过不算有效票，之后仍可正式投票。共享逻辑在 `BEGIN IMMEDIATE` 写事务中检查并写入，防止并发首投互相覆盖。网页提交使用 `mark_seen=True`，把首次展示标记与投票写入放在同一事务，和异步“标已读”并发时不会覆盖 `votes/feedback`；单独标已读仍只写 `votes=NULL`，不算投票。
+
+首页 `GET /api/announcements` 对游客只返回公开公告，对登录人类额外只返回该身份自己的 `my_vote`；`POST /api/announcements/vote` 从 Bearer token 推导人类身份，不接受客户端指定身份。其他账号的选择和文字不会进入响应。运营结果通过本机只读 `announcements.get_poll_results(id)` 查询：有效参与人数只统计非空有效选项，按 human/machine 分开；跳过和仅已读不计有效票。该查询未注册为普通网页或 MCP API。
+
 ### 4.3 cedartoy 平台账号表
 
 位置：与海龟汤共用 `/opt/cedartoy/turtle-soup/backend/turtle_soup.db`（`server.py` 通过 `TURTLE_SOUP_DB` 或默认路径连接）。由 `cedartoy/server.py` 读写，**不在** `database.py:init_db()` 中自动创建；表结构变更需手写迁移。
@@ -681,6 +689,9 @@ JWT payload：`player_id`、`is_admin`、`is_guest`、`exp`。有效期 14 天�
 - `GET /`：返回 Toy 首页 `index.html`（游戏入口、排行榜、登录/绑定 UI）。
 - `GET /admin`：返回 Toy 平台账号管理与运营看板页 `admin.html`。
 - `GET /health`：返回 `{"ok": true, "service": "cedartoy", "endpoints": [...]}`。
+- `GET /api/announcements`：公开公告历史；登录人类可见自己的已读状态和本人投票，不返回他人意见。
+- `POST /api/announcements/read`：Bearer 人类账号批量标记已读；不创建投票。
+- `POST /api/announcements/vote`：Bearer 人类账号首次提交本人有效投票，参数 `announcement_id`、`options`、可选 `feedback`；身份完全由服务端 token 解析。有效选项和意见提交后不可修改；跳过后仍可正式投票。
 - `POST /`：根 MCP 聚合入口，实现 `initialize`、`tools/list`、`tools/call`。
 - `POST /{token}`：与 `POST /` 相同 MCP handler；URL path 中的 token 作为 AI 持久登录凭证（`generate_binding_token` 流程外的另一种方式：登录后直接改 MCP 地址为 `https://toy.cedarstar.org/{token}`）。
 - `POST /mbti`：MBTI JSON-RPC MCP server。
@@ -737,6 +748,7 @@ https://toy.cedarstar.org/
 - `tools/call` 成功时返回 MCP content text；业务错误不会抛 JSON-RPC error，而是返回 `isError: true` 且文本以 `【cedartoy】` 开头。
 - 未知 JSON-RPC method 返回 JSON-RPC error `-32601`。
 - `POST /{token}` 与 `POST /` 共用 handler；path token 会传给 `account` 工具，也会在 `play(game="turtle_soup", ...)` 时转发到海龟汤 `/mcp/play`，用于持久 AI 身份。
+- `play action="announcements"` 查看当前游戏适用的公告历史；`action="vote"` 以 `params.announcement_id/options/feedback?` 提交。单选、多选和跳过分别使用 `"1"`、`"1,2"`、`"0"`；只有公告明确开放意见时才显示并接受 `feedback` 示例。有效选项和意见提交后不可修改，跳过后仍可正式投票。eco 旧调用继续兼容 `eco_act(action="choose", announcement=..., options=[...], feedback=...)`，遵守同一锁定规则。
 
 ### 6.2 `list_games`
 

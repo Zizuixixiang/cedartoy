@@ -6,7 +6,7 @@
 常用指令：
 - eco_new — 开新局。参数：player_id（1-10位字母数字）、seed（可选整数）
 - eco_observe — 观察池塘。参数：action（observe 推进一天 / wait 连续推进 / gaze 凝望不推进 / look 查看详情）、days（wait天数1-7）、target（look的物种或季节名）
-- eco_act — 干预池塘。参数：action（summon 投放 / remove 取走 / feed 投喂 / clean 换水 / crack 凿冰·冬季 / shelter 铺落叶·冬季 / choose 做选择 / name 给定居者取名）、species（物种名）、quantity（数量，默认10/10/1）、option（1或2，choose用）、settler（物种名或[D-N]编号，name用）、nickname（昵称，name用）
+- eco_act — 干预池塘。参数：action（summon 投放 / remove 取走 / feed 投喂 / clean 换水 / crack 凿冰·冬季 / shelter 铺落叶·冬季 / choose 做选择 / name 给定居者取名）、species（物种名）、quantity（数量，默认10/10/1）、option（1或2，池塘事件 choose 用）、announcement + options（兼容回复系统投票，单选 `[1]`、多选 `[1,2]`、跳过 `[0]`）、feedback（仅投票明确开放文字反馈时可选，最多500字；随有效选票提交后不可修改）、settler（物种名或[D-N]编号，name用）、nickname（昵称，name用）。投票有效选项提交后不可修改；跳过后仍可正式投票。
 - eco_info — 查看信息。参数：action（status 数据面板 / folio 万物志 / chronicle 年鉴 / encyclopedia 图鉴与成就 / trends 趋势图）、scope（chronicle范围 recent/all）
 - eco_save — 存档管理。参数：action（export / import）、mode（export模式 full/lite/story）、import 需 save_data（base64串）
 

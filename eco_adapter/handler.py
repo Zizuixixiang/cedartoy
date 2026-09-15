@@ -124,7 +124,12 @@ TOOLS = [
                 "options": {
                     "type": "array",
                     "items": {"type": "integer", "minimum": 0},
-                    "description": "投票选项序号（choose + announcement 用）：多选如 [1,3,5]，[0] 表示跳过。",
+                    "description": "投票选项序号（choose + announcement 用）：多选如 [1,2]，[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
+                },
+                "feedback": {
+                    "type": "string",
+                    "maxLength": announcements.FEEDBACK_MAX_LENGTH,
+                    "description": "投票开放文字反馈时可选的补充意见；所有选项均可附带，随有效选票提交后不可修改。",
                 },
                 "settler": {
                     "type": "string",
@@ -478,10 +483,26 @@ def eco_save(arguments):
 
 
 # eco 的指令走 MCP 结构化参数，玩家没法发裸文本，所以投票指引得写成工具调用的样子。
-_ECO_VOTE_HINT = (
-    '投票请调用 eco_act(action="choose", announcement="{id}", options=[1,3,5])'
-    '（多选）/ options=[0] 跳过。不回也没关系，这条通知不会再弹。'
-)
+def _eco_vote_hint(announcement_id, multiple, option_count=2):
+    example = "[1,2]" if multiple and option_count >= 2 else "[1]"
+    kind = "多选" if multiple else "单选"
+    return (
+        f'投票请调用 eco_act(action="choose", announcement="{announcement_id}", '
+        f"options={example})（{kind}）/ options=[0] 跳过。"
+        "有效选项提交后不可修改；跳过后仍可再投。"
+        "不回也没关系，这条通知不会再弹。"
+    )
+
+
+def _eco_feedback_hint(announcement_id, _multiple, _option_count):
+    return (
+        "本投票可附补充意见，例如："
+        f'eco_act(action="choose", announcement="{announcement_id}", options=[1], '
+        'feedback="我的意见")'
+    )
+
+
+_ECO_VOTE_HINT = _eco_vote_hint
 
 _ECO_MORE_HINT = (
     '另有 {count} 条旧公告；action="announcements" 可查看。'
@@ -490,6 +511,8 @@ _ECO_MORE_HINT = (
 
 def _record_vote(player_id, announcement_id, arguments):
     """回复系统投票。options 缺省时兼容单选的 option。"""
+    if isinstance(player_id, str) and player_id.startswith("guest:"):
+        raise JsonRpcError(-32602, "游客身份不参与投票，注册认领存档后可参与。")
     options = arguments.get("options")
     if isinstance(options, str):
         for _ in range(3):
@@ -509,7 +532,12 @@ def _record_vote(player_id, announcement_id, arguments):
             -32602, "choose 投票需要 options：多选如 [1,3]，跳过填 [0]。"
         )
     try:
-        return announcements.record_vote(player_id, announcement_id, options)
+        return announcements.record_vote(
+            player_id,
+            announcement_id,
+            options,
+            feedback=arguments.get("feedback"),
+        )
     except announcements.AnnouncementError as exc:
         raise JsonRpcError(-32602, str(exc))
 
@@ -522,6 +550,7 @@ def _with_announcements(player_id, text):
             GAME,
             vote_hint=_ECO_VOTE_HINT,
             more_hint=_ECO_MORE_HINT,
+            feedback_hint=_eco_feedback_hint,
         )
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该看池塘还是看池塘。

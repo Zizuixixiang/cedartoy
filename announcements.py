@@ -10,6 +10,10 @@
   历史查询真正展示后会改成普通时间。这样旧投票不会因防刷屏归档而失去入口。
 * 投票是可选的后续动作：`announcement_reads.votes` 初始为 NULL（没回应），
   玩家回复后写成 JSON 数组；显式跳过写成 `[]`，以便和「压根没回」区分。
+* `announcements.allow_feedback=1` 的投票可附纯文字意见；旧投票迁移后默认 0。
+  意见单独存在 `announcement_reads.feedback`，不改变旧 `votes` JSON 数组格式。
+* 一旦写入至少一个有效选项，该身份的选项、意见和提交时间永久锁定；跳过 `[]`
+  不算有效票，之后仍可正式投票。
 * `target_game` 为具体游戏名（eco/fishing/...）或 `all`（所有游戏都弹）。
 
 时间统一用 Asia/Shanghai 的 `%Y-%m-%d %H:%M:%S`，和 eco_adapter 里的
@@ -22,6 +26,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # 跟 server.SESSIONS_DB_PATH 认同一个环境变量；server 启动时还会再赋一次，
@@ -29,16 +34,21 @@ from zoneinfo import ZoneInfo
 DB_PATH = os.getenv("SESSIONS_DB", "/opt/cedartoy/data/sessions.db")
 AUTO_PUSH_LIMIT = 3
 HISTORY_PAGE_LIMIT = 10
+FEEDBACK_MAX_LENGTH = 500
 _ARCHIVED_READ_PREFIX = "archived:"
 
 # 通知只弹一次，所以文案里必须把「怎么投票」讲清楚，玩家没有第二次机会看到。
 DEFAULT_VOTE_HINT = (
-    "投票请回复：choose 投票编号 {id} 1 3 5（多选，空格分隔）"
-    " / choose 投票编号 {id} 0（跳过）"
+    "投票请回复：choose 投票编号 {id} 1 2（多选，空格分隔）"
+    " / choose 投票编号 {id} 0（跳过）。有效选项提交后不可修改；跳过后仍可再投"
 )
 SINGLE_VOTE_HINT = (
-    "投票请回复：choose 投票编号 {id} 2（单选，只能选一个）"
-    " / choose 投票编号 {id} 0（跳过）"
+    "投票请回复：choose 投票编号 {id} 1（单选，只能选一个）"
+    " / choose 投票编号 {id} 0（跳过）。有效选项提交后不可修改；跳过后仍可再投"
+)
+DEFAULT_FEEDBACK_HINT = (
+    '可附补充意见：choose 投票编号 {id} 1 feedback="我的意见"'
+    f"（最多 {FEEDBACK_MAX_LENGTH} 字）"
 )
 
 
@@ -54,6 +64,10 @@ def _now_iso(now=None):
 
 def _connect():
     return sqlite3.connect(DB_PATH)
+
+
+def _connect_read_only():
+    return sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=ro", uri=True)
 
 
 # 账号存档槽把 player_id 写成 "12:3"（槽 1 就是裸 "12"，见 server._account_slot_player_id）。
@@ -116,6 +130,7 @@ def init_db(conn):
             content TEXT NOT NULL,
             options TEXT,
             multiple INTEGER DEFAULT 0,
+            allow_feedback INTEGER NOT NULL DEFAULT 0,
             target_game TEXT NOT NULL DEFAULT 'all',
             created_at TEXT NOT NULL,
             expires_at TEXT
@@ -128,6 +143,7 @@ def init_db(conn):
             player_id TEXT NOT NULL,
             announcement_id TEXT NOT NULL,
             votes TEXT,
+            feedback TEXT,
             read_at TEXT NOT NULL,
             PRIMARY KEY (player_id, announcement_id)
         )
@@ -138,6 +154,20 @@ def init_db(conn):
         "CREATE INDEX IF NOT EXISTS idx_announcements_target"
         " ON announcements(target_game)"
     )
+    # 最小幂等迁移：只补两个新列，不重建表，也不重写旧 votes JSON。
+    announcement_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(announcements)")
+    }
+    if "allow_feedback" not in announcement_columns:
+        conn.execute(
+            "ALTER TABLE announcements"
+            " ADD COLUMN allow_feedback INTEGER NOT NULL DEFAULT 0"
+        )
+    read_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(announcement_reads)")
+    }
+    if "feedback" not in read_columns:
+        conn.execute("ALTER TABLE announcement_reads ADD COLUMN feedback TEXT")
 
 
 def _parse_options(raw):
@@ -153,17 +183,32 @@ def _parse_options(raw):
     return [str(item) for item in parsed]
 
 
-def _resolve_vote_hint(vote_hint, ann_id, multiple):
+def _resolve_vote_hint(vote_hint, ann_id, multiple, option_count):
     """vote_hint 可以是模板串（`{id}` 占位）或 `(ann_id, multiple) -> str` 的可调用对象。
 
-    可调用形式是给平台层用的：单选/多选的示例参数不一样（options="2" vs "1,3,5"），
+    可调用形式是给平台层用的：单选/多选的示例参数不一样（options="1" vs "1,2"），
     给单选投票展示多选示例会直接把 AI 引到一个必然报错的调用上。
     """
     if callable(vote_hint):
-        return vote_hint(ann_id, bool(multiple))
+        try:
+            return vote_hint(ann_id, bool(multiple), option_count)
+        except TypeError:
+            # 兼容既有的 `(ann_id, multiple) -> str` 定制提示。
+            return vote_hint(ann_id, bool(multiple))
     if vote_hint is None:
-        vote_hint = DEFAULT_VOTE_HINT if multiple else SINGLE_VOTE_HINT
+        if multiple and option_count < 2:
+            vote_hint = DEFAULT_VOTE_HINT.replace("1 2", "1")
+        else:
+            vote_hint = DEFAULT_VOTE_HINT if multiple else SINGLE_VOTE_HINT
     return vote_hint.format(id=ann_id)
+
+
+def _resolve_feedback_hint(feedback_hint, ann_id, multiple, option_count):
+    if callable(feedback_hint):
+        return feedback_hint(ann_id, bool(multiple), option_count)
+    if feedback_hint is None:
+        feedback_hint = DEFAULT_FEEDBACK_HINT
+    return feedback_hint.format(id=ann_id)
 
 
 def _resolve_more_hint(more_hint, game_name, count):
@@ -174,8 +219,8 @@ def _resolve_more_hint(more_hint, game_name, count):
     return more_hint.format(game=game_name, count=count)
 
 
-def _format(row, vote_hint):
-    ann_id, ann_type, title, content, options_raw, multiple = row
+def _format(row, vote_hint, feedback_hint=None):
+    ann_id, ann_type, title, content, options_raw, multiple, allow_feedback = row
     lines = ["【系统通知】" + (title or "")]
     if content:
         lines.append(content)
@@ -186,12 +231,24 @@ def _format(row, vote_hint):
             lines.extend(
                 "  %d. %s" % (idx, label) for idx, label in enumerate(options, 1)
             )
-        lines.append(_resolve_vote_hint(vote_hint, ann_id, multiple))
+        lines.append(_resolve_vote_hint(vote_hint, ann_id, multiple, len(options)))
+        if allow_feedback:
+            lines.append(
+                _resolve_feedback_hint(
+                    feedback_hint, ann_id, multiple, len(options)
+                )
+            )
 
     return "\n".join(lines)
 
 
-def check_announcements(player_id, game_name, vote_hint=None, more_hint=None):
+def check_announcements(
+    player_id,
+    game_name,
+    vote_hint=None,
+    more_hint=None,
+    feedback_hint=None,
+):
     """自动展示最近三条未读，并归档同批更早公告。
 
     没有未读时返回空字符串，调用方可以直接 `if text:` 判断要不要拼进输出。
@@ -231,7 +288,8 @@ def check_announcements(player_id, game_name, vote_hint=None, more_hint=None):
 
         rows = conn.execute(
             """
-            SELECT a.id, a.type, a.title, a.content, a.options, a.multiple
+            SELECT a.id, a.type, a.title, a.content, a.options, a.multiple,
+                   a.allow_feedback
             FROM announcements AS a
             WHERE (a.target_game = ? OR a.target_game = 'all')
               AND (a.expires_at IS NULL OR a.expires_at > ?)
@@ -274,7 +332,7 @@ def check_announcements(player_id, game_name, vote_hint=None, more_hint=None):
             ),
         )
 
-        blocks.extend(_format(row, vote_hint) for row in rows)
+        blocks.extend(_format(row, vote_hint, feedback_hint) for row in rows)
 
     older_count = unread_count - len(rows)
     if older_count:
@@ -288,6 +346,7 @@ def list_announcements(
     game_name,
     before=None,
     vote_hint=None,
+    feedback_hint=None,
 ):
     """按游标返回 game_name 相关的十条有效公告，并把本页标为确实已展示。
 
@@ -322,7 +381,8 @@ def list_announcements(
             cursor_args = [cursor[0], cursor[0], cursor[1]]
         rows = conn.execute(
             f"""
-            SELECT a.id, a.type, a.title, a.content, a.options, a.multiple
+            SELECT a.id, a.type, a.title, a.content, a.options, a.multiple,
+                   a.allow_feedback
             FROM announcements AS a
             WHERE (a.target_game = ? OR a.target_game = 'all')
               AND (a.expires_at IS NULL OR a.expires_at > ?)
@@ -346,7 +406,7 @@ def list_announcements(
             )
 
     return {
-        "blocks": [_format(row, vote_hint) for row in visible],
+        "blocks": [_format(row, vote_hint, feedback_hint) for row in visible],
         "has_more": len(rows) > HISTORY_PAGE_LIMIT,
         "next_before": visible[-1][0]
         if len(rows) > HISTORY_PAGE_LIMIT and visible
@@ -354,11 +414,57 @@ def list_announcements(
     }
 
 
-def record_vote(player_id, announcement_id, options):
-    """记录一次投票。`options` 为选项序号列表，`[0]` 或 `[]` 表示跳过。
+def _normalize_feedback(feedback):
+    if feedback is None:
+        return None
+    if not isinstance(feedback, str):
+        raise AnnouncementError("feedback 须为文字。")
+    feedback = feedback.strip()
+    if not feedback:
+        return None
+    if len(feedback) > FEEDBACK_MAX_LENGTH:
+        raise AnnouncementError(
+            f"feedback 最多 {FEEDBACK_MAX_LENGTH} 字，当前 {len(feedback)} 字。"
+        )
+    return feedback
 
-    只有实际展示过（read_at 不是 archived: 状态）的投票才能回复；重复投票以
-    最后一次为准。
+
+def _has_effective_vote(votes_raw, option_count):
+    """旧库里只要已存至少一个当前有效选项，就视为不可修改的正式选票。"""
+    if votes_raw is None:
+        return False
+    try:
+        stored = json.loads(votes_raw)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(stored, list):
+        return False
+    for value in stored:
+        if isinstance(value, bool):
+            continue
+        try:
+            pick = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= pick <= option_count:
+            return True
+    return False
+
+
+def submit_vote(
+    player_id,
+    announcement_id,
+    options,
+    feedback=None,
+    *,
+    mark_seen=False,
+):
+    """共享投票校验与记录逻辑，返回归一化后的本次提交。
+
+    `options` 接受 parse_option_list 支持的旧格式；`[0]` 或 `[]` 表示跳过。
+    默认仍要求公告已经展示。人类网页接口可传 `mark_seen=True`，把“已展示/已读”
+    与投票写入放在同一写事务里，避免前端已读请求和提交请求竞态。有效选项
+    首次写入后不可修改；`BEGIN IMMEDIATE` 内检查既有票，避免并发首投互相覆盖。
     """
     if not player_id:
         raise AnnouncementError("缺少 player_id。")
@@ -368,36 +474,49 @@ def record_vote(player_id, announcement_id, options):
     if not announcement_id:
         raise AnnouncementError("缺少投票编号。")
 
-    picks = []
-    for raw in options or []:
-        try:
-            picks.append(int(raw))
-        except (TypeError, ValueError):
-            raise AnnouncementError("选项须为整数序号。")
-
     now = _now_iso()
     with _connect() as conn:
         init_db(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT type, options, multiple, expires_at FROM announcements WHERE id = ?",
+            "SELECT type, options, multiple, expires_at, allow_feedback"
+            " FROM announcements WHERE id = ?",
             (announcement_id,),
         ).fetchone()
         if row is None:
             raise AnnouncementError(f"没有编号为 {announcement_id} 的通知。")
 
-        ann_type, options_raw, multiple, expires_at = row
+        ann_type, options_raw, multiple, expires_at, allow_feedback = row
         if ann_type != "poll":
             raise AnnouncementError(f"通知 {announcement_id} 不是投票，无需回复。")
+
+        choices = _parse_options(options_raw)
+        existing = conn.execute(
+            "SELECT votes FROM announcement_reads"
+            " WHERE player_id = ? AND announcement_id = ?",
+            (player_id, announcement_id),
+        ).fetchone()
+        if existing is not None and _has_effective_vote(
+            existing[0], len(choices)
+        ):
+            raise AnnouncementError(
+                "你已提交有效选票，选票和补充意见不可修改。"
+            )
+
         if expires_at is not None and expires_at <= now:
             raise AnnouncementError(f"投票 {announcement_id} 已经结束了。")
 
-        seen = conn.execute(
-            "SELECT 1 FROM announcement_reads"
-            " WHERE player_id = ? AND announcement_id = ? AND read_at NOT LIKE ?",
-            (player_id, announcement_id, _ARCHIVED_READ_PREFIX + "%"),
-        ).fetchone()
-        if seen is None:
-            raise AnnouncementError(f"投票 {announcement_id} 还没推送给你。")
+        raw_picks = parse_option_list(options)
+        picks = []
+        for raw in raw_picks:
+            try:
+                picks.append(int(raw))
+            except (TypeError, ValueError):
+                raise AnnouncementError("选项须为整数序号。")
+        normalized_feedback = _normalize_feedback(feedback)
+        if normalized_feedback is not None and not allow_feedback:
+            raise AnnouncementError(f"投票 {announcement_id} 未开放文字反馈。")
 
         # 0 = 跳过。跟别的序号混着传属于表达矛盾，直接拒绝。
         if 0 in picks:
@@ -405,7 +524,6 @@ def record_vote(player_id, announcement_id, options):
                 raise AnnouncementError("0（跳过）不能和其他选项一起选。")
             picks = []
 
-        choices = _parse_options(options_raw)
         for pick in picks:
             if not 1 <= pick <= len(choices):
                 raise AnnouncementError(
@@ -416,16 +534,182 @@ def record_vote(player_id, announcement_id, options):
         if not multiple and len(picks) > 1:
             raise AnnouncementError(f"投票 {announcement_id} 是单选，只能选一个。")
 
+        if mark_seen:
+            conn.execute(
+                "INSERT OR IGNORE INTO announcement_reads"
+                " (player_id, announcement_id, votes, feedback, read_at)"
+                " VALUES (?, ?, NULL, NULL, ?)",
+                (player_id, announcement_id, now),
+            )
+            conn.execute(
+                "UPDATE announcement_reads SET read_at = ?"
+                " WHERE player_id = ? AND announcement_id = ? AND read_at LIKE ?",
+                (
+                    now,
+                    player_id,
+                    announcement_id,
+                    _ARCHIVED_READ_PREFIX + "%",
+                ),
+            )
+
+        seen = conn.execute(
+            "SELECT 1 FROM announcement_reads"
+            " WHERE player_id = ? AND announcement_id = ? AND read_at NOT LIKE ?",
+            (player_id, announcement_id, _ARCHIVED_READ_PREFIX + "%"),
+        ).fetchone()
+        if seen is None:
+            raise AnnouncementError(f"投票 {announcement_id} 还没推送给你。")
+
         conn.execute(
-            "UPDATE announcement_reads SET votes = ?, read_at = ?"
+            "UPDATE announcement_reads SET votes = ?, feedback = ?, read_at = ?"
             " WHERE player_id = ? AND announcement_id = ?",
-            (json.dumps(picks), now, player_id, announcement_id),
+            (
+                json.dumps(picks),
+                normalized_feedback,
+                now,
+                player_id,
+                announcement_id,
+            ),
         )
 
-    if not picks:
-        return f"已记录：跳过投票 {announcement_id}。"
-    labels = "、".join(f"{i}. {choices[i - 1]}" for i in picks)
-    return f"已记录你对投票 {announcement_id} 的选择：{labels}。"
+    return {
+        "announcement_id": announcement_id,
+        "options": picks,
+        "labels": [choices[index - 1] for index in picks],
+        "skipped": not picks,
+        "feedback": normalized_feedback,
+        "allow_feedback": bool(allow_feedback),
+        "locked": bool(picks),
+    }
+
+
+def record_vote(player_id, announcement_id, options, feedback=None):
+    """记录一次投票并返回机器端兼容的文字结果。
+
+    只有实际展示过（read_at 不是 archived: 状态）的投票才能回复；一旦提交
+    有效选项，选票和补充意见均不可修改。跳过不算有效票，之后仍可正式投票。
+    """
+    result = submit_vote(
+        player_id,
+        announcement_id,
+        options,
+        feedback=feedback,
+    )
+    feedback_suffix = "并保存了补充意见。" if result["feedback"] else ""
+    if result["skipped"]:
+        return f"已记录：跳过投票 {result['announcement_id']}。{feedback_suffix}"
+    labels = "、".join(
+        f"{index}. {label}"
+        for index, label in zip(result["options"], result["labels"])
+    )
+    return (
+        f"已记录你对投票 {result['announcement_id']} 的选择：{labels}。"
+        f"{feedback_suffix}"
+    )
+
+
+def get_poll_results(announcement_id):
+    """运营侧本机只读查询：返回票数、有效参与数和文字意见。
+
+    本函数不调用 init_db、不执行迁移；普通 HTTP/MCP API 没有暴露该结果。
+    """
+    announcement_id = str(announcement_id or "").strip()
+    if not announcement_id:
+        raise AnnouncementError("缺少投票编号。")
+
+    with _connect_read_only() as conn:
+        conn.row_factory = sqlite3.Row
+        announcement_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(announcements)")
+        }
+        read_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(announcement_reads)")
+        }
+        allow_feedback_sql = (
+            "allow_feedback" if "allow_feedback" in announcement_columns else "0"
+        )
+        feedback_sql = "feedback" if "feedback" in read_columns else "NULL"
+        announcement = conn.execute(
+            f"SELECT id, type, title, options, multiple, {allow_feedback_sql}"
+            " AS allow_feedback FROM announcements WHERE id = ?",
+            (announcement_id,),
+        ).fetchone()
+        if announcement is None:
+            raise AnnouncementError(f"没有编号为 {announcement_id} 的通知。")
+        if announcement["type"] != "poll":
+            raise AnnouncementError(f"通知 {announcement_id} 不是投票。")
+        responses = conn.execute(
+            f"SELECT player_id, votes, {feedback_sql} AS feedback, read_at"
+            " FROM announcement_reads WHERE announcement_id = ?"
+            " ORDER BY read_at, player_id",
+            (announcement_id,),
+        ).fetchall()
+
+    choices = _parse_options(announcement["options"])
+    counts = [0] * len(choices)
+    participant_counts = {"total": 0, "human": 0, "machine": 0}
+    skipped_responses = 0
+    feedback_items = []
+    for response in responses:
+        votes_raw = response["votes"]
+        stored_picks = []
+        if votes_raw is not None:
+            try:
+                parsed = json.loads(votes_raw)
+            except (TypeError, ValueError):
+                parsed = None
+            if isinstance(parsed, list):
+                for value in parsed:
+                    if isinstance(value, bool):
+                        continue
+                    try:
+                        pick = int(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if 1 <= pick <= len(choices) and pick not in stored_picks:
+                        stored_picks.append(pick)
+        identity = str(response["player_id"])
+        # 新入口禁止游客；若老库遗留过 guest 行，运营统计也不把它当账号参与。
+        if identity.startswith("guest:"):
+            continue
+        identity_type = "human" if identity.startswith("human:") else "machine"
+        effective = bool(stored_picks)
+        if effective:
+            participant_counts["total"] += 1
+            participant_counts[identity_type] += 1
+            for pick in stored_picks:
+                counts[pick - 1] += 1
+        elif votes_raw is not None:
+            skipped_responses += 1
+
+        feedback = response["feedback"]
+        if isinstance(feedback, str) and feedback:
+            feedback_items.append(
+                {
+                    "identity": identity,
+                    "identity_type": identity_type,
+                    "options": stored_picks,
+                    "labels": [choices[pick - 1] for pick in stored_picks],
+                    "effective_vote": effective,
+                    "feedback": feedback,
+                    "updated_at": response["read_at"],
+                }
+            )
+
+    return {
+        "id": announcement["id"],
+        "title": announcement["title"],
+        "multiple": bool(announcement["multiple"]),
+        "allow_feedback": bool(announcement["allow_feedback"]),
+        "options": [
+            {"index": index, "label": label, "votes": counts[index - 1]}
+            for index, label in enumerate(choices, 1)
+        ],
+        "valid_participants": participant_counts,
+        "skipped_responses": skipped_responses,
+        "feedback": feedback_items,
+    }
 
 
 def create_announcement(
@@ -437,6 +721,7 @@ def create_announcement(
     options=None,
     multiple=False,
     expires_at=None,
+    allow_feedback=False,
 ):
     """运营侧写入一条通知/投票。重复 id 覆盖旧内容（已读记录不受影响）。"""
     if ann_type not in ("notice", "poll"):
@@ -455,8 +740,9 @@ def create_announcement(
         init_db(conn)
         conn.execute(
             "INSERT OR REPLACE INTO announcements"
-            " (id, type, title, content, options, multiple, target_game,"
-            "  created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " (id, type, title, content, options, multiple, allow_feedback,"
+            "  target_game, created_at, expires_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(ann_id),
                 ann_type,
@@ -464,6 +750,7 @@ def create_announcement(
                 content.strip(),
                 json.dumps(list(options), ensure_ascii=False) if options else None,
                 1 if multiple else 0,
+                1 if ann_type == "poll" and allow_feedback else 0,
                 target_game.strip(),
                 _now_iso(),
                 expires_at,

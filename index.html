@@ -1536,6 +1536,126 @@
       line-height: 1.55;
     }
 
+    .announcement-poll-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 2px;
+      padding-top: 10px;
+      border-top: 3px dashed var(--purple-light);
+    }
+
+    .announcement-choice-list {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .announcement-choice-list legend {
+      margin-bottom: 7px;
+      color: var(--purple-darker);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .announcement-choice {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr);
+      align-items: start;
+      gap: 8px;
+      min-height: 38px;
+      padding: 8px 9px;
+      color: var(--purple-dark);
+      background: var(--purple-light);
+      border: 2px solid #BEB1D1;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .announcement-choice:hover,
+    .announcement-choice:focus-within {
+      border-color: var(--purple);
+    }
+
+    .announcement-choice.skip {
+      background: #fff;
+      color: var(--muted);
+    }
+
+    .announcement-choice input {
+      width: 17px;
+      height: 17px;
+      margin: 0;
+      accent-color: var(--pink-dark);
+    }
+
+    .announcement-feedback-label {
+      display: grid;
+      gap: 6px;
+      color: var(--purple-darker);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .announcement-feedback-label textarea {
+      width: 100%;
+      min-height: 82px;
+      resize: vertical;
+      padding: 9px;
+      color: var(--text);
+      background: #fff;
+      border: 3px solid #BEB1D1;
+      border-radius: 0;
+      font: 12px/1.6 "Courier New", Courier, monospace;
+    }
+
+    .announcement-feedback-label textarea:focus {
+      outline: 2px solid var(--pink);
+      outline-offset: 1px;
+      border-color: var(--purple);
+    }
+
+    .announcement-vote-status,
+    .announcement-vote-error,
+    .announcement-login-hint {
+      margin: 0;
+      padding: 8px 9px;
+      font-size: 10px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .announcement-vote-status {
+      color: #326342;
+      background: #E9F7EC;
+      border-left: 4px solid #69A778;
+    }
+
+    .announcement-vote-error {
+      color: #8A2948;
+      background: #FFF0F5;
+      border-left: 4px solid var(--pink-dark);
+    }
+
+    .announcement-login-hint {
+      color: var(--muted);
+      background: var(--purple-light);
+    }
+
+    .announcement-vote-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .announcement-vote-actions .pixel-btn {
+      min-width: 112px;
+    }
+
     .announcement-empty {
       margin: 0;
       color: var(--muted);
@@ -2685,6 +2805,8 @@
       #announcementModal .modal-box { max-height: calc(100dvh - 102px); }
       .announcement-list { max-height: calc(100dvh - 220px); }
       .announcement-item { padding: 12px; }
+      .announcement-choice { min-height: 42px; font-size: 12px; }
+      .announcement-vote-actions .pixel-btn { width: 100%; min-height: 42px; }
       #historyModal .modal-box { max-height: calc(100dvh - 102px); }
       #historyModal .history-content { max-height: calc(100dvh - 245px); }
       #historyModal .history-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -4005,6 +4127,12 @@
       authenticated: false,
       announcements: [],
       unreadCount: 0,
+      feedbackMaxLength: 500,
+      drafts: {},
+      voteUi: {},
+      draftToken: "",
+      visibleIds: [],
+      automatic: false,
       error: "",
       requestId: 0,
     };
@@ -4201,32 +4329,139 @@
       return !target || target === "all" ? "全站" : target.toUpperCase();
     }
 
+    function initialAnnouncementDraft(item) {
+      const vote = item && item.my_vote;
+      return {
+        selected: Array.isArray(vote?.options) ? vote.options.map(Number).filter((value) => value >= 1) : [],
+        skip: Boolean(vote?.skipped),
+        feedback: typeof vote?.feedback === "string" ? vote.feedback : "",
+        dirty: false,
+      };
+    }
+
+    function syncAnnouncementDrafts(items, requestToken) {
+      if (announcementState.draftToken !== requestToken) {
+        announcementState.drafts = {};
+        announcementState.voteUi = {};
+        announcementState.draftToken = requestToken;
+      }
+      items.forEach((item) => {
+        if (item.type !== "poll") return;
+        const current = announcementState.drafts[item.id];
+        if (!current || !current.dirty) {
+          announcementState.drafts[item.id] = initialAnnouncementDraft(item);
+        }
+      });
+    }
+
+    function submittedAnnouncementVoteText(item) {
+      const vote = item.my_vote;
+      if (!vote) return "";
+      const selected = Array.isArray(vote.options) ? vote.options : [];
+      const feedbackText = vote.feedback ? `\n补充意见：${vote.feedback}` : "";
+      if (!selected.length) {
+        return `已跳过本次投票${feedbackText}\n跳过不算有效投票，之后仍可提交。`;
+      }
+      const choiceText = selected.map((index) => `${index}. ${item.options[index - 1] || "未知选项"}`).join("、");
+      return `本人已投：${choiceText}${feedbackText}\n提交后不可修改。`;
+    }
+
+    function renderAnnouncementPoll(item, itemIndex) {
+      if (!Array.isArray(item.options) || !item.options.length) {
+        return '<p class="announcement-vote-error">投票选项暂不可用。</p>';
+      }
+      if (!announcementState.authenticated) {
+        return `
+          <ol class="announcement-options">${item.options.map((option) => `<li>${escapeHtml(option)}</li>`).join("")}</ol>
+          <p class="announcement-login-hint">登录人类账号后可参与投票；游客查看不会留下投票记录。</p>
+        `;
+      }
+      const hasEffectiveVote = Boolean(item.my_vote && Array.isArray(item.my_vote.options) && item.my_vote.options.length);
+      if (hasEffectiveVote) {
+        return `<p class="announcement-vote-status">${escapeHtml(submittedAnnouncementVoteText(item))}</p>`;
+      }
+      const draft = announcementState.drafts[item.id] || initialAnnouncementDraft(item);
+      const selected = new Set(draft.selected.map(Number));
+      const ui = announcementState.voteUi[item.id] || {};
+      const inputType = item.multiple ? "checkbox" : "radio";
+      const inputName = `announcement-choice-${itemIndex}`;
+      const choices = item.options.map((option, index) => {
+        const value = index + 1;
+        return `
+          <label class="announcement-choice">
+            <input type="${inputType}" name="${inputName}" value="${value}" data-poll-option ${selected.has(value) ? "checked" : ""} ${ui.saving ? "disabled" : ""}>
+            <span>${value}. ${escapeHtml(option)}</span>
+          </label>
+        `;
+      }).join("");
+      const feedback = item.allow_feedback ? `
+        <label class="announcement-feedback-label">
+          补充意见（可选，所有选项都能填写）
+          <textarea data-poll-feedback maxlength="${announcementState.feedbackMaxLength}" placeholder="最多 ${announcementState.feedbackMaxLength} 字，将按纯文本保存" ${ui.saving ? "disabled" : ""}>${escapeHtml(draft.feedback)}</textarea>
+        </label>
+      ` : "";
+      const submitted = item.my_vote
+        ? `<p class="announcement-vote-status">${escapeHtml(submittedAnnouncementVoteText(item))}</p>`
+        : "";
+      const error = ui.error
+        ? `<p class="announcement-vote-error" role="alert">${escapeHtml(ui.error)}</p>`
+        : "";
+      return `
+        <form class="announcement-poll-form" data-announcement-vote="${escapeHtml(item.id)}">
+          ${submitted}
+          <fieldset class="announcement-choice-list">
+            <legend>${item.multiple ? "可选择一项或多项" : "请选择一项"}</legend>
+            ${choices}
+            <label class="announcement-choice skip">
+              <input type="${inputType}" name="${inputName}" value="0" data-poll-skip ${draft.skip ? "checked" : ""} ${ui.saving ? "disabled" : ""}>
+              <span>跳过本次投票</span>
+            </label>
+          </fieldset>
+          ${feedback}
+          ${error}
+          <p class="announcement-vote-status">提示：提交后不可修改；若只选“跳过”，之后仍可正式投票。</p>
+          <div class="announcement-vote-actions">
+            <button class="pixel-btn" type="submit" ${ui.saving ? "disabled" : ""}>${ui.saving ? "提交中..." : "提交投票"}</button>
+          </div>
+        </form>
+      `;
+    }
+
     function renderAnnouncementItems(items) {
       if (!items.length) {
         return `<p class="announcement-empty">${announcementState.error ? escapeHtml(announcementState.error) : "暂无通知"}</p>`;
       }
-      return items.map((item) => {
-        const options = item.type === "poll" && item.options.length
-          ? `<ol class="announcement-options">${item.options.map((option) => `<li>${escapeHtml(option)}</li>`).join("")}</ol>`
-          : "";
+      return items.map((item, itemIndex) => {
+        const poll = item.type === "poll" ? renderAnnouncementPoll(item, itemIndex) : "";
         const pollLabel = item.type === "poll" ? ` · ${item.multiple ? "多选投票" : "单选投票"}` : "";
         return `
-          <article class="announcement-item${item.unread ? " unread" : ""}">
+          <article class="announcement-item${item.unread ? " unread" : ""}" data-announcement-item="${escapeHtml(item.id)}">
             <h3>${escapeHtml(item.title || "系统通知")}</h3>
             <div class="announcement-meta">${escapeHtml(item.created_at || "")} · ${escapeHtml(announcementTargetLabel(item.target_game))}${pollLabel}</div>
             <p class="announcement-content">${escapeHtml(item.content || "")}</p>
-            ${options}
+            ${poll}
           </article>
         `;
       }).join("");
     }
 
+    function visibleAnnouncements() {
+      const byId = new Map(announcementState.announcements.map((item) => [item.id, item]));
+      return announcementState.visibleIds.map((id) => byId.get(id)).filter(Boolean);
+    }
+
+    function renderVisibleAnnouncements() {
+      $("announcementList").innerHTML = renderAnnouncementItems(visibleAnnouncements());
+    }
+
     function showAnnouncements(items, automatic = false) {
+      announcementState.visibleIds = items.map((item) => item.id);
+      announcementState.automatic = automatic;
       $("announcementTitle").textContent = automatic ? "新通知" : "通知";
       $("announcementHint").textContent = automatic
-        ? "以下通知仅自动展示一次，可随时点铃铛重新查看。"
-        : (announcementState.authenticated ? "打开列表后，未读通知会标记为已读。" : "游客可查看通知，但不会记录已读状态。");
-      $("announcementList").innerHTML = renderAnnouncementItems(items);
+        ? "以下通知仅自动展示一次，可随时点铃铛重新查看；已读不等于投票。"
+        : (announcementState.authenticated ? "打开列表后，未读通知会标记为已读；已读不等于投票。" : "游客可查看通知，但不会记录已读或投票状态。");
+      renderVisibleAnnouncements();
       openModal("announcementModal");
     }
 
@@ -4252,6 +4487,80 @@
       }
     }
 
+    function announcementDraftFromForm(form) {
+      const selected = Array.from(form.querySelectorAll("[data-poll-option]:checked"))
+        .map((input) => Number(input.value))
+        .filter((value) => Number.isInteger(value) && value >= 1);
+      const feedbackInput = form.querySelector("[data-poll-feedback]");
+      return {
+        selected,
+        skip: Boolean(form.querySelector("[data-poll-skip]:checked")),
+        feedback: feedbackInput ? feedbackInput.value : "",
+        dirty: true,
+      };
+    }
+
+    function updateAnnouncementDraft(event) {
+      const form = event.target.closest("[data-announcement-vote]");
+      if (!form) return;
+      if (event.type === "change" && event.target.matches("[data-poll-skip]") && event.target.checked) {
+        form.querySelectorAll("[data-poll-option]").forEach((input) => { input.checked = false; });
+      } else if (event.type === "change" && event.target.matches("[data-poll-option]") && event.target.checked) {
+        const skip = form.querySelector("[data-poll-skip]");
+        if (skip) skip.checked = false;
+      }
+      const announcementId = form.dataset.announcementVote;
+      announcementState.drafts[announcementId] = announcementDraftFromForm(form);
+      const ui = announcementState.voteUi[announcementId];
+      if (ui?.error) ui.error = "";
+    }
+
+    async function submitAnnouncementVote(form) {
+      const announcementId = form.dataset.announcementVote;
+      const item = announcementState.announcements.find((entry) => entry.id === announcementId);
+      if (!item || !announcementState.authenticated) return;
+      const ui = announcementState.voteUi[announcementId] || {};
+      if (ui.saving) return;
+
+      const draft = announcementDraftFromForm(form);
+      announcementState.drafts[announcementId] = draft;
+      if (!draft.skip && !draft.selected.length) {
+        announcementState.voteUi[announcementId] = {saving: false, error: "请选择至少一个选项，或明确选择“跳过本次投票”。"};
+        renderVisibleAnnouncements();
+        return;
+      }
+
+      announcementState.voteUi[announcementId] = {saving: true, error: ""};
+      renderVisibleAnnouncements();
+      const requestToken = token();
+      try {
+        const res = await fetch("/api/announcements/vote", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({
+            announcement_id: announcementId,
+            options: draft.skip ? [0] : draft.selected,
+            feedback: item.allow_feedback ? draft.feedback : undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "投票提交失败");
+        if (requestToken !== token()) return;
+        item.my_vote = data.vote;
+        item.unread = false;
+        announcementState.drafts[announcementId] = initialAnnouncementDraft(item);
+        announcementState.voteUi[announcementId] = {saving: false, error: ""};
+        announcementState.unreadCount = announcementState.announcements.filter((entry) => entry.unread).length;
+        renderNotificationBell();
+        renderVisibleAnnouncements();
+        showToast(item.my_vote?.skipped ? "已记录跳过，之后仍可投票" : "投票已提交，之后不可修改");
+      } catch (err) {
+        if (requestToken !== token()) return;
+        announcementState.voteUi[announcementId] = {saving: false, error: err.message || "投票提交失败"};
+        renderVisibleAnnouncements();
+      }
+    }
+
     async function loadAnnouncements({autoPopup = false} = {}) {
       const requestId = ++announcementState.requestId;
       const requestToken = token();
@@ -4269,6 +4578,8 @@
         announcementState.authenticated = Boolean(data.authenticated);
         announcementState.announcements = Array.isArray(data.announcements) ? data.announcements : [];
         announcementState.unreadCount = Number(data.unread_count) || 0;
+        announcementState.feedbackMaxLength = Number(data.feedback_max_length) || 500;
+        syncAnnouncementDrafts(announcementState.announcements, requestToken);
         renderNotificationBell();
         const unread = announcementState.announcements.filter((item) => item.unread);
         if (autoPopup && announcementState.authenticated && unread.length) {
@@ -7541,6 +7852,14 @@
     $("searchInput").addEventListener("focus", () => document.body.classList.add("searching"));
     $("searchInput").addEventListener("blur", () => document.body.classList.remove("searching"));
     $("notificationBell").addEventListener("click", openAnnouncementList);
+    $("announcementList").addEventListener("change", updateAnnouncementDraft);
+    $("announcementList").addEventListener("input", updateAnnouncementDraft);
+    $("announcementList").addEventListener("submit", (event) => {
+      const form = event.target.closest("[data-announcement-vote]");
+      if (!form) return;
+      event.preventDefault();
+      submitAnnouncementVote(form);
+    });
     document.querySelectorAll("[data-detail-tab]").forEach((button) => {
       button.addEventListener("click", () => setDetailTab(button.dataset.detailTab));
     });
