@@ -479,6 +479,36 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   color: #166534;
 }
 
+.room-id-copy-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.room-id-copy {
+  display: inline-flex;
+  align-items: center;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: copy;
+}
+
+.room-id-copy:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.room-id-copy:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
 .online-dot {
   width: 8px;
   height: 8px;

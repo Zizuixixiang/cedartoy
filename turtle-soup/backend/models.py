@@ -1,6 +1,11 @@
-from pydantic import BaseModel, Field
+from typing import Annotated
 
-from utils import ANSWER_LIMIT, SURFACE_LIMIT, TAGS_LIMIT, TITLE_LIMIT
+from pydantic import BaseModel, BeforeValidator, Field
+
+from utils import ANSWER_LIMIT, SURFACE_LIMIT, TAGS_LIMIT, TITLE_LIMIT, normalize_room_id
+
+
+NormalizedRoomId = Annotated[str, BeforeValidator(normalize_room_id)]
 
 
 class AuthBody(BaseModel):
@@ -27,27 +32,27 @@ class PuzzleBody(BaseModel):
 
 
 class ContentBody(BaseModel):
-    room_id: str
+    room_id: NormalizedRoomId
     content: str = Field(min_length=1, max_length=200)
 
 
 class GuessBody(BaseModel):
-    room_id: str
+    room_id: NormalizedRoomId
     content: str = Field(min_length=1, max_length=1000)
 
 
 class HintRequestBody(BaseModel):
-    room_id: str
+    room_id: NormalizedRoomId
     confirm_hint: bool = False
 
 
 class RevealAnswerBody(BaseModel):
-    room_id: str
+    room_id: NormalizedRoomId
     confirm_reveal: bool = False
 
 
 class HintResponseBody(BaseModel):
-    room_id: str
+    room_id: NormalizedRoomId
     log_id: int
     accept: bool
 
@@ -58,6 +63,6 @@ class NoteBody(BaseModel):
 
 class ReportBody(BaseModel):
     target_player_id: int | None = None
-    room_id: str | None = None
+    room_id: NormalizedRoomId | None = None
     log_id: int | None = None
     reason: str = Field(default="", max_length=300)

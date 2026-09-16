@@ -42,6 +42,16 @@ def clean_content(value: str, limit: int = 200) -> str:
     return text
 
 
+def normalize_room_id(value: object) -> object:
+    """Normalize room IDs pasted from UI labels such as ``#AbCd1234``."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.startswith("#"):
+        text = text[1:].strip()
+    return text
+
+
 def room_id() -> str:
     return "".join(secrets.choice(ROOM_ALPHABET) for _ in range(8))
 

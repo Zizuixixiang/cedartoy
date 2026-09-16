@@ -13,7 +13,8 @@ from pydantic import BaseModel, ConfigDict
 
 from auth_utils import hash_password
 from database import execute, fetch_all, fetch_one, get_db, get_setting
-from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody, NoteBody, RevealAnswerBody, RoomCreateBody
+from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody, NormalizedRoomId, NoteBody, RevealAnswerBody, RoomCreateBody
+from presence import enter_room
 from routers.game import ask as game_ask
 from routers.game import _ask_impl
 from routers.game import generate as game_generate
@@ -50,7 +51,7 @@ class PlayBody(BaseModel):
     username: str | None = None
     password: str | None = None
     avatar: str | None = None
-    room_id: str | None = None
+    room_id: NormalizedRoomId | None = None
     content: str | None = None
     puzzle_id: int | None = None
     title: str | None = None
@@ -183,6 +184,8 @@ async def play(body: PlayBody):
         )
         if not room:
             raise HTTPException(status_code=404, detail="房间不存在")
+        player = await _mcp_player(body.path_token)
+        await enter_room(body.room_id, player["id"])
         return room
     if body.action == "generate":
         return await game_generate({"style": body.style or "horror"})

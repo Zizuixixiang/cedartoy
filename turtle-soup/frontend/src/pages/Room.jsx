@@ -15,6 +15,7 @@ import GameLog from '../components/GameLog.jsx'
 import LoginModal from '../components/LoginModal.jsx'
 import MineDrawer from '../components/MineDrawer.jsx'
 import NoteBoard from '../components/NoteBoard.jsx'
+import RoomIdCopy from '../components/RoomIdCopy.jsx'
 import { soupName } from '../utils/display.js'
 
 function parseTags(tags) {
@@ -360,7 +361,7 @@ export default function Room() {
           <div className="lobby-title"><span className="pixel-mark">▣</span><span>游戏大厅</span></div>
           <div className={`lobby-status${finished ? '' : ' playing'}`}>
             <span className="online-dot" />
-            房间 <b>#{room.id}</b>
+            <RoomIdCopy roomId={room.id} />
             <span>{finished ? '已结束' : '进行中'}</span>
           </div>
         </div>

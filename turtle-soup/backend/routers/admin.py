@@ -14,7 +14,7 @@ from judge import (
     reset_fail_counts,
     test_config,
 )
-from models import RoomCreateBody
+from models import NormalizedRoomId, RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, SQL_NOW, clean_content, room_id
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -116,7 +116,7 @@ class RoomAdminBody(BaseModel):
 class ReportAdminBody(BaseModel):
     reporter_id: Optional[int] = None
     target_player_id: Optional[int] = None
-    room_id: Optional[str] = None
+    room_id: NormalizedRoomId | None = None
     log_id: Optional[int] = None
     reason: str = ""
     status: str = "pending"
@@ -319,14 +319,14 @@ async def create_admin_room(body: RoomAdminBody, admin: dict = Depends(admin_pla
 
 
 @router.post("/rooms/{room_id}/finish")
-async def finish_room(room_id: str, admin: dict = Depends(admin_player)):
+async def finish_room(room_id: NormalizedRoomId, admin: dict = Depends(admin_player)):
     del admin
     await execute(f"UPDATE rooms SET status = 'finished', finished_at = {SQL_NOW} WHERE id = ?", (room_id,))
     return {"ok": True}
 
 
 @router.put("/rooms/{room_id}")
-async def update_room(room_id: str, body: RoomAdminBody, admin: dict = Depends(admin_player)):
+async def update_room(room_id: NormalizedRoomId, body: RoomAdminBody, admin: dict = Depends(admin_player)):
     del admin
     existing = await fetch_one("SELECT id FROM rooms WHERE id = ?", (room_id,))
     if not existing:
@@ -347,7 +347,7 @@ async def update_room(room_id: str, body: RoomAdminBody, admin: dict = Depends(a
 
 
 @router.delete("/rooms/{room_id}")
-async def delete_room(room_id: str, admin: dict = Depends(admin_player)):
+async def delete_room(room_id: NormalizedRoomId, admin: dict = Depends(admin_player)):
     del admin
     await execute("UPDATE reports SET room_id = NULL WHERE room_id = ?", (room_id,))
     await execute(

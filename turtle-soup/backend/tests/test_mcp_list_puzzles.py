@@ -1,4 +1,6 @@
+import sqlite3
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -28,6 +30,7 @@ database_stub.get_setting = AsyncMock(return_value=None)
 sys.modules["database"] = database_stub
 
 import mcp_app  # noqa: E402
+import presence  # noqa: E402
 
 
 def list_body(**kwargs):
@@ -135,6 +138,101 @@ class ListPuzzlesTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(raised.exception.status_code, 400)
                 fetch_one.assert_not_awaited()
                 fetch_all.assert_not_awaited()
+
+
+class RoomIdCompatibilityTests(unittest.TestCase):
+    def test_play_body_normalizes_hash_prefix_and_outer_whitespace(self):
+        actions = (
+            "join",
+            "status",
+            "ask",
+            "guess",
+            "hint_request",
+            "note_list",
+            "note_add",
+            "close_room",
+        )
+        for action in actions:
+            for raw in ("#KXXEwLoF", " KXXEwLoF ", "  # KXXEwLoF  "):
+                with self.subTest(action=action, raw=raw):
+                    body = mcp_app.PlayBody(
+                        game="turtle_soup",
+                        action=action,
+                        room_id=raw,
+                    )
+                    self.assertEqual(body.room_id, "KXXEwLoF")
+
+    def test_play_body_preserves_room_id_case(self):
+        for room_id in ("KXXEwLoF", "kxxewlof", "KxxeWlOf"):
+            with self.subTest(room_id=room_id):
+                body = mcp_app.PlayBody(
+                    game="turtle_soup",
+                    action="status",
+                    room_id=f"#{room_id}",
+                )
+                self.assertEqual(body.room_id, room_id)
+
+
+class JoinPresenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hash_prefixed_mixed_case_join_persists_one_presence_row(self):
+        room = {
+            "id": "KXXEwLoF",
+            "title": "混合大小写房间",
+            "surface": "汤面",
+            "status": "playing",
+            "created_at": "2026-09-16 12:00:00",
+        }
+        player = {"id": 37, "username": "小机"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            connection = sqlite3.connect(Path(temp_dir) / "presence.db")
+            connection.execute(
+                """
+                CREATE TABLE room_presence (
+                    room_id TEXT NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    joined_at TEXT NOT NULL,
+                    last_active_at TEXT NOT NULL,
+                    PRIMARY KEY (room_id, player_id)
+                )
+                """
+            )
+
+            async def execute_presence(query, params=()):
+                cursor = connection.execute(query, tuple(params))
+                connection.commit()
+                return int(cursor.lastrowid or 0)
+
+            fetch_one = AsyncMock(return_value=room)
+            mcp_player = AsyncMock(return_value=player)
+            try:
+                with (
+                    patch.object(mcp_app, "fetch_one", new=fetch_one),
+                    patch.object(mcp_app, "_mcp_player", new=mcp_player),
+                    patch.object(presence, "execute", new=execute_presence),
+                    patch.object(mcp_app, "enter_room", new=presence.enter_room),
+                ):
+                    for raw_room_id in (" #KXXEwLoF ", "KXXEwLoF"):
+                        result = await mcp_app.play(mcp_app.PlayBody(
+                            game="turtle_soup",
+                            action="join",
+                            path_token="machine-token",
+                            room_id=raw_room_id,
+                        ))
+                        self.assertEqual(result, room)
+
+                rows = connection.execute(
+                    "SELECT room_id, player_id FROM room_presence"
+                ).fetchall()
+            finally:
+                connection.close()
+
+        self.assertEqual(rows, [("KXXEwLoF", 37)])
+        self.assertEqual(
+            [call.args[1] for call in fetch_one.await_args_list],
+            [("KXXEwLoF",), ("KXXEwLoF",)],
+        )
+        self.assertEqual(mcp_player.await_count, 2)
 
 
 class AccountAvatarCompatibilityTests(unittest.TestCase):

@@ -2,7 +2,8 @@
   "scripts": {
     "check:eco-result": "node scripts/eco_result_null_check.js",
     "check:machine-token": "node scripts/check_machine_token_ui.js",
-    "check:password-ui": "node scripts/check_password_ui.js"
+    "check:password-ui": "node scripts/check_password_ui.js",
+    "check:turtle-room-id": "node scripts/check_turtle_room_id_copy.js"
   },
   "dependencies": {
     "jsdom": "^29.1.1"

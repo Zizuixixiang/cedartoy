@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth_utils import current_player
 from database import execute, fetch_all, fetch_one, get_setting
 from judge import public_answer_from_full_answer, scan_text
-from models import RoomCreateBody
+from models import NormalizedRoomId, RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT, SQL_NOW, clean_content, public_player, room_id
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
@@ -244,7 +244,7 @@ async def create_room(body: RoomCreateBody, player: dict = Depends(current_playe
 
 
 @router.get("/{room_id}")
-async def get_room(room_id: str, player: dict = Depends(current_player)):
+async def get_room(room_id: NormalizedRoomId, player: dict = Depends(current_player)):
     room = await fetch_one(
         """
         SELECT r.id, r.puzzle_id,
@@ -303,7 +303,7 @@ async def get_room(room_id: str, player: dict = Depends(current_player)):
 
 
 @router.post("/{room_id}/close")
-async def close_room(room_id: str, player: dict = Depends(current_player)):
+async def close_room(room_id: NormalizedRoomId, player: dict = Depends(current_player)):
     room = await fetch_one("SELECT * FROM rooms WHERE id = ?", (room_id,))
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")

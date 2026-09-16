@@ -9,6 +9,7 @@ import HistoryModal from '../components/HistoryModal.jsx'
 import Leaderboard from '../components/Leaderboard.jsx'
 import LoginModal from '../components/LoginModal.jsx'
 import MineDrawer from '../components/MineDrawer.jsx'
+import RoomIdCopy from '../components/RoomIdCopy.jsx'
 import { stripSurfaceColorMarkers } from '../utils/display.js'
 
 const TITLE_MAX = 24
@@ -423,7 +424,7 @@ export default function Lobby() {
                     setSpoilerConfirm(room)
                   }
                 }}>
-                  <div className="room-code">房间 #{room.id}</div>
+                  <RoomIdCopy roomId={room.id} className="room-code" />
                   <div className="room-glyph" aria-hidden="true">?</div>
                   <div className="room-copy">
                     <h2>{roomTitle(room)}</h2>

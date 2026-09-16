@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth_utils import current_player
 from database import execute, fetch_one
-from models import NoteBody
+from models import NormalizedRoomId, NoteBody
 from sse import broadcast
 from utils import ROOM_FINISHED_STATUS_HINT, SQL_NOW, clean_content
 
@@ -49,7 +49,7 @@ async def _note_log_payload(log_id: int) -> dict:
 
 
 @router.post("/{room_id}")
-async def add_note(room_id: str, body: NoteBody, player: dict = Depends(current_player)):
+async def add_note(room_id: NormalizedRoomId, body: NoteBody, player: dict = Depends(current_player)):
     room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (room_id,))
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")
