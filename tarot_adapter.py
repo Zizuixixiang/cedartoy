@@ -1276,7 +1276,7 @@ class TarotWeb:
         tags: ["塔罗", "3D", "MCP"],
         url: "{COVE_REPOSITORY}",
         watchLabel: "开始占问 →",
-        ctaLabel: "适配器 GitHub →",
+        ctaLabel: "GitHub →",
         ranks: []
       }},
 {card_marker}"""

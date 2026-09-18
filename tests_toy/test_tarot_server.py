@@ -522,7 +522,7 @@ class TarotHomepageTests(unittest.TestCase):
         self.assertIn('location: "LOCATION: TAROT RITUAL"', card)
         self.assertNotIn("STARRY RITUAL", card)
         self.assertIn('watchLabel: "开始占问 →"', card)
-        self.assertIn('ctaLabel: "适配器 GitHub →"', card)
+        self.assertIn('ctaLabel: "GitHub →"', card)
         self.assertIn(
             'url: "https://github.com/moonlin1213/cove-tarot-companion"', card
         )
