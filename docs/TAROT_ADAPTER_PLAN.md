@@ -69,7 +69,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 
 ### 3.4 专用 AI 路由
 
-托管版右上角默认显示“本站 Flash”，打开后只有 Flash（Gemini 3.5 Flash）和 Pro（Gemini 3.1 Pro）两个固定选项，并显示“本站暂仅支持所提供的模型。如需自行配置模型，请克隆原版。”及原引擎仓库链接。已去掉 DSH 导入、自填 model / API Key / Base URL 的可见入口。托管 core 不读取这些字段，reading 只从浏览器传 `action_id + model`；旧 `/api/dsh/import`、`/api/models`、`/api/chat` 不解析业务 payload 并返回拒绝。这不等于声称服务器在网络层无法收到恶意 POST；边界是不再收集、保存、转发或使用浏览器凭据。
+托管版右上角默认显示“本站 Flash”，打开后只有 Flash（Gemini 3.5 Flash）和 Pro（Gemini 3.1 Pro）两个固定选项，并显示“本站暂仅支持所提供的模型。如需自行配置模型，请克隆原版。”及 Cove Tarot Companion 适配器仓库链接。已去掉 DSH 导入、自填 model / API Key / Base URL 的可见入口。托管 core 不读取这些字段，reading 只从浏览器传 `action_id + model`；旧 `/api/dsh/import`、`/api/models`、`/api/chat` 不解析业务 payload 并返回拒绝。这不等于声称服务器在网络层无法收到恶意 POST；边界是不再收集、保存、转发或使用浏览器凭据。
 
 reading 创建时先校验两个 allowlist 模型，再把实际选择写入幂等记录。同一 `action_id` 即使重放时换了选项，也只返回首次的模型与结果，不再发付费请求。bridge 仅筛选相同 `purpose='tarot' AND model=<已锁定模型>` 的配置；中断、失败或未配置都不跨模型回退。浏览器 bootstrap/SSE 和 MCP `status/result` 都返回同一存储 model/source。用户后续手动换模型只影响下一个新解读，不会自动重跑既有记录。
 

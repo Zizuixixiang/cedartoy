@@ -1201,7 +1201,7 @@ class TarotWeb:
     </div>
     </div>"""
         managed_settings = f"""    <div class="settings-body managed-settings">
-      <p class="managed-model-note">本站暂仅支持所提供的模型。如需自行配置模型，请克隆<a href="{RITUAL_REPOSITORY}" target="_blank" rel="noopener noreferrer">原版</a>。</p>
+      <p class="managed-model-note">本站暂仅支持所提供的模型。如需自行配置模型，请克隆<a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">原版</a>。</p>
       <div id="providerList" class="provider-list" aria-label="本站塔罗模型"></div>
       <div class="managed-compat" hidden aria-hidden="true">
         <div id="dshBanner"></div><button id="dshImportBtn" disabled></button>

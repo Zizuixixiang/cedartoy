@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tarot_adapter import (
     RITUAL_DISPLAY_NAME,
-    RITUAL_REPOSITORY,
+    COVE_REPOSITORY,
     TAROT_FLASH_MODEL,
     TAROT_PRO_MODEL,
     TarotCatalog,
@@ -609,7 +609,7 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('id="companion-config"', page)
         self.assertIn('id="providerOrb"', page)
         self.assertIn("本站暂仅支持所提供的模型。如需自行配置模型，请克隆", page)
-        self.assertIn(f'href="{RITUAL_REPOSITORY}"', page)
+        self.assertIn(f'href="{COVE_REPOSITORY}"', page)
         self.assertNotIn("导入本机 DSH", page)
         self.assertNotIn("手动填写模型 ID", page)
         self.assertNotIn("Base URL", page)
