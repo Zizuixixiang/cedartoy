@@ -1,4 +1,3 @@
-import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -410,12 +409,6 @@ class TarotStoreIsolationTests(unittest.TestCase):
             rejected_error.exception.message,
             "人类拒绝后 24 小时内不能再次邀请，请等待冷却结束",
         )
-        self.assertTarotStatus(
-            429,
-            lambda: self.store.create_invite(
-                201, 101, "reject_human_requested", human_requested=True
-            ),
-        )
         self.now[0] += 86_401
         self.store.create_invite(201, 101, "limit_001")
         self.store.create_invite(201, 101, "limit_002")
@@ -426,55 +419,37 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertEqual(
             limit_error.exception.message,
             "主动邀请 24 小时内最多 3 次，请等待额度恢复；"
-            "若是人类当前明确要求抽牌，请在 invite 传 human_requested=true",
+            "人类想主动占问可直接从 CedarToy 首页进入塔罗",
         )
-        requested = self.store.create_invite(
-            201, 101, "limit_human_requested", human_requested=True
-        )
-        self.assertEqual(requested["phase"], "pending")
 
-    def test_existing_invite_schema_adds_human_requested_without_data_loss(self):
-        self.temp_dir.cleanup()
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="tarot-adapter-migrate-")
-        path = Path(self.temp_dir.name) / "tarot.db"
-        with sqlite3.connect(path) as conn:
-            conn.executescript(
-                """
-                CREATE TABLE tarot_sessions (
-                    id TEXT PRIMARY KEY,
-                    human_user_id INTEGER NOT NULL,
-                    ai_user_id INTEGER,
-                    request_id TEXT,
-                    phase TEXT NOT NULL,
-                    revision INTEGER NOT NULL DEFAULT 0,
-                    question TEXT NOT NULL DEFAULT '',
-                    spread_id TEXT,
-                    draws_json TEXT NOT NULL DEFAULT '[]',
-                    canonical_json TEXT NOT NULL DEFAULT '{}',
-                    reading_id TEXT,
-                    csrf_token TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    UNIQUE(ai_user_id, request_id)
-                );
-                CREATE TABLE tarot_invites (
-                    session_id TEXT PRIMARY KEY REFERENCES tarot_sessions(id) ON DELETE CASCADE,
-                    human_user_id INTEGER NOT NULL,
-                    ai_user_id INTEGER NOT NULL,
-                    state TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    expires_at REAL NOT NULL,
-                    accepted_at REAL,
-                    rejected_at REAL
-                );
-                """
-            )
-        migrated = TarotStore(path, clock=lambda: self.now[0], catalog=FakeCatalog())
-        with migrated._connect() as conn:
+    def test_new_invite_schema_has_no_client_claimed_exemption_column(self):
+        with self.store._connect() as conn:
             columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(tarot_invites)")
             }
-        self.assertIn("human_requested", columns)
+        self.assertNotIn("human_requested", columns)
+
+    def test_legacy_exemption_column_is_retained_but_never_bypasses_limit(self):
+        with self.store._connect() as conn:
+            conn.execute(
+                "ALTER TABLE tarot_invites "
+                "ADD COLUMN human_requested INTEGER NOT NULL DEFAULT 0"
+            )
+        restarted = TarotStore(
+            self.store.db_path,
+            clock=lambda: self.now[0],
+            catalog=FakeCatalog(),
+        )
+        for index in range(3):
+            invite = restarted.create_invite(201, 101, f"legacy_limit_{index}")
+            with restarted._connect() as conn:
+                conn.execute(
+                    "UPDATE tarot_invites SET human_requested=1 WHERE session_id=?",
+                    (invite["session_id"],),
+                )
+        with self.assertRaises(TarotError) as caught:
+            restarted.create_invite(201, 101, "legacy_limit_blocked")
+        self.assertEqual(caught.exception.status, 429)
 
 
 class TarotUpstreamAndUiTests(unittest.TestCase):

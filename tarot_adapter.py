@@ -186,7 +186,6 @@ class TarotStore:
                     human_user_id INTEGER NOT NULL,
                     ai_user_id INTEGER NOT NULL,
                     state TEXT NOT NULL,
-                    human_requested INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL,
                     expires_at REAL NOT NULL,
                     accepted_at REAL,
@@ -223,15 +222,6 @@ class TarotStore:
                 WHERE state='running';
                 """
             )
-            invite_columns = {
-                row["name"]
-                for row in conn.execute("PRAGMA table_info(tarot_invites)").fetchall()
-            }
-            if "human_requested" not in invite_columns:
-                conn.execute(
-                    "ALTER TABLE tarot_invites "
-                    "ADD COLUMN human_requested INTEGER NOT NULL DEFAULT 0"
-                )
 
     @staticmethod
     def _new_id() -> str:
@@ -356,14 +346,10 @@ class TarotStore:
         ai_user_id: int,
         human_user_id: int,
         request_id: str,
-        *,
-        human_requested: bool = False,
     ) -> dict[str, Any]:
         ai_user_id = _require_positive_id(ai_user_id, "ai_user_id")
         human_user_id = _require_positive_id(human_user_id, "human_user_id")
         request_id = _require_id(request_id, REQUEST_RE, "request_id")
-        if not isinstance(human_requested, bool):
-            raise TarotError(400, "human_requested must be boolean")
         now = self._now()
         with self._tx() as conn:
             old = conn.execute(
@@ -386,23 +372,21 @@ class TarotStore:
                     429,
                     "人类拒绝后 24 小时内不能再次邀请，请等待冷却结束",
                 )
-            if not human_requested:
-                count = int(
-                    conn.execute(
-                        """
-                        SELECT COUNT(*) AS count FROM tarot_invites
-                        WHERE ai_user_id=? AND human_user_id=?
-                          AND human_requested=0 AND created_at>?
-                        """,
-                        (ai_user_id, human_user_id, now - DAY_SECONDS),
-                    ).fetchone()["count"]
+            count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS count FROM tarot_invites
+                    WHERE ai_user_id=? AND human_user_id=? AND created_at>?
+                    """,
+                    (ai_user_id, human_user_id, now - DAY_SECONDS),
+                ).fetchone()["count"]
+            )
+            if count >= 3:
+                raise TarotError(
+                    429,
+                    "主动邀请 24 小时内最多 3 次，请等待额度恢复；"
+                    "人类想主动占问可直接从 CedarToy 首页进入塔罗",
                 )
-                if count >= 3:
-                    raise TarotError(
-                        429,
-                        "主动邀请 24 小时内最多 3 次，请等待额度恢复；"
-                        "若是人类当前明确要求抽牌，请在 invite 传 human_requested=true",
-                    )
             session_id = self._new_id()
             conn.execute(
                 """
@@ -423,15 +407,13 @@ class TarotStore:
             conn.execute(
                 """
                 INSERT INTO tarot_invites(
-                    session_id,human_user_id,ai_user_id,state,human_requested,
-                    created_at,expires_at
-                ) VALUES(?,?,?,'pending',?,?,?)
+                    session_id,human_user_id,ai_user_id,state,created_at,expires_at
+                ) VALUES(?,?,?,'pending',?,?)
                 """,
                 (
                     session_id,
                     human_user_id,
                     ai_user_id,
-                    int(human_requested),
                     now,
                     now + INVITE_TTL_SECONDS,
                 ),

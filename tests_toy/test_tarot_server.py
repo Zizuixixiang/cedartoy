@@ -29,7 +29,7 @@ def make_handler(*, headers=None, body=b""):
 
 
 class TarotMcpBoundaryTests(unittest.TestCase):
-    def test_invite_forwards_the_public_explicit_request_semantics(self):
+    def test_invite_has_no_client_claimed_rate_limit_exemption(self):
         store = Mock()
         store.create_invite.return_value = {"phase": "pending"}
         ai = {"id": 201, "is_ai": 1}
@@ -41,28 +41,14 @@ class TarotMcpBoundaryTests(unittest.TestCase):
                 {
                     "action": "invite",
                     "request_id": "tarot_invite_01",
+                    # A stale client may still send the removed field. It must
+                    # never reach the store or alter rate-limit behavior.
                     "human_requested": True,
                 },
                 ai,
             )
         self.assertEqual(response, {"phase": "pending"})
-        store.create_invite.assert_called_once_with(
-            201, 101, "tarot_invite_01", human_requested=True
-        )
-
-        with (
-            patch.object(server, "_tarot_bound_human_user_id", return_value=101),
-            patch.object(server, "get_tarot_store", return_value=store),
-            self.assertRaises(server._McpError),
-        ):
-            server._play_tarot(
-                {
-                    "action": "invite",
-                    "request_id": "tarot_invite_02",
-                    "human_requested": "true",
-                },
-                ai,
-            )
+        store.create_invite.assert_called_once_with(201, 101, "tarot_invite_01")
 
     def test_mcp_passes_the_exact_machine_human_pair_to_every_lookup(self):
         store = Mock()
@@ -132,7 +118,7 @@ class TarotMcpBoundaryTests(unittest.TestCase):
     def test_rate_limit_reason_and_next_step_reach_mcp_response(self):
         messages = (
             "主动邀请 24 小时内最多 3 次，请等待额度恢复；"
-            "若是人类当前明确要求抽牌，请在 invite 传 human_requested=true",
+            "人类想主动占问可直接从 CedarToy 首页进入塔罗",
             "人类拒绝后 24 小时内不能再次邀请，请等待冷却结束",
         )
         for message in messages:
@@ -325,7 +311,7 @@ class TarotGuideTests(unittest.TestCase):
         guide = delivered["guide"]
         self.assertLess(len(guide), 1000)
         for example in (
-            'play(game="tarot", action="invite", params={"request_id":"tarot_invite_01","human_requested":false})',
+            'play(game="tarot", action="invite", params={"request_id":"tarot_invite_01"})',
             'play(game="tarot", action="status", params={"session_id":"invite返回值","after_revision":0,"wait_seconds":20})',
             'play(game="tarot", action="result", params={"session_id":"invite返回值"})',
         ):
@@ -335,18 +321,17 @@ class TarotGuideTests(unittest.TestCase):
         schema_params = play_tool["inputSchema"]["properties"]["params"]["properties"]
         for name in (
             "request_id",
-            "human_requested",
             "session_id",
             "after_revision",
             "wait_seconds",
         ):
             self.assertIn(name, schema_params)
+        self.assertNotIn("human_requested", schema_params)
 
         for required_rule in (
-            "人类可直接发起",
+            "人类可从 CedarToy 首页直接发起且不计邀请次数",
             "小机可在合适时 invite",
-            "主动邀请 24 小时内最多 3 次",
-            "human_requested=true 不计次数",
+            "全部 MCP invite 滚动 24 小时内最多 3 次",
             "拒绝后冷却 24 小时",
             "问题、牌阵、抽牌、揭示并取得原始专业解读",
             "不得代抽、补造或冒充原解读",
@@ -361,6 +346,7 @@ class TarotGuideTests(unittest.TestCase):
             server.COVE_REPOSITORY,
         ):
             self.assertIn(required_rule, guide)
+        self.assertNotIn("human_requested", guide)
 
         for local_only_detail in (
             "companion.mjs",
