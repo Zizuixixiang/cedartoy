@@ -23,6 +23,13 @@ from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 NPC_POOL_NAMES = ("npc_decision", "npc_speech")
 SOUP_DUEL_POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
 TAROT_POOL_NAME = "tarot"
+TAROT_FLASH_MODEL = "gemini-3.5-flash"
+TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
+TAROT_ALLOWED_MODELS = frozenset({TAROT_FLASH_MODEL, TAROT_PRO_MODEL})
+TAROT_MODEL_LABELS = {
+    TAROT_FLASH_MODEL: "Gemini 3.5 Flash",
+    TAROT_PRO_MODEL: "Gemini 3.1 Pro",
+}
 POOL_NAMES = (*SOUP_DUEL_POOL_NAMES, TAROT_POOL_NAME)
 TAROT_EXCLUSIVE_MODEL_RE = re.compile(
     r"(?:^|[^a-z0-9])gemini[._ -]?3[._ -]?5[._ -]?flash(?:$|[^a-z0-9])",
@@ -135,9 +142,9 @@ def _pool_name(pool: str) -> str:
 
 
 def is_tarot_exclusive_model(cfg: dict[str, Any]) -> bool:
-    """Keep Gemini 3.5 Flash variants exclusive to the Tarot pool."""
+    """Keep existing Flash variants and the exact managed Pro model in Tarot."""
     model = str(cfg.get("model") or "").strip()
-    return bool(TAROT_EXCLUSIVE_MODEL_RE.search(model))
+    return bool(TAROT_EXCLUSIVE_MODEL_RE.search(model)) or model.lower() == TAROT_PRO_MODEL
 
 
 def _credential_key(cfg: dict[str, Any]) -> str:
@@ -343,18 +350,22 @@ def _release_probe(config_id: int) -> None:
         state.probe_in_flight = False
 
 
-async def _configs(pool: str = "judge") -> list[dict[str, Any]]:
+async def _configs(
+    pool: str = "judge", model: str | None = None
+) -> list[dict[str, Any]]:
     pool = _pool_name(pool)
     rows = await _enabled_configs()
     now = _now()
     available = [row for row in rows if _config_available(int(row["id"]), now)]
-    return _select_configs_for_pool(available, pool)
+    return _select_configs_for_pool(available, pool, model=model)
 
 
-async def _matching_configs(pool: str = "judge") -> list[dict[str, Any]]:
+async def _matching_configs(
+    pool: str = "judge", model: str | None = None
+) -> list[dict[str, Any]]:
     pool = _pool_name(pool)
     rows = await _enabled_configs()
-    return _select_configs_for_pool(rows, pool)
+    return _select_configs_for_pool(rows, pool, model=model)
 
 
 async def _enabled_configs() -> list[dict[str, Any]]:
@@ -367,7 +378,7 @@ async def _enabled_configs() -> list[dict[str, Any]]:
 
 
 def _select_configs_for_pool(
-    rows: list[dict[str, Any]], pool: str
+    rows: list[dict[str, Any]], pool: str, model: str | None = None
 ) -> list[dict[str, Any]]:
     """Keep Tarot exact-only; for NPC prefer exact, then all, then legacy."""
     pool = _pool_name(pool)
@@ -379,6 +390,13 @@ def _select_configs_for_pool(
                 str(row.get("purpose") or "judge").strip().lower()
                 != TAROT_POOL_NAME
             ):
+                continue
+            # Managed Tarot model IDs are an exact allowlist.  Do not make a
+            # malformed value (for example, surrounding whitespace) routable.
+            row_model = str(row.get("model") or "")
+            if row_model not in TAROT_ALLOWED_MODELS:
+                continue
+            if model is not None and row_model != model:
                 continue
             node = model_node_fingerprint(row) or f"config:{row.get('id')}"
             if node in seen_nodes:
@@ -540,9 +558,14 @@ async def _chat(
     timeout: float = 20,
     max_tokens: int | None = None,
     pool: str = "judge",
+    model: str | None = None,
 ) -> str:
     global _npc_active, _npc_waiting, _tarot_active, _tarot_waiting, _priority_waiters
     pool = _pool_name(pool)
+    if pool == TAROT_POOL_NAME:
+        model = TAROT_FLASH_MODEL if model is None else model
+        if not isinstance(model, str) or model not in TAROT_ALLOWED_MODELS:
+            raise ValueError("只能选择本站提供的 Flash 或 Pro 模型")
     if pool in NPC_POOL_NAMES:
         semaphore = _npc_limit_semaphore()
         _npc_waiting += 1
@@ -562,6 +585,7 @@ async def _chat(
                 timeout=timeout,
                 max_tokens=max_tokens,
                 pool=pool,
+                model=model,
             )
         finally:
             _npc_active -= 1
@@ -586,6 +610,7 @@ async def _chat(
                 timeout=timeout,
                 max_tokens=max_tokens,
                 pool=pool,
+                model=model,
             )
         finally:
             _tarot_active -= 1
@@ -599,6 +624,7 @@ async def _chat(
             timeout=timeout,
             max_tokens=max_tokens,
             pool=pool,
+            model=model,
         )
     finally:
         _priority_waiters -= 1
@@ -611,22 +637,31 @@ async def _chat_from_pool(
     timeout: float,
     max_tokens: int | None,
     pool: str,
+    model: str | None = None,
 ) -> str:
     errors: list[str] = []
-    available = await _configs(pool)
+    available = await _configs(pool, model=model)
     if not available:
-        matching = await _matching_configs(pool)
+        matching = await _matching_configs(pool, model=model)
         if matching:
             logger.warning("%s configs are cooling or already probing", pool)
         else:
             logger.warning("%s has no enabled API configs", pool)
-        detail = (
-            "NPC 通道繁忙，请稍后再试"
-            if pool in NPC_POOL_NAMES
-            else "塔罗解读通道暂时不可用，请稍后再试"
-            if pool == TAROT_POOL_NAME
-            else "裁判暂时不可用，请稍后再试"
-        )
+        if pool == TAROT_POOL_NAME and model in TAROT_ALLOWED_MODELS:
+            label = TAROT_MODEL_LABELS[model]
+            detail = (
+                f"所选塔罗模型暂时不可用：{label}"
+                if matching
+                else f"所选塔罗模型未配置：{label}"
+            )
+        else:
+            detail = (
+                "NPC 通道繁忙，请稍后再试"
+                if pool in NPC_POOL_NAMES
+                else "塔罗解读通道暂时不可用，请稍后再试"
+                if pool == TAROT_POOL_NAME
+                else "裁判暂时不可用，请稍后再试"
+            )
         raise HTTPException(status_code=503, detail=detail)
     layers: dict[int, list[dict[str, Any]]] = {}
     for cfg in sorted(available, key=lambda item: (int(item.get("priority") or 0), int(item["id"]))):
@@ -689,8 +724,8 @@ async def _chat_from_pool(
     detail = (
         "NPC 通道繁忙，请稍后再试"
         if pool in NPC_POOL_NAMES
-        else "塔罗解读通道暂时不可用，请稍后再试"
-        if pool == TAROT_POOL_NAME
+        else f"所选塔罗模型暂时不可用：{TAROT_MODEL_LABELS[model]}"
+        if pool == TAROT_POOL_NAME and model in TAROT_ALLOWED_MODELS
         else "裁判暂时不可用，请稍后再试"
     )
     raise HTTPException(status_code=503, detail=detail)
@@ -797,6 +832,7 @@ async def tarot_reading_chat(
     *,
     max_tokens: int = 4096,
     timeout: float = 90,
+    model: str = TAROT_FLASH_MODEL,
 ) -> str:
     """Internal ARCANUM completion entry; accepts only bounded canonical prompts."""
     if not isinstance(messages, list) or not 1 <= len(messages) <= 4:
@@ -820,12 +856,15 @@ async def tarot_reading_chat(
         raise ValueError("max_tokens 必须是 1–8192 的整数")
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 5 <= timeout <= 120:
         raise ValueError("timeout 必须在 5–120 秒之间")
+    if not isinstance(model, str) or model not in TAROT_ALLOWED_MODELS:
+        raise ValueError("只能选择本站提供的 Flash 或 Pro 模型")
     return await _chat(
         canonical,
         temperature=0.8,
         timeout=float(timeout),
         max_tokens=max_tokens,
         pool=TAROT_POOL_NAME,
+        model=model,
     )
 
 

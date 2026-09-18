@@ -32,6 +32,13 @@ RITUAL_REPOSITORY = "https://github.com/moonlin1213/tarot-ritual"
 COVE_REPOSITORY = "https://github.com/moonlin1213/cove-tarot-companion"
 RITUAL_DISPLAY_NAME = "ARCANUM · 星轨塔罗圣仪"
 RITUAL_COMMIT = "04c6ee2c112e2da9a22bf0b5b4ec80d61ef401d5"
+TAROT_FLASH_MODEL = "gemini-3.5-flash"
+TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
+TAROT_ALLOWED_MODELS = frozenset({TAROT_FLASH_MODEL, TAROT_PRO_MODEL})
+TAROT_MODEL_LABELS = {
+    TAROT_FLASH_MODEL: "Gemini 3.5 Flash",
+    TAROT_PRO_MODEL: "Gemini 3.1 Pro",
+}
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 REQUEST_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 EVENT_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -45,6 +52,17 @@ class TarotError(Exception):
         super().__init__(message)
         self.status = int(status)
         self.message = str(message)
+
+
+def require_tarot_model(value: Any) -> str:
+    if not isinstance(value, str) or value not in TAROT_ALLOWED_MODELS:
+        raise TarotError(400, "只能选择本站提供的 Flash 或 Pro 模型")
+    return value
+
+
+def tarot_model_source(model: str) -> str:
+    model = require_tarot_model(model)
+    return f"{RITUAL_DISPLAY_NAME} · {TAROT_MODEL_LABELS[model]} 塔罗专用池"
 
 
 def _require_positive_id(value: Any, name: str) -> int:
@@ -206,7 +224,7 @@ class TarotStore:
                     action_id TEXT NOT NULL,
                     state TEXT NOT NULL,
                     text TEXT NOT NULL DEFAULT '',
-                    model TEXT NOT NULL DEFAULT 'tarot-pool',
+                    model TEXT NOT NULL DEFAULT 'gemini-3.5-flash',
                     error_code TEXT,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
@@ -218,6 +236,9 @@ class TarotStore:
                     ON tarot_sessions(ai_user_id, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS tarot_invites_pair
                     ON tarot_invites(ai_user_id, human_user_id, created_at DESC);
+                UPDATE tarot_readings
+                SET model='gemini-3.5-flash'
+                WHERE model IN ('', 'tarot-pool');
                 UPDATE tarot_readings
                 SET state='unknown', error_code='process_restart'
                 WHERE state='running';
@@ -296,6 +317,7 @@ class TarotStore:
             "state": reading["state"],
             "text": reading["text"],
             "model": reading["model"],
+            "source": tarot_model_source(reading["model"]),
             "error_code": reading["error_code"],
         }
 
@@ -702,10 +724,12 @@ class TarotStore:
         human_user_id: int,
         action_id: str,
         csrf_token: str,
+        model: str = TAROT_FLASH_MODEL,
     ) -> dict[str, Any]:
         session_id = _require_id(session_id, SESSION_RE, "session_id")
         action_id = _require_id(action_id, EVENT_RE, "action_id")
         human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        model = require_tarot_model(model)
         now = self._now()
         with self._tx() as conn:
             row = self._verify_human_csrf(
@@ -730,9 +754,9 @@ class TarotStore:
                 """
                 INSERT INTO tarot_readings(
                     id,session_id,action_id,state,text,model,created_at,updated_at
-                ) VALUES(?,?,?,'running','','gemini-3.5-flash',?,?)
+                ) VALUES(?,?,?,'running','',?,?,?)
                 """,
-                (attempt_id, session_id, action_id, now, now),
+                (attempt_id, session_id, action_id, model, now, now),
             )
             conn.execute(
                 """
@@ -924,6 +948,8 @@ class TarotStore:
             "phase": phase,
             "revision": int(row["revision"]),
             "reading_state": reading["state"] if reading else "missing",
+            "reading_model": reading["model"] if reading else None,
+            "reading_source": reading["source"] if reading else None,
             "invite_url": f"{self.public_base_url}/tarot/invite/{row['id']}",
             "next_call": {
                 "game": "tarot",
@@ -1031,9 +1057,11 @@ class TarotStore:
                 "reading": {
                     "id": reading["id"] if reading else None,
                     "state": reading["state"] if reading else "missing",
+                    "model": reading["model"] if reading else None,
+                    "error_code": reading["error_code"] if reading else None,
                     "text": text,
                     "truncated": truncated,
-                    "source": f"{RITUAL_DISPLAY_NAME} · Gemini 3.5 Flash 专用池",
+                    "source": reading["source"] if reading else None,
                 },
                 "safety": "结果仅供娱乐与自我反思，不替代医疗、法律或财务专业意见。",
             }
@@ -1063,6 +1091,17 @@ class TarotWeb:
 
     def static_file(self, relative_path: str) -> tuple[Path, str]:
         relative_path = relative_path.lstrip("/")
+        platform_assets = {
+            "platform/managed-core.v1.js": ROOT / "assets" / "tarot" / "managed-core.v1.js",
+            "platform/managed-ui.v1.js": ROOT / "assets" / "tarot" / "managed-ui.v1.js",
+            "platform/managed-ui.v1.css": ROOT / "assets" / "tarot" / "managed-ui.v1.css",
+        }
+        if relative_path in platform_assets:
+            candidate = platform_assets[relative_path].resolve()
+            if not candidate.is_file():
+                raise TarotError(404, "not found")
+            mime = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+            return candidate, mime
         candidate = (self.public_root / relative_path).resolve()
         if (
             self.public_root not in candidate.parents
@@ -1119,9 +1158,61 @@ class TarotWeb:
             separators=(",", ":"),
         ).replace("<", "\\u003c")
         source = source.replace("<head>", '<head>\n<base href="/tarot/static/">', 1)
+        import_map = '<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>'
+        managed_import_map = (
+            '<script type="importmap">{ "imports": {'
+            ' "three": "./vendor/three.module.js",'
+            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v1.js"'
+            ' } }</script>'
+        )
+        if source.count(import_map) != 1:
+            raise TarotError(500, "塔罗原版模块结构已变化")
+        source = source.replace(import_map, managed_import_map, 1)
+        style_marker = '<link rel="stylesheet" href="./css/style.css">'
+        source = source.replace(
+            style_marker,
+            style_marker
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v1.css">',
+            1,
+        )
+        upstream_settings = """    <div class="settings-body">
+    <div id="dshBanner" class="dsh-banner hidden"></div>
+    <div class="dsh-import-actions">
+      <button id="dshImportBtn" class="btn ghost small" disabled>导入本机 DSH</button>
+        <p id="dshConsentNote" class="settings-note">正在读取本机 DSH 导入与续期设置……</p>
+    </div>
+    <div id="providerList" class="provider-list"></div>
+    <div class="settings-section">
+      <div class="section-title">亲自延请一位神谕</div>
+      <div class="form-grid">
+        <input id="cpName" placeholder="名号（如 My Gateway）">
+        <select id="cpKind">
+          <option value="openai">OpenAI 兼容 · chat/completions</option>
+          <option value="responses">OpenAI Responses</option>
+          <option value="anthropic">Anthropic Messages</option>
+        </select>
+        <input id="cpBase" placeholder="Base URL（如 https://api.example.com/v1）">
+        <input id="cpKey" placeholder="API Key" type="password">
+        <button id="cpAdd" class="btn ghost small">载 入 议 会</button>
+      </div>
+      <p class="settings-note">自定义密钥仅保留在本页内存，刷新后需重新添加。问题、牌阵和实拍照片会发送到所选 AI 服务；密钥用于该服务认证。DSH 导入默认只读，若本机启用 Codex 自动续期，上方会明确说明。请勿上传不愿分享的个人信息。</p>
+    </div>
+    </div>"""
+        managed_settings = f"""    <div class="settings-body managed-settings">
+      <p class="managed-model-note">本站暂仅支持所提供的模型。如需自行配置模型，请克隆<a href="{RITUAL_REPOSITORY}" target="_blank" rel="noopener noreferrer">原版</a>。</p>
+      <div id="providerList" class="provider-list" aria-label="本站塔罗模型"></div>
+      <div class="managed-compat" hidden aria-hidden="true">
+        <div id="dshBanner"></div><button id="dshImportBtn" disabled></button>
+        <p id="dshConsentNote"></p><input id="cpName"><select id="cpKind"><option value="openai"></option></select>
+        <input id="cpBase"><input id="cpKey" type="password"><button id="cpAdd" disabled></button>
+      </div>
+    </div>"""
+        if source.count(upstream_settings) != 1:
+            raise TarotError(500, "塔罗原版模型面板结构已变化")
+        source = source.replace(upstream_settings, managed_settings, 1)
         managed = f"""
 <script type="application/json" id="companion-config">{config}</script>
-<script>try{{localStorage.setItem('arcana.selectedProvider.v1',JSON.stringify({{id:'dsh:cedartoy-tarot',models:{{'dsh:cedartoy-tarot':'gemini-3.5-flash'}}}}));}}catch{{}}</script>
+<script src="/tarot/static/platform/managed-ui.v1.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',
@@ -1167,8 +1258,8 @@ class TarotWeb:
         glyph: "✦",
         badge: "TAROT",
         level: "78 CARDS",
-        metricLabel: "牌阵数",
-        metric: "00005",
+        metricLabel: "存档数",
+        metric: "--",
         short: "3D 塔罗 / 人机陪伴",
         desc: "保留 {RITUAL_DISPLAY_NAME} 原版 3D 抽牌与翻牌动画；人类亲自提问、选阵、抽牌，小机可发出邀请并读取本次结果。",
         logs: [
@@ -1228,6 +1319,42 @@ class TarotWeb:
 
 _STORE: TarotStore | None = None
 _STORE_LOCK = threading.Lock()
+
+
+def count_saved_tarot_sessions(db_path: str | Path | None = None) -> int:
+    """Count sessions with a durably committed draw, without creating a DB."""
+    path = Path(
+        db_path
+        if db_path is not None
+        else os.getenv("TAROT_DB_PATH", str(DEFAULT_DB_PATH))
+    ).expanduser()
+    if not path.is_file():
+        return 0
+    try:
+        uri = path.resolve().as_uri() + "?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=2) as conn:
+            conn.execute("PRAGMA query_only=ON")
+            row = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM tarot_sessions AS session
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM tarot_receipts AS receipt
+                    WHERE receipt.session_id = session.id
+                      AND receipt.kind = 'draw'
+                )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM tarot_invites AS invite
+                    WHERE invite.session_id = session.id
+                      AND invite.state <> 'accepted'
+                  )
+                """
+            ).fetchone()
+        return int(row[0] or 0) if row else 0
+    except (OSError, sqlite3.Error, ValueError):
+        return 0
 
 
 def get_store() -> TarotStore:

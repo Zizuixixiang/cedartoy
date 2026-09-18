@@ -6,7 +6,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import server
-from tarot_adapter import RITUAL_DISPLAY_NAME, TarotError, TarotStore, WEB
+from tarot_adapter import (
+    RITUAL_DISPLAY_NAME,
+    TAROT_FLASH_MODEL,
+    TAROT_PRO_MODEL,
+    TarotError,
+    TarotStore,
+    WEB,
+)
 from tests_toy.test_tarot_adapter import FakeCatalog
 
 
@@ -163,6 +170,70 @@ class TarotHttpBoundaryTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_public_game_stats_exposes_only_the_tarot_save_total(self):
+        with (
+            patch.object(server, "count_saved_tarot_sessions", return_value=7),
+            patch.object(server, "_count_table_rows", return_value=0),
+            patch.object(server, "_sum_ciyuwu_runs", return_value=0),
+            patch.object(
+                server,
+                "_vendor_save_stats",
+                return_value={"save_count": 0, "file_count": 0},
+            ),
+            patch.object(
+                server, "CAMPING_PLAZA_DB_PATH", Path(self.temp_dir.name) / "none.db"
+            ),
+        ):
+            stats = server._public_game_stats()
+        self.assertEqual(
+            stats["tarot"],
+            {"metric_label": "存档数", "metric": 7},
+        )
+
+    @staticmethod
+    def reveal_session(store, *, request_id="request_reading", ai_id=201, human_id=101):
+        invite = store.create_invite(ai_id, human_id, request_id)
+        session_id = invite["session_id"]
+        invitation = store.invitation_for_human(session_id, human_id)
+        csrf = invitation["csrf_token"]
+        store.respond_invite(
+            session_id, human_id, accept=True, csrf_token=csrf
+        )
+        store.commit_draw(
+            session_id,
+            human_id,
+            {
+                "event_id": "draw_" + request_id,
+                "question": "今天该看见什么？",
+                "spread_id": "single",
+                "draws": [{"position": 0, "card_id": "M00", "reversed": False}],
+            },
+            csrf,
+        )
+        store.reveal(
+            session_id,
+            human_id,
+            {"event_id": "reveal_" + request_id, "positions": [0]},
+            csrf,
+        )
+        return session_id, csrf
+
+    @staticmethod
+    def reading_handler(body, csrf):
+        raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        handler = make_handler(
+            headers={
+                "Content-Length": str(len(raw)),
+                "Content-Type": "application/json",
+                "X-Companion-CSRF": csrf,
+                "Origin": "https://toy.example",
+                "Host": "toy.example",
+            },
+            body=raw,
+        )
+        handler._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        return handler
+
     def test_bootstrap_endpoint_cannot_read_another_humans_session(self):
         session = self.store.create_direct_session(101)
         path = f"/companion/v1/sessions/{session['id']}"
@@ -221,18 +292,21 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         self.assertEqual(owner["phase"], "accepted")
         self.assertEqual(owner["draws"], [])
 
-    def test_managed_provider_endpoints_require_tarot_marker_and_human_cookie(self):
+    def test_deprecated_provider_endpoints_reject_without_parsing_credentials(self):
+        secret = "browser-secret-must-not-leak"
+        raw = json.dumps({"provider": {"apiKey": secret}}).encode("utf-8")
         missing_marker = make_handler(
             headers={
-                "Content-Length": "2",
+                "Content-Length": str(len(raw)),
                 "Origin": "https://toy.example",
                 "Host": "toy.example",
             },
-            body=b"{}",
+            body=raw,
         )
         missing_marker._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
         missing_marker._handle_tarot_post("/api/models")
-        self.assertEqual(missing_marker.response_statuses, [403])
+        self.assertEqual(missing_marker.response_statuses, [410])
+        self.assertNotIn(secret.encode(), missing_marker.wfile.getvalue())
 
         machine = make_handler(
             headers={
@@ -246,6 +320,149 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         machine._tarot_human = Mock(side_effect=TarotError(403, "human only"))
         machine._handle_tarot_post("/api/models")
         self.assertEqual(machine.response_statuses, [403])
+
+        dsh = make_handler()
+        dsh._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        dsh._handle_tarot_get("/api/dsh", {})
+        self.assertEqual(dsh.response_statuses, [410])
+
+    def test_both_fixed_models_reach_bridge_and_return_the_recorded_model(self):
+        for index, model in enumerate((TAROT_FLASH_MODEL, TAROT_PRO_MODEL), 1):
+            with self.subTest(model=model):
+                store = TarotStore(
+                    Path(self.temp_dir.name) / f"model-{index}.db",
+                    catalog=FakeCatalog(),
+                )
+                session_id, csrf = self.reveal_session(
+                    store, request_id=f"request_model_{index}"
+                )
+                handler = self.reading_handler(
+                    {"action_id": f"reading_model_{index}", "model": model},
+                    csrf,
+                )
+                upstream = Mock(status_code=200)
+                upstream.json.return_value = {
+                    "content": f"{model} 的模拟解读",
+                    "source": "tarot-ritual",
+                    "pool": "tarot",
+                    "model": model,
+                }
+                post = Mock(return_value=upstream)
+                with (
+                    patch.object(server, "get_tarot_store", return_value=store),
+                    patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+                    patch.object(server.httpx, "post", post),
+                ):
+                    handler._handle_tarot_post(
+                        f"/companion/v1/sessions/{session_id}/reading"
+                    )
+                self.assertEqual(handler.response_statuses, [200])
+                self.assertEqual(post.call_count, 1)
+                self.assertEqual(post.call_args.kwargs["json"]["model"], model)
+                attempt = store.bootstrap_for_human(session_id, 101)["session"]["reading"]
+                self.assertEqual(attempt["model"], model)
+                self.assertIn(
+                    "Gemini 3.5 Flash" if model == TAROT_FLASH_MODEL else "Gemini 3.1 Pro",
+                    attempt["source"],
+                )
+                stream = handler.wfile.getvalue().decode("utf-8")
+                self.assertIn(f'"model":"{model}"', stream)
+                self.assertIn(attempt["source"], stream)
+
+    def test_reading_rejects_arbitrary_model_and_provider_credentials(self):
+        cases = (
+            {"action_id": "reading_bad_model", "model": "attacker-model"},
+            {
+                "action_id": "reading_bad_provider",
+                "model": TAROT_FLASH_MODEL,
+                "provider": {"apiKey": "browser-secret", "baseURL": "https://bad.test"},
+            },
+        )
+        for index, body in enumerate(cases, 1):
+            with self.subTest(body=body):
+                store = TarotStore(
+                    Path(self.temp_dir.name) / f"reject-{index}.db",
+                    catalog=FakeCatalog(),
+                )
+                session_id, csrf = self.reveal_session(
+                    store, request_id=f"request_reject_{index}"
+                )
+                handler = self.reading_handler(body, csrf)
+                post = Mock()
+                with (
+                    patch.object(server, "get_tarot_store", return_value=store),
+                    patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+                    patch.object(server.httpx, "post", post),
+                ):
+                    handler._handle_tarot_post(
+                        f"/companion/v1/sessions/{session_id}/reading"
+                    )
+                self.assertEqual(handler.response_statuses, [400])
+                self.assertNotIn(b"browser-secret", handler.wfile.getvalue())
+                self.assertIsNone(
+                    store.bootstrap_for_human(session_id, 101)["session"]["reading"]
+                )
+                post.assert_not_called()
+
+    def test_same_action_id_replays_original_model_without_another_paid_call(self):
+        session_id, csrf = self.reveal_session(self.store)
+        upstream = Mock(status_code=200)
+        upstream.json.return_value = {
+            "content": "Flash 模拟解读",
+            "source": "tarot-ritual",
+            "pool": "tarot",
+            "model": TAROT_FLASH_MODEL,
+        }
+        post = Mock(return_value=upstream)
+        first = self.reading_handler(
+            {"action_id": "stable_reading_action", "model": TAROT_FLASH_MODEL}, csrf
+        )
+        with (
+            patch.object(server, "get_tarot_store", return_value=self.store),
+            patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+            patch.object(server.httpx, "post", post),
+        ):
+            first._handle_tarot_post(
+                f"/companion/v1/sessions/{session_id}/reading"
+            )
+            replay = self.reading_handler(
+                {"action_id": "stable_reading_action", "model": TAROT_PRO_MODEL}, csrf
+            )
+            replay._handle_tarot_post(
+                f"/companion/v1/sessions/{session_id}/reading"
+            )
+        self.assertEqual(post.call_count, 1)
+        attempt = self.store.bootstrap_for_human(session_id, 101)["session"]["reading"]
+        self.assertEqual(attempt["model"], TAROT_FLASH_MODEL)
+        self.assertIn(
+            f'"model":"{TAROT_FLASH_MODEL}"',
+            replay.wfile.getvalue().decode("utf-8"),
+        )
+
+    def test_unconfigured_pro_fails_clearly_without_cross_model_retry(self):
+        session_id, csrf = self.reveal_session(self.store)
+        upstream = Mock(status_code=503)
+        upstream.json.return_value = {"detail": "所选塔罗模型未配置：Gemini 3.1 Pro"}
+        post = Mock(return_value=upstream)
+        handler = self.reading_handler(
+            {"action_id": "reading_unconfigured", "model": TAROT_PRO_MODEL}, csrf
+        )
+        with (
+            patch.object(server, "get_tarot_store", return_value=self.store),
+            patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+            patch.object(server.httpx, "post", post),
+        ):
+            handler._handle_tarot_post(
+                f"/companion/v1/sessions/{session_id}/reading"
+            )
+        self.assertEqual(post.call_count, 1)
+        attempt = self.store.bootstrap_for_human(session_id, 101)["session"]["reading"]
+        self.assertEqual(attempt["state"], "failed")
+        self.assertEqual(attempt["model"], TAROT_PRO_MODEL)
+        self.assertEqual(attempt["error_code"], "model_unconfigured")
+        stream = handler.wfile.getvalue().decode("utf-8")
+        self.assertIn("本站尚未配置 Gemini 3.1 Pro", stream)
+        self.assertIn("未切换其他模型", stream)
 
     def test_malformed_json_is_a_bounded_client_error(self):
         handler = make_handler(
@@ -266,12 +483,12 @@ class TarotHttpBoundaryTests(unittest.TestCase):
             {"error": "塔罗请求格式无效"},
         )
 
-    def test_managed_provider_uses_the_service_name_without_platform_branding(self):
+    def test_managed_provider_metadata_has_only_the_two_fixed_models(self):
         metadata = server.CedarToyHandler._tarot_provider_metadata()
         provider = metadata["providers"][0]
-        self.assertEqual(provider["id"], "dsh:cedartoy-tarot")
-        self.assertEqual(provider["label"], "Gemini")
-        self.assertEqual(provider["models"], ["gemini-3.5-flash"])
+        self.assertEqual(provider["id"], "managed:cedartoy-tarot")
+        self.assertEqual(provider["label"], "本站")
+        self.assertEqual(provider["models"], [TAROT_FLASH_MODEL, TAROT_PRO_MODEL])
         self.assertNotIn("note", provider)
         self.assertNotIn("source", provider)
 

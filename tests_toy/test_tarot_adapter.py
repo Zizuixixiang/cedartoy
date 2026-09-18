@@ -5,10 +5,14 @@ from pathlib import Path
 
 from tarot_adapter import (
     RITUAL_DISPLAY_NAME,
+    RITUAL_REPOSITORY,
+    TAROT_FLASH_MODEL,
+    TAROT_PRO_MODEL,
     TarotCatalog,
     TarotError,
     TarotStore,
     TarotWeb,
+    count_saved_tarot_sessions,
 )
 
 
@@ -104,6 +108,75 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertTarotStatus(
             404, lambda: self.store.bootstrap_for_human(session["id"], 102)
         )
+
+    def test_public_save_count_only_counts_sessions_with_a_committed_draw(self):
+        missing = Path(self.temp_dir.name) / "missing.db"
+        self.assertEqual(count_saved_tarot_sessions(missing), 0)
+        self.assertFalse(missing.exists())
+
+        pending = self.store.create_invite(201, 101, "count_pending_1")
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
+        self.accept(pending["session_id"])
+        pending_bootstrap = self.store.bootstrap_for_human(
+            pending["session_id"], 101
+        )
+        self.store.stop_session(
+            pending["session_id"], 101, pending_bootstrap["csrf_token"]
+        )
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
+
+        stopped = self.store.create_invite(202, 102, "count_stopped_2")
+        self.accept(stopped["session_id"], 102)
+        stopped_csrf = self.store.bootstrap_for_human(
+            stopped["session_id"], 102
+        )["csrf_token"]
+        self.store.commit_draw(
+            stopped["session_id"],
+            102,
+            {
+                "event_id": "count_draw_stopped",
+                "question": "停止后仍计数",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M00", "reversed": False}
+                ],
+            },
+            stopped_csrf,
+        )
+        self.store.stop_session(stopped["session_id"], 102, stopped_csrf)
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 1)
+
+        returned = self.store.create_invite(203, 103, "count_returned_3")
+        self.accept(returned["session_id"], 103)
+        returned_csrf = self.store.bootstrap_for_human(
+            returned["session_id"], 103
+        )["csrf_token"]
+        self.store.commit_draw(
+            returned["session_id"],
+            103,
+            {
+                "event_id": "count_draw_returned",
+                "question": "返回后仍计数",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M01", "reversed": True}
+                ],
+            },
+            returned_csrf,
+        )
+        self.store.reveal(
+            returned["session_id"],
+            103,
+            {"event_id": "count_reveal_returned", "positions": [0]},
+            returned_csrf,
+        )
+        revision = self.store.bootstrap_for_human(
+            returned["session_id"], 103
+        )["session"]["revision"]
+        self.store.return_session(
+            returned["session_id"], 103, revision, returned_csrf
+        )
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 2)
 
     def test_two_human_machine_pairs_complete_concurrently_without_cross_reads(self):
         first = self.store.create_invite(201, 101, "concurrent_pair_1")
@@ -277,8 +350,9 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertTrue(result["untrusted"])
         self.assertEqual(
             result["reading"]["source"],
-            f"{RITUAL_DISPLAY_NAME} · Gemini 3.5 Flash 专用池",
+            f"{RITUAL_DISPLAY_NAME} · Gemini 3.5 Flash 塔罗专用池",
         )
+        self.assertEqual(result["reading"]["model"], TAROT_FLASH_MODEL)
         self.assertEqual(result["question"], "今天该看见什么？")
         self.assertEqual(result["cards"][0]["card_id"], "M00")
         self.assertEqual(result["cards"][0]["zh"], "愚者")
@@ -311,11 +385,17 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.store.reveal(
             session_id, 101, {"event_id": "reveal_1", "positions": [0]}, csrf
         )
-        first = self.store.claim_reading(session_id, 101, "reading_1", csrf)
-        replay = self.store.claim_reading(session_id, 101, "reading_1", csrf)
+        first = self.store.claim_reading(
+            session_id, 101, "reading_1", csrf, model=TAROT_PRO_MODEL
+        )
+        replay = self.store.claim_reading(
+            session_id, 101, "reading_1", csrf, model=TAROT_FLASH_MODEL
+        )
         self.assertTrue(first["claimed"])
         self.assertFalse(replay["claimed"])
         self.assertEqual(first["attempt"]["id"], replay["attempt"]["id"])
+        self.assertEqual(first["attempt"]["model"], TAROT_PRO_MODEL)
+        self.assertEqual(replay["attempt"]["model"], TAROT_PRO_MODEL)
         self.store.finish_reading(
             session_id,
             101,
@@ -328,6 +408,36 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
         self.assertFalse(final_replay["claimed"])
         self.assertEqual(final_replay["attempt"]["state"], "unknown")
+        self.assertEqual(final_replay["attempt"]["model"], TAROT_PRO_MODEL)
+
+    def test_reading_rejects_any_model_outside_the_fixed_allowlist(self):
+        invite = self.store.create_invite(201, 101, "request_bad_model")
+        session_id = invite["session_id"]
+        self.accept(session_id)
+        csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
+        self.store.commit_draw(
+            session_id,
+            101,
+            {
+                "event_id": "draw_bad_model",
+                "question": "问题",
+                "spread_id": "single",
+                "draws": [{"position": 0, "card_id": "M00", "reversed": False}],
+            },
+            csrf,
+        )
+        self.store.reveal(
+            session_id,
+            101,
+            {"event_id": "reveal_bad_model", "positions": [0]},
+            csrf,
+        )
+        self.assertTarotStatus(
+            400,
+            lambda: self.store.claim_reading(
+                session_id, 101, "reading_bad_model", csrf, model="arbitrary-model"
+            ),
+        )
 
     def test_stop_or_process_restart_never_retries_or_overwrites_running_reading(self):
         invite = self.store.create_invite(201, 101, "request_stop_race")
@@ -490,9 +600,18 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('<link rel="stylesheet" href="./fonts/fonts.css">', page)
         self.assertIn('<link rel="stylesheet" href="./css/style.css">', page)
         self.assertIn('<script type="module" src="./js/main.js"></script>', page)
+        self.assertIn('/tarot/static/platform/managed-core.v1.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v1.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v1.css', page)
         self.assertIn(f"<title>{RITUAL_DISPLAY_NAME}</title>", page)
         self.assertIn('id="companion-config"', page)
         self.assertIn('id="providerOrb"', page)
+        self.assertIn("本站暂仅支持所提供的模型。如需自行配置模型，请克隆", page)
+        self.assertIn(f'href="{RITUAL_REPOSITORY}"', page)
+        self.assertNotIn("导入本机 DSH", page)
+        self.assertNotIn("手动填写模型 ID", page)
+        self.assertNotIn("Base URL", page)
+        self.assertNotIn("API Key", page)
         self.assertIn('class="mode-opt photo-opt"', page)
         self.assertEqual(page.count("<style"), upstream.count("<style"))
         self.assertNotIn("CedarToy", page)
@@ -503,6 +622,14 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             "label.textContent = `${p.label}${m ? ' · ' + m : ''}`;",
             main_js,
         )
+        managed_core = web.static_file("platform/managed-core.v1.js")[0].read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("/api/dsh", managed_core)
+        self.assertNotIn("/api/models", managed_core)
+        self.assertNotIn("/api/chat", managed_core)
+        self.assertNotIn("apiKey", managed_core)
+        self.assertNotIn("baseURL", managed_core)
         for platform_marker in (
             "cedar-platform-bar",
             "CEDAR TOY",
@@ -520,6 +647,18 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         ):
             with self.subTest(platform_marker=platform_marker):
                 self.assertNotIn(platform_marker, page)
+
+    def test_homepage_tarot_card_uses_live_save_count_placeholder(self):
+        web = TarotWeb()
+        homepage = (Path(__file__).resolve().parents[1] / "index.html").read_text(
+            encoding="utf-8"
+        )
+        rendered = web.homepage_index(homepage).decode("utf-8")
+        tarot_card = rendered.split('id: "tarot"', 1)[1].split('id: "fishing"', 1)[0]
+        self.assertIn('metricLabel: "存档数"', tarot_card)
+        self.assertIn('metric: "--"', tarot_card)
+        self.assertNotIn('metricLabel: "牌阵数"', tarot_card)
+        self.assertNotIn('metric: "00005"', tarot_card)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,19 @@
 # 塔罗接入调查与适配方案
 
-状态：代码接入已完成、相关本机可运行测试已通过，尚未部署。`tarot-ritual` 已按审定 commit vendor；Cove 不安装 Skill 本体，只保留公开行为规范、License 与 notices。CedarToy 已新增塔罗页面、独立会话库、MCP 动作和 loopback-only 模型桥。
+状态：本轮 Flash / Pro 选择、模型锁定、托管前端收口与配置脚本已完成本地开发和 mock 验收，尚未部署。当前线上基线仍为 `7569e7b`；本轮没有修改 `vendor/tarot-ritual`、子模块指针或生产数据库，也没有重启、提交或推送。
 
 ## 1. 现状与已实施的安全调整
 
-生产配置由 `turtle-soup/backend/turtle_soup.db` 的 `judge_api_configs` 提供。2026-09-18 的最新决定以当前实际存在的 `gemini-3.5-flash` 为塔罗专用模型，不再为海龟汤或双弈服务。迁移后的两行是：
+生产配置由 `turtle-soup/backend/turtle_soup.db` 的 `judge_api_configs` 提供。本轮开始时已核对的 Flash 记录是：
 
 | ID | 名称 | model | purpose | enabled | 当前用途 |
 | --- | --- | --- | --- | --- | --- |
-| 19 | `gg · 3.5 · 塔罗解读` | `gemini-3.5-flash` | `tarot` | 1 | 唯一启用的塔罗专业解读节点 |
+| 19 | `gg · 3.5 · 塔罗解读` | `gemini-3.5-flash` | `tarot` | 1 | Flash 塔罗专用节点 |
 | 20 | `gg · 3.5 · 塔罗解读（原NPC操作，重复停用）` | `gemini-3.5-flash` | `tarot` | 0 | 保留原记录用于回溯，不参与竞争 |
 
-迁移前的服务日志证实 ID 19 实际参加过 `judge` 调用，ID 20 实际参加过 `npc_decision` 调用；迁移后两者都不再匹配这些池。两行使用完全相同的 endpoint + API Key + model，因此只保留 ID 19 启用，避免同一个模型节点重复轮询竞争。它们仍与 ID 5/15 的 `gemini-3-flash-preview` 共用 endpoint + API Key；为避免影响现有 gg 通道，ID 5/15 保持原用途和启用状态。这实现了模型与用途路由隔离，但供应商 credential 锁和账号级额度仍共享。sukaka 的 Gemini 3.1、GLM 5.3 Flash、DeepSeek V4 Flash，以及其他 Groq/OpenRouter/硅基流动/DeepSeek 配置也均未改动。
+待上线的 Pro 记录为独立 `purpose='tarot'` 配置，模型精确为 `gemini-3.1-pro-preview`，可共用 #19 的 gg 上游账号。#4/#18 的 `gcli-gemini-3.1-pro-preview` 仍服务海龟汤/双弈，不借用、不改用途，也不会被本站精确 Pro 规则误排除。管理 API 现有的 endpoint + API Key + model 启用冲突检查保留，配置脚本在插入 Pro 前也执行同等检查。
+
+已用 #19 凭据做过的只读模型目录查询能看到 `gemini-3.1-pro-preview`；这只证明模型目录可见。本轮没有发送真实付费生成请求，因此不声称 Pro 真实生成、计费或额度已验证成功。Flash 与 Pro 共用上游账号时也不代表额度独立；Flash 无额度时不能假定 Pro 一定可用。
 
 当前代码已加入以下防护：
 
@@ -19,9 +21,9 @@
 2. 旧 `purpose='all'` 仍覆盖海龟汤 judge/hint 与双弈 NPC 池，但不会覆盖塔罗。
 3. `model` 明确匹配 Gemini 3.5 Flash（允许 provider 前缀、分隔符差异及 preview 后缀）时，即使被误标为 `judge`、`hint`、`both`、`all` 或 `npc*`，也会从海龟汤和双弈候选中排除。
 4. 匹配不包含 Gemini 3 Preview、其他 Gemini 型号、GLM、DeepSeek 等现有型号。
-5. 管理 API 会拒绝把 Gemini 3.5 Flash 保存成非 `tarot` 用途，并按 endpoint + API Key + model 阻止跨用途启用或重复启用同一个塔罗模型节点；错误信息只显示冲突配置的 ID/名称，不回显密钥。
+5. 管理 API 会拒绝把塔罗预留的 Flash 或精确 Pro 保存成非 `tarot` 用途，并按 endpoint + API Key + model 阻止跨用途启用或重复启用同一个塔罗模型节点；错误信息只显示冲突配置的 ID/名称，不回显密钥。
 
-当前生产配置已经迁移，不需要再猜测或新增“3.7”行。若未来要求供应商侧额度也完全独立，应给 ID 19 更换成独立项目/账号的 API Key；在此之前只能声明模型/用途隔离，不能声明账号级额度隔离。
+本轮不会新增或猜测“3.7”配置。在独立项目/账号凭据上线前，只能声明模型/用途隔离，不能声明账号级额度隔离。
 
 ## 2. 上游边界
 
@@ -44,7 +46,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 1. `vendor/tarot-ritual` 固定审定 commit，保留独立 Git 历史、`LICENSE`、`THIRD_PARTY_NOTICES.md` 和原 README；没有修改或推送上游源码。
 2. `server.py` 只提供审定前端静态资源、平台会话 API 和同源 companion API；模型请求经服务端 Bearer 调用海龟汤进程中的 loopback-only `/internal/tarot/reading`，不会把上游凭据代理暴露公网。
 3. `/tarot/` 验证人类 JWT 后下发 HttpOnly、SameSite=Lax 的独立 cookie（HTTPS 下同时带 Secure）。邀请 URL 只携带随机 invitation ID，最终授权仍核对登录人类、会话所有者与邀请方小机，URL 不是 bearer token。
-4. 首页/4399 塔罗卡片沿用现有“双入口”：主按钮打开原 GitHub，平台按钮进入 `/tarot/`。作者与来源信息按月幕万象模式放在首页卡片；进入游戏后不注入 CedarToy 顶栏、Logo、平台按钮皮肤或来源面板，原版页面只增加不可见的鉴权/session/AI bridge 配置。
+4. 首页/4399 塔罗卡片与 Guide 保留引擎/适配器署名链接。进入游戏后不恢复已移除的平台品牌顶栏；原版抽牌界面仅由 `tarot_adapter.py` 注入版本化托管资产。静态资产使用 immutable 缓存，新增适配资产为 `managed-core.v1.js` / `managed-ui.v1.js` / `managed-ui.v1.css`。
 
 ### 3.2 共享会话
 
@@ -52,7 +54,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 
 - `tarot_sessions`：随机 session ID、`human_user_id`、可空的邀请方 `ai_user_id`、状态、问题、牌阵、版本、创建/更新时间。
 - `tarot_sessions.draws_json` / `canonical_json`：服务端确认的牌位、牌 ID、正逆位、揭示状态及原版牌库事实；浏览器按同一 canonical deck 恢复原动画，避免两端看到不同结果。
-- `tarot_readings`：请求幂等键、状态（pending/running/succeeded/failed/unknown）、原始流式解读、可展示结果、模型配置 ID、错误与计费不确定标记。
+- `tarot_readings`：请求幂等键、状态（running/succeeded/failed/unknown/cancelled）、原始流式解读、实际锁定的固定模型 ID、错误与计费不确定标记。
 - `tarot_invites`：邀请、接受、拒绝、过期时间以及限频所需时间戳。
 
 创建邀请、接受/拒绝、提交整组牌面、开始解读和完成解读等状态跃迁分别使用短 `BEGIN IMMEDIATE` 事务；网络模型请求绝不占着数据库写锁。模型请求用幂等键，超时后的 `unknown` 只查询、不自动重试。人类直接进入可创建无 `ai_user_id` 的会话；小机邀请创建同时绑定 `human_user_id + ai_user_id` 的会话。只有该人类和邀请方小机能读已揭示牌面与解读；其他绑定小机不能横向读取，未揭示牌面也不能提前返回。
@@ -67,9 +69,13 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 
 ### 3.4 专用 AI 路由
 
-托管版原 UI 不再要求人类输入 CedarToy 的服务端密钥；它保留原有“神谕连接/流式解读”交互，但调用新的 loopback-only bridge。bridge 只查询 `enabled=1 AND purpose='tarot'`，不回退 `all/judge/hint/npc*`，海龟汤和双弈也不会反向回退到 tarot。ARCANUM · 星轨塔罗圣仪的提示词、牌义、流式文本和安全渲染仍是规范，不另写一套“平台塔罗解释器”。
+托管版右上角默认显示“本站 Flash”，打开后只有 Flash（Gemini 3.5 Flash）和 Pro（Gemini 3.1 Pro）两个固定选项，并显示“本站暂仅支持所提供的模型。如需自行配置模型，请克隆原版。”及原引擎仓库链接。已去掉 DSH 导入、自填 model / API Key / Base URL 的可见入口。托管 core 不读取这些字段，reading 只从浏览器传 `action_id + model`；旧 `/api/dsh/import`、`/api/models`、`/api/chat` 不解析业务 payload 并返回拒绝。这不等于声称服务器在网络层无法收到恶意 POST；边界是不再收集、保存、转发或使用浏览器凭据。
 
-塔罗 bridge 需要独立的并发上限、排队超时、幂等记录与观测指标，不计入海龟汤优先等待数或双弈 NPC 信号量。管理 API 会阻止同一个 endpoint + API Key + model 跨用途或重复启用；当前 3.5 与 gg 的其他模型仍共享 provider credential，因此供应商账号级额度并未拆分。若上线门禁要求额度完全独立，必须另配独立项目/账号的 API Key，不能靠改配置名称来宣称已经隔离。
+reading 创建时先校验两个 allowlist 模型，再把实际选择写入幂等记录。同一 `action_id` 即使重放时换了选项，也只返回首次的模型与结果，不再发付费请求。bridge 仅筛选相同 `purpose='tarot' AND model=<已锁定模型>` 的配置；中断、失败或未配置都不跨模型回退。浏览器 bootstrap/SSE 和 MCP `status/result` 都返回同一存储 model/source。用户后续手动换模型只影响下一个新解读，不会自动重跑既有记录。
+
+bridge 只查询精确的 `enabled=1 AND purpose='tarot' AND model=?`，不回退 `all/judge/hint/npc*`，海龟汤和双弈也不会反向回退到 tarot。ARCANUM · 星轨塔罗圣仪的提示词、牌义、流式文本和安全渲染仍是规范，不另写一套“平台塔罗解释器”。
+
+塔罗 bridge 需要独立的并发上限、排队超时、幂等记录与观测指标，不计入海龟汤优先等待数或双弈 NPC 信号量。管理 API 会阻止同一个 endpoint + API Key + model 跨用途或重复启用；Flash / Pro 可与 gg 的其他模型共享 provider credential，因此供应商账号级额度并未拆分。若上线门禁要求额度完全独立，必须另配独立项目/账号的 API Key，不能靠改配置名称来宣称已经隔离。
 
 ## 4. MCP Guide 中保留的小机规则
 
@@ -96,12 +102,27 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 
 不要加入作者未开源的自用实体牌面；只使用仓库随附的程序化粒子牌面。CedarToy 根仓许可不能覆盖或替换 vendor 的原许可。
 
-## 6. 已完成验收与部署门禁
+## 6. 已完成验收与待执行上线步骤
 
 1. `vendor/tarot-ritual` 已固定到 `04c6ee2c112e2da9a22bf0b5b4ec80d61ef401d5`，`origin` 仍是作者仓库；上游源码零修改。Cove 仅在临时目录审查，没有安装 Skill，也没有 vendor 其运行时代码。
 2. 原项目的 `check` 和 110 项测试已用 Node 24 运行通过（105 通过、5 个按上游条件跳过）；海龟汤管理前端也已完成独立临时目录生产构建。CedarToy 另有后端隔离、MCP/HTTP 越权、模型池和页面注入测试。
 3. 两组人类+小机可以在两个线程同时提交不同问题、牌面与解读；双方的 AI、human bootstrap、invitation、reading 交叉读取全部得到 404。会话 ID 是 `token_urlsafe(32)`，API 没有 list/latest/global event stream；`/tarot/static/` 只提供资源文件，拒绝直接提供上游 HTML，不能绕过平台鉴权会话壳。
 4. `action_id`、抽牌和揭牌事件都有幂等记录；进程重启遗留的 `running` 会变为 `unknown`，人类主动停止后的迟到模型响应不能覆盖 `cancelled`，平台不会自动重试可能已计费的请求。
 5. 首页入口在新 `server.py` 中按既有 4399 双入口规范注入，当前磁盘上的实时 `index.html` 保持不变；所以本次没有把尚未加载的 `/tarot/*` 路由提前暴露成半部署入口。将来重启 `cedartoy` 后，GitHub 主按钮与“开始占问”平台按钮会一起生效。
-6. 上线前必须给 `cedartoy` 与 `turtle-soup` 配置相同的高熵 `TAROT_BRIDGE_TOKEN`，随后重启这两个现有进程；本实现不需要新增 Tarot supervisor 进程。若上线门禁要求供应商账号级额度也独立，还必须先给 ID 19 更换独立项目/账号凭据。
-7. 部署后再做真实浏览器验收：桌面与移动端的问询、择阵、Three.js 洗牌/飞牌/整组翻牌、刷新恢复、流式解读、邀请接受/拒绝，以及人类完成后小机 `status/result` 续聊。本次按要求没有重启服务、没有部署，也没有 Git push/pull。
+6. mock 验收覆盖两个选项到 upstream `model` 字段、存储与浏览器/MCP 返回、任意模型和凭据字段拒绝、未配置 Pro 不回退 Flash、`action_id` 幂等、权限/CSRF/来源校验，以及 jsdom 中的 Flash → Pro 选择行为和移动端全宽面板规则。所有模型调用都是 mock，没有真实付费生成。
+7. 上线前先对 `turtle-soup/backend/turtle_soup.db` 做可恢复备份，再先预演、后写入：
+   ```bash
+   cd /opt/cedartoy
+   sqlite3 /opt/cedartoy/turtle-soup/backend/turtle_soup.db ".timeout 30000" ".backup '/home/backups/cedartoy/turtle_soup_pre_tarot_pro_YYYYMMDD_HHMMSS.db'"
+   python3 scripts/configure_tarot_pro.py --database /opt/cedartoy/turtle-soup/backend/turtle_soup.db
+   python3 scripts/configure_tarot_pro.py --database /opt/cedartoy/turtle-soup/backend/turtle_soup.db --apply
+   sqlite3 /opt/cedartoy/turtle-soup/backend/turtle_soup.db "SELECT id,name,model,purpose,enabled,priority FROM judge_api_configs WHERE purpose='tarot' ORDER BY id; PRAGMA integrity_check;"
+   ```
+   脚本不输出 endpoint 或 API Key，并可重复执行；正式库写入仍须由上线人明确执行。
+8. 代码和 Pro 配置就位后，需重启两个现有服务（不新增 Tarot 进程）：
+   ```bash
+   supervisorctl -c /etc/supervisor/supervisord.conf restart turtle-soup
+   supervisorctl -c /etc/supervisor/supervisord.conf restart cedartoy
+   ```
+   `TAROT_BRIDGE_TOKEN` 仍须在两个服务中一致，不要在工单或报告中回显。
+9. 部署后再做真实浏览器验收：桌面与移动端的问询、择阵、Three.js 洗牌/飞牌/整组翻牌、右上角两模型选择、刷新恢复、返回聊天/停止本次、邀请接受/拒绝，以及人类完成后小机 `status/result` 续聊。如需做真实付费 Flash/Pro 生成验收，必须由运营方另行明确触发并如实记录；不能用模型目录可见或 mock 测试代替。

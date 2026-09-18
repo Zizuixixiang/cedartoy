@@ -14,6 +14,8 @@ from judge import tarot_reading_chat
 
 
 router = APIRouter()
+TAROT_FLASH_MODEL = "gemini-3.5-flash"
+TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
 
 
 class TarotMessage(BaseModel):
@@ -27,6 +29,7 @@ class TarotBridgeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     messages: list[TarotMessage] = Field(min_length=1, max_length=4)
+    model: Literal["gemini-3.5-flash", "gemini-3.1-pro-preview"] = TAROT_FLASH_MODEL
     max_tokens: int = Field(default=4096, ge=1, le=8192)
     timeout: float = Field(default=90, ge=5, le=120)
 
@@ -55,6 +58,7 @@ async def tarot_reading(
         content = await asyncio.wait_for(
             tarot_reading_chat(
                 messages,
+                model=body.model,
                 max_tokens=body.max_tokens,
                 timeout=body.timeout,
             ),
@@ -74,5 +78,5 @@ async def tarot_reading(
         "content": content,
         "source": "tarot-ritual",
         "pool": "tarot",
-        "model": "gemini-3.5-flash",
+        "model": body.model,
     }

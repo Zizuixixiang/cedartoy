@@ -1,0 +1,91 @@
+.managed-model-note {
+  margin: 4px 0 22px;
+  color: var(--ivory-dim);
+  font-size: 13px;
+  line-height: 1.85;
+  letter-spacing: .05em;
+}
+
+.managed-model-note a {
+  color: var(--gold-bright);
+  text-underline-offset: 3px;
+}
+
+.managed-settings .provider-list {
+  margin-bottom: 0;
+}
+
+.managed-settings .provider-item {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.managed-settings .provider-item .p-head,
+.managed-settings .managed-model-source {
+  display: none;
+}
+
+.managed-model-options {
+  display: grid;
+  gap: 10px;
+}
+
+.managed-model-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 58px;
+  padding: 13px 15px;
+  border: 1px solid rgba(212, 176, 115, .18);
+  background: rgba(212, 176, 115, .035);
+  color: var(--ivory);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .25s, background .25s;
+}
+
+.managed-model-option:hover,
+.managed-model-option:focus-visible {
+  border-color: var(--gold-dim);
+  outline: none;
+}
+
+.managed-model-option.selected {
+  border-color: var(--gold);
+  background: rgba(212, 176, 115, .09);
+}
+
+.managed-model-option span {
+  color: var(--gold-bright);
+  font-size: 15px;
+  letter-spacing: .14em;
+}
+
+.managed-model-option small {
+  color: var(--ivory-dim);
+  font-size: 12px;
+  letter-spacing: .05em;
+}
+
+@media (max-width: 600px) {
+  #settingsPanel {
+    width: 100vw;
+    padding: 76px 18px 0;
+  }
+
+  .managed-model-option {
+    min-height: 62px;
+    padding: 14px;
+  }
+
+  #providerLabel {
+    max-width: 34vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

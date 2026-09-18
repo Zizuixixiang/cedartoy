@@ -68,9 +68,15 @@ from tarot_adapter import (
     RITUAL_DISPLAY_NAME,
     RITUAL_ROOT,
     RITUAL_REPOSITORY,
+    TAROT_ALLOWED_MODELS,
+    TAROT_FLASH_MODEL,
+    TAROT_MODEL_LABELS,
+    TAROT_PRO_MODEL,
     TarotError,
     WEB as TAROT_WEB,
+    count_saved_tarot_sessions,
     get_store as get_tarot_store,
+    tarot_model_source,
 )
 from vendor_cmd_adapter import bar as bar_adapter
 from vendor_cmd_adapter import arcade as arcade_adapter
@@ -4044,6 +4050,10 @@ def _public_game_stats():
             "metric_label": "对局数",
             "metric": _sum_ciyuwu_runs(),
             "save_count": _count_table_rows("ciyuwu_sessions"),
+        },
+        "tarot": {
+            "metric_label": "存档数",
+            "metric": count_saved_tarot_sessions(),
         },
     }
     for game in ("arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
@@ -11717,30 +11727,11 @@ a{{color:#c9afff}}
         try:
             human = self._tarot_human()
             if path in {"/api/dsh/import", "/api/models", "/api/chat"}:
-                if self.headers.get("X-Tarot-Request") != "1":
-                    self._drain_body()
-                    raise TarotError(403, "缺少同源请求标记")
-                body = self._read_json_body()
-                if path == "/api/chat":
-                    raise TarotError(
-                        403,
-                        f"托管版只允许本次 {RITUAL_DISPLAY_NAME} 会话调用专业解读",
-                    )
-                if path == "/api/dsh/import" and body.get("consent") is not True:
-                    raise TarotError(400, "需要明确确认托管神谕")
-                if path == "/api/models":
-                    if body.get("providerId") != "dsh:cedartoy-tarot":
-                        raise TarotError(400, "provider 不存在")
-                    self._send_json(
-                        {"models": ["gemini-3.5-flash"]},
-                        extra_headers={"Cache-Control": "no-store"},
-                    )
-                    return
-                self._send_json(
-                    self._tarot_provider_metadata(),
-                    extra_headers={"Cache-Control": "no-store"},
+                self._drain_body()
+                raise TarotError(
+                    410,
+                    "托管版不支持导入或自定义模型；请使用右上角的本站 Flash / Pro",
                 )
-                return
 
             invite = re.fullmatch(
                 r"/api/tarot/invitations/([A-Za-z0-9_-]{32,128})/(accept|reject)",
@@ -11781,6 +11772,10 @@ a{{color:#c9afff}}
                 self._send_json(result, extra_headers={"Cache-Control": "no-store"})
                 return
             if suffix == "reading":
+                if not isinstance(body, dict) or "action_id" not in body:
+                    raise TarotError(400, "缺少解读 action_id")
+                if not set(body).issubset({"action_id", "model"}):
+                    raise TarotError(400, "解读请求只允许 action_id 和本站模型")
                 self._handle_tarot_reading_start(
                     session_id, int(human["id"]), body, csrf
                 )
@@ -11798,10 +11793,10 @@ a{{color:#c9afff}}
             "managed": True,
             "providers": [
                 {
-                    "id": "dsh:cedartoy-tarot",
-                    "label": "Gemini",
-                    "kind": "openai",
-                    "models": ["gemini-3.5-flash"],
+                    "id": "managed:cedartoy-tarot",
+                    "label": "本站",
+                    "kind": "managed",
+                    "models": [TAROT_FLASH_MODEL, TAROT_PRO_MODEL],
                     "hasKey": True,
                     "oauth": None,
                 }
@@ -11878,11 +11873,9 @@ a{{color:#c9afff}}
             return
 
         if path == "/api/dsh":
-            if self.headers.get("X-Tarot-Request") != "1":
-                self._send_json({"error": "缺少同源请求标记"}, status=403)
-                return
             self._send_json(
-                self._tarot_provider_metadata(),
+                {"error": "托管版已不使用 DSH 配置端点"},
+                status=410,
                 extra_headers={"Cache-Control": "no-store"},
             )
             return
@@ -11952,9 +11945,12 @@ a{{color:#c9afff}}
 
     def _handle_tarot_reading_start(self, session_id, human_user_id, body, csrf):
         action_id = body.get("action_id")
+        model = body.get("model", TAROT_FLASH_MODEL)
+        if not isinstance(model, str) or model not in TAROT_ALLOWED_MODELS:
+            raise TarotError(400, "只能选择本站提供的 Flash 或 Pro 模型")
         store = get_tarot_store()
         claim = store.claim_reading(
-            session_id, human_user_id, action_id, csrf
+            session_id, human_user_id, action_id, csrf, model=model
         )
         attempt = claim["attempt"]
         if not claim["claimed"]:
@@ -11978,6 +11974,7 @@ a{{color:#c9afff}}
                 headers={"Authorization": f"Bearer {TAROT_BRIDGE_TOKEN}"},
                 json={
                     "messages": messages,
+                    "model": attempt["model"],
                     "max_tokens": 4096,
                     "timeout": min(120, TAROT_BRIDGE_TIMEOUT_SECONDS - 1),
                 },
@@ -11985,18 +11982,29 @@ a{{color:#c9afff}}
             )
             if response.status_code >= 400:
                 terminal = "unknown" if response.status_code in {502, 504} else "failed"
+                error_code = f"bridge_http_{response.status_code}"
+                if response.status_code == 503:
+                    try:
+                        detail = response.json().get("detail", "")
+                    except (ValueError, AttributeError):
+                        detail = ""
+                    if isinstance(detail, str) and detail.startswith("所选塔罗模型未配置："):
+                        error_code = "model_unconfigured"
+                    else:
+                        error_code = "model_unavailable"
                 attempt = store.finish_reading(
                     session_id,
                     human_user_id,
                     attempt_id,
                     state=terminal,
-                    error_code=f"bridge_http_{response.status_code}",
+                    error_code=error_code,
                 )
             else:
                 payload = response.json()
                 if (
                     payload.get("pool") != "tarot"
-                    or payload.get("model") != "gemini-3.5-flash"
+                    or payload.get("model") != attempt["model"]
+                    or payload.get("source") != "tarot-ritual"
                     or not isinstance(payload.get("content"), str)
                     or not payload["content"].strip()
                 ):
@@ -12028,19 +12036,30 @@ a{{color:#c9afff}}
 
     def _send_tarot_reading_sse(self, attempt):
         state = attempt.get("state")
-        events = []
+        model = attempt.get("model")
+        if model not in TAROT_ALLOWED_MODELS:
+            model = TAROT_FLASH_MODEL
+        events = [{"t": "meta", "model": model, "source": tarot_model_source(model)}]
         if state == "succeeded":
             text = str(attempt.get("text") or "")
             for offset in range(0, len(text), 256):
                 events.append({"t": "delta", "v": text[offset:offset + 256]})
         else:
+            error_code = attempt.get("error_code")
+            model_label = TAROT_MODEL_LABELS[model]
             messages = {
                 "running": "解读仍在进行；不会自动重复发起。",
                 "unknown": "先前解读状态未知，可能已经计费；请勿自动重试。",
                 "cancelled": "本次解读已停止。",
                 "failed": "本次专业解读未完成，请稍后由人类明确决定是否重试。",
             }
-            events.append({"t": "error", "v": messages.get(state, "解读状态无效")})
+            if error_code == "model_unconfigured":
+                message = f"本站尚未配置 {model_label}，未切换其他模型。"
+            elif error_code == "model_unavailable":
+                message = f"{model_label} 暂时不可用，未切换其他模型。"
+            else:
+                message = messages.get(state, "解读状态无效")
+            events.append({"t": "error", "v": message})
         events.append({"t": "done"})
         body = "".join(
             "data: " + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n\n"

@@ -554,6 +554,8 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         }
         judge._npc_semaphore = None
         judge._npc_semaphore_loop = None
+        judge._tarot_semaphore = None
+        judge._tarot_semaphore_loop = None
         judge._npc_active = 0
         judge._npc_waiting = 0
         judge._priority_waiters = 0
@@ -658,6 +660,18 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             **CONFIG,
             "id": 54,
             "purpose": "tarot",
+            "model": judge.TAROT_FLASH_MODEL,
+        }
+        pro = {
+            **CONFIG,
+            "id": 57,
+            "purpose": "tarot",
+            "model": judge.TAROT_PRO_MODEL,
+        }
+        unapproved_tarot = {
+            **CONFIG,
+            "id": 58,
+            "purpose": "tarot",
             "model": "gcli-gemini-3.5-flash-preview",
         }
         ordinary = {
@@ -672,17 +686,81 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             "name": "duplicate tarot row",
         }
         self.assertTrue(judge.is_tarot_exclusive_model(tarot))
+        self.assertTrue(judge.is_tarot_exclusive_model(pro))
+        self.assertTrue(judge.is_tarot_exclusive_model(unapproved_tarot))
+        self.assertFalse(judge.is_tarot_exclusive_model({
+            **CONFIG,
+            "model": "gcli-gemini-3.1-pro-preview",
+        }))
         self.assertFalse(judge.is_tarot_exclusive_model(ordinary))
         self.assertEqual(
             judge._select_configs_for_pool(
-                [ordinary, tarot, duplicate_tarot], "tarot"
+                [ordinary, tarot, pro, unapproved_tarot, duplicate_tarot], "tarot"
             ),
-            [tarot],
+            [tarot, pro],
+        )
+        self.assertEqual(
+            judge._select_configs_for_pool(
+                [tarot, pro], "tarot", model=judge.TAROT_PRO_MODEL
+            ),
+            [pro],
         )
         self.assertEqual(
             judge._select_configs_for_pool([ordinary, tarot], "judge"),
             [ordinary],
         )
+
+    async def test_tarot_selected_model_is_the_only_upstream_candidate(self):
+        flash = {
+            **CONFIG,
+            "id": 81,
+            "name": "flash",
+            "purpose": "tarot",
+            "model": judge.TAROT_FLASH_MODEL,
+        }
+        pro = {
+            **CONFIG,
+            "id": 82,
+            "name": "pro",
+            "purpose": "tarot",
+            "model": judge.TAROT_PRO_MODEL,
+        }
+        FakeClient.outcomes = [response(200, content="pro only")]
+        with (
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash, pro])),
+            patch.object(judge.httpx, "AsyncClient", FakeClient),
+        ):
+            result = await judge.tarot_reading_chat(
+                MESSAGES,
+                model=judge.TAROT_PRO_MODEL,
+                timeout=20,
+            )
+        self.assertEqual(result, "pro only")
+        self.assertEqual(
+            [payload["model"] for payload in FakeClient.payloads],
+            [judge.TAROT_PRO_MODEL],
+        )
+
+    async def test_unconfigured_tarot_model_does_not_fall_back(self):
+        flash = {
+            **CONFIG,
+            "id": 83,
+            "purpose": "tarot",
+            "model": judge.TAROT_FLASH_MODEL,
+        }
+        with (
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash])),
+            patch.object(judge.httpx, "AsyncClient", FakeClient),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            await judge.tarot_reading_chat(
+                MESSAGES,
+                model=judge.TAROT_PRO_MODEL,
+                timeout=20,
+            )
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("所选塔罗模型未配置", raised.exception.detail)
+        self.assertEqual(FakeClient.payloads, [])
 
     def test_tarot_model_node_is_unique_but_other_models_may_share_credential(self):
         soup_other_model = {
@@ -793,6 +871,27 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"id": 61})
         execute.assert_awaited_once()
+
+    async def test_admin_rejects_exact_managed_pro_outside_tarot(self):
+        body = admin_router.ApiConfigBody(
+            name="misassigned managed pro",
+            api_url=CONFIG["api_url"],
+            api_key=CONFIG["api_key"],
+            model=judge.TAROT_PRO_MODEL,
+            purpose="npc",
+            enabled=1,
+            priority=0,
+        )
+        execute = AsyncMock(return_value=91)
+        with (
+            patch.object(admin_router, "fetch_all", AsyncMock(return_value=[])),
+            patch.object(admin_router, "execute", execute),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            await admin_router.add_api_config(body, admin={"id": 1})
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertIn("purpose 必须为 tarot", raised.exception.detail)
+        execute.assert_not_awaited()
 
     async def test_tarot_does_not_join_soup_priority_waiter_signal(self):
         observed = []

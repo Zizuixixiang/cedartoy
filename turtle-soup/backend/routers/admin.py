@@ -125,7 +125,8 @@ async def require_api_config_assignment(
         raise HTTPException(
             status_code=422,
             detail=(
-                "Gemini 3.5 Flash 是塔罗解读专用模型，purpose 必须为 tarot；"
+                "本站预留的 Gemini Flash / Pro 是塔罗解读专用模型，"
+                "purpose 必须为 tarot；"
                 "不能分配给海龟汤或双弈。"
             ),
         )

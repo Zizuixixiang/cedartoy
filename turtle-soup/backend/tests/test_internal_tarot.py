@@ -67,23 +67,28 @@ class TarotBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(wrong.status_code, 401)
         chat.assert_not_awaited()
 
-    async def test_always_reports_tarot_pool_and_gemini_35(self):
-        chat = AsyncMock(return_value="### 牌阵总览\n本次解读")
-        with (
-            patch.dict("os.environ", {"TAROT_BRIDGE_TOKEN": "bridge-secret"}),
-            patch.object(internal_tarot, "tarot_reading_chat", chat),
-        ):
-            response = await self.client.post(
-                "/internal/tarot/reading",
-                headers={"Authorization": "Bearer bridge-secret"},
-                json=self.payload,
-            )
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["pool"], "tarot")
-        self.assertEqual(response.json()["model"], "gemini-3.5-flash")
-        chat.assert_awaited_once_with(
-            self.payload["messages"], max_tokens=4096, timeout=20.0
-        )
+    async def test_reports_and_forwards_the_exact_fixed_model(self):
+        for model in ("gemini-3.5-flash", "gemini-3.1-pro-preview"):
+            with self.subTest(model=model):
+                chat = AsyncMock(return_value="### 牌阵总览\n本次解读")
+                with (
+                    patch.dict("os.environ", {"TAROT_BRIDGE_TOKEN": "bridge-secret"}),
+                    patch.object(internal_tarot, "tarot_reading_chat", chat),
+                ):
+                    response = await self.client.post(
+                        "/internal/tarot/reading",
+                        headers={"Authorization": "Bearer bridge-secret"},
+                        json={**self.payload, "model": model},
+                    )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["pool"], "tarot")
+                self.assertEqual(response.json()["model"], model)
+                chat.assert_awaited_once_with(
+                    self.payload["messages"],
+                    model=model,
+                    max_tokens=4096,
+                    timeout=20.0,
+                )
 
     async def test_schema_is_bounded_and_extra_provider_fields_are_rejected(self):
         chat = AsyncMock()
@@ -104,8 +109,14 @@ class TarotBridgeTests(unittest.IsolatedAsyncioTestCase):
                 headers={"Authorization": "Bearer bridge-secret"},
                 json={**self.payload, "provider": {"apiKey": "attacker"}},
             )
+            arbitrary_model = await self.client.post(
+                "/internal/tarot/reading",
+                headers={"Authorization": "Bearer bridge-secret"},
+                json={**self.payload, "model": "attacker-model"},
+            )
         self.assertEqual(too_large.status_code, 422)
         self.assertEqual(injected.status_code, 422)
+        self.assertEqual(arbitrary_model.status_code, 422)
         chat.assert_not_awaited()
 
     async def test_upstream_details_are_not_leaked(self):
