@@ -3,7 +3,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from fastapi import HTTPException
@@ -275,6 +275,81 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
             judge.get_config_runtime_status(model_b["id"])["runtime_status"],
             "healthy",
         )
+
+    async def test_tarot_public_status_reads_live_429_state_without_claim_or_request(self):
+        flash = {
+            **CONFIG,
+            "id": 73,
+            "name": "tarot-flash",
+            "purpose": "tarot",
+            "model": judge.TAROT_FLASH_MODEL,
+        }
+        pro = {
+            **CONFIG,
+            "id": 74,
+            "name": "tarot-pro",
+            "purpose": "tarot",
+            "model": judge.TAROT_PRO_MODEL,
+        }
+        with (
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash, pro])),
+            patch.object(judge.httpx, "AsyncClient", FakeClient),
+            self.assertRaises(HTTPException),
+        ):
+            FakeClient.outcomes = [response(429, headers={"Retry-After": "240"})]
+            await judge.tarot_reading_chat(
+                MESSAGES, model=judge.TAROT_FLASH_MODEL, timeout=20
+            )
+        self.assertEqual(
+            [payload["model"] for payload in FakeClient.payloads],
+            [judge.TAROT_FLASH_MODEL],
+        )
+        claim = Mock(side_effect=AssertionError("status must not claim a probe"))
+
+        with (
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash, pro])),
+            patch.object(judge, "_claim_attempt", claim),
+            patch.object(
+                judge.httpx,
+                "AsyncClient",
+                side_effect=AssertionError("status must not contact upstream"),
+            ),
+        ):
+            current = await judge.get_tarot_model_runtime_statuses()
+            self.clock += 240
+            retry_ready = await judge.get_tarot_model_runtime_statuses()
+            judge._state(flash["id"]).probe_in_flight = True
+            probing = await judge.get_tarot_model_runtime_statuses()
+
+        self.assertEqual(
+            current,
+            {
+                "models": [
+                    {
+                        "model": judge.TAROT_FLASH_MODEL,
+                        "status": "cooling",
+                        "remaining_seconds": 240,
+                    },
+                    {
+                        "model": judge.TAROT_PRO_MODEL,
+                        "status": "available",
+                        "remaining_seconds": 0,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(retry_ready["models"][0]["status"], "retry_ready")
+        self.assertEqual(probing["models"][0]["status"], "probing")
+        self.assertEqual(probing["models"][1]["status"], "available")
+        claim.assert_not_called()
+
+        disabled_pro = {**pro, "enabled": 0}
+        with patch.object(
+            judge, "fetch_all", AsyncMock(return_value=[disabled_pro])
+        ):
+            unavailable = await judge.get_tarot_model_runtime_statuses()
+        self.assertEqual(unavailable["models"][0]["status"], "unconfigured")
+        self.assertEqual(unavailable["models"][1]["status"], "disabled")
 
     async def test_only_one_request_can_use_a_half_open_probe(self):
         state = judge._state(CONFIG["id"])

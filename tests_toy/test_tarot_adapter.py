@@ -178,6 +178,221 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
         self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 2)
 
+    def test_history_lists_only_owned_saved_draws_and_returns_safe_detail(self):
+        empty = self.store.create_direct_session(101)
+        self.assertEqual(self.store.history_for_human(101)["items"], [])
+        self.store.stop_session(
+            empty["id"],
+            101,
+            self.store.bootstrap_for_human(empty["id"], 101)["csrf_token"],
+        )
+
+        first = self.store.create_invite(201, 101, "history_owned_1")
+        self.accept(first["session_id"], 101)
+        first_csrf = self.store.bootstrap_for_human(
+            first["session_id"], 101
+        )["csrf_token"]
+        self.store.commit_draw(
+            first["session_id"],
+            101,
+            {
+                "event_id": "history_draw_1",
+                "question": "<img src=x onerror=alert(1)> 我的私密问题",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M00", "reversed": False}
+                ],
+            },
+            first_csrf,
+        )
+        self.store.reveal(
+            first["session_id"],
+            101,
+            {"event_id": "history_reveal_1", "positions": [0]},
+            first_csrf,
+        )
+        attempt = self.store.claim_reading(
+            first["session_id"], 101, "history_read_1", first_csrf
+        )["attempt"]
+        self.store.finish_reading(
+            first["session_id"],
+            101,
+            attempt["id"],
+            state="succeeded",
+            text="<script>不能作为 HTML 执行</script>",
+        )
+
+        second_owned = self.store.create_invite(202, 101, "history_owned_2")
+        self.accept(second_owned["session_id"], 101)
+        second_csrf = self.store.bootstrap_for_human(
+            second_owned["session_id"], 101
+        )["csrf_token"]
+        self.store.commit_draw(
+            second_owned["session_id"],
+            101,
+            {
+                "event_id": "history_draw_owned_2",
+                "question": "第二条本人记录",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M01", "reversed": True}
+                ],
+            },
+            second_csrf,
+        )
+
+        other = self.store.create_invite(201, 102, "history_other_2")
+        self.accept(other["session_id"], 102)
+        other_csrf = self.store.bootstrap_for_human(
+            other["session_id"], 102
+        )["csrf_token"]
+        self.store.commit_draw(
+            other["session_id"],
+            102,
+            {
+                "event_id": "history_draw_2",
+                "question": "另一位人类的问题",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M01", "reversed": True}
+                ],
+            },
+            other_csrf,
+        )
+
+        owned = self.store.history_for_human(101, limit=1)
+        self.assertEqual(len(owned["items"]), 1)
+        self.assertEqual(owned["next_offset"], 1)
+        second_page = self.store.history_for_human(101, offset=1, limit=1)
+        listed = owned["items"] + second_page["items"]
+        self.assertEqual(
+            {item["session_id"] for item in listed},
+            {first["session_id"], second_owned["session_id"]},
+        )
+        self.assertTrue(
+            any("<img" in item["question_summary"] for item in listed)
+        )
+        self.assertNotIn("human_user_id", str(listed))
+        with self.store._connect() as conn:
+            readings_before = conn.execute(
+                "SELECT COUNT(*) FROM tarot_readings"
+            ).fetchone()[0]
+            revision_before = conn.execute(
+                "SELECT revision FROM tarot_sessions WHERE id=?",
+                (first["session_id"],),
+            ).fetchone()[0]
+        detail = self.store.history_detail_for_human(first["session_id"], 101)
+        self.assertEqual(detail["spread"]["zh"], "每日一牌")
+        self.assertEqual(detail["cards"][0]["zh"], "愚者")
+        self.assertEqual(
+            detail["reading"]["text"], "<script>不能作为 HTML 执行</script>"
+        )
+        self.assertNotIn("id", detail["reading"])
+        self.assertNotIn("error_code", detail["reading"])
+        self.assertNotIn("ai_user_id", detail)
+        with self.store._connect() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM tarot_readings").fetchone()[0],
+                readings_before,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT revision FROM tarot_sessions WHERE id=?",
+                    (first["session_id"],),
+                ).fetchone()[0],
+                revision_before,
+            )
+        self.assertTarotStatus(
+            404,
+            lambda: self.store.history_detail_for_human(first["session_id"], 102),
+        )
+        self.assertTarotStatus(
+            404,
+            lambda: self.store.history_detail_for_human(other["session_id"], 101),
+        )
+
+    def test_history_delete_cascades_and_late_reading_cannot_resurrect(self):
+        invite = self.store.create_invite(201, 101, "history_delete_1")
+        session_id = invite["session_id"]
+        self.accept(session_id, 101)
+        csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
+        self.store.commit_draw(
+            session_id,
+            101,
+            {
+                "event_id": "history_delete_draw",
+                "question": "删除中的解读",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M00", "reversed": False}
+                ],
+            },
+            csrf,
+        )
+        self.store.reveal(
+            session_id,
+            101,
+            {"event_id": "history_delete_reveal", "positions": [0]},
+            csrf,
+        )
+        attempt = self.store.claim_reading(
+            session_id, 101, "history_delete_read", csrf
+        )["attempt"]
+        self.assertTarotStatus(
+            403,
+            lambda: self.store.delete_history_session(
+                session_id,
+                101,
+                csrf_session_id=session_id,
+                csrf_token="wrong-csrf",
+            ),
+        )
+        other_current = self.store.create_direct_session(102)
+        other_csrf = self.store.bootstrap_for_human(
+            other_current["id"], 102
+        )["csrf_token"]
+        self.assertTarotStatus(
+            404,
+            lambda: self.store.delete_history_session(
+                session_id,
+                102,
+                csrf_session_id=other_current["id"],
+                csrf_token=other_csrf,
+            ),
+        )
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 1)
+        deleted = self.store.delete_history_session(
+            session_id,
+            101,
+            csrf_session_id=session_id,
+            csrf_token=csrf,
+        )
+        self.assertEqual(deleted, {"deleted": True, "session_id": session_id})
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
+        self.assertTarotStatus(
+            404, lambda: self.store.bootstrap_for_human(session_id, 101)
+        )
+        self.assertTarotStatus(
+            404, lambda: self.store.ai_status(session_id, 201, 101)
+        )
+        self.assertTarotStatus(
+            404,
+            lambda: self.store.finish_reading(
+                session_id,
+                101,
+                attempt["id"],
+                state="succeeded",
+                text="迟到响应不得复活",
+            ),
+        )
+        with self.store._connect() as conn:
+            for table in ("tarot_invites", "tarot_receipts", "tarot_readings"):
+                count = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE session_id=?",
+                    (session_id,),
+                ).fetchone()[0]
+                self.assertEqual(count, 0, table)
+
     def test_two_human_machine_pairs_complete_concurrently_without_cross_reads(self):
         first = self.store.create_invite(201, 101, "concurrent_pair_1")
         second = self.store.create_invite(202, 102, "concurrent_pair_2")
@@ -601,8 +816,11 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('<link rel="stylesheet" href="./css/style.css">', page)
         self.assertIn('<script type="module" src="./js/main.js"></script>', page)
         self.assertIn('/tarot/static/platform/managed-core.v1.js', page)
-        self.assertIn('/tarot/static/platform/managed-ui.v2.js', page)
-        self.assertIn('/tarot/static/platform/managed-ui.v2.css', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v3.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v3.css', page)
+        self.assertIn('/tarot/static/platform/managed-companion.v3.js', page)
+        self.assertNotIn('/tarot/static/platform/managed-ui.v2.js', page)
+        self.assertNotIn('/tarot/static/platform/managed-ui.v2.css', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v1.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v1.css', page)
         self.assertIn(f"<title>{RITUAL_DISPLAY_NAME}</title>", page)
@@ -610,6 +828,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('id="providerOrb"', page)
         self.assertIn("本站暂仅支持所提供的模型。如需自行配置模型，请克隆", page)
         self.assertIn(f'href="{COVE_REPOSITORY}"', page)
+        self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v3.js'),
+            page.index('<script type="module" src="./js/main.js"></script>'),
+        )
         self.assertNotIn("导入本机 DSH", page)
         self.assertNotIn("手动填写模型 ID", page)
         self.assertNotIn("Base URL", page)
@@ -633,13 +855,26 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertNotIn("apiKey", managed_core)
         self.assertNotIn("baseURL", managed_core)
         managed_ui_path, managed_ui_mime = web.static_file(
-            "platform/managed-ui.v2.js"
+            "platform/managed-ui.v3.js"
         )
         self.assertEqual(managed_ui_mime, "text/javascript")
         managed_ui = managed_ui_path.read_text(encoding="utf-8")
         self.assertIn("本次已结束，记录已保留。", managed_ui)
         self.assertIn("managed-companion-settings-hidden", managed_ui)
+        self.assertIn("/api/tarot/models/status", managed_ui)
+        self.assertIn("可重试（尚未确认恢复）", managed_ui)
+        self.assertIn("installSecureRandomUUID", managed_ui)
+        self.assertIn("managedHistoryPanel", managed_ui)
+        self.assertNotIn("formatRemaining", managed_ui)
+        self.assertNotIn("setInterval", managed_ui)
+        self.assertNotIn("Math.random(", managed_ui)
+        managed_companion = web.static_file(
+            "platform/managed-companion.v3.js"
+        )[0].read_text(encoding="utf-8")
+        self.assertIn("/api/tarot/models/status", managed_companion)
+        self.assertIn("body?.attempt_id", managed_companion)
         self.assertTrue(web.static_file("platform/managed-ui.v1.js")[0].is_file())
+        self.assertTrue(web.static_file("platform/managed-ui.v2.js")[0].is_file())
         for platform_marker in (
             "cedar-platform-bar",
             "CEDAR TOY",

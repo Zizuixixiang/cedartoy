@@ -257,6 +257,76 @@ def get_config_runtime_status(config_id: int, *, enabled: bool = True) -> dict[s
     }
 
 
+def _public_tarot_node_status(
+    cfg: dict[str, Any], now: float
+) -> tuple[str, int]:
+    """Return the managed UI status without claiming or changing a probe."""
+    state = _runtime_states.get(_node_key(cfg))
+    if state is None:
+        return "available", 0
+    remaining = max(0, math.ceil(state.cooldown_until - now))
+    if remaining:
+        return "cooling", remaining
+    if state.probe_in_flight:
+        return "probing", 0
+    if state.cooldown_stage >= 0:
+        return "retry_ready", 0
+    return "available", 0
+
+
+async def get_tarot_model_runtime_statuses() -> dict[str, Any]:
+    """Expose only fixed Tarot model availability from this running process.
+
+    This is deliberately read-only: it neither claims a half-open probe nor
+    performs an upstream request. Runtime health remains scoped to the same
+    endpoint + credential + model node used by actual Tarot calls.
+    """
+    rows = await fetch_all(
+        "SELECT id, api_url, api_key, model, purpose, enabled "
+        "FROM judge_api_configs ORDER BY priority ASC, id ASC"
+    )
+    now = _now()
+    models: list[dict[str, Any]] = []
+    for model in (TAROT_FLASH_MODEL, TAROT_PRO_MODEL):
+        configured = [
+            row
+            for row in rows
+            if str(row.get("purpose") or "judge").strip().lower()
+            == TAROT_POOL_NAME
+            and str(row.get("model") or "") == model
+        ]
+        enabled = [row for row in configured if bool(row.get("enabled"))]
+        if not configured:
+            models.append(
+                {"model": model, "status": "unconfigured", "remaining_seconds": 0}
+            )
+            continue
+        if not enabled:
+            models.append(
+                {"model": model, "status": "disabled", "remaining_seconds": 0}
+            )
+            continue
+
+        node_statuses = [_public_tarot_node_status(row, now) for row in enabled]
+        if any(status == "available" for status, _ in node_statuses):
+            status, remaining = "available", 0
+        elif any(status == "retry_ready" for status, _ in node_statuses):
+            status, remaining = "retry_ready", 0
+        elif any(status == "probing" for status, _ in node_statuses):
+            status, remaining = "probing", 0
+        else:
+            status = "cooling"
+            remaining = min(
+                seconds
+                for node_status, seconds in node_statuses
+                if node_status == "cooling"
+            )
+        models.append(
+            {"model": model, "status": status, "remaining_seconds": remaining}
+        )
+    return {"models": models}
+
+
 def _config_available(config_id: int, now: float | None = None) -> bool:
     state = _runtime_states.get(_runtime_key(config_id))
     if state is None:

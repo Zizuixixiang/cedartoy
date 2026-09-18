@@ -11586,6 +11586,10 @@ a{{color:#c9afff}}
                 path,
             )
             or re.fullmatch(
+                r"/api/tarot/history/[A-Za-z0-9_-]{32,128}/delete",
+                path,
+            )
+            or re.fullmatch(
                 r"/companion/v1/sessions/[A-Za-z0-9_-]{32,128}/(?:draw|reveal|reading|return|stop)",
                 path,
             )
@@ -11594,12 +11598,21 @@ a{{color:#c9afff}}
     @staticmethod
     def _is_tarot_get_path(path):
         return bool(
-            path in {"/tarot", "/tarot/", "/api/dsh"}
+            path in {
+                "/tarot",
+                "/tarot/",
+                "/api/dsh",
+                "/api/tarot/models/status",
+                "/api/tarot/history",
+            }
             or path.startswith("/tarot/static/")
             or path.startswith("/tarot/legal/")
             or re.fullmatch(
                 r"/tarot/(?:invite|session)/[A-Za-z0-9_-]{32,128}/?",
                 path,
+            )
+            or re.fullmatch(
+                r"/api/tarot/history/[A-Za-z0-9_-]{32,128}", path
             )
             or re.fullmatch(
                 r"/companion/v1/sessions/[A-Za-z0-9_-]{32,128}(?:/reading)?",
@@ -11732,6 +11745,25 @@ a{{color:#c9afff}}
                     410,
                     "托管版不支持导入或自定义模型；请使用右上角的本站 Flash / Pro",
                 )
+
+            history_delete = re.fullmatch(
+                r"/api/tarot/history/([A-Za-z0-9_-]{32,128})/delete",
+                path,
+            )
+            if history_delete:
+                body = self._read_json_body()
+                if set(body) != {"confirm", "csrf_session_id"}:
+                    raise TarotError(400, "删除请求格式无效")
+                if body.get("confirm") is not True:
+                    raise TarotError(400, "删除记录必须明确确认")
+                result = get_tarot_store().delete_history_session(
+                    history_delete.group(1),
+                    int(human["id"]),
+                    csrf_session_id=body.get("csrf_session_id"),
+                    csrf_token=self.headers.get("X-Companion-CSRF", ""),
+                )
+                self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+                return
 
             invite = re.fullmatch(
                 r"/api/tarot/invitations/([A-Za-z0-9_-]{32,128})/(accept|reject)",
@@ -11876,6 +11908,99 @@ a{{color:#c9afff}}
             self._send_json(
                 {"error": "托管版已不使用 DSH 配置端点"},
                 status=410,
+                extra_headers={"Cache-Control": "no-store"},
+            )
+            return
+
+        if path == "/api/tarot/history":
+            try:
+                raw_offset = (params.get("offset") or ["0"])[0]
+                raw_limit = (params.get("limit") or ["10"])[0]
+                if not raw_offset.isascii() or not raw_offset.isdecimal():
+                    raise ValueError("invalid offset")
+                if not raw_limit.isascii() or not raw_limit.isdecimal():
+                    raise ValueError("invalid limit")
+                result = get_tarot_store().history_for_human(
+                    int(human["id"]),
+                    offset=int(raw_offset),
+                    limit=int(raw_limit),
+                )
+                self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+            except (TarotError, ValueError) as exc:
+                self._send_tarot_error(exc)
+            return
+
+        history_detail = re.fullmatch(
+            r"/api/tarot/history/([A-Za-z0-9_-]{32,128})", path
+        )
+        if history_detail:
+            try:
+                result = get_tarot_store().history_detail_for_human(
+                    history_detail.group(1), int(human["id"])
+                )
+                self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+            except TarotError as exc:
+                self._send_tarot_error(exc)
+            return
+
+        if path == "/api/tarot/models/status":
+            if not TAROT_BRIDGE_TOKEN:
+                self._send_json(
+                    {"error": "暂时无法确认模型状态，请稍后重查"},
+                    status=503,
+                    extra_headers={"Cache-Control": "no-store"},
+                )
+                return
+            try:
+                response = httpx.get(
+                    f"{SOUP_BASE}/internal/tarot/models/status",
+                    headers={"Authorization": f"Bearer {TAROT_BRIDGE_TOKEN}"},
+                    timeout=min(10.0, TAROT_BRIDGE_TIMEOUT_SECONDS),
+                )
+                if response.status_code != 200:
+                    raise ValueError("tarot status bridge failed")
+                payload = response.json()
+                raw_models = payload.get("models")
+                expected_models = (TAROT_FLASH_MODEL, TAROT_PRO_MODEL)
+                allowed_statuses = {
+                    "available",
+                    "cooling",
+                    "retry_ready",
+                    "probing",
+                    "disabled",
+                    "unconfigured",
+                }
+                if not isinstance(raw_models, list) or len(raw_models) != 2:
+                    raise ValueError("invalid tarot status payload")
+                sanitized = []
+                for expected_model, item in zip(expected_models, raw_models):
+                    if not isinstance(item, dict) or item.get("model") != expected_model:
+                        raise ValueError("invalid tarot status model")
+                    status = item.get("status")
+                    remaining = item.get("remaining_seconds")
+                    if (
+                        status not in allowed_statuses
+                        or type(remaining) is not int
+                        or remaining < 0
+                        or (status != "cooling" and remaining != 0)
+                    ):
+                        raise ValueError("invalid tarot runtime status")
+                    sanitized.append(
+                        {
+                            "model": expected_model,
+                            "status": status,
+                            "remaining_seconds": remaining,
+                        }
+                    )
+            except (httpx.HTTPError, TypeError, ValueError, AttributeError):
+                self._send_json(
+                    {"error": "暂时无法确认模型状态，请稍后重查"},
+                    status=503,
+                    extra_headers={"Cache-Control": "no-store"},
+                )
+                return
+            self._send_json(
+                {"models": sanitized},
                 extra_headers={"Cache-Control": "no-store"},
             )
             return

@@ -45,6 +45,9 @@ EVENT_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 DAY_SECONDS = 86_400
 INVITE_TTL_SECONDS = 86_400
 MAX_RESULT_TEXT = 24_000
+HISTORY_DEFAULT_LIMIT = 10
+HISTORY_MAX_LIMIT = 20
+HISTORY_QUESTION_SUMMARY = 80
 
 
 class TarotError(Exception):
@@ -544,6 +547,216 @@ class TarotStore:
                 "csrf_token": row["csrf_token"],
                 "session": self._browser_view(conn, row),
             }
+
+    @staticmethod
+    def _saved_history_row_for_human(
+        conn: sqlite3.Connection, session_id: str, human_user_id: int
+    ) -> sqlite3.Row:
+        row = conn.execute(
+            """
+            SELECT session.*
+            FROM tarot_sessions AS session
+            WHERE session.id=? AND session.human_user_id=?
+              AND EXISTS (
+                SELECT 1 FROM tarot_receipts AS receipt
+                WHERE receipt.session_id=session.id AND receipt.kind='draw'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM tarot_invites AS invite
+                WHERE invite.session_id=session.id AND invite.state<>'accepted'
+              )
+            """,
+            (session_id, human_user_id),
+        ).fetchone()
+        if row is None:
+            raise TarotError(404, "塔罗记录不存在")
+        return row
+
+    @staticmethod
+    def _canonical_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        try:
+            canonical = json.loads(row["canonical_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            canonical = {}
+        return canonical if isinstance(canonical, dict) else {}
+
+    @staticmethod
+    def _draws_from_row(row: sqlite3.Row) -> list[dict[str, Any]]:
+        try:
+            draws = json.loads(row["draws_json"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            draws = []
+        return draws if isinstance(draws, list) else []
+
+    def history_for_human(
+        self,
+        human_user_id: int,
+        *,
+        offset: int = 0,
+        limit: int = HISTORY_DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+            or offset > 1_000_000
+        ):
+            raise TarotError(400, "invalid history offset")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit < 1
+            or limit > HISTORY_MAX_LIMIT
+        ):
+            raise TarotError(400, "invalid history limit")
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT session.*
+                FROM tarot_sessions AS session
+                WHERE session.human_user_id=?
+                  AND EXISTS (
+                    SELECT 1 FROM tarot_receipts AS receipt
+                    WHERE receipt.session_id=session.id AND receipt.kind='draw'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tarot_invites AS invite
+                    WHERE invite.session_id=session.id AND invite.state<>'accepted'
+                  )
+                ORDER BY session.updated_at DESC, session.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (human_user_id, limit + 1, offset),
+            ).fetchall()
+        has_more = len(rows) > limit
+        items = []
+        for row in rows[:limit]:
+            canonical = self._canonical_from_row(row)
+            spread = canonical.get("spread")
+            spread_name = (
+                str(spread.get("zh") or row["spread_id"] or "未知牌阵")
+                if isinstance(spread, dict)
+                else str(row["spread_id"] or "未知牌阵")
+            )
+            question = " ".join(str(row["question"] or "").split())
+            items.append(
+                {
+                    "session_id": row["id"],
+                    "updated_at": float(row["updated_at"]),
+                    "question_summary": question[:HISTORY_QUESTION_SUMMARY]
+                    or "未填写问题",
+                    "spread_name": spread_name[:80],
+                }
+            )
+        return {
+            "items": items,
+            "next_offset": offset + limit if has_more else None,
+        }
+
+    def history_detail_for_human(
+        self, session_id: str, human_user_id: int
+    ) -> dict[str, Any]:
+        session_id = _require_id(session_id, SESSION_RE, "session_id")
+        human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        with self._connect() as conn:
+            row = self._saved_history_row_for_human(
+                conn, session_id, human_user_id
+            )
+            canonical = self._canonical_from_row(row)
+            draws = self._draws_from_row(row)
+            reading = self._reading(conn, row)
+        facts_by_position = {
+            int(item["position"]): item
+            for item in canonical.get("draws", [])
+            if isinstance(item, dict) and isinstance(item.get("position"), int)
+        }
+        cards = []
+        for draw in draws:
+            if not isinstance(draw, dict) or not isinstance(draw.get("position"), int):
+                continue
+            facts = facts_by_position.get(draw["position"], {})
+            cards.append(
+                {
+                    "position": draw["position"],
+                    "card_id": str(draw.get("card_id") or "")[:32],
+                    "zh": str(facts.get("zh") or "未知牌面")[:80],
+                    "en": str(facts.get("en") or "")[:120],
+                    "slot": str(facts.get("slot") or "")[:80],
+                    "reversed": bool(draw.get("reversed")),
+                    "revealed": bool(draw.get("revealed")),
+                }
+            )
+        spread = canonical.get("spread")
+        if isinstance(spread, dict):
+            spread_view = {
+                "id": str(spread.get("id") or row["spread_id"] or "")[:80],
+                "zh": str(spread.get("zh") or row["spread_id"] or "未知牌阵")[:80],
+                "en": str(spread.get("en") or "")[:120],
+            }
+        else:
+            spread_view = {
+                "id": str(row["spread_id"] or "")[:80],
+                "zh": str(row["spread_id"] or "未知牌阵")[:80],
+                "en": "",
+            }
+        reading_view = None
+        if reading is not None:
+            reading_view = {
+                "state": reading["state"],
+                "text": reading["text"],
+                "model": reading["model"],
+                "source": reading["source"],
+            }
+        return {
+            "session_id": row["id"],
+            "updated_at": float(row["updated_at"]),
+            "question": str(row["question"] or ""),
+            "spread": spread_view,
+            "cards": cards,
+            "reading": reading_view,
+        }
+
+    def delete_history_session(
+        self,
+        session_id: str,
+        human_user_id: int,
+        *,
+        csrf_session_id: str,
+        csrf_token: str,
+    ) -> dict[str, Any]:
+        session_id = _require_id(session_id, SESSION_RE, "session_id")
+        csrf_session_id = _require_id(
+            csrf_session_id, SESSION_RE, "csrf_session_id"
+        )
+        human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        now = self._now()
+        with self._tx() as conn:
+            csrf_session = self._session_row_for_human(
+                conn, csrf_session_id, human_user_id
+            )
+            if not secrets.compare_digest(
+                str(csrf_session["csrf_token"]), str(csrf_token or "")
+            ):
+                raise TarotError(403, "CSRF 校验失败")
+            target = self._saved_history_row_for_human(
+                conn, session_id, human_user_id
+            )
+            reading = self._reading(conn, target)
+            if reading and reading["state"] == "running":
+                conn.execute(
+                    "UPDATE tarot_readings SET state='cancelled',updated_at=? "
+                    "WHERE id=? AND session_id=? AND state='running'",
+                    (now, reading["id"], session_id),
+                )
+            deleted = conn.execute(
+                "DELETE FROM tarot_sessions WHERE id=? AND human_user_id=?",
+                (session_id, human_user_id),
+            ).rowcount
+            if deleted != 1:
+                raise TarotError(404, "塔罗记录不存在")
+        self._notify()
+        return {"deleted": True, "session_id": session_id}
 
     def _verify_human_csrf(
         self,
@@ -1097,6 +1310,10 @@ class TarotWeb:
             "platform/managed-ui.v1.css": ROOT / "assets" / "tarot" / "managed-ui.v1.css",
             "platform/managed-ui.v2.js": ROOT / "assets" / "tarot" / "managed-ui.v2.js",
             "platform/managed-ui.v2.css": ROOT / "assets" / "tarot" / "managed-ui.v2.css",
+            "platform/managed-ui.v3.js": ROOT / "assets" / "tarot" / "managed-ui.v3.js",
+            "platform/managed-ui.v3.css": ROOT / "assets" / "tarot" / "managed-ui.v3.css",
+            "platform/managed-companion.v3.js": ROOT / "assets" / "tarot" / "managed-companion.v3.js",
+            "platform/upstream-companion-adapter.v1.js": RITUAL_PUBLIC / "js" / "companion-adapter.js",
         }
         if relative_path in platform_assets:
             candidate = platform_assets[relative_path].resolve()
@@ -1164,7 +1381,8 @@ class TarotWeb:
         managed_import_map = (
             '<script type="importmap">{ "imports": {'
             ' "three": "./vendor/three.module.js",'
-            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v1.js"'
+            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v1.js",'
+            ' "/tarot/static/js/companion-adapter.js": "/tarot/static/platform/managed-companion.v3.js"'
             ' } }</script>'
         )
         if source.count(import_map) != 1:
@@ -1174,7 +1392,7 @@ class TarotWeb:
         source = source.replace(
             style_marker,
             style_marker
-            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v2.css">',
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v3.css">',
             1,
         )
         upstream_settings = """    <div class="settings-body">
@@ -1208,13 +1426,14 @@ class TarotWeb:
         <p id="dshConsentNote"></p><input id="cpName"><select id="cpKind"><option value="openai"></option></select>
         <input id="cpBase"><input id="cpKey" type="password"><button id="cpAdd" disabled></button>
       </div>
+      <p class="managed-model-note managed-credit">原作：林默Moon · <a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">项目来源</a></p>
     </div>"""
         if source.count(upstream_settings) != 1:
             raise TarotError(500, "塔罗原版模型面板结构已变化")
         source = source.replace(upstream_settings, managed_settings, 1)
         managed = f"""
 <script type="application/json" id="companion-config">{config}</script>
-<script src="/tarot/static/platform/managed-ui.v2.js"></script>
+<script src="/tarot/static/platform/managed-ui.v3.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',

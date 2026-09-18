@@ -13,6 +13,7 @@ from tarot_adapter import (
     TarotError,
     TarotStore,
     WEB,
+    count_saved_tarot_sessions,
 )
 from tests_toy.test_tarot_adapter import FakeCatalog
 
@@ -325,6 +326,188 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         dsh._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
         dsh._handle_tarot_get("/api/dsh", {})
         self.assertEqual(dsh.response_statuses, [410])
+
+    def test_model_status_uses_authenticated_runtime_bridge_and_sanitizes_output(self):
+        self.assertTrue(
+            server.CedarToyHandler._is_tarot_get_path(
+                "/api/tarot/models/status"
+            )
+        )
+        handler = make_handler()
+        handler._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        upstream = Mock(status_code=200)
+        upstream.json.return_value = {
+            "models": [
+                {
+                    "model": TAROT_FLASH_MODEL,
+                    "status": "cooling",
+                    "remaining_seconds": 240,
+                    "endpoint": "must-not-pass-through",
+                },
+                {
+                    "model": TAROT_PRO_MODEL,
+                    "status": "available",
+                    "remaining_seconds": 0,
+                    "last_error": "private-upstream-error",
+                },
+            ],
+            "other_pool": {"judge": "private"},
+        }
+        get = Mock(return_value=upstream)
+        with (
+            patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+            patch.object(server.httpx, "get", get),
+        ):
+            handler._handle_tarot_get("/api/tarot/models/status", {})
+
+        self.assertEqual(handler.response_statuses, [200])
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {
+                "models": [
+                    {
+                        "model": TAROT_FLASH_MODEL,
+                        "status": "cooling",
+                        "remaining_seconds": 240,
+                    },
+                    {
+                        "model": TAROT_PRO_MODEL,
+                        "status": "available",
+                        "remaining_seconds": 0,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(
+            get.call_args.kwargs["headers"],
+            {"Authorization": "Bearer bridge-token"},
+        )
+        self.assertNotIn(b"private", handler.wfile.getvalue())
+        self.assertIn(("Cache-Control", "no-store"), handler.response_headers)
+
+    def test_model_status_failure_is_honest_and_does_not_leak_bridge_error(self):
+        handler = make_handler()
+        handler._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        upstream = Mock(status_code=502)
+        upstream.json.return_value = {"detail": "secret provider failure"}
+        with (
+            patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+            patch.object(server.httpx, "get", return_value=upstream),
+        ):
+            handler._handle_tarot_get("/api/tarot/models/status", {})
+        self.assertEqual(handler.response_statuses, [503])
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {"error": "暂时无法确认模型状态，请稍后重查"},
+        )
+        self.assertNotIn(b"secret provider failure", handler.wfile.getvalue())
+
+        unauthenticated = make_handler()
+        unauthenticated._tarot_human = Mock(
+            side_effect=server._McpError(-32001, "not logged in")
+        )
+        bridge = Mock()
+        with patch.object(server.httpx, "get", bridge):
+            unauthenticated._handle_tarot_get("/api/tarot/models/status", {})
+        self.assertEqual(unauthenticated.response_statuses, [401])
+        bridge.assert_not_called()
+
+    def test_history_http_is_human_scoped_and_delete_is_origin_csrf_protected(self):
+        session_id, _csrf = self.reveal_session(
+            self.store, request_id="history_http_01"
+        )
+        current = self.store.create_direct_session(101)
+        current_csrf = self.store.bootstrap_for_human(
+            current["id"], 101
+        )["csrf_token"]
+        self.assertTrue(server.CedarToyHandler._is_tarot_get_path("/api/tarot/history"))
+        self.assertTrue(
+            server.CedarToyHandler._is_tarot_get_path(
+                f"/api/tarot/history/{session_id}"
+            )
+        )
+        self.assertTrue(
+            server.CedarToyHandler._is_tarot_post_path(
+                f"/api/tarot/history/{session_id}/delete"
+            )
+        )
+
+        listing = make_handler()
+        listing._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        with patch.object(server, "get_tarot_store", return_value=self.store):
+            listing._handle_tarot_get(
+                "/api/tarot/history", {"offset": ["0"], "limit": ["10"]}
+            )
+        payload = json.loads(listing.wfile.getvalue())
+        self.assertEqual(listing.response_statuses, [200])
+        self.assertEqual(payload["items"][0]["session_id"], session_id)
+        self.assertNotIn("human_user_id", str(payload))
+
+        cross = make_handler()
+        cross._tarot_human = Mock(return_value={"id": 102, "is_ai": 0})
+        with patch.object(server, "get_tarot_store", return_value=self.store):
+            cross._handle_tarot_get(f"/api/tarot/history/{session_id}", {})
+        self.assertEqual(cross.response_statuses, [404])
+
+        body = json.dumps(
+            {"confirm": True, "csrf_session_id": current["id"]}
+        ).encode("utf-8")
+        no_origin = make_handler(
+            headers={
+                "Content-Length": str(len(body)),
+                "X-Companion-CSRF": current_csrf,
+            },
+            body=body,
+        )
+        with patch.object(server, "get_tarot_store", return_value=self.store):
+            no_origin._handle_tarot_post(
+                f"/api/tarot/history/{session_id}/delete"
+            )
+        self.assertEqual(no_origin.response_statuses, [403])
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 1)
+
+        unconfirmed_body = json.dumps(
+            {"confirm": False, "csrf_session_id": current["id"]}
+        ).encode("utf-8")
+        unconfirmed = make_handler(
+            headers={
+                "Content-Length": str(len(unconfirmed_body)),
+                "Content-Type": "application/json",
+                "X-Companion-CSRF": current_csrf,
+                "Origin": "https://toy.example",
+                "Host": "toy.example",
+            },
+            body=unconfirmed_body,
+        )
+        unconfirmed._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        with patch.object(server, "get_tarot_store", return_value=self.store):
+            unconfirmed._handle_tarot_post(
+                f"/api/tarot/history/{session_id}/delete"
+            )
+        self.assertEqual(unconfirmed.response_statuses, [400])
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 1)
+
+        delete = make_handler(
+            headers={
+                "Content-Length": str(len(body)),
+                "Content-Type": "application/json",
+                "X-Companion-CSRF": current_csrf,
+                "Origin": "https://toy.example",
+                "Host": "toy.example",
+            },
+            body=body,
+        )
+        delete._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        with patch.object(server, "get_tarot_store", return_value=self.store):
+            delete._handle_tarot_post(
+                f"/api/tarot/history/{session_id}/delete"
+            )
+        self.assertEqual(delete.response_statuses, [200])
+        self.assertEqual(
+            json.loads(delete.wfile.getvalue()),
+            {"deleted": True, "session_id": session_id},
+        )
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
 
     def test_both_fixed_models_reach_bridge_and_return_the_recorded_model(self):
         for index, model in enumerate((TAROT_FLASH_MODEL, TAROT_PRO_MODEL), 1):

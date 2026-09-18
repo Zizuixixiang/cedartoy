@@ -15,6 +15,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 judge_stub = types.ModuleType("judge")
 judge_stub.tarot_reading_chat = AsyncMock()
+judge_stub.get_tarot_model_runtime_statuses = AsyncMock()
 module_name = "tarot_internal_bridge_under_test"
 module_path = BACKEND_DIR / "routers" / "internal_tarot.py"
 spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -66,6 +67,40 @@ class TarotBridgeTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(wrong.status_code, 401)
         chat.assert_not_awaited()
+
+    async def test_status_requires_token_and_returns_only_runtime_summary(self):
+        statuses = AsyncMock(
+            return_value={
+                "models": [
+                    {
+                        "model": "gemini-3.5-flash",
+                        "status": "cooling",
+                        "remaining_seconds": 120,
+                    },
+                    {
+                        "model": "gemini-3.1-pro-preview",
+                        "status": "available",
+                        "remaining_seconds": 0,
+                    },
+                ]
+            }
+        )
+        with (
+            patch.dict("os.environ", {"TAROT_BRIDGE_TOKEN": "bridge-secret"}),
+            patch.object(
+                internal_tarot, "get_tarot_model_runtime_statuses", statuses
+            ),
+        ):
+            denied = await self.client.get("/internal/tarot/models/status")
+            response = await self.client.get(
+                "/internal/tarot/models/status",
+                headers={"Authorization": "Bearer bridge-secret"},
+            )
+
+        self.assertEqual(denied.status_code, 401)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), statuses.return_value)
+        statuses.assert_awaited_once_with()
 
     async def test_reports_and_forwards_the_exact_fixed_model(self):
         for model in ("gemini-3.5-flash", "gemini-3.1-pro-preview"):

@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from judge import tarot_reading_chat
+from judge import get_tarot_model_runtime_statuses, tarot_reading_chat
 
 
 router = APIRouter()
@@ -43,6 +43,14 @@ def _authorize(authorization: str | None) -> None:
         supplied.strip(), expected
     ):
         raise HTTPException(status_code=401, detail="Tarot bridge 鉴权失败")
+
+
+@router.get("/internal/tarot/models/status")
+async def tarot_model_statuses(
+    authorization: str | None = Header(default=None),
+):
+    _authorize(authorization)
+    return await get_tarot_model_runtime_statuses()
 
 
 @router.post("/internal/tarot/reading")
