@@ -1095,6 +1095,8 @@ class TarotWeb:
             "platform/managed-core.v1.js": ROOT / "assets" / "tarot" / "managed-core.v1.js",
             "platform/managed-ui.v1.js": ROOT / "assets" / "tarot" / "managed-ui.v1.js",
             "platform/managed-ui.v1.css": ROOT / "assets" / "tarot" / "managed-ui.v1.css",
+            "platform/managed-ui.v2.js": ROOT / "assets" / "tarot" / "managed-ui.v2.js",
+            "platform/managed-ui.v2.css": ROOT / "assets" / "tarot" / "managed-ui.v2.css",
         }
         if relative_path in platform_assets:
             candidate = platform_assets[relative_path].resolve()
@@ -1172,7 +1174,7 @@ class TarotWeb:
         source = source.replace(
             style_marker,
             style_marker
-            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v1.css">',
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v2.css">',
             1,
         )
         upstream_settings = """    <div class="settings-body">
@@ -1212,7 +1214,7 @@ class TarotWeb:
         source = source.replace(upstream_settings, managed_settings, 1)
         managed = f"""
 <script type="application/json" id="companion-config">{config}</script>
-<script src="/tarot/static/platform/managed-ui.v1.js"></script>
+<script src="/tarot/static/platform/managed-ui.v2.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',

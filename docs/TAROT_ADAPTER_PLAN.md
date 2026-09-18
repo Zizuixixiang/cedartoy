@@ -46,7 +46,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 1. `vendor/tarot-ritual` 固定审定 commit，保留独立 Git 历史、`LICENSE`、`THIRD_PARTY_NOTICES.md` 和原 README；没有修改或推送上游源码。
 2. `server.py` 只提供审定前端静态资源、平台会话 API 和同源 companion API；模型请求经服务端 Bearer 调用海龟汤进程中的 loopback-only `/internal/tarot/reading`，不会把上游凭据代理暴露公网。
 3. `/tarot/` 验证人类 JWT 后下发 HttpOnly、SameSite=Lax 的独立 cookie（HTTPS 下同时带 Secure）。邀请 URL 只携带随机 invitation ID，最终授权仍核对登录人类、会话所有者与邀请方小机，URL 不是 bearer token。
-4. 首页/4399 塔罗卡片与 Guide 保留引擎/适配器署名链接。进入游戏后不恢复已移除的平台品牌顶栏；原版抽牌界面仅由 `tarot_adapter.py` 注入版本化托管资产。静态资产使用 immutable 缓存，新增适配资产为 `managed-core.v1.js` / `managed-ui.v1.js` / `managed-ui.v1.css`。
+4. 首页/4399 塔罗卡片与 Guide 保留引擎/适配器署名链接。进入游戏后不恢复已移除的平台品牌顶栏；原版抽牌界面仅由 `tarot_adapter.py` 注入版本化托管资产。静态资产使用 immutable 缓存；模型边界沿用 `managed-core.v1.js`，当前托管交互资产为 `managed-ui.v2.js` / `managed-ui.v2.css`，旧 v1 地址继续保留兼容已打开的页面。
 
 ### 3.2 共享会话
 
@@ -125,4 +125,4 @@ bridge 只查询精确的 `enabled=1 AND purpose='tarot' AND model=?`，不回�
    supervisorctl -c /etc/supervisor/supervisord.conf restart cedartoy
    ```
    `TAROT_BRIDGE_TOKEN` 仍须在两个服务中一致，不要在工单或报告中回显。
-9. 部署后再做真实浏览器验收：桌面与移动端的问询、择阵、Three.js 洗牌/飞牌/整组翻牌、右上角两模型选择、刷新恢复、返回聊天/停止本次、邀请接受/拒绝，以及人类完成后小机 `status/result` 续聊。如需做真实付费 Flash/Pro 生成验收，必须由运营方另行明确触发并如实记录；不能用模型目录可见或 mock 测试代替。
+9. 部署后再做真实浏览器验收：桌面与移动端的问询、择阵、Three.js 洗牌/飞牌/整组翻牌、右上角两模型选择、刷新恢复、单一“结束本次”操作、邀请接受/拒绝，以及人类完成后小机 `status/result` 续聊。如需做真实付费 Flash/Pro 生成验收，必须由运营方另行明确触发并如实记录；不能用模型目录可见或 mock 测试代替。

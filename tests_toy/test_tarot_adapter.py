@@ -601,8 +601,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('<link rel="stylesheet" href="./css/style.css">', page)
         self.assertIn('<script type="module" src="./js/main.js"></script>', page)
         self.assertIn('/tarot/static/platform/managed-core.v1.js', page)
-        self.assertIn('/tarot/static/platform/managed-ui.v1.js', page)
-        self.assertIn('/tarot/static/platform/managed-ui.v1.css', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v2.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v2.css', page)
+        self.assertNotIn('/tarot/static/platform/managed-ui.v1.js', page)
+        self.assertNotIn('/tarot/static/platform/managed-ui.v1.css', page)
         self.assertIn(f"<title>{RITUAL_DISPLAY_NAME}</title>", page)
         self.assertIn('id="companion-config"', page)
         self.assertIn('id="providerOrb"', page)
@@ -630,6 +632,14 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertNotIn("/api/chat", managed_core)
         self.assertNotIn("apiKey", managed_core)
         self.assertNotIn("baseURL", managed_core)
+        managed_ui_path, managed_ui_mime = web.static_file(
+            "platform/managed-ui.v2.js"
+        )
+        self.assertEqual(managed_ui_mime, "text/javascript")
+        managed_ui = managed_ui_path.read_text(encoding="utf-8")
+        self.assertIn("本次已结束，记录已保留。", managed_ui)
+        self.assertIn("managed-companion-settings-hidden", managed_ui)
+        self.assertTrue(web.static_file("platform/managed-ui.v1.js")[0].is_file())
         for platform_marker in (
             "cedar-platform-bar",
             "CEDAR TOY",
