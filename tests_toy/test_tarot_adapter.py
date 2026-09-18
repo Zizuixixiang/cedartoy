@@ -403,8 +403,12 @@ class TarotStoreIsolationTests(unittest.TestCase):
             accept=False,
             csrf_token=invitation["csrf_token"],
         )
-        self.assertTarotStatus(
-            429, lambda: self.store.create_invite(201, 101, "reject_02")
+        with self.assertRaises(TarotError) as rejected_error:
+            self.store.create_invite(201, 101, "reject_02")
+        self.assertEqual(rejected_error.exception.status, 429)
+        self.assertEqual(
+            rejected_error.exception.message,
+            "人类拒绝后 24 小时内不能再次邀请，请等待冷却结束",
         )
         self.assertTarotStatus(
             429,
@@ -416,8 +420,13 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.store.create_invite(201, 101, "limit_001")
         self.store.create_invite(201, 101, "limit_002")
         self.store.create_invite(201, 101, "limit_003")
-        self.assertTarotStatus(
-            429, lambda: self.store.create_invite(201, 101, "limit_004")
+        with self.assertRaises(TarotError) as limit_error:
+            self.store.create_invite(201, 101, "limit_004")
+        self.assertEqual(limit_error.exception.status, 429)
+        self.assertEqual(
+            limit_error.exception.message,
+            "主动邀请 24 小时内最多 3 次，请等待额度恢复；"
+            "若是人类当前明确要求抽牌，请在 invite 传 human_requested=true",
         )
         requested = self.store.create_invite(
             201, 101, "limit_human_requested", human_requested=True

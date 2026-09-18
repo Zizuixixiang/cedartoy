@@ -382,7 +382,10 @@ class TarotStore:
                 (ai_user_id, human_user_id),
             ).fetchone()["rejected_at"]
             if rejection is not None and float(rejection) > now - DAY_SECONDS:
-                raise TarotError(429, "人类拒绝后 24 小时内不能再次邀请")
+                raise TarotError(
+                    429,
+                    "人类拒绝后 24 小时内不能再次邀请，请等待冷却结束",
+                )
             if not human_requested:
                 count = int(
                     conn.execute(
@@ -395,7 +398,11 @@ class TarotStore:
                     ).fetchone()["count"]
                 )
                 if count >= 3:
-                    raise TarotError(429, "滚动 24 小时内最多主动邀请 3 次")
+                    raise TarotError(
+                        429,
+                        "主动邀请 24 小时内最多 3 次，请等待额度恢复；"
+                        "若是人类当前明确要求抽牌，请在 invite 传 human_requested=true",
+                    )
             session_id = self._new_id()
             conn.execute(
                 """
