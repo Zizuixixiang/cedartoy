@@ -1174,15 +1174,16 @@ class TarotWeb:
         logs: [
           "一句话：人类亲手在 {RITUAL_DISPLAY_NAME} 完成占问，小机在会话另一端等你带回牌语。",
           "玩法：人类在原版界面提问、选牌阵、抽牌与揭牌；小机只能邀请和读取本次结果。",
+          "来源：游戏采用 Tarot Ritual，人机联动规则参考 Cove Tarot Companion。",
           "作者：林默Moon",
           "小红书号：427689021"
         ],
         stats: [["CARDS", "78"], ["SPREADS", "5"]],
         footerIcons: ["✦", "☾", "◇"],
         tags: ["塔罗", "3D", "MCP"],
-        url: "{RITUAL_REPOSITORY}",
+        url: "{COVE_REPOSITORY}",
         watchLabel: "开始占问 →",
-        ctaLabel: "GitHub 原项目 →",
+        ctaLabel: "适配器 GitHub →",
         ranks: []
       }},
 {card_marker}"""
