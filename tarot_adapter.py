@@ -1,6 +1,6 @@
-"""CedarToy's identity-bound adapter for the public Tarot Ritual UI.
+"""CedarToy's identity-bound adapter for the public ARCANUM UI.
 
-The browser keeps Tarot Ritual's original draw/animation code.  This module
+The browser keeps ARCANUM's original draw/animation code.  This module
 owns only durable sessions, invitation consent, canonical fact validation and
 the strict human/AI ownership boundary used by the CedarToy host.
 """
@@ -30,6 +30,7 @@ RITUAL_PUBLIC = RITUAL_ROOT / "public"
 PROMPT_HELPER = ROOT / "scripts" / "tarot_prompt_helper.mjs"
 RITUAL_REPOSITORY = "https://github.com/moonlin1213/tarot-ritual"
 COVE_REPOSITORY = "https://github.com/moonlin1213/cove-tarot-companion"
+RITUAL_DISPLAY_NAME = "ARCANUM · 星轨塔罗圣仪"
 RITUAL_COMMIT = "04c6ee2c112e2da9a22bf0b5b4ec80d61ef401d5"
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 REQUEST_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
@@ -68,7 +69,7 @@ def _json_fingerprint(value: Any) -> str:
 
 
 class TarotCatalog:
-    """Validate facts and build prompts using Tarot Ritual's exact modules."""
+    """Validate facts and build prompts using ARCANUM's exact modules."""
 
     def __init__(self, *, node_binary: str | None = None, helper: Path | None = None):
         self.node_binary = node_binary or os.getenv("TAROT_NODE_BINARY", "node")
@@ -1032,7 +1033,7 @@ class TarotStore:
                     "state": reading["state"] if reading else "missing",
                     "text": text,
                     "truncated": truncated,
-                    "source": "Tarot Ritual · Gemini 3.5 Flash 专用池",
+                    "source": f"{RITUAL_DISPLAY_NAME} · Gemini 3.5 Flash 专用池",
                 },
                 "safety": "结果仅供娱乐与自我反思，不替代医疗、法律或财务专业意见。",
             }
@@ -1076,8 +1077,8 @@ class TarotWeb:
     def auth_bridge(return_path: str) -> bytes:
         return_path_json = json.dumps(return_path, ensure_ascii=False).replace("<", "\\u003c")
         body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>进入星轨塔罗圣仪</title></head>
-<body><main><h1>星轨塔罗圣仪</h1><p id="state">正在确认 CedarToy 人类身份……</p><p><a href="/">返回 CedarToy 首页</a></p></main>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>进入 {RITUAL_DISPLAY_NAME}</title></head>
+<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p id="state">正在确认 CedarToy 人类身份……</p><p><a href="/">返回 CedarToy 首页</a></p></main>
 <script>(()=>{{const state=document.getElementById('state');const token=localStorage.getItem('cedartoy_token');if(!token){{state.textContent='请先返回 CedarToy 首页登录，再进入圣仪。';return;}}fetch('/api/tarot/browser-login',{{method:'POST',headers:{{Authorization:'Bearer '+token}}}}).then(async r=>{{const j=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(j.error||'登录失效');location.replace({return_path_json});}}).catch(e=>state.textContent=e.message+'，请返回首页重新登录。');}})();</script></body></html>"""
         return body.encode("utf-8")
 
@@ -1099,10 +1100,10 @@ class TarotWeb:
             description = "这次邀请已拒绝或过期。"
         else:
             action = """<div><button data-answer="accept">接受并进入原版抽牌</button> <button data-answer="reject">拒绝</button></div>"""
-            description = f"{machine} 邀请你亲自在原版 Tarot Ritual 界面提问、选牌阵并抽牌。小机不能代替你操作。"
+            description = f"{machine} 邀请你亲自在原版 {RITUAL_DISPLAY_NAME} 界面提问、选牌阵并抽牌。小机不能代替你操作。"
         body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>塔罗邀请 · CedarToy</title></head>
-<body><main><h1>星轨塔罗圣仪</h1><p>{description}</p>{action}<p id="status"></p></main>
+<title>{RITUAL_DISPLAY_NAME} · CedarToy</title></head>
+<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p>{description}</p>{action}<p id="status"></p></main>
 <script>document.querySelectorAll('[data-answer]').forEach(button=>button.addEventListener('click',async()=>{{document.querySelectorAll('button').forEach(x=>x.disabled=true);const response=await fetch('/api/tarot/invitations/{sid}/'+button.dataset.answer,{{method:'POST',headers:{{'Content-Type':'application/json','X-Tarot-CSRF':{csrf}}},body:'{{}}'}});const result=await response.json().catch(()=>({{}}));if(response.ok&&button.dataset.answer==='accept')location.replace('/tarot/session/{sid}/');else if(response.ok)location.reload();else{{document.getElementById('status').textContent=result.error||'操作失败';document.querySelectorAll('button').forEach(x=>x.disabled=false);}}}}));</script></body></html>"""
         return body.encode("utf-8")
 
@@ -1160,18 +1161,18 @@ class TarotWeb:
         iconFile: "tarot.svg",
         category: "mini",
         watch: true,
-        name: "星轨塔罗圣仪",
+        name: "{RITUAL_DISPLAY_NAME}",
         mission: "MISSION: ARCANUM",
-        location: "LOCATION: STARRY RITUAL",
+        location: "LOCATION: TAROT RITUAL",
         glyph: "✦",
         badge: "TAROT",
         level: "78 CARDS",
         metricLabel: "牌阵数",
         metric: "00005",
         short: "3D 塔罗 / 人机陪伴",
-        desc: "保留 Tarot Ritual 原版 3D 抽牌与翻牌动画；人类亲自提问、选阵、抽牌，小机可发出邀请并读取本次结果。",
+        desc: "保留 {RITUAL_DISPLAY_NAME} 原版 3D 抽牌与翻牌动画；人类亲自提问、选阵、抽牌，小机可发出邀请并读取本次结果。",
         logs: [
-          "一句话：人类亲手完成一场星轨圣仪，小机在会话另一端等你带回牌语。",
+          "一句话：人类亲手在 {RITUAL_DISPLAY_NAME} 完成占问，小机在会话另一端等你带回牌语。",
           "玩法：人类在原版界面提问、选牌阵、抽牌与揭牌；小机只能邀请和读取本次结果。",
           "作者：林默Moon",
           "小红书号：427689021"

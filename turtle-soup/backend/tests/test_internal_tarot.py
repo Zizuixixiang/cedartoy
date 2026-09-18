@@ -34,7 +34,7 @@ class TarotBridgeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.payload = {
             "messages": [
-                {"role": "system", "content": "原版 Tarot Ritual 提示"},
+                {"role": "system", "content": "原版 ARCANUM · 星轨塔罗圣仪提示"},
                 {"role": "user", "content": "仅含当前会话的规范化牌面"},
             ],
             "max_tokens": 4096,

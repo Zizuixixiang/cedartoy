@@ -798,7 +798,7 @@ async def tarot_reading_chat(
     max_tokens: int = 4096,
     timeout: float = 90,
 ) -> str:
-    """Internal Tarot Ritual completion entry; accepts only bounded canonical prompts."""
+    """Internal ARCANUM completion entry; accepts only bounded canonical prompts."""
     if not isinstance(messages, list) or not 1 <= len(messages) <= 4:
         raise ValueError("messages 必须包含 1–4 条消息")
     canonical: list[dict[str, str]] = []

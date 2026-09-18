@@ -27,15 +27,15 @@
 
 目标上游：
 
-- Tarot Ritual：<https://github.com/moonlin1213/tarot-ritual>
+- ARCANUM · 星轨塔罗圣仪：<https://github.com/moonlin1213/tarot-ritual>
 - Cove Tarot Companion：<https://github.com/moonlin1213/cove-tarot-companion>
-- Cove 当前锁定的 Tarot Ritual commit：`04c6ee2c112e2da9a22bf0b5b4ec80d61ef401d5`
+- Cove 当前锁定的 ARCANUM · 星轨塔罗圣仪 commit：`04c6ee2c112e2da9a22bf0b5b4ec80d61ef401d5`
 
-`tarot-ritual` 已有完整 Web 前端：78 张牌、五种牌阵、Three.js 洗牌/选牌/飞牌/整组翻牌动画、内置正逆位牌义和流式 AI 解读。因此符合 CedarToy 的新游戏边界，应复用原界面与动画，不重做第二套游戏 UI。
+ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web 前端：78 张牌、五种牌阵、Three.js 洗牌/选牌/飞牌/整组翻牌动画、内置正逆位牌义和流式 AI 解读。因此符合 CedarToy 的新游戏边界，应复用原界面与动画，不重做第二套游戏 UI。
 
 原项目的 `server.mjs` 是 loopback 单机信任模型，README 明确不应把凭据代理直接暴露为公网多人服务。CedarToy 接入时不能原封不动公网反代：必须由平台层补人类登录、绑定关系、会话授权、服务端模型凭据和共享结果持久化。
 
-`cove-tarot-companion` 是本机 Skill/CLI 邀请与回收连接器。它的公开规范明确把问题、牌阵、抽牌、整组揭示和原始专业解读交给 Tarot Ritual；agent 只负责邀请、取回已揭示事实和原解读中的综合/建议，并在原会话继续交流。它还明确禁止 agent 独立抽牌或补造原解读，`unknown/running` 只观察、不自动再次付费。CedarToy 不原样安装该 Skill，不复制其本机私有目录、owner token、进程管理或聊天投递协议；只把这些必要行为约束提炼进 4399 Guide。
+`cove-tarot-companion` 是本机 Skill/CLI 邀请与回收连接器。它的公开规范明确把问题、牌阵、抽牌、整组揭示和原始专业解读交给 ARCANUM · 星轨塔罗圣仪；agent 只负责邀请、取回已揭示事实和原解读中的综合/建议，并在原会话继续交流。它还明确禁止 agent 独立抽牌或补造原解读，`unknown/running` 只观察、不自动再次付费。CedarToy 不原样安装该 Skill，不复制其本机私有目录、owner token、进程管理或聊天投递协议；只把这些必要行为约束提炼进 4399 Guide。
 
 ## 3. 已实现架构
 
@@ -67,7 +67,7 @@
 
 ### 3.4 专用 AI 路由
 
-托管版原 UI 不再要求人类输入 CedarToy 的服务端密钥；它保留原有“神谕连接/流式解读”交互，但调用新的 loopback-only bridge。bridge 只查询 `enabled=1 AND purpose='tarot'`，不回退 `all/judge/hint/npc*`，海龟汤和双弈也不会反向回退到 tarot。原 Ritual 的提示词、牌义、流式文本和安全渲染仍是规范，不另写一套“平台塔罗解释器”。
+托管版原 UI 不再要求人类输入 CedarToy 的服务端密钥；它保留原有“神谕连接/流式解读”交互，但调用新的 loopback-only bridge。bridge 只查询 `enabled=1 AND purpose='tarot'`，不回退 `all/judge/hint/npc*`，海龟汤和双弈也不会反向回退到 tarot。ARCANUM · 星轨塔罗圣仪的提示词、牌义、流式文本和安全渲染仍是规范，不另写一套“平台塔罗解释器”。
 
 塔罗 bridge 需要独立的并发上限、排队超时、幂等记录与观测指标，不计入海龟汤优先等待数或双弈 NPC 信号量。管理 API 会阻止同一个 endpoint + API Key + model 跨用途或重复启用；当前 3.5 与 gg 的其他模型仍共享 provider credential，因此供应商账号级额度并未拆分。若上线门禁要求额度完全独立，必须另配独立项目/账号的 API Key，不能靠改配置名称来宣称已经隔离。
 
@@ -91,7 +91,7 @@
 - 作者：林默Moon
 - 小红书号：427689021
 - 原项目地址：上述 `tarot-ritual` 与 `cove-tarot-companion`
-- Tarot Ritual / Cove connector 的 ISC License 原文
+- ARCANUM · 星轨塔罗圣仪 / Cove connector 的 ISC License 原文
 - Three.js 的 MIT notice、Cinzel 与 Cormorant Garamond 的 SIL OFL 1.1，以及上游 `THIRD_PARTY_NOTICES.md` 中的其他依赖声明
 
 不要加入作者未开源的自用实体牌面；只使用仓库随附的程序化粒子牌面。CedarToy 根仓许可不能覆盖或替换 vendor 的原许可。

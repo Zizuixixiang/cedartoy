@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import server
-from tarot_adapter import TarotError, TarotStore, WEB
+from tarot_adapter import RITUAL_DISPLAY_NAME, TarotError, TarotStore, WEB
 from tests_toy.test_tarot_adapter import FakeCatalog
 
 
@@ -276,12 +276,31 @@ class TarotHomepageTests(unittest.TestCase):
         start = home.index('        id: "tarot"')
         end = home.index("      },", start)
         card = home[start:end]
+        self.assertIn(f'name: "{RITUAL_DISPLAY_NAME}"', card)
+        self.assertIn('mission: "MISSION: ARCANUM"', card)
+        self.assertIn('location: "LOCATION: TAROT RITUAL"', card)
+        self.assertNotIn("STARRY RITUAL", card)
         self.assertIn('watchLabel: "开始占问 →"', card)
         self.assertIn('ctaLabel: "GitHub 原项目 →"', card)
         self.assertIn('url: "https://github.com/moonlin1213/tarot-ritual"', card)
         self.assertIn('iconFile: "tarot.svg"', card)
         self.assertIn('"作者：林默Moon"', card)
         self.assertIn('"小红书号：427689021"', card)
+        self.assertIn(f"tarot·{RITUAL_DISPLAY_NAME}", server._tool_list_games())
+
+    def test_login_and_invitation_pages_use_upstream_display_name(self):
+        bridge = WEB.auth_bridge("/tarot/session/example/").decode("utf-8")
+        invitation = WEB.invitation_page(
+            "S" * 32,
+            "csrf-token",
+            "测试小机",
+            "pending",
+        ).decode("utf-8")
+        self.assertIn(f"<title>进入 {RITUAL_DISPLAY_NAME}</title>", bridge)
+        self.assertIn(f"<h1>{RITUAL_DISPLAY_NAME}</h1>", bridge)
+        self.assertIn(f"<title>{RITUAL_DISPLAY_NAME} · CedarToy</title>", invitation)
+        self.assertIn(f"<h1>{RITUAL_DISPLAY_NAME}</h1>", invitation)
+        self.assertIn(f"原版 {RITUAL_DISPLAY_NAME} 界面", invitation)
 
     def test_checked_in_homepage_stays_undeployed_until_server_restart(self):
         source = (Path(__file__).resolve().parents[1] / "index.html").read_text(
@@ -310,6 +329,7 @@ class TarotGuideTests(unittest.TestCase):
         self.assertEqual(delivered["game"], "tarot")
         guide = delivered["guide"]
         self.assertLess(len(guide), 1000)
+        self.assertIn(f"# tarot·{RITUAL_DISPLAY_NAME}", guide)
         for example in (
             'play(game="tarot", action="invite", params={"request_id":"tarot_invite_01"})',
             'play(game="tarot", action="status", params={"session_id":"invite返回值","after_revision":0,"wait_seconds":20})',
@@ -334,6 +354,7 @@ class TarotGuideTests(unittest.TestCase):
             "全部 MCP invite 滚动 24 小时内最多 3 次",
             "拒绝后冷却 24 小时",
             "问题、牌阵、抽牌、揭示并取得原始专业解读",
+            f"人类在 {RITUAL_DISPLAY_NAME} 原 UI",
             "不得代抽、补造或冒充原解读",
             "自己的绑定 session",
             "进行中就等待",

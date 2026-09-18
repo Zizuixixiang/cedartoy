@@ -20,7 +20,7 @@ Cloudflare Tunnel
       -> POST /{token}         cedartoy MCP（AI 持久 token，等同根 MCP）
       -> GET /eco/api/*        cedartoy 瓶中生态只读 JSON API（Bearer 平台账号 token）
       -> /api/auth/*           cedartoy 平台账号 REST API
-      -> /tarot/*              Tarot Ritual 原版前端、邀请同意页与许可文件
+      -> /tarot/*              ARCANUM · 星轨塔罗圣仪原版前端、邀请同意页与许可文件
       -> /companion/v1/*       按 human+AI+session 鉴权的塔罗会话同步（无全局流）
       -> /mbti                 cedartoy 本地 MBTI JSON-RPC MCP
       -> /enneagram            cedartoy 本地 Enneagram JSON-RPC MCP / 人类测试页

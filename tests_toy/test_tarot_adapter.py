@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from tarot_adapter import (
+    RITUAL_DISPLAY_NAME,
     TarotCatalog,
     TarotError,
     TarotStore,
@@ -274,6 +275,10 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
         result = self.store.ai_result(session_id, 201, 101)
         self.assertTrue(result["untrusted"])
+        self.assertEqual(
+            result["reading"]["source"],
+            f"{RITUAL_DISPLAY_NAME} · Gemini 3.5 Flash 专用池",
+        )
         self.assertEqual(result["question"], "今天该看见什么？")
         self.assertEqual(result["cards"][0]["card_id"], "M00")
         self.assertEqual(result["cards"][0]["zh"], "愚者")
@@ -485,6 +490,7 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('<link rel="stylesheet" href="./fonts/fonts.css">', page)
         self.assertIn('<link rel="stylesheet" href="./css/style.css">', page)
         self.assertIn('<script type="module" src="./js/main.js"></script>', page)
+        self.assertIn(f"<title>{RITUAL_DISPLAY_NAME}</title>", page)
         self.assertIn('id="companion-config"', page)
         self.assertIn('id="providerOrb"', page)
         self.assertIn('class="mode-opt photo-opt"', page)
@@ -501,7 +507,7 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             "作者：林默Moon",
             "小红书号：427689021",
             "GitHub 原项目",
-            "Tarot Ritual ISC License",
+            f"{RITUAL_DISPLAY_NAME} ISC License",
         ):
             with self.subTest(platform_marker=platform_marker):
                 self.assertNotIn(platform_marker, page)
