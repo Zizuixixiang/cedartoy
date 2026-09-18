@@ -1078,8 +1078,8 @@ class TarotWeb:
         return_path_json = json.dumps(return_path, ensure_ascii=False).replace("<", "\\u003c")
         body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>进入 {RITUAL_DISPLAY_NAME}</title></head>
-<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p id="state">正在确认 CedarToy 人类身份……</p><p><a href="/">返回 CedarToy 首页</a></p></main>
-<script>(()=>{{const state=document.getElementById('state');const token=localStorage.getItem('cedartoy_token');if(!token){{state.textContent='请先返回 CedarToy 首页登录，再进入圣仪。';return;}}fetch('/api/tarot/browser-login',{{method:'POST',headers:{{Authorization:'Bearer '+token}}}}).then(async r=>{{const j=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(j.error||'登录失效');location.replace({return_path_json});}}).catch(e=>state.textContent=e.message+'，请返回首页重新登录。');}})();</script></body></html>"""
+<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p id="state">正在确认登录身份……</p><p><a href="/">返回首页</a></p></main>
+<script>(()=>{{const state=document.getElementById('state');const token=localStorage.getItem('cedartoy_token');if(!token){{state.textContent='请先返回首页登录，再进入圣仪。';return;}}fetch('/api/tarot/browser-login',{{method:'POST',headers:{{Authorization:'Bearer '+token}}}}).then(async r=>{{const j=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(j.error||'登录失效');location.replace({return_path_json});}}).catch(e=>state.textContent=e.message+'，请返回首页重新登录。');}})();</script></body></html>"""
         return body.encode("utf-8")
 
     @staticmethod
@@ -1096,13 +1096,13 @@ class TarotWeb:
             action = f'<a href="/tarot/session/{sid}/">继续本次圣仪</a>'
             description = f"你已经接受 {machine} 的邀请。"
         elif state in {"rejected", "expired"}:
-            action = '<a href="/">返回 CedarToy</a>'
+            action = '<a href="/">返回首页</a>'
             description = "这次邀请已拒绝或过期。"
         else:
             action = """<div><button data-answer="accept">接受并进入原版抽牌</button> <button data-answer="reject">拒绝</button></div>"""
             description = f"{machine} 邀请你亲自在原版 {RITUAL_DISPLAY_NAME} 界面提问、选牌阵并抽牌。小机不能代替你操作。"
         body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{RITUAL_DISPLAY_NAME} · CedarToy</title></head>
+<title>{RITUAL_DISPLAY_NAME}</title></head>
 <body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p>{description}</p>{action}<p id="status"></p></main>
 <script>document.querySelectorAll('[data-answer]').forEach(button=>button.addEventListener('click',async()=>{{document.querySelectorAll('button').forEach(x=>x.disabled=true);const response=await fetch('/api/tarot/invitations/{sid}/'+button.dataset.answer,{{method:'POST',headers:{{'Content-Type':'application/json','X-Tarot-CSRF':{csrf}}},body:'{{}}'}});const result=await response.json().catch(()=>({{}}));if(response.ok&&button.dataset.answer==='accept')location.replace('/tarot/session/{sid}/');else if(response.ok)location.reload();else{{document.getElementById('status').textContent=result.error||'操作失败';document.querySelectorAll('button').forEach(x=>x.disabled=false);}}}}));</script></body></html>"""
         return body.encode("utf-8")

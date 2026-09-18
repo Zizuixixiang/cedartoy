@@ -11799,13 +11799,11 @@ a{{color:#c9afff}}
             "providers": [
                 {
                     "id": "dsh:cedartoy-tarot",
-                    "label": "CedarToy · Tarot 专业解读",
+                    "label": "Gemini",
                     "kind": "openai",
                     "models": ["gemini-3.5-flash"],
                     "hasKey": True,
                     "oauth": None,
-                    "note": "与海龟汤、双弈隔离的 Tarot 专用池",
-                    "source": "CedarToy Managed",
                 }
             ],
         }
@@ -11873,7 +11871,7 @@ a{{color:#c9afff}}
                 )
             else:
                 self._send_json(
-                    {"error": "需要 CedarToy 人类登录"},
+                    {"error": "需要先登录人类账号"},
                     status=401,
                     extra_headers={"Cache-Control": "no-store"},
                 )

@@ -266,6 +266,30 @@ class TarotHttpBoundaryTests(unittest.TestCase):
             {"error": "塔罗请求格式无效"},
         )
 
+    def test_managed_provider_uses_the_service_name_without_platform_branding(self):
+        metadata = server.CedarToyHandler._tarot_provider_metadata()
+        provider = metadata["providers"][0]
+        self.assertEqual(provider["id"], "dsh:cedartoy-tarot")
+        self.assertEqual(provider["label"], "Gemini")
+        self.assertEqual(provider["models"], ["gemini-3.5-flash"])
+        self.assertNotIn("note", provider)
+        self.assertNotIn("source", provider)
+
+    def test_expired_game_session_login_error_has_no_platform_branding(self):
+        handler = make_handler()
+        handler._tarot_human = Mock(
+            side_effect=server._McpError(-32001, "not logged in")
+        )
+        handler._handle_tarot_get(
+            "/companion/v1/sessions/" + "S" * 32,
+            {},
+        )
+        self.assertEqual(handler.response_statuses, [401])
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {"error": "需要先登录人类账号"},
+        )
+
 
 class TarotHomepageTests(unittest.TestCase):
     def test_card_has_platform_entry_exact_credit_and_github_primary_action(self):
@@ -305,9 +329,22 @@ class TarotHomepageTests(unittest.TestCase):
         ).decode("utf-8")
         self.assertIn(f"<title>进入 {RITUAL_DISPLAY_NAME}</title>", bridge)
         self.assertIn(f"<h1>{RITUAL_DISPLAY_NAME}</h1>", bridge)
-        self.assertIn(f"<title>{RITUAL_DISPLAY_NAME} · CedarToy</title>", invitation)
+        self.assertIn("正在确认登录身份", bridge)
+        self.assertIn(">返回首页</a>", bridge)
+        self.assertNotIn("CedarToy", bridge)
+        self.assertIn(f"<title>{RITUAL_DISPLAY_NAME}</title>", invitation)
         self.assertIn(f"<h1>{RITUAL_DISPLAY_NAME}</h1>", invitation)
         self.assertIn(f"原版 {RITUAL_DISPLAY_NAME} 界面", invitation)
+        self.assertNotIn("CedarToy", invitation)
+
+        closed = WEB.invitation_page(
+            "S" * 32,
+            "csrf-token",
+            "测试小机",
+            "rejected",
+        ).decode("utf-8")
+        self.assertIn(">返回首页</a>", closed)
+        self.assertNotIn("CedarToy", closed)
 
     def test_checked_in_homepage_stays_undeployed_until_server_restart(self):
         source = (Path(__file__).resolve().parents[1] / "index.html").read_text(

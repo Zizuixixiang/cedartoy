@@ -495,6 +495,14 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('id="providerOrb"', page)
         self.assertIn('class="mode-opt photo-opt"', page)
         self.assertEqual(page.count("<style"), upstream.count("<style"))
+        self.assertNotIn("CedarToy", page)
+        main_js = web.static_file("js/main.js")[0].read_text(encoding="utf-8")
+        self.assertIn("mkBtn('返回聊天', 'ghost small'", main_js)
+        self.assertIn("mkBtn('停止本次', 'ghost small'", main_js)
+        self.assertIn(
+            "label.textContent = `${p.label}${m ? ' · ' + m : ''}`;",
+            main_js,
+        )
         for platform_marker in (
             "cedar-platform-bar",
             "CEDAR TOY",
@@ -507,6 +515,7 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             "作者：林默Moon",
             "小红书号：427689021",
             "GitHub 原项目",
+            "CedarToy · Tarot 专业解读",
             f"{RITUAL_DISPLAY_NAME} ISC License",
         ):
             with self.subTest(platform_marker=platform_marker):
