@@ -21,7 +21,13 @@ from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
 NPC_POOL_NAMES = ("npc_decision", "npc_speech")
-POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
+SOUP_DUEL_POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
+TAROT_POOL_NAME = "tarot"
+POOL_NAMES = (*SOUP_DUEL_POOL_NAMES, TAROT_POOL_NAME)
+TAROT_EXCLUSIVE_MODEL_RE = re.compile(
+    r"(?:^|[^a-z0-9])gemini[._ -]?3[._ -]?5[._ -]?flash(?:$|[^a-z0-9])",
+    re.IGNORECASE,
+)
 _rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}
 _rr_locks: dict[str, asyncio.Lock] = {pool: asyncio.Lock() for pool in POOL_NAMES}
 # Locks belong to the physical API credential; health belongs to one model on
@@ -39,6 +45,10 @@ CONFIG_DIR = Path(__file__).resolve().parent / "config"
 NPC_API_MAX_CONCURRENCY = max(1, int(os.getenv("NPC_API_MAX_CONCURRENCY", "4")))
 NPC_API_QUEUE_TIMEOUT_SECONDS = max(
     0.1, float(os.getenv("NPC_API_QUEUE_TIMEOUT_SECONDS", "2"))
+)
+TAROT_API_MAX_CONCURRENCY = max(1, int(os.getenv("TAROT_API_MAX_CONCURRENCY", "2")))
+TAROT_API_QUEUE_TIMEOUT_SECONDS = max(
+    0.1, float(os.getenv("TAROT_API_QUEUE_TIMEOUT_SECONDS", "5"))
 )
 NPC_CHAT_MAX_MESSAGES = 20
 NPC_CHAT_MAX_CONTENT_LENGTH = 4000
@@ -61,6 +71,10 @@ _npc_semaphore: asyncio.Semaphore | None = None
 _npc_semaphore_loop: asyncio.AbstractEventLoop | None = None
 _npc_active = 0
 _npc_waiting = 0
+_tarot_semaphore: asyncio.Semaphore | None = None
+_tarot_semaphore_loop: asyncio.AbstractEventLoop | None = None
+_tarot_active = 0
+_tarot_waiting = 0
 _priority_waiters = 0
 
 STYLE_DESCRIPTIONS = {
@@ -120,6 +134,12 @@ def _pool_name(pool: str) -> str:
     return pool if pool in POOL_NAMES else "judge"
 
 
+def is_tarot_exclusive_model(cfg: dict[str, Any]) -> bool:
+    """Keep Gemini 3.5 Flash variants exclusive to the Tarot pool."""
+    model = str(cfg.get("model") or "").strip()
+    return bool(TAROT_EXCLUSIVE_MODEL_RE.search(model))
+
+
 def _credential_key(cfg: dict[str, Any]) -> str:
     endpoint = _endpoint(str(cfg.get("api_url") or "").strip()).lower()
     api_key = str(cfg.get("api_key") or "").strip()
@@ -133,6 +153,16 @@ def _node_key(cfg: dict[str, Any]) -> str:
     model = str(cfg.get("model") or "").strip()
     material = f"{endpoint}\0{api_key}\0{model}".encode("utf-8")
     return "node:" + hashlib.sha256(material).hexdigest()
+
+
+def model_node_fingerprint(cfg: dict[str, Any]) -> str | None:
+    """Return a non-secret endpoint + credential + model identity."""
+    api_url = str(cfg.get("api_url") or "").strip()
+    api_key = str(cfg.get("api_key") or "").strip()
+    model = str(cfg.get("model") or "").strip()
+    if not api_url or not api_key or not model:
+        return None
+    return _node_key({"api_url": api_url, "api_key": api_key, "model": model})
 
 
 def _merge_runtime_state(target: ConfigRuntimeState, source: ConfigRuntimeState) -> None:
@@ -339,8 +369,24 @@ async def _enabled_configs() -> list[dict[str, Any]]:
 def _select_configs_for_pool(
     rows: list[dict[str, Any]], pool: str
 ) -> list[dict[str, Any]]:
-    """Prefer exact NPC purpose, then ``all``, then available legacy ``npc``."""
+    """Keep Tarot exact-only; for NPC prefer exact, then all, then legacy."""
     pool = _pool_name(pool)
+    if pool == TAROT_POOL_NAME:
+        selected: list[dict[str, Any]] = []
+        seen_nodes: set[str] = set()
+        for row in rows:
+            if (
+                str(row.get("purpose") or "judge").strip().lower()
+                != TAROT_POOL_NAME
+            ):
+                continue
+            node = model_node_fingerprint(row) or f"config:{row.get('id')}"
+            if node in seen_nodes:
+                continue
+            seen_nodes.add(node)
+            selected.append(row)
+        return selected
+    rows = [row for row in rows if not is_tarot_exclusive_model(row)]
     if pool in NPC_POOL_NAMES:
         dedicated = [
             row
@@ -368,7 +414,7 @@ def _purpose_matches(config_purpose: Any, pool: str) -> bool:
     purpose = str(config_purpose or "judge").strip().lower()
     pool = _pool_name(pool)
     if purpose == "all":
-        return True
+        return pool in SOUP_DUEL_POOL_NAMES
     if purpose == "both":
         return pool in {"judge", "hint"}
     if purpose == "npc":
@@ -460,6 +506,15 @@ def _npc_limit_semaphore() -> asyncio.Semaphore:
     return _npc_semaphore
 
 
+def _tarot_limit_semaphore() -> asyncio.Semaphore:
+    global _tarot_semaphore, _tarot_semaphore_loop
+    loop = asyncio.get_running_loop()
+    if _tarot_semaphore is None or _tarot_semaphore_loop is not loop:
+        _tarot_semaphore = asyncio.Semaphore(TAROT_API_MAX_CONCURRENCY)
+        _tarot_semaphore_loop = loop
+    return _tarot_semaphore
+
+
 def get_pool_runtime_status() -> dict[str, Any]:
     return {
         "npc": {
@@ -467,6 +522,12 @@ def get_pool_runtime_status() -> dict[str, Any]:
             "waiting": _npc_waiting,
             "max_concurrency": NPC_API_MAX_CONCURRENCY,
             "queue_timeout_seconds": NPC_API_QUEUE_TIMEOUT_SECONDS,
+        },
+        "tarot": {
+            "active": _tarot_active,
+            "waiting": _tarot_waiting,
+            "max_concurrency": TAROT_API_MAX_CONCURRENCY,
+            "queue_timeout_seconds": TAROT_API_QUEUE_TIMEOUT_SECONDS,
         },
         "priority_waiters": _priority_waiters,
     }
@@ -480,7 +541,7 @@ async def _chat(
     max_tokens: int | None = None,
     pool: str = "judge",
 ) -> str:
-    global _npc_active, _npc_waiting, _priority_waiters
+    global _npc_active, _npc_waiting, _tarot_active, _tarot_waiting, _priority_waiters
     pool = _pool_name(pool)
     if pool in NPC_POOL_NAMES:
         semaphore = _npc_limit_semaphore()
@@ -504,6 +565,30 @@ async def _chat(
             )
         finally:
             _npc_active -= 1
+            semaphore.release()
+
+    if pool == TAROT_POOL_NAME:
+        semaphore = _tarot_limit_semaphore()
+        _tarot_waiting += 1
+        try:
+            await asyncio.wait_for(
+                semaphore.acquire(), timeout=TAROT_API_QUEUE_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(status_code=503, detail="塔罗解读通道繁忙，请稍后再试") from exc
+        finally:
+            _tarot_waiting -= 1
+        _tarot_active += 1
+        try:
+            return await _chat_from_pool(
+                messages,
+                temperature,
+                timeout=timeout,
+                max_tokens=max_tokens,
+                pool=pool,
+            )
+        finally:
+            _tarot_active -= 1
             semaphore.release()
 
     _priority_waiters += 1
@@ -538,6 +623,8 @@ async def _chat_from_pool(
         detail = (
             "NPC 通道繁忙，请稍后再试"
             if pool in NPC_POOL_NAMES
+            else "塔罗解读通道暂时不可用，请稍后再试"
+            if pool == TAROT_POOL_NAME
             else "裁判暂时不可用，请稍后再试"
         )
         raise HTTPException(status_code=503, detail=detail)
@@ -602,6 +689,8 @@ async def _chat_from_pool(
     detail = (
         "NPC 通道繁忙，请稍后再试"
         if pool in NPC_POOL_NAMES
+        else "塔罗解读通道暂时不可用，请稍后再试"
+        if pool == TAROT_POOL_NAME
         else "裁判暂时不可用，请稍后再试"
     )
     raise HTTPException(status_code=503, detail=detail)
@@ -700,6 +789,43 @@ async def npc_chat(
         messages,
         max_tokens=max_tokens,
         timeout=timeout,
+    )
+
+
+async def tarot_reading_chat(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 4096,
+    timeout: float = 90,
+) -> str:
+    """Internal Tarot Ritual completion entry; accepts only bounded canonical prompts."""
+    if not isinstance(messages, list) or not 1 <= len(messages) <= 4:
+        raise ValueError("messages 必须包含 1–4 条消息")
+    canonical: list[dict[str, str]] = []
+    total_length = 0
+    for message in messages:
+        if not isinstance(message, dict) or set(message) != {"role", "content"}:
+            raise ValueError("每条 Tarot message 只能包含 role 和 content")
+        role = message.get("role")
+        content = message.get("content")
+        if role not in {"system", "user", "assistant"}:
+            raise ValueError("Tarot message role 无效")
+        if not isinstance(content, str) or not content.strip() or len(content) > 50_000:
+            raise ValueError("Tarot message content 无效")
+        total_length += len(content)
+        canonical.append({"role": role, "content": content.strip()})
+    if total_length > 60_000:
+        raise ValueError("Tarot messages 总长度过长")
+    if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 8192:
+        raise ValueError("max_tokens 必须是 1–8192 的整数")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 5 <= timeout <= 120:
+        raise ValueError("timeout 必须在 5–120 秒之间")
+    return await _chat(
+        canonical,
+        temperature=0.8,
+        timeout=float(timeout),
+        max_tokens=max_tokens,
+        pool=TAROT_POOL_NAME,
     )
 
 

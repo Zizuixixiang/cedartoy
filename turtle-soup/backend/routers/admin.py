@@ -8,8 +8,10 @@ from database import execute, fetch_all, fetch_one
 from judge import (
     get_config_runtime_status,
     get_pool_runtime_status,
+    is_tarot_exclusive_model,
     list_models,
     mark_config_success,
+    model_node_fingerprint,
     register_config_runtime_node,
     reset_fail_counts,
     test_config,
@@ -82,6 +84,7 @@ API_CONFIG_PURPOSES = {
     "npc",
     "npc_decision",
     "npc_speech",
+    "tarot",
     "all",
 }
 
@@ -89,6 +92,64 @@ API_CONFIG_PURPOSES = {
 def normalize_api_config_purpose(value: str | None) -> str:
     purpose = (value or "judge").strip()
     return purpose if purpose in API_CONFIG_PURPOSES else "judge"
+
+
+def tarot_model_node_conflict(
+    rows: list[dict], candidate: dict, *, exclude_id: int | None = None
+) -> dict | None:
+    """Prevent one enabled model node from competing in/with Tarot twice."""
+    fingerprint = model_node_fingerprint(candidate)
+    if fingerprint is None or not bool(int(candidate.get("enabled", 1) or 0)):
+        return None
+    candidate_is_tarot = (
+        normalize_api_config_purpose(candidate.get("purpose")) == "tarot"
+    )
+    for row in rows:
+        if exclude_id is not None and int(row.get("id") or 0) == exclude_id:
+            continue
+        row_is_tarot = normalize_api_config_purpose(row.get("purpose")) == "tarot"
+        if not (candidate_is_tarot or row_is_tarot):
+            continue
+        if not bool(int(row.get("enabled", 1) or 0)):
+            continue
+        if model_node_fingerprint(row) == fingerprint:
+            return row
+    return None
+
+
+async def require_api_config_assignment(
+    candidate: dict, *, exclude_id: int | None = None
+) -> None:
+    purpose = normalize_api_config_purpose(candidate.get("purpose"))
+    if is_tarot_exclusive_model(candidate) and purpose != "tarot":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Gemini 3.5 Flash 是塔罗解读专用模型，purpose 必须为 tarot；"
+                "不能分配给海龟汤或双弈。"
+            ),
+        )
+    rows = await fetch_all(
+        "SELECT id, name, api_url, api_key, model, purpose, enabled "
+        "FROM judge_api_configs ORDER BY id ASC"
+    )
+    conflict = tarot_model_node_conflict(rows, candidate, exclude_id=exclude_id)
+    if conflict is None:
+        return
+    conflict_id = int(conflict.get("id") or 0)
+    conflict_name = str(conflict.get("name") or "未命名配置").strip()
+    conflict_purpose = normalize_api_config_purpose(conflict.get("purpose"))
+    if purpose == "tarot" and conflict_purpose == "tarot":
+        reason = "已有启用的重复塔罗节点"
+    else:
+        reason = "同一模型节点已跨塔罗与海龟汤/双弈用途启用"
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"{reason}：当前 endpoint + API Key + model 与配置 "
+            f"#{conflict_id}（{conflict_name}）冲突。请只保留一条启用记录。"
+        ),
+    )
 
 
 class SubmissionBody(BaseModel):
@@ -523,6 +584,15 @@ async def api_configs(admin: dict = Depends(admin_player)):
 async def add_api_config(body: ApiConfigBody, admin: dict = Depends(admin_player)):
     del admin
     purpose = normalize_api_config_purpose(body.purpose)
+    await require_api_config_assignment(
+        {
+            "api_url": body.api_url,
+            "api_key": body.api_key,
+            "model": body.model,
+            "purpose": purpose,
+            "enabled": body.enabled,
+        }
+    )
     cid = await execute(
         "INSERT INTO judge_api_configs (name, api_url, api_key, model, purpose, enabled, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (body.name, body.api_url, body.api_key, body.model, purpose, body.enabled, body.priority),
@@ -574,6 +644,16 @@ async def update_api_config(config_id: int, body: ApiConfigBody, admin: dict = D
         raise HTTPException(status_code=404, detail="配置不存在")
     key = body.api_key or existing["api_key"]
     purpose = normalize_api_config_purpose(body.purpose)
+    await require_api_config_assignment(
+        {
+            "api_url": body.api_url,
+            "api_key": key,
+            "model": body.model,
+            "purpose": purpose,
+            "enabled": body.enabled,
+        },
+        exclude_id=config_id,
+    )
     await execute(
         "UPDATE judge_api_configs SET name=?, api_url=?, api_key=?, model=?, purpose=?, enabled=?, priority=? WHERE id=?",
         (body.name, body.api_url, key, body.model, purpose, body.enabled, body.priority, config_id),

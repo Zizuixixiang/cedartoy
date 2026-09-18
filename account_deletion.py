@@ -540,6 +540,7 @@ def purge_account(
     workkk_delete=None,
     garden_delete=None,
     camping_delete=None,
+    tarot_delete=None,
     garden_legacy_db=None,
 ) -> dict:
     """Purge one due account. Every committed phase is safe to repeat."""
@@ -624,6 +625,8 @@ def purge_account(
     stats = _delete_sessions_private(sessions_db, user_id, player_ids)
     stats.update(_delete_garden_notes(garden_notes_db, player_ids))
     stats.update(_delete_legacy_garden(garden_legacy_db, player_ids))
+    if tarot_delete is not None:
+        stats["tarot_sessions"] = int(tarot_delete(user_id) or 0)
     _merge_stats(account_db, job_id, PHASE_SESSIONS, stats)
 
     _start_phase(account_db, job_id, PHASE_SHARED, lease_token, now_epoch)

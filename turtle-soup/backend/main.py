@@ -10,7 +10,8 @@ from database import init_db
 from mcp_app import router as mcp_router
 from middleware import IpBanMiddleware
 from routers import (
-    admin, auth, game, internal_duel, leaderboard, notes, puzzles, report, rooms,
+    admin, auth, game, internal_duel, internal_tarot, leaderboard, notes, puzzles,
+    report, rooms,
 )
 from scheduler import start_scheduler
 from sse import router as sse_router
@@ -57,6 +58,7 @@ app.include_router(report.router, prefix=api_prefix)
 app.include_router(sse_router, prefix=api_prefix)
 app.include_router(mcp_router)
 app.include_router(internal_duel.router)
+app.include_router(internal_tarot.router)
 
 
 @app.get("/health")

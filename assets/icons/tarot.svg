@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="星轨塔罗圣仪">
+  <defs>
+    <radialGradient id="night" cx="50%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#3b2858"/>
+      <stop offset=".58" stop-color="#171026"/>
+      <stop offset="1" stop-color="#08060e"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f1ddb0"/>
+      <stop offset=".5" stop-color="#b78a43"/>
+      <stop offset="1" stop-color="#765126"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="34" fill="url(#night)"/>
+  <rect x="51" y="24" width="154" height="208" rx="12" fill="#0e0a18" stroke="url(#gold)" stroke-width="5"/>
+  <rect x="62" y="35" width="132" height="186" rx="7" fill="none" stroke="#987647" stroke-width="1.5" opacity=".8"/>
+  <circle cx="128" cy="125" r="52" fill="none" stroke="#c8a768" stroke-width="2"/>
+  <path d="M128 55l8 53 45-29-35 42 50 17-55-4 14 51-27-47-27 47 14-51-55 4 50-17-35-42 45 29z" fill="none" stroke="url(#gold)" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="128" cy="125" r="12" fill="#d7bc7c"/>
+  <path d="M128 79c22 14 31 31 31 46s-9 32-31 46c-22-14-31-31-31-46s9-32 31-46z" fill="none" stroke="#ead8aa" stroke-width="2"/>
+  <circle cx="82" cy="61" r="3" fill="#ead8aa"/>
+  <circle cx="177" cy="62" r="2.5" fill="#ead8aa"/>
+  <circle cx="81" cy="193" r="2.5" fill="#ead8aa"/>
+  <circle cx="177" cy="192" r="3" fill="#ead8aa"/>
+</svg>

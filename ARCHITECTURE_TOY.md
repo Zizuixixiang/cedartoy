@@ -20,6 +20,8 @@ Cloudflare Tunnel
       -> POST /{token}         cedartoy MCP（AI 持久 token，等同根 MCP）
       -> GET /eco/api/*        cedartoy 瓶中生态只读 JSON API（Bearer 平台账号 token）
       -> /api/auth/*           cedartoy 平台账号 REST API
+      -> /tarot/*              Tarot Ritual 原版前端、邀请同意页与许可文件
+      -> /companion/v1/*       按 human+AI+session 鉴权的塔罗会话同步（无全局流）
       -> /mbti                 cedartoy 本地 MBTI JSON-RPC MCP
       -> /enneagram            cedartoy 本地 Enneagram JSON-RPC MCP / 人类测试页
       -> /dnd                  cedartoy 本地 DND JSON-RPC MCP
@@ -35,6 +37,10 @@ Cloudflare Tunnel
 /opt/cedartoy/
 ├── server.py                 # cedartoy HTTP 服务，端口 8002（含平台账号与 MCP 聚合）
 ├── index.html                # Toy 首页 SPA（登录/绑定/游戏入口；底部排行榜/历史为占位弹窗）
+├── tarot_adapter.py          # Tarot 会话/邀请/幂等回执、原版 UI 注入与静态资源边界
+├── scripts/tarot_prompt_helper.mjs # 直接调用固定上游牌库与原解读提示构建器
+├── vendor/tarot-ritual/      # 作者上游仓库，固定审定 commit；不改、不推上游
+├── data/tarot_sessions.db    # 首次启用时创建的独立私有会话库（WAL，纳入 data/ 备份）
 ├── mbti/
 │   ├── handler.py            # MBTI JSON-RPC MCP 工具实现
 │   ├── questions.py          # MBTI 题库与模式
@@ -273,7 +279,7 @@ Toy 平台账号和海龟汤 `players` 不是同一张表。网页端通过 `/au
 - `api_url`：OpenAI-compatible base URL 或 `/chat/completions` URL。
 - `api_key`：API Key。管理 API 列表返回时脱敏。
 - `model`：模型名。
-- `purpose`：用途池，`judge` 仅用于问答/猜底/生成题/扫描，`hint` 仅用于手动/自动提示，`both` 仍只代表前两池；`npc` 仅用于对局 NPC，`all` 才进入三池。
+- `purpose`：用途池，`judge` 仅用于问答/猜底/生成题/扫描，`hint` 仅用于手动/自动提示，`both` 仍只代表前两池；`npc_decision` / `npc_speech` 分别用于双弈 NPC 操作与发言，`npc` 是两者的旧版回退，`all` 覆盖海龟汤与双弈用途；`tarot` 是塔罗专业解读专用用途，必须精确匹配，`all` 不会进入。
 - `enabled`：是否启用。
 - `priority`：优先级，数字越小越先用。
 
@@ -963,13 +969,17 @@ DND 返回语义和 MBTI 类似：逐题模式返回下一题或最终结果；�
 
 实现文件：`turtle-soup/backend/judge.py`
 
-配置来源：`judge_api_configs` 表，仅使用 `enabled=1` 的行，按 `priority ASC, id ASC` 排序。`purpose` 将同一张配置表拆成 `judge`、`hint`、`npc` 三个独立轮询池：`both` 只进入 judge+hint，保持历史语义；`all` 才进入三池。付费或免费供应商都不由代码按价格屏蔽，管理员自行决定哪些节点可用于 NPC。
+配置来源：`judge_api_configs` 表，仅使用 `enabled=1` 的行，按 `priority ASC, id ASC` 排序。`purpose` 将同一张配置表拆成 `judge`、`hint`、`npc_decision`、`npc_speech` 与 `tarot` 池：`both` 只进入 judge+hint，保持历史语义；`all` 只覆盖海龟汤和双弈的前四池，绝不进入 `tarot`。付费或免费供应商都不由代码按价格屏蔽，管理员自行决定哪些节点可用于 NPC。
+
+`Gemini 3.5 Flash` 型号（含 provider 前缀及 preview 后缀）另有硬隔离：即使配置被误标为 `judge`、`hint`、`both`、`npc*` 或 `all`，选择海龟汤/双弈池时仍会排除；只有显式 `purpose='tarot'` 才能进入塔罗池。管理 API 也会拒绝把该型号保存成非 `tarot` 用途。该保护按 `model` 字段匹配，不会命中 `gemini-3-flash-preview`、其他 Gemini 型号、GLM 或 DeepSeek。CedarToy 的会话层通过带服务端 Bearer 的 loopback-only `/internal/tarot/reading` 消费该池；公网不能直接调用该内部路由。完整接入边界见 `docs/TAROT_ADAPTER_PLAN.md`。
+
+管理 API 新增/编辑配置时还会按规范化后的 endpoint + API Key + model 校验塔罗节点：同一模型节点不得同时跨塔罗与非塔罗用途启用，也不得存在两条启用的重复塔罗记录；禁用的重复记录可保留用于回溯。不同 model 仍可沿用现有共享 credential，因此同一供应商账号/Key 的锁和账号级额度仍可能共享；要进一步拆分供应商额度，必须另配独立项目/账号的 API Key。
 
 运行时状态：
 
 ```python
-_rr_index = {"judge": {}, "hint": {}, "npc": {}}
-_rr_locks = {pool: asyncio.Lock() for pool in ("judge", "hint", "npc")}
+_rr_index = {"judge": {}, "hint": {}, "npc_decision": {}, "npc_speech": {}, "tarot": {}}
+_rr_locks = {pool: asyncio.Lock() for pool in _rr_index}
 _config_locks: dict[str, asyncio.Lock] = {}
 _runtime_states: dict[str, ConfigRuntimeState] = {}
 FAIL_LIMIT = 3
@@ -992,7 +1002,7 @@ NPC_API_MAX_CONCURRENCY = 4  # 环境变量可覆盖
 
 CedarDuet 通过独立 provider 边界接入：自部署可用服务端环境配置的标准 OpenAI-compatible `/chat/completions`；官方部署使用 `cedartoy_bridge` 向 loopback `/internal/duel/npc-decision` 发送带 `DUEL_NPC_BRIDGE_TOKEN` 的 Bearer 请求。该路由不在 `/soup/api` 或 CedarToy 公网代理白名单内，只返回上游文本并统一映射超时/格式/上游错误，不记录请求消息。CedarDuet 不 import 海龟汤代码，也不复制 `judge_api_configs` 的 key。Provider 请求已由 Duel 按当前 NPC viewer 投影，只含当前 persona、精简规则、公共状态/公开行动、自己的私有状态和权威合法行动；其他参与者隐藏状态与思维链不进入请求或数据库。
 
-生产 API 池通过管理后台维护：只有 `enabled=1` 的配置参与轮询，`purpose` 可选「问答 / 提示 / 两边 / NPC / 全部」。列表继续脱敏 key，并展示健康、冷却和 NPC 全局并发摘要。格式或语义不稳定的配置即使连通也会影响对应池；`judge_ask` 和 `generate_hint` 会通过 `_chat_validated` 按各自重试次数重新调用 `_chat()`，`judge_guess` 在独立猜底锁内要求 JSON 并最多重试 3 次，格式失败会记录 warning 日志。
+生产 API 池通过管理后台维护：只有 `enabled=1` 的配置参与轮询，`purpose` 可选「问答 / 提示 / 两边 / NPC 操作 / NPC 发言 / NPC 旧版回退 / 海龟汤与双弈全部用途 / 塔罗解读专用」。列表继续脱敏 key，并展示健康、冷却和 NPC 全局并发摘要。格式或语义不稳定的配置即使连通也会影响对应池；`judge_ask` 和 `generate_hint` 会通过 `_chat_validated` 按各自重试次数重新调用 `_chat()`，`judge_guess` 在独立猜底锁内要求 JSON 并最多重试 3 次，格式失败会记录 warning 日志。
 
 系统 prompt 来源：
 
@@ -1286,7 +1296,7 @@ Room 移动端规则：顶部栏只保留房间状态（隐藏「游戏大厅」
 3. supervisord 当前只加载 `*.conf`。不要只复制 `turtle-soup.ini` 后期待生效；需要同步 `.conf`，或修改 supervisor include 规则。
 4. `TURTLE_SOUP_SECRET` 当前若未设置会使用默认值 `<your-secret-here>`。生产建议在环境中显式设置并保持稳定；变更会使旧海龟汤 JWT 失效。
 5. `TOY_SECRET` 继续用于人类平台 JWT和 legacy AI JWT 双栈，不用于 `ctai_v1_` opaque 鉴权。本轮不得切换现有 secret；未来关闭 `LEGACY_AI_JWT_COMPAT_ENABLED` 只停 AI JWT，不影响 opaque 或人类 JWT。`legacy_ai_token_hashes` 仅用于经核实的旧 secret JWT 精确 hash fallback。`SESSIONS_DB`（默认 `/opt/cedartoy/data/sessions.db`）供 `get_profile` 统计 MBTI/DND 完成次数；`TURTLE_SOUP_DB` 供平台账号与海龟汤 `players` 统计。
-6. 裁判 LLM 不配置可用 `judge_api_configs` 时，`ask/guess/generate/hint/AI扫描` 会返回裁判不可用或失败；普通登录、开房、房间列表不依赖 LLM。`purpose='both'` 只服务 judge+hint；NPC 必须由 `npc` 或 `all` 明确开放。NPC 并发上限用 `NPC_API_MAX_CONCURRENCY` 配置（默认 4），排队超时用 `NPC_API_QUEUE_TIMEOUT_SECONDS`（默认 2 秒）。
+6. 裁判 LLM 不配置可用 `judge_api_configs` 时，`ask/guess/generate/hint/AI扫描` 会返回裁判不可用或失败；普通登录、开房、房间列表不依赖 LLM。`purpose='both'` 只服务 judge+hint；NPC 必须由 `npc*` 或 `all` 明确开放；`purpose='tarot'` 与 `Gemini 3.5 Flash` 专用规则不会进入这些现有用途。NPC 并发上限用 `NPC_API_MAX_CONCURRENCY` 配置（默认 4），排队超时用 `NPC_API_QUEUE_TIMEOUT_SECONDS`（默认 2 秒）。
 7. `judge_api_configs.api_key` 存在 SQLite 中，管理 API 列表会脱敏，但数据库文件本身需要限制访问权限。启用配置前不只要测 HTTP 连通，还要用真实 `ask/guess/hint_request` 场景确认输出格式与语义；`guess` 现在要求严格 JSON，提示生成要求低剧透且不空回。连通但格式错误的节点会在后端内部重试，连续失败后玩家才会看到 `【系统提示】系统开小差了...` 或提示请求失败。
 8. `settings.judge_prompt`、`settings.generate_prompt`、`settings.judge_prompt_clue` 不走缓存；通过管理后台或直接改表后，下一次裁判/生成调用立即生效。提示生成另有房间级异步锁，同一房间内手动/自动提示会排队调用提示池 LLM；手动提示不重置自动提示周期。
 9. 汤底保护：普通 `/rooms/{room_id}`、MCP `join` 和进行中房间的 MCP `status` 不返回房间表 `answer`；管理员 `/admin/rooms` 会返回完整 answer；猜中后 SSE `game_over` 会下发纯 `answer`，同时写入含还原度和汤底的公开揭晓日志，因此结束后 MCP `status` 可通过日志看到最终汤底。100 题查看汤底是个人行为：网页端先显示页面内提示条，点“接受”后才进入最终确认弹窗；MCP 端在下一次 `ask` 顺便带 `confirm_reveal=true` 接受提示。确认后写入 `room_answer_reveals`，不结束房间、不广播答案，但该玩家不能继续答题、请求提示或操作记事板。若题目包含 `【隐藏后台设定】`，公开揭晓默认只使用该标记之前的汤底段，除非裁判 JSON 提供 `public_answer`。
