@@ -1,4 +1,6 @@
+import sqlite3
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -6,6 +8,7 @@ from pathlib import Path
 from tarot_adapter import (
     RITUAL_DISPLAY_NAME,
     COVE_REPOSITORY,
+    MAX_INVITE_QUESTION,
     TAROT_FLASH_MODEL,
     TAROT_PRO_MODEL,
     TarotCatalog,
@@ -114,7 +117,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertEqual(count_saved_tarot_sessions(missing), 0)
         self.assertFalse(missing.exists())
 
-        pending = self.store.create_invite(201, 101, "count_pending_1")
+        pending = self.store.create_invite(201, 101, "count_pending_1", "待确认问题")
         self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
         self.accept(pending["session_id"])
         pending_bootstrap = self.store.bootstrap_for_human(
@@ -125,7 +128,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
         self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
 
-        stopped = self.store.create_invite(202, 102, "count_stopped_2")
+        stopped = self.store.create_invite(202, 102, "count_stopped_2", "停止问题")
         self.accept(stopped["session_id"], 102)
         stopped_csrf = self.store.bootstrap_for_human(
             stopped["session_id"], 102
@@ -146,7 +149,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.store.stop_session(stopped["session_id"], 102, stopped_csrf)
         self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 1)
 
-        returned = self.store.create_invite(203, 103, "count_returned_3")
+        returned = self.store.create_invite(203, 103, "count_returned_3", "返回问题")
         self.accept(returned["session_id"], 103)
         returned_csrf = self.store.bootstrap_for_human(
             returned["session_id"], 103
@@ -187,7 +190,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
             self.store.bootstrap_for_human(empty["id"], 101)["csrf_token"],
         )
 
-        first = self.store.create_invite(201, 101, "history_owned_1")
+        first = self.store.create_invite(201, 101, "history_owned_1", "历史问题一")
         self.accept(first["session_id"], 101)
         first_csrf = self.store.bootstrap_for_human(
             first["session_id"], 101
@@ -222,7 +225,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
             text="<script>不能作为 HTML 执行</script>",
         )
 
-        second_owned = self.store.create_invite(202, 101, "history_owned_2")
+        second_owned = self.store.create_invite(202, 101, "history_owned_2", "历史问题二")
         self.accept(second_owned["session_id"], 101)
         second_csrf = self.store.bootstrap_for_human(
             second_owned["session_id"], 101
@@ -241,7 +244,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
             second_csrf,
         )
 
-        other = self.store.create_invite(201, 102, "history_other_2")
+        other = self.store.create_invite(201, 102, "history_other_2", "其他问题")
         self.accept(other["session_id"], 102)
         other_csrf = self.store.bootstrap_for_human(
             other["session_id"], 102
@@ -312,7 +315,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
 
     def test_history_delete_cascades_and_late_reading_cannot_resurrect(self):
-        invite = self.store.create_invite(201, 101, "history_delete_1")
+        invite = self.store.create_invite(201, 101, "history_delete_1", "删除问题")
         session_id = invite["session_id"]
         self.accept(session_id, 101)
         csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
@@ -394,8 +397,8 @@ class TarotStoreIsolationTests(unittest.TestCase):
                 self.assertEqual(count, 0, table)
 
     def test_two_human_machine_pairs_complete_concurrently_without_cross_reads(self):
-        first = self.store.create_invite(201, 101, "concurrent_pair_1")
-        second = self.store.create_invite(202, 102, "concurrent_pair_2")
+        first = self.store.create_invite(201, 101, "concurrent_pair_1", "第一组私密问题")
+        second = self.store.create_invite(202, 102, "concurrent_pair_2", "第二组私密问题")
         first_id, second_id = first["session_id"], second["session_id"]
         self.assertNotEqual(first_id, second_id)
         self.assertNotRegex(first_id, r"^\d+$")
@@ -471,8 +474,8 @@ class TarotStoreIsolationTests(unittest.TestCase):
             self.assertTarotStatus(404, cross_read)
 
     def test_account_purge_deletes_sessions_owned_by_either_actor(self):
-        first = self.store.create_invite(301, 401, "purge_human_1")
-        second = self.store.create_invite(302, 402, "purge_machine_2")
+        first = self.store.create_invite(301, 401, "purge_human_1", "清理问题一")
+        second = self.store.create_invite(302, 402, "purge_machine_2", "清理问题二")
         self.assertEqual(self.store.delete_user_data(401), 1)
         self.assertEqual(self.store.delete_user_data(302), 1)
         self.assertTarotStatus(
@@ -483,10 +486,20 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
 
     def test_invite_is_idempotent_and_bound_to_exact_human_machine_pair(self):
-        first = self.store.create_invite(201, 101, "request_0001")
-        replay = self.store.create_invite(201, 101, "request_0001")
+        first = self.store.create_invite(201, 101, "request_0001", "我该如何选择？")
+        replay = self.store.create_invite(201, 101, "request_0001", "我该如何选择？")
         self.assertEqual(first["session_id"], replay["session_id"])
+        self.assertEqual(first["invitation"]["state"], "pending")
+        self.assertEqual(first["invitation"]["question"], "我该如何选择？")
+        self.assertEqual(first["question"], "我该如何选择？")
         session_id = first["session_id"]
+
+        self.assertTarotStatus(
+            409,
+            lambda: self.store.create_invite(
+                201, 101, "request_0001", "换成另一个问题"
+            ),
+        )
 
         self.assertTarotStatus(
             404, lambda: self.store.invitation_for_human(session_id, 102)
@@ -505,13 +518,138 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
 
         self.accept(session_id)
+        accepted = self.store.bootstrap_for_human(session_id, 101)["session"]
+        self.assertEqual(accepted["phase"], "accepted")
+        self.assertEqual(accepted["question"], "我该如何选择？")
+        invitation = self.store.invitation_for_human(session_id, 101)
+        accepted_replay = self.store.respond_invite(
+            session_id,
+            101,
+            accept=True,
+            csrf_token=invitation["csrf_token"],
+        )
+        self.assertEqual(accepted_replay["invitation_state"], "accepted")
+        self.assertEqual(self.store.pending_invitations_for_human(101), [])
+        self.assertTarotStatus(
+            409,
+            lambda: self.store.respond_invite(
+                session_id,
+                101,
+                accept=False,
+                csrf_token=invitation["csrf_token"],
+            ),
+        )
         self.assertEqual(
-            self.store.bootstrap_for_human(session_id, 101)["session"]["phase"],
+            self.store.ai_status(session_id, 201, 101)["invitation"]["state"],
             "accepted",
         )
 
+    def test_new_invite_requires_a_bounded_nonempty_question(self):
+        for index, question in enumerate((None, 42, "", " \n\t"), 1):
+            with self.subTest(question=question):
+                self.assertTarotStatus(
+                    400,
+                    lambda question=question, index=index: self.store.create_invite(
+                        201, 101, f"bad_question_{index}", question
+                    ),
+                )
+        self.assertTarotStatus(
+            400,
+            lambda: self.store.create_invite(
+                201, 101, "bad_question_long", "问" * (MAX_INVITE_QUESTION + 1)
+            ),
+        )
+        valid = self.store.create_invite(
+            201, 101, "trimmed_question", "  保留正文，去掉首尾空白  "
+        )
+        self.assertEqual(valid["invitation"]["question"], "保留正文，去掉首尾空白")
+
+    def test_pending_list_is_owned_offline_durable_and_expires_once(self):
+        own = self.store.create_invite(201, 101, "pending_owned", "<b>只作纯文本</b>")
+        other = self.store.create_invite(202, 102, "pending_other", "别人的问题")
+        pending = self.store.pending_invitations_for_human(101)
+        self.assertEqual([item["session_id"] for item in pending], [own["session_id"]])
+        self.assertEqual(pending[0]["question"], "<b>只作纯文本</b>")
+
+        self.now[0] += 86_401
+        self.assertEqual(self.store.pending_invitations_for_human(101), [])
+        expired = self.store.ai_status(own["session_id"], 201, 101)
+        self.assertEqual(expired["invitation"]["state"], "expired")
+        self.assertEqual(expired["phase"], "expired")
+        revision = expired["revision"]
+        self.assertEqual(self.store.pending_invitations_for_human(101), [])
+        self.assertEqual(
+            self.store.ai_status(own["session_id"], 201, 101)["revision"],
+            revision,
+        )
+        self.assertEqual(
+            self.store.ai_status(other["session_id"], 202, 102)["invitation"]["state"],
+            "expired",
+        )
+
+    def test_pending_invite_wait_wakes_for_owner_without_cross_account_leak(self):
+        initial = self.store.wait_pending_invitations_for_human(101)
+        self.assertEqual(initial["invitations"], [])
+        self.assertRegex(initial["cursor"], r"^[0-9a-f]{64}$")
+        unchanged = self.store.wait_pending_invitations_for_human(
+            101, after_cursor=initial["cursor"], wait_seconds=0
+        )
+        self.assertTrue(unchanged["unchanged"])
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            waiting = executor.submit(
+                self.store.wait_pending_invitations_for_human,
+                101,
+                after_cursor=initial["cursor"],
+                wait_seconds=2,
+            )
+            self.store.create_invite(202, 102, "wait_other", "别人的等待问题")
+            time.sleep(0.05)
+            self.assertFalse(waiting.done(), "another account must not change this cursor")
+            own = self.store.create_invite(201, 101, "wait_owner", "稍后发来的问题")
+            changed = waiting.result(timeout=1)
+
+        self.assertNotEqual(changed["cursor"], initial["cursor"])
+        self.assertEqual(
+            [item["session_id"] for item in changed["invitations"]],
+            [own["session_id"]],
+        )
+        self.assertNotIn("别人的等待问题", str(changed))
+
+    def test_legacy_questionless_invite_can_still_be_reviewed(self):
+        now = self.now[0]
+        session_id = "L" * 32
+        with self.store._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO tarot_sessions(
+                    id,human_user_id,ai_user_id,request_id,phase,csrf_token,
+                    created_at,updated_at
+                ) VALUES(?,?,?,?, 'pending',?,?,?)
+                """,
+                (session_id, 101, 201, "legacy_questionless", "legacy-csrf", now, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO tarot_invites(
+                    session_id,human_user_id,ai_user_id,state,created_at,expires_at
+                ) VALUES(?,?,?,'pending',?,?)
+                """,
+                (session_id, 101, 201, now, now + 60),
+            )
+        invitation = self.store.invitation_for_human(session_id, 101)
+        self.assertEqual(invitation["question"], "")
+        accepted = self.store.respond_invite(
+            session_id, 101, accept=True, csrf_token="legacy-csrf"
+        )
+        self.assertEqual(accepted["invitation_state"], "accepted")
+        self.assertEqual(
+            self.store.bootstrap_for_human(session_id, 101)["session"]["question"],
+            "",
+        )
+
     def test_draw_reveal_and_result_do_not_cross_identity_boundaries(self):
-        invite = self.store.create_invite(201, 101, "request_0002")
+        invite = self.store.create_invite(201, 101, "request_0002", "小机最初想问什么？")
         session_id = invite["session_id"]
         accepted = self.accept(session_id)
         csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
@@ -528,6 +666,23 @@ class TarotStoreIsolationTests(unittest.TestCase):
         receipt = self.store.commit_draw(session_id, 101, draw, csrf)
         self.assertEqual(
             receipt, self.store.commit_draw(session_id, 101, draw, csrf)
+        )
+        drawn_status = self.store.ai_status(session_id, 201, 101)
+        self.assertEqual(drawn_status["phase"], "drawn")
+        self.assertEqual(drawn_status["invitation"]["state"], "accepted")
+        self.assertEqual(
+            drawn_status["invitation"]["question"], "小机最初想问什么？"
+        )
+        replay = self.store.create_invite(
+            201, 101, "request_0002", "小机最初想问什么？"
+        )
+        self.assertEqual(replay["session_id"], session_id)
+        self.assertEqual(replay["question"], "今天该看见什么？")
+        self.assertTarotStatus(
+            409,
+            lambda: self.store.create_invite(
+                201, 101, "request_0002", "今天该看见什么？"
+            ),
         )
         conflict = {
             **draw,
@@ -580,7 +735,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertEqual(accepted["id"], session_id)
 
     def test_reading_action_id_never_creates_a_duplicate_attempt(self):
-        invite = self.store.create_invite(201, 101, "request_0003")
+        invite = self.store.create_invite(201, 101, "request_0003", "专业解读问题")
         session_id = invite["session_id"]
         self.accept(session_id)
         csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
@@ -626,7 +781,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertEqual(final_replay["attempt"]["model"], TAROT_PRO_MODEL)
 
     def test_reading_rejects_any_model_outside_the_fixed_allowlist(self):
-        invite = self.store.create_invite(201, 101, "request_bad_model")
+        invite = self.store.create_invite(201, 101, "request_bad_model", "模型问题")
         session_id = invite["session_id"]
         self.accept(session_id)
         csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
@@ -655,7 +810,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
 
     def test_stop_or_process_restart_never_retries_or_overwrites_running_reading(self):
-        invite = self.store.create_invite(201, 101, "request_stop_race")
+        invite = self.store.create_invite(201, 101, "request_stop_race", "停止竞态问题")
         session_id = invite["session_id"]
         self.accept(session_id)
         csrf = self.store.bootstrap_for_human(session_id, 101)["csrf_token"]
@@ -689,7 +844,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
 
         # A process restart converts orphaned running attempts to unknown so
         # clients observe rather than automatically submitting the paid call again.
-        other = self.store.create_invite(202, 102, "request_restart")
+        other = self.store.create_invite(202, 102, "request_restart", "重启问题")
         other_id = other["session_id"]
         self.accept(other_id, 102)
         other_csrf = self.store.bootstrap_for_human(other_id, 102)["csrf_token"]
@@ -724,7 +879,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertEqual(observed["error_code"], "process_restart")
 
     def test_rejection_cooldown_and_rolling_invite_limit(self):
-        rejected = self.store.create_invite(201, 101, "reject_01")
+        rejected = self.store.create_invite(201, 101, "reject_01", "会被拒绝的问题")
         invitation = self.store.invitation_for_human(rejected["session_id"], 101)
         self.store.respond_invite(
             rejected["session_id"],
@@ -732,19 +887,42 @@ class TarotStoreIsolationTests(unittest.TestCase):
             accept=False,
             csrf_token=invitation["csrf_token"],
         )
+        replay = self.store.respond_invite(
+            rejected["session_id"],
+            101,
+            accept=False,
+            csrf_token=invitation["csrf_token"],
+        )
+        self.assertEqual(replay["invitation_state"], "rejected")
+        self.assertEqual(
+            self.store.ai_status(rejected["session_id"], 201, 101)["invitation"]["state"],
+            "rejected",
+        )
+        self.assertEqual(self.store.history_for_human(101)["items"], [])
+        self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
+        self.assertEqual(self.store.pending_invitations_for_human(101), [])
+        self.assertTarotStatus(
+            409,
+            lambda: self.store.respond_invite(
+                rejected["session_id"],
+                101,
+                accept=True,
+                csrf_token=invitation["csrf_token"],
+            ),
+        )
         with self.assertRaises(TarotError) as rejected_error:
-            self.store.create_invite(201, 101, "reject_02")
+            self.store.create_invite(201, 101, "reject_02", "冷却中的问题")
         self.assertEqual(rejected_error.exception.status, 429)
         self.assertEqual(
             rejected_error.exception.message,
             "人类拒绝后 24 小时内不能再次邀请，请等待冷却结束",
         )
         self.now[0] += 86_401
-        self.store.create_invite(201, 101, "limit_001")
-        self.store.create_invite(201, 101, "limit_002")
-        self.store.create_invite(201, 101, "limit_003")
+        self.store.create_invite(201, 101, "limit_001", "限频问题一")
+        self.store.create_invite(201, 101, "limit_002", "限频问题二")
+        self.store.create_invite(201, 101, "limit_003", "限频问题三")
         with self.assertRaises(TarotError) as limit_error:
-            self.store.create_invite(201, 101, "limit_004")
+            self.store.create_invite(201, 101, "limit_004", "限频问题四")
         self.assertEqual(limit_error.exception.status, 429)
         self.assertEqual(
             limit_error.exception.message,
@@ -757,7 +935,38 @@ class TarotStoreIsolationTests(unittest.TestCase):
             columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(tarot_invites)")
             }
+        self.assertIn("question", columns)
         self.assertNotIn("human_requested", columns)
+
+    def test_existing_invite_table_gets_idempotent_question_migration(self):
+        legacy_path = Path(self.temp_dir.name) / "legacy-schema.db"
+        with sqlite3.connect(legacy_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE tarot_sessions (
+                    id TEXT PRIMARY KEY,human_user_id INTEGER NOT NULL,
+                    ai_user_id INTEGER,request_id TEXT,phase TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    question TEXT NOT NULL DEFAULT '',spread_id TEXT,
+                    draws_json TEXT NOT NULL DEFAULT '[]',
+                    canonical_json TEXT NOT NULL DEFAULT '{}',reading_id TEXT,
+                    csrf_token TEXT NOT NULL,created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,UNIQUE(ai_user_id,request_id)
+                );
+                CREATE TABLE tarot_invites (
+                    session_id TEXT PRIMARY KEY REFERENCES tarot_sessions(id),
+                    human_user_id INTEGER NOT NULL,ai_user_id INTEGER NOT NULL,
+                    state TEXT NOT NULL,created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,accepted_at REAL,rejected_at REAL
+                );
+                """
+            )
+        TarotStore(legacy_path, clock=lambda: self.now[0], catalog=FakeCatalog())
+        TarotStore(legacy_path, clock=lambda: self.now[0], catalog=FakeCatalog())
+        with sqlite3.connect(legacy_path) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(tarot_invites)")}
+            self.assertIn("question", columns)
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
     def test_legacy_exemption_column_is_retained_but_never_bypasses_limit(self):
         with self.store._connect() as conn:
@@ -771,14 +980,16 @@ class TarotStoreIsolationTests(unittest.TestCase):
             catalog=FakeCatalog(),
         )
         for index in range(3):
-            invite = restarted.create_invite(201, 101, f"legacy_limit_{index}")
+            invite = restarted.create_invite(
+                201, 101, f"legacy_limit_{index}", f"旧限频问题 {index}"
+            )
             with restarted._connect() as conn:
                 conn.execute(
                     "UPDATE tarot_invites SET human_requested=1 WHERE session_id=?",
                     (invite["session_id"],),
                 )
         with self.assertRaises(TarotError) as caught:
-            restarted.create_invite(201, 101, "legacy_limit_blocked")
+            restarted.create_invite(201, 101, "legacy_limit_blocked", "旧限频拦截")
         self.assertEqual(caught.exception.status, 429)
 
 

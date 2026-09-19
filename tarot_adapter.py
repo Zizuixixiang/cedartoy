@@ -44,6 +44,7 @@ REQUEST_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 EVENT_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 DAY_SECONDS = 86_400
 INVITE_TTL_SECONDS = 86_400
+MAX_INVITE_QUESTION = 500
 MAX_RESULT_TEXT = 24_000
 HISTORY_DEFAULT_LIMIT = 10
 HISTORY_MAX_LIMIT = 20
@@ -82,6 +83,17 @@ def _require_id(value: Any, pattern: re.Pattern[str], name: str) -> str:
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise TarotError(400, f"invalid {name}")
     return value
+
+
+def _require_invite_question(value: Any) -> str:
+    if not isinstance(value, str):
+        raise TarotError(400, "invite 必须填写想问的问题")
+    question = value.strip()
+    if not question:
+        raise TarotError(400, "invite 必须填写想问的问题")
+    if len(question) > MAX_INVITE_QUESTION:
+        raise TarotError(400, f"invite 问题不能超过 {MAX_INVITE_QUESTION} 字")
+    return question
 
 
 def _json_fingerprint(value: Any) -> str:
@@ -207,6 +219,7 @@ class TarotStore:
                     session_id TEXT PRIMARY KEY REFERENCES tarot_sessions(id) ON DELETE CASCADE,
                     human_user_id INTEGER NOT NULL,
                     ai_user_id INTEGER NOT NULL,
+                    question TEXT NOT NULL DEFAULT '',
                     state TEXT NOT NULL,
                     created_at REAL NOT NULL,
                     expires_at REAL NOT NULL,
@@ -247,6 +260,14 @@ class TarotStore:
                 WHERE state='running';
                 """
             )
+            invite_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(tarot_invites)")
+            }
+            if "question" not in invite_columns:
+                conn.execute(
+                    "ALTER TABLE tarot_invites "
+                    "ADD COLUMN question TEXT NOT NULL DEFAULT ''"
+                )
 
     @staticmethod
     def _new_id() -> str:
@@ -372,19 +393,28 @@ class TarotStore:
         ai_user_id: int,
         human_user_id: int,
         request_id: str,
+        question: str,
     ) -> dict[str, Any]:
         ai_user_id = _require_positive_id(ai_user_id, "ai_user_id")
         human_user_id = _require_positive_id(human_user_id, "human_user_id")
         request_id = _require_id(request_id, REQUEST_RE, "request_id")
+        question = _require_invite_question(question)
         now = self._now()
         with self._tx() as conn:
             old = conn.execute(
-                "SELECT * FROM tarot_sessions WHERE ai_user_id=? AND request_id=?",
+                """
+                SELECT session.*,invite.question AS invite_question
+                FROM tarot_sessions AS session
+                LEFT JOIN tarot_invites AS invite ON invite.session_id=session.id
+                WHERE session.ai_user_id=? AND session.request_id=?
+                """,
                 (ai_user_id, request_id),
             ).fetchone()
             if old is not None:
                 if int(old["human_user_id"]) != human_user_id:
                     raise TarotError(409, "request_id 已绑定到另一位人类")
+                if str(old["invite_question"] or "") != question:
+                    raise TarotError(409, "request_id 已绑定到另一个问题")
                 return self._ai_status_from_row(conn, old)
             rejection = conn.execute(
                 """
@@ -417,14 +447,16 @@ class TarotStore:
             conn.execute(
                 """
                 INSERT INTO tarot_sessions(
-                    id,human_user_id,ai_user_id,request_id,phase,csrf_token,created_at,updated_at
-                ) VALUES(?,?,?,?, 'pending',?,?,?)
+                    id,human_user_id,ai_user_id,request_id,phase,question,
+                    csrf_token,created_at,updated_at
+                ) VALUES(?,?,?,?, 'pending',?,?,?,?)
                 """,
                 (
                     session_id,
                     human_user_id,
                     ai_user_id,
                     request_id,
+                    question,
                     self._new_csrf(),
                     now,
                     now,
@@ -433,13 +465,14 @@ class TarotStore:
             conn.execute(
                 """
                 INSERT INTO tarot_invites(
-                    session_id,human_user_id,ai_user_id,state,created_at,expires_at
-                ) VALUES(?,?,?,'pending',?,?)
+                    session_id,human_user_id,ai_user_id,question,state,created_at,expires_at
+                ) VALUES(?,?,?,?,'pending',?,?)
                 """,
                 (
                     session_id,
                     human_user_id,
                     ai_user_id,
+                    question,
                     now,
                     now + INVITE_TTL_SECONDS,
                 ),
@@ -455,7 +488,9 @@ class TarotStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT i.*,s.phase,s.csrf_token FROM tarot_invites i
+                SELECT i.*,i.question AS invite_question,s.phase,s.csrf_token,
+                       s.question AS session_question
+                FROM tarot_invites i
                 JOIN tarot_sessions s ON s.id=i.session_id
                 WHERE i.session_id=? AND i.human_user_id=?
                 """,
@@ -470,10 +505,122 @@ class TarotStore:
                 "session_id": session_id,
                 "ai_user_id": int(row["ai_user_id"]),
                 "state": state,
+                "question": str(row["invite_question"] or ""),
                 "expires_at": float(row["expires_at"]),
                 "csrf_token": row["csrf_token"],
                 "phase": row["phase"],
             }
+
+    def pending_invitations_for_human(
+        self, human_user_id: int
+    ) -> list[dict[str, Any]]:
+        human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        now = self._now()
+        expired = False
+        with self._tx() as conn:
+            expired_ids = [
+                str(row["session_id"])
+                for row in conn.execute(
+                    """
+                    SELECT session_id FROM tarot_invites
+                    WHERE human_user_id=? AND state='pending' AND expires_at<=?
+                    """,
+                    (human_user_id, now),
+                )
+            ]
+            if expired_ids:
+                placeholders = ",".join("?" for _ in expired_ids)
+                conn.execute(
+                    f"UPDATE tarot_invites SET state='expired' "
+                    f"WHERE session_id IN ({placeholders}) AND state='pending'",
+                    expired_ids,
+                )
+                conn.execute(
+                    f"""
+                    UPDATE tarot_sessions
+                    SET phase='stopped',revision=revision+1,updated_at=?
+                    WHERE id IN ({placeholders}) AND phase='pending'
+                    """,
+                    (now, *expired_ids),
+                )
+                expired = True
+            rows = conn.execute(
+                """
+                SELECT invite.session_id,invite.ai_user_id,
+                       invite.question,invite.created_at,invite.expires_at,
+                       session.csrf_token
+                FROM tarot_invites AS invite
+                JOIN tarot_sessions AS session ON session.id=invite.session_id
+                WHERE invite.human_user_id=? AND invite.state='pending'
+                  AND invite.expires_at>?
+                ORDER BY invite.created_at,invite.session_id
+                LIMIT 20
+                """,
+                (human_user_id, now),
+            ).fetchall()
+            result = [
+                {
+                    "session_id": str(row["session_id"]),
+                    "ai_user_id": int(row["ai_user_id"]),
+                    "question": str(row["question"] or ""),
+                    "created_at": float(row["created_at"]),
+                    "expires_at": float(row["expires_at"]),
+                    "csrf_token": str(row["csrf_token"]),
+                }
+                for row in rows
+            ]
+        if expired:
+            self._notify()
+        return result
+
+    def wait_pending_invitations_for_human(
+        self,
+        human_user_id: int,
+        *,
+        after_cursor: str | None = None,
+        wait_seconds: float = 0,
+    ) -> dict[str, Any]:
+        """Return this human's pending invites, optionally waiting for a change.
+
+        The cursor fingerprints only the already ownership-filtered snapshot.
+        Holding the condition while reading prevents a create/respond notify from
+        being lost between the snapshot query and ``wait``.
+        """
+        human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        if after_cursor is not None and (
+            not isinstance(after_cursor, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", after_cursor)
+        ):
+            raise TarotError(400, "invalid invitation cursor")
+        try:
+            wait_seconds = float(wait_seconds)
+        except (TypeError, ValueError):
+            raise TarotError(400, "invalid wait_seconds") from None
+        if not 0 <= wait_seconds <= 25:
+            raise TarotError(400, "wait_seconds 必须为 0–25")
+
+        deadline = time.monotonic() + wait_seconds
+        with self._condition:
+            while True:
+                invitations = self.pending_invitations_for_human(human_user_id)
+                cursor = _json_fingerprint(
+                    [
+                        {
+                            "session_id": item["session_id"],
+                            "question": item["question"],
+                            "expires_at": item["expires_at"],
+                        }
+                        for item in invitations
+                    ]
+                )
+                result = {"invitations": invitations, "cursor": cursor}
+                if after_cursor is None or cursor != after_cursor:
+                    return result
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    result["unchanged"] = True
+                    return result
+                self._condition.wait(timeout=remaining)
 
     def respond_invite(
         self,
@@ -498,9 +645,19 @@ class TarotStore:
             if invite is None:
                 raise TarotError(404, "塔罗邀请不存在")
             if invite["state"] == "accepted":
-                return self._browser_view(conn, session)
+                if not accept:
+                    raise TarotError(409, "该邀请已接受")
+                result = self._browser_view(conn, session)
+                result["invitation_state"] = "accepted"
+                return result
             if invite["state"] == "rejected":
-                raise TarotError(409, "该邀请已拒绝")
+                if accept:
+                    raise TarotError(409, "该邀请已拒绝")
+                result = self._browser_view(conn, session)
+                result["invitation_state"] = "rejected"
+                return result
+            if invite["state"] == "expired":
+                raise TarotError(410, "该邀请已过期")
             if float(invite["expires_at"]) <= now:
                 conn.execute(
                     "UPDATE tarot_invites SET state='expired' WHERE session_id=?",
@@ -531,6 +688,7 @@ class TarotStore:
                 )
             session = self._session_row_for_human(conn, session_id, human_user_id)
             result = self._browser_view(conn, session)
+            result["invitation_state"] = "accepted" if accept else "rejected"
         self._notify()
         if expired:
             raise TarotError(410, "该邀请已过期")
@@ -1148,7 +1306,10 @@ class TarotStore:
         self, conn: sqlite3.Connection, row: sqlite3.Row
     ) -> dict[str, Any]:
         invite = conn.execute(
-            "SELECT state,expires_at FROM tarot_invites WHERE session_id=?",
+            """
+            SELECT state,question,expires_at,accepted_at,rejected_at
+            FROM tarot_invites WHERE session_id=?
+            """,
             (row["id"],),
         ).fetchone()
         invite_state = invite["state"] if invite else None
@@ -1160,6 +1321,26 @@ class TarotStore:
             "session_id": row["id"],
             "phase": phase,
             "revision": int(row["revision"]),
+            "question": str(row["question"] or ""),
+            "invitation": (
+                {
+                    "state": invite_state,
+                    "question": str(invite["question"] or ""),
+                    "expires_at": float(invite["expires_at"]),
+                    "accepted_at": (
+                        float(invite["accepted_at"])
+                        if invite["accepted_at"] is not None
+                        else None
+                    ),
+                    "rejected_at": (
+                        float(invite["rejected_at"])
+                        if invite["rejected_at"] is not None
+                        else None
+                    ),
+                }
+                if invite
+                else None
+            ),
             "reading_state": reading["state"] if reading else "missing",
             "reading_model": reading["model"] if reading else None,
             "reading_source": reading["source"] if reading else None,
@@ -1353,10 +1534,19 @@ class TarotWeb:
         csrf_token: str,
         machine_name: str,
         state: str,
+        question: str = "",
     ) -> bytes:
         sid = html.escape(session_id, quote=True)
         csrf = json.dumps(csrf_token).replace("<", "\\u003c")
         machine = html.escape(machine_name or "你的小机")
+        safe_question = html.escape(question or "")
+        question_block = (
+            f'<section aria-labelledby="invite-question-title">'
+            f'<h2 id="invite-question-title">{machine} 想问</h2>'
+            f'<p style="white-space:pre-wrap">{safe_question}</p></section>'
+            if safe_question
+            else '<p>这是一条旧版邀请，没有附带问题；接受后仍可由你填写。</p>'
+        )
         if state == "accepted":
             action = f'<a href="/tarot/session/{sid}/">继续本次圣仪</a>'
             description = f"你已经接受 {machine} 的邀请。"
@@ -1365,10 +1555,10 @@ class TarotWeb:
             description = "这次邀请已拒绝或过期。"
         else:
             action = """<div><button data-answer="accept">接受并进入原版抽牌</button> <button data-answer="reject">拒绝</button></div>"""
-            description = f"{machine} 邀请你亲自在原版 {RITUAL_DISPLAY_NAME} 界面提问、选牌阵并抽牌。小机不能代替你操作。"
+            description = f"{machine} 邀请你确认这次占问。同意后问题会预填进原版 {RITUAL_DISPLAY_NAME} 界面，由你选择牌阵并亲自抽牌；小机不能代替你操作。"
         body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{RITUAL_DISPLAY_NAME}</title></head>
-<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p>{description}</p>{action}<p id="status"></p></main>
+<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p>{description}</p>{question_block}{action}<p id="status"></p></main>
 <script>document.querySelectorAll('[data-answer]').forEach(button=>button.addEventListener('click',async()=>{{document.querySelectorAll('button').forEach(x=>x.disabled=true);const response=await fetch('/api/tarot/invitations/{sid}/'+button.dataset.answer,{{method:'POST',headers:{{'Content-Type':'application/json','X-Tarot-CSRF':{csrf}}},body:'{{}}'}});const result=await response.json().catch(()=>({{}}));if(response.ok&&button.dataset.answer==='accept')location.replace('/tarot/session/{sid}/');else if(response.ok)location.reload();else{{document.getElementById('status').textContent=result.error||'操作失败';document.querySelectorAll('button').forEach(x=>x.disabled=false);}}}}));</script></body></html>"""
         return body.encode("utf-8")
 
@@ -1477,6 +1667,405 @@ class TarotWeb:
                 raise TarotError(500, "CedarToy 首页结构已变化，未安全加入塔罗入口")
             source = source.replace(old, new, 1)
 
+        style_marker = "</style>"
+        invite_style = """
+    #tarotInviteModal .modal-box { max-width: 560px; }
+    .tarot-invite-machine { margin: 0 0 10px; color: var(--ink-muted, #675a73); }
+    .tarot-invite-question {
+      margin: 0 0 14px;
+      padding: 14px;
+      border: 3px solid #BEB1D1;
+      background: #F8F4FC;
+      color: #2D2333;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.65;
+    }
+    .tarot-invite-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .tarot-invite-actions .pixel-btn { flex: 1 1 140px; }
+"""
+        if source.count(style_marker) != 1:
+            raise TarotError(500, "CedarToy 首页样式结构已变化，未安全加入塔罗邀请")
+        source = source.replace(style_marker, invite_style + style_marker, 1)
+
+        modal_marker = '  <div class="modal" id="announcementModal"'
+        invite_modal = f"""  <div class="modal" id="tarotInviteModal" role="dialog" aria-modal="true" aria-labelledby="tarotInviteTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="tarotInviteTitle">小机发来塔罗占问</h2>
+      <p class="tarot-invite-machine" id="tarotInviteMachine"></p>
+      <div class="tarot-invite-question" id="tarotInviteQuestion"></div>
+      <p class="modal-hint">同意后问题会预填进原版 {RITUAL_DISPLAY_NAME}；牌阵与抽牌仍由你亲自决定。拒绝不会创建占卜记录。</p>
+      <div class="modal-msg" id="tarotInviteMessage" role="status"></div>
+      <div class="tarot-invite-actions">
+        <button class="pixel-btn" id="tarotInviteAccept" type="button">同意并进入</button>
+        <button class="pixel-btn secondary" id="tarotInviteReject" type="button">拒绝</button>
+        <button class="pixel-btn secondary" type="button" data-close-modal>稍后处理</button>
+      </div>
+    </div>
+  </div>
+
+"""
+        if source.count(modal_marker) != 1:
+            raise TarotError(500, "CedarToy 首页弹窗结构已变化，未安全加入塔罗邀请")
+        source = source.replace(modal_marker, invite_modal + modal_marker, 1)
+
+        load_marker = "    async function loadMe() {"
+        invite_script = """    let tarotInviteState = {
+      accountId: "",
+      invitations: [],
+      active: null,
+      cursor: "",
+      prompted: new Set(),
+      loading: false,
+      queued: false,
+      monitorController: null,
+      retryTimer: null,
+      generation: 0,
+    };
+
+    function tarotInviteIdentity() {
+      if (!me || me.user?.is_ai || !me.user?.id || !token()) return null;
+      return {accountId: String(me.user.id), authToken: token()};
+    }
+
+    function stopTarotInvitationMonitor() {
+      tarotInviteState.generation += 1;
+      if (tarotInviteState.retryTimer !== null) {
+        window.clearTimeout(tarotInviteState.retryTimer);
+        tarotInviteState.retryTimer = null;
+      }
+      if (tarotInviteState.monitorController) {
+        tarotInviteState.monitorController.abort();
+        tarotInviteState.monitorController = null;
+      }
+    }
+
+    function resetTarotInvitationState(accountId = "") {
+      stopTarotInvitationMonitor();
+      tarotInviteState.accountId = accountId;
+      tarotInviteState.invitations = [];
+      tarotInviteState.active = null;
+      tarotInviteState.cursor = "";
+      tarotInviteState.prompted = new Set();
+      tarotInviteState.loading = false;
+      tarotInviteState.queued = false;
+      $("tarotInviteModal").classList.remove("show");
+      renderNotificationBell();
+    }
+
+    function syncTarotInvitationAccount() {
+      const identity = tarotInviteIdentity();
+      const accountId = identity?.accountId || "";
+      if (tarotInviteState.accountId !== accountId) {
+        resetTarotInvitationState(accountId);
+      }
+      return identity;
+    }
+
+    function tarotInviteIdentityStillCurrent(identity) {
+      const current = tarotInviteIdentity();
+      return Boolean(current
+        && identity
+        && current.accountId === identity.accountId
+        && current.authToken === identity.authToken
+        && tarotInviteState.accountId === identity.accountId);
+    }
+
+    function anotherModalIsOpen() {
+      return Array.from(document.querySelectorAll(".modal.show"))
+        .some((modal) => modal.id !== "tarotInviteModal");
+    }
+
+    function showTarotInvitation({automatic = true} = {}) {
+      const identity = syncTarotInvitationAccount();
+      if (!identity || document.hidden) return false;
+      if ($("tarotInviteModal").classList.contains("show")) return true;
+      const current = automatic
+        ? tarotInviteState.invitations.find(
+          (item) => !tarotInviteState.prompted.has(item.session_id)
+        )
+        : tarotInviteState.invitations[0];
+      if (!current) {
+        tarotInviteState.queued = false;
+        return false;
+      }
+      if (anotherModalIsOpen()) {
+        tarotInviteState.queued = true;
+        return false;
+      }
+      tarotInviteState.active = current;
+      tarotInviteState.prompted.add(current.session_id);
+      tarotInviteState.queued = false;
+      $("tarotInviteMachine").textContent = `${current.machine_name || "你的小机"} 想问：`;
+      $("tarotInviteQuestion").textContent = current.question
+        || "这是一条旧版邀请，没有附带问题；同意后仍可由你填写。";
+      $("tarotInviteMessage").textContent = tarotInviteState.invitations.length > 1
+        ? `还有 ${tarotInviteState.invitations.length - 1} 条待确认邀请`
+        : "";
+      $("tarotInviteAccept").disabled = false;
+      $("tarotInviteReject").disabled = false;
+      openModal("tarotInviteModal");
+      return true;
+    }
+
+    function applyTarotInvitationSnapshot(data, identity, {autoPopup = false} = {}) {
+      if (!tarotInviteIdentityStillCurrent(identity)) return false;
+      const invitations = Array.isArray(data.invitations) ? data.invitations : [];
+      const pendingIds = new Set(invitations.map((item) => item.session_id));
+      tarotInviteState.invitations = invitations;
+      tarotInviteState.cursor = typeof data.cursor === "string" ? data.cursor : "";
+      tarotInviteState.prompted = new Set(
+        Array.from(tarotInviteState.prompted).filter((sessionId) => pendingIds.has(sessionId))
+      );
+      if (tarotInviteState.active && !pendingIds.has(tarotInviteState.active.session_id)) {
+        tarotInviteState.active = null;
+        $("tarotInviteModal").classList.remove("show");
+      }
+      if (!invitations.length) tarotInviteState.queued = false;
+      renderNotificationBell();
+      return Boolean(autoPopup && showTarotInvitation({automatic: true}));
+    }
+
+    async function fetchTarotInvitationSnapshot({cursor = "", waitSeconds = 0, signal} = {}) {
+      const query = new URLSearchParams();
+      if (cursor) {
+        query.set("cursor", cursor);
+        query.set("wait_seconds", String(waitSeconds));
+      }
+      const suffix = query.toString() ? `?${query}` : "";
+      const res = await fetch(`/api/tarot/invitations/pending${suffix}`, {
+        headers: headers(false),
+        cache: "no-store",
+        signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "塔罗邀请加载失败");
+      return data;
+    }
+
+    function startTarotInvitationMonitor() {
+      const identity = syncTarotInvitationAccount();
+      if (!identity || document.hidden
+          || tarotInviteState.monitorController
+          || tarotInviteState.retryTimer !== null) return;
+      const controller = new AbortController();
+      const generation = ++tarotInviteState.generation;
+      tarotInviteState.monitorController = controller;
+      let retry = false;
+      (async () => {
+        try {
+          while (!controller.signal.aborted && !document.hidden) {
+            if (generation !== tarotInviteState.generation
+                || !tarotInviteIdentityStillCurrent(identity)) return;
+            const cursor = tarotInviteState.cursor;
+            const data = await fetchTarotInvitationSnapshot({
+              cursor,
+              waitSeconds: cursor ? 25 : 0,
+              signal: controller.signal,
+            });
+            if (generation !== tarotInviteState.generation
+                || !tarotInviteIdentityStillCurrent(identity)) return;
+            applyTarotInvitationSnapshot(data, identity, {autoPopup: true});
+          }
+        } catch (err) {
+          if (err?.name !== "AbortError" && !controller.signal.aborted) retry = true;
+        } finally {
+          if (tarotInviteState.monitorController === controller) {
+            tarotInviteState.monitorController = null;
+          }
+          if (retry && generation === tarotInviteState.generation
+              && !document.hidden && tarotInviteIdentityStillCurrent(identity)) {
+            tarotInviteState.retryTimer = window.setTimeout(() => {
+              tarotInviteState.retryTimer = null;
+              startTarotInvitationMonitor();
+            }, 15000);
+          }
+        }
+      })();
+    }
+
+    async function loadTarotInvitations({autoPopup = false} = {}) {
+      const identity = syncTarotInvitationAccount();
+      if (!identity || document.hidden || tarotInviteState.loading) return false;
+      tarotInviteState.loading = true;
+      try {
+        const data = await fetchTarotInvitationSnapshot();
+        return applyTarotInvitationSnapshot(data, identity, {autoPopup});
+      } catch (_err) {
+        return false;
+      } finally {
+        tarotInviteState.loading = false;
+        if (tarotInviteIdentityStillCurrent(identity) && !document.hidden) {
+          startTarotInvitationMonitor();
+        }
+      }
+    }
+
+    async function resumeTarotInvitationMonitor() {
+      if (document.hidden || !syncTarotInvitationAccount()) return;
+      if (tarotInviteState.monitorController || tarotInviteState.loading) return;
+      await loadTarotInvitations({autoPopup: true});
+    }
+
+    async function openSiteNotifications() {
+      syncTarotInvitationAccount();
+      if (tarotInviteState.invitations.length) {
+        showTarotInvitation({automatic: false});
+        return;
+      }
+      await loadTarotInvitations();
+      if (tarotInviteState.invitations.length) {
+        showTarotInvitation({automatic: false});
+        return;
+      }
+      await openAnnouncementList();
+    }
+
+    async function respondTarotInvitation(answer) {
+      const current = tarotInviteState.active;
+      if (!current || !["accept", "reject"].includes(answer)) return;
+      $("tarotInviteAccept").disabled = true;
+      $("tarotInviteReject").disabled = true;
+      $("tarotInviteMessage").textContent = answer === "accept" ? "正在进入……" : "正在拒绝……";
+      try {
+        if (answer === "accept") {
+          const loginRes = await fetch("/api/tarot/browser-login", {
+            method: "POST",
+            headers: headers(false),
+          });
+          const loginData = await loginRes.json().catch(() => ({}));
+          if (!loginRes.ok) throw new Error(loginData.error || "塔罗登录确认失败");
+        }
+        const res = await fetch(`/api/tarot/invitations/${current.session_id}/${answer}`, {
+          method: "POST",
+          headers: {...headers(true), "X-Tarot-CSRF": current.csrf_token},
+          body: "{}",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "邀请处理失败");
+        if (answer === "accept") {
+          window.location.href = `/tarot/session/${current.session_id}/`;
+          return;
+        }
+        tarotInviteState.invitations = tarotInviteState.invitations.filter(
+          (item) => item.session_id !== current.session_id
+        );
+        tarotInviteState.prompted.delete(current.session_id);
+        tarotInviteState.active = null;
+        $("tarotInviteModal").classList.remove("show");
+        renderNotificationBell();
+        if (!showTarotInvitation({automatic: true})) {
+          await loadAnnouncements({autoPopup: true, tarotFollowup: true});
+        }
+      } catch (err) {
+        $("tarotInviteMessage").textContent = err.message || "邀请处理失败";
+        $("tarotInviteAccept").disabled = false;
+        $("tarotInviteReject").disabled = false;
+      }
+    }
+
+    const tarotInviteModalObserver = new MutationObserver(() => {
+      if (tarotInviteState.queued && !anotherModalIsOpen()
+          && !$("tarotInviteModal").classList.contains("show")) {
+        showTarotInvitation({automatic: true});
+      }
+    });
+    document.querySelectorAll(".modal").forEach((modal) => {
+      tarotInviteModalObserver.observe(modal, {attributes: true, attributeFilter: ["class"]});
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopTarotInvitationMonitor();
+      } else {
+        resumeTarotInvitationMonitor();
+      }
+    });
+    window.addEventListener("focus", () => {
+      if (!document.hidden && !tarotInviteState.monitorController) {
+        resumeTarotInvitationMonitor();
+      }
+    });
+
+"""
+        if source.count(load_marker) != 1:
+            raise TarotError(500, "CedarToy 首页登录结构已变化，未安全加入塔罗邀请")
+        source = source.replace(load_marker, invite_script + load_marker, 1)
+
+        load_calls = (
+            (
+                "        await loadAnnouncements({autoPopup: Boolean(me)});",
+                "        const tarotInviteShown = await loadTarotInvitations({autoPopup: Boolean(me)});\n"
+                "        await loadAnnouncements({autoPopup: Boolean(me) && !tarotInviteShown});",
+            ),
+            (
+                "          await loadAnnouncements({autoPopup: true});",
+                "          const tarotInviteShown = await loadTarotInvitations({autoPopup: true});\n"
+                "          await loadAnnouncements({autoPopup: !tarotInviteShown});",
+            ),
+        )
+        for old, new in load_calls:
+            if source.count(old) != 1:
+                raise TarotError(500, "CedarToy 首页通知流程已变化，未安全加入塔罗邀请")
+            source = source.replace(old, new, 1)
+
+        badge_marker = (
+            "      const count = announcementState.authenticated "
+            "? announcementState.unreadCount : 0;"
+        )
+        badge_replacement = (
+            "      const count = (announcementState.authenticated "
+            "? announcementState.unreadCount : 0)\n"
+            "        + (tarotInviteState?.invitations?.length || 0);"
+        )
+        if source.count(badge_marker) != 1:
+            raise TarotError(500, "CedarToy 首页通知徽标结构已变化，未安全加入塔罗邀请")
+        source = source.replace(badge_marker, badge_replacement, 1)
+
+        no_token_marker = """      if (!token()) {
+        me = null;
+        renderAuth();"""
+        no_token_replacement = """      if (!token()) {
+        me = null;
+        resetTarotInvitationState();
+        renderAuth();"""
+        if source.count(no_token_marker) != 1:
+            raise TarotError(500, "CedarToy 首页游客登录结构已变化，未安全停止塔罗邀请")
+        source = source.replace(no_token_marker, no_token_replacement, 1)
+
+        logout_marker = """    function logout() {
+      loadMeAbort?.abort();
+      localStorage.removeItem(TOKEN_KEY);"""
+        logout_replacement = """    function logout() {
+      loadMeAbort?.abort();
+      stopTarotInvitationMonitor();
+      localStorage.removeItem(TOKEN_KEY);"""
+        if source.count(logout_marker) != 1:
+            raise TarotError(500, "CedarToy 首页登出结构已变化，未安全停止塔罗邀请")
+        source = source.replace(logout_marker, logout_replacement, 1)
+
+        logout_state_marker = """      me = null;
+      arcadeBankState.status = null;"""
+        logout_state_replacement = """      me = null;
+      resetTarotInvitationState();
+      arcadeBankState.status = null;"""
+        if source.count(logout_state_marker) != 1:
+            raise TarotError(500, "CedarToy 首页登出状态结构已变化，未安全清理塔罗邀请")
+        source = source.replace(logout_state_marker, logout_state_replacement, 1)
+
+        listener_marker = '    $("notificationBell").addEventListener("click", openAnnouncementList);'
+        invite_listeners = """    $("tarotInviteAccept").addEventListener("click", () => respondTarotInvitation("accept"));
+    $("tarotInviteReject").addEventListener("click", () => respondTarotInvitation("reject"));
+"""
+        if source.count(listener_marker) != 1:
+            raise TarotError(500, "CedarToy 首页事件结构已变化，未安全加入塔罗邀请")
+        source = source.replace(
+            listener_marker,
+            invite_listeners
+            + '    $("notificationBell").addEventListener("click", openSiteNotifications);',
+            1,
+        )
+
         card_marker = """      {
         id: "fishing",
         category: "mini","""
@@ -1494,10 +2083,10 @@ class TarotWeb:
         metricLabel: "存档数",
         metric: "--",
         short: "3D 塔罗 / 人机陪伴",
-        desc: "保留 {RITUAL_DISPLAY_NAME} 原版 3D 抽牌与翻牌动画；人类亲自提问、选阵、抽牌，小机可发出邀请并读取本次结果。",
+        desc: "保留 {RITUAL_DISPLAY_NAME} 原版 3D 抽牌与翻牌动画；小机可带问题发出邀请，人类确认后亲自选阵、抽牌。",
         logs: [
           "一句话：人类亲手在 {RITUAL_DISPLAY_NAME} 完成占问，小机在会话另一端等你带回牌语。",
-          "玩法：人类在原版界面提问、选牌阵、抽牌与揭牌；小机只能邀请和读取本次结果。",
+          "玩法：小机填写问题并邀请；绑定人类在本站同意后进入原版界面，亲自选牌阵、抽牌与揭牌。",
           "来源：游戏采用 Tarot Ritual，人机联动规则参考 Cove Tarot Companion。",
           "作者：林默Moon",
           "小红书号：427689021"

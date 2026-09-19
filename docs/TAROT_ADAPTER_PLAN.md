@@ -1,6 +1,6 @@
 # 塔罗接入调查与适配方案
 
-状态：Flash / Pro 选择、模型锁定、托管前端收口与单一“结束本次”均已在线上基线 `7b71b0b`。当前未部署的 v3 同时包含运行中模型状态、安全 UUID 兼容和本人塔罗历史记录；本轮没有修改 `vendor/tarot-ritual`、子模块指针、生产配置或生产数据库，也没有重启、提交或推送。
+状态：线上基线已包含 v1–v5 托管前端、本人历史和手机修复，版本化资源保持 immutable。当前工作树新增“带问题邀请→人类确认”及首页本人邀请等待；没有修改 vendor、生产配置或生产数据库，也没有重启、提交或推送。
 
 ## 1. 现状与已实施的安全调整
 
@@ -37,7 +37,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 
 原项目的 `server.mjs` 是 loopback 单机信任模型，README 明确不应把凭据代理直接暴露为公网多人服务。CedarToy 接入时不能原封不动公网反代：必须由平台层补人类登录、绑定关系、会话授权、服务端模型凭据和共享结果持久化。
 
-`cove-tarot-companion` 是本机 Skill/CLI 邀请与回收连接器。它的公开规范明确把问题、牌阵、抽牌、整组揭示和原始专业解读交给 ARCANUM · 星轨塔罗圣仪；agent 只负责邀请、取回已揭示事实和原解读中的综合/建议，并在原会话继续交流。它还明确禁止 agent 独立抽牌或补造原解读，`unknown/running` 只观察、不自动再次付费。CedarToy 不原样安装该 Skill，不复制其本机私有目录、owner token、进程管理或聊天投递协议；只把这些必要行为约束提炼进 4399 Guide。
+`cove-tarot-companion` 是本机 Skill/CLI 邀请与回收连接器。小机邀请时可填写想问的问题，但绑定人类必须先在 CedarToy 明确同意；问题随后才预填进 ARCANUM · 星轨塔罗圣仪，牌阵、抽牌、整组揭示和是否发起专业解读仍由人类操作。agent 只负责邀请、查询审核态、取回已揭示事实和原解读中的综合/建议，并在原会话继续交流。它仍禁止 agent 独立抽牌或补造原解读，`unknown/running` 只观察、不自动再次付费。CedarToy 不原样安装该 Skill，不复制其本机私有目录、owner token、进程管理或聊天投递协议；只把这些必要行为约束提炼进 4399 Guide。
 
 ## 3. 已实现架构
 
@@ -46,7 +46,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 1. `vendor/tarot-ritual` 固定审定 commit，保留独立 Git 历史、`LICENSE`、`THIRD_PARTY_NOTICES.md` 和原 README；没有修改或推送上游源码。
 2. `server.py` 只提供审定前端静态资源、平台会话 API 和同源 companion API；模型请求经服务端 Bearer 调用海龟汤进程中的 loopback-only `/internal/tarot/reading`，不会把上游凭据代理暴露公网。
 3. `/tarot/` 验证人类 JWT 后下发 HttpOnly、SameSite=Lax 的独立 cookie（HTTPS 下同时带 Secure）。邀请 URL 只携带随机 invitation ID，最终授权仍核对登录人类、会话所有者与邀请方小机，URL 不是 bearer token。
-4. 首页/4399 塔罗卡片与 Guide 保留引擎/适配器署名链接。进入游戏后不恢复已移除的平台品牌顶栏；原版抽牌界面仅由 `tarot_adapter.py` 注入版本化托管资产。静态资产使用 immutable 缓存；模型边界沿用 `managed-core.v1.js`，当前托管交互资产为 `managed-ui.v3.js` / `managed-ui.v3.css` 与 `managed-companion.v3.js`，已上线的 v1/v2 地址保持原内容不变。
+4. 首页/4399 塔罗卡片与 Guide 保留引擎/适配器署名链接。进入游戏后不恢复已移除的平台品牌顶栏；原版抽牌界面仅由 `tarot_adapter.py` 注入版本化托管资产。静态资产使用 immutable 缓存；当前加载 `managed-core.v5.js`、`managed-ui.v3/v4/v5`、`managed-companion.v3.js` 与 `managed-cards3d.v5.js`，已上线的 v1–v5 文件均保持原内容不变。本轮首页确认弹窗由服务端首页注入生成，不改这些 immutable 资源。
 
 ### 3.2 共享会话
 
@@ -55,7 +55,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 - `tarot_sessions`：随机 session ID、`human_user_id`、可空的邀请方 `ai_user_id`、状态、问题、牌阵、版本、创建/更新时间。
 - `tarot_sessions.draws_json` / `canonical_json`：服务端确认的牌位、牌 ID、正逆位、揭示状态及原版牌库事实；浏览器按同一 canonical deck 恢复原动画，避免两端看到不同结果。
 - `tarot_readings`：请求幂等键、状态（running/succeeded/failed/unknown/cancelled）、原始流式解读、实际锁定的固定模型 ID、错误与计费不确定标记。
-- `tarot_invites`：邀请、接受、拒绝、过期时间以及限频所需时间戳。
+- `tarot_invites`：不可变的邀请原问题、审核状态、过期时间及接受/拒绝/限频时间戳。旧行的原问题为空，仍可接受或拒绝。
 
 本人历史记录不新增表或大厅索引，只查询现有 `tarot_sessions + tarot_receipts(kind='draw')`：空会话和未接受邀请不列出，停止/已返回但确有 draw receipt 的会话仍列出。列表和详情始终以 `human_user_id` 过滤，不按绑定小机合并；详情只读，不创建会话、不揭牌、不发起解读。逐条删除需要当前塔罗页面会话的 CSRF、同源 Origin 和同一人类所有权，在一个写事务内取消运行中标记并硬删除会话；邀请、回执与解读由现有外键级联清理，迟到模型响应只能得到 404，不能重建记录。全站存档数使用同一 draw receipt 口径，因此删除后自然扣减。
 
@@ -65,7 +65,7 @@ ARCANUM · 星轨塔罗圣仪（仓库目录 `tarot-ritual`）已有完整 Web �
 
 人类直接发起：登录首页 → `/tarot/` → 原 UI 提问/选牌阵/抽牌 → 整组揭示 → 专业解读 → 同页可恢复查看。
 
-小机邀请：`play(game="tarot", action="invite", params={"request_id":"..."})` → 平台根据当前 AI 唯一绑定的人类创建邀请 → 小机把页面入口交给人类 → 人类登录并明确接受后在原 UI 提问、选牌阵和抽牌 → 小机用 `status` / `result` 取回同一 session 的已揭示牌面与有长度上限的原解读综合/建议，在原聊天继续交流。完整原文留在人类 UI；平台不能替人类点击接受、填写问题、选牌阵或代抽。
+小机邀请：`play(game="tarot", action="invite", params={"request_id":"...","question":"..."})` → 平台根据当前 AI 唯一绑定的人类创建邀请；已登录且停留首页的人类通过最多 25 秒的本人邀请等待及时收到，页面隐藏/登出即停止、回前台立即恢复，待确认项也并入既有通知铃铛回看 → 首页以纯文本显示发起小机、问题与同意/拒绝按钮 → 人类明确同意后进入原 UI，问题已预填，由人类选牌阵和抽牌 → 小机用 `status` 的 `invitation.state` 查询 pending/accepted/rejected/expired，并用 `result` 取回同一 session 的已揭示牌面与有长度上限的原解读综合/建议。拒绝不进入历史或存档计数；平台不能替人类点击同意、选牌阵、代抽或自动调用模型。
 
 为了“两端可见”而新增的是服务端会话同步层，不是第二套 UI。网页刷新从共享会话恢复；MCP 返回同一份 canonical cards/readings，不能让浏览器和小机各自随机抽一组。现有 MCP 是请求/响应式，首版用 `status/result` 拉取或在小机下个正常回合提示未读结果，不虚构“后台已自动唤醒小机”的能力。
 
@@ -87,7 +87,7 @@ bridge 只查询精确的 `enabled=1 AND purpose='tarot' AND model=?`，不回�
 
 不接入 Cove Skill 本体，只在 `get_guide(game="tarot")` 写清：
 
-1. 小机公开动作只包含 `invite(request_id)`、`status(session_id)`、`result(session_id)`；不开放 `question`、`choose_spread`、`draw`、`reveal` 等小机代操作入口。小机只能邀请唯一绑定的人类，不代替人类同意、提问、选牌或抽牌。
+1. 小机公开动作只包含 `invite(request_id, question)`、`status(session_id)`、`result(session_id)`；问题必须经绑定人类确认，不开放 `choose_spread`、`draw`、`reveal` 等代操作入口。小机只能邀请唯一绑定的人类，不代替人类同意、选牌或抽牌。
 2. 同一 AI 与人类之间的全部 MCP 邀请滚动 24 小时最多 3 次，被拒后 24 小时内不能再次邀请。服务端不接受小机自报的豁免参数；人类可直接从网页发起不计入邀请限额的私有 session。
 3. 同一次邀请复用 request/session ID；状态不明、解读运行中或回执中断时只查询，禁止自动重抽、重发或再次计费。
 4. 只讨论已揭示的牌和原项目返回的解读；缺失、失败或截断要如实说明，不能补造“原解读”。
@@ -115,8 +115,8 @@ bridge 只查询精确的 `enabled=1 AND purpose='tarot' AND model=?`，不回�
 3. 两组人类+小机可以在两个线程同时提交不同问题、牌面与解读；双方的 AI、human bootstrap、invitation、reading 交叉读取全部得到 404。会话 ID 是 `token_urlsafe(32)`，API 没有 list/latest/global event stream；`/tarot/static/` 只提供资源文件，拒绝直接提供上游 HTML，不能绕过平台鉴权会话壳。
 4. `action_id`、抽牌和揭牌事件都有幂等记录；进程重启遗留的 `running` 会变为 `unknown`，人类主动停止后的迟到模型响应不能覆盖 `cancelled`，平台不会自动重试可能已计费的请求。
 5. 首页入口在新 `server.py` 中按既有 4399 双入口规范注入，当前磁盘上的实时 `index.html` 保持不变；所以本次没有把尚未加载的 `/tarot/*` 路由提前暴露成半部署入口。将来重启 `cedartoy` 后，GitHub 主按钮与“开始占问”平台按钮会一起生效。
-6. mock 验收覆盖两个选项到 upstream `model` 字段、存储与浏览器/MCP 返回、任意模型和凭据字段拒绝、未配置 Pro 不回退 Flash、`action_id` 幂等、权限/CSRF/来源校验，以及 jsdom 中的 360/375/390px 设置显隐、单一结束按钮、模型独立冷却、无可见倒计时、手动重查、状态失败、安全 UUID、draw/reveal ACK 丢失同 ID 重放、同步保存语义和历史列表/详情/确认删除。临时数据库测试覆盖历史账号隔离、分页、只读查看、运行中删除、级联清理、迟到回写失败、旧网页/MCP 读取 404 和存档总数扣减。所有模型调用都是 mock，没有真实付费生成，也没有实际浏览器布局验收。
-7. 本轮历史记录和 UUID 变更复用现有表，不需要 schema 迁移或生产数据写入；部署前仍应按常规备份 `data/tarot_sessions.db`。下列是首次创建 Pro 配置时的历史上线步骤，仅在目标环境确实缺少 Pro 配置时执行：
+6. mock 验收覆盖带问题邀请的限长/幂等、同 ID 换问题冲突、首页纯文本弹窗、接受预填但不自动解读、拒绝/过期/重复点击、跨账号与 Origin/CSRF 拒绝、审核态不被抽牌 phase 覆盖，以及两个模型到 upstream 的既有边界。jsdom 覆盖“先打开空首页、稍后收到邀请”、其它弹窗排队、铃铛回看、后台停止/前台恢复、处理去重和账号切换隔离；接收使用本人游标长等待，不做高频全量轮询。临时数据库覆盖旧表连续迁移两次与 `integrity_check`。Python 回归入口为 `python3 -m unittest tests_toy.test_tarot_adapter tests_toy.test_tarot_server -q`；缺少独立 eco/ci-yu-wu checkout 时只替身这两个无关导入，塔罗 store、HTTP handler 与鉴权仍执行仓库真实代码。所有模型调用都是 mock，没有真实付费生成，也没有把 jsdom 当作真机截图验收。
+7. 带问题邀请会在首次初始化时幂等为 `tarot_invites` 增加 `question TEXT NOT NULL DEFAULT ''`；旧邀请保留空问题并可继续审核，不重建表。部署前应备份 `data/tarot_sessions.db`，在副本连续初始化两次并执行 `PRAGMA integrity_check`。下列是首次创建 Pro 配置时的历史上线步骤，仅在目标环境确实缺少 Pro 配置时执行：
    ```bash
    cd /opt/cedartoy
    sqlite3 /opt/cedartoy/turtle-soup/backend/turtle_soup.db ".timeout 30000" ".backup '/home/backups/cedartoy/turtle_soup_pre_tarot_pro_YYYYMMDD_HHMMSS.db'"
