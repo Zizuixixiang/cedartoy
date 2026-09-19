@@ -833,6 +833,11 @@ def _build_kelivo_platform_tools():
             "player_emoji": {"type": "string", "maxLength": 32, "description": "ai_life 围观展示头像。"},
         }
     )
+    # Kelivo 1.2.6 flattens a root allOf into its first if/then branch, then
+    # drops if/then and the original type/properties.  Keep its outbound copy
+    # usable; the shared schema retains these conditions for other clients,
+    # while the same requirements remain enforced by each game backend.
+    play_tool["inputSchema"].pop("allOf", None)
     return tools
 
 

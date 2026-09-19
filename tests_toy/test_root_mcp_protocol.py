@@ -1,7 +1,77 @@
 import unittest
-from unittest.mock import patch
+from contextlib import nullcontext
+from unittest.mock import Mock, patch
 
 import server
+
+
+_KELIVO_126_SCHEMA_KEYS = {
+    "type",
+    "description",
+    "properties",
+    "required",
+    "items",
+    "enum",
+    "additionalProperties",
+}
+
+
+def _kelivo_126_sanitize_node(node):
+    """Equivalent to Kelivo v1.2.6's OpenAI/Claude schema sanitizer."""
+    if isinstance(node, list):
+        return [_kelivo_126_sanitize_node(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    sanitized = dict(node)
+    sanitized.pop("$schema", None)
+    if "const" in sanitized:
+        value = sanitized.pop("const")
+        if isinstance(value, (str, int, float, bool)):
+            sanitized["enum"] = [value]
+            if sanitized.get("type") is None:
+                if isinstance(value, bool):
+                    sanitized["type"] = "boolean"
+                elif isinstance(value, int):
+                    sanitized["type"] = "integer"
+                elif isinstance(value, float):
+                    sanitized["type"] = "number"
+                else:
+                    sanitized["type"] = "string"
+
+    for keyword in ("anyOf", "oneOf", "allOf", "any_of", "one_of", "all_of"):
+        branches = sanitized.get(keyword)
+        if isinstance(branches, list) and branches:
+            flattened = _kelivo_126_sanitize_node(branches[0])
+            sanitized.pop(keyword, None)
+            if isinstance(flattened, dict):
+                sanitized.pop("type", None)
+                sanitized.pop("properties", None)
+                sanitized.pop("items", None)
+                sanitized.update(flattened)
+
+    schema_type = sanitized.get("type")
+    if isinstance(schema_type, list) and schema_type:
+        sanitized["type"] = str(schema_type[0])
+    items = sanitized.get("items")
+    if isinstance(items, list) and items:
+        sanitized["items"] = items[0]
+    if isinstance(sanitized.get("items"), dict):
+        sanitized["items"] = _kelivo_126_sanitize_node(sanitized["items"])
+    if isinstance(sanitized.get("properties"), dict):
+        sanitized["properties"] = {
+            name: _kelivo_126_sanitize_node(property_schema)
+            for name, property_schema in sanitized["properties"].items()
+        }
+    if isinstance(sanitized.get("additionalProperties"), dict):
+        sanitized["additionalProperties"] = _kelivo_126_sanitize_node(
+            sanitized["additionalProperties"]
+        )
+    return {
+        key: value
+        for key, value in sanitized.items()
+        if key in _KELIVO_126_SCHEMA_KEYS
+    }
 
 
 class RootMcpProtocolTests(unittest.TestCase):
@@ -70,6 +140,118 @@ class RootMcpProtocolTests(unittest.TestCase):
             called["result"]["content"],
             [{"type": "text", "text": "game catalog"}],
         )
+
+    @staticmethod
+    def _play_schema(user_agent):
+        listed = server._handle_root_mcp(
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+            user_agent=user_agent,
+        )
+        return next(
+            tool["inputSchema"]
+            for tool in listed["result"]["tools"]
+            if tool["name"] == "play"
+        )
+
+    def test_kelivo_126_sanitizer_keeps_compatible_play_schema_usable(self):
+        regular_schema = self._play_schema("ExampleMcpClient/1.0")
+        self.assertIn("allOf", regular_schema)
+        broken = _kelivo_126_sanitize_node(regular_schema)
+        self.assertNotIn("type", broken)
+        self.assertNotIn("properties", broken)
+
+        for user_agent in (
+            "Kelivo/1.2.6",
+            "Dart/3.9 (dart:io)",
+            "ktor-client/3.0",
+        ):
+            with self.subTest(user_agent=user_agent):
+                schema = self._play_schema(user_agent)
+                self.assertNotIn("allOf", schema)
+                sanitized = _kelivo_126_sanitize_node(schema)
+                self.assertEqual(sanitized["type"], "object")
+                self.assertEqual(
+                    set(sanitized["properties"]), {"game", "action", "params"}
+                )
+                self.assertEqual(sanitized["required"], ["game", "action"])
+                self.assertIs(sanitized["additionalProperties"], True)
+                sanitized_params = sanitized["properties"]["params"]
+                self.assertEqual(sanitized_params["type"], "object")
+                self.assertIs(sanitized_params["additionalProperties"], True)
+                self.assertEqual(
+                    set(sanitized_params["properties"]),
+                    set(schema["properties"]["params"]["properties"]),
+                )
+                for field in (
+                    "room_id",
+                    "question",
+                    "revision",
+                    "game_action",
+                    "command",
+                ):
+                    self.assertIn(
+                        field,
+                        sanitized_params["properties"],
+                    )
+
+    def test_regular_client_keeps_conditional_play_requirements(self):
+        schema = self._play_schema("ExampleMcpClient/1.0")
+        self.assertEqual(schema["type"], "object")
+        self.assertIn("allOf", schema)
+        self.assertEqual(
+            schema["allOf"][0]["then"]["properties"]["params"]["required"],
+            ["request_id", "question"],
+        )
+        self.assertEqual(
+            schema["allOf"][2]["then"]["properties"]["params"]["required"],
+            ["name", "difficulty"],
+        )
+
+    def test_backend_still_rejects_missing_tarot_and_detroit_parameters(self):
+        tarot_store = Mock()
+        tarot_ai = {"id": 201, "is_ai": 1}
+        with (
+            patch.object(server, "_tarot_bound_human_user_id", return_value=101),
+            patch.object(server, "get_tarot_store", return_value=tarot_store),
+        ):
+            for arguments, message_fragment in (
+                ({"action": "invite", "question": "问题"}, "request_id"),
+                (
+                    {"action": "invite", "request_id": "tarot_invite_01"},
+                    "必须填写",
+                ),
+            ):
+                with self.subTest(game="tarot", arguments=arguments):
+                    with self.assertRaises(server._McpError) as caught:
+                        server._play_tarot(arguments, tarot_ai)
+                    self.assertEqual(caught.exception.code, -32602)
+                    self.assertIn(message_fragment, caught.exception.message)
+        tarot_store.create_invite.assert_not_called()
+
+        with (
+            patch.object(server.detroit_adapter, "_locked", return_value=nullcontext()),
+            patch.object(
+                server.detroit_adapter,
+                "_read_state_unlocked",
+                return_value=None,
+            ),
+            patch.object(
+                server.detroit_adapter,
+                "_ensure_owner_and_connection_unlocked",
+                return_value={},
+            ),
+        ):
+            for arguments, message_fragment in (
+                ({}, "name"),
+                ({"name": "测试周目"}, "difficulty"),
+            ):
+                with self.subTest(game="detroit", arguments=arguments):
+                    with self.assertRaises(
+                        server.detroit_adapter.DetroitError
+                    ) as caught:
+                        server.detroit_adapter.play("42", "create_save", arguments)
+                    self.assertEqual(caught.exception.status, 400)
+                    self.assertIn(message_fragment, caught.exception.message)
 
 
 if __name__ == "__main__":
