@@ -112,6 +112,107 @@ class TarotStoreIsolationTests(unittest.TestCase):
             404, lambda: self.store.bootstrap_for_human(session["id"], 102)
         )
 
+    def test_next_direct_session_is_independent_csrf_scoped_and_idempotent(self):
+        invite = self.store.create_invite(
+            201, 101, "next_direct_source", "旧邀请问题会保留"
+        )
+        source_id = invite["session_id"]
+        accepted = self.accept(source_id)
+        csrf = self.store.bootstrap_for_human(source_id, 101)["csrf_token"]
+
+        def create_again(_index):
+            return self.store.create_next_direct_session(
+                source_id, 101, "new_reading_action", csrf
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            created = list(pool.map(create_again, range(4)))
+
+        self.assertEqual(len({item["id"] for item in created}), 1)
+        next_session = created[0]
+        self.assertNotEqual(next_session["id"], source_id)
+        self.assertEqual(next_session["phase"], "accepted")
+        self.assertEqual(next_session["question"], "")
+        self.assertEqual(next_session["draws"], [])
+        self.assertIsNone(next_session["reading"])
+        self.assertEqual(
+            self.store.invitation_for_human(source_id, 101)["state"], "accepted"
+        )
+        source = self.store.bootstrap_for_human(source_id, 101)["session"]
+        self.assertEqual(source["phase"], accepted["phase"])
+        self.assertEqual(source["question"], "旧邀请问题会保留")
+        self.assertEqual(source["draws"], [])
+        with self.store._connect() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM tarot_sessions").fetchone()[0], 2
+            )
+
+        self.assertTarotStatus(
+            403,
+            lambda: self.store.create_next_direct_session(
+                source_id, 101, "new_reading_bad_csrf", "wrong"
+            ),
+        )
+        self.assertTarotStatus(
+            404,
+            lambda: self.store.create_next_direct_session(
+                source_id, 102, "new_reading_wrong_owner", csrf
+            ),
+        )
+
+    def test_next_direct_session_blocks_running_reading_but_allows_terminal_history(self):
+        source = self.store.create_direct_session(101)
+        source_id = source["id"]
+        csrf = self.store.bootstrap_for_human(source_id, 101)["csrf_token"]
+        self.store.commit_draw(
+            source_id,
+            101,
+            {
+                "event_id": "next_running_draw",
+                "question": "运行中的问题",
+                "spread_id": "single",
+                "draws": [
+                    {"position": 0, "card_id": "M00", "reversed": False}
+                ],
+            },
+            csrf,
+        )
+        self.store.reveal(
+            source_id,
+            101,
+            {"event_id": "next_running_reveal", "positions": [0]},
+            csrf,
+        )
+        attempt = self.store.claim_reading(
+            source_id, 101, "next_running_reading", csrf
+        )["attempt"]
+        with self.assertRaises(TarotError) as running:
+            self.store.create_next_direct_session(
+                source_id, 101, "next_while_running", csrf
+            )
+        self.assertEqual(running.exception.status, 409)
+        self.assertIn("解读仍在进行", running.exception.message)
+        with self.store._connect() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM tarot_sessions").fetchone()[0], 1
+            )
+
+        self.store.finish_reading(
+            source_id,
+            101,
+            attempt["id"],
+            state="succeeded",
+            text="旧解读保持可读",
+        )
+        self.store.stop_session(source_id, 101, csrf)
+        created = self.store.create_next_direct_session(
+            source_id, 101, "next_after_terminal", csrf
+        )
+        self.assertNotEqual(created["id"], source_id)
+        old = self.store.bootstrap_for_human(source_id, 101)["session"]
+        self.assertEqual(old["phase"], "stopped")
+        self.assertEqual(old["reading"]["text"], "旧解读保持可读")
+
     def test_public_save_count_only_counts_sessions_with_a_committed_draw(self):
         missing = Path(self.temp_dir.name) / "missing.db"
         self.assertEqual(count_saved_tarot_sessions(missing), 0)
@@ -293,6 +394,13 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertNotIn("id", detail["reading"])
         self.assertNotIn("error_code", detail["reading"])
         self.assertNotIn("ai_user_id", detail)
+        unrevealed = self.store.history_detail_for_human(
+            second_owned["session_id"], 101
+        )
+        self.assertEqual(
+            unrevealed["cards"], [],
+            "history detail must never disclose cards that the human has not revealed",
+        )
         with self.store._connect() as conn:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM tarot_readings").fetchone()[0],
@@ -931,12 +1039,24 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
 
     def test_new_invite_schema_has_no_client_claimed_exemption_column(self):
+        self.store.init_db()
+        self.store.init_db()
         with self.store._connect() as conn:
             columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(tarot_invites)")
             }
+            start_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(tarot_session_starts)")
+            }
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
         self.assertIn("question", columns)
         self.assertNotIn("human_requested", columns)
+        self.assertEqual(
+            start_columns,
+            {"source_session_id", "action_id", "new_session_id", "created_at"},
+        )
+        self.assertEqual(integrity, "ok")
 
     def test_existing_invite_table_gets_idempotent_question_migration(self):
         legacy_path = Path(self.temp_dir.name) / "legacy-schema.db"
@@ -1021,26 +1141,31 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
     def test_managed_page_keeps_upstream_ui_without_platform_shell(self):
         web = TarotWeb()
         upstream = web.index_path.read_text(encoding="utf-8")
-        page = web.ritual_index("A" * 32).decode("utf-8")
+        page = web.ritual_index("A" * 32, 101).decode("utf-8")
         self.assertIn('<base href="/tarot/static/">', page)
         self.assertIn('<link rel="stylesheet" href="./fonts/fonts.css">', page)
         self.assertIn('<link rel="stylesheet" href="./css/style.css">', page)
         self.assertIn('<script type="module" src="./js/main.js"></script>', page)
-        self.assertIn('/tarot/static/platform/managed-core.v5.js', page)
+        self.assertIn('/tarot/static/platform/managed-core.v6.js', page)
+        self.assertNotIn('/tarot/static/platform/managed-core.v5.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v3.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v3.css', page)
         self.assertIn('/tarot/static/platform/managed-ui.v4.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v4.css', page)
         self.assertIn('/tarot/static/platform/managed-ui.v5.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v5.css', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v6.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v6.css', page)
         self.assertIn('/tarot/static/platform/managed-companion.v3.js', page)
-        self.assertIn('/tarot/static/platform/managed-cards3d.v5.js', page)
+        self.assertIn('/tarot/static/platform/managed-cards3d.v6.js', page)
+        self.assertNotIn('/tarot/static/platform/managed-cards3d.v5.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v2.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v2.css', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v1.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v1.css', page)
         self.assertIn(f"<title>{RITUAL_DISPLAY_NAME}</title>", page)
         self.assertIn('id="companion-config"', page)
+        self.assertIn('"humanUserId":101', page)
         self.assertIn('id="providerOrb"', page)
         self.assertIn("本站暂仅支持所提供的模型。如需自行配置模型，请克隆", page)
         self.assertIn(f'href="{COVE_REPOSITORY}"', page)
@@ -1055,6 +1180,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             page.index('/tarot/static/platform/managed-ui.v5.css'),
         )
         self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v5.css'),
+            page.index('/tarot/static/platform/managed-ui.v6.css'),
+        )
+        self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v3.js'),
             page.index('/tarot/static/platform/managed-ui.v4.js'),
         )
@@ -1064,6 +1193,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         )
         self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v5.js'),
+            page.index('/tarot/static/platform/managed-ui.v6.js'),
+        )
+        self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v6.js'),
             page.index('<script type="module" src="./js/main.js"></script>'),
         )
         self.assertNotIn("导入本机 DSH", page)
@@ -1080,6 +1213,7 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             "label.textContent = `${p.label}${m ? ' · ' + m : ''}`;",
             main_js,
         )
+        self.assertIn("navigator.clipboard.writeText(S.readingRaw)", main_js)
         managed_core = web.static_file("platform/managed-core.v1.js")[0].read_text(
             encoding="utf-8"
         )
@@ -1096,6 +1230,14 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertNotIn("apiKey", managed_core_v5)
         self.assertNotIn("baseURL", managed_core_v5)
         self.assertNotIn("/api/chat", managed_core_v5)
+        managed_core_v6 = web.static_file(
+            "platform/managed-core.v6.js"
+        )[0].read_text(encoding="utf-8")
+        self.assertIn("managed-core.v5.js", managed_core_v6)
+        self.assertIn("cedartoy:tarot-reading-state", managed_core_v6)
+        self.assertNotIn("apiKey", managed_core_v6)
+        self.assertNotIn("baseURL", managed_core_v6)
+        self.assertNotIn("/api/chat", managed_core_v6)
         managed_ui_path, managed_ui_mime = web.static_file(
             "platform/managed-ui.v3.js"
         )
@@ -1135,6 +1277,19 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         )
         self.assertTrue(managed_mobile_css.is_file())
         self.assertEqual(managed_mobile_css_mime, "text/css")
+        managed_reading_path, managed_reading_mime = web.static_file(
+            "platform/managed-ui.v6.js"
+        )
+        self.assertEqual(managed_reading_mime, "text/javascript")
+        managed_reading = managed_reading_path.read_text(encoding="utf-8")
+        self.assertIn("`${endpoint}/new`", managed_reading)
+        self.assertIn("stopImmediatePropagation", managed_reading)
+        self.assertIn("X-Companion-CSRF", managed_reading)
+        managed_reading_css, managed_reading_css_mime = web.static_file(
+            "platform/managed-ui.v6.css"
+        )
+        self.assertTrue(managed_reading_css.is_file())
+        self.assertEqual(managed_reading_css_mime, "text/css")
         managed_layout_css, managed_layout_css_mime = web.static_file(
             "platform/managed-ui.v4.css"
         )
@@ -1146,13 +1301,26 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn("/api/tarot/models/status", managed_companion)
         self.assertIn("body?.attempt_id", managed_companion)
         managed_cards_path, managed_cards_mime = web.static_file(
-            "platform/managed-cards3d.v5.js"
+            "platform/managed-cards3d.v6.js"
         )
         self.assertTrue(managed_cards_path.is_file())
         self.assertEqual(managed_cards_mime, "text/javascript")
         managed_cards = managed_cards_path.read_text(encoding="utf-8")
         self.assertIn("selectionViewportIsCrowded", managed_cards)
         self.assertIn("deferredFrame", managed_cards)
+        self.assertIn("managed-cards3d-core.v6.js", managed_cards)
+        managed_cards_core = web.static_file(
+            "js/three/managed-cards3d-core.v6.js"
+        )[0].read_text(encoding="utf-8")
+        self.assertIn("updatePointer", managed_cards_core)
+        self.assertIn("pickEntry", managed_cards_core)
+        self.assertIn("./canvas-navigation.v6.js", managed_cards_core)
+        managed_navigation = web.static_file(
+            "js/three/canvas-navigation.v6.js"
+        )[0].read_text(encoding="utf-8")
+        self.assertIn("tapSlop", managed_navigation)
+        self.assertIn("onTap(finalPoint)", managed_navigation)
+        self.assertTrue(web.static_file("platform/managed-cards3d.v5.js")[0].is_file())
         upstream_cards, upstream_cards_mime = web.static_file(
             "js/three/upstream-cards3d.v1.js"
         )

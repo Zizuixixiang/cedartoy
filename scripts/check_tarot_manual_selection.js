@@ -5,8 +5,10 @@ const vm = require('node:vm');
 const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..');
-const wrapperPath = path.join(root, 'assets/tarot/managed-cards3d.v5.js');
-const upstreamSpecifier = '/tarot/static/js/three/upstream-cards3d.v1.js';
+const wrapperPath = path.join(root, 'assets/tarot/managed-cards3d.v6.js');
+const cardsCorePath = path.join(root, 'assets/tarot/managed-cards3d-core.v6.js');
+const navigationPath = path.join(root, 'assets/tarot/managed-canvas-navigation.v6.js');
+const upstreamSpecifier = '/tarot/static/js/three/managed-cards3d-core.v6.js';
 const CARD_W = 1.6;
 const CARD_H = 2.8;
 const FOV_DEGREES = 42;
@@ -204,80 +206,322 @@ async function checkRealProjectionAndRaycast() {
   }
 }
 
-async function checkTouchNavigationReset() {
+class PointerCanvas {
+  constructor(rect) {
+    this.rect = rect;
+    this.style = {};
+    this.captures = new Set();
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(listener);
+  }
+
+  getBoundingClientRect() { return { ...this.rect }; }
+
+  setPointerCapture(pointerId) { this.captures.add(pointerId); }
+
+  releasePointerCapture(pointerId) { this.captures.delete(pointerId); }
+
+  fire(type, {
+    pointerId = 1, clientX = 0, clientY = 0, pointerType = 'touch', button = 0,
+  } = {}) {
+    const event = {
+      type, pointerId, clientX, clientY, pointerType, button,
+      deltaY: 0, deltaMode: 0, ctrlKey: false,
+      defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; },
+    };
+    for (const listener of [...(this.listeners.get(type) || [])]) listener(event);
+    return event;
+  }
+}
+
+async function navigationFactory(context) {
+  const module = new vm.SourceTextModule(fs.readFileSync(navigationPath, 'utf8'), {
+    context,
+    identifier: navigationPath,
+  });
+  await module.link(async specifier => {
+    throw new Error(`unexpected navigation import: ${specifier}`);
+  });
+  await module.evaluate();
+  return module.namespace.attachCanvasNavigation;
+}
+
+async function checkTouchNavigationGestures() {
   const THREE = await import(pathToFileURL(path.join(
     root, 'vendor/tarot-ritual/public/vendor/three.module.js',
   )).href);
-  const { attachCanvasNavigation } = await import(pathToFileURL(path.join(
-    root, 'vendor/tarot-ritual/public/js/three/canvas-navigation.js',
-  )).href);
-  const element = new EventTarget();
-  element.style = {};
-  element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 375, height: 812 });
-  const captures = new Set();
-  element.setPointerCapture = id => captures.add(id);
-  element.releasePointerCapture = id => captures.delete(id);
-  const camera = new THREE.PerspectiveCamera(FOV_DEGREES, 375 / 812, 0.1, 400);
+  const context = vm.createContext({ console });
+  const attachCanvasNavigation = await navigationFactory(context);
+  const element = new PointerCanvas({ left: 19, top: 37, width: 337, height: 700 });
+  const camera = new THREE.PerspectiveCamera(FOV_DEGREES, 337 / 700, 0.1, 400);
   camera.position.z = 17;
   const rig = {
     base: new THREE.Vector3(0, 0, 17),
     target: new THREE.Vector3(0, 0, 17),
   };
-  let mode = 'select';
-  let taps = 0;
+  const taps = [];
   const navigation = attachCanvasNavigation({
     element,
     camera,
     rig,
     canPan: () => true,
-    canZoom: () => mode === 'layout',
+    canZoom: () => true,
     onInteract() {},
-    onTap() { taps += 1; },
+    onTap(point) { taps.push(point); },
   });
-  const fire = (type, pointerId, clientX, clientY) => {
-    const event = new Event(type, { cancelable: true });
-    Object.assign(event, {
-      pointerId, clientX, clientY, button: 0, pointerType: 'touch',
-    });
-    element.dispatchEvent(event);
-  };
 
-  fire('pointerdown', 1, 100, 400);
-  fire('pointerdown', 2, 275, 400);
-  fire('pointermove', 2, 350, 400);
-  fire('pointerup', 2, 350, 400);
-  fire('pointerup', 1, 100, 400);
-  assert.equal(camera.zoom, 1, 'selection pinch must not leave latent zoom');
-  assert.equal(navigation.isInteracting, false);
-  assert.equal(captures.size, 0);
-  assert.equal(taps, 0);
+  element.fire('pointerdown', { pointerId: 1, clientX: 100, clientY: 300 });
+  element.fire('pointerup', { pointerId: 1, clientX: 108, clientY: 305 });
+  assert.deepEqual(
+    { x: taps[0].x, y: taps[0].y, pointerType: taps[0].pointerType },
+    { x: 108, y: 305, pointerType: 'touch' },
+    'touch jitter stays a tap and forwards the release coordinates',
+  );
 
-  mode = 'layout';
-  fire('pointerdown', 1, 100, 400);
-  fire('pointerdown', 2, 275, 400);
-  fire('pointermove', 2, 350, 400);
-  assert.ok(camera.zoom > 1, 'reading layout can zoom in');
-  fire('pointermove', 2, 275, 400);
-  assert.equal(camera.zoom, 1, 'reading layout can pinch back to its original zoom');
-  fire('pointerup', 2, 275, 400);
-  fire('pointerup', 1, 100, 400);
-  assert.equal(navigation.isInteracting, false);
-  assert.equal(captures.size, 0);
+  element.fire('pointerdown', { pointerId: 2, clientX: 140, clientY: 300 });
+  element.fire('pointerup', { pointerId: 2, clientX: 152, clientY: 300 });
+  assert.equal(taps.length, 1, 'a release outside touch slop is not a tap');
 
-  fire('pointerdown', 3, 180, 400);
+  element.fire('pointerdown', { pointerId: 3, clientX: 160, clientY: 300 });
+  element.fire('pointermove', { pointerId: 3, clientX: 195, clientY: 300 });
+  assert.equal(navigation.isInteracting, true);
+  element.fire('pointerup', { pointerId: 3, clientX: 195, clientY: 300 });
+  assert.equal(taps.length, 1, 'a real drag never becomes a tap');
+
+  element.fire('pointerdown', { pointerId: 4, clientX: 100, clientY: 360 });
+  element.fire('pointerdown', { pointerId: 5, clientX: 250, clientY: 360 });
+  element.fire('pointermove', { pointerId: 5, clientX: 290, clientY: 360 });
+  assert.ok(camera.zoom > 1, 'two-finger navigation still pinches');
+  element.fire('pointerup', { pointerId: 5, clientX: 290, clientY: 360 });
+  element.fire('pointerup', { pointerId: 4, clientX: 100, clientY: 360 });
+  assert.equal(taps.length, 1, 'a pinch never draws a card');
+
+  element.fire('pointerdown', { pointerId: 6, clientX: 180, clientY: 400 });
+  element.fire('pointercancel', { pointerId: 6, clientX: 180, clientY: 400 });
+  element.fire('pointerdown', { pointerId: 7, clientX: 180, clientY: 400 });
+  element.fire('lostpointercapture', { pointerId: 7, clientX: 180, clientY: 400 });
+  assert.equal(taps.length, 1, 'cancelled and lost captures never draw');
+
+  element.fire('pointerdown', { pointerId: 8, clientX: 180, clientY: 400 });
   navigation.reset();
-  fire('pointerup', 3, 180, 400);
+  element.fire('pointerup', { pointerId: 8, clientX: 180, clientY: 400 });
   assert.equal(camera.zoom, 1);
   assert.equal(navigation.isInteracting, false);
-  assert.equal(captures.size, 0);
-  assert.equal(taps, 0, 'reset must not turn a captured gesture into a card tap');
+  assert.equal(element.captures.size, 0);
+  assert.equal(taps.length, 1, 'reset cannot turn a captured gesture into a tap');
+}
+
+async function cardsFactory(THREE) {
+  const makeCanvas = () => ({
+    width: 0,
+    height: 0,
+    getContext: () => ({
+      beginPath() {}, moveTo() {}, arcTo() {}, fill() {},
+    }),
+  });
+  const context = vm.createContext({
+    console,
+    window: { innerWidth: 900, innerHeight: 900 },
+    document: { createElement: makeCanvas },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  });
+  const threeNames = Object.keys(THREE);
+  const threeModule = new vm.SyntheticModule(threeNames, function init() {
+    for (const name of threeNames) this.setExport(name, THREE[name]);
+  }, { context, identifier: 'three' });
+  const cardfaceModule = new vm.SyntheticModule(['renderCardFace'], function init() {
+    this.setExport('renderCardFace', makeCanvas);
+  }, { context, identifier: '../art/cardface.js' });
+  const navigationModule = new vm.SourceTextModule(
+    fs.readFileSync(navigationPath, 'utf8'),
+    { context, identifier: './canvas-navigation.v6.js' },
+  );
+  const cardsModule = new vm.SourceTextModule(fs.readFileSync(cardsCorePath, 'utf8'), {
+    context,
+    identifier: cardsCorePath,
+  });
+  await cardsModule.link(async specifier => {
+    if (specifier === 'three') return threeModule;
+    if (specifier === '../art/cardface.js') return cardfaceModule;
+    if (specifier === './canvas-navigation.v6.js') return navigationModule;
+    throw new Error(`unexpected cards import: ${specifier}`);
+  });
+  await cardsModule.evaluate();
+  return cardsModule.namespace.createRitual;
+}
+
+function createCardsHarness(THREE, createRitual) {
+  const rect = { left: 31, top: 73, width: 320, height: 700 };
+  const element = new PointerCanvas(rect);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(FOV_DEGREES, rect.width / rect.height, 0.1, 400);
+  camera.position.set(0, 0, 17);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  const rig = {
+    base: new THREE.Vector3(0, 0, 17),
+    target: new THREE.Vector3(0, 0, 17),
+  };
+  const frames = [];
+  const ritual = createRitual({
+    scene,
+    camera,
+    rig,
+    renderer: { domElement: element },
+    onFrame(callback) { frames.push(callback); },
+  });
+  ritual.build(['A', 'B', 'C'].map(id => ({ id })), { deterministic: true });
+  const entries = ritual.cards;
+  entries.forEach((entry, index) => {
+    entry.state = 'fan';
+    entry.mesh.visible = true;
+    entry.mesh.position.set((index - 1) * 2, 0, index * 0.001);
+    entry.mesh.rotation.set(0, 0, 0);
+    entry.mesh.scale.setScalar(1);
+  });
+  ritual.beginSelection();
+  const selected = [];
+  ritual.onSelect = entry => {
+    selected.push(entry.card.id);
+    ritual.flyToSlot(entry, {
+      pos: new THREE.Vector3(0, -5 - selected.length, 1),
+      rot: 0,
+      scale: 0.7,
+      deferReveal: true,
+    });
+  };
+  const tick = () => {
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    frames.forEach(callback => callback(0.016, 1));
+  };
+  const clientPoint = entry => {
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const projected = entry.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+    return {
+      x: rect.left + (projected.x + 1) * rect.width / 2,
+      y: rect.top + (1 - projected.y) * rect.height / 2,
+    };
+  };
+  const touch = (entry, { jitter = false, pointerId = 1 } = {}) => {
+    const at = clientPoint(entry);
+    element.fire('pointerdown', {
+      pointerId,
+      clientX: at.x + (jitter ? -4 : 0),
+      clientY: at.y + (jitter ? -3 : 0),
+    });
+    element.fire('pointerup', {
+      pointerId,
+      clientX: at.x + (jitter ? 3 : 0),
+      clientY: at.y + (jitter ? 3 : 0),
+    });
+  };
+  tick();
+  return { element, scene, camera, rig, ritual, entries, selected, tick, clientPoint, touch };
+}
+
+async function checkRealCardsTouchFlow() {
+  const THREE = await import(pathToFileURL(path.join(
+    root, 'vendor/tarot-ritual/public/vendor/three.module.js',
+  )).href);
+  const createRitual = await cardsFactory(THREE);
+
+  const direct = createCardsHarness(THREE, createRitual);
+  direct.touch(direct.entries[1]);
+  assert.deepEqual(direct.selected, ['B'], 'a touch tap selects without any pointermove frame');
+
+  const stale = createCardsHarness(THREE, createRitual);
+  const stalePoint = stale.clientPoint(stale.entries[0]);
+  stale.element.fire('pointermove', {
+    pointerId: 1, clientX: stalePoint.x, clientY: stalePoint.y,
+  });
+  stale.tick();
+  stale.touch(stale.entries[2]);
+  assert.deepEqual(stale.selected, ['C'], 'tap-time raycast replaces a stale hover on another card');
+
+  const repeated = createCardsHarness(THREE, createRitual);
+  repeated.touch(repeated.entries[1], { jitter: true, pointerId: 1 });
+  repeated.camera.position.set(0.8, 0.35, 17);
+  repeated.camera.lookAt(0.8, 0.35, 0);
+  repeated.camera.updateMatrixWorld();
+  repeated.touch(repeated.entries[2], { pointerId: 2 });
+  repeated.touch(repeated.entries[0], { pointerId: 3 });
+  assert.deepEqual(
+    repeated.selected,
+    ['B', 'C', 'A'],
+    'each tap re-raycasts after the selected card leaves the fan and after camera movement',
+  );
+  assert.equal(new Set(repeated.selected).size, 3);
+
+  const gestures = createCardsHarness(THREE, createRitual);
+  const center = gestures.clientPoint(gestures.entries[1]);
+  gestures.element.fire('pointerdown', {
+    pointerId: 10, clientX: center.x, clientY: center.y,
+  });
+  gestures.element.fire('pointermove', {
+    pointerId: 10, clientX: center.x + 36, clientY: center.y,
+  });
+  gestures.element.fire('pointerup', {
+    pointerId: 10, clientX: center.x + 36, clientY: center.y,
+  });
+  gestures.element.fire('pointerdown', {
+    pointerId: 11, clientX: center.x - 50, clientY: center.y,
+  });
+  gestures.element.fire('pointerdown', {
+    pointerId: 12, clientX: center.x + 50, clientY: center.y,
+  });
+  gestures.element.fire('pointermove', {
+    pointerId: 12, clientX: center.x + 80, clientY: center.y,
+  });
+  gestures.element.fire('pointerup', {
+    pointerId: 12, clientX: center.x + 80, clientY: center.y,
+  });
+  gestures.element.fire('pointerup', {
+    pointerId: 11, clientX: center.x - 50, clientY: center.y,
+  });
+  gestures.element.fire('pointerdown', {
+    pointerId: 13, clientX: center.x, clientY: center.y,
+  });
+  gestures.element.fire('pointercancel', {
+    pointerId: 13, clientX: center.x, clientY: center.y,
+  });
+  gestures.element.fire('pointerdown', {
+    pointerId: 14, clientX: center.x, clientY: center.y,
+  });
+  gestures.element.fire('lostpointercapture', {
+    pointerId: 14, clientX: center.x, clientY: center.y,
+  });
+  assert.deepEqual(gestures.selected, [], 'drag, pinch, cancel, and lost capture do not select');
+
+  const mouse = createCardsHarness(THREE, createRitual);
+  const mousePoint = mouse.clientPoint(mouse.entries[1]);
+  mouse.element.fire('pointermove', {
+    pointerId: 20, clientX: mousePoint.x, clientY: mousePoint.y, pointerType: 'mouse',
+  });
+  mouse.tick();
+  mouse.element.fire('pointerdown', {
+    pointerId: 20, clientX: mousePoint.x, clientY: mousePoint.y, pointerType: 'mouse',
+  });
+  mouse.element.fire('pointerup', {
+    pointerId: 20, clientX: mousePoint.x, clientY: mousePoint.y, pointerType: 'mouse',
+  });
+  assert.deepEqual(mouse.selected, ['B'], 'desktop mouse hover/click behavior remains available');
 }
 
 Promise.resolve()
   .then(checkWrapperLifecycle)
   .then(checkRealProjectionAndRaycast)
-  .then(checkTouchNavigationReset)
-  .then(() => console.log('tarot mobile manual selection (Three.js projection/raycast + touch navigation): ok'))
+  .then(checkTouchNavigationGestures)
+  .then(checkRealCardsTouchFlow)
+  .then(() => console.log('tarot manual selection (real cards3d/navigation/Three.js touch flow): ok'))
   .catch(error => {
     console.error(error);
     process.exitCode = 1;

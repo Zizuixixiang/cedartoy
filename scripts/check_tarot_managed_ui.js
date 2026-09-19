@@ -3,18 +3,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { TextDecoder, TextEncoder } = require('node:util');
-const { JSDOM } = require('jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 const csstree = require('css-tree');
 
 const root = path.resolve(__dirname, '..');
 const uiPath = path.join(root, 'assets/tarot/managed-ui.v3.js');
 const layoutPath = path.join(root, 'assets/tarot/managed-ui.v4.js');
 const mobileUiPath = path.join(root, 'assets/tarot/managed-ui.v5.js');
+const readingUiPath = path.join(root, 'assets/tarot/managed-ui.v6.js');
 const corePath = path.join(root, 'assets/tarot/managed-core.v1.js');
 const mobileCorePath = path.join(root, 'assets/tarot/managed-core.v5.js');
+const readingCorePath = path.join(root, 'assets/tarot/managed-core.v6.js');
 const cssPath = path.join(root, 'assets/tarot/managed-ui.v3.css');
 const layoutCssPath = path.join(root, 'assets/tarot/managed-ui.v4.css');
 const mobileCssPath = path.join(root, 'assets/tarot/managed-ui.v5.css');
+const readingCssPath = path.join(root, 'assets/tarot/managed-ui.v6.css');
 const companionPath = path.join(root, 'assets/tarot/managed-companion.v3.js');
 const upstreamCompanionPath = path.join(
   root, 'vendor/tarot-ritual/public/js/companion-adapter.js',
@@ -40,6 +43,7 @@ function loadManagedUi(window) {
   window.eval(fs.readFileSync(uiPath, 'utf8'));
   window.eval(fs.readFileSync(layoutPath, 'utf8'));
   window.eval(fs.readFileSync(mobileUiPath, 'utf8'));
+  window.eval(fs.readFileSync(readingUiPath, 'utf8'));
 }
 
 async function checkUiBehavior() {
@@ -111,12 +115,15 @@ async function createCompanionHarness(session, {
     </aside>
     <main id="ui">
       <aside id="readingPanel" class="hidden">
-        <div class="reading-head"><h2>解读</h2><p class="reading-question">问题</p></div>
+        <div class="reading-head"><h2 id="readingTitle">解读</h2>
+          <p id="readingQuestion" class="reading-question">问题</p>
+          <button id="chipsToggle"></button><div id="readingChips" class="reading-chips"></div>
+        </div>
         <div id="readingStream" class="reading-stream"></div>
         <div class="reading-actions">
-          <button class="btn">再 问 一 次</button>
-          <button class="btn">誊 抄</button>
-          <button class="btn">新 的 占 问</button>
+          <button id="reReadBtn" class="btn">再 问 一 次</button>
+          <button id="copyReadBtn" class="btn">誊 抄</button>
+          <button id="newReadBtn" class="btn">新 的 占 问</button>
         </div>
       </aside>
     </main>
@@ -148,7 +155,10 @@ async function createCompanionHarness(session, {
     assert.equal(options.cache, 'no-store');
     return {
       ok: true,
-      json: async () => ({ session: JSON.parse(JSON.stringify(current)) }),
+      json: async () => ({
+        csrf_token: 'test-csrf',
+        session: JSON.parse(JSON.stringify(current)),
+      }),
     };
   };
   loadManagedUi(window);
@@ -359,16 +369,47 @@ async function checkReadingMobileBehavior(viewportWidth) {
     assert.equal(box.parentElement, panel);
     assert.equal(panel.firstElementChild, box);
     assert.equal(box.classList.contains('managed-companion-reading'), true);
+    assert.equal(box.classList.contains('managed-companion-reading-compact'), true);
+    assert.equal(harness.status.getAttribute('aria-hidden'), 'true');
   } else {
     assert.equal(box.parentElement, ui);
     assert.equal(box.classList.contains('managed-companion-reading'), false);
+    assert.equal(box.classList.contains('managed-companion-reading-compact'), false);
+    assert.equal(harness.status.hasAttribute('aria-hidden'), false);
   }
   assert.equal(stream.scrollTop, 0, `${viewportWidth}px restored reading starts at top`);
   assert.equal(end.hidden, false);
   assert.notEqual(end.tabIndex, -1);
+  if (viewportWidth === 360) {
+    harness.status.textContent = '已恢复原解读。';
+    await settle(window);
+    const feedback = window.document.getElementById('managedReadingFeedback');
+    assert.equal(feedback.hidden, true, 'routine restored status must not occupy the header');
+    harness.status.textContent = '原解读失败，未自动重试。';
+    await settle(window);
+    assert.equal(feedback.hidden, false, 'failure remains visible in compact form');
+    assert.match(feedback.textContent, /原解读失败/);
+    harness.status.textContent = '已恢复原解读。';
+    await settle(window);
+    assert.equal(feedback.hidden, true);
+  }
   if (viewportWidth === 375) {
     await clickEndAndSettle(harness);
     await assertEnded(harness, { finish: 1, stop: 0 });
+  }
+  if (viewportWidth === 390) {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 700 });
+    window.dispatchEvent(new window.Event('resize'));
+    await settle(window);
+    await settle(window);
+    assert.equal(box.parentElement, ui, 'landscape/desktop width restores the side-panel companion');
+    assert.equal(box.classList.contains('managed-companion-reading-compact'), false);
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    window.dispatchEvent(new window.Event('resize'));
+    await settle(window);
+    await settle(window);
+    assert.equal(box.parentElement, panel, 'returning to portrait restores the compact title action');
+    assert.equal(box.classList.contains('managed-companion-reading-compact'), true);
   }
 
   stream.scrollTop = 73;
@@ -379,6 +420,9 @@ async function checkReadingMobileBehavior(viewportWidth) {
   stream.classList.add('streaming');
   await settle(window);
   assert.equal(stream.scrollTop, 0, 'a newly streamed reading starts at top once');
+  const newRead = window.document.getElementById('newReadBtn');
+  assert.equal(newRead.disabled, true, 'a live reading keeps new-session creation busy');
+  assert.equal(newRead.textContent, '解 读 中…');
   stream.scrollTop = 91;
   stream.appendChild(window.document.createElement('p'));
   await settle(window);
@@ -389,7 +433,287 @@ async function checkReadingMobileBehavior(viewportWidth) {
   await settle(window);
   assert.equal(box.parentElement, ui);
   assert.equal(box.classList.contains('managed-companion-reading'), false);
+  assert.equal(box.classList.contains('managed-companion-reading-compact'), false);
   window.dispatchEvent(new window.Event('pagehide'));
+}
+
+async function checkReadingRequestFeedback() {
+  const harness = await createCompanionHarness({
+    phase: 'revealed', draws: [{ revealed: true }],
+    reading: { state: 'succeeded', text: '已有完整解读' },
+  }, { viewportWidth: 375 });
+  const { window } = harness;
+  const panel = window.document.getElementById('readingPanel');
+  const stream = window.document.getElementById('readingStream');
+  panel.classList.add('open');
+  const stateNode = () => stream.querySelector('[data-managed-reading-state="1"]');
+  const dispatch = (requestId, state, extra = {}) => {
+    window.document.dispatchEvent(new window.CustomEvent('cedartoy:tarot-reading-state', {
+      detail: { requestId, state, ...extra },
+    }));
+  };
+
+  stream.innerHTML = '<p>恢复的完整历史解读</p>';
+  await settle(window);
+  assert.equal(stateNode(), null, 'restored history never flashes a fake wait state');
+
+  stream.classList.add('streaming');
+  stream.innerHTML = '';
+  dispatch(1, 'start');
+  assert.equal(stream.getAttribute('aria-busy'), 'true');
+  assert.match(stateNode().textContent, /正在解读牌面，请稍候/);
+  assert.equal(stateNode().getAttribute('role'), 'status');
+  assert.equal(stateNode().getAttribute('aria-live'), 'polite');
+  assert.equal(stateNode().querySelectorAll('.managed-reading-dots i').length, 3);
+  await new Promise(resolve => window.setTimeout(resolve, 25));
+  assert.match(stateNode().textContent, /正在解读牌面/, 'slow response keeps the wait visible');
+
+  stream.innerHTML = '';
+  dispatch(1, 'delta', { hasText: false });
+  assert.match(stateNode().textContent, /正在解读牌面/, 'whitespace is not treated as real text');
+  stream.scrollTop = 83;
+  stream.innerHTML = '<p>第一段真实文字</p>';
+  stream.scrollTop = 83;
+  dispatch(1, 'delta', { hasText: true });
+  assert.equal(stateNode(), null, 'the first real text removes the placeholder');
+  assert.match(stream.textContent, /第一段真实文字/);
+  assert.equal(stream.scrollTop, 83, 'removing the placeholder does not force scrolling');
+  stream.insertAdjacentHTML('beforeend', '<p>后续流式文字</p>');
+  dispatch(1, 'delta', { hasText: true });
+  assert.equal(stream.scrollTop, 83, 'later deltas keep the chosen scroll position');
+  dispatch(1, 'done', { ok: true });
+  assert.equal(stream.getAttribute('aria-busy'), 'false');
+  assert.equal(stateNode(), null);
+  assert.match(stream.textContent, /第一段真实文字/);
+
+  stream.classList.add('streaming');
+  stream.innerHTML = '';
+  dispatch(2, 'start');
+  assert.match(stateNode().textContent, /正在解读牌面/, 'manual reread starts a new wait cycle');
+  stream.classList.remove('streaming');
+  const error = window.document.createElement('p');
+  error.id = 'realReadingError';
+  error.textContent = '神谕中断：网络连接已断开';
+  stream.appendChild(error);
+  dispatch(2, 'error');
+  assert.equal(stateNode(), null);
+  assert.equal(window.document.getElementById('realReadingError'), error);
+  assert.match(stream.textContent, /网络连接已断开/, 'real error reason is preserved');
+
+  stream.classList.add('streaming');
+  stream.innerHTML = '';
+  dispatch(3, 'start');
+  dispatch(3, 'cancelled', { ok: false });
+  assert.equal(stream.classList.contains('streaming'), false);
+  assert.equal(stream.getAttribute('aria-busy'), 'false');
+  assert.match(stateNode().textContent, /本次解读已取消/);
+  assert.equal(stateNode().querySelector('.managed-reading-dots'), null);
+
+  stream.classList.add('streaming');
+  stream.innerHTML = '';
+  dispatch(4, 'start');
+  dispatch(4, 'done', { ok: true });
+  assert.match(stateNode().textContent, /未收到解读内容/);
+
+  stream.classList.add('streaming');
+  stream.innerHTML = '';
+  dispatch(5, 'start');
+  dispatch(5, 'done', { ok: false });
+  assert.match(stateNode().textContent, /解读未能完成/);
+
+  stream.classList.add('streaming');
+  stream.innerHTML = '';
+  dispatch(6, 'start');
+  dispatch(7, 'start');
+  dispatch(6, 'cancelled', { ok: false });
+  assert.match(stateNode().textContent, /正在解读牌面/, 'an old abort cannot cancel a newer reread');
+  stream.innerHTML = '<p>新的请求正文</p>';
+  dispatch(7, 'delta', { hasText: true });
+  dispatch(7, 'done', { ok: true });
+  assert.equal(stateNode(), null);
+
+  stream.textContent = '尚无完整原解读。可查看牌义，或配置服务后主动请求解读。';
+  harness.status.textContent = '本次会话已结束，已有结果仅供查看。';
+  await settle(window);
+  assert.equal(stateNode(), null, 'ended/restored sessions have no residual wait state');
+  window.dispatchEvent(new window.Event('pagehide'));
+}
+
+async function createNewSessionHarness({
+  session = {
+    id: 'test_session', phase: 'revealed', draws: [{ revealed: true }],
+    reading: { state: 'succeeded', text: '旧解读' },
+  },
+  failPost = false,
+  viewportWidth = 375,
+} = {}) {
+  const virtualConsole = new VirtualConsole();
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <header id="topbar"><div class="top-right"><button id="providerOrb"><span id="providerLabel"></span></button></div></header>
+    <aside id="settingsPanel"><div id="providerList"></div></aside>
+    <main id="ui">
+      <aside id="readingPanel" class="open">
+        <div class="reading-head"><div class="eyebrow">THE READING</div>
+          <h2 id="readingTitle">三牌阵</h2>
+          <p id="readingQuestion" class="reading-question">这是一个很长但必须保留的旧问题</p>
+          <button id="chipsToggle"></button>
+          <div id="readingChips" class="reading-chips">
+            <span class="chip">过去</span><span class="chip">现在</span><span class="chip">未来</span>
+          </div>
+        </div>
+        <div id="readingStream" class="reading-stream"><p>旧解读仍在这里。</p></div>
+        <div class="reading-actions">
+          <button id="reReadBtn">再问一次</button><button id="copyReadBtn">誊抄</button>
+          <button id="newReadBtn" disabled>新 的 占 问</button>
+        </div>
+      </aside>
+      <div class="panel" id="companionBox"><p id="companionStatus">已恢复原解读。</p>
+        <button>返回聊天</button><button>停止本次</button>
+      </div>
+    </main>
+    <div id="toasts"></div>
+    <script type="application/json" id="companion-config">{"protocol":"cove-tarot-companion-v1","sessionId":"test_session","apiBase":"/companion/v1"}</script>
+  </body></html>`, {
+    runScripts: 'outside-only', pretendToBeVisual: true,
+    url: 'https://toy.example/tarot/session/test_session/', virtualConsole,
+  });
+  const { window } = dom;
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    value: viewportWidth,
+  });
+  let getCalls = 0;
+  let postCalls = 0;
+  let postBody = null;
+  let postHeaders = null;
+  window.fetch = async (url, options = {}) => {
+    if (url === '/api/tarot/models/status') {
+      return { ok: true, json: async () => modelStatuses() };
+    }
+    if (url === '/companion/v1/sessions/test_session') {
+      getCalls += 1;
+      return {
+        ok: true,
+        json: async () => ({ csrf_token: 'next-csrf', session: { ...session } }),
+      };
+    }
+    if (url === '/companion/v1/sessions/test_session/new') {
+      postCalls += 1;
+      postBody = JSON.parse(options.body);
+      postHeaders = options.headers;
+      if (failPost) {
+        return {
+          ok: false, status: 503,
+          json: async () => ({ error: '新占问服务暂时不可用' }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          session_id: 'N'.repeat(32),
+          location: `/tarot/session/${'N'.repeat(32)}/`,
+        }),
+      };
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  loadManagedUi(window);
+  await settle(window);
+  await settle(window);
+  return {
+    window,
+    panel: window.document.getElementById('readingPanel'),
+    stream: window.document.getElementById('readingStream'),
+    button: window.document.getElementById('newReadBtn'),
+    calls: () => ({ get: getCalls, post: postCalls, postBody, postHeaders }),
+  };
+}
+
+async function checkNewSessionButton() {
+  const restoredSession = {
+      id: 'test_session', phase: 'revealed', draws: [{ revealed: true }],
+      reading: { state: 'succeeded', text: '恢复的旧解读' },
+    };
+  const cases = [320, 360, 375, 390, 1280].map(viewportWidth => ({
+    viewportWidth,
+    session: restoredSession,
+  }));
+  cases.push({
+    viewportWidth: 375,
+    session: {
+      id: 'test_session', phase: 'stopped', draws: [{ revealed: true }],
+      reading: { state: 'failed', text: '' },
+    },
+  });
+  for (const { session, viewportWidth } of cases) {
+    const harness = await createNewSessionHarness({ session, viewportWidth });
+    const { window, button, panel, stream } = harness;
+    let upstreamResetCalls = 0;
+    button.addEventListener('click', () => { upstreamResetCalls += 1; });
+    assert.equal(button.disabled, false, 'v6 overrides the upstream restored/terminal lock');
+    button.disabled = true;
+    await settle(window);
+    assert.equal(button.disabled, false, 'later upstream disabled writes are also overridden');
+
+    const click = () => button.dispatchEvent(new window.MouseEvent('click', {
+      bubbles: true, cancelable: true,
+    }));
+    click(); click(); click();
+    await settle(window);
+    await settle(window);
+    await settle(window);
+    const calls = harness.calls();
+    assert.ok(calls.get >= 1);
+    assert.equal(calls.post, 1, 'rapid clicks create only one new session');
+    assert.match(calls.postBody.action_id, /^[0-9a-f-]{36}$/);
+    assert.equal(calls.postHeaders['X-Companion-CSRF'], 'next-csrf');
+    assert.equal(upstreamResetCalls, 0, 'the upstream softReset handler is not invoked');
+    assert.equal(panel.classList.contains('open'), true);
+    assert.match(stream.textContent, /旧解读仍在这里/);
+    window.dispatchEvent(new window.Event('pagehide'));
+  }
+
+  const failed = await createNewSessionHarness({ failPost: true });
+  let failedUpstreamCalls = 0;
+  failed.button.addEventListener('click', () => { failedUpstreamCalls += 1; });
+  failed.button.dispatchEvent(new failed.window.MouseEvent('click', {
+    bubbles: true, cancelable: true,
+  }));
+  await settle(failed.window);
+  await settle(failed.window);
+  await settle(failed.window);
+  assert.equal(failed.calls().post, 1);
+  assert.equal(failed.button.disabled, false);
+  assert.equal(failed.panel.classList.contains('open'), true);
+  assert.match(failed.stream.textContent, /旧解读仍在这里/);
+  assert.match(
+    failed.window.document.getElementById('managedReadingFeedback').textContent,
+    /新占问服务暂时不可用/,
+  );
+  assert.equal(failedUpstreamCalls, 0);
+  failed.button.disabled = true;
+  await settle(failed.window);
+  assert.equal(failed.button.disabled, false);
+  failed.window.dispatchEvent(new failed.window.Event('pagehide'));
+
+  const running = await createNewSessionHarness({
+    session: {
+      id: 'test_session', phase: 'revealed', draws: [{ revealed: true }],
+      reading: { state: 'running', text: '生成中' },
+    },
+  });
+  running.button.dispatchEvent(new running.window.MouseEvent('click', {
+    bubbles: true, cancelable: true,
+  }));
+  await settle(running.window);
+  await settle(running.window);
+  assert.equal(running.calls().post, 0, 'restored running readings never start a new session');
+  assert.equal(running.button.disabled, false);
+  assert.match(
+    running.window.document.getElementById('managedReadingFeedback').textContent,
+    /解读仍在进行/,
+  );
+  running.window.dispatchEvent(new running.window.Event('pagehide'));
 }
 
 async function checkSecureUuidAndAckReplay() {
@@ -1155,6 +1479,103 @@ async function checkStreamingScrollPreservation() {
   assert.equal(stream.scrollTop, 263, 'manual scroll position survives later deltas');
 }
 
+async function checkReadingCoreLifecycleEvents() {
+  let streaming = true;
+  const stream = {
+    classList: { contains: name => name === 'streaming' && streaming },
+  };
+  const events = [];
+  class StateEvent {
+    constructor(type, options = {}) {
+      this.type = type;
+      this.detail = options.detail;
+    }
+  }
+  const context = vm.createContext({
+    document: {
+      getElementById: id => id === 'readingStream' ? stream : null,
+      dispatchEvent: event => events.push(event.detail),
+    },
+    CustomEvent: StateEvent,
+  });
+  const upstreamChat = async options => {
+    if (options.scenario === 'text') {
+      options.onDelta?.('   ');
+      options.onDelta?.('private reading text');
+      options.onDone?.(true);
+      return 'upstream-result';
+    }
+    if (options.scenario === 'error') {
+      options.onError?.('private network reason');
+      options.onDone?.(false);
+      return undefined;
+    }
+    if (options.scenario === 'empty') {
+      options.onDone?.(true);
+      return undefined;
+    }
+    if (options.scenario === 'abort' || options.scenario === 'silent') return undefined;
+    throw new Error(`unexpected scenario: ${options.scenario}`);
+  };
+  const upstreamModule = new vm.SyntheticModule(['chat'], function init() {
+    this.setExport('chat', upstreamChat);
+  }, { context, identifier: '/tarot/static/platform/managed-core.v5.js' });
+  const module = new vm.SourceTextModule(fs.readFileSync(readingCorePath, 'utf8'), {
+    context,
+    identifier: readingCorePath,
+  });
+  await module.link(async specifier => {
+    assert.equal(specifier, '/tarot/static/platform/managed-core.v5.js');
+    return upstreamModule;
+  });
+  await module.evaluate();
+
+  let deltas = '';
+  let done = null;
+  const result = await module.namespace.chat({
+    scenario: 'text',
+    onDelta: value => { deltas += value; },
+    onDone: ok => { done = ok; },
+  });
+  assert.equal(result, 'upstream-result');
+  assert.equal(deltas, '   private reading text');
+  assert.equal(done, true);
+  assert.deepEqual(events.map(event => event.state), ['start', 'delta', 'delta', 'done']);
+  assert.deepEqual(events.filter(event => event.state === 'delta').map(event => event.hasText), [false, true]);
+  assert.doesNotMatch(JSON.stringify(events), /private reading text/);
+
+  events.length = 0;
+  let errorReason = '';
+  await module.namespace.chat({
+    scenario: 'error',
+    onError: message => { errorReason = message; },
+    onDone: ok => { done = ok; },
+  });
+  assert.equal(errorReason, 'private network reason');
+  assert.equal(done, false);
+  assert.deepEqual(events.map(event => event.state), ['start', 'error']);
+  assert.doesNotMatch(JSON.stringify(events), /private network reason/);
+
+  events.length = 0;
+  await module.namespace.chat({ scenario: 'empty' });
+  assert.deepEqual(events.map(event => event.state), ['start', 'done']);
+  assert.equal(events.at(-1).ok, true);
+
+  events.length = 0;
+  await module.namespace.chat({ scenario: 'abort', signal: { aborted: true } });
+  assert.deepEqual(events.map(event => event.state), ['start', 'cancelled']);
+
+  events.length = 0;
+  await module.namespace.chat({ scenario: 'silent', signal: { aborted: false } });
+  assert.deepEqual(events.map(event => event.state), ['start', 'done']);
+  assert.equal(events.at(-1).ok, false, 'silent completion cannot leave the body waiting forever');
+
+  events.length = 0;
+  streaming = false;
+  await module.namespace.chat({ scenario: 'empty' });
+  assert.deepEqual(events, [], 'non-reading chat uses do not emit reading UI state');
+}
+
 function checkMobileRules() {
   const ast = csstree.parse(fs.readFileSync(cssPath, 'utf8'));
   let mobile = false;
@@ -1290,6 +1711,90 @@ function checkReadingMobileRules() {
   }
 }
 
+function checkReadingV6Rules() {
+  const ast = csstree.parse(fs.readFileSync(readingCssPath, 'utf8'));
+  const topLevelRules = [];
+  let readingState = '';
+  let readingDots = '';
+  let panel = '';
+  let companion = '';
+  let end = '';
+  let head = '';
+  let title = '';
+  let chips = '';
+  let chip = '';
+  let stream = '';
+  ast.children.forEach(node => {
+    if (node.type === 'Rule') {
+      const selector = csstree.generate(node.prelude);
+      const block = csstree.generate(node.block);
+      topLevelRules.push(selector);
+      if (selector === '.managed-reading-state') readingState = block;
+      if (selector === '.managed-reading-dots i') readingDots = block;
+    }
+    if (node.type !== 'Atrule' || node.name !== 'media') return;
+    const query = csstree.generate(node.prelude);
+    if (query.includes('prefers-reduced-motion')) return;
+    assert.ok(query.includes('max-width:600px'));
+    node.block.children.forEach(child => {
+      if (child.type !== 'Rule') return;
+      const selector = csstree.generate(child.prelude);
+      const block = csstree.generate(child.block);
+      if (selector === '#readingPanel') panel = block;
+      if (selector === '#readingPanel>.managed-companion-reading.managed-companion-reading-compact') companion = block;
+      if (selector === '#readingPanel>.managed-companion-reading-compact [data-managed-end="1"]') end = block;
+      if (selector === '#readingPanel>.reading-head') head = block;
+      if (selector === '#readingPanel>.reading-head h2') title = block;
+      if (selector === '#readingPanel>.reading-head .reading-chips') chips = block;
+      if (selector === '#readingPanel>.reading-head .reading-chips .chip') chip = block;
+      if (selector === '#readingPanel>.reading-stream') stream = block;
+    });
+  });
+  assert.ok(
+    topLevelRules.length > 0
+      && topLevelRules.every(selector => selector.split(',').every(
+        part => part.trim().startsWith('.managed-invite-')
+          || part.trim().startsWith('.managed-reading-'),
+      )),
+    'v6 desktop rules are limited to invitation and inline reading-state components',
+  );
+  assert.equal(
+    topLevelRules.some(selector => selector.includes('#readingPanel')),
+    false,
+    'v6 must not alter the existing desktop reading layout',
+  );
+  assert.match(readingState, /display:flex/);
+  assert.match(readingState, /min-height:28px/);
+  assert.match(readingDots, /animation:managed-reading-pulse/);
+  assert.match(panel, /left:0/);
+  assert.match(panel, /right:0/);
+  assert.match(panel, /width:100vw/);
+  assert.match(panel, /max-width:100vw/);
+  assert.match(panel, /box-sizing:border-box/);
+  assert.match(panel, /border-left:0/);
+  assert.match(companion, /display:contents!important/);
+  assert.match(end, /position:absolute/);
+  assert.match(end, /right:34px/);
+  assert.match(head, /max-height:46dvh/);
+  assert.match(head, /padding:74px 34px 12px/);
+  assert.match(head, /overflow-y:auto/);
+  assert.match(title, /padding-right:78px/);
+  assert.match(chips, /flex-flow:column nowrap/);
+  assert.match(chips, /align-items:flex-start/);
+  assert.match(chip, /width:auto/);
+  assert.match(chip, /max-width:100%/);
+  assert.match(stream, /min-height:96px/);
+  assert.match(stream, /overflow-wrap:anywhere/);
+  assert.match(stream, /word-break:break-word/);
+  for (const width of [320, 360, 375, 390]) {
+    const contentWidth = width - 68;
+    const actionWidth = (width - 24 - 12) / 3;
+    assert.ok(contentWidth >= 252, `${width}px full-width reading header remains usable`);
+    assert.ok(contentWidth - 78 >= 136, `${width}px title keeps room beside end action`);
+    assert.ok(actionWidth >= 94, `${width}px bottom actions remain inside the full-width panel`);
+  }
+}
+
 Promise.resolve()
   .then(checkUiBehavior)
   .then(checkEndScenarios)
@@ -1302,6 +1807,8 @@ Promise.resolve()
   .then(() => checkReadingMobileBehavior(375))
   .then(() => checkReadingMobileBehavior(390))
   .then(() => checkReadingMobileBehavior(1280))
+  .then(checkReadingRequestFeedback)
+  .then(checkNewSessionButton)
   .then(checkSecureUuidAndAckReplay)
   .then(checkSaveFailureMessages)
   .then(() => checkHistoryEntryPlacement(320))
@@ -1314,9 +1821,11 @@ Promise.resolve()
   .then(checkManagedCompanionBoundary)
   .then(checkManagedCoreBoundary)
   .then(checkStreamingScrollPreservation)
+  .then(checkReadingCoreLifecycleEvents)
   .then(checkMobileRules)
   .then(checkHistoryEntryLayoutRules)
   .then(checkReadingMobileRules)
+  .then(checkReadingV6Rules)
   .then(() => console.log('tarot managed UI behavior (jsdom 320/360/375/390/1280): ok'))
   .catch(error => {
     console.error(error);

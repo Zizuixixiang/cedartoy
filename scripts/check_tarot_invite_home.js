@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const {spawnSync} = require("node:child_process");
 const {JSDOM, VirtualConsole} = require("jsdom");
@@ -17,16 +18,29 @@ const rendered = spawnSync(
   {cwd: root, encoding: "utf8"},
 );
 assert.equal(rendered.status, 0, rendered.stderr);
-const html = rendered.stdout;
-const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
-assert.ok(styleMatch, "rendered homepage must retain its stylesheet");
+const homepage = rendered.stdout;
+const styleMatch = homepage.match(/<style>([\s\S]*?)<\/style>/);
+assert.ok(styleMatch, "rendered homepage keeps its original stylesheet");
 csstree.parse(styleMatch[1]);
+assert.match(homepage, /id: "tarot"/);
+assert.match(homepage, /watchLabel: "开始占问 →"/);
+assert.doesNotMatch(homepage, /tarotInviteModal|tarotInviteState/);
+assert.doesNotMatch(homepage, /\/api\/tarot\/invitations\/pending|X-Tarot-CSRF/);
+assert.match(
+  homepage,
+  /\$\("notificationBell"\)\.addEventListener\("click", openAnnouncementList\)/,
+  "homepage bell must remain the normal site-notification bell",
+);
+
+const uiScripts = ["v3", "v4", "v5", "v6"].map(version => (
+  fs.readFileSync(path.join(root, `assets/tarot/managed-ui.${version}.js`), "utf8")
+));
 
 function response(body, ok = true, status = ok ? 200 : 400) {
   return {ok, status, json: async () => body};
 }
 
-function invitation(sessionId, machineName, question) {
+function invite(sessionId, machineName, question) {
   return {
     session_id: sessionId,
     machine_name: machineName,
@@ -36,308 +50,376 @@ function invitation(sessionId, machineName, question) {
   };
 }
 
-function createInvitationApi(window, requests) {
-  const accounts = new Map([
-    ["human-token-1", {
-      user: {id: 101, username: "HumanOne", is_ai: false},
-      bindings: [{id: 201, username: "BotOne", is_ai: true}],
-      pending: [],
-      version: 0,
-    }],
-    ["human-token-2", {
-      user: {id: 102, username: "HumanTwo", is_ai: false},
-      bindings: [{id: 202, username: "BotTwo", is_ai: true}],
-      pending: [],
-      version: 0,
-    }],
-  ]);
-  const waiters = [];
+async function waitFor(window, predicate, message, timeoutMs = 1800) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise(resolve => window.setTimeout(resolve, 10));
+  }
+  assert.fail(message);
+}
 
-  const bearer = (options = {}) => {
-    const value = options.headers?.Authorization || "";
-    return value.startsWith("Bearer ") ? value.slice(7) : "";
+function makeInvitationApi(window, requests) {
+  const state = {
+    ownerId: 101,
+    pending: [],
+    version: 0,
+    current: {
+      id: "current_session",
+      phase: "accepted",
+      draws: [],
+      reading: null,
+    },
+    timeoutIds: new Set(),
   };
-  const cursor = (account) => account.version.toString(16).padStart(64, "0");
-  const snapshot = (account) => ({
-    invitations: account.pending.map((item) => ({...item})),
-    cursor: cursor(account),
+  const waiters = [];
+  const cursor = () => state.version.toString(16).padStart(64, "0");
+  const snapshot = () => ({
+    human_user_id: state.ownerId,
+    invitations: state.pending.map(item => ({...item})),
+    cursor: cursor(),
   });
-  const removeWaiter = (waiter) => {
+  const removeWaiter = waiter => {
     const index = waiters.indexOf(waiter);
     if (index >= 0) waiters.splice(index, 1);
   };
 
-  function publish(token, pending) {
-    const account = accounts.get(token);
-    assert.ok(account, `unknown test account ${token}`);
-    account.pending = pending.map((item) => ({...item}));
-    account.version += 1;
+  function publish(pending) {
+    state.pending = pending.map(item => ({...item}));
+    state.version += 1;
     for (const waiter of [...waiters]) {
-      if (waiter.token !== token) continue;
       removeWaiter(waiter);
-      waiter.resolve(response(snapshot(account)));
+      waiter.resolve(response(snapshot()));
     }
   }
 
   async function fetch(url, options = {}) {
     requests.push({url, options});
     const parsed = new URL(url, "https://toy.example/");
-    const token = bearer(options);
-    const account = accounts.get(token);
-
-    if (parsed.pathname === "/api/auth/me") {
-      return account
-        ? response({user: account.user, bindings: account.bindings})
-        : response({error: "unauthorized"}, false, 401);
-    }
-    if (parsed.pathname === "/api/tarot/invitations/pending") {
-      if (!account) return response({error: "unauthorized"}, false, 401);
-      const afterCursor = parsed.searchParams.get("cursor");
-      const waitSeconds = Number(parsed.searchParams.get("wait_seconds") || 0);
-      if (!afterCursor || afterCursor !== cursor(account) || waitSeconds <= 0) {
-        return response(snapshot(account));
-      }
-      return new Promise((resolve, reject) => {
-        const waiter = {token, resolve, reject};
-        waiters.push(waiter);
-        if (options.signal) {
-          options.signal.addEventListener("abort", () => {
-            removeWaiter(waiter);
-            reject(new window.DOMException("Aborted", "AbortError"));
-          }, {once: true});
-        }
+    if (parsed.pathname === "/api/tarot/models/status") {
+      return response({
+        models: [
+          {model: "gemini-3.5-flash", status: "available", remaining_seconds: 0},
+          {model: "gemini-3.1-pro-preview", status: "available", remaining_seconds: 0},
+        ],
       });
     }
-    if (parsed.pathname === "/api/tarot/browser-login") {
-      return account
-        ? response({ok: true, user_id: account.user.id})
-        : response({error: "unauthorized"}, false, 401);
+    if (parsed.pathname === "/api/tarot/history") {
+      return response({items: [], next_offset: null});
+    }
+    if (parsed.pathname === "/api/tarot/invitations/pending") {
+      const after = parsed.searchParams.get("cursor");
+      const waitSeconds = Number(parsed.searchParams.get("wait_seconds") || 0);
+      if (!after || after !== cursor() || waitSeconds <= 0) return response(snapshot());
+      return new Promise((resolve, reject) => {
+        const waiter = {resolve, reject};
+        waiters.push(waiter);
+        options.signal?.addEventListener("abort", () => {
+          removeWaiter(waiter);
+          reject(new window.DOMException("Aborted", "AbortError"));
+        }, {once: true});
+      });
+    }
+    if (parsed.pathname === "/companion/v1/sessions/current_session") {
+      return response({csrf_token: "current-csrf", session: {...state.current}});
     }
     const action = parsed.pathname.match(
       /^\/api\/tarot\/invitations\/([A-Za-z0-9_-]{32,128})\/(accept|reject)$/,
     );
     if (action) {
-      if (!account) return response({error: "unauthorized"}, false, 401);
-      const sessionId = action[1];
-      const answer = action[2];
-      if (!account.pending.some((item) => item.session_id === sessionId)) {
-        return response({error: "already processed"}, false, 409);
+      if (state.timeoutIds.has(action[1])) {
+        throw new window.DOMException("Timed out", "AbortError");
       }
-      publish(token, account.pending.filter((item) => item.session_id !== sessionId));
+      const item = state.pending.find(candidate => candidate.session_id === action[1]);
+      if (!item) return response({error: "邀请已处理"}, false, 409);
+      if (options.headers?.["X-Tarot-CSRF"] !== item.csrf_token) {
+        return response({error: "CSRF 校验失败"}, false, 403);
+      }
+      publish(state.pending.filter(candidate => candidate.session_id !== action[1]));
       return response({
-        phase: answer === "accept" ? "accepted" : "stopped",
-        invitation_state: answer === "accept" ? "accepted" : "rejected",
+        invitation_state: action[2] === "accept" ? "accepted" : "rejected",
       });
     }
-    if (parsed.pathname === "/api/announcements") {
-      return response({announcements: [], unread_count: 0, authenticated: Boolean(account)});
-    }
-    if (parsed.pathname === "/api/auth/avatar") return response({supported: true, type: "emoji"});
-    if (parsed.pathname === "/soup/api/rooms/") return response({count: 0});
-    if (parsed.pathname === "/api/platform-stats") return response({});
-    if (parsed.pathname === "/api/games/stats") return response({});
-    return response({}, false, 404);
+    throw new Error(`unexpected request: ${url}`);
   }
 
   return {
     fetch,
     publish,
-    waiting(token) {
-      return waiters.filter((waiter) => waiter.token === token).length;
+    dropSilently(sessionId) {
+      state.pending = state.pending.filter(item => item.session_id !== sessionId);
+      state.version += 1;
     },
+    setTimedOut(sessionId, enabled) {
+      if (enabled) state.timeoutIds.add(sessionId);
+      else state.timeoutIds.delete(sessionId);
+    },
+    state,
+    waiting: () => waiters.length,
   };
 }
 
-async function waitFor(window, predicate, message, timeoutMs = 1500) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => window.setTimeout(resolve, 10));
-  }
-  assert.fail(message);
+function pageHtml() {
+  return `<!doctype html><html><body>
+    <header id="topbar"><div class="top-right">
+      <button id="providerOrb"><span id="providerLabel"></span></button>
+    </div></header>
+    <aside id="settingsPanel" class="open"><div id="providerList"></div>
+      <button id="settingsClose">关闭</button></aside>
+    <main id="ui">
+      <section id="phase-question" class="phase"><textarea id="questionInput"></textarea></section>
+      <section id="phase-spread" class="phase hidden"></section>
+      <div id="ritualBar" class="hidden"></div>
+      <section id="photoPanel" class="phase hidden"></section>
+      <aside id="readingPanel" class="hidden">
+        <div class="reading-head"><h2 id="readingTitle">解读</h2>
+          <p id="readingQuestion"></p><div id="readingChips"></div></div>
+        <div id="readingStream"></div><button id="newReadBtn">新的占问</button>
+      </aside>
+      <div id="cardDetail" class="hidden"></div>
+      <div class="panel"><p id="companionStatus">会话已就绪；抽牌将保存到本次记录。</p>
+        <button>返回聊天</button><button>停止本次</button></div>
+    </main>
+    <div id="toasts"></div>
+    <script type="application/json" id="companion-config">{"protocol":"cove-tarot-companion-v1","sessionId":"current_session","apiBase":"/companion/v1","humanUserId":101}</script>
+  </body></html>`;
 }
 
-async function runPage() {
+async function runGamePage() {
   const requests = [];
   let api;
   const virtualConsole = new VirtualConsole();
-  virtualConsole.on("jsdomError", (error) => {
+  virtualConsole.on("jsdomError", error => {
     if (!/Not implemented: navigation/.test(error.message)) throw error;
   });
-  const dom = new JSDOM(html, {
-    url: "https://toy.example/",
-    runScripts: "dangerously",
+  const dom = new JSDOM(pageHtml(), {
+    runScripts: "outside-only",
     pretendToBeVisual: true,
+    url: "https://toy.example/tarot/session/current_session/",
     virtualConsole,
-    beforeParse(window) {
-      window.__testHidden = false;
-      Object.defineProperty(window.Document.prototype, "hidden", {
-        configurable: true,
-        get() { return window.__testHidden; },
-      });
-      Object.defineProperty(window.Document.prototype, "visibilityState", {
-        configurable: true,
-        get() { return window.__testHidden ? "hidden" : "visible"; },
-      });
-      window.localStorage.setItem("cedartoy_token", "human-token-1");
-      api = createInvitationApi(window, requests);
-      window.fetch = api.fetch;
-    },
   });
+  const {window} = dom;
+  window.__hidden = false;
+  Object.defineProperty(window.Document.prototype, "hidden", {
+    configurable: true,
+    get() { return window.__hidden; },
+  });
+  api = makeInvitationApi(window, requests);
+  window.fetch = api.fetch;
+  for (const source of uiScripts) window.eval(source);
 
   try {
-    const {window} = dom;
-    const byId = (id) => window.document.getElementById(id);
-    const firstId = "S".repeat(32);
-    const backgroundId = "B".repeat(32);
-    const secondAccountId = "T".repeat(32);
+    const byId = id => window.document.getElementById(id);
+    const firstId = "A".repeat(32);
+    const secondId = "B".repeat(32);
+    await waitFor(window, () => api.waiting() === 1, "game page establishes one bounded invitation wait");
+    assert.equal(byId("managedInviteModal").classList.contains("open"), false);
 
-    await waitFor(
-      window,
-      () => api.waiting("human-token-1") === 1,
-      "visible signed-in homepage must establish one invitation wait",
-    );
-    assert.equal(byId("tarotInviteModal").classList.contains("show"), false);
-
-    window.openPlaceholder("正在处理别的操作", "塔罗邀请不得覆盖此弹窗");
-    api.publish("human-token-1", [
-      invitation(
-        firstId,
-        "<b>测试小机</b>",
-        "<img src=x onerror=alert(1)>\n我该如何选择？",
-      ),
+    api.publish([
+      invite(firstId, "<b>甲小机</b>", "<img src=x onerror=alert(1)>\n第一个问题"),
+      invite(secondId, "乙小机", "第二个问题"),
     ]);
     await waitFor(
       window,
-      () => byId("notificationBadge").textContent === "1",
-      "a later invite must update the existing notification bell without refresh",
+      () => byId("managedInvitePendingList")?.children.length === 2,
+      "pending invitations appear in the existing history panel state",
     );
-    assert.equal(byId("placeholderModal").classList.contains("show"), true);
-    assert.equal(byId("tarotInviteModal").classList.contains("show"), false);
-
-    window.closeModals();
-    await waitFor(
-      window,
-      () => byId("tarotInviteModal").classList.contains("show"),
-      "queued invite must appear after the existing modal closes",
-    );
-    assert.equal(byId("tarotInviteMachine").textContent, "<b>测试小机</b> 想问：");
     assert.equal(
-      byId("tarotInviteQuestion").textContent,
-      "<img src=x onerror=alert(1)>\n我该如何选择？",
-    );
-    assert.equal(byId("tarotInviteQuestion").querySelector("img"), null);
-
-    window.closeModals();
-    await new Promise((resolve) => window.setTimeout(resolve, 20));
-    assert.equal(byId("tarotInviteModal").classList.contains("show"), false);
-    assert.equal(byId("notificationBadge").hidden, false);
-    byId("notificationBell").click();
-    await waitFor(
-      window,
-      () => byId("tarotInviteModal").classList.contains("show"),
-      "the existing notification bell must reopen an unresolved invite",
-    );
-
-    byId("tarotInviteReject").click();
-    await waitFor(
-      window,
-      () => !byId("tarotInviteModal").classList.contains("show")
-        && byId("notificationBadge").hidden,
-      "reject must remove the processed invite exactly once",
-    );
-    const rejectRequest = requests.find(({url}) => url.endsWith(`/${firstId}/reject`));
-    assert.ok(rejectRequest);
-    assert.equal(rejectRequest.options.method, "POST");
-    assert.equal(rejectRequest.options.headers.Authorization, "Bearer human-token-1");
-    assert.equal(rejectRequest.options.headers["X-Tarot-CSRF"], "csrf-SSSS");
-    assert.equal(rejectRequest.options.body, "{}");
-    api.publish("human-token-1", []);
-    await new Promise((resolve) => window.setTimeout(resolve, 30));
-    window.dispatchEvent(new window.Event("focus"));
-    await new Promise((resolve) => window.setTimeout(resolve, 30));
-    assert.equal(
-      byId("tarotInviteModal").classList.contains("show"),
+      byId("managedInviteModal").classList.contains("open"),
       false,
-      "processed invitations must not be prompted again",
+      "settings overlay prevents an automatic invitation popup",
     );
+    assert.equal(byId("managedInvitePendingList").querySelector("img"), null);
+    assert.match(byId("managedInvitePendingList").textContent, /<img src=x/);
 
-    window.__testHidden = true;
-    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    byId("settingsPanel").classList.remove("open");
     await waitFor(
       window,
-      () => api.waiting("human-token-1") === 0,
-      "hidden page must abort its invitation wait",
+      () => byId("managedInviteModal").classList.contains("open"),
+      "oldest queued invitation opens when the game returns to an idle question phase",
     );
-    api.publish("human-token-1", [
-      invitation(backgroundId, "后台小机", "回到前台后看见我"),
+    assert.equal(byId("managedInviteMachine").textContent, "<b>甲小机</b> 想问");
+    assert.equal(byId("managedInviteQuestion").querySelector("img"), null);
+    assert.match(byId("managedInviteQuestion").textContent, /第一个问题/);
+    byId("managedInviteModal").querySelector(".managed-invite-later").click();
+    assert.equal(byId("managedInviteModal").classList.contains("open"), false);
+
+    byId("managedHistoryTrigger").click();
+    await waitFor(
+      window,
+      () => byId("managedHistoryPanel").classList.contains("open"),
+      "record panel opens without a new navigation entry",
+    );
+    assert.equal(byId("managedInvitePending").hidden, false);
+    const firstRow = byId("managedInvitePendingList").children[0];
+    const reject = firstRow.querySelector(".managed-invite-reject");
+    reject.click();
+    reject.click();
+    await waitFor(
+      window,
+      () => byId("managedInvitePendingList").children.length === 1,
+      "reject updates modal and record-panel state exactly once",
+    );
+    const rejects = requests.filter(({url}) => url.endsWith(`/${firstId}/reject`));
+    assert.equal(rejects.length, 1, "rapid reject clicks are de-duplicated");
+    assert.equal(rejects[0].options.credentials, "same-origin");
+    assert.equal(rejects[0].options.headers["X-Tarot-CSRF"], "csrf-AAAA");
+
+    byId("questionInput").value = "尚未完成的本地问题";
+    byId("managedInvitePendingList").children[0]
+      .querySelector(".managed-invite-accept").click();
+    await waitFor(
+      window,
+      () => /尚未完成抽牌/.test(byId("managedInvitePendingStatus").textContent),
+      "accept refuses to abandon an unsaved current question",
+    );
+    assert.equal(
+      requests.filter(({url}) => url.endsWith(`/${secondId}/accept`)).length,
+      0,
+    );
+
+    byId("questionInput").value = "";
+    byId("readingStream").classList.add("streaming");
+    byId("managedInvitePendingList").children[0]
+      .querySelector(".managed-invite-accept").click();
+    await waitFor(
+      window,
+      () => /当前解读仍在进行/.test(byId("managedInvitePendingStatus").textContent),
+      "accept does not interrupt a streaming reading",
+    );
+    assert.equal(
+      requests.filter(({url}) => url.endsWith(`/${secondId}/accept`)).length,
+      0,
+    );
+    byId("readingStream").classList.remove("streaming");
+
+    const staleId = "E".repeat(32);
+    api.publish([
+      invite(secondId, "乙小机", "第二个问题"),
+      invite(staleId, "已处理小机", "另一页已经处理"),
     ]);
-    await new Promise((resolve) => window.setTimeout(resolve, 30));
-    assert.equal(byId("tarotInviteModal").classList.contains("show"), false);
-    window.__testHidden = false;
-    window.document.dispatchEvent(new window.Event("visibilitychange"));
     await waitFor(
       window,
-      () => byId("tarotInviteModal").classList.contains("show")
-        && byId("tarotInviteQuestion").textContent === "回到前台后看见我",
-      "foreground recovery must immediately reload this account's pending invites",
+      () => byId("managedInvitePendingList").children.length === 2,
+      "a second queued item reaches the shared pending list",
+    );
+    const staleRow = byId("managedInvitePendingList").children[1];
+    api.setTimedOut(staleId, true);
+    staleRow.querySelector(".managed-invite-reject").click();
+    await waitFor(
+      window,
+      () => /邀请处理超时/.test(byId("managedInvitePendingStatus").textContent),
+      "a timed-out response releases the busy state with a clear explanation",
+    );
+    assert.equal(byId("managedInvitePendingList").children.length, 2);
+    api.setTimedOut(staleId, false);
+    const staleRetryRow = byId("managedInvitePendingList").children[1];
+    api.dropSilently(staleId);
+    staleRetryRow.querySelector(".managed-invite-reject").click();
+    await waitFor(
+      window,
+      () => byId("managedInvitePendingList").children.length === 1,
+      "already-processed or expired responses refresh the shared pending list",
+    );
+    assert.match(
+      byId("managedInvitePendingStatus").textContent,
+      /其他页面处理或已过期/,
+      "already-processed or expired responses keep a friendly explanation",
     );
 
-    window.localStorage.setItem("cedartoy_token", "human-token-2");
-    await window.loadMe();
+    api.state.current = {
+      id: "current_session",
+      phase: "returned",
+      draws: [{position: 0, card_id: "M00", revealed: true}],
+      reading: {state: "succeeded", text: "已保存旧解读"},
+    };
+    byId("ritualBar").classList.remove("hidden");
+    byId("readingPanel").classList.add("open");
+    const freshSecondRow = byId("managedInvitePendingList").children[0];
+    freshSecondRow.querySelector(".managed-invite-accept").click();
+    freshSecondRow.querySelector(".managed-invite-accept").click();
     await waitFor(
       window,
-      () => api.waiting("human-token-2") === 1,
-      "account switch must establish a wait for the new account",
+      () => requests.some(({url}) => url.endsWith(`/${secondId}/accept`)),
+      "clean current state accepts through the existing invitation endpoint",
     );
-    assert.equal(byId("tarotInviteModal").classList.contains("show"), false);
-    assert.equal(byId("notificationBadge").hidden, true);
-    api.publish("human-token-1", [
-      invitation(backgroundId, "后台小机", "这是旧账号的问题"),
-    ]);
-    await new Promise((resolve) => window.setTimeout(resolve, 30));
-    assert.equal(byId("tarotInviteModal").classList.contains("show"), false);
+    assert.equal(
+      api.state.current.reading.state,
+      "succeeded",
+      "accepting from a restored terminal result does not mutate or rerun its reading",
+    );
+    const accepts = requests.filter(({url}) => url.endsWith(`/${secondId}/accept`));
+    assert.equal(accepts.length, 1, "rapid accept clicks are de-duplicated");
+    assert.equal(accepts[0].options.method, "POST");
+    assert.equal(accepts[0].options.credentials, "same-origin");
+    assert.equal(accepts[0].options.headers["X-Tarot-CSRF"], "csrf-BBBB");
+    assert.equal(accepts[0].options.body, "{}");
 
-    api.publish("human-token-2", [
-      invitation(secondAccountId, "二号小机", "只属于二号账号的问题"),
-    ]);
-    await waitFor(
-      window,
-      () => byId("tarotInviteModal").classList.contains("show")
-        && byId("tarotInviteQuestion").textContent === "只属于二号账号的问题",
-      "new account must receive only its own later invite",
-    );
-    byId("tarotInviteAccept").click();
-    await waitFor(
-      window,
-      () => requests.some(({url}) => url.endsWith(`/${secondAccountId}/accept`)),
-      "accept must use the existing human-controlled response path",
-    );
-    const browserLogin = requests.find(({url, options}) => (
-      url === "/api/tarot/browser-login"
-        && options.headers?.Authorization === "Bearer human-token-2"
-    ));
-    const acceptRequest = requests.find(({url}) => url.endsWith(`/${secondAccountId}/accept`));
-    assert.ok(browserLogin, "acceptance must establish the existing Tarot cookie flow");
-    assert.ok(requests.indexOf(browserLogin) < requests.indexOf(acceptRequest));
-    assert.equal(acceptRequest.options.headers["X-Tarot-CSRF"], "csrf-TTTT");
-
-    const pendingRequests = requests.filter(({url}) => (
+    const waitRequests = requests.filter(({url}) => (
       new URL(url, "https://toy.example/").pathname === "/api/tarot/invitations/pending"
     ));
-    assert.ok(
-      pendingRequests.some(({url}) => new URL(url, "https://toy.example/").searchParams.get("wait_seconds") === "25"),
-      "homepage must use a bounded per-account invitation wait",
-    );
-    assert.ok(pendingRequests.length < 15, "invitation checks must not become a high-frequency loop");
+    assert.ok(waitRequests.some(({url}) => (
+      new URL(url, "https://toy.example/").searchParams.get("wait_seconds") === "25"
+    )), "game page uses bounded long-wait reception rather than a rapid poll");
   } finally {
-    dom.window.close();
+    window.dispatchEvent(new window.Event("pagehide"));
   }
 }
 
-runPage()
-  .then(() => console.log("tarot homepage invitation receive/resume/queue/isolation (jsdom): ok"))
-  .catch((error) => {
+async function runIdentityAndResume() {
+  const requests = [];
+  let api;
+  const dom = new JSDOM(pageHtml(), {
+    runScripts: "outside-only",
+    pretendToBeVisual: true,
+    url: "https://toy.example/tarot/session/current_session/",
+  });
+  const {window} = dom;
+  window.__hidden = false;
+  Object.defineProperty(window.Document.prototype, "hidden", {
+    configurable: true,
+    get() { return window.__hidden; },
+  });
+  api = makeInvitationApi(window, requests);
+  window.fetch = api.fetch;
+  for (const source of uiScripts) window.eval(source);
+  try {
+    await waitFor(window, () => api.waiting() === 1, "identity harness starts waiting");
+    window.__hidden = true;
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    await waitFor(window, () => api.waiting() === 0, "hidden game page aborts its pending wait");
+    api.publish([invite("C".repeat(32), "后台小机", "回前台后读取")]);
+    window.__hidden = false;
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    await waitFor(
+      window,
+      () => window.document.getElementById("managedInvitePendingList")?.children.length === 1,
+      "foreground resume performs an immediate fresh invitation read",
+    );
+
+    api.state.ownerId = 102;
+    api.publish([invite("D".repeat(32), "另一身份小机", "不应泄露到旧页面")]);
+    await waitFor(
+      window,
+      () => /登录身份已变化/.test(
+        window.document.getElementById("managedInvitePendingStatus")?.textContent || "",
+      ),
+      "a cookie identity switch invalidates the old page receiver",
+    );
+    assert.equal(window.document.getElementById("managedInvitePendingList").children.length, 0);
+    assert.doesNotMatch(window.document.body.textContent, /不应泄露到旧页面/);
+    await new Promise(resolve => window.setTimeout(resolve, 30));
+    assert.equal(api.waiting(), 0, "identity-invalid page does not restart its receiver");
+  } finally {
+    window.dispatchEvent(new window.Event("pagehide"));
+  }
+}
+
+Promise.resolve()
+  .then(runGamePage)
+  .then(runIdentityAndResume)
+  .then(() => console.log("tarot homepage invitation absence + in-game receive/queue/actions/isolation (jsdom): ok"))
+  .catch(error => {
     console.error(error);
     process.exitCode = 1;
   });

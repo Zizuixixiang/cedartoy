@@ -8,7 +8,6 @@ the strict human/AI ownership boundary used by the CedarToy host.
 from __future__ import annotations
 
 import hashlib
-import html
 import json
 import mimetypes
 import os
@@ -246,6 +245,14 @@ class TarotStore:
                     updated_at REAL NOT NULL,
                     UNIQUE(session_id, action_id)
                 );
+                CREATE TABLE IF NOT EXISTS tarot_session_starts (
+                    source_session_id TEXT NOT NULL REFERENCES tarot_sessions(id) ON DELETE CASCADE,
+                    action_id TEXT NOT NULL,
+                    new_session_id TEXT NOT NULL REFERENCES tarot_sessions(id) ON DELETE CASCADE,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY(source_session_id, action_id),
+                    UNIQUE(new_session_id)
+                );
                 CREATE INDEX IF NOT EXISTS tarot_sessions_human
                     ON tarot_sessions(human_user_id, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS tarot_sessions_ai
@@ -382,6 +389,69 @@ class TarotStore:
                 ) VALUES(?,?,NULL,NULL,'accepted',?,?,?)
                 """,
                 (session_id, human_user_id, self._new_csrf(), now, now),
+            )
+            row = self._session_row_for_human(conn, session_id, human_user_id)
+            result = self._browser_view(conn, row)
+        self._notify()
+        return result
+
+    def create_next_direct_session(
+        self,
+        source_session_id: str,
+        human_user_id: int,
+        action_id: str,
+        csrf_token: str,
+    ) -> dict[str, Any]:
+        """Create an independent direct session without mutating the source.
+
+        The source session and action id form an idempotency key so a rapid
+        double-click or a retried response cannot create multiple blank records.
+        """
+        source_session_id = _require_id(
+            source_session_id, SESSION_RE, "source_session_id"
+        )
+        human_user_id = _require_positive_id(human_user_id, "human_user_id")
+        action_id = _require_id(action_id, EVENT_RE, "action_id")
+        now = self._now()
+        with self._tx() as conn:
+            source = self._verify_human_csrf(
+                conn, source_session_id, human_user_id, csrf_token
+            )
+            old = conn.execute(
+                """
+                SELECT session.*
+                FROM tarot_session_starts AS start
+                JOIN tarot_sessions AS session ON session.id=start.new_session_id
+                WHERE start.source_session_id=? AND start.action_id=?
+                  AND session.human_user_id=?
+                """,
+                (source_session_id, action_id, human_user_id),
+            ).fetchone()
+            if old is not None:
+                return self._browser_view(conn, old)
+
+            reading = self._reading(conn, source)
+            if reading and reading["state"] == "running":
+                raise TarotError(
+                    409, "解读仍在进行，请等待完成或先明确结束本次"
+                )
+
+            session_id = self._new_id()
+            conn.execute(
+                """
+                INSERT INTO tarot_sessions(
+                    id,human_user_id,ai_user_id,request_id,phase,csrf_token,created_at,updated_at
+                ) VALUES(?,?,NULL,NULL,'accepted',?,?,?)
+                """,
+                (session_id, human_user_id, self._new_csrf(), now, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO tarot_session_starts(
+                    source_session_id,action_id,new_session_id,created_at
+                ) VALUES(?,?,?,?)
+                """,
+                (source_session_id, action_id, session_id, now),
             )
             row = self._session_row_for_human(conn, session_id, human_user_id)
             result = self._browser_view(conn, row)
@@ -831,7 +901,11 @@ class TarotStore:
         }
         cards = []
         for draw in draws:
-            if not isinstance(draw, dict) or not isinstance(draw.get("position"), int):
+            if (
+                not isinstance(draw, dict)
+                or not isinstance(draw.get("position"), int)
+                or draw.get("revealed") is not True
+            ):
                 continue
             facts = facts_by_position.get(draw["position"], {})
             cards.append(
@@ -1344,7 +1418,7 @@ class TarotStore:
             "reading_state": reading["state"] if reading else "missing",
             "reading_model": reading["model"] if reading else None,
             "reading_source": reading["source"] if reading else None,
-            "invite_url": f"{self.public_base_url}/tarot/invite/{row['id']}",
+            "invite_url": f"{self.public_base_url}/tarot/",
             "next_call": {
                 "game": "tarot",
                 "action": "status",
@@ -1488,6 +1562,7 @@ class TarotWeb:
         platform_assets = {
             "platform/managed-core.v1.js": ROOT / "assets" / "tarot" / "managed-core.v1.js",
             "platform/managed-core.v5.js": ROOT / "assets" / "tarot" / "managed-core.v5.js",
+            "platform/managed-core.v6.js": ROOT / "assets" / "tarot" / "managed-core.v6.js",
             "platform/managed-ui.v1.js": ROOT / "assets" / "tarot" / "managed-ui.v1.js",
             "platform/managed-ui.v1.css": ROOT / "assets" / "tarot" / "managed-ui.v1.css",
             "platform/managed-ui.v2.js": ROOT / "assets" / "tarot" / "managed-ui.v2.js",
@@ -1498,8 +1573,13 @@ class TarotWeb:
             "platform/managed-ui.v4.css": ROOT / "assets" / "tarot" / "managed-ui.v4.css",
             "platform/managed-ui.v5.js": ROOT / "assets" / "tarot" / "managed-ui.v5.js",
             "platform/managed-ui.v5.css": ROOT / "assets" / "tarot" / "managed-ui.v5.css",
+            "platform/managed-ui.v6.js": ROOT / "assets" / "tarot" / "managed-ui.v6.js",
+            "platform/managed-ui.v6.css": ROOT / "assets" / "tarot" / "managed-ui.v6.css",
             "platform/managed-companion.v3.js": ROOT / "assets" / "tarot" / "managed-companion.v3.js",
             "platform/managed-cards3d.v5.js": ROOT / "assets" / "tarot" / "managed-cards3d.v5.js",
+            "platform/managed-cards3d.v6.js": ROOT / "assets" / "tarot" / "managed-cards3d.v6.js",
+            "js/three/managed-cards3d-core.v6.js": ROOT / "assets" / "tarot" / "managed-cards3d-core.v6.js",
+            "js/three/canvas-navigation.v6.js": ROOT / "assets" / "tarot" / "managed-canvas-navigation.v6.js",
             "platform/upstream-companion-adapter.v1.js": RITUAL_PUBLIC / "js" / "companion-adapter.js",
             "js/three/upstream-cards3d.v1.js": RITUAL_PUBLIC / "js" / "three" / "cards3d.js",
         }
@@ -1527,49 +1607,21 @@ class TarotWeb:
 <body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p id="state">正在确认登录身份……</p><p><a href="/">返回首页</a></p></main>
 <script>(()=>{{const state=document.getElementById('state');const token=localStorage.getItem('cedartoy_token');if(!token){{state.textContent='请先返回首页登录，再进入圣仪。';return;}}fetch('/api/tarot/browser-login',{{method:'POST',headers:{{Authorization:'Bearer '+token}}}}).then(async r=>{{const j=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(j.error||'登录失效');location.replace({return_path_json});}}).catch(e=>state.textContent=e.message+'，请返回首页重新登录。');}})();</script></body></html>"""
         return body.encode("utf-8")
-
-    @staticmethod
-    def invitation_page(
-        session_id: str,
-        csrf_token: str,
-        machine_name: str,
-        state: str,
-        question: str = "",
+    def ritual_index(
+        self, session_id: str, human_user_id: int | None = None
     ) -> bytes:
-        sid = html.escape(session_id, quote=True)
-        csrf = json.dumps(csrf_token).replace("<", "\\u003c")
-        machine = html.escape(machine_name or "你的小机")
-        safe_question = html.escape(question or "")
-        question_block = (
-            f'<section aria-labelledby="invite-question-title">'
-            f'<h2 id="invite-question-title">{machine} 想问</h2>'
-            f'<p style="white-space:pre-wrap">{safe_question}</p></section>'
-            if safe_question
-            else '<p>这是一条旧版邀请，没有附带问题；接受后仍可由你填写。</p>'
-        )
-        if state == "accepted":
-            action = f'<a href="/tarot/session/{sid}/">继续本次圣仪</a>'
-            description = f"你已经接受 {machine} 的邀请。"
-        elif state in {"rejected", "expired"}:
-            action = '<a href="/">返回首页</a>'
-            description = "这次邀请已拒绝或过期。"
-        else:
-            action = """<div><button data-answer="accept">接受并进入原版抽牌</button> <button data-answer="reject">拒绝</button></div>"""
-            description = f"{machine} 邀请你确认这次占问。同意后问题会预填进原版 {RITUAL_DISPLAY_NAME} 界面，由你选择牌阵并亲自抽牌；小机不能代替你操作。"
-        body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{RITUAL_DISPLAY_NAME}</title></head>
-<body><main><h1>{RITUAL_DISPLAY_NAME}</h1><p>{description}</p>{question_block}{action}<p id="status"></p></main>
-<script>document.querySelectorAll('[data-answer]').forEach(button=>button.addEventListener('click',async()=>{{document.querySelectorAll('button').forEach(x=>x.disabled=true);const response=await fetch('/api/tarot/invitations/{sid}/'+button.dataset.answer,{{method:'POST',headers:{{'Content-Type':'application/json','X-Tarot-CSRF':{csrf}}},body:'{{}}'}});const result=await response.json().catch(()=>({{}}));if(response.ok&&button.dataset.answer==='accept')location.replace('/tarot/session/{sid}/');else if(response.ok)location.reload();else{{document.getElementById('status').textContent=result.error||'操作失败';document.querySelectorAll('button').forEach(x=>x.disabled=false);}}}}));</script></body></html>"""
-        return body.encode("utf-8")
-
-    def ritual_index(self, session_id: str) -> bytes:
         source = self.index_path.read_text(encoding="utf-8")
+        config_payload = {
+            "protocol": "cove-tarot-companion-v1",
+            "sessionId": session_id,
+            "apiBase": "/companion/v1",
+        }
+        if human_user_id is not None:
+            config_payload["humanUserId"] = _require_positive_id(
+                human_user_id, "human_user_id"
+            )
         config = json.dumps(
-            {
-                "protocol": "cove-tarot-companion-v1",
-                "sessionId": session_id,
-                "apiBase": "/companion/v1",
-            },
+            config_payload,
             ensure_ascii=False,
             separators=(",", ":"),
         ).replace("<", "\\u003c")
@@ -1578,9 +1630,9 @@ class TarotWeb:
         managed_import_map = (
             '<script type="importmap">{ "imports": {'
             ' "three": "./vendor/three.module.js",'
-            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v5.js",'
+            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v6.js",'
             ' "/tarot/static/js/companion-adapter.js": "/tarot/static/platform/managed-companion.v3.js",'
-            ' "/tarot/static/js/three/cards3d.js": "/tarot/static/platform/managed-cards3d.v5.js"'
+            ' "/tarot/static/js/three/cards3d.js": "/tarot/static/platform/managed-cards3d.v6.js"'
             ' } }</script>'
         )
         if source.count(import_map) != 1:
@@ -1592,7 +1644,8 @@ class TarotWeb:
             style_marker
             + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v3.css">'
             + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v4.css">'
-            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v5.css">',
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v5.css">'
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v6.css">',
             1,
         )
         upstream_settings = """    <div class="settings-body">
@@ -1636,6 +1689,7 @@ class TarotWeb:
 <script src="/tarot/static/platform/managed-ui.v3.js"></script>
 <script src="/tarot/static/platform/managed-ui.v4.js"></script>
 <script src="/tarot/static/platform/managed-ui.v5.js"></script>
+<script src="/tarot/static/platform/managed-ui.v6.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',
@@ -1666,405 +1720,6 @@ class TarotWeb:
             if source.count(old) != 1:
                 raise TarotError(500, "CedarToy 首页结构已变化，未安全加入塔罗入口")
             source = source.replace(old, new, 1)
-
-        style_marker = "</style>"
-        invite_style = """
-    #tarotInviteModal .modal-box { max-width: 560px; }
-    .tarot-invite-machine { margin: 0 0 10px; color: var(--ink-muted, #675a73); }
-    .tarot-invite-question {
-      margin: 0 0 14px;
-      padding: 14px;
-      border: 3px solid #BEB1D1;
-      background: #F8F4FC;
-      color: #2D2333;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      line-height: 1.65;
-    }
-    .tarot-invite-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    .tarot-invite-actions .pixel-btn { flex: 1 1 140px; }
-"""
-        if source.count(style_marker) != 1:
-            raise TarotError(500, "CedarToy 首页样式结构已变化，未安全加入塔罗邀请")
-        source = source.replace(style_marker, invite_style + style_marker, 1)
-
-        modal_marker = '  <div class="modal" id="announcementModal"'
-        invite_modal = f"""  <div class="modal" id="tarotInviteModal" role="dialog" aria-modal="true" aria-labelledby="tarotInviteTitle">
-    <div class="modal-box">
-      <h2 class="modal-title" id="tarotInviteTitle">小机发来塔罗占问</h2>
-      <p class="tarot-invite-machine" id="tarotInviteMachine"></p>
-      <div class="tarot-invite-question" id="tarotInviteQuestion"></div>
-      <p class="modal-hint">同意后问题会预填进原版 {RITUAL_DISPLAY_NAME}；牌阵与抽牌仍由你亲自决定。拒绝不会创建占卜记录。</p>
-      <div class="modal-msg" id="tarotInviteMessage" role="status"></div>
-      <div class="tarot-invite-actions">
-        <button class="pixel-btn" id="tarotInviteAccept" type="button">同意并进入</button>
-        <button class="pixel-btn secondary" id="tarotInviteReject" type="button">拒绝</button>
-        <button class="pixel-btn secondary" type="button" data-close-modal>稍后处理</button>
-      </div>
-    </div>
-  </div>
-
-"""
-        if source.count(modal_marker) != 1:
-            raise TarotError(500, "CedarToy 首页弹窗结构已变化，未安全加入塔罗邀请")
-        source = source.replace(modal_marker, invite_modal + modal_marker, 1)
-
-        load_marker = "    async function loadMe() {"
-        invite_script = """    let tarotInviteState = {
-      accountId: "",
-      invitations: [],
-      active: null,
-      cursor: "",
-      prompted: new Set(),
-      loading: false,
-      queued: false,
-      monitorController: null,
-      retryTimer: null,
-      generation: 0,
-    };
-
-    function tarotInviteIdentity() {
-      if (!me || me.user?.is_ai || !me.user?.id || !token()) return null;
-      return {accountId: String(me.user.id), authToken: token()};
-    }
-
-    function stopTarotInvitationMonitor() {
-      tarotInviteState.generation += 1;
-      if (tarotInviteState.retryTimer !== null) {
-        window.clearTimeout(tarotInviteState.retryTimer);
-        tarotInviteState.retryTimer = null;
-      }
-      if (tarotInviteState.monitorController) {
-        tarotInviteState.monitorController.abort();
-        tarotInviteState.monitorController = null;
-      }
-    }
-
-    function resetTarotInvitationState(accountId = "") {
-      stopTarotInvitationMonitor();
-      tarotInviteState.accountId = accountId;
-      tarotInviteState.invitations = [];
-      tarotInviteState.active = null;
-      tarotInviteState.cursor = "";
-      tarotInviteState.prompted = new Set();
-      tarotInviteState.loading = false;
-      tarotInviteState.queued = false;
-      $("tarotInviteModal").classList.remove("show");
-      renderNotificationBell();
-    }
-
-    function syncTarotInvitationAccount() {
-      const identity = tarotInviteIdentity();
-      const accountId = identity?.accountId || "";
-      if (tarotInviteState.accountId !== accountId) {
-        resetTarotInvitationState(accountId);
-      }
-      return identity;
-    }
-
-    function tarotInviteIdentityStillCurrent(identity) {
-      const current = tarotInviteIdentity();
-      return Boolean(current
-        && identity
-        && current.accountId === identity.accountId
-        && current.authToken === identity.authToken
-        && tarotInviteState.accountId === identity.accountId);
-    }
-
-    function anotherModalIsOpen() {
-      return Array.from(document.querySelectorAll(".modal.show"))
-        .some((modal) => modal.id !== "tarotInviteModal");
-    }
-
-    function showTarotInvitation({automatic = true} = {}) {
-      const identity = syncTarotInvitationAccount();
-      if (!identity || document.hidden) return false;
-      if ($("tarotInviteModal").classList.contains("show")) return true;
-      const current = automatic
-        ? tarotInviteState.invitations.find(
-          (item) => !tarotInviteState.prompted.has(item.session_id)
-        )
-        : tarotInviteState.invitations[0];
-      if (!current) {
-        tarotInviteState.queued = false;
-        return false;
-      }
-      if (anotherModalIsOpen()) {
-        tarotInviteState.queued = true;
-        return false;
-      }
-      tarotInviteState.active = current;
-      tarotInviteState.prompted.add(current.session_id);
-      tarotInviteState.queued = false;
-      $("tarotInviteMachine").textContent = `${current.machine_name || "你的小机"} 想问：`;
-      $("tarotInviteQuestion").textContent = current.question
-        || "这是一条旧版邀请，没有附带问题；同意后仍可由你填写。";
-      $("tarotInviteMessage").textContent = tarotInviteState.invitations.length > 1
-        ? `还有 ${tarotInviteState.invitations.length - 1} 条待确认邀请`
-        : "";
-      $("tarotInviteAccept").disabled = false;
-      $("tarotInviteReject").disabled = false;
-      openModal("tarotInviteModal");
-      return true;
-    }
-
-    function applyTarotInvitationSnapshot(data, identity, {autoPopup = false} = {}) {
-      if (!tarotInviteIdentityStillCurrent(identity)) return false;
-      const invitations = Array.isArray(data.invitations) ? data.invitations : [];
-      const pendingIds = new Set(invitations.map((item) => item.session_id));
-      tarotInviteState.invitations = invitations;
-      tarotInviteState.cursor = typeof data.cursor === "string" ? data.cursor : "";
-      tarotInviteState.prompted = new Set(
-        Array.from(tarotInviteState.prompted).filter((sessionId) => pendingIds.has(sessionId))
-      );
-      if (tarotInviteState.active && !pendingIds.has(tarotInviteState.active.session_id)) {
-        tarotInviteState.active = null;
-        $("tarotInviteModal").classList.remove("show");
-      }
-      if (!invitations.length) tarotInviteState.queued = false;
-      renderNotificationBell();
-      return Boolean(autoPopup && showTarotInvitation({automatic: true}));
-    }
-
-    async function fetchTarotInvitationSnapshot({cursor = "", waitSeconds = 0, signal} = {}) {
-      const query = new URLSearchParams();
-      if (cursor) {
-        query.set("cursor", cursor);
-        query.set("wait_seconds", String(waitSeconds));
-      }
-      const suffix = query.toString() ? `?${query}` : "";
-      const res = await fetch(`/api/tarot/invitations/pending${suffix}`, {
-        headers: headers(false),
-        cache: "no-store",
-        signal,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "塔罗邀请加载失败");
-      return data;
-    }
-
-    function startTarotInvitationMonitor() {
-      const identity = syncTarotInvitationAccount();
-      if (!identity || document.hidden
-          || tarotInviteState.monitorController
-          || tarotInviteState.retryTimer !== null) return;
-      const controller = new AbortController();
-      const generation = ++tarotInviteState.generation;
-      tarotInviteState.monitorController = controller;
-      let retry = false;
-      (async () => {
-        try {
-          while (!controller.signal.aborted && !document.hidden) {
-            if (generation !== tarotInviteState.generation
-                || !tarotInviteIdentityStillCurrent(identity)) return;
-            const cursor = tarotInviteState.cursor;
-            const data = await fetchTarotInvitationSnapshot({
-              cursor,
-              waitSeconds: cursor ? 25 : 0,
-              signal: controller.signal,
-            });
-            if (generation !== tarotInviteState.generation
-                || !tarotInviteIdentityStillCurrent(identity)) return;
-            applyTarotInvitationSnapshot(data, identity, {autoPopup: true});
-          }
-        } catch (err) {
-          if (err?.name !== "AbortError" && !controller.signal.aborted) retry = true;
-        } finally {
-          if (tarotInviteState.monitorController === controller) {
-            tarotInviteState.monitorController = null;
-          }
-          if (retry && generation === tarotInviteState.generation
-              && !document.hidden && tarotInviteIdentityStillCurrent(identity)) {
-            tarotInviteState.retryTimer = window.setTimeout(() => {
-              tarotInviteState.retryTimer = null;
-              startTarotInvitationMonitor();
-            }, 15000);
-          }
-        }
-      })();
-    }
-
-    async function loadTarotInvitations({autoPopup = false} = {}) {
-      const identity = syncTarotInvitationAccount();
-      if (!identity || document.hidden || tarotInviteState.loading) return false;
-      tarotInviteState.loading = true;
-      try {
-        const data = await fetchTarotInvitationSnapshot();
-        return applyTarotInvitationSnapshot(data, identity, {autoPopup});
-      } catch (_err) {
-        return false;
-      } finally {
-        tarotInviteState.loading = false;
-        if (tarotInviteIdentityStillCurrent(identity) && !document.hidden) {
-          startTarotInvitationMonitor();
-        }
-      }
-    }
-
-    async function resumeTarotInvitationMonitor() {
-      if (document.hidden || !syncTarotInvitationAccount()) return;
-      if (tarotInviteState.monitorController || tarotInviteState.loading) return;
-      await loadTarotInvitations({autoPopup: true});
-    }
-
-    async function openSiteNotifications() {
-      syncTarotInvitationAccount();
-      if (tarotInviteState.invitations.length) {
-        showTarotInvitation({automatic: false});
-        return;
-      }
-      await loadTarotInvitations();
-      if (tarotInviteState.invitations.length) {
-        showTarotInvitation({automatic: false});
-        return;
-      }
-      await openAnnouncementList();
-    }
-
-    async function respondTarotInvitation(answer) {
-      const current = tarotInviteState.active;
-      if (!current || !["accept", "reject"].includes(answer)) return;
-      $("tarotInviteAccept").disabled = true;
-      $("tarotInviteReject").disabled = true;
-      $("tarotInviteMessage").textContent = answer === "accept" ? "正在进入……" : "正在拒绝……";
-      try {
-        if (answer === "accept") {
-          const loginRes = await fetch("/api/tarot/browser-login", {
-            method: "POST",
-            headers: headers(false),
-          });
-          const loginData = await loginRes.json().catch(() => ({}));
-          if (!loginRes.ok) throw new Error(loginData.error || "塔罗登录确认失败");
-        }
-        const res = await fetch(`/api/tarot/invitations/${current.session_id}/${answer}`, {
-          method: "POST",
-          headers: {...headers(true), "X-Tarot-CSRF": current.csrf_token},
-          body: "{}",
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "邀请处理失败");
-        if (answer === "accept") {
-          window.location.href = `/tarot/session/${current.session_id}/`;
-          return;
-        }
-        tarotInviteState.invitations = tarotInviteState.invitations.filter(
-          (item) => item.session_id !== current.session_id
-        );
-        tarotInviteState.prompted.delete(current.session_id);
-        tarotInviteState.active = null;
-        $("tarotInviteModal").classList.remove("show");
-        renderNotificationBell();
-        if (!showTarotInvitation({automatic: true})) {
-          await loadAnnouncements({autoPopup: true, tarotFollowup: true});
-        }
-      } catch (err) {
-        $("tarotInviteMessage").textContent = err.message || "邀请处理失败";
-        $("tarotInviteAccept").disabled = false;
-        $("tarotInviteReject").disabled = false;
-      }
-    }
-
-    const tarotInviteModalObserver = new MutationObserver(() => {
-      if (tarotInviteState.queued && !anotherModalIsOpen()
-          && !$("tarotInviteModal").classList.contains("show")) {
-        showTarotInvitation({automatic: true});
-      }
-    });
-    document.querySelectorAll(".modal").forEach((modal) => {
-      tarotInviteModalObserver.observe(modal, {attributes: true, attributeFilter: ["class"]});
-    });
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        stopTarotInvitationMonitor();
-      } else {
-        resumeTarotInvitationMonitor();
-      }
-    });
-    window.addEventListener("focus", () => {
-      if (!document.hidden && !tarotInviteState.monitorController) {
-        resumeTarotInvitationMonitor();
-      }
-    });
-
-"""
-        if source.count(load_marker) != 1:
-            raise TarotError(500, "CedarToy 首页登录结构已变化，未安全加入塔罗邀请")
-        source = source.replace(load_marker, invite_script + load_marker, 1)
-
-        load_calls = (
-            (
-                "        await loadAnnouncements({autoPopup: Boolean(me)});",
-                "        const tarotInviteShown = await loadTarotInvitations({autoPopup: Boolean(me)});\n"
-                "        await loadAnnouncements({autoPopup: Boolean(me) && !tarotInviteShown});",
-            ),
-            (
-                "          await loadAnnouncements({autoPopup: true});",
-                "          const tarotInviteShown = await loadTarotInvitations({autoPopup: true});\n"
-                "          await loadAnnouncements({autoPopup: !tarotInviteShown});",
-            ),
-        )
-        for old, new in load_calls:
-            if source.count(old) != 1:
-                raise TarotError(500, "CedarToy 首页通知流程已变化，未安全加入塔罗邀请")
-            source = source.replace(old, new, 1)
-
-        badge_marker = (
-            "      const count = announcementState.authenticated "
-            "? announcementState.unreadCount : 0;"
-        )
-        badge_replacement = (
-            "      const count = (announcementState.authenticated "
-            "? announcementState.unreadCount : 0)\n"
-            "        + (tarotInviteState?.invitations?.length || 0);"
-        )
-        if source.count(badge_marker) != 1:
-            raise TarotError(500, "CedarToy 首页通知徽标结构已变化，未安全加入塔罗邀请")
-        source = source.replace(badge_marker, badge_replacement, 1)
-
-        no_token_marker = """      if (!token()) {
-        me = null;
-        renderAuth();"""
-        no_token_replacement = """      if (!token()) {
-        me = null;
-        resetTarotInvitationState();
-        renderAuth();"""
-        if source.count(no_token_marker) != 1:
-            raise TarotError(500, "CedarToy 首页游客登录结构已变化，未安全停止塔罗邀请")
-        source = source.replace(no_token_marker, no_token_replacement, 1)
-
-        logout_marker = """    function logout() {
-      loadMeAbort?.abort();
-      localStorage.removeItem(TOKEN_KEY);"""
-        logout_replacement = """    function logout() {
-      loadMeAbort?.abort();
-      stopTarotInvitationMonitor();
-      localStorage.removeItem(TOKEN_KEY);"""
-        if source.count(logout_marker) != 1:
-            raise TarotError(500, "CedarToy 首页登出结构已变化，未安全停止塔罗邀请")
-        source = source.replace(logout_marker, logout_replacement, 1)
-
-        logout_state_marker = """      me = null;
-      arcadeBankState.status = null;"""
-        logout_state_replacement = """      me = null;
-      resetTarotInvitationState();
-      arcadeBankState.status = null;"""
-        if source.count(logout_state_marker) != 1:
-            raise TarotError(500, "CedarToy 首页登出状态结构已变化，未安全清理塔罗邀请")
-        source = source.replace(logout_state_marker, logout_state_replacement, 1)
-
-        listener_marker = '    $("notificationBell").addEventListener("click", openAnnouncementList);'
-        invite_listeners = """    $("tarotInviteAccept").addEventListener("click", () => respondTarotInvitation("accept"));
-    $("tarotInviteReject").addEventListener("click", () => respondTarotInvitation("reject"));
-"""
-        if source.count(listener_marker) != 1:
-            raise TarotError(500, "CedarToy 首页事件结构已变化，未安全加入塔罗邀请")
-        source = source.replace(
-            listener_marker,
-            invite_listeners
-            + '    $("notificationBell").addEventListener("click", openSiteNotifications);',
-            1,
-        )
 
         card_marker = """      {
         id: "fishing",
