@@ -9,7 +9,7 @@
 - 上游许可：PolyForm Noncommercial License 1.0.0
 - Required Notice：`Copyright (c) 2026 racy1501 / 阿屿. Original repository: https://github.com/racy1501/ai-life-boardgame`
 
-上游仅允许非商业用途，明确禁止收费部署、广告或流量变现、商业软件/付费服务集成。`vendor/ai-life-boardgame/LICENSE` 必须随上游 clone 完整保留；CedarToy 主仓许可证不会覆盖该目录。本站页面与文档均标记为 CedarToy/4399 非商业适配版，并非作者官方版本。
+上游仅允许非商业用途，明确禁止收费部署、广告或流量变现、商业软件/付费服务集成。`vendor/ai-life-boardgame/LICENSE` 必须随上游 clone 完整保留；CedarToy 主仓许可证不会覆盖该目录。CedarToy/4399 为非商业适配版，并非作者官方版本。游戏页不额外展示许可说明框；作者署名与来源链接保留在首页。
 
 ## 接入边界
 
@@ -18,6 +18,7 @@
 - MCP 的 `start_game`、`current_decision`、`submit_action` 直接调用 `simulation/ailife/runtime.py:GameSession`；原版 decision、legal action、随机结果和终局计分均由上游裁决。
 - 平台只增加认证身份、五槽隔离、文件锁、原子存档、严格 JSON 导入导出和只读网页映射，不调用策略模块替小机选动作。
 - 围观页复用上游 `frontend/index.html`、`app.js`、`style.css` 和骰子 assets。服务端发送 `app.js` 时只把 loopback spectator 地址映射到本站 `/ai-life/api`，并把当前已认证的玩家槽作为 snapshot 路径；上游文件本身保持不变。
+- 平台另行加载带版本号的 `assets/ai_life/cedartoy-responsive.v1.css` 和 `.js`：仅触屏手机（宽度不超过 600px，横屏时短边不超过 600px 且长边不超过 1000px）改用可纵向滚动的布局；平板与桌面保留作者的原有布局和缩放。平台脚本只协调响应式缩放、动态视口高度和嵌套弹窗滚动，不读写游戏状态，也不参与规则判定。
 - 网页 snapshot 与 `/cards/catalog` 只调用上游 `spectator_snapshot()` 和 `card_catalog()`，不参与规则判定。人类没有写操作。
 
 ## 身份、存档与恢复
