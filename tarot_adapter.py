@@ -1575,6 +1575,8 @@ class TarotWeb:
             "platform/managed-ui.v5.css": ROOT / "assets" / "tarot" / "managed-ui.v5.css",
             "platform/managed-ui.v6.js": ROOT / "assets" / "tarot" / "managed-ui.v6.js",
             "platform/managed-ui.v6.css": ROOT / "assets" / "tarot" / "managed-ui.v6.css",
+            "platform/managed-ui.v7.js": ROOT / "assets" / "tarot" / "managed-ui.v7.js",
+            "platform/managed-ui.v7.css": ROOT / "assets" / "tarot" / "managed-ui.v7.css",
             "platform/managed-companion.v3.js": ROOT / "assets" / "tarot" / "managed-companion.v3.js",
             "platform/managed-cards3d.v5.js": ROOT / "assets" / "tarot" / "managed-cards3d.v5.js",
             "platform/managed-cards3d.v6.js": ROOT / "assets" / "tarot" / "managed-cards3d.v6.js",
@@ -1645,7 +1647,8 @@ class TarotWeb:
             + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v3.css">'
             + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v4.css">'
             + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v5.css">'
-            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v6.css">',
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v6.css">'
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v7.css">',
             1,
         )
         upstream_settings = """    <div class="settings-body">
@@ -1689,7 +1692,7 @@ class TarotWeb:
 <script src="/tarot/static/platform/managed-ui.v3.js"></script>
 <script src="/tarot/static/platform/managed-ui.v4.js"></script>
 <script src="/tarot/static/platform/managed-ui.v5.js"></script>
-<script src="/tarot/static/platform/managed-ui.v6.js"></script>
+<script src="/tarot/static/platform/managed-ui.v7.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',

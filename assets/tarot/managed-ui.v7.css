@@ -1,0 +1,6 @@
+/* v7 centers the invitation dialog on phone viewports. */
+@media (max-width: 600px) {
+  .managed-invite-modal {
+    align-items: center;
+  }
+}

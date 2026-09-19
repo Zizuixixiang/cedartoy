@@ -32,7 +32,7 @@ assert.match(
   "homepage bell must remain the normal site-notification bell",
 );
 
-const uiScripts = ["v3", "v4", "v5", "v6"].map(version => (
+const uiScripts = ["v3", "v4", "v5", "v7"].map(version => (
   fs.readFileSync(path.join(root, `assets/tarot/managed-ui.${version}.js`), "utf8")
 ));
 
@@ -264,6 +264,19 @@ async function runGamePage() {
     assert.equal(rejects.length, 1, "rapid reject clicks are de-duplicated");
     assert.equal(rejects[0].options.credentials, "same-origin");
     assert.equal(rejects[0].options.headers["X-Tarot-CSRF"], "csrf-AAAA");
+    await waitFor(
+      window,
+      () => byId("managedInvitePendingStatus").textContent === ""
+        && byId("toasts").querySelector("[data-managed-invite-toast='1']"),
+      "successful rejection clears the persistent notice and shows a short toast",
+    );
+    assert.equal(byId("managedInvitePending").hidden, false);
+    assert.match(byId("managedInvitePendingList").textContent, /乙小机/);
+    assert.match(byId("managedInvitePendingList").textContent, /第二个问题/);
+    assert.equal(
+      byId("toasts").querySelector("[data-managed-invite-toast='1']").textContent,
+      "已拒绝",
+    );
 
     byId("questionInput").value = "尚未完成的本地问题";
     byId("managedInvitePendingList").children[0]
@@ -326,6 +339,51 @@ async function runGamePage() {
       /其他页面处理或已过期/,
       "already-processed or expired responses keep a friendly explanation",
     );
+
+    byId("managedInvitePendingList").children[0]
+      .querySelector(".managed-invite-reject").click();
+    await waitFor(
+      window,
+      () => byId("managedInvitePending").hidden
+        && byId("managedInvitePendingList").children.length === 0
+        && byId("managedInvitePendingStatus").textContent === "",
+      "rejecting the final invitation immediately collapses the empty section",
+    );
+    assert.equal(
+      byId("toasts").querySelector("[data-managed-invite-toast='1']")?.textContent,
+      "已拒绝",
+    );
+    byId("managedHistoryClose").click();
+    await waitFor(
+      window,
+      () => !byId("managedHistoryPanel").classList.contains("open"),
+      "record panel closes after the final rejection",
+    );
+    byId("managedHistoryTrigger").click();
+    await waitFor(
+      window,
+      () => byId("managedHistoryPanel").classList.contains("open"),
+      "record panel reopens after the final rejection",
+    );
+    assert.equal(byId("managedInvitePending").hidden, true);
+    assert.equal(byId("managedInvitePendingStatus").textContent, "");
+    await waitFor(
+      window,
+      () => !byId("toasts").querySelector("[data-managed-invite-toast='1']"),
+      "rejection toast disappears instead of becoming a record",
+      2200,
+    );
+
+    api.publish([invite(secondId, "乙小机", "第二个问题")]);
+    await waitFor(
+      window,
+      () => byId("managedInvitePendingList").children.length === 1,
+      "a later invitation batch appears normally after the rejection feedback expires",
+    );
+    assert.equal(byId("managedInvitePending").hidden, false);
+    assert.equal(byId("managedInvitePendingStatus").textContent, "");
+    assert.match(byId("managedInvitePendingList").textContent, /乙小机/);
+    assert.match(byId("managedInvitePendingList").textContent, /第二个问题/);
 
     api.state.current = {
       id: "current_session",

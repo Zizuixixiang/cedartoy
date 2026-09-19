@@ -1154,8 +1154,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('/tarot/static/platform/managed-ui.v4.css', page)
         self.assertIn('/tarot/static/platform/managed-ui.v5.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v5.css', page)
-        self.assertIn('/tarot/static/platform/managed-ui.v6.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v7.js', page)
+        self.assertNotIn('/tarot/static/platform/managed-ui.v6.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v6.css', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v7.css', page)
         self.assertIn('/tarot/static/platform/managed-companion.v3.js', page)
         self.assertIn('/tarot/static/platform/managed-cards3d.v6.js', page)
         self.assertNotIn('/tarot/static/platform/managed-cards3d.v5.js', page)
@@ -1184,6 +1186,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             page.index('/tarot/static/platform/managed-ui.v6.css'),
         )
         self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v6.css'),
+            page.index('/tarot/static/platform/managed-ui.v7.css'),
+        )
+        self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v3.js'),
             page.index('/tarot/static/platform/managed-ui.v4.js'),
         )
@@ -1193,10 +1199,10 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         )
         self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v5.js'),
-            page.index('/tarot/static/platform/managed-ui.v6.js'),
+            page.index('/tarot/static/platform/managed-ui.v7.js'),
         )
         self.assertLess(
-            page.index('/tarot/static/platform/managed-ui.v6.js'),
+            page.index('/tarot/static/platform/managed-ui.v7.js'),
             page.index('<script type="module" src="./js/main.js"></script>'),
         )
         self.assertNotIn("导入本机 DSH", page)
@@ -1278,18 +1284,34 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertTrue(managed_mobile_css.is_file())
         self.assertEqual(managed_mobile_css_mime, "text/css")
         managed_reading_path, managed_reading_mime = web.static_file(
-            "platform/managed-ui.v6.js"
+            "platform/managed-ui.v7.js"
         )
         self.assertEqual(managed_reading_mime, "text/javascript")
         managed_reading = managed_reading_path.read_text(encoding="utf-8")
         self.assertIn("`${endpoint}/new`", managed_reading)
         self.assertIn("stopImmediatePropagation", managed_reading)
         self.assertIn("X-Companion-CSRF", managed_reading)
+        self.assertIn("showInvitationToast('已拒绝')", managed_reading)
+        self.assertNotIn("邀请已拒绝；当前占问未受影响。", managed_reading)
+        self.assertTrue(web.static_file("platform/managed-ui.v6.js")[0].is_file())
         managed_reading_css, managed_reading_css_mime = web.static_file(
             "platform/managed-ui.v6.css"
         )
         self.assertTrue(managed_reading_css.is_file())
         self.assertEqual(managed_reading_css_mime, "text/css")
+        managed_reading_source = managed_reading_css.read_text(encoding="utf-8")
+        self.assertIn("padding: 12px", managed_reading_source)
+        self.assertIn("max-height: min(82vh, 640px)", managed_reading_source)
+        self.assertIn("overflow-y: auto", managed_reading_source)
+        managed_invite_css, managed_invite_css_mime = web.static_file(
+            "platform/managed-ui.v7.css"
+        )
+        self.assertTrue(managed_invite_css.is_file())
+        self.assertEqual(managed_invite_css_mime, "text/css")
+        managed_invite_source = managed_invite_css.read_text(encoding="utf-8")
+        self.assertIn("@media (max-width: 600px)", managed_invite_source)
+        self.assertIn("align-items: center", managed_invite_source)
+        self.assertNotIn("managed-invite-dialog", managed_invite_source)
         managed_layout_css, managed_layout_css_mime = web.static_file(
             "platform/managed-ui.v4.css"
         )
