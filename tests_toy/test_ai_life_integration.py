@@ -607,14 +607,57 @@ class AiLifeWebTests(unittest.TestCase):
         style = make_handler()
         style._handle_ai_life_static("style.css")
         self.assertEqual(style.response_statuses, [200])
-        style_source = style.wfile.getvalue().decode("utf-8")
-        self.assertIn("cedartoy-adaptation-notice", style_source)
-        self.assertIn("@media(max-width:640px)", style_source)
+        self.assertEqual(
+            style.wfile.getvalue(),
+            (server.AI_LIFE_FRONTEND_ROOT / "style.css").read_bytes(),
+        )
+        self.assertEqual(dict(style.response_headers)["Cache-Control"], "no-cache")
 
         asset = make_handler()
         asset._handle_ai_life_static("assets/dice/dice-h.png")
         self.assertEqual(asset.response_statuses, [200])
         self.assertEqual(dict(asset.response_headers)["Content-Type"], "image/png")
+
+    def test_responsive_layer_is_separate_versioned_and_covers_mobile_layout(self):
+        responsive_style = make_handler()
+        responsive_style._handle_ai_life_get(
+            "/ai-life/cedartoy-responsive.v1.css", {}
+        )
+        self.assertEqual(responsive_style.response_statuses, [200])
+        style_headers = dict(responsive_style.response_headers)
+        self.assertEqual(style_headers["Content-Type"], "text/css; charset=utf-8")
+        self.assertEqual(
+            style_headers["Cache-Control"],
+            "public, max-age=31536000, immutable",
+        )
+        css = responsive_style.wfile.getvalue().decode("utf-8")
+        self.assertIn("(hover: none) and (pointer: coarse) and (max-width: 600px)", css)
+        self.assertNotIn("(max-width: 900px)", css)
+        self.assertIn("body {\n    min-width: 0;", css)
+        self.assertIn("transform: none !important", css)
+        self.assertIn("#opportunity-cards", css)
+        self.assertIn("overflow-x: auto", css)
+        self.assertIn("grid-auto-rows: auto", css)
+        self.assertIn(".card-detail-body", css)
+        self.assertIn(".rules-content", css)
+        self.assertNotIn("body { overflow-x: hidden", css)
+
+        responsive_script = make_handler()
+        responsive_script._handle_ai_life_get(
+            "/ai-life/cedartoy-responsive.v1.js", {}
+        )
+        self.assertEqual(responsive_script.response_statuses, [200])
+        script_headers = dict(responsive_script.response_headers)
+        self.assertEqual(
+            script_headers["Content-Type"], "text/javascript; charset=utf-8"
+        )
+        js = responsive_script.wfile.getvalue().decode("utf-8")
+        self.assertIn("window.visualViewport", js)
+        self.assertIn("orientationchange", js)
+        self.assertIn("removeProperty('width')", js)
+        self.assertIn("if (wasCompact)", js)
+        self.assertIn("syncBoardScale()", js)
+        self.assertIn("dialogs.some", js)
 
     def test_page_requires_bound_human_existing_save_and_has_noncommercial_notice(self):
         denied = make_handler()
@@ -649,6 +692,15 @@ class AiLifeWebTests(unittest.TestCase):
         self.assertIn("作者：乐诶雷女士", page)
         self.assertIn("/ai-life/LICENSE", page)
         self.assertIn('name="viewport"', page)
+        self.assertNotIn("user-scalable=no", page)
+        self.assertLess(
+            page.index('href="style.css"'),
+            page.index('href="/ai-life/cedartoy-responsive.v1.css"'),
+        )
+        self.assertLess(
+            page.index('src="app.js"'),
+            page.index('src="/ai-life/cedartoy-responsive.v1.js"'),
+        )
         headers = dict(allowed.response_headers)
         self.assertIn("connect-src 'self'", headers["Content-Security-Policy"])
         self.assertIn("script-src 'self'", headers["Content-Security-Policy"])

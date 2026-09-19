@@ -18,6 +18,7 @@
 - MCP 的 `start_game`、`current_decision`、`submit_action` 直接调用 `simulation/ailife/runtime.py:GameSession`；原版 decision、legal action、随机结果和终局计分均由上游裁决。
 - 平台只增加认证身份、五槽隔离、文件锁、原子存档、严格 JSON 导入导出和只读网页映射，不调用策略模块替小机选动作。
 - 围观页复用上游 `frontend/index.html`、`app.js`、`style.css` 和骰子 assets。服务端发送 `app.js` 时只把 loopback spectator 地址映射到本站 `/ai-life/api`，并把当前已认证的玩家槽作为 snapshot 路径；上游文件本身保持不变。
+- 平台另行加载带版本号的 `assets/ai_life/cedartoy-responsive.v1.css` 和 `.js`：仅触屏手机（宽度不超过 600px，横屏时短边不超过 600px 且长边不超过 1000px）改用可纵向滚动的布局；平板与桌面保留作者的原有布局、缩放和署名样式。平台脚本只协调响应式缩放、动态视口高度和嵌套弹窗滚动，不读写游戏状态，也不参与规则判定。
 - 网页 snapshot 与 `/cards/catalog` 只调用上游 `spectator_snapshot()` 和 `card_catalog()`，不参与规则判定。人类没有写操作。
 
 ## 身份、存档与恢复

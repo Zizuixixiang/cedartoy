@@ -1,0 +1,674 @@
+
+
+/* CedarToy noncommercial adaptation notice; upstream stylesheet remains untouched. */
+.cedartoy-adaptation-notice{position:fixed;z-index:20;right:10px;bottom:8px;max-width:min(440px,calc(100vw - 20px));padding:5px 9px;border:1px solid rgba(117,135,111,.24);border-radius:9px;background:rgba(255,253,248,.94);color:#71806e;font:10px/1.45 system-ui,sans-serif;box-shadow:0 4px 14px rgba(68,59,44,.09)}
+.cedartoy-adaptation-notice a{color:#566b52}.cedartoy-adaptation-notice a:focus-visible{outline:2px solid #71806e;outline-offset:2px}
+@media(max-width:640px){.cedartoy-adaptation-notice{position:static;box-sizing:border-box;margin:8px auto;width:calc(100% - 16px);max-width:none;text-align:center}}
+
+@media (hover: none) and (pointer: coarse) and (max-width: 600px), (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+  :root {
+    --board-scale: 1 !important;
+    --mobile-card-width: clamp(164px, 44vw, 220px);
+  }
+
+  html.cedartoy-dialog-open,
+  html.cedartoy-dialog-open body { overflow: hidden; }
+
+  body {
+    min-width: 0;
+    width: auto;
+    min-height: var(--cedartoy-viewport-height, 100dvh);
+  }
+
+  .board-space {
+    position: relative;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0;
+  }
+
+  .page-shell {
+    --board-scale: 1 !important;
+    position: static;
+    display: flex;
+    width: 100% !important;
+    height: auto !important;
+    min-height: var(--cedartoy-viewport-height, 100dvh);
+    margin: 0;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      max(14px, env(safe-area-inset-right))
+      22px
+      max(14px, env(safe-area-inset-left));
+    overflow: visible;
+    transform: none !important;
+  }
+
+  .page-header {
+    display: block;
+    min-height: 0;
+    margin: 0 2px 16px;
+  }
+
+  .page-header p {
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+
+  .title-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .page-header h1 {
+    font-size: clamp(25px, 8vw, 35px);
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .title-tag-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .catalog-button,
+  .more-button,
+  .childhood-memory,
+  .catalog-filter {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .catalog-button {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .markets {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .market-block,
+  .market-block .card-row { min-width: 0; }
+
+  .section-title {
+    margin: 0 2px 10px;
+  }
+
+  .section-title h2,
+  .text-section h2 {
+    font-size: 19px;
+  }
+
+  .section-title span,
+  .market-hint {
+    font-size: 12px;
+  }
+
+  .market-hint {
+    margin: -3px 2px 11px;
+    line-height: 1.55;
+  }
+
+  #opportunity-cards,
+  #fate-cards,
+  #resume-cards {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    padding: 2px 2px 10px;
+    overflow-x: auto;
+    overflow-y: visible;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline proximity;
+    scrollbar-width: thin;
+  }
+
+  #opportunity-cards > *,
+  #fate-cards > *,
+  #resume-cards > * {
+    flex: 0 0 var(--mobile-card-width);
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+
+  .fate-market .two-cards { width: 100%; }
+
+  .game-card,
+  .card-slot {
+    border-radius: 16px;
+  }
+
+  .game-card {
+    padding: 14px;
+  }
+
+  .market-card:not(.detail-card) {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    padding: 14px 14px 52px;
+  }
+
+  .market-card:not(.detail-card) h3,
+  .resume-card h3 {
+    display: -webkit-box;
+    margin: 10px 0 7px;
+    overflow: hidden;
+    font-size: 16px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .card-type { font-size: 11px; }
+
+  .market-card:not(.detail-card) .card-effect,
+  .resume-card .card-effect {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+  }
+
+  .game-card footer {
+    right: 14px;
+    bottom: 13px;
+    left: 14px;
+    font-size: 11px;
+  }
+
+  .game-card footer b { font-size: 14px; }
+
+  .play-area {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+    padding-top: 16px;
+  }
+
+  .life-center {
+    order: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-height: 0;
+    padding: 12px;
+    overflow: visible;
+    border-radius: 20px;
+  }
+
+  .player-identity-card,
+  .dice-pool-card {
+    min-height: 260px;
+    padding: 14px 10px;
+    overflow: visible;
+    border-radius: 16px;
+  }
+
+  .player-identity-card {
+    grid-template-rows: auto auto auto minmax(90px, 1fr) auto;
+  }
+
+  .player-name {
+    font-size: 16px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .player-status {
+    height: auto;
+    min-height: 48px;
+    overflow: visible;
+  }
+
+  .player-identity-card #round-status,
+  .player-identity-card .connection-status,
+  .player-turn,
+  .dice-count,
+  .dice-rule-hint {
+    font-size: 12px;
+  }
+
+  .childhood-memory {
+    width: 100%;
+    margin: 7px 0;
+    padding: 8px 7px;
+    font-size: 12px;
+    white-space: normal;
+  }
+
+  .player-avatar {
+    width: min(92px, 80%);
+    border-radius: 22px;
+    font-size: 54px;
+  }
+
+  .dice-pool-card h2 { font-size: 16px; }
+
+  .dice-row {
+    gap: 9px;
+    min-height: 145px;
+  }
+
+  .dice-row-group { gap: 7px; }
+
+  .die {
+    width: clamp(36px, 10vw, 52px);
+    border-radius: 10px;
+  }
+
+  .left-notes {
+    order: 2;
+    display: grid;
+    grid-template-rows: none;
+    gap: 14px;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .left-notes .text-section,
+  .game-log,
+  .resume-section {
+    min-height: 0;
+    padding: 16px;
+    overflow: visible;
+    border-radius: 20px;
+  }
+
+  .left-notes .text-section ol,
+  .left-notes .text-section ul,
+  .game-log ul {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .text-section h2 { padding-bottom: 10px; }
+
+  .text-section ol,
+  .text-section ul {
+    margin-top: 12px;
+  }
+
+  .text-section li,
+  .game-log li {
+    margin-bottom: 12px;
+    font-size: 14px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  .text-section li b,
+  .goal-item b,
+  .event-item b {
+    font-size: 16px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .text-section li span,
+  .left-notes #debuff-detail span,
+  .left-notes #debuff-detail small {
+    font-size: 13px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  .left-notes ol li { padding-left: 22px; }
+
+  .goal-item .goal-more,
+  .event-item .event-more,
+  .resume-card-wrap > .more-button {
+    margin-top: 9px;
+    padding: 9px 13px;
+    font-size: 13px;
+  }
+
+  .resume-section {
+    order: 3;
+    display: block;
+  }
+
+  #resume-cards {
+    align-content: initial;
+    min-height: 0;
+  }
+
+  .resume-card-wrap { width: var(--mobile-card-width); }
+  .resume-card-wrap .resume-card { width: 100%; }
+
+  .game-log {
+    order: 4;
+    display: block;
+  }
+
+  .game-log .log-sync-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .cedartoy-adaptation-notice {
+    position: static;
+    box-sizing: border-box;
+    max-width: none;
+    text-align: center;
+    width: calc(100% - 28px);
+    margin: 0 auto max(12px, env(safe-area-inset-bottom));
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  dialog.resume-modal,
+  dialog.childhood-modal,
+  dialog.goal-modal,
+  dialog.card-detail-modal,
+  dialog.card-catalog-modal,
+  dialog.rules-modal {
+    --board-scale: 1 !important;
+    box-sizing: border-box;
+    width: calc(100vw - max(16px, env(safe-area-inset-left)) - max(16px, env(safe-area-inset-right)));
+    max-width: 760px;
+    height: min(720px, calc(var(--cedartoy-viewport-height, 100dvh) - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom))));
+    max-height: none;
+    margin: auto;
+    padding: 54px 18px 18px;
+    overflow: hidden;
+    border-radius: 18px;
+  }
+
+  dialog.goal-modal { height: min(430px, calc(var(--cedartoy-viewport-height, 100dvh) - 24px)); }
+
+  dialog .modal-close,
+  .resume-modal .modal-close,
+  .goal-modal .modal-close,
+  .card-detail-modal .modal-close,
+  .card-catalog-modal .modal-close,
+  .rules-modal .modal-close {
+    top: max(5px, env(safe-area-inset-top));
+    right: max(7px, env(safe-area-inset-right));
+    z-index: 5;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(247, 243, 232, .92);
+    font-size: 30px;
+    line-height: 1;
+    touch-action: manipulation;
+  }
+
+  dialog .modal-close:focus-visible {
+    outline: 2px solid #71806e;
+    outline-offset: 2px;
+  }
+
+  .resume-modal .modal-label,
+  .goal-modal .modal-label,
+  .card-detail-modal .modal-label,
+  .card-catalog-modal .modal-label,
+  .rules-modal .modal-label {
+    flex: none;
+    font-size: 12px;
+  }
+
+  .resume-modal h2,
+  .goal-modal h2,
+  .card-detail-modal h2,
+  .card-catalog-modal h2,
+  .rules-modal h2 {
+    flex: none;
+    margin: 5px 48px 8px 0;
+    font-size: 21px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .resume-modal > p:not(.modal-label) {
+    flex: none;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .resume-modal ul,
+  .childhood-modal ul {
+    grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+    justify-content: stretch;
+    gap: 16px;
+    align-content: start;
+    flex: 1;
+    min-height: 0;
+    margin-top: 14px;
+    padding: 2px 3px 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .resume-modal li,
+  .childhood-modal li {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .resume-modal .game-card {
+    width: 100%;
+    min-height: 270px;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .resume-modal .game-card .card-type { font-size: 11px; }
+  .resume-modal .game-card h3 {
+    margin: 12px 0 7px;
+    font-size: 17px;
+    overflow-wrap: anywhere;
+  }
+  .resume-modal .game-card .card-effect {
+    font-size: 13px;
+    line-height: 1.55;
+    -webkit-line-clamp: 5;
+  }
+  .resume-modal .game-card footer { font-size: 11px; }
+  .resume-modal .game-card footer b { font-size: 14px; }
+
+  .childhood-modal .game-card.full-effect-card {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .childhood-modal .game-card.full-effect-card .card-effect {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
+
+  .childhood-status,
+  .current-badge { font-size: 12px; }
+
+  .goal-modal {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .goal-scoring {
+    flex: 1;
+    min-height: 0;
+    margin-top: 10px;
+    padding-right: 4px;
+    overflow-y: auto;
+    font-size: 15px;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+  }
+
+  .card-detail-body {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    margin-top: 8px;
+    padding: 2px 3px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .card-detail-side .game-card.detail-card {
+    width: min(240px, 100%);
+    margin: 0 auto 18px;
+  }
+
+  .card-detail-info { overflow: visible; }
+  .fact-label { font-size: 13px; }
+  .fact-value {
+    font-size: 15px;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+
+  .catalog-heading,
+  .catalog-heading-main {
+    display: block;
+  }
+
+  .catalog-heading { padding-right: 0; }
+  .catalog-heading span,
+  .catalog-hint { font-size: 12px; }
+  .catalog-hint { margin: 2px 0 0; }
+
+  .catalog-filters {
+    flex: none;
+    flex-wrap: nowrap;
+    gap: 7px;
+    margin-top: 10px;
+    padding: 6px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  .catalog-filter {
+    flex: none;
+    padding: 9px 14px;
+    font-size: 14px;
+  }
+
+  .catalog-status {
+    flex: none;
+    min-height: 19px;
+    margin: 7px 0 0;
+    font-size: 12px;
+  }
+
+  .catalog-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+    grid-auto-rows: auto;
+    gap: 14px;
+    align-content: start;
+    flex: 1;
+    min-height: 0;
+    margin-top: 4px;
+    padding: 2px 3px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .catalog-cards .game-card {
+    width: 100%;
+    height: auto;
+    aspect-ratio: var(--card-ratio);
+  }
+
+  .rules-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+    margin-top: 8px;
+    padding: 2px 3px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .rules-content .rules-intro,
+  .rules-content .rules-score { grid-column: auto; }
+  .rules-content section { padding: 14px; }
+  .rules-content h3 { font-size: 16px; }
+  .rules-content p {
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .rules-flow {
+    display: grid;
+    gap: 6px;
+  }
+
+  .rules-flow li {
+    display: block;
+    font-size: 14px;
+  }
+
+  .rules-flow li:not(:last-child)::after {
+    display: block;
+    margin: 4px 0 0 6px;
+    content: '↓';
+  }
+
+  .rules-dice {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .rules-dice img { max-width: 48px; }
+  .rules-dice figcaption { font-size: 12px; }
+  .resume-kinds span { font-size: 13px; }
+  .other-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .other-cards h4 { font-size: 14px; }
+  .other-cards p { font-size: 13px; }
+}
+
+@media (hover: none) and (pointer: coarse) and (max-width: 359px) {
+  :root { --mobile-card-width: 164px; }
+
+  .page-shell {
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-left: max(10px, env(safe-area-inset-left));
+  }
+
+  .markets,
+  .left-notes .text-section,
+  .game-log,
+  .resume-section { padding: 13px; }
+
+  .life-center { grid-template-columns: minmax(0, 1fr); }
+
+  .player-identity-card,
+  .dice-pool-card { min-height: 250px; }
+
+  .catalog-cards { grid-template-columns: minmax(0, 1fr); }
+  .catalog-cards .game-card {
+    width: min(210px, 100%);
+    justify-self: center;
+  }
+
+  .other-cards { grid-template-columns: minmax(0, 1fr); }
+}

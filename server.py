@@ -190,6 +190,18 @@ ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
 FOREST_INDEX_PATH = Path(__file__).resolve().parent / "forest.html"
 AI_LIFE_FRONTEND_ROOT = ai_life_adapter.FRONTEND_ROOT.resolve()
 AI_LIFE_LICENSE_PATH = ai_life_adapter.LICENSE_PATH.resolve()
+AI_LIFE_RESPONSIVE_STYLE_PATH = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "ai_life"
+    / "cedartoy-responsive.v1.css"
+)
+AI_LIFE_RESPONSIVE_SCRIPT_PATH = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "ai_life"
+    / "cedartoy-responsive.v1.js"
+)
 TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
@@ -10531,21 +10543,28 @@ a{{color:#61785d}}
                 self._send_json({"error": "frontend integration unavailable"}, status=500)
                 return
             cache_control = "no-cache"
-        elif relative_path == "style.css":
-            notice_css = b"""
-\n/* CedarToy noncommercial adaptation notice; upstream stylesheet remains untouched. */
-.cedartoy-adaptation-notice{position:fixed;z-index:20;right:10px;bottom:8px;max-width:min(440px,calc(100vw - 20px));padding:5px 9px;border:1px solid rgba(117,135,111,.24);border-radius:9px;background:rgba(255,253,248,.94);color:#71806e;font:10px/1.45 system-ui,sans-serif;box-shadow:0 4px 14px rgba(68,59,44,.09)}
-.cedartoy-adaptation-notice a{color:#566b52}.cedartoy-adaptation-notice a:focus-visible{outline:2px solid #71806e;outline-offset:2px}
-@media(max-width:640px){.cedartoy-adaptation-notice{position:static;box-sizing:border-box;margin:8px auto;width:calc(100% - 16px);max-width:none;text-align:center}}
-"""
-            body += notice_css
-            cache_control = "no-cache"
         else:
-            cache_control = "public, max-age=3600"
+            cache_control = (
+                "no-cache"
+                if relative_path == "style.css"
+                else "public, max-age=3600"
+            )
         self._send_ai_life_bytes(
             body,
             content_type=content_type,
             cache_control=cache_control,
+        )
+
+    def _handle_ai_life_responsive_asset(self, asset_path, content_type):
+        try:
+            body = asset_path.read_bytes()
+        except OSError:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        self._send_ai_life_bytes(
+            body,
+            content_type=content_type,
+            cache_control="public, max-age=31536000, immutable",
         )
 
     def _handle_ai_life_page(self, params):
@@ -10599,6 +10618,24 @@ a{{color:#61785d}}
         ).replace(
             "AI 人生桌游静态视觉原型", "AI 人生桌游 CedarToy 围观版", 1
         )
+        style_marker = '<link rel="stylesheet" href="style.css" />'
+        script_marker = '<script src="app.js"></script>'
+        if style_marker not in source or script_marker not in source:
+            self._send_ai_life_message(
+                "围观页暂时不可用", "原版前端结构已变化。", status=500
+            )
+            return
+        source = source.replace(
+            style_marker,
+            style_marker
+            + '\n    <link rel="stylesheet" href="/ai-life/cedartoy-responsive.v1.css" />',
+            1,
+        ).replace(
+            script_marker,
+            script_marker
+            + '\n    <script src="/ai-life/cedartoy-responsive.v1.js"></script>',
+            1,
+        )
         notice = (
             '<aside class="cedartoy-adaptation-notice">'
             'CedarToy/4399 非商业适配版，并非作者官方版本。'
@@ -10643,6 +10680,17 @@ a{{color:#61785d}}
             return
         if path in {"/ai-life/app.js", "/ai-life/style.css"}:
             self._handle_ai_life_static(path.removeprefix("/ai-life/"))
+            return
+        if path == "/ai-life/cedartoy-responsive.v1.css":
+            self._handle_ai_life_responsive_asset(
+                AI_LIFE_RESPONSIVE_STYLE_PATH, "text/css; charset=utf-8"
+            )
+            return
+        if path == "/ai-life/cedartoy-responsive.v1.js":
+            self._handle_ai_life_responsive_asset(
+                AI_LIFE_RESPONSIVE_SCRIPT_PATH,
+                "text/javascript; charset=utf-8",
+            )
             return
         if path.startswith("/ai-life/assets/"):
             self._handle_ai_life_static(path.removeprefix("/ai-life/"))
