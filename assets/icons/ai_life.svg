@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">AI 人生桌游</title>
+  <desc id="desc">一颗落在人生路径上的骰子</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffdf7"/>
+      <stop offset="1" stop-color="#e9efe2"/>
+    </linearGradient>
+    <linearGradient id="path" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#b9957d"/>
+      <stop offset="1" stop-color="#738d6d"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="50" fill="url(#paper)" stroke="#70816b" stroke-width="8"/>
+  <path d="M39 190c32-45 51-12 78-53s48-20 77-65" fill="none" stroke="url(#path)" stroke-width="18" stroke-linecap="round" stroke-dasharray="2 28"/>
+  <g transform="rotate(-8 130 125)">
+    <rect x="82" y="77" width="96" height="96" rx="20" fill="#fffefa" stroke="#596b56" stroke-width="8"/>
+    <circle cx="108" cy="103" r="9" fill="#738d6d"/>
+    <circle cx="152" cy="103" r="9" fill="#b9957d"/>
+    <circle cx="130" cy="125" r="9" fill="#677c63"/>
+    <circle cx="108" cy="147" r="9" fill="#b9957d"/>
+    <circle cx="152" cy="147" r="9" fill="#738d6d"/>
+  </g>
+  <circle cx="42" cy="194" r="10" fill="#b9957d"/>
+  <circle cx="207" cy="62" r="10" fill="#738d6d"/>
+</svg>

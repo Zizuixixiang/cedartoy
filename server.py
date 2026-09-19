@@ -78,8 +78,9 @@ from tarot_adapter import (
     get_store as get_tarot_store,
     tarot_model_source,
 )
-from vendor_cmd_adapter import bar as bar_adapter
+from vendor_cmd_adapter import ai_life as ai_life_adapter
 from vendor_cmd_adapter import arcade as arcade_adapter
+from vendor_cmd_adapter import bar as bar_adapter
 from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import crucible_echoes as crucible_echoes_adapter
 from vendor_cmd_adapter import delve as delve_adapter
@@ -187,6 +188,8 @@ TOY_INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 ADMIN_INDEX_PATH = Path(__file__).resolve().parent / "admin.html"
 ECO_INDEX_PATH = Path(__file__).resolve().parent / "eco.html"
 FOREST_INDEX_PATH = Path(__file__).resolve().parent / "forest.html"
+AI_LIFE_FRONTEND_ROOT = ai_life_adapter.FRONTEND_ROOT.resolve()
+AI_LIFE_LICENSE_PATH = ai_life_adapter.LICENSE_PATH.resolve()
 TEST_GAME_INDEX_PATH = Path(__file__).resolve().parent / "test_game.html"
 ECO_ASSET_ROOT = (Path(__file__).resolve().parent / "eco" / "assets").resolve()
 ICON_ASSET_ROOT = Path("/opt/cedartoy/assets/icons").resolve()
@@ -311,7 +314,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，tarot 的 invite/status/result，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，tarot 的 invite/status/result，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -380,6 +383,50 @@ _PLATFORM_TOOLS = [
                             "minimum": 0,
                             "maximum": 25,
                             "description": "tarot status 可选长轮询秒数，最长 25 秒；不是全局事件流。",
+                        },
+                        "seed": {
+                            "type": "integer",
+                            "description": "ai_life start_game 可选随机种子。",
+                        },
+                        "slot": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5,
+                            "description": "账号存档槽 1-5，默认 1。",
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": "覆盖已有存档时必须显式为 true。",
+                        },
+                        "save_data": {
+                            "anyOf": [{"type": "string"}, {"type": "object"}],
+                            "description": "import 的 JSON 存档；ai_life 仅接受自己的 export 完整结果。",
+                        },
+                        "decision_id": {
+                            "type": "string",
+                            "description": "ai_life submit_action 必填：原版 current decision 返回的 decision_id。",
+                        },
+                        "game_action": {
+                            "type": "object",
+                            "description": "ai_life submit_action 必填：从当前 decision 的 legal_actions、purchase_targets 或 action_format 构造的原版动作 JSON；与外层平台 action 分开。",
+                            "additionalProperties": True,
+                        },
+                        "forced_goals": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "items": {"type": "integer"},
+                            "description": "ai_life start_game 可选：原版调试参数，固定两个人生目标编号。",
+                        },
+                        "player_name": {
+                            "type": "string",
+                            "maxLength": 100,
+                            "description": "ai_life start_game 可选：围观页展示名。",
+                        },
+                        "player_emoji": {
+                            "type": "string",
+                            "maxLength": 32,
+                            "description": "ai_life start_game 可选：围观页展示头像。",
                         },
                     },
                     "additionalProperties": True,
@@ -485,7 +532,7 @@ def _build_kelivo_platform_tools():
             },
             "seed": {
                 "anyOf": [{"type": "integer"}, {"type": "string"}],
-                "description": "新局可选随机种子。",
+                "description": "新局可选随机种子；ai_life 只接受整数。",
             },
             "version": {
                 "type": "string",
@@ -520,7 +567,7 @@ def _build_kelivo_platform_tools():
             },
             "save_data": {
                 "anyOf": [{"type": "string"}, {"type": "object"}],
-                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
+                "description": "import 的存档数据（可先用 export 获取）；eco/ciyuwu 使用 base64 字符串；ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、garden_cat、imitator_td、leek、market、memoria、moonlit、travel、white_room、workkk 使用 JSON 对象或 JSON 字符串，多文件游戏使用以文件名为 key 的 JSON 对象。",
             },
             "a_score": {
                 "type": "integer",
@@ -599,6 +646,24 @@ def _build_kelivo_platform_tools():
             },
             "chaos": {"type": "string", "description": "imitator_td 特殊模式 chaos 设置。"},
             "cards": {"type": "string", "description": "imitator_td 新局选卡文本。"},
+            "decision_id": {
+                "type": "string",
+                "description": "ai_life submit_action 必填：当前 decision_id。",
+            },
+            "game_action": {
+                "type": "object",
+                "description": "ai_life submit_action 必填：原版动作 JSON；不要放进外层 action。",
+                "additionalProperties": True,
+            },
+            "forced_goals": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {"type": "integer"},
+                "description": "ai_life start_game 可选的两个人生目标编号。",
+            },
+            "player_name": {"type": "string", "maxLength": 100, "description": "ai_life 围观展示名。"},
+            "player_emoji": {"type": "string", "maxLength": 32, "description": "ai_life 围观展示头像。"},
         }
     )
     return tools
@@ -908,6 +973,10 @@ def _forest_bound_target_for_user(user, requested_player):
 
 
 def _moonlit_bound_target_for_user(user, requested_player):
+    return _bound_ai_slot_target_for_user(user, requested_player)
+
+
+def _ai_life_bound_target_for_user(user, requested_player):
     return _bound_ai_slot_target_for_user(user, requested_player)
 
 
@@ -4034,6 +4103,14 @@ def _vendor_save_stats(game):
     if not root.exists():
         return {"save_count": 0, "file_count": 0}
     player_dirs = [path for path in root.iterdir() if path.is_dir()]
+    # ai_life 的锁文件与损坏存档备份都不代表一份可继续的有效存档；
+    # 只把经过严格重放校验入口使用的 save.json 计入平台存档数。
+    if game == "ai_life":
+        player_dirs = [
+            path
+            for path in player_dirs
+            if (path / ai_life_adapter.SAVE_NAME).is_file()
+        ]
     file_count = 0
     for path in player_dirs:
         file_count += sum(1 for child in path.iterdir() if child.is_file() and child.name != ".lock")
@@ -4056,7 +4133,7 @@ def _public_game_stats():
             "metric": count_saved_tarot_sessions(),
         },
     }
-    for game in ("arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
+    for game in ("ai_life", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -5523,10 +5600,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza"})
-VENDOR_GAMES = ("bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza"})
+VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
@@ -5773,6 +5850,14 @@ def _stamp_save_owner(game, player_id, user_id):
         pass
 
 
+def _directory_vendor_save_exists(game, save_dir):
+    if not save_dir.is_dir():
+        return False
+    if game == "ai_life":
+        return (save_dir / ai_life_adapter.SAVE_NAME).is_file()
+    return True
+
+
 def _collect_player_saves(old_player_id, target_player_id):
     """列出 old_player_id 名下所有存档，以及迁到 target_player_id 会撞上的冲突。
 
@@ -5810,7 +5895,7 @@ def _collect_player_saves(old_player_id, target_player_id):
                         conflicts.append(f"{game}/{table}（账号名下已有记录）")
     for game in DIRECTORY_VENDOR_GAMES:
         old_dir = VENDOR_SAVE_ROOT / game / old_player_id
-        if not old_dir.is_dir():
+        if not _directory_vendor_save_exists(game, old_dir):
             continue
         found[f"vendor:{game}"] = {"dir": str(old_dir)}
         if (VENDOR_SAVE_ROOT / game / target_player_id).exists():
@@ -6070,7 +6155,7 @@ def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
                     migrated.append(f"{table}×{cur.rowcount}")
         for game in DIRECTORY_VENDOR_GAMES:
             old_dir = VENDOR_SAVE_ROOT / game / old_player_id
-            if old_dir.is_dir():
+            if _directory_vendor_save_exists(game, old_dir):
                 target_dir = VENDOR_SAVE_ROOT / game / target_player_id
                 old_dir.rename(target_dir)
                 moved_directories.append((old_dir, target_dir))
@@ -6192,7 +6277,7 @@ def _auto_migrate_legacy_username_saves(user, username):
     for game in DIRECTORY_VENDOR_GAMES:
         old_dir = VENDOR_SAVE_ROOT / game / username
         target_dir = VENDOR_SAVE_ROOT / game / target_player_id
-        if old_dir.is_dir() and not target_dir.exists():
+        if _directory_vendor_save_exists(game, old_dir) and not target_dir.exists():
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             old_dir.rename(target_dir)
             migrated.append(f"vendor_saves/{game}")
@@ -6626,6 +6711,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
                     entry.clear()
                     entry.update({"slot": slot, **summary})
     vendor_summaries = {
+        "ai_life": ai_life_adapter.save_summary,
         "bar": bar_adapter.save_summary,
         "leek": leek_adapter.save_summary,
         "delve": delve_adapter.save_summary,
@@ -6911,6 +6997,7 @@ GAME_RECOMMENDATIONS = (
     ("bar", "让 AI 开一家自己的跨世界酒馆，认真记账，也认真听客人把话说完"),
     ("fishing", "鼻祖之作，第一竿永远不知道咬钩的是什么"),
     ("forest", "和 AI 并肩走进十一条翻转格林童话的角色线，在多轮选择里走到自然结局"),
+    ("ai_life", "掷一把人生骰，在机会、逆境与目标之间亲手走完二十三回合"),
     ("moonlit", "月光下构筑一副会乘法的牌，八幕之后才是终演"),
     ("eco", "当一回造物主，浮萍和乌龟都会记得你"),
     ("ciyuwu", "词库会被没收，活下来靠捡回真实"),
@@ -6996,7 +7083,10 @@ def _owned_game_names_for_recommendation(user):
                 owned.add("ciyuwu")
     for game in VENDOR_GAMES:
         root = VENDOR_SAVE_ROOT / game
-        if root.exists() and any((root / player_id).is_dir() for player_id in player_ids):
+        if root.exists() and any(
+            _directory_vendor_save_exists(game, root / player_id)
+            for player_id in player_ids
+        ):
             owned.add(game)
     if any(_camping_plaza_save_summary(player_id) is not None for player_id in player_ids):
         owned.add("camping_plaza")
@@ -7031,7 +7121,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，人类在原版 3D UI 提问选阵抽牌，小机可邀请并读取本次结果·林默Moon（小红书号：427689021） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，人类在原版 3D UI 提问选阵抽牌，小机可邀请并读取本次结果·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -7039,6 +7129,32 @@ def _tool_list_games(path_token=None):
 def _root_tools(user_agent=""):
     platform_tools = _KELIVO_PLATFORM_TOOLS if _is_kelivo_user_agent(user_agent) else _PLATFORM_TOOLS
     return [tool for tool in platform_tools if tool.get("name") in _ROOT_TOOL_NAMES]
+
+
+AI_LIFE_GUIDE = """# ai_life·AI人生桌游
+调用：play(game="ai_life", action="start_game") 开局；随后只根据当前 decision 自己选择，不要让平台代替你决策。持久 MCP 地址可省 player_id。
+
+这是原版 GameSession 的薄包装：平台只负责认证、存档槽、并发锁与重启后重放；规则、随机结果、decision、legal_actions 和终局计分都由作者 runtime 裁决。人类只能在原版围观页看你自己的这局，不参与操作。
+
+三个原版动作：
+1. start_game：新局。例：play(game="ai_life", action="start_game", params={"seed":42,"player_name":"小杉","player_emoji":"🤖"})。seed 可省；forced_goals=[1,2] 仅用于明确指定原版目标。当前槽已有存档时必须加 confirm=true 才会覆盖。
+2. current_decision：只读当前决策，不推进随机数。例：play(game="ai_life", action="current_decision")。
+3. submit_action：外层 action 固定为 submit_action；把当前 decision_id 和原版动作 JSON 分开放进 params。可直接执行的 Draft 示例：play(game="ai_life", action="submit_action", params={"decision_id":"childhood_pick_1:0","game_action":{"card_id":"C01"}})。decision_id 必须使用刚返回的值，不能沿用旧阶段。
+
+如何提交：
+- 优先从 decision.legal_actions 选择一个对象，原样作为 game_action；不要猜未公布动作。
+- purchase_ready 第一层可能没有 legal_actions：这时从 purchase_targets 选一项，只提交 {"ordinary_card_ids":[...],"fate_card_id":null或卡号}。若随后仍是 purchase_ready，再从新返回的 legal_actions 选择 {"plan_id":"..."}。
+- final_flex_designation 按 action_format 一次提交全部 designations。
+- 非法或过期动作返回 ok=false、error 和当前 decision，不会写入动作日志。完全相同的已成功请求重试会幂等返回 duplicate=true，不会重复推进。
+- kind=game_over 时 decision.score 是原版最终计分；此时不再提交动作。
+
+存档：
+- 每个账号 slot=1..5 独立保存实际 seed 与已接受动作日志，冷加载会逐步校验重放，保持随机序列和 decision 一致；客户端自报 session_id/player_id 不用于找档。
+- export：导出当前槽 JSON。import：params.save_data 传 export 的完整 JSON；覆盖已有存档必须同时传 confirm=true。导入只接受已验证版本的严格 JSON 重放档，不加载 pickle。
+
+围观：人类从 CedarToy 首页「围观人生 →」选择已绑定小机和已有槽位。没有存档时只提示先让小机开局，不会创建演示局。
+
+作者：乐诶雷女士。原仓库：https://github.com/racy1501/ai-life-boardgame 。上游许可：PolyForm Noncommercial License 1.0.0，仅限非商业使用，禁止收费、广告或流量变现；本站为 CedarToy/4399 非商业适配版，并非作者官方版本。完整 LICENSE 与 Required Notice 在围观页保留。"""
 
 
 WORKKK_GUIDE = """# workkk·AI打工人模拟
@@ -7220,6 +7336,8 @@ def _tool_get_guide(arguments):
         return json.dumps(guide, ensure_ascii=False)
     if game == "workkk":
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
+    if game == "ai_life":
+        return json.dumps({"game": "ai_life", "guide": _guide_with_slot_note(AI_LIFE_GUIDE)}, ensure_ascii=False)
     if game == "tarot":
         return json.dumps({"game": "tarot", "guide": TAROT_GUIDE}, ensure_ascii=False)
     if game == "garden_cat":
@@ -7951,7 +8069,7 @@ def _tool_play_inner(
                 announce_player_id=announce_player_id,
             )
         response = _play_duel(merged_arguments, **duel_kwargs)
-    elif game in {"bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
+    elif game in {"ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -7990,6 +8108,11 @@ def _finalize_play_response(
         result = response.get("result")
         if "error" in response or (isinstance(result, dict) and result.get("isError")):
             succeeded = False
+    idempotent_retry = (
+        game == "ai_life"
+        and isinstance(response, dict)
+        and response.get("duplicate") is True
+    )
     if succeeded and account_user is not None:
         if game in ANTI_ADDICTION_TEST_GAMES:
             response = _replace_play_storage_identity(
@@ -7997,7 +8120,13 @@ def _finalize_play_response(
                 _storage_identity_line(account_player_id, account_user, slot),
             )
         _stamp_save_owner(game, account_player_id, int(account_user["id"]))
-    if succeeded and guest_player_id and game in PERSISTENT_SAVE_GAMES and isinstance(response, dict):
+    if (
+        succeeded
+        and not idempotent_retry
+        and guest_player_id
+        and game in PERSISTENT_SAVE_GAMES
+        and isinstance(response, dict)
+    ):
         code = _ensure_guest_claim_code(guest_player_id)
         if code:
             response = dict(response)
@@ -8008,7 +8137,7 @@ def _finalize_play_response(
                 'account(action="claim", claim_code="...", slot=2)；slot 可为 1-5，默认 1。'
                 "之后把 MCP 地址改为 https://toy.cedarstar.org/{token} 即获得持久身份。"
             )
-    if succeeded:
+    if succeeded and not idempotent_retry:
         response = _append_play_text(response, _anti_addiction_record_success(anti_context))
         # 只在成功时取通知：check_announcements 一取就标已读，而通知只弹一次。
         # 拼在报错响应上，玩家多半看不到，这条通知就永远丢了。
@@ -9482,6 +9611,8 @@ def _play_vendor_cmd(game, arguments):
     extra["action"] = action
 
     try:
+        if game == "ai_life":
+            return ai_life_adapter.play(extra)
         if game == "bar":
             return bar_adapter.play(extra)
         if game == "leek":
@@ -9892,6 +10023,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_camping_plaza_proxy("GET")
             return
 
+        if path == "/ai-life" or path.startswith("/ai-life/"):
+            self._handle_ai_life_get(path, params)
+            return
+
         if path.startswith("/static/games/") and _duel_proxy_allowed("GET", path):
             self._proxy_to_duel("GET", path, query_string)
             return
@@ -10273,6 +10408,293 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
         discarded = _discard_duel_gateway_ticket(payload.get("ticket"))
         self._send_json({"ok": True, "discarded": discarded})
+
+    def _ai_life_cookie_token(self):
+        cookie = self.headers.get("Cookie", "")
+        for item in cookie.split(";"):
+            name, separator, value = item.strip().partition("=")
+            if separator and name == "ai_life_token":
+                return urllib.parse.unquote(value)
+        return ""
+
+    def _ai_life_human_target(self, requested_player, token_from_query=""):
+        raw_token = (
+            token_from_query
+            or self._ai_life_cookie_token()
+            or _extract_bearer(self.headers)
+        )
+        user = _current_account(raw_token)
+        if user.get("is_ai"):
+            raise _McpError(-32003, "只有人类账号可以围观 AI 人生桌游")
+        target = _ai_life_bound_target_for_user(user, requested_player)
+        if target is None:
+            raise _McpError(-32003, "你没有绑定这只小机或槽位无效")
+        return user, target
+
+    @staticmethod
+    def _ai_life_http_status(exc):
+        if exc.code == -32001:
+            return 401
+        if exc.code == -32003:
+            return 403
+        return 400
+
+    def _send_ai_life_bytes(
+        self,
+        body,
+        *,
+        content_type,
+        status=200,
+        cache_control="private, no-cache, max-age=0",
+        extra_headers=None,
+    ):
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", cache_control)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_ai_life_message(self, title, message, *, status):
+        safe_title = html_lib.escape(str(title))
+        safe_message = html_lib.escape(str(message))
+        body = f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{safe_title} · AI 人生桌游</title><style>
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f3eb;color:#526050;font:16px/1.7 system-ui,sans-serif}}
+main{{max-width:34rem;margin:1rem;padding:2rem;border:1px solid #d9d6ca;border-radius:20px;background:#fffdf8;text-align:center;box-shadow:0 18px 45px rgba(68,59,44,.12)}}
+a{{color:#61785d}}
+</style></head><body><main><h1>{safe_title}</h1><p>{safe_message}</p><p><a href="/">返回 CedarToy 首页</a></p></main></body></html>"""
+        self._send_ai_life_bytes(
+            body,
+            content_type="text/html; charset=utf-8",
+            status=status,
+            extra_headers={
+                "Content-Security-Policy": (
+                    "default-src 'none'; style-src 'unsafe-inline'; "
+                    "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+                ),
+                "Vary": "Cookie",
+                "X-Frame-Options": "SAMEORIGIN",
+            },
+        )
+
+    def _ai_life_frontend_asset(self, relative_path):
+        try:
+            asset_path = (AI_LIFE_FRONTEND_ROOT / relative_path).resolve()
+            asset_path.relative_to(AI_LIFE_FRONTEND_ROOT)
+        except (OSError, RuntimeError, ValueError):
+            return None
+        return asset_path if asset_path.is_file() else None
+
+    def _handle_ai_life_static(self, relative_path):
+        asset_path = self._ai_life_frontend_asset(relative_path)
+        if asset_path is None:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            body = asset_path.read_bytes()
+        except OSError:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        content_type = mimetypes.guess_type(asset_path.name)[0] or "application/octet-stream"
+        if relative_path == "app.js":
+            try:
+                source = body.decode("utf-8")
+                source = source.replace(
+                    "const sessionId = new URLSearchParams(window.location.search).get('session_id');",
+                    "const sessionId = new URLSearchParams(window.location.search).get('player');",
+                    1,
+                )
+                source = source.replace(
+                    "const spectatorBase = 'http://127.0.0.1:8765';",
+                    "const spectatorBase = '/ai-life/api';",
+                    1,
+                )
+                source = source.replace(
+                    "renderDemo();\nif (sessionId)",
+                    "if (sessionId)",
+                    1,
+                )
+                if "127.0.0.1:8765" in source or "get('session_id')" in source:
+                    raise ValueError("upstream frontend integration markers changed")
+                body = source.encode("utf-8")
+            except (UnicodeError, ValueError) as exc:
+                logger.error("ai_life app.js integration unavailable: %s", exc)
+                self._send_json({"error": "frontend integration unavailable"}, status=500)
+                return
+            cache_control = "no-cache"
+        elif relative_path == "style.css":
+            notice_css = b"""
+\n/* CedarToy noncommercial adaptation notice; upstream stylesheet remains untouched. */
+.cedartoy-adaptation-notice{position:fixed;z-index:20;right:10px;bottom:8px;max-width:min(440px,calc(100vw - 20px));padding:5px 9px;border:1px solid rgba(117,135,111,.24);border-radius:9px;background:rgba(255,253,248,.94);color:#71806e;font:10px/1.45 system-ui,sans-serif;box-shadow:0 4px 14px rgba(68,59,44,.09)}
+.cedartoy-adaptation-notice a{color:#566b52}.cedartoy-adaptation-notice a:focus-visible{outline:2px solid #71806e;outline-offset:2px}
+@media(max-width:640px){.cedartoy-adaptation-notice{position:static;box-sizing:border-box;margin:8px auto;width:calc(100% - 16px);max-width:none;text-align:center}}
+"""
+            body += notice_css
+            cache_control = "no-cache"
+        else:
+            cache_control = "public, max-age=3600"
+        self._send_ai_life_bytes(
+            body,
+            content_type=content_type,
+            cache_control=cache_control,
+        )
+
+    def _handle_ai_life_page(self, params):
+        token_from_query = (params.get("token") or [""])[0]
+        requested_player = (params.get("player") or [""])[0]
+        try:
+            _user, target = self._ai_life_human_target(
+                requested_player, token_from_query
+            )
+        except _McpError as exc:
+            self._send_ai_life_message(
+                "无法围观这局人生",
+                exc.message,
+                status=self._ai_life_http_status(exc),
+            )
+            return
+
+        if token_from_query:
+            cookie = (
+                f"ai_life_token={urllib.parse.quote(token_from_query, safe='')}; "
+                f"Path=/ai-life; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
+            )
+            clean_query = urllib.parse.urlencode({"player": target["player"]})
+            self.send_response(303)
+            self.send_header("Location", f"/ai-life/?{clean_query}")
+            self.send_header("Set-Cookie", cookie)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Vary", "Cookie")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        if ai_life_adapter.save_summary(target["player"]) is None:
+            self._send_ai_life_message(
+                "还没有 AI 人生桌游存档",
+                "这只小机的这个槽位还没有开局。请先让它通过 MCP 调用 start_game；围观页不会自动创建或展示演示局。",
+                status=404,
+            )
+            return
+
+        try:
+            source = (AI_LIFE_FRONTEND_ROOT / "index.html").read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            self._send_ai_life_message("围观页暂时不可用", "原版前端读取失败。", status=500)
+            return
+        source = source.replace(
+            "AI 人生桌游｜静态视觉原型", "AI 人生桌游｜CedarToy 围观", 1
+        ).replace(
+            "AI 人生桌游静态视觉原型", "AI 人生桌游 CedarToy 围观版", 1
+        )
+        notice = (
+            '<aside class="cedartoy-adaptation-notice">'
+            'CedarToy/4399 非商业适配版，并非作者官方版本。'
+            '作者：乐诶雷女士 · '
+            '<a href="https://github.com/racy1501/ai-life-boardgame" rel="noopener noreferrer">原仓库</a> · '
+            '<a href="/ai-life/LICENSE">PolyForm Noncommercial 1.0.0 / Required Notice</a>'
+            '</aside>'
+        )
+        if "</body>" not in source:
+            self._send_ai_life_message("围观页暂时不可用", "原版前端结构已变化。", status=500)
+            return
+        body = source.replace("</body>", notice + "</body>", 1).encode("utf-8")
+        self._send_ai_life_bytes(
+            body,
+            content_type="text/html; charset=utf-8",
+            extra_headers={
+                "Content-Security-Policy": (
+                    "default-src 'none'; style-src 'self'; script-src 'self'; "
+                    "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+                    "form-action 'none'; frame-ancestors 'self'"
+                ),
+                "Vary": "Cookie",
+                "X-Frame-Options": "SAMEORIGIN",
+            },
+        )
+
+    def _handle_ai_life_get(self, path, params):
+        if path in {"/ai-life", "/ai-life/"}:
+            self._handle_ai_life_page(params)
+            return
+        if path == "/ai-life/LICENSE":
+            try:
+                body = AI_LIFE_LICENSE_PATH.read_bytes()
+            except OSError:
+                self._send_json({"error": "not found"}, status=404)
+                return
+            self._send_ai_life_bytes(
+                body,
+                content_type="text/plain; charset=utf-8",
+                cache_control="public, max-age=3600",
+            )
+            return
+        if path in {"/ai-life/app.js", "/ai-life/style.css"}:
+            self._handle_ai_life_static(path.removeprefix("/ai-life/"))
+            return
+        if path.startswith("/ai-life/assets/"):
+            self._handle_ai_life_static(path.removeprefix("/ai-life/"))
+            return
+        if path == "/ai-life/api/cards/catalog":
+            try:
+                catalog = ai_life_adapter.card_catalog()
+            except Exception:
+                logger.exception("ai_life card catalog failed")
+                self._send_json({"error": "catalog unavailable"}, status=500)
+                return
+            self._send_ai_life_bytes(
+                json.dumps(catalog, ensure_ascii=False).encode("utf-8"),
+                content_type="application/json; charset=utf-8",
+                cache_control="public, max-age=3600",
+            )
+            return
+        snapshot_match = re.fullmatch(
+            r"/ai-life/api/spectator/sessions/([^/]+)", path
+        )
+        if snapshot_match:
+            requested_player = urllib.parse.unquote(snapshot_match.group(1))
+            try:
+                _user, target = self._ai_life_human_target(requested_player)
+                snapshot = ai_life_adapter.spectator_snapshot(target["player"])
+            except _McpError as exc:
+                self._send_ai_life_bytes(
+                    json.dumps({"error": exc.message}, ensure_ascii=False),
+                    content_type="application/json; charset=utf-8",
+                    status=self._ai_life_http_status(exc),
+                    cache_control="no-store",
+                    extra_headers={"Vary": "Cookie"},
+                )
+                return
+            except VendorCmdError as exc:
+                status = 404 if "还没有" in str(exc) else 500
+                self._send_ai_life_bytes(
+                    json.dumps({"error": str(exc)}, ensure_ascii=False),
+                    content_type="application/json; charset=utf-8",
+                    status=status,
+                    cache_control="no-store",
+                    extra_headers={"Vary": "Cookie"},
+                )
+                return
+            self._send_ai_life_bytes(
+                json.dumps(snapshot, ensure_ascii=False).encode("utf-8"),
+                content_type="application/json; charset=utf-8",
+                cache_control="private, no-store",
+                extra_headers={"Vary": "Cookie"},
+            )
+            return
+        self._send_json({"error": "not found"}, status=404)
 
     def _forest_cookie_token(self):
         cookie = self.headers.get("Cookie", "")

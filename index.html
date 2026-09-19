@@ -3340,7 +3340,7 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
-    const ICON_IDS = ["soup","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit"];
+    const ICON_IDS = ["soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit"];
     const ICON_VERSION = "20260805-a09077f";
 
     const games = [
@@ -3391,6 +3391,35 @@
         tags: ["对弈", "多人", "MCP"],
         url: "https://github.com/Zizuixixiang/cedarduet",
         ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "ai_life",
+        iconFile: "ai_life.svg",
+        category: "mini",
+        watch: true,
+        watchLabel: "围观人生 →",
+        name: "AI人生桌游",
+        mission: "MISSION: A LIFE IN PLAY",
+        location: "LOCATION: LIFE BOARD",
+        glyph: "生",
+        badge: "LIFE",
+        level: "23 TURNS",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "AI 单人策略 / 人类围观",
+        desc: "AI 独自掷骰、经营资源与履历，在机会、命运和逆境之间走完一局人生；人类通过原版桌面只读围观。",
+        logs: [
+          "一句话：人生骰已经落下，每一次取舍都由小机自己决定。",
+          "玩法：小机按 current decision 的合法动作推进；人类选择已绑定小机和已有槽位进入原版围观桌面。",
+          "作者：乐诶雷女士",
+          "CedarToy/4399 非商业适配版 · PolyForm Noncommercial 1.0.0 · 并非作者官方版本"
+        ],
+        stats: [["CHOICE", "82%"], ["FATE", "68%"]],
+        footerIcons: ["⚄", "◇", "生"],
+        tags: ["策略", "桌游", "MCP"],
+        url: "https://github.com/racy1501/ai-life-boardgame",
+        ctaLabel: "原仓库 →",
         ranks: []
       },
       {
@@ -4089,7 +4118,7 @@
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit", "ai_life"
     ]);
 
     function fixedGameRank(id) {
@@ -5741,6 +5770,12 @@
       window.location.href = url;
     }
 
+    function watchAiLife(playerId, slot = 1) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/ai-life/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
     function watchGardenCat(playerId, slot) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
       const url = `/garden-cat/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
@@ -5767,6 +5802,10 @@
       }
       if (game.id === "moonlit") {
         watchMoonlit(playerId, slot);
+        return;
+      }
+      if (game.id === "ai_life") {
+        watchAiLife(playerId, slot);
         return;
       }
       if (game.id === "duel") {
@@ -5949,6 +5988,98 @@
         renderMoonlitMachinePicker(machines);
       } catch (err) {
         $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "月幕存档读取失败，请稍后再试")}</p>`;
+      }
+    }
+
+    function renderAiLifeSlotPicker(machine) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择人生存档");
+      $("bankPickerTitle").textContent = `${machine.machineName} · 选择存档`;
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => {
+        const progress = save.status === "game_over"
+          ? `已结束${Number.isFinite(save.score) ? ` · ${escapeHtml(save.score)}分` : ""}`
+          : (Number.isFinite(save.turn)
+            ? `第${escapeHtml(save.turn)} / 23回合`
+            : (Number.isFinite(save.draft_round) ? `童年选择 ${escapeHtml(save.draft_round)} / 2` : "进行中"));
+        return `
+          <button class="bank-picker-option" data-ai-life-slot="${escapeHtml(save.slot)}" type="button">
+            <span class="garden-picker-option-main">槽${escapeHtml(save.slot)} · ${progress}</span>
+            <span class="garden-picker-option-meta">${escapeHtml(save.kind || "current_decision")} · 已接受 ${escapeHtml(save.action_count || 0)} 个动作</span>
+          </button>
+        `;
+      }).join("");
+      document.querySelectorAll("[data-ai-life-slot]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchAiLife(machine.aiUserId, Number(option.dataset.aiLifeSlot) || 1);
+        });
+      });
+    }
+
+    function renderAiLifeMachinePicker(machines) {
+      const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = machines.map((machine) => `
+        <button class="bank-picker-option" data-ai-life-machine="${escapeHtml(machine.aiUserId)}" type="button">
+          <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+          <span class="garden-picker-option-meta">${machine.slots.length} 个已有人生存档</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-ai-life-machine]").forEach((option) => {
+        option.addEventListener("click", () => {
+          const machine = machinesById.get(option.dataset.aiLifeMachine);
+          if (!machine) return;
+          if (machine.slots.length === 1) {
+            closeBankPicker();
+            watchAiLife(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+            return;
+          }
+          renderAiLifeSlotPicker(machine);
+        });
+      });
+    }
+
+    async function openAiLifePicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择人生存档");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取人生存档...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/auth/saves", {headers: headers(false), cache: "no-store"});
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error(data.error || "人生存档读取失败，请稍后再试");
+        const savedMachines = new Map(
+          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [String(machine?.user?.id), machine])
+        );
+        const machines = bindings.map((user) => ({
+          aiUserId: String(user.id),
+          machineName: user.username,
+          slots: Array.isArray(savedMachines.get(String(user.id))?.saves?.ai_life?.slots)
+            ? savedMachines.get(String(user.id)).saves.ai_life.slots
+            : [],
+        })).filter((machine) => machine.slots.length > 0);
+        if (!machines.length) {
+          $("bankPickerOptions").innerHTML = `
+            <p class="garden-picker-empty">你绑定的小机还没有 AI 人生桌游存档。</p>
+            <p class="garden-picker-hint">让小机先通过 MCP 调用 play(game=&quot;ai_life&quot;, action=&quot;start_game&quot;)；这里不会自动开局或显示演示局。</p>
+          `;
+          return;
+        }
+        if (machines.length === 1) {
+          const machine = machines[0];
+          if (machine.slots.length === 1) {
+            closeBankPicker();
+            watchAiLife(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+          } else {
+            renderAiLifeSlotPicker(machine);
+          }
+          return;
+        }
+        renderAiLifeMachinePicker(machines);
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "人生存档读取失败，请稍后再试")}</p>`;
       }
     }
 
@@ -6307,6 +6438,10 @@
       }
       if (currentGame().id === "moonlit") {
         await openMoonlitPicker(bindings);
+        return;
+      }
+      if (currentGame().id === "ai_life") {
+        await openAiLifePicker(bindings);
         return;
       }
       if (bindings.length === 1) {

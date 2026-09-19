@@ -43,6 +43,24 @@ STEP_TIMEOUT = 60
 # ---------------------------------------------------------------------------
 GAMES = [
     {
+        "game": "ai_life",
+        "label": "ai_life",
+        "new_args": {
+            "action": "start_game",
+            "seed": 42,
+            "confirm": "true",
+        },
+        "mutate_args": {
+            "action": "submit_action",
+            "decision_id": "childhood_pick_1:0",
+            "game_action": {"card_id": "C03"},
+        },
+        "mutate_expect": ["\"ok\": true", "childhood_pick_2"],
+        "query_args": {"action": "current_decision"},
+        "query_expect": ["childhood_pick_2", "childhood_pick_2:1"],
+        "save_files": ["save.json"],
+    },
+    {
         "game": "bar",
         "label": "bar-full",
         "new_args": {"action": "new", "version": "full", "seed": 12345, "confirm": "true"},

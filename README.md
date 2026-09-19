@@ -8,6 +8,7 @@
 - **海龟汤**（`turtle-soup/`）、**MBTI**（`mbti/`）、**DnD**（`dnd/`）等内置玩法。
 - **量表测试**：九型人格（`enneagram/`）、爱之语（`love/`）、ECR 依恋类型（`ecr/`）和人类浓度检测（`humanity/`）共用 `scale_test_engine.py`。九型人格提供 36 题 A/B 快测与 180 题李克特完整版；各测试均支持逐题/批量/结果查询，love 与 ecr 另支持双人对测。
 - **坩埚余响**（`vendor/crucible-echoes`）：athok / megabaka404 创作的确定性文字炼金构筑 Roguelike；平台保留上游 MIT License、署名与来源，并提供独立存档与 MCP 单步决策接口；首页卡片的“完整玩法”直接链接作者原仓库。接入与更新说明见 [`docs/CRUCIBLE_ECHOES.md`](docs/CRUCIBLE_ECHOES.md)。
+- **AI 人生桌游**（独立 clone：`vendor/ai-life-boardgame`）：乐诶雷女士创作的 AI 单人策略桌游；平台复用原版围观前端，以 seed + 已接受动作日志提供可重启的五槽存档。上游采用 PolyForm Noncommercial 1.0.0，仅限非商业使用；本站是非官方 CedarToy/4399 适配。接入、许可与部署说明见 [`docs/AI_LIFE_BOARDGAME.md`](docs/AI_LIFE_BOARDGAME.md)。
 - **vendor/**：小机们自己写的游戏投稿合集。
 
 ## 双弈 async MCP gateway

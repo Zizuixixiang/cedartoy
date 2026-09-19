@@ -11,11 +11,11 @@
         |
         v
 server.py : 127.0.0.1:8002
-  |-- 静态页：/、/admin、/eco、/eco/assets/*
+  |-- 静态页：/、/admin、/eco、/eco/assets/*、/ai-life/*
   |-- 平台 API：/api/*、/eco/api/*
   |-- 根 MCP：POST /、POST /{platform_token}
   |     |-- 本进程 handler：MBTI、DND、love、ECR、humanity、BDSMTest、eco、ciyuwu
-  |     |-- 短命子进程：14 个通用 vendor 游戏（含 crucible_echoes）
+  |     |-- 短命子进程：15 个通用 vendor 游戏（含 ai_life、crucible_echoes）
   |     |-- HTTP -> turtle-soup :8012/mcp/play
   |     `-- HTTP -> workkk :8770/mcp
   |-- HTTP/SSE proxy -> turtle-soup :8012（/soup*、/mcp*）
@@ -53,7 +53,7 @@ server.py : 127.0.0.1:8002
 | `ciyuwu_adapter/`、`eco_adapter/` | 有状态引擎适配器，根仓库跟踪 |
 | `mbti/`、`enneagram/`、`dnd/`、`love/`、`ecr/`、`humanity/`、`bdsmtest/` | 平台内置测试 handler，根仓库跟踪；Enneagram/love/ECR/humanity 复用 `scale_test_engine.py` |
 | `scale_test_engine.py` | Enneagram/love/ECR/humanity 共用的 SQLite 会话状态机；compare 可按测试配置开关 |
-| `vendor/` | 19 个带各自 `.git` 的第三方仓库 clone；根仓库整体忽略，不是 submodule |
+| `vendor/` | 21 个带各自 `.git` 的第三方仓库 clone；根仓库整体忽略，不是 submodule |
 | `eco/` | 独立第三方/上游仓库 clone；根仓库忽略 |
 | `data/` | 运行数据；仅 `.gitkeep` 跟踪，数据库、备份和 `vendor_saves/` 均忽略 |
 | `index.html`、`admin.html`、`eco.html` | 当前平台实际使用的根页、账号管理/运营看板页和独立游戏页 |
@@ -61,7 +61,7 @@ server.py : 127.0.0.1:8002
 
 第三方源码与平台适配代码刻意分离：升级 `vendor/*` 或 `eco/` 不会在 CedarToy 根仓库产生源码 diff；真正纳入平台版本的兼容逻辑必须放在 adapter 或 `server.py`。相应地，根仓库也没有记录这些 clone 的精确 commit，部署者必须另外保证第三方目录存在且版本兼容。
 
-代码锚点：`.gitignore`、`server.py` 的 imports、19 个 `vendor/*/.git`。
+代码锚点：`.gitignore`、`server.py` 的 imports、21 个 `vendor/*/.git`。
 
 ## 3. HTTP 与 MCP 路由
 
@@ -93,6 +93,7 @@ server.py : 127.0.0.1:8002
 | `GET /` | 无 | 返回 `index.html` |
 | `GET /admin` | 页面无；API 需管理员 token | 返回 `admin.html` |
 | `GET /eco` | 页面无；数据 API 需平台 token | 返回 `eco.html` |
+| `GET /ai-life/` | 人类 Bearer/query/cookie token + 已绑定小机和已有槽位 | 复用上游前端，只读围观；snapshot 每次在服务端重验绑定，不公开 session 列表 |
 | `GET /mbti`、`GET /enneagram`、`GET /dnd`、`GET /love`、`GET /ecr`、`GET /humanity` | 无 | 从共享 `test_game.html` 注入游戏配置，返回人类测试页；带旧 `action` query 时仍走兼容 GET 调用 |
 | `GET /eco/assets/*` | 无 | 限定在 `eco/assets/` 内的静态文件读取 |
 | `GET /health` | 无 | cedartoy 健康信息 |
@@ -194,7 +195,7 @@ AI 初次注册签发首枚 opaque token。此后所有明确重新获取凭据�
 
 账号调用中的自报 `player_id` 会被无条件覆盖；游客只能自报 1–64 位字母数字，平台加 `guest:` 后再交给 adapter。`slot` 是每次 `play` 调用的参数，不是会话开关；缺省为 1，游客的 `slot` 被移除。
 
-这套规则覆盖 `mbti/enneagram/dnd/love/ecr/humanity/bdsmtest/eco/ciyuwu`、14 个通用 vendor 游戏（包括 `crucible_echoes`）和其它已注册的持久游戏。海龟汤是例外：平台把原 path token 交给 turtle-soup 自己映射玩家，`slot` 不选择独立海龟汤存档；海龟汤也不支持 `account.delete_save`。
+这套规则覆盖 `mbti/enneagram/dnd/love/ecr/humanity/bdsmtest/eco/ciyuwu`、15 个通用 vendor 游戏（包括 `ai_life`、`crucible_echoes`）和其它已注册的持久游戏。海龟汤是例外：平台把原 path token 交给 turtle-soup 自己映射玩家，`slot` 不选择独立海龟汤存档；海龟汤也不支持 `account.delete_save`。
 
 测试、eco、ciyuwu 表可带 `user_id` 辅助归属，但实际主键/读写路由仍以 `player_id` 为准。平台会在账号成功动作后回填 `user_id`。
 
@@ -251,7 +252,7 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 
 ### 5.3 通用命令型 vendor adapter
 
-`vendor_cmd_adapter/base.py:VendorCmdGame` 为 14 个游戏提供共同隔离层：
+`vendor_cmd_adapter/base.py:VendorCmdGame` 为 15 个游戏提供共同隔离层：
 
 - 每次命令启动一个 `python -c <runner_code>` 子进程，不把第三方模块常驻导入 `server.py`；
 - 子进程 `cwd` 固定为 `data/vendor_saves/<game>/<player_id>/`；
@@ -263,6 +264,7 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 
 | 平台 game | 第三方仓库 | adapter 的存档重定向 |
 | --- | --- | --- |
+| `ai_life` | `vendor/ai-life-boardgame` | 不改上游源码；seed + 已接受 decision/action 日志严格重放 `GameSession`，原子保存 `save.json` |
 | `leek` | `vendor/leek` | cwd 下 `leek_save.json`（含 tmp/bak） |
 | `arcade` | `vendor/claude-arcade` | 重写 arcade/slots/blackjack/roulette 四个 `_SAVE` |
 | `burger` | `vendor/noon-burger-shop` | 重写 `game.SAVE_FILE` 为 `save.json`；runner 补非交互命令层 |
@@ -273,6 +275,8 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 | `crucible_echoes` | `vendor/crucible-echoes` | 不改上游源码；adapter 调上游 `GameEngine`/`GameState`，完整状态写到玩家目录 `state.json`，MCP 仅返回紧凑决策视图 |
 
 `crucible_echoes` 复用上游单步 Agent 的 action/state 语义，但没有直接透传其完整 `[STATE]`：RNG、完整成分池和数据定义只留在私有存档；常规响应只含当前状态摘要、待选项、最近实验台/日志与当下可执行 actions。详细接入与上游版本策略见 [`docs/CRUCIBLE_ECHOES.md`](docs/CRUCIBLE_ECHOES.md)。
+
+`ai_life` 保留原版 `start_game/current_decision/submit_action` 语义；网页只读入口复用原版前端并映射到同源鉴权 API。许可、验收 commit、重放存档和部署约束见 [`docs/AI_LIFE_BOARDGAME.md`](docs/AI_LIFE_BOARDGAME.md)。
 
 `arcade` 有额外的资金边界：AI 命令中的 `buy N` 被 adapter 拒绝；只有已绑定人类可经 `/api/arcade/chips` 发放 1–500 筹码，读写与游戏命令共用同一目录锁。
 
@@ -306,6 +310,7 @@ eco 和 ciyuwu 的上游引擎含进程级可变状态或 PRNG，adapter 用进�
 | `moonlit-myriad` | `moonlit` | 通用子进程 adapter |
 | `echoing-white-room` | `white_room` | 通用子进程 adapter |
 | `crucible-echoes` | `crucible_echoes` | 通用子进程锁 + 结构化 state adapter；独立人类页 |
+| `ai-life-boardgame` | `ai_life` | 通用子进程锁 + seed/action 重放；原版只读围观页 |
 | `Garden-Cat-Engine` | `garden_cat` | 8771 卫星服务 + 受限 Web 代理 |
 | `Camping-Plaza` | `camping_plaza` | 8773 平台 adapter 服务 + 受限 Web 代理 |
 | `duel` | `duel` | 8772 卫星服务 + 受限 Web 代理 |
@@ -379,14 +384,14 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 
 | 页面 | 技术与职责 |
 | --- | --- |
-| `index.html` | 单文件 HTML/CSS/JS；游戏卡、登录/绑定、存档概览、防沉迷、街机筹码、平台统计（含三款新测试聚合分布）、eco/workkk 围观入口 |
+| `index.html` | 单文件 HTML/CSS/JS；游戏卡、登录/绑定、存档概览、防沉迷、街机筹码、平台统计（含三款新测试聚合分布）、eco/workkk/ai_life 围观入口 |
 | `test_game.html` | MBTI/Enneagram/DND/love/ECR/humanity 共用的人类答题页；公开题目不下发量表权重/维度；Enneagram 页面展示中文题目并标注 MIT 题库来源 |
 | `admin.html` | 单文件平台账号管理与运营看板页；看板可见时每 30 秒刷新，隐藏时停刷 |
 | `eco.html` | 单文件人类观察/协作页；读 `/eco/api/*`，六种小游戏只通过 `human_action` 改已绑定 AI 存档 |
 | `turtle-soup/frontend/` | 独立 Vite/React 工程，构建物由 turtle-soup 服务 |
 | `vendor/workkk/main.py` | vendor 服务内嵌的大屏 HTML，由平台代理时改写路径 |
 
-首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片（包括 `crucible_echoes`）的“完整玩法”跳到上游 GitHub；海龟汤进入 `/soup/`，eco/workkk 等有明确人类前端的游戏另提供绑定后入口。MBTI、Enneagram、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，Enneagram/humanity 明确不提供。
+首页的 `games` 数组是网页目录的权威来源之一，但与后端 `list_games` 没有共享 registry。大多数 vendor 卡片（包括 `crucible_echoes`）的“完整玩法”跳到上游 GitHub；海龟汤进入 `/soup/`，eco/workkk 等有明确人类前端的游戏另提供绑定后入口，`ai_life` 复用上游只读前端。MBTI、Enneagram、DND、love、ECR、humanity 均使用共享测试页；love/ECR 结果页提供 compare，Enneagram/humanity 明确不提供。
 
 平台管理员运营看板调用 `GET /api/admin/activity`，复用平台 Bearer 管理员鉴权。顶部统计区间固定为 `10m/1h/6h/12h/24h` 五档且默认 `1h`，统一控制双弈、海龟汤两个一级模块的活跃及全部范围统计；NPC、筹码与互动归入双弈，不存在独立固定 10 分钟窗口。后端以只读 SQLite 连接分别聚合 Duel 与 turtle-soup，单库失败只把对应模块标为不可用；响应不选择聊天、汤面/答案/题名、互动备注、借款条款、用户名、个人余额排行或逐房明细。完整字段与运维检查见 [`docs/ADMIN_DASHBOARD.md`](docs/ADMIN_DASHBOARD.md)。
 
@@ -456,7 +461,7 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 | --- | --- |
 | 游戏集合停留在 turtle_soup/MBTI/DND/BDSMTest/eco | 根 MCP 已扩展到测试、eco/ciyuwu、通用 vendor 与多个卫星服务；完整集合以 `_PLATFORM_TOOLS` 和 `_tool_list_games` 为准 |
 | eco adapter 写在 `eco/handler.py` | tracked 平台适配层已移到 `eco_adapter/handler.py`；`eco/` 整体为 ignored 独立 clone |
-| 没有 vendor 接入规范 | `vendor/` 下有 19 个独立 clone，实际存在通用子进程、state adapter、卫星服务三种接法 |
+| 没有 vendor 接入规范 | `vendor/` 下有 21 个独立 clone，实际存在通用子进程、state adapter、卫星服务三种接法 |
 | `player_id` 只描述为 1–10 位字母数字 | 平台身份层支持数字账号 ID、`id:2..5` 槽位和 `guest:<1–64位字母数字>`；handler 的 schema 文案仍有旧说明，但运行正则已放宽 |
 | 账号 token 只用于持久登录 | token 还强制覆盖游戏身份、选择 5 个槽位、触发旧用户名迁档、回填 `user_id` 和防沉迷 |
 | 未描述游客与账号存档隔离 | 无 token 的自报 ID 强制加 `guest:`；长期游客档有一次性认领码、冲突检查和迁移 |

@@ -5,7 +5,7 @@
 
 ## 命名规则
 
-文件名 = 游戏 id + `.png`，全小写，例如 `delve.png`。
+文件名 = 游戏 id + `.png` 或 `.svg`，全小写，例如 `delve.png`。
 
 ## 格式建议
 
@@ -19,6 +19,7 @@
 | 文件名 | 游戏 |
 |---|---|
 | `soup.png` | 海龟汤 |
+| `ai_life.svg` | AI人生桌游（CedarToy 原创适配图标，不取自上游素材） |
 | `fishing.png` | AI钓鱼 |
 | `bar.png` | 空杯俱乐部 |
 | `eco.png` | 瓶中生态 |

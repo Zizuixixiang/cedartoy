@@ -46,6 +46,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
                 "camping_plaza",
                 "moonlit",
                 "workkk",
+                "ai_life",
                 "white_room",
                 "market",
                 "ciyuwu",
