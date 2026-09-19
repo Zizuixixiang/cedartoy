@@ -10636,18 +10636,10 @@ a{{color:#61785d}}
             + '\n    <script src="/ai-life/cedartoy-responsive.v1.js"></script>',
             1,
         )
-        notice = (
-            '<aside class="cedartoy-adaptation-notice">'
-            'CedarToy/4399 非商业适配版，并非作者官方版本。'
-            '作者：乐诶雷女士 · '
-            '<a href="https://github.com/racy1501/ai-life-boardgame" rel="noopener noreferrer">原仓库</a> · '
-            '<a href="/ai-life/LICENSE">PolyForm Noncommercial 1.0.0 / Required Notice</a>'
-            '</aside>'
-        )
         if "</body>" not in source:
             self._send_ai_life_message("围观页暂时不可用", "原版前端结构已变化。", status=500)
             return
-        body = source.replace("</body>", notice + "</body>", 1).encode("utf-8")
+        body = source.encode("utf-8")
         self._send_ai_life_bytes(
             body,
             content_type="text/html; charset=utf-8",

@@ -659,7 +659,7 @@ class AiLifeWebTests(unittest.TestCase):
         self.assertIn("syncBoardScale()", js)
         self.assertIn("dialogs.some", js)
 
-    def test_page_requires_bound_human_existing_save_and_has_noncommercial_notice(self):
+    def test_page_requires_bound_human_existing_save_without_notice_banner(self):
         denied = make_handler()
         denied._ai_life_human_target = Mock(
             side_effect=server._McpError(-32003, "你没有绑定这只小机或槽位无效")
@@ -688,9 +688,8 @@ class AiLifeWebTests(unittest.TestCase):
             allowed._handle_ai_life_page({"player": ["42"]})
         self.assertEqual(allowed.response_statuses, [200])
         page = allowed.wfile.getvalue().decode("utf-8")
-        self.assertIn("CedarToy/4399 非商业适配版", page)
-        self.assertIn("作者：乐诶雷女士", page)
-        self.assertIn("/ai-life/LICENSE", page)
+        self.assertNotIn('class="cedartoy-adaptation-notice"', page)
+        self.assertNotIn("CedarToy/4399 非商业适配版", page)
         self.assertIn('name="viewport"', page)
         self.assertNotIn("user-scalable=no", page)
         self.assertLess(
