@@ -815,12 +815,15 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('<link rel="stylesheet" href="./fonts/fonts.css">', page)
         self.assertIn('<link rel="stylesheet" href="./css/style.css">', page)
         self.assertIn('<script type="module" src="./js/main.js"></script>', page)
-        self.assertIn('/tarot/static/platform/managed-core.v1.js', page)
+        self.assertIn('/tarot/static/platform/managed-core.v5.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v3.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v3.css', page)
         self.assertIn('/tarot/static/platform/managed-ui.v4.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v4.css', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v5.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v5.css', page)
         self.assertIn('/tarot/static/platform/managed-companion.v3.js', page)
+        self.assertIn('/tarot/static/platform/managed-cards3d.v5.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v2.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v2.css', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v1.js', page)
@@ -837,11 +840,19 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
             page.index('/tarot/static/platform/managed-ui.v4.css'),
         )
         self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v4.css'),
+            page.index('/tarot/static/platform/managed-ui.v5.css'),
+        )
+        self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v3.js'),
             page.index('/tarot/static/platform/managed-ui.v4.js'),
         )
         self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v4.js'),
+            page.index('/tarot/static/platform/managed-ui.v5.js'),
+        )
+        self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v5.js'),
             page.index('<script type="module" src="./js/main.js"></script>'),
         )
         self.assertNotIn("导入本机 DSH", page)
@@ -866,6 +877,14 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertNotIn("/api/chat", managed_core)
         self.assertNotIn("apiKey", managed_core)
         self.assertNotIn("baseURL", managed_core)
+        managed_core_v5 = web.static_file(
+            "platform/managed-core.v5.js"
+        )[0].read_text(encoding="utf-8")
+        self.assertIn("scrollTop", managed_core_v5)
+        self.assertIn("managed-core.v1.js", managed_core_v5)
+        self.assertNotIn("apiKey", managed_core_v5)
+        self.assertNotIn("baseURL", managed_core_v5)
+        self.assertNotIn("/api/chat", managed_core_v5)
         managed_ui_path, managed_ui_mime = web.static_file(
             "platform/managed-ui.v3.js"
         )
@@ -893,6 +912,18 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         )
         self.assertIn("top-right", managed_layout)
         self.assertNotIn("managedHistoryEntryRow", managed_layout)
+        managed_mobile_path, managed_mobile_mime = web.static_file(
+            "platform/managed-ui.v5.js"
+        )
+        self.assertEqual(managed_mobile_mime, "text/javascript")
+        managed_mobile = managed_mobile_path.read_text(encoding="utf-8")
+        self.assertIn("managed-companion-reading", managed_mobile)
+        self.assertIn("stream.scrollTop = 0", managed_mobile)
+        managed_mobile_css, managed_mobile_css_mime = web.static_file(
+            "platform/managed-ui.v5.css"
+        )
+        self.assertTrue(managed_mobile_css.is_file())
+        self.assertEqual(managed_mobile_css_mime, "text/css")
         managed_layout_css, managed_layout_css_mime = web.static_file(
             "platform/managed-ui.v4.css"
         )
@@ -903,6 +934,22 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         )[0].read_text(encoding="utf-8")
         self.assertIn("/api/tarot/models/status", managed_companion)
         self.assertIn("body?.attempt_id", managed_companion)
+        managed_cards_path, managed_cards_mime = web.static_file(
+            "platform/managed-cards3d.v5.js"
+        )
+        self.assertTrue(managed_cards_path.is_file())
+        self.assertEqual(managed_cards_mime, "text/javascript")
+        managed_cards = managed_cards_path.read_text(encoding="utf-8")
+        self.assertIn("selectionViewportIsCrowded", managed_cards)
+        self.assertIn("deferredFrame", managed_cards)
+        upstream_cards, upstream_cards_mime = web.static_file(
+            "js/three/upstream-cards3d.v1.js"
+        )
+        self.assertEqual(upstream_cards_mime, "text/javascript")
+        self.assertEqual(
+            upstream_cards.resolve(),
+            (web.public_root / "js" / "three" / "cards3d.js").resolve(),
+        )
         self.assertTrue(web.static_file("platform/managed-ui.v1.js")[0].is_file())
         self.assertTrue(web.static_file("platform/managed-ui.v2.js")[0].is_file())
         for platform_marker in (

@@ -9,9 +9,12 @@ const csstree = require('css-tree');
 const root = path.resolve(__dirname, '..');
 const uiPath = path.join(root, 'assets/tarot/managed-ui.v3.js');
 const layoutPath = path.join(root, 'assets/tarot/managed-ui.v4.js');
+const mobileUiPath = path.join(root, 'assets/tarot/managed-ui.v5.js');
 const corePath = path.join(root, 'assets/tarot/managed-core.v1.js');
+const mobileCorePath = path.join(root, 'assets/tarot/managed-core.v5.js');
 const cssPath = path.join(root, 'assets/tarot/managed-ui.v3.css');
 const layoutCssPath = path.join(root, 'assets/tarot/managed-ui.v4.css');
+const mobileCssPath = path.join(root, 'assets/tarot/managed-ui.v5.css');
 const companionPath = path.join(root, 'assets/tarot/managed-companion.v3.js');
 const upstreamCompanionPath = path.join(
   root, 'vendor/tarot-ritual/public/js/companion-adapter.js',
@@ -36,6 +39,7 @@ function settle(window) {
 function loadManagedUi(window) {
   window.eval(fs.readFileSync(uiPath, 'utf8'));
   window.eval(fs.readFileSync(layoutPath, 'utf8'));
+  window.eval(fs.readFileSync(mobileUiPath, 'utf8'));
 }
 
 async function checkUiBehavior() {
@@ -105,7 +109,17 @@ async function createCompanionHarness(session, {
       </div>
       <div id="providerList"></div>
     </aside>
-    <main id="ui"></main>
+    <main id="ui">
+      <aside id="readingPanel" class="hidden">
+        <div class="reading-head"><h2>解读</h2><p class="reading-question">问题</p></div>
+        <div id="readingStream" class="reading-stream"></div>
+        <div class="reading-actions">
+          <button class="btn">再 问 一 次</button>
+          <button class="btn">誊 抄</button>
+          <button class="btn">新 的 占 问</button>
+        </div>
+      </aside>
+    </main>
     <div id="toasts"></div>
     <script type="application/json" id="companion-config">{"protocol":"cove-tarot-companion-v1","sessionId":"test_session","apiBase":"/companion/v1"}</script>
   </body></html>`, {
@@ -325,6 +339,56 @@ async function checkSettingsVisibility(viewportWidth) {
     toast.textContent,
     '本次记录已锁定；请先结束本次，再开始新的占问。',
   );
+  window.dispatchEvent(new window.Event('pagehide'));
+}
+
+async function checkReadingMobileBehavior(viewportWidth) {
+  const harness = await createCompanionHarness({
+    phase: 'revealed', draws: [{ revealed: true }], reading: { state: 'succeeded' },
+  }, { viewportWidth });
+  const { window, box, end } = harness;
+  const ui = window.document.getElementById('ui');
+  const panel = window.document.getElementById('readingPanel');
+  const stream = window.document.getElementById('readingStream');
+  stream.scrollTop = 700;
+  panel.classList.add('open');
+  await settle(window);
+  await settle(window);
+
+  if (viewportWidth <= 600) {
+    assert.equal(box.parentElement, panel);
+    assert.equal(panel.firstElementChild, box);
+    assert.equal(box.classList.contains('managed-companion-reading'), true);
+  } else {
+    assert.equal(box.parentElement, ui);
+    assert.equal(box.classList.contains('managed-companion-reading'), false);
+  }
+  assert.equal(stream.scrollTop, 0, `${viewportWidth}px restored reading starts at top`);
+  assert.equal(end.hidden, false);
+  assert.notEqual(end.tabIndex, -1);
+  if (viewportWidth === 375) {
+    await clickEndAndSettle(harness);
+    await assertEnded(harness, { finish: 1, stop: 0 });
+  }
+
+  stream.scrollTop = 73;
+  stream.appendChild(window.document.createElement('p'));
+  await settle(window);
+  assert.equal(stream.scrollTop, 73, 'content updates alone must not reset manual scroll');
+
+  stream.classList.add('streaming');
+  await settle(window);
+  assert.equal(stream.scrollTop, 0, 'a newly streamed reading starts at top once');
+  stream.scrollTop = 91;
+  stream.appendChild(window.document.createElement('p'));
+  await settle(window);
+  assert.equal(stream.scrollTop, 91, 'stream mutations must not pull manual scroll to top');
+
+  panel.classList.remove('open');
+  await settle(window);
+  await settle(window);
+  assert.equal(box.parentElement, ui);
+  assert.equal(box.classList.contains('managed-companion-reading'), false);
   window.dispatchEvent(new window.Event('pagehide'));
 }
 
@@ -1021,6 +1085,76 @@ async function checkManagedCoreBoundary() {
   assert.equal(done, true);
 }
 
+async function checkStreamingScrollPreservation() {
+  const stream = {
+    scrollTop: 0,
+    scrollHeight: 2400,
+    classList: { contains: name => name === 'streaming' },
+  };
+  const context = vm.createContext({
+    document: { getElementById: id => id === 'readingStream' ? stream : null },
+    TextDecoder,
+  });
+  const upstreamModule = new vm.SourceTextModule(fs.readFileSync(corePath, 'utf8'), {
+    context,
+    identifier: corePath,
+  });
+  await upstreamModule.link(async specifier => new vm.SyntheticModule([], () => {}, {
+    context,
+    identifier: specifier,
+  }));
+  await upstreamModule.evaluate();
+  const module = new vm.SourceTextModule(fs.readFileSync(mobileCorePath, 'utf8'), {
+    context,
+    identifier: mobileCorePath,
+  });
+  await module.link(async specifier => {
+    assert.equal(specifier, '/tarot/static/platform/managed-core.v1.js');
+    return upstreamModule;
+  });
+  await module.evaluate();
+
+  const encoder = new TextEncoder();
+  const transport = values => async () => {
+    const chunks = [encoder.encode(
+      values.map(value => `data: {"t":"delta","v":"${value}"}\n\n`).join('')
+      + 'data: {"t":"done"}\n\n',
+    )];
+    return {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: async () => chunks.length
+            ? { done: false, value: chunks.shift() }
+            : { done: true },
+          cancel: async () => {},
+          releaseLock: () => {},
+        }),
+      },
+    };
+  };
+  const seen = [];
+  await module.namespace.chat({
+    model: FLASH_MODEL,
+    transport: transport(['first', 'second']),
+    onDelta(value) {
+      seen.push(value);
+      stream.scrollTop = stream.scrollHeight;
+      if (value === 'first') stream.scrollTop = 184;
+    },
+  });
+  assert.deepEqual(seen, ['first', 'second']);
+  assert.equal(stream.scrollTop, 0, 'upstream bottom forcing is neutralized from initial top');
+
+  stream.scrollTop = 263;
+  await module.namespace.chat({
+    model: FLASH_MODEL,
+    transport: transport(['later']),
+    onDelta() { stream.scrollTop = stream.scrollHeight; },
+  });
+  assert.equal(stream.scrollTop, 263, 'manual scroll position survives later deltas');
+}
+
 function checkMobileRules() {
   const ast = csstree.parse(fs.readFileSync(cssPath, 'utf8'));
   let mobile = false;
@@ -1122,6 +1256,40 @@ function checkHistoryEntryLayoutRules() {
   assert.ok(48 * 2 + 6 <= 110, 'managed controls must stay compact');
 }
 
+function checkReadingMobileRules() {
+  const ast = csstree.parse(fs.readFileSync(mobileCssPath, 'utf8'));
+  let companion = '';
+  let actions = '';
+  let buttons = '';
+  let stream = '';
+  csstree.walk(ast, node => {
+    if (node.type !== 'Atrule' || node.name !== 'media') return;
+    if (!csstree.generate(node.prelude).includes('max-width:600px')) return;
+    node.block.children.forEach(child => {
+      if (child.type !== 'Rule') return;
+      const selector = csstree.generate(child.prelude);
+      const block = csstree.generate(child.block);
+      if (selector === '#readingPanel>.managed-companion-reading') companion = block;
+      if (selector === '#readingPanel>.reading-stream') stream = block;
+      if (selector === '#readingPanel>.reading-actions') actions = block;
+      if (selector === '#readingPanel>.reading-actions .btn') buttons = block;
+    });
+  });
+  assert.match(companion, /position:static!important/);
+  assert.match(companion, /margin:76px 16px 0/);
+  assert.match(stream, /min-height:0/);
+  assert.match(actions, /gap:6px/);
+  assert.match(actions, /padding:12px 12px/);
+  assert.match(buttons, /flex:1 1 0/);
+  assert.match(buttons, /min-width:0/);
+  assert.match(buttons, /min-height:44px/);
+  for (const width of [320, 360, 375, 390]) {
+    const panelWidth = width * 0.94;
+    const perButtonWidth = (panelWidth - 24 - 12) / 3;
+    assert.ok(perButtonWidth >= 88, `${width}px action width must remain usable`);
+  }
+}
+
 Promise.resolve()
   .then(checkUiBehavior)
   .then(checkEndScenarios)
@@ -1129,6 +1297,11 @@ Promise.resolve()
   .then(() => checkSettingsVisibility(360))
   .then(() => checkSettingsVisibility(375))
   .then(() => checkSettingsVisibility(390))
+  .then(() => checkReadingMobileBehavior(320))
+  .then(() => checkReadingMobileBehavior(360))
+  .then(() => checkReadingMobileBehavior(375))
+  .then(() => checkReadingMobileBehavior(390))
+  .then(() => checkReadingMobileBehavior(1280))
   .then(checkSecureUuidAndAckReplay)
   .then(checkSaveFailureMessages)
   .then(() => checkHistoryEntryPlacement(320))
@@ -1140,8 +1313,10 @@ Promise.resolve()
   .then(checkModelRuntimeStates)
   .then(checkManagedCompanionBoundary)
   .then(checkManagedCoreBoundary)
+  .then(checkStreamingScrollPreservation)
   .then(checkMobileRules)
   .then(checkHistoryEntryLayoutRules)
+  .then(checkReadingMobileRules)
   .then(() => console.log('tarot managed UI behavior (jsdom 320/360/375/390/1280): ok'))
   .catch(error => {
     console.error(error);

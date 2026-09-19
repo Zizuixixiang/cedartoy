@@ -1306,6 +1306,7 @@ class TarotWeb:
         relative_path = relative_path.lstrip("/")
         platform_assets = {
             "platform/managed-core.v1.js": ROOT / "assets" / "tarot" / "managed-core.v1.js",
+            "platform/managed-core.v5.js": ROOT / "assets" / "tarot" / "managed-core.v5.js",
             "platform/managed-ui.v1.js": ROOT / "assets" / "tarot" / "managed-ui.v1.js",
             "platform/managed-ui.v1.css": ROOT / "assets" / "tarot" / "managed-ui.v1.css",
             "platform/managed-ui.v2.js": ROOT / "assets" / "tarot" / "managed-ui.v2.js",
@@ -1314,8 +1315,12 @@ class TarotWeb:
             "platform/managed-ui.v3.css": ROOT / "assets" / "tarot" / "managed-ui.v3.css",
             "platform/managed-ui.v4.js": ROOT / "assets" / "tarot" / "managed-ui.v4.js",
             "platform/managed-ui.v4.css": ROOT / "assets" / "tarot" / "managed-ui.v4.css",
+            "platform/managed-ui.v5.js": ROOT / "assets" / "tarot" / "managed-ui.v5.js",
+            "platform/managed-ui.v5.css": ROOT / "assets" / "tarot" / "managed-ui.v5.css",
             "platform/managed-companion.v3.js": ROOT / "assets" / "tarot" / "managed-companion.v3.js",
+            "platform/managed-cards3d.v5.js": ROOT / "assets" / "tarot" / "managed-cards3d.v5.js",
             "platform/upstream-companion-adapter.v1.js": RITUAL_PUBLIC / "js" / "companion-adapter.js",
+            "js/three/upstream-cards3d.v1.js": RITUAL_PUBLIC / "js" / "three" / "cards3d.js",
         }
         if relative_path in platform_assets:
             candidate = platform_assets[relative_path].resolve()
@@ -1383,8 +1388,9 @@ class TarotWeb:
         managed_import_map = (
             '<script type="importmap">{ "imports": {'
             ' "three": "./vendor/three.module.js",'
-            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v1.js",'
-            ' "/tarot/static/js/companion-adapter.js": "/tarot/static/platform/managed-companion.v3.js"'
+            ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v5.js",'
+            ' "/tarot/static/js/companion-adapter.js": "/tarot/static/platform/managed-companion.v3.js",'
+            ' "/tarot/static/js/three/cards3d.js": "/tarot/static/platform/managed-cards3d.v5.js"'
             ' } }</script>'
         )
         if source.count(import_map) != 1:
@@ -1395,7 +1401,8 @@ class TarotWeb:
             style_marker,
             style_marker
             + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v3.css">'
-            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v4.css">',
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v4.css">'
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v5.css">',
             1,
         )
         upstream_settings = """    <div class="settings-body">
@@ -1438,6 +1445,7 @@ class TarotWeb:
 <script type="application/json" id="companion-config">{config}</script>
 <script src="/tarot/static/platform/managed-ui.v3.js"></script>
 <script src="/tarot/static/platform/managed-ui.v4.js"></script>
+<script src="/tarot/static/platform/managed-ui.v5.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',
