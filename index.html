@@ -3446,8 +3446,8 @@
         stats: [["CHOICE", "88%"], ["STORY", "92%"]],
         footerIcons: ["△", "○", "□"],
         tags: ["剧情", "选择", "MCP"],
-        url: "http://community.rhysen.love/thread/3170",
-        ctaLabel: "原帖 →",
+        url: "https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host",
+        ctaLabel: "作者原版 ↗",
         ranks: []
       },
       {
@@ -6122,18 +6122,17 @@
     }
 
     function renderDetroitSlotPicker(machine) {
-      const existing = new Map(machine.slots.map((save) => [Number(save.slot), save]));
       $("bankPickerPanel").setAttribute("aria-label", "选择底特律存档槽");
       $("bankPickerTitle").textContent = `${machine.machineName} · 选择槽位`;
-      $("bankPickerOptions").innerHTML = [1, 2, 3, 4, 5].map((slot) => {
-        const save = existing.get(slot);
+      $("bankPickerOptions").innerHTML = machine.slots.map((save) => {
+        const slot = Number(save.slot) || 1;
         const chapter = save?.chapter != null && Number.isFinite(Number(save.chapter))
           ? ` · 第${escapeHtml(save.chapter)}章`
           : (save?.chapter_index != null && Number.isFinite(Number(save.chapter_index)) ? ` · 第${escapeHtml(Number(save.chapter_index) + 1)}章` : "");
         return `
           <button class="bank-picker-option" data-detroit-slot="${slot}" type="button">
-            <span class="garden-picker-option-main">槽${slot}${save?.name ? ` · ${escapeHtml(save.name)}` : " · 空槽"}</span>
-            <span class="garden-picker-option-meta">${save ? `作者站点云存档${chapter}` : "进入原版主持台后可新建或导入"}</span>
+            <span class="garden-picker-option-main">槽${slot}${save?.name ? ` · ${escapeHtml(save.name)}` : ""}</span>
+            <span class="garden-picker-option-meta">作者站点云存档${chapter}</span>
           </button>
         `;
       }).join("");
@@ -6141,6 +6140,30 @@
         option.addEventListener("click", () => {
           closeBankPicker();
           watchDetroit(machine.aiUserId, Number(option.dataset.detroitSlot) || 1);
+        });
+      });
+    }
+
+    function renderDetroitMachinePicker(machines) {
+      const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = machines.map((machine) => `
+        <button class="bank-picker-option" data-detroit-machine="${escapeHtml(machine.aiUserId)}" type="button">
+          <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+          <span class="garden-picker-option-meta">${machine.slots.length} 个已有底特律存档</span>
+        </button>
+      `).join("");
+      document.querySelectorAll("[data-detroit-machine]").forEach((option) => {
+        option.addEventListener("click", () => {
+          const machine = machinesById.get(option.dataset.detroitMachine);
+          if (!machine) return;
+          if (machine.slots.length === 1) {
+            closeBankPicker();
+            watchDetroit(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+            return;
+          }
+          renderDetroitSlotPicker(machine);
         });
       });
     }
@@ -6165,24 +6188,22 @@
           slots: Array.isArray(savedMachines.get(String(user.id))?.saves?.detroit?.slots)
             ? savedMachines.get(String(user.id)).saves.detroit.slots
             : [],
-        }));
-        if (machines.length === 1) {
-          renderDetroitSlotPicker(machines[0]);
+        })).filter((machine) => machine.slots.length > 0);
+        if (!machines.length) {
+          $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">你绑定的小机还没有底特律存档；请先让小机开档，这里不会自动创建。</p>`;
           return;
         }
-        const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
-        $("bankPickerOptions").innerHTML = machines.map((machine) => `
-          <button class="bank-picker-option" data-detroit-machine="${escapeHtml(machine.aiUserId)}" type="button">
-            <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
-            <span class="garden-picker-option-meta">${machine.slots.length} 个已有作者站点云存档</span>
-          </button>
-        `).join("");
-        document.querySelectorAll("[data-detroit-machine]").forEach((option) => {
-          option.addEventListener("click", () => {
-            const machine = machinesById.get(option.dataset.detroitMachine);
-            if (machine) renderDetroitSlotPicker(machine);
-          });
-        });
+        if (machines.length === 1) {
+          const machine = machines[0];
+          if (machine.slots.length === 1) {
+            closeBankPicker();
+            watchDetroit(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
+          } else {
+            renderDetroitSlotPicker(machine);
+          }
+          return;
+        }
+        renderDetroitMachinePicker(machines);
       } catch (err) {
         $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "底特律槽位读取失败，请稍后再试")}</p>`;
       }

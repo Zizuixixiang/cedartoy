@@ -10667,7 +10667,12 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     def _detroit_human_target(self, token="", requested_player=""):
         raw_token = token or self._detroit_cookie_value("detroit_token") or _extract_bearer(self.headers)
         player = requested_player or self._detroit_cookie_value("detroit_player")
-        user = _current_account(raw_token)
+        try:
+            user = _current_account(raw_token)
+        except _McpError as exc:
+            if exc.code == -32001:
+                raise _McpError(-32001, "网页登录已失效，请返回 CedarToy 首页登录后重新进入。") from None
+            raise
         if user.get("is_ai"):
             raise _McpError(-32003, "底特律网页只供绑定人类进入")
         target = _bound_ai_slot_target_for_user(user, player)
@@ -10746,15 +10751,17 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             except _McpError as exc:
                 self._send_json({"error": exc.message}, status=self._detroit_http_status(exc))
                 return
+            forwarded_proto = self.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+            secure = "; Secure" if forwarded_proto == "https" else ""
             self.send_response(303)
             self.send_header("Location", "/detroit/")
             self.send_header(
                 "Set-Cookie",
-                f"detroit_token={urllib.parse.quote(raw_token, safe='')}; Path=/detroit; HttpOnly; Secure; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
+                f"detroit_token={urllib.parse.quote(raw_token, safe='')}; Path=/detroit; HttpOnly; SameSite=Lax{secure}; Max-Age={HUMAN_TOKEN_SECONDS}",
             )
             self.send_header(
                 "Set-Cookie",
-                f"detroit_player={urllib.parse.quote(target['player'], safe='')}; Path=/detroit; HttpOnly; Secure; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
+                f"detroit_player={urllib.parse.quote(target['player'], safe='')}; Path=/detroit; HttpOnly; SameSite=Lax{secure}; Max-Age={HUMAN_TOKEN_SECONDS}",
             )
             self.send_header("Cache-Control", "no-store")
             self.send_header("Referrer-Policy", "no-referrer")

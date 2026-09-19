@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import http.cookiejar
+import http.client
 import importlib
 import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -178,6 +185,92 @@ class DetroitIntegrationTests(unittest.TestCase):
             _token, target = handler._detroit_human_target()
         self.assertEqual(target["player"], captured["player_id"])
 
+    def test_human_entry_redirect_sets_browser_session_and_protects_api(self):
+        human_token = "test-human-token"
+        target = {"player": "42:3", "ai_user_id": 42, "machine_name": "小机", "slot": 3}
+
+        def current_account(raw_token):
+            if raw_token != human_token:
+                raise server._McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
+            return {"id": 7, "username": "人类", "is_ai": 0}
+
+        def bound_target(user, requested_player):
+            return target if user.get("id") == 7 and requested_player == "42:3" else None
+
+        host_fixture = (FIXTURE_ROOT / "detroit_host_v17.html").read_bytes()
+        browser_payload = json.dumps(
+            {"sessions": [{"id": detroit_adapter.PUBLIC_SAVE_ID, "name": "已有第一局"}]},
+            ensure_ascii=False,
+        ).encode("utf-8")
+
+        with patch.object(server, "_current_account", side_effect=current_account), patch.object(
+            server, "_bound_ai_slot_target_for_user", side_effect=bound_target
+        ), patch.object(
+            server.detroit_adapter,
+            "fetch_public",
+            return_value=(200, "text/html; charset=utf-8", host_fixture),
+        ), patch.object(
+            server.detroit_adapter,
+            "browser_api",
+            return_value=(200, {"content-type": "application/json; charset=utf-8"}, browser_payload),
+        ) as browser_api:
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.CedarToyHandler)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{httpd.server_port}"
+                jar = http.cookiejar.CookieJar()
+                opener = urllib.request.build_opener(
+                    urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(jar)
+                )
+                query = urllib.parse.urlencode({"player": "42:3", "token": human_token})
+                http_entry = urllib.request.Request(
+                    f"{base}/detroit/?{query}", headers={"X-Forwarded-Proto": "http"}
+                )
+                with opener.open(http_entry) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn("底特律盲玩主持台", response.read().decode("utf-8"))
+                self.assertEqual({cookie.name for cookie in jar}, {"detroit_token", "detroit_player"})
+                self.assertTrue(all(not cookie.secure for cookie in jar))
+
+                with opener.open(f"{base}/detroit/api/sessions") as response:
+                    self.assertEqual(json.loads(response.read())["sessions"][0]["name"], "已有第一局")
+                browser_api.assert_called_once_with("42:3", "GET", "sessions", query={}, payload=None)
+
+                unauthorized = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    unauthorized.open(f"{base}/detroit/api/sessions")
+                self.assertEqual(denied.exception.code, 401)
+                denied_body = denied.exception.read().decode("utf-8")
+                self.assertIn("网页登录", denied_body)
+                self.assertNotIn("MCP 地址", denied_body)
+
+                unbound_query = urllib.parse.urlencode({"player": "99", "token": human_token})
+                with self.assertRaises(urllib.error.HTTPError) as unbound:
+                    unauthorized.open(f"{base}/detroit/?{unbound_query}")
+                self.assertEqual(unbound.exception.code, 403)
+
+                https_proxy = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+                try:
+                    https_proxy.request(
+                        "GET",
+                        f"/detroit/?{query}",
+                        headers={"X-Forwarded-Proto": "https"},
+                    )
+                    secure_response = https_proxy.getresponse()
+                    secure_response.read()
+                    secure_cookies = secure_response.headers.get_all("Set-Cookie") or []
+                finally:
+                    https_proxy.close()
+                self.assertEqual(secure_response.status, 303)
+                self.assertEqual(len(secure_cookies), 2)
+                self.assertTrue(all("; Secure" in cookie for cookie in secure_cookies))
+                self.assertEqual(browser_api.call_count, 1)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=2)
+
     def test_uncertain_play_step_is_never_blindly_retried(self):
         self.state()
         selection = {"revision": 1, "node_id": "n1", "label": "A", "reason": "这是我的选择"}
@@ -324,9 +417,20 @@ class DetroitIntegrationTests(unittest.TestCase):
 
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('id: "detroit"', homepage)
-        self.assertIn("http://community.rhysen.love/thread/3170", homepage)
+        self.assertIn(
+            'url: "https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host"',
+            homepage,
+        )
+        self.assertIn('ctaLabel: "作者原版 ↗"', homepage)
         self.assertIn("openDetroitPicker", homepage)
         self.assertIn("/detroit/?player=", homepage)
+        detroit_picker = homepage.split("async function openDetroitPicker", 1)[1].split(
+            "function renderCampingPlazaSlotPicker", 1
+        )[0]
+        self.assertIn(".filter((machine) => machine.slots.length > 0)", detroit_picker)
+        self.assertIn("还没有底特律存档", detroit_picker)
+        self.assertIn("if (machine.slots.length === 1)", detroit_picker)
+        self.assertNotIn("[1, 2, 3, 4, 5].map", detroit_picker)
 
     def test_root_tool_schema_guide_and_log_redaction(self):
         play_tool = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")
