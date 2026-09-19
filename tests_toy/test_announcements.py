@@ -56,6 +56,9 @@ class AnnouncementTests(unittest.TestCase):
                 (announcement_id,),
             )
 
+    def _force_mcp_push(self, announcement_id):
+        return announcements.set_force_mcp_push(announcement_id)
+
     @staticmethod
     def _notice(number, *, target="eco", expires_at=None):
         return (
@@ -136,6 +139,123 @@ class AnnouncementTests(unittest.TestCase):
                 ).fetchone()[0],
                 3,
             )
+
+    def test_flagged_archived_poll_is_forced_once_without_using_latest_three_quota(self):
+        self._insert(
+            [self._poll("important-old", "重要旧投票", 1)]
+            + [self._notice(number) for number in range(2, 5)]
+        )
+
+        ordinary = announcements.check_announcements("already-archived", "eco")
+        self.assertNotIn("重要旧投票", ordinary)
+        self.assertEqual(ordinary.count("【系统通知】"), 3)
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertTrue(
+                conn.execute(
+                    "SELECT read_at FROM announcement_reads"
+                    " WHERE player_id = 'already-archived'"
+                    " AND announcement_id = 'important-old'"
+                ).fetchone()[0].startswith("archived:")
+            )
+
+        self.assertEqual(self._force_mcp_push("important-old"), "important-old")
+        self.assertEqual(self._force_mcp_push("important-old"), "important-old")
+        forced = announcements.check_announcements(
+            "already-archived", "eco", include_forced_mcp=True
+        )
+        self.assertIn(announcements.IMPORTANT_MCP_HEADING, forced)
+        self.assertIn("重要旧投票", forced)
+        self.assertEqual(forced.count("【系统通知】"), 1)
+        self.assertEqual(
+            announcements.check_announcements(
+                "already-archived", "eco", include_forced_mcp=True
+            ),
+            "",
+        )
+
+        fresh = announcements.check_announcements(
+            "fresh-machine", "eco", include_forced_mcp=True
+        )
+        self.assertIn("重要旧投票", fresh)
+        self.assertEqual(fresh.count("【系统通知】"), 4)
+        self.assertNotIn("旧公告", fresh)
+
+        human = announcements.check_announcements("human:7", "eco")
+        self.assertNotIn("重要旧投票", human)
+        self.assertEqual(
+            announcements.check_forced_mcp_announcements("human:7", "eco"), ""
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            archived_read = conn.execute(
+                "SELECT read_at FROM announcement_reads"
+                " WHERE player_id = 'human:7' AND announcement_id = 'important-old'"
+            ).fetchone()[0]
+            machine_read = conn.execute(
+                "SELECT read_at FROM announcement_reads"
+                " WHERE player_id = 'already-archived'"
+                " AND announcement_id = 'important-old'"
+            ).fetchone()[0]
+        self.assertTrue(archived_read.startswith("archived:"))
+        self.assertFalse(machine_read.startswith("archived:"))
+
+    def test_seen_flagged_poll_is_not_forced_again(self):
+        self._insert([self._poll("already-seen", "已经展示", 1)])
+        self._mark_seen("seen-machine", "already-seen")
+        self._force_mcp_push("already-seen")
+
+        self.assertEqual(
+            announcements.check_forced_mcp_announcements(
+                "seen-machine", "eco"
+            ),
+            "",
+        )
+
+    def test_concurrent_forced_push_claims_poll_once(self):
+        self._insert([self._poll("important-race", "并发重要投票", 1)])
+        self._force_mcp_push("important-race")
+        barrier = threading.Barrier(2)
+
+        def check():
+            barrier.wait()
+            return announcements.check_forced_mcp_announcements(
+                "forced-racer", "eco"
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _unused: check(), range(2)))
+
+        self.assertEqual(sum("并发重要投票" in result for result in results), 1)
+
+    def test_authenticated_mcp_tool_call_forces_global_poll_without_gameplay(self):
+        self._insert([self._poll("root-important", "根入口重要投票", 1)])
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE announcements SET target_game = 'all' WHERE id = ?",
+                ("root-important",),
+            )
+        self._force_mcp_push("root-important")
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "list_games", "arguments": {}},
+        }
+
+        with (
+            patch.object(server, "_authenticated_ai_player_id", return_value="77"),
+            patch.object(server, "_tool_list_games", return_value="游戏列表"),
+            patch.object(server, "_duel_unread_request_reminder", return_value=""),
+        ):
+            first = server._handle_root_mcp(payload, path_token="ai-token")
+            second = server._handle_root_mcp(payload, path_token="ai-token")
+
+        self.assertEqual(first["result"]["content"][0]["text"], "游戏列表")
+        self.assertEqual(len(first["result"]["content"]), 2)
+        self.assertIn("根入口重要投票", first["result"]["content"][1]["text"])
+        self.assertEqual(
+            second["result"]["content"],
+            [{"type": "text", "text": "游戏列表"}],
+        )
 
     def test_archived_old_poll_becomes_votable_after_history_displays_it(self):
         self._insert(
@@ -322,6 +442,7 @@ class AnnouncementTests(unittest.TestCase):
                     for row in conn.execute("PRAGMA table_info(announcement_reads)")
                 }
                 self.assertIn("allow_feedback", announcement_columns)
+                self.assertIn("force_mcp_push", announcement_columns)
                 self.assertIn("feedback", read_columns)
                 self.assertEqual(
                     conn.execute(
@@ -332,10 +453,10 @@ class AnnouncementTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     conn.execute(
-                        "SELECT allow_feedback FROM announcements"
+                        "SELECT allow_feedback, force_mcp_push FROM announcements"
                         " WHERE id = 'legacy-poll'"
-                    ).fetchone()[0],
-                    0,
+                    ).fetchone(),
+                    (0, 0),
                 )
                 self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
@@ -527,7 +648,7 @@ class AnnouncementTests(unittest.TestCase):
         with self.assertRaisesRegex(announcements.AnnouncementError, "未开放文字反馈"):
             announcements.record_vote("validate", "multi", [1], feedback="不应保存")
 
-    def test_create_announcement_feedback_switch_defaults_off_for_notices(self):
+    def test_create_announcement_optional_switches_default_off_for_notices(self):
         poll_id = announcements.create_announcement(
             ann_id="temporary-poll",
             ann_type="poll",
@@ -538,6 +659,15 @@ class AnnouncementTests(unittest.TestCase):
             multiple=False,
             allow_feedback=True,
         )
+        forced_poll_id = announcements.create_announcement(
+            ann_id="temporary-important-poll",
+            ann_type="poll",
+            title="临时重要投票",
+            content="仅写入隔离临时库",
+            target_game="all",
+            options=["甲", "乙"],
+            force_mcp_push=True,
+        )
         notice_id = announcements.create_announcement(
             ann_id="temporary-notice",
             ann_type="notice",
@@ -545,16 +675,29 @@ class AnnouncementTests(unittest.TestCase):
             content="普通通知",
             target_game="all",
             allow_feedback=True,
+            force_mcp_push=True,
         )
-        self.assertEqual((poll_id, notice_id), ("temporary-poll", "temporary-notice"))
+        self.assertEqual(
+            (poll_id, forced_poll_id, notice_id),
+            ("temporary-poll", "temporary-important-poll", "temporary-notice"),
+        )
         with sqlite3.connect(self.db_path) as conn:
-            rows = dict(
-                conn.execute(
-                    "SELECT id, allow_feedback FROM announcements"
-                    " WHERE id IN ('temporary-poll', 'temporary-notice')"
+            rows = {
+                row[0]: row[1:]
+                for row in conn.execute(
+                    "SELECT id, allow_feedback, force_mcp_push FROM announcements"
+                    " WHERE id IN ('temporary-poll', 'temporary-important-poll',"
+                    " 'temporary-notice')"
                 ).fetchall()
-            )
-        self.assertEqual(rows, {"temporary-poll": 1, "temporary-notice": 0})
+            }
+        self.assertEqual(
+            rows,
+            {
+                "temporary-poll": (1, 0),
+                "temporary-important-poll": (0, 1),
+                "temporary-notice": (0, 0),
+            },
+        )
 
     def test_web_vote_marks_seen_without_race_and_keeps_human_votes_private(self):
         self._insert([self._poll("web-poll", "网页投票", 1, multiple=True), self._notice(2)])

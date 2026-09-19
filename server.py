@@ -907,11 +907,16 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                 and isinstance(arguments, dict)
                 and arguments.get("game") == "duel"
             )
+            ai_player_id = _authenticated_ai_player_id(
+                path_token or bearer_token
+            )
+            forced_announcement_game = (
+                arguments.get("game")
+                if name == "play" and isinstance(arguments, dict)
+                else None
+            )
             duel_reminder = ""
             if not is_duel_call:
-                ai_player_id = _authenticated_ai_player_id(
-                    path_token or bearer_token
-                )
                 duel_reminder = _duel_unread_request_reminder(ai_player_id)
             try:
                 if name == "list_games":
@@ -930,6 +935,11 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                 else:
                     raise _McpError(-32601, f"未知工具：{name}")
                 content = [{"type": "text", "text": text}]
+                forced_announcement = _mcp_forced_announcement(
+                    ai_player_id, forced_announcement_game
+                )
+                if forced_announcement:
+                    content.append({"type": "text", "text": forced_announcement})
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
                 return _json_rpc_result(
@@ -943,6 +953,11 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                 content = [
                     {"type": "text", "text": error_text}
                 ]
+                forced_announcement = _mcp_forced_announcement(
+                    ai_player_id, forced_announcement_game
+                )
+                if forced_announcement:
+                    content.append({"type": "text", "text": forced_announcement})
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
                 return _json_rpc_result(
@@ -952,6 +967,11 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
                 content = [
                     {"type": "text", "text": f"【cedartoy服务错误】{exc}"}
                 ]
+                forced_announcement = _mcp_forced_announcement(
+                    ai_player_id, forced_announcement_game
+                )
+                if forced_announcement:
+                    content.append({"type": "text", "text": forced_announcement})
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
                 return _json_rpc_result(
@@ -7896,9 +7916,28 @@ def _play_announcements(player_id, game, action):
             vote_hint=_announcement_vote_hint(game),
             more_hint=_announcement_more_hint(game),
             feedback_hint=_announcement_feedback_hint(game),
+            include_forced_mcp=True,
         )
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该玩游戏还是玩游戏。
+        return ""
+
+
+def _mcp_forced_announcement(player_id, game=None):
+    """Best-effort one-time important poll exposure for authenticated machines."""
+    if player_id in {None, ""}:
+        return ""
+    try:
+        announcements.DB_PATH = str(SESSIONS_DB_PATH)
+        hint_game = game if isinstance(game, str) and game else "eco"
+        return announcements.check_forced_mcp_announcements(
+            player_id,
+            game if isinstance(game, str) and game else None,
+            vote_hint=_announcement_vote_hint(hint_game),
+            feedback_hint=_announcement_feedback_hint(hint_game),
+        )
+    except Exception:
+        # 和普通公告一致：公告故障不能覆盖原本的 MCP 工具结果。
         return ""
 
 

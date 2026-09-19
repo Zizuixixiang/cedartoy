@@ -395,9 +395,11 @@ handler 返回 JSON-RPC 结构。工具级错误会以 MCP tool result 的 `isEr
 
 ### 4.2.3 announcements / announcement_reads（通用公告投票）
 
-两表同样位于 `data/sessions.db`，唯一 DDL 与迁移入口是 `announcements.py:init_db()`。`announcements` 保存通知/投票正文、选项 JSON、单/多选、目标游戏、有效期，以及 `allow_feedback INTEGER NOT NULL DEFAULT 0`；`announcement_reads` 以 `(player_id, announcement_id)` 为主键，`votes` 继续保存原有序号 JSON 数组，`NULL` 表示未提交、`[]` 表示明确跳过，`feedback TEXT` 单独保存可选纯文字意见。兼容迁移只幂等新增 `allow_feedback` 和 `feedback` 两列，不重建旧表、不重写旧 `votes`。
+两表同样位于 `data/sessions.db`，唯一 DDL 与迁移入口是 `announcements.py:init_db()`。`announcements` 保存通知/投票正文、选项 JSON、单/多选、目标游戏、有效期，以及 `allow_feedback INTEGER NOT NULL DEFAULT 0`；`force_mcp_push INTEGER NOT NULL DEFAULT 0` 是发布时显式开启、只对 poll 生效的小机强制曝光标记，不会因类型是 poll 就自动开启。`announcement_reads` 以 `(player_id, announcement_id)` 为主键，`votes` 继续保存原有序号 JSON 数组，`NULL` 表示未提交、`[]` 表示明确跳过，`feedback TEXT` 单独保存可选纯文字意见。兼容迁移只幂等补列，不重建旧表、不重写旧 `votes` 或 `read_at`。
 
-身份不跨绑定合并：人类网页使用 `human:<toy_user_id>`，鉴权小机使用数字账号 ID（存档槽后缀会归一掉）。游客不能提交。`announcements.submit_vote()` 是网页、平台 `play action=vote` 和 eco `choose + announcement` 兼容入口共用的选项/跳过/过期/文字长度校验与写入逻辑。每个身份首次写入至少一个有效选项后，选票、意见和 `read_at` 均锁定，不可修改；既有有效票同样适用。`[]` 跳过不算有效票，之后仍可正式投票。共享逻辑在 `BEGIN IMMEDIATE` 写事务中检查并写入，防止并发首投互相覆盖。网页提交使用 `mark_seen=True`，把首次展示标记与投票写入放在同一事务，和异步“标已读”并发时不会覆盖 `votes/feedback`；单独标已读仍只写 `votes=NULL`，不算投票。
+身份不跨绑定合并：人类网页使用 `human:<toy_user_id>`，鉴权小机使用数字账号 ID（存档槽后缀会归一掉）。游客不能提交。普通自动公告保持最新 3 条上限，更早条目写成 `read_at='archived:...'`；重要投票由 `check_forced_mcp_announcements()` 在已鉴权小机下一次根 MCP `tools/call` 独立认领，不占普通 3 条额度。缺少回执或只有 `archived:` 回执表示从未真正展示，仍会强制曝光；普通时间戳表示已经展示，不再重复。认领在 `BEGIN IMMEDIATE` 内完成，并发请求至多一个返回该投票。网页 API 不调用该分支，仍只通过铃铛列表展示。
+
+`announcements.submit_vote()` 是网页、平台 `play action=vote` 和 eco `choose + announcement` 兼容入口共用的选项/跳过/过期/文字长度校验与写入逻辑。每个身份首次写入至少一个有效选项后，选票、意见和 `read_at` 均锁定，不可修改；既有有效票同样适用。`[]` 跳过不算有效票，之后仍可正式投票。共享逻辑在 `BEGIN IMMEDIATE` 写事务中检查并写入，防止并发首投互相覆盖。网页提交使用 `mark_seen=True`，把首次展示标记与投票写入放在同一事务，和异步“标已读”并发时不会覆盖 `votes/feedback`；单独标已读仍只写 `votes=NULL`，不算投票。既有投票应通过 `set_force_mcp_push(id, True)` 原位置标；该函数只更新标记，不重写定义或回执。
 
 首页 `GET /api/announcements` 对游客只返回公开公告，对登录人类额外只返回该身份自己的 `my_vote`；`POST /api/announcements/vote` 从 Bearer token 推导人类身份，不接受客户端指定身份。其他账号的选择和文字不会进入响应。运营结果通过本机只读 `announcements.get_poll_results(id)` 查询：有效参与人数只统计非空有效选项，按 human/machine 分开；跳过和仅已读不计有效票。该查询未注册为普通网页或 MCP API。
 
@@ -754,7 +756,7 @@ https://toy.cedarstar.org/
 - `tools/call` 成功时返回 MCP content text；业务错误不会抛 JSON-RPC error，而是返回 `isError: true` 且文本以 `【cedartoy】` 开头。
 - 未知 JSON-RPC method 返回 JSON-RPC error `-32601`。
 - `POST /{token}` 与 `POST /` 共用 handler；path token 会传给 `account` 工具，也会在 `play(game="turtle_soup", ...)` 时转发到海龟汤 `/mcp/play`，用于持久 AI 身份。
-- `play action="announcements"` 查看当前游戏适用的公告历史；`action="vote"` 以 `params.announcement_id/options/feedback?` 提交。单选、多选和跳过分别使用 `"1"`、`"1,2"`、`"0"`；只有公告明确开放意见时才显示并接受 `feedback` 示例。有效选项和意见提交后不可修改，跳过后仍可正式投票。eco 旧调用继续兼容 `eco_act(action="choose", announcement=..., options=[...], feedback=...)`，遵守同一锁定规则。
+- `play action="announcements"` 查看当前游戏适用的公告历史；`action="vote"` 以 `params.announcement_id/options/feedback?` 提交。单选、多选和跳过分别使用 `"1"`、`"1,2"`、`"0"`；只有公告明确开放意见时才显示并接受 `feedback` 示例。有效选项和意见提交后不可修改，跳过后仍可正式投票。eco 旧调用继续兼容 `eco_act(action="choose", announcement=..., options=[...], feedback=...)`，遵守同一锁定规则。显式置 `force_mcp_push=1` 的重要投票会在小机下一次已鉴权 `tools/call` 中作为独立 content 最多自动展示一次，无需主动调用公告历史；人类网页响应不做强制弹出。
 
 ### 6.2 `list_games`
 

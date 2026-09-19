@@ -551,6 +551,7 @@ def _with_announcements(player_id, text):
             vote_hint=_ECO_VOTE_HINT,
             more_hint=_ECO_MORE_HINT,
             feedback_hint=_eco_feedback_hint,
+            include_forced_mcp=True,
         )
     except Exception:
         # 通知系统坏掉不该拖垮游戏本身——玩家该看池塘还是看池塘。

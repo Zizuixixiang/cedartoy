@@ -230,9 +230,9 @@ AI 初次注册签发首枚 opaque token。此后所有明确重新获取凭据�
 7. 成功动作累计防沉迷，并取一次性系统通知；
 8. JSON 序列化为根 MCP 的 text content。
 
-系统通知存在 `data/sessions.db` 的 `announcements`、`announcement_reads`。通知只在成功游戏动作后取出并标已读；`vote` 由平台直接写票，不进入游戏，也不累计防沉迷。通知身份会去掉 `:slot` 后缀，因此同一账号的不同槽位共享已读状态。
+系统通知存在 `data/sessions.db` 的 `announcements`、`announcement_reads`。普通通知只在成功游戏动作后自动取最新 3 条并标已读；`vote` 由平台直接写票，不进入游戏，也不累计防沉迷。`announcements.force_mcp_push` 默认 0，只有发布投票时显式开启才会让已鉴权小机在下一次根 MCP `tools/call` 独立看到一次；即使回执是普通流留下的 `archived:` 也会曝光，真正展示后复用同一回执防重复，并发认领由写事务串行化。网页人类不走强制分支。通知身份会去掉 `:slot` 后缀，因此同一账号的不同槽位共享已读状态。
 
-代码锚点：`_tool_play_inner`、`announcements.py:_announcement_identity`、`_play_announcements`。
+代码锚点：`_handle_root_mcp`、`_tool_play_inner`、`announcements.py:_announcement_identity`、`announcements.py:check_forced_mcp_announcements`、`_play_announcements`。
 
 ### 5.2 本进程 handler
 
@@ -472,7 +472,7 @@ vendor 新局和 fishing import 的覆盖确认是应用层保护；`account.del
 | supervisord 只描述 cedartoy 和 turtle-soup | workkk 需要第三个 `cedartoy-workkk` uvicorn 进程；其余 vendor 每次调用起短命子进程 |
 | 首页被笼统称为 toy-platform 前端 | 当前实际源码是根目录 `index.html`/`admin.html`/`eco.html`；`toy-platform/` 被忽略且没有前端代码 |
 | 根 MCP 参数只描述对象 | 平台兼容最多三层 JSON 字符串化 `params`；eco/ciyuwu/workkk 需保留外层/内层同名 action |
-| 未描述平台通知 | `announcements`/`announcement_reads` 提供按游戏一次性通知和通用 `vote` action |
+| 未描述平台通知 | `announcements`/`announcement_reads` 提供按游戏一次性通知和通用 `vote` action；显式 `force_mcp_push` 支持仅小机的一次性重要投票曝光 |
 | 旧文档含 nginx/Cloudflare 与 `/etc` 的现场结论 | v2 只记录仓库内可验证的 server proxy 与部署配置，不推断仓库外网络拓扑和实际加载状态 |
 | 平台账号表被描述为 server 自动管理结构 | 当前启动代码不会创建 `toy_users`、`binding_tokens`、`user_bindings`，只会使用它们并创建辅助表 |
 | 所有长期游戏看似都能统一管理 | workkk 目前不进入 my_saves/claim/delete_save/公开 stats/防沉迷；海龟汤也没有平台存档槽和 delete_save |

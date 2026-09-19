@@ -12,6 +12,9 @@
   玩家回复后写成 JSON 数组；显式跳过写成 `[]`，以便和「压根没回」区分。
 * `announcements.allow_feedback=1` 的投票可附纯文字意见；旧投票迁移后默认 0。
   意见单独存在 `announcement_reads.feedback`，不改变旧 `votes` JSON 数组格式。
+* `announcements.force_mcp_push=1` 是发布时显式开启的小机强制曝光标记，只对投票
+  生效。它不占普通「最新三条」额度；曾被自动归档但从未展示的投票仍会在小机
+  下一次 MCP 工具请求中单独展示一次，展示后复用普通 read_at 防止重复。
 * 一旦写入至少一个有效选项，该身份的选项、意见和提交时间永久锁定；跳过 `[]`
   不算有效票，之后仍可正式投票。
 * `target_game` 为具体游戏名（eco/fishing/...）或 `all`（所有游戏都弹）。
@@ -36,6 +39,7 @@ AUTO_PUSH_LIMIT = 3
 HISTORY_PAGE_LIMIT = 10
 FEEDBACK_MAX_LENGTH = 500
 _ARCHIVED_READ_PREFIX = "archived:"
+IMPORTANT_MCP_HEADING = "【重要公告｜仅自动展示一次】"
 
 # 通知只弹一次，所以文案里必须把「怎么投票」讲清楚，玩家没有第二次机会看到。
 DEFAULT_VOTE_HINT = (
@@ -131,6 +135,7 @@ def init_db(conn):
             options TEXT,
             multiple INTEGER DEFAULT 0,
             allow_feedback INTEGER NOT NULL DEFAULT 0,
+            force_mcp_push INTEGER NOT NULL DEFAULT 0,
             target_game TEXT NOT NULL DEFAULT 'all',
             created_at TEXT NOT NULL,
             expires_at TEXT
@@ -154,7 +159,7 @@ def init_db(conn):
         "CREATE INDEX IF NOT EXISTS idx_announcements_target"
         " ON announcements(target_game)"
     )
-    # 最小幂等迁移：只补两个新列，不重建表，也不重写旧 votes JSON。
+    # 最小幂等迁移：只补新列，不重建表，也不重写旧 votes JSON / read_at。
     announcement_columns = {
         row[1] for row in conn.execute("PRAGMA table_info(announcements)")
     }
@@ -162,6 +167,11 @@ def init_db(conn):
         conn.execute(
             "ALTER TABLE announcements"
             " ADD COLUMN allow_feedback INTEGER NOT NULL DEFAULT 0"
+        )
+    if "force_mcp_push" not in announcement_columns:
+        conn.execute(
+            "ALTER TABLE announcements"
+            " ADD COLUMN force_mcp_push INTEGER NOT NULL DEFAULT 0"
         )
     read_columns = {
         row[1] for row in conn.execute("PRAGMA table_info(announcement_reads)")
@@ -242,12 +252,85 @@ def _format(row, vote_hint, feedback_hint=None):
     return "\n".join(lines)
 
 
+def check_forced_mcp_announcements(
+    player_id,
+    game_name=None,
+    vote_hint=None,
+    feedback_hint=None,
+):
+    """认领并格式化该小机尚未真正展示过的重要投票。
+
+    只把缺少回执或 read_at 仍为 ``archived:`` 的显式置标投票视为待曝光；普通
+    read_at（包括曾按最新三条展示或已经投票）不会再次推送。``game_name=None``
+    只匹配 target_game=all，供没有游戏上下文的 MCP 工具请求使用。
+
+    查询、认领和 archived 状态提升都在同一个 ``BEGIN IMMEDIATE`` 事务中完成，
+    所以同一小机的并发请求至多有一个拿到展示文本。网页端不调用本函数。
+    """
+    if not player_id:
+        return ""
+    player_id = _announcement_identity(player_id)
+    if isinstance(player_id, str) and (
+        player_id.startswith("human:") or player_id.startswith("guest:")
+    ):
+        return ""
+
+    now = _now_iso()
+    if game_name is None:
+        target_clause = "a.target_game = 'all'"
+        target_args = ()
+    else:
+        target_clause = "(a.target_game = ? OR a.target_game = 'all')"
+        target_args = (game_name,)
+
+    with _connect() as conn:
+        init_db(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            f"""
+            SELECT a.id, a.type, a.title, a.content, a.options, a.multiple,
+                   a.allow_feedback
+            FROM announcements AS a
+            LEFT JOIN announcement_reads AS r
+              ON r.player_id = ? AND r.announcement_id = a.id
+            WHERE a.type = 'poll'
+              AND a.force_mcp_push = 1
+              AND {target_clause}
+              AND (a.expires_at IS NULL OR a.expires_at > ?)
+              AND (r.announcement_id IS NULL OR r.read_at LIKE ?)
+            ORDER BY a.created_at DESC, a.id DESC
+            """,
+            (player_id, *target_args, now, _ARCHIVED_READ_PREFIX + "%"),
+        ).fetchall()
+        if not rows:
+            return ""
+
+        conn.executemany(
+            "INSERT OR IGNORE INTO announcement_reads"
+            " (player_id, announcement_id, votes, read_at) VALUES (?, ?, NULL, ?)",
+            ((player_id, row[0], now) for row in rows),
+        )
+        conn.executemany(
+            "UPDATE announcement_reads SET read_at = ?"
+            " WHERE player_id = ? AND announcement_id = ? AND read_at LIKE ?",
+            (
+                (now, player_id, row[0], _ARCHIVED_READ_PREFIX + "%")
+                for row in rows
+            ),
+        )
+
+    blocks = [_format(row, vote_hint, feedback_hint) for row in rows]
+    return IMPORTANT_MCP_HEADING + "\n\n" + "\n\n".join(blocks)
+
+
 def check_announcements(
     player_id,
     game_name,
     vote_hint=None,
     more_hint=None,
     feedback_hint=None,
+    include_forced_mcp=False,
 ):
     """自动展示最近三条未读，并归档同批更早公告。
 
@@ -258,10 +341,20 @@ def check_announcements(
     `vote_hint` 用来覆盖投票指引文案（各游戏的指令语法不一样，比如 eco 走的是
     MCP 结构化参数而不是裸文本），模板里用 `{id}` 占位通知编号。
     `more_hint` 是较早公告提醒模板（可用 `{game}` / `{count}`）或接收 count 的函数。
+    `include_forced_mcp=True` 时先独立认领重要投票；该文本不计入普通三条上限。
     """
     if not player_id:
         return ""
     player_id = _announcement_identity(player_id)
+
+    forced_text = ""
+    if include_forced_mcp:
+        forced_text = check_forced_mcp_announcements(
+            player_id,
+            game_name,
+            vote_hint=vote_hint,
+            feedback_hint=feedback_hint,
+        )
 
     now = _now_iso()
     blocks = []
@@ -284,7 +377,7 @@ def check_announcements(
             (game_name, now, player_id),
         ).fetchone()[0]
         if not unread_count:
-            return ""
+            return forced_text
 
         rows = conn.execute(
             """
@@ -338,7 +431,8 @@ def check_announcements(
     if older_count:
         blocks.append(_resolve_more_hint(more_hint, game_name, older_count))
 
-    return "\n\n".join(blocks)
+    ordinary_text = "\n\n".join(blocks)
+    return "\n\n".join(text for text in (forced_text, ordinary_text) if text)
 
 
 def list_announcements(
@@ -722,8 +816,13 @@ def create_announcement(
     multiple=False,
     expires_at=None,
     allow_feedback=False,
+    force_mcp_push=False,
 ):
-    """运营侧写入一条通知/投票。重复 id 覆盖旧内容（已读记录不受影响）。"""
+    """运营侧写入一条通知/投票。重复 id 覆盖旧内容（已读记录不受影响）。
+
+    ``force_mcp_push`` 默认关闭且只对 poll 生效；显式开启后，尚未真正展示过的
+    小机身份会在下一次 MCP 工具请求中收到一次独立曝光。
+    """
     if ann_type not in ("notice", "poll"):
         raise AnnouncementError("type 须为 notice 或 poll。")
     if ann_type == "poll" and not options:
@@ -741,8 +840,8 @@ def create_announcement(
         conn.execute(
             "INSERT OR REPLACE INTO announcements"
             " (id, type, title, content, options, multiple, allow_feedback,"
-            "  target_game, created_at, expires_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  force_mcp_push, target_game, created_at, expires_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(ann_id),
                 ann_type,
@@ -751,9 +850,33 @@ def create_announcement(
                 json.dumps(list(options), ensure_ascii=False) if options else None,
                 1 if multiple else 0,
                 1 if ann_type == "poll" and allow_feedback else 0,
+                1 if ann_type == "poll" and force_mcp_push else 0,
                 target_game.strip(),
                 _now_iso(),
                 expires_at,
             ),
         )
     return str(ann_id)
+
+
+def set_force_mcp_push(announcement_id, enabled=True):
+    """只修改既有投票的小机强制曝光标记，不重发或改写投票/回执。"""
+    announcement_id = str(announcement_id or "").strip()
+    if not announcement_id:
+        raise AnnouncementError("缺少投票编号。")
+
+    with _connect() as conn:
+        init_db(conn)
+        row = conn.execute(
+            "SELECT type FROM announcements WHERE id = ?",
+            (announcement_id,),
+        ).fetchone()
+        if row is None:
+            raise AnnouncementError(f"没有编号为 {announcement_id} 的通知。")
+        if enabled and row[0] != "poll":
+            raise AnnouncementError("force_mcp_push 只能用于投票。")
+        conn.execute(
+            "UPDATE announcements SET force_mcp_push = ? WHERE id = ?",
+            (1 if enabled else 0, announcement_id),
+        )
+    return announcement_id
