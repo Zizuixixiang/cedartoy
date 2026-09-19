@@ -7303,7 +7303,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·《底特律：变人》盲玩叙事，原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·底特律：变人，分支叙事、原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -7339,22 +7339,24 @@ AI_LIFE_GUIDE = """# ai_life·AI人生桌游
 作者：乐诶雷女士。原仓库：https://github.com/racy1501/ai-life-boardgame 。上游许可：PolyForm Noncommercial License 1.0.0，仅限非商业使用，禁止收费、广告或流量变现；本站为 CedarToy/4399 非商业适配版，并非作者官方版本。完整 LICENSE 与 Required Notice 在围观页保留。"""
 
 
-DETROIT_GUIDE = """# detroit·《底特律：变人》盲玩
-剧情、规则、原版网页与云存档继续由「如火如風的容」老师站点托管；人类从 CedarToy 首页选择已绑定小机及 1–5 号槽位后，和该小机访问同一份存档。
+DETROIT_GUIDE = """# detroit·底特律：变人
+调用：play(game="detroit", action="操作", params={...})；params.slot=1..5（默认 1）。人类网页选择绑定小机同槽，即与小机共档。
 
-建议流程：
-1. play(game="detroit", action="list_saves", params={"slot":1}) 查看当前槽。
-2. 空槽用 create_save，必填 name（1–60 字）与 difficulty（casual/experienced/hardcore）。已有存档不会静默覆盖；请先在人类原版网页确认删除，或明确传 confirm=true。
-3. read_current_scene 读取当前 revision、node_id、剧情和选项。
-4. 有选项时优先用 play_step，一次提交 label 与 reason 并完整读到下一个决策点；也可用 record_choice 只保存一次选择。reason 为 1–500 字，revision/node_id 必须原样使用当前返回值。
-5. 无选项场景用 continue_scene。read_progress 查看公开进度，read_record_card 查看已发生的记录卡。
-6. 章末用 save_chapter_reflection（reflection 最多 3000 字），再用 start_next_chapter。
+操作：
+- list_saves 查槽位。
+- create_save 传 name（1–60 字）、difficulty（casual/experienced/hardcore）；非空槽不会静默覆盖，确认覆盖另传 confirm=true。
+- read_current_scene 取 revision、node_id、剧情和选项。
+- play_step 传 revision、node_id、label、reason（1–500 字），记录选择并推进；record_choice 同参但只记录。
+- continue_scene 无选项时传 revision、node_id。
+- read_progress / read_record_card 查公开进度 / 已发生记录。
+- save_chapter_reflection 传 revision、reflection（最多 3000 字）；start_next_chapter 传 revision。
 
-写入安全：record_choice、continue_scene、save_chapter_reflection、start_next_chapter 支持稳定 request_id；同一重试必须复用。上游 play_step 不支持 request_id，因此连接中断时 CedarToy 不会自动重试：先调用 read_current_scene；只有明确仍是原 revision/node_id，才可对完全相同的选择加 confirm_retry=true 重试。若场景已变化，视为上次可能成功，直接按新场景继续。
+并发：推进写入用最新 revision，场景写入还原样传 node_id；过期先重读。record_choice、continue_scene、章末两操作可带稳定 request_id，同一请求重试须复用。play_step 不支持 request_id，结果不确定时不会自动重试：先 read_current_scene；仅 revision/node_id 均未变，才以相同参数加 confirm_retry=true 重试；已变化则按新场景继续。
 
-存档：每个账号有 5 个独立槽，params 传 slot=1..5，默认 1。完整存档的导入、导出、备份和删除沿用作者原版网页；完整存档含隐藏状态，不要交给盲玩的 AI 阅读。删除必须在网页输入“刪除”确认，或使用 account(action="delete_save", game="detroit", slot=1, confirm=true)。
+存档：完整备份含隐藏状态，勿交给盲玩的 AI。导入 / 导出 / 备份 / 删除走人类网页；删除须输入“刪除”确认。
 
-作者：如火如風的容（小红书号 27231843685）。作者原版（直接游玩）：https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host 。原帖：http://community.rhysen.love/thread/3170 。老师仓库：https://github.com/cfzdgbw42k-pixel/detroit-ai-player 。老师注明的创作来源：https://github.com/Baba88611/detroit-ai-player ；该来源不替代作者署名。"""
+作者：如火如風的容（小红书 27231843685）
+作者原版：https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host"""
 
 
 WORKKK_GUIDE = """# workkk·AI打工人模拟
