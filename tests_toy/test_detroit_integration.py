@@ -399,20 +399,36 @@ class DetroitIntegrationTests(unittest.TestCase):
         self.assertIn("/detroit/api/sessions", script)
         self.assertNotIn("/api/mcp-connection", script)
         self.assertIn("CedarToy 統一 MCP", script)
-        self.assertIn('get_guide(game="detroit")', script)
-        self.assertIn("遊戲與雲端存檔由作者站點托管", script)
+        self.assertEqual(script.count('get_guide(game="detroit")'), 1)
+        self.assertIn("遊戲與存檔由「如火如風的容」老師站點托管", script)
+        self.assertIn("目前存檔", script)
+        self.assertIn("可在此查看劇情與章末記錄", script)
+        self.assertNotIn("本站玩法說明", script)
+        self.assertEqual(script.count("來源與許可"), 1)
+        self.assertIn(
+            '<details class="usage-note"><summary>來源與許可</summary>', script
+        )
+        self.assertNotIn('<details class="usage-note" open', script)
         self.assertNotIn("上游 owner", script)
         self.assertNotIn("安全代理", script)
         self.assertNotIn("專屬網址", script)
         self.assertNotIn("存檔鑰匙", script)
         self.assertNotIn("第三方中轉", script)
+        self.assertNotIn("換手機", script)
+        self.assertNotIn("換瀏覽器", script)
+        self.assertNotIn("清除本站資料", script)
+        self.assertNotIn("1–5 號槽位", script)
         self.assertIn("如火如風的容", script)
         self.assertIn("27231843685", script)
         self.assertIn("Baba88611", script)
         self.assertIn(
+            "https://github.com/cfzdgbw42k-pixel/detroit-ai-player", script
+        )
+        self.assertIn("CC BY-NC 4.0", script)
+        self.assertIn(
             "https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host", script
         )
-        self.assertIn("作者原版 ↗", script)
+        self.assertEqual(script.count("作者原版 ↗"), 1)
         self.assertIn('target="_blank"', script)
 
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -431,6 +447,25 @@ class DetroitIntegrationTests(unittest.TestCase):
         self.assertIn("还没有底特律存档", detroit_picker)
         self.assertIn("if (machine.slots.length === 1)", detroit_picker)
         self.assertNotIn("[1, 2, 3, 4, 5].map", detroit_picker)
+
+    def test_rewritten_page_opens_existing_save_only_on_initial_load(self):
+        script = detroit_adapter.rewrite_public(
+            "host.js", (FIXTURE_ROOT / "detroit_host_v17.js").read_bytes()
+        ).decode("utf-8")
+        self.assertIn("async function showCedarToyInitialSave()", script)
+        self.assertIn("const listing = await api('/detroit/api/sessions')", script)
+        self.assertIn("if (!sessions.length) return showHome();", script)
+        self.assertIn(
+            "render(await api(`/detroit/api/session?id=${encodeURIComponent(sessions[0].id)}`));",
+            script,
+        )
+        self.assertIn("showCedarToyInitialSave().catch", script)
+        self.assertNotIn("showHome().catch", script)
+        self.assertIn("async function showHome()", script)
+        self.assertIn("addEventListener('click', showHome)", script)
+        initial_bootstrap = script.split("async function showCedarToyInitialSave()", 1)[1]
+        self.assertNotIn("method: 'POST'", initial_bootstrap)
+        self.assertNotIn("create_save", initial_bootstrap)
 
     def test_root_tool_schema_guide_and_log_redaction(self):
         play_tool = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")

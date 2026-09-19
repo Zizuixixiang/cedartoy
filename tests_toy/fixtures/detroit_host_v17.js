@@ -26,3 +26,16 @@ async function showMcpSetup() {
 function showDeleteDialog(id, name) {
   return api(`/api/delete?id=${encodeURIComponent(id)}`, {method: 'POST', body: name});
 }
+
+async function loadSession(id) {
+  try { render(await api(`/api/session?id=${encodeURIComponent(id)}`)); }
+  catch (error) { notify(error.message); }
+}
+
+function render(data) {
+  app.innerHTML = `<button id="home">回存檔首頁</button>`;
+  document.querySelector('#home').addEventListener('click', showHome);
+  return data;
+}
+
+showHome().catch(error => { app.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`; });

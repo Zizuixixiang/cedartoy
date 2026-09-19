@@ -847,7 +847,7 @@ def rewrite_public(path: str, body: bytes) -> bytes:
   const dialog = document.createElement('div');
   dialog.id = 'copy-fallback';
   dialog.className = 'copy-fallback';
-  dialog.innerHTML = `<div class="copy-card"><h2>CedarToy 統一 MCP</h2><p>小機請繼續使用 CedarToy/4399 的統一 MCP，先呼叫 <code>get_guide(game="detroit")</code>；人類與綁定小機共用所選槽位。</p><p class="tiny">遊戲與雲端存檔由「如火如風的容」老師站點托管。</p><button id="copy-close" class="button primary">知道了</button></div>`;
+  dialog.innerHTML = `<div class="copy-card"><h2>CedarToy 統一 MCP</h2><p>小機請使用 CedarToy/4399 的統一 MCP，並先呼叫 <code>get_guide(game="detroit")</code>。</p><p class="tiny">遊戲與存檔由「如火如風的容」老師站點托管。</p><button id="copy-close" class="button primary">知道了</button></div>`;
   document.body.appendChild(dialog);
   dialog.querySelector('#copy-close').addEventListener('click', () => dialog.remove());
 }
@@ -865,17 +865,18 @@ function showDeleteDialog'''
         text = text.replace("建立 AI 連接網址", "查看 CedarToy 統一連接說明")
         text = re.sub(
             r'<div class="cloud-save-note" role="note">.*?</div>',
-            '<div class="cloud-save-note" role="note"><strong>作者站點雲端存檔</strong>'
-            '<p>遊戲與雲端存檔由作者站點托管；人類網頁與綁定小機共用所選槽位。頁面可以關閉，換裝置或清除本站資料前請先匯出完整存檔備份。</p></div>',
+            '<div class="cloud-save-note" role="note"><strong>目前存檔</strong>'
+            '<p>可在此查看劇情與章末記錄；備份、匯入和匯出功能仍可正常使用，遊戲進度會自動保存。</p></div>',
             text,
             count=1,
         )
         text = re.sub(
             r'<details class="usage-note">.*?</details>',
-            '<details class="usage-note"><summary>本站玩法說明</summary><div class="tiny">'
-            '<p><strong>小機：</strong>使用 CedarToy/4399 統一 MCP，先呼叫 <code>get_guide(game="detroit")</code>，再依 Guide 讀取與推進劇情。</p>'
-            '<p><strong>人類：</strong>從 CedarToy 首頁選擇綁定小機與 1–5 號槽位，即可查看同一份存檔。</p>'
-            '<p>遊戲與雲端存檔由「如火如風的容」老師站點托管。</p></div></details>',
+            '<details class="usage-note"><summary>來源與許可</summary><div class="tiny">'
+            '<p><a href="https://github.com/cfzdgbw42k-pixel/detroit-ai-player" target="_blank" rel="noopener noreferrer">老師倉庫</a>；老師註明本作的創作來源為 '
+            '<a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">Baba88611 原項目</a>。</p>'
+            '<p>非商用實驗；劇情資料依原項目的 <a href="https://github.com/Baba88611/detroit-ai-player/blob/main/docs/legal/CC-BY-NC-4.0.txt" target="_blank" rel="noopener noreferrer">CC BY-NC 4.0</a> 授權。</p>'
+            '</div></details>',
             text,
             count=1,
         )
@@ -883,15 +884,29 @@ function showDeleteDialog'''
             r'<p class="tiny">按上方按鈕取得這個瀏覽器專屬的完整 MCP 網址.*?</p><p class="tiny">非商用實驗.*?</p>'
         )
         new_note = (
-            '<p class="tiny">小機使用 CedarToy/4399 統一 MCP；人類網頁與綁定小機共用所選的 1–5 號槽位。'
-            '遊戲與雲端存檔由作者站點托管；換手機、換瀏覽器或清除本站資料前，請先匯出完整存檔備份。'
-            '<strong>完整存檔不是交接卡，請勿交給盲玩的 AI 閱讀。</strong></p>'
             '<p class="tiny">作者：<a href="http://community.rhysen.love/thread/3170" target="_blank" rel="noopener noreferrer">如火如風的容</a>'
-            '（小红书号 27231843685）；<a href="https://github.com/cfzdgbw42k-pixel/detroit-ai-player" target="_blank" rel="noopener noreferrer">老师仓库</a>；老师注明创作来源为 '
-            '<a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">Baba88611 原项目</a>。'
-            '非商用实验；剧情资料依原项目的 <a href="https://github.com/Baba88611/detroit-ai-player/blob/main/docs/legal/CC-BY-NC-4.0.txt" target="_blank" rel="noopener noreferrer">CC BY-NC 4.0</a> 授权。</p>'
-            '<p class="tiny"><a href="https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host" target="_blank" rel="noopener noreferrer">作者原版 ↗</a></p>'
+            '（小红书号 27231843685） · '
+            '<a href="https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host" target="_blank" rel="noopener noreferrer">作者原版 ↗</a></p>'
         )
         text = old_note.sub(new_note, text, count=1)
+        original_bootstrap = (
+            'showHome().catch(error => { app.innerHTML = `<div class="error">'
+            '${escapeHtml(error.message)}</div>`; });'
+        )
+        if text.count(original_bootstrap) != 1:
+            raise DetroitError("老师页面版本变化，无法安全接入初始存档", status=502)
+        cedartoy_bootstrap = '''async function showCedarToyInitialSave() {
+  const listing = await api('/detroit/api/sessions');
+  const sessions = listing && Array.isArray(listing.sessions) ? listing.sessions : null;
+  if (sessions === null) throw new Error('存档列表格式异常，请稍后重试');
+  if (!sessions.length) return showHome();
+  if (sessions.length !== 1 || !sessions[0] || !sessions[0].id) {
+    throw new Error('当前槽位的存档状态异常，请联系管理员核对');
+  }
+  render(await api(`/detroit/api/session?id=${encodeURIComponent(sessions[0].id)}`));
+}
+
+showCedarToyInitialSave().catch(error => { app.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`; });'''
+        text = text.replace(original_bootstrap, cedartoy_bootstrap, 1)
         return text.encode("utf-8")
     return body
