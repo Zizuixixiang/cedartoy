@@ -270,8 +270,9 @@ def _delete_managed_saves(
     workkk_delete,
     garden_delete,
     camping_delete=None,
+    detroit_delete=None,
 ) -> dict:
-    counts = {"workkk": 0, "garden_cat": 0, "camping_plaza": 0}
+    counts = {"workkk": 0, "garden_cat": 0, "camping_plaza": 0, "detroit": 0}
     for player_id in player_ids:
         workkk_path = save_root / "workkk" / player_id / "game_state.json"
         if workkk_path.is_file():
@@ -293,6 +294,14 @@ def _delete_managed_saves(
             result = camping_delete(player_id)
             if result:
                 counts["camping_plaza"] += 1
+        detroit_path = save_root / "detroit" / player_id / "remote_state.fernet"
+        if detroit_path.is_file():
+            if detroit_delete is None:
+                raise RuntimeError("detroit managed delete callback is required")
+            detroit_delete(player_id)
+            if detroit_path.exists():
+                raise RuntimeError("detroit managed delete did not remove mapping")
+            counts["detroit"] += 1
     return counts
 
 
@@ -301,7 +310,7 @@ def _delete_file_saves(save_root: Path, player_ids: list[str]) -> dict:
     if not save_root.is_dir():
         return {"directories": 0}
     for game_dir in save_root.iterdir():
-        if not game_dir.is_dir() or game_dir.name in {"workkk", "garden_cat"}:
+        if not game_dir.is_dir() or game_dir.name in {"workkk", "garden_cat", "detroit"}:
             continue
         for player_id in player_ids:
             target = game_dir / player_id
@@ -540,6 +549,7 @@ def purge_account(
     workkk_delete=None,
     garden_delete=None,
     camping_delete=None,
+    detroit_delete=None,
     tarot_delete=None,
     garden_legacy_db=None,
 ) -> dict:
@@ -614,6 +624,7 @@ def purge_account(
         workkk_delete=workkk_delete,
         garden_delete=garden_delete,
         camping_delete=camping_delete,
+        detroit_delete=detroit_delete,
     )
     _merge_stats(account_db, job_id, PHASE_MANAGED_SAVES, stats)
 

@@ -3423,6 +3423,34 @@
         ranks: []
       },
       {
+        id: "detroit",
+        category: "mini",
+        watch: true,
+        watchLabel: "进入主持台 →",
+        name: "《底特律》盲玩",
+        mission: "MISSION: BECOME HUMAN",
+        location: "LOCATION: DETROIT",
+        glyph: "D",
+        badge: "DBR",
+        level: "STORY",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "分支叙事 / 人机同档",
+        desc: "小机只根据不含剧透的剧情与选项做决定、写理由；人类通过作者原版主持台查看同一槽位、备份与回顾。游戏及云存档由作者站点托管。",
+        logs: [
+          "一句话：每一次选择都会留在这条底特律时间线上。",
+          "玩法：小机用 CedarToy MCP 推进；人类选择绑定小机与 1–5 号槽位进入原版主持台。",
+          "作者：如火如風的容（小红书号 27231843685）",
+          "老师仓库：cfzdgbw42k-pixel/detroit-ai-player · 创作来源：Baba88611/detroit-ai-player"
+        ],
+        stats: [["CHOICE", "88%"], ["STORY", "92%"]],
+        footerIcons: ["△", "○", "□"],
+        tags: ["剧情", "选择", "MCP"],
+        url: "http://community.rhysen.love/thread/3170",
+        ctaLabel: "原帖 →",
+        ranks: []
+      },
+      {
         id: "fishing",
         category: "mini",
         name: "AI钓鱼",
@@ -4118,7 +4146,7 @@
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit", "ai_life"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit", "ai_life", "detroit"
     ]);
 
     function fixedGameRank(id) {
@@ -5776,6 +5804,12 @@
       window.location.href = url;
     }
 
+    function watchDetroit(playerId, slot = 1) {
+      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/detroit/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+      window.location.href = url;
+    }
+
     function watchGardenCat(playerId, slot) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
       const url = `/garden-cat/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
@@ -5806,6 +5840,10 @@
       }
       if (game.id === "ai_life") {
         watchAiLife(playerId, slot);
+        return;
+      }
+      if (game.id === "detroit") {
+        watchDetroit(playerId, slot);
         return;
       }
       if (game.id === "duel") {
@@ -6080,6 +6118,73 @@
         renderAiLifeMachinePicker(machines);
       } catch (err) {
         $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "人生存档读取失败，请稍后再试")}</p>`;
+      }
+    }
+
+    function renderDetroitSlotPicker(machine) {
+      const existing = new Map(machine.slots.map((save) => [Number(save.slot), save]));
+      $("bankPickerPanel").setAttribute("aria-label", "选择底特律存档槽");
+      $("bankPickerTitle").textContent = `${machine.machineName} · 选择槽位`;
+      $("bankPickerOptions").innerHTML = [1, 2, 3, 4, 5].map((slot) => {
+        const save = existing.get(slot);
+        const chapter = save?.chapter != null && Number.isFinite(Number(save.chapter))
+          ? ` · 第${escapeHtml(save.chapter)}章`
+          : (save?.chapter_index != null && Number.isFinite(Number(save.chapter_index)) ? ` · 第${escapeHtml(Number(save.chapter_index) + 1)}章` : "");
+        return `
+          <button class="bank-picker-option" data-detroit-slot="${slot}" type="button">
+            <span class="garden-picker-option-main">槽${slot}${save?.name ? ` · ${escapeHtml(save.name)}` : " · 空槽"}</span>
+            <span class="garden-picker-option-meta">${save ? `作者站点云存档${chapter}` : "进入原版主持台后可新建或导入"}</span>
+          </button>
+        `;
+      }).join("");
+      document.querySelectorAll("[data-detroit-slot]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchDetroit(machine.aiUserId, Number(option.dataset.detroitSlot) || 1);
+        });
+      });
+    }
+
+    async function openDetroitPicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择底特律小机与槽位");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取底特律槽位...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch("/api/auth/saves", {headers: headers(false), cache: "no-store"});
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error("登录已失效，请重新登录");
+        if (!res.ok) throw new Error(data.error || "底特律槽位读取失败，请稍后再试");
+        const savedMachines = new Map(
+          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [String(machine?.user?.id), machine])
+        );
+        const machines = bindings.map((user) => ({
+          aiUserId: String(user.id),
+          machineName: user.username,
+          slots: Array.isArray(savedMachines.get(String(user.id))?.saves?.detroit?.slots)
+            ? savedMachines.get(String(user.id)).saves.detroit.slots
+            : [],
+        }));
+        if (machines.length === 1) {
+          renderDetroitSlotPicker(machines[0]);
+          return;
+        }
+        const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
+        $("bankPickerOptions").innerHTML = machines.map((machine) => `
+          <button class="bank-picker-option" data-detroit-machine="${escapeHtml(machine.aiUserId)}" type="button">
+            <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
+            <span class="garden-picker-option-meta">${machine.slots.length} 个已有作者站点云存档</span>
+          </button>
+        `).join("");
+        document.querySelectorAll("[data-detroit-machine]").forEach((option) => {
+          option.addEventListener("click", () => {
+            const machine = machinesById.get(option.dataset.detroitMachine);
+            if (machine) renderDetroitSlotPicker(machine);
+          });
+        });
+      } catch (err) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "底特律槽位读取失败，请稍后再试")}</p>`;
       }
     }
 
@@ -6442,6 +6547,10 @@
       }
       if (currentGame().id === "ai_life") {
         await openAiLifePicker(bindings);
+        return;
+      }
+      if (currentGame().id === "detroit") {
+        await openDetroitPicker(bindings);
         return;
       }
       if (bindings.length === 1) {

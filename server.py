@@ -28,6 +28,7 @@ from threading import BoundedSemaphore, Lock
 import httpx
 
 import account_deletion
+import detroit_adapter
 from admin_dashboard import build_activity_dashboard
 
 try:
@@ -327,7 +328,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，tarot 的 invite/status/result/history/history_detail，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
+                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，detroit 的 list_saves/create_save/read_current_scene/record_choice/play_step/continue_scene/read_progress/read_record_card/save_chapter_reflection/start_next_chapter，tarot 的 invite/status/result/history/history_detail，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -345,7 +346,7 @@ _PLATFORM_TOOLS = [
                         "revision": {
                             "type": "integer",
                             "minimum": 0,
-                            "description": "duel move 优先使用最近成功响应的版本；缺失、409 或怀疑过期时再 state。",
+                            "description": "duel move 或 detroit 写操作使用的当前版本；必须使用最近成功响应的值，缺失、冲突或怀疑过期时先重新读取状态。",
                         },
                         "wait": {
                             "type": "boolean",
@@ -384,7 +385,45 @@ _PLATFORM_TOOLS = [
                         },
                         "request_id": {
                             "type": "string",
-                            "description": "tarot invite 的稳定幂等 ID；同一次邀请重试必须复用。",
+                            "description": "tarot invite 或 detroit 支持该字段的写操作所用稳定幂等 ID；同一次请求重试必须复用。detroit play_step 不支持 request_id。",
+                        },
+                        "save_id": {
+                            "type": "string",
+                            "description": "detroit 远程存档 ID；平台会按账号与槽位注入，通常不要自行填写。",
+                        },
+                        "node_id": {
+                            "type": "string",
+                            "description": "detroit 当前场景返回的 node_id；写操作必须原样回传。",
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "detroit 当前画面上的选项标签，如 A/B/C。",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500,
+                            "description": "detroit 选择理由，最多 500 字。",
+                        },
+                        "reflection": {
+                            "type": "string",
+                            "maxLength": 3000,
+                            "description": "detroit 章末回顾，最多 3000 字。",
+                        },
+                        "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 60,
+                            "description": "detroit create_save 的周目名称。",
+                        },
+                        "difficulty": {
+                            "type": "string",
+                            "enum": ["casual", "experienced", "hardcore"],
+                            "description": "detroit create_save 的难度。",
+                        },
+                        "confirm_retry": {
+                            "type": "boolean",
+                            "description": "detroit 仅在上次结果不明、并已按提示读取当前场景核对后，显式确认重试同一写操作。",
                         },
                         "question": {
                             "description": "tarot invite 必填：小机想问的问题；须经绑定人类确认后才进入原版界面。",
@@ -502,6 +541,61 @@ _PLATFORM_TOOLS = [
                                 "required": ["session_id"],
                             }
                         },
+                        "required": ["params"],
+                    },
+                },
+                {
+                    "if": {
+                        "properties": {"game": {"const": "detroit"}, "action": {"const": "create_save"}},
+                        "required": ["game", "action"],
+                    },
+                    "then": {
+                        "properties": {"params": {"type": "object", "required": ["name", "difficulty"]}},
+                        "required": ["params"],
+                    },
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "game": {"const": "detroit"},
+                            "action": {"enum": ["record_choice", "play_step"]},
+                        },
+                        "required": ["game", "action"],
+                    },
+                    "then": {
+                        "properties": {
+                            "params": {"type": "object", "required": ["revision", "node_id", "label", "reason"]}
+                        },
+                        "required": ["params"],
+                    },
+                },
+                {
+                    "if": {
+                        "properties": {"game": {"const": "detroit"}, "action": {"const": "continue_scene"}},
+                        "required": ["game", "action"],
+                    },
+                    "then": {
+                        "properties": {"params": {"type": "object", "required": ["revision", "node_id"]}},
+                        "required": ["params"],
+                    },
+                },
+                {
+                    "if": {
+                        "properties": {"game": {"const": "detroit"}, "action": {"const": "save_chapter_reflection"}},
+                        "required": ["game", "action"],
+                    },
+                    "then": {
+                        "properties": {"params": {"type": "object", "required": ["revision", "reflection"]}},
+                        "required": ["params"],
+                    },
+                },
+                {
+                    "if": {
+                        "properties": {"game": {"const": "detroit"}, "action": {"const": "start_next_chapter"}},
+                        "required": ["game", "action"],
+                    },
+                    "then": {
+                        "properties": {"params": {"type": "object", "required": ["revision"]}},
                         "required": ["params"],
                     },
                 },
@@ -4184,6 +4278,8 @@ def _vendor_save_stats(game):
             for path in player_dirs
             if (path / ai_life_adapter.SAVE_NAME).is_file()
         ]
+    elif game == "detroit":
+        player_dirs = [path for path in player_dirs if detroit_adapter.has_save(path.name)]
     file_count = 0
     for path in player_dirs:
         file_count += sum(1 for child in path.iterdir() if child.is_file() and child.name != ".lock")
@@ -4206,7 +4302,7 @@ def _public_game_stats():
             "metric": count_saved_tarot_sessions(),
         },
     }
-    for game in ("ai_life", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
+    for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -5673,10 +5769,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza"})
-VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
+VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat", "detroit")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
@@ -5928,6 +6024,8 @@ def _directory_vendor_save_exists(game, save_dir):
         return False
     if game == "ai_life":
         return (save_dir / ai_life_adapter.SAVE_NAME).is_file()
+    if game == "detroit":
+        return detroit_adapter.has_save(save_dir.name)
     return True
 
 
@@ -6529,6 +6627,9 @@ def _purge_account_deletion(user_id, *, now_epoch=None):
         camping_delete=lambda player_id: _purge_managed_save_safely(
             _delete_camping_plaza_save, player_id
         ),
+        detroit_delete=lambda player_id: _purge_managed_save_safely(
+            detroit_adapter.delete_save, player_id
+        ),
         tarot_delete=lambda tarot_user_id: get_tarot_store().delete_user_data(
             tarot_user_id
         ),
@@ -6684,6 +6785,12 @@ def _delete_save(arguments, raw_token):
         workkk_deleted = _delete_workkk_save(player_id)
         if workkk_deleted:
             deleted.append(workkk_deleted)
+    elif game == "detroit":
+        try:
+            if detroit_adapter.delete_save(player_id):
+                deleted.append({"target": f"remote:detroit/{player_id}", "rows": 1})
+        except detroit_adapter.DetroitError as exc:
+            raise _McpError(-32010 if exc.uncertain else -32602, exc.message) from None
     elif game == "moonlit":
         if moonlit_adapter.delete_save(player_id):
             deleted.append(
@@ -6802,6 +6909,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "workkk": _workkk_save_summary,
         "garden_cat": _garden_cat_save_summary,
         "camping_plaza": _camping_plaza_save_summary,
+        "detroit": detroit_adapter.save_summary,
     }
     for game, summarize in vendor_summaries.items():
         for candidate, slot in candidate_pairs:
@@ -7071,6 +7179,7 @@ GAME_RECOMMENDATIONS = (
     ("fishing", "鼻祖之作，第一竿永远不知道咬钩的是什么"),
     ("forest", "和 AI 并肩走进十一条翻转格林童话的角色线，在多轮选择里走到自然结局"),
     ("ai_life", "掷一把人生骰，在机会、逆境与目标之间亲手走完二十三回合"),
+    ("detroit", "把选择与理由留在底特律的分岔路上，看这次会走成怎样的人"),
     ("moonlit", "月光下构筑一副会乘法的牌，八幕之后才是终演"),
     ("eco", "当一回造物主，浮萍和乌龟都会记得你"),
     ("ciyuwu", "词库会被没收，活下来靠捡回真实"),
@@ -7194,7 +7303,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·《底特律：变人》盲玩叙事，原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -7228,6 +7337,24 @@ AI_LIFE_GUIDE = """# ai_life·AI人生桌游
 围观：人类从 CedarToy 首页「围观人生 →」选择已绑定小机和已有槽位。没有存档时只提示先让小机开局，不会创建演示局。
 
 作者：乐诶雷女士。原仓库：https://github.com/racy1501/ai-life-boardgame 。上游许可：PolyForm Noncommercial License 1.0.0，仅限非商业使用，禁止收费、广告或流量变现；本站为 CedarToy/4399 非商业适配版，并非作者官方版本。完整 LICENSE 与 Required Notice 在围观页保留。"""
+
+
+DETROIT_GUIDE = """# detroit·《底特律：变人》盲玩
+剧情、规则、原版网页与云存档继续由「如火如風的容」老师站点托管；人类从 CedarToy 首页选择已绑定小机及 1–5 号槽位后，和该小机访问同一份存档。
+
+建议流程：
+1. play(game="detroit", action="list_saves", params={"slot":1}) 查看当前槽。
+2. 空槽用 create_save，必填 name（1–60 字）与 difficulty（casual/experienced/hardcore）。已有存档不会静默覆盖；请先在人类原版网页确认删除，或明确传 confirm=true。
+3. read_current_scene 读取当前 revision、node_id、剧情和选项。
+4. 有选项时优先用 play_step，一次提交 label 与 reason 并完整读到下一个决策点；也可用 record_choice 只保存一次选择。reason 为 1–500 字，revision/node_id 必须原样使用当前返回值。
+5. 无选项场景用 continue_scene。read_progress 查看公开进度，read_record_card 查看已发生的记录卡。
+6. 章末用 save_chapter_reflection（reflection 最多 3000 字），再用 start_next_chapter。
+
+写入安全：record_choice、continue_scene、save_chapter_reflection、start_next_chapter 支持稳定 request_id；同一重试必须复用。上游 play_step 不支持 request_id，因此连接中断时 CedarToy 不会自动重试：先调用 read_current_scene；只有明确仍是原 revision/node_id，才可对完全相同的选择加 confirm_retry=true 重试。若场景已变化，视为上次可能成功，直接按新场景继续。
+
+存档：每个账号有 5 个独立槽，params 传 slot=1..5，默认 1。完整存档的导入、导出、备份和删除沿用作者原版网页；完整存档含隐藏状态，不要交给盲玩的 AI 阅读。删除必须在网页输入“刪除”确认，或使用 account(action="delete_save", game="detroit", slot=1, confirm=true)。
+
+作者：如火如風的容（小红书号 27231843685）。作者原版（直接游玩）：https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host 。原帖：http://community.rhysen.love/thread/3170 。老师仓库：https://github.com/cfzdgbw42k-pixel/detroit-ai-player 。老师注明的创作来源：https://github.com/Baba88611/detroit-ai-player ；该来源不替代作者署名。"""
 
 
 WORKKK_GUIDE = """# workkk·AI打工人模拟
@@ -7412,6 +7539,8 @@ def _tool_get_guide(arguments):
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
     if game == "ai_life":
         return json.dumps({"game": "ai_life", "guide": _guide_with_slot_note(AI_LIFE_GUIDE)}, ensure_ascii=False)
+    if game == "detroit":
+        return json.dumps({"game": "detroit", "guide": DETROIT_GUIDE + PLATFORM_ANNOUNCEMENT_GUIDE_NOTE}, ensure_ascii=False)
     if game == "tarot":
         return json.dumps({"game": "tarot", "guide": TAROT_GUIDE}, ensure_ascii=False)
     if game == "garden_cat":
@@ -8102,6 +8231,14 @@ def _tool_play_inner(
         # Camping Plaza is a resident FastAPI process (8773). The adapter ignores
         # native session IDs and keys the camp only by this canonical player/slot.
         response = _play_camping_plaza(arguments)
+    elif game == "detroit":
+        if account_user is None or account_player_id is None:
+            raise _McpError(-32001, "detroit 仅支持已认证账号；请使用 CedarToy 统一 MCP 地址")
+        try:
+            response = detroit_adapter.play(account_player_id, action, merged_arguments)
+        except detroit_adapter.DetroitError as exc:
+            code = -32010 if exc.uncertain else (-32003 if exc.status == 403 else -32602)
+            raise _McpError(code, exc.message) from None
     elif game == "tarot":
         # Tarot is not a machine-playable card game.  The authenticated machine
         # may only create and observe an invitation bound to its one current
@@ -9865,6 +10002,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._proxy_to_soup()
             return
 
+        if internal_path.startswith("/detroit/api/"):
+            self._handle_detroit_api("POST", internal_path)
+            return
+
         _workkk_path = self.path.split("?", 1)[0]
         if _workkk_path == "/workkk" or _workkk_path.startswith("/workkk/"):
             self._handle_workkk_proxy("POST")
@@ -10089,6 +10230,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         path, _, query_string = self.path.partition("?")
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+
+        if path == "/detroit" or path.startswith("/detroit/"):
+            self._handle_detroit_get(path, params)
+            return
 
         if self._is_tarot_get_path(path):
             self._handle_tarot_get(path, params)
@@ -10508,6 +10653,166 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             if separator and name == "ai_life_token":
                 return urllib.parse.unquote(value)
         return ""
+
+    def _detroit_cookie_value(self, name):
+        cookie = self.headers.get("Cookie", "")
+        for item in cookie.split(";"):
+            key, separator, value = item.strip().partition("=")
+            if separator and key == name:
+                return urllib.parse.unquote(value)
+        return ""
+
+    def _detroit_human_target(self, token="", requested_player=""):
+        raw_token = token or self._detroit_cookie_value("detroit_token") or _extract_bearer(self.headers)
+        player = requested_player or self._detroit_cookie_value("detroit_player")
+        user = _current_account(raw_token)
+        if user.get("is_ai"):
+            raise _McpError(-32003, "底特律网页只供绑定人类进入")
+        target = _bound_ai_slot_target_for_user(user, player)
+        if target is None:
+            raise _McpError(-32003, "你没有绑定这只小机或槽位无效")
+        return raw_token, target
+
+    @staticmethod
+    def _detroit_http_status(exc):
+        if isinstance(exc, ValueError):
+            return 400
+        if isinstance(exc, detroit_adapter.DetroitError):
+            return exc.status
+        if isinstance(exc, _McpError):
+            return 401 if exc.code == -32001 else 403 if exc.code == -32003 else 400
+        return 500
+
+    def _send_detroit_bytes(self, status, content_type, body, *, content_disposition="", extra_headers=None):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type or "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if content_disposition:
+            self.send_header("Content-Disposition", content_disposition)
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        try:
+            if self.command != "HEAD":
+                self.wfile.write(body)
+        except BrokenPipeError:
+            pass
+
+    def _handle_detroit_get(self, path, params):
+        if path in {"/detroit/host.js", "/detroit/host.css"}:
+            public_name = path.removeprefix("/detroit/")
+            try:
+                status, content_type, body = detroit_adapter.fetch_public(public_name)
+                if status < 400:
+                    body = detroit_adapter.rewrite_public(public_name, body)
+            except detroit_adapter.DetroitError as exc:
+                self._send_json({"error": exc.message}, status=exc.status)
+                return
+            self._send_detroit_bytes(status, content_type, body)
+            return
+        if path == "/detroit/downloads/detroit_blind_host_windows_v9.zip":
+            try:
+                status, content_type, body = detroit_adapter.fetch_public(
+                    "downloads/detroit_blind_host_windows_v9.zip"
+                )
+            except detroit_adapter.DetroitError as exc:
+                self._send_json({"error": exc.message}, status=exc.status)
+                return
+            self._send_detroit_bytes(
+                status,
+                content_type,
+                body,
+                content_disposition='attachment; filename="detroit_blind_host_windows_v9.zip"',
+            )
+            return
+        if path.startswith("/detroit/api/"):
+            self._handle_detroit_api("GET", path, params=params)
+            return
+        if path not in {"/detroit", "/detroit/"}:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        token_values = params.get("token") or []
+        player_values = params.get("player") or []
+        if token_values or player_values:
+            if len(token_values) != 1 or len(player_values) != 1:
+                self._send_json({"error": "需要唯一的网页登录凭据和槽位"}, status=400)
+                return
+            try:
+                raw_token, target = self._detroit_human_target(token_values[0], player_values[0])
+            except _McpError as exc:
+                self._send_json({"error": exc.message}, status=self._detroit_http_status(exc))
+                return
+            self.send_response(303)
+            self.send_header("Location", "/detroit/")
+            self.send_header(
+                "Set-Cookie",
+                f"detroit_token={urllib.parse.quote(raw_token, safe='')}; Path=/detroit; HttpOnly; Secure; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
+            )
+            self.send_header(
+                "Set-Cookie",
+                f"detroit_player={urllib.parse.quote(target['player'], safe='')}; Path=/detroit; HttpOnly; Secure; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
+            )
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        try:
+            self._detroit_human_target()
+            status, content_type, body = detroit_adapter.fetch_public("host")
+            if status < 400:
+                body = detroit_adapter.rewrite_public("host", body)
+        except (_McpError, detroit_adapter.DetroitError) as exc:
+            message = exc.message if hasattr(exc, "message") else str(exc)
+            self._send_json({"error": message}, status=self._detroit_http_status(exc))
+            return
+        self._send_detroit_bytes(
+            status,
+            content_type,
+            body,
+            extra_headers={
+                "Referrer-Policy": "no-referrer",
+                "X-Frame-Options": "SAMEORIGIN",
+                "Content-Security-Policy": (
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                    "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+                    "base-uri 'none'; frame-ancestors 'self'"
+                ),
+            },
+        )
+
+    def _handle_detroit_api(self, method, path, params=None):
+        endpoint = path.removeprefix("/detroit/api/")
+        if "/" in endpoint or not endpoint:
+            self._send_json({"error": "not found"}, status=404)
+            return
+        try:
+            _token, target = self._detroit_human_target()
+            payload = self._read_json_body() if method == "POST" else None
+            flat_query = {}
+            for key, values in (params or {}).items():
+                if len(values) != 1:
+                    raise detroit_adapter.DetroitError("查询参数必须唯一")
+                flat_query[key] = values[0]
+            status, headers, body = detroit_adapter.browser_api(
+                target["player"],
+                method,
+                endpoint,
+                query=flat_query,
+                payload=payload,
+            )
+        except (ValueError, _McpError, detroit_adapter.DetroitError) as exc:
+            message = exc.message if hasattr(exc, "message") else str(exc)
+            self._send_json({"error": message}, status=self._detroit_http_status(exc))
+            return
+        self._send_detroit_bytes(
+            status,
+            headers.get("content-type", "application/json; charset=utf-8"),
+            body,
+            content_disposition=headers.get("content-disposition", ""),
+        )
 
     def _ai_life_human_target(self, requested_player, token_from_query=""):
         raw_token = (
@@ -13751,9 +14056,10 @@ _JWT_LOG_VALUE_RE = re.compile(
 _OPAQUE_AI_LOG_VALUE_RE = re.compile(r"ctai_v1_[A-Za-z0-9_-]{40,}")
 _OPERIT_LOG_VALUE_RE = re.compile(r"cto(?:p|w)_v1_[A-Za-z0-9_-]{30,}")
 _SENSITIVE_QUERY_LOG_RE = re.compile(
-    r"([?&](?:token|web_ticket|reset_token|access_token)=)[^&#\s\"]+",
+    r"([?&](?:token|web_ticket|reset_token|access_token|connection)=)[^&#\s\"]+",
     re.IGNORECASE,
 )
+_DETROIT_CONNECTION_LOG_RE = re.compile(r"dbr_[A-Za-z0-9_-]{16,}")
 
 
 def _redact_http_log_text(value):
@@ -13761,6 +14067,7 @@ def _redact_http_log_text(value):
     text = _OPAQUE_AI_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
     text = _OPERIT_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
     text = _JWT_LOG_VALUE_RE.sub("<TOKEN_REDACTED>", text)
+    text = _DETROIT_CONNECTION_LOG_RE.sub("<TOKEN_REDACTED>", text)
     return _SENSITIVE_QUERY_LOG_RE.sub(r"\1<TOKEN_REDACTED>", text)
 
 
