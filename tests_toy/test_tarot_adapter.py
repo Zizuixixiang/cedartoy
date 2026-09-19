@@ -818,6 +818,8 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('/tarot/static/platform/managed-core.v1.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v3.js', page)
         self.assertIn('/tarot/static/platform/managed-ui.v3.css', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v4.js', page)
+        self.assertIn('/tarot/static/platform/managed-ui.v4.css', page)
         self.assertIn('/tarot/static/platform/managed-companion.v3.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v2.js', page)
         self.assertNotIn('/tarot/static/platform/managed-ui.v2.css', page)
@@ -828,8 +830,18 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('id="providerOrb"', page)
         self.assertIn("本站暂仅支持所提供的模型。如需自行配置模型，请克隆", page)
         self.assertIn(f'href="{COVE_REPOSITORY}"', page)
+        self.assertIn('class="managed-model-note managed-credit"', page)
+        self.assertIn("原作：林默Moon", page)
+        self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v3.css'),
+            page.index('/tarot/static/platform/managed-ui.v4.css'),
+        )
         self.assertLess(
             page.index('/tarot/static/platform/managed-ui.v3.js'),
+            page.index('/tarot/static/platform/managed-ui.v4.js'),
+        )
+        self.assertLess(
+            page.index('/tarot/static/platform/managed-ui.v4.js'),
             page.index('<script type="module" src="./js/main.js"></script>'),
         )
         self.assertNotIn("导入本机 DSH", page)
@@ -868,6 +880,24 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertNotIn("formatRemaining", managed_ui)
         self.assertNotIn("setInterval", managed_ui)
         self.assertNotIn("Math.random(", managed_ui)
+        managed_layout_path, managed_layout_mime = web.static_file(
+            "platform/managed-ui.v4.js"
+        )
+        self.assertEqual(managed_layout_mime, "text/javascript")
+        managed_layout = managed_layout_path.read_text(encoding="utf-8")
+        self.assertIn("managedProviderLabel", managed_layout)
+        self.assertIn("label.textContent = '配置'", managed_layout)
+        self.assertIn(
+            "trigger.replaceChildren(document.createTextNode('记录'))",
+            managed_layout,
+        )
+        self.assertIn("top-right", managed_layout)
+        self.assertNotIn("managedHistoryEntryRow", managed_layout)
+        managed_layout_css, managed_layout_css_mime = web.static_file(
+            "platform/managed-ui.v4.css"
+        )
+        self.assertTrue(managed_layout_css.is_file())
+        self.assertEqual(managed_layout_css_mime, "text/css")
         managed_companion = web.static_file(
             "platform/managed-companion.v3.js"
         )[0].read_text(encoding="utf-8")

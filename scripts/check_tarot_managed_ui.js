@@ -8,8 +8,10 @@ const csstree = require('css-tree');
 
 const root = path.resolve(__dirname, '..');
 const uiPath = path.join(root, 'assets/tarot/managed-ui.v3.js');
+const layoutPath = path.join(root, 'assets/tarot/managed-ui.v4.js');
 const corePath = path.join(root, 'assets/tarot/managed-core.v1.js');
 const cssPath = path.join(root, 'assets/tarot/managed-ui.v3.css');
+const layoutCssPath = path.join(root, 'assets/tarot/managed-ui.v4.css');
 const companionPath = path.join(root, 'assets/tarot/managed-companion.v3.js');
 const upstreamCompanionPath = path.join(
   root, 'vendor/tarot-ritual/public/js/companion-adapter.js',
@@ -31,6 +33,11 @@ function settle(window) {
   return new Promise(resolve => window.setTimeout(resolve, 0));
 }
 
+function loadManagedUi(window) {
+  window.eval(fs.readFileSync(uiPath, 'utf8'));
+  window.eval(fs.readFileSync(layoutPath, 'utf8'));
+}
+
 async function checkUiBehavior() {
   const dom = new JSDOM(`<!doctype html><html><body>
     <button id="providerOrb"><span id="providerLabel"></span></button>
@@ -44,7 +51,7 @@ async function checkUiBehavior() {
     assert.equal(url, '/api/tarot/models/status');
     return { ok: true, json: async () => modelStatuses() };
   };
-  window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(window);
 
   const item = window.document.createElement('div');
   item.className = 'provider-item';
@@ -130,7 +137,7 @@ async function createCompanionHarness(session, {
       json: async () => ({ session: JSON.parse(JSON.stringify(current)) }),
     };
   };
-  window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(window);
 
   const settings = window.document.getElementById('settingsPanel');
   window.document.getElementById('providerOrb').addEventListener('click', () => {
@@ -342,7 +349,7 @@ async function checkSecureUuidAndAckReplay() {
       return array;
     },
   });
-  window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(window);
   const generated = window.crypto.randomUUID();
   assert.match(
     generated,
@@ -474,7 +481,7 @@ async function checkSecureUuidAndAckReplay() {
   Object.defineProperty(unavailable.window.crypto, 'getRandomValues', {
     configurable: true, value: undefined,
   });
-  unavailable.window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(unavailable.window);
   assert.throws(
     () => unavailable.window.crypto.randomUUID(),
     /缺少安全随机源.*尚未保存/,
@@ -492,7 +499,7 @@ async function checkSecureUuidAndAckReplay() {
     configurable: true,
     value: () => { throw new Error('native random failure'); },
   });
-  broken.window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(broken.window);
   assert.throws(
     () => broken.window.crypto.randomUUID(),
     /安全随机源不可用.*尚未保存/,
@@ -536,6 +543,96 @@ async function checkSaveFailureMessages() {
   assert.match(saved.status.textContent, /服务器已确认保存本次牌面/);
   assert.doesNotMatch(saved.status.textContent, /已保留本次记录|刷新重试/);
   saved.window.dispatchEvent(new saved.window.Event('pagehide'));
+}
+
+async function checkHistoryEntryPlacement(viewportWidth) {
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <header id="topbar"><div class="brand"><span>ARCANUM</span></div><div class="top-right">
+      <button id="providerOrb"><span id="providerLabel">本站 Pro</span></button>
+    </div></header>
+    <aside id="settingsPanel"><button id="settingsClose">关闭</button><div id="providerList">
+      <div class="provider-item"><div class="p-head"></div><select>
+        <option value="${FLASH_MODEL}">Flash</option><option value="${PRO_MODEL}" selected>Pro</option>
+      </select></div>
+    </div></aside>
+    <main id="ui"></main>
+    <script type="application/json" id="companion-config">{"protocol":"cove-tarot-companion-v1","sessionId":"layout_session","apiBase":"/companion/v1"}</script>
+  </body></html>`, {
+    runScripts: 'outside-only', pretendToBeVisual: true,
+    url: 'https://toy.example/tarot/session/layout_session/',
+  });
+  const { window } = dom;
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true, value: viewportWidth,
+  });
+  window.fetch = async () => ({ ok: true, json: async () => modelStatuses() });
+  loadManagedUi(window);
+  await settle(window);
+  await settle(window);
+
+  const topbar = window.document.getElementById('topbar');
+  const topRight = topbar.querySelector('.top-right');
+  const provider = window.document.getElementById('providerOrb');
+  const upstreamLabel = window.document.getElementById('providerLabel');
+  const managedLabel = window.document.getElementById('managedProviderLabel');
+  const trigger = window.document.getElementById('managedHistoryTrigger');
+  assert.ok(trigger, `missing history trigger at ${viewportWidth}px`);
+  assert.equal(window.document.getElementById('managedHistoryEntryRow'), null);
+  assert.equal(trigger.parentElement, topRight);
+  assert.equal(topRight.children.length, 2);
+  assert.equal(topRight.children[0], trigger);
+  assert.equal(topRight.children[1], provider);
+  assert.equal(topbar.querySelector('.brand').textContent, 'ARCANUM');
+  assert.equal(upstreamLabel.hidden, true);
+  assert.equal(upstreamLabel.getAttribute('aria-hidden'), 'true');
+  assert.equal(managedLabel.textContent, '配置');
+  assert.equal(provider.getAttribute('aria-label'), '配置');
+  assert.equal(trigger.textContent, '记录');
+  assert.equal(trigger.type, 'button');
+  assert.equal(trigger.tabIndex, 0);
+  assert.equal(trigger.getAttribute('aria-controls'), 'managedHistoryPanel');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(trigger.getAttribute('aria-label'), '历史记录');
+  assert.equal(trigger.querySelector('.managed-history-trigger-short'), null);
+  assert.equal(
+    window.document.querySelector(`[data-model="${PRO_MODEL}"]`).getAttribute('aria-checked'),
+    'true',
+  );
+
+  const select = window.document.querySelector('#providerList select');
+  select.value = FLASH_MODEL;
+  select.dispatchEvent(new window.Event('change', { bubbles: true }));
+  window.document.getElementById('settingsPanel').classList.add('open');
+  await settle(window);
+  await settle(window);
+  assert.equal(upstreamLabel.textContent, '本站 Flash');
+  assert.equal(managedLabel.textContent, '配置');
+  assert.equal(
+    window.document.querySelector(`[data-model="${FLASH_MODEL}"]`).getAttribute('aria-checked'),
+    'true',
+  );
+  assert.equal(
+    window.document.querySelector(`[data-model="${PRO_MODEL}"]`).getAttribute('aria-checked'),
+    'false',
+  );
+  upstreamLabel.textContent = '原模块再次更新的模型名称';
+  await settle(window);
+  await settle(window);
+  assert.equal(managedLabel.textContent, '配置');
+  assert.equal(provider.getAttribute('aria-label'), '配置');
+
+  trigger.click();
+  await settle(window);
+  await settle(window);
+  const panel = window.document.getElementById('managedHistoryPanel');
+  assert.equal(panel.classList.contains('open'), true);
+  assert.equal(panel.getAttribute('aria-hidden'), 'false');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  panel.querySelector('#managedHistoryClose').click();
+  await settle(window);
+  assert.equal(panel.classList.contains('open'), false);
+  assert.equal(window.document.activeElement, trigger);
+  window.dispatchEvent(new window.Event('pagehide'));
 }
 
 async function checkHistoryUi() {
@@ -616,11 +713,17 @@ async function checkHistoryUi() {
     }
     throw new Error(`unexpected request: ${url}`);
   };
-  window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(window);
   await settle(window);
   await settle(window);
   const trigger = window.document.getElementById('managedHistoryTrigger');
   assert.ok(trigger);
+  const topRight = window.document.querySelector('.top-right');
+  assert.equal(trigger.parentElement, topRight);
+  assert.equal(trigger.textContent, '记录');
+  assert.equal(trigger.getAttribute('aria-label'), '历史记录');
+  assert.equal(topRight.children.length, 2);
+  assert.equal(window.document.getElementById('managedProviderLabel').textContent, '配置');
   trigger.click();
   await settle(window);
   await settle(window);
@@ -630,6 +733,16 @@ async function checkHistoryUi() {
   assert.equal(window.document.getElementById('companionBox').getAttribute('aria-hidden'), 'true');
   assert.equal(panel.querySelectorAll('img, script').length, 0);
   assert.match(panel.textContent, /<img src=x onerror=alert\(1\)>/);
+
+  panel.querySelector('#managedHistoryClose').click();
+  await settle(window);
+  assert.equal(panel.classList.contains('open'), false);
+  assert.equal(window.document.activeElement, trigger);
+  assert.equal(window.document.getElementById('companionBox').hasAttribute('aria-hidden'), false);
+  trigger.click();
+  await settle(window);
+  await settle(window);
+  assert.equal(panel.classList.contains('open'), true);
 
   panel.querySelector('.managed-history-view').click();
   await settle(window);
@@ -682,7 +795,7 @@ async function createModelStatusHarness(responses, { selected = FLASH_MODEL } = 
       json: async () => response.payload,
     };
   };
-  window.eval(fs.readFileSync(uiPath, 'utf8'));
+  loadManagedUi(window);
   const item = window.document.createElement('div');
   item.className = 'provider-item';
   item.innerHTML = `<div class="p-head"></div><select>
@@ -949,20 +1062,87 @@ function checkMobileRules() {
   assert.equal(companionHidden, true);
 }
 
+function checkHistoryEntryLayoutRules() {
+  const layoutAst = csstree.parse(fs.readFileSync(layoutCssPath, 'utf8'));
+  const directRule = (ast, expected) => {
+    let result = '';
+    ast.children.forEach(node => {
+      if (node.type === 'Rule' && csstree.generate(node.prelude) === expected) {
+        result = csstree.generate(node.block);
+      }
+    });
+    return result;
+  };
+
+  const topRight = directRule(layoutAst, '.top-right');
+  const hiddenUpstreamLabel = directRule(layoutAst, '#providerLabel[hidden]');
+  const managedButtons = directRule(layoutAst, '.top-right .orb-btn');
+  const fixedLabels = directRule(
+    layoutAst, '.managed-provider-label,#managedHistoryTrigger',
+  );
+  assert.match(topRight, /display:flex/);
+  assert.match(topRight, /gap:6px/);
+  assert.match(topRight, /flex:none/);
+  assert.match(hiddenUpstreamLabel, /display:none!important/);
+  assert.match(managedButtons, /min-width:48px/);
+  assert.match(managedButtons, /min-height:40px/);
+  assert.match(managedButtons, /padding:8px 9px/);
+  assert.match(managedButtons, /white-space:nowrap/);
+  assert.match(managedButtons, /word-break:keep-all/);
+  assert.match(managedButtons, /writing-mode:horizontal-tb/);
+  assert.match(fixedLabels, /white-space:nowrap/);
+  assert.match(fixedLabels, /writing-mode:horizontal-tb/);
+
+  let mobileTopRight = '';
+  let mobileButtons = '';
+  let mobileProvider = '';
+  layoutAst.children.forEach(node => {
+    if (node.type !== 'Atrule' || node.name !== 'media') return;
+    const query = csstree.generate(node.prelude);
+    if (!query.includes('max-width:600px')) return;
+    node.block.children.forEach(child => {
+      if (child.type !== 'Rule') return;
+      const selector = csstree.generate(child.prelude);
+      const block = csstree.generate(child.block);
+      if (selector === '.top-right') mobileTopRight = block;
+      if (selector === '.top-right .orb-btn') mobileButtons = block;
+      if (selector === '#providerOrb') mobileProvider = block;
+    });
+  });
+  assert.match(mobileTopRight, /gap:5px/);
+  assert.match(mobileButtons, /min-height:42px/);
+  assert.match(mobileButtons, /padding:8px/);
+  assert.match(mobileButtons, /font-size:12px/);
+  assert.match(mobileProvider, /gap:5px/);
+
+  const css = fs.readFileSync(layoutCssPath, 'utf8');
+  assert.doesNotMatch(css, /managedHistoryEntryRow/);
+  assert.doesNotMatch(css, /#phase-question/);
+  assert.doesNotMatch(css, /managed-companion/);
+  assert.ok(48 * 2 + 6 <= 110, 'managed controls must stay compact');
+}
+
 Promise.resolve()
   .then(checkUiBehavior)
   .then(checkEndScenarios)
+  .then(() => checkSettingsVisibility(320))
   .then(() => checkSettingsVisibility(360))
   .then(() => checkSettingsVisibility(375))
   .then(() => checkSettingsVisibility(390))
   .then(checkSecureUuidAndAckReplay)
   .then(checkSaveFailureMessages)
+  .then(() => checkHistoryEntryPlacement(320))
+  .then(() => checkHistoryEntryPlacement(360))
+  .then(() => checkHistoryEntryPlacement(375))
+  .then(() => checkHistoryEntryPlacement(390))
+  .then(() => checkHistoryEntryPlacement(1280))
   .then(checkHistoryUi)
   .then(checkModelRuntimeStates)
   .then(checkManagedCompanionBoundary)
   .then(checkManagedCoreBoundary)
   .then(checkMobileRules)
-  .then(() => console.log('tarot managed UI behavior (jsdom 360/375/390): ok'))
+  .then(checkHistoryEntryLayoutRules)
+  .then(() => console.log('tarot managed UI behavior (jsdom 320/360/375/390/1280): ok'))
   .catch(error => {
     console.error(error);
     process.exitCode = 1;

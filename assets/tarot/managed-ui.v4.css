@@ -1,0 +1,60 @@
+/* v4 compacts the two managed actions without changing the immutable v3 UI. */
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+#providerLabel[hidden] {
+  display: none !important;
+}
+
+.top-right .orb-btn {
+  flex: none;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 40px;
+  padding: 8px 9px;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: .12em;
+  text-indent: .12em;
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
+}
+
+#providerOrb {
+  gap: 6px;
+}
+
+.managed-provider-label,
+#managedHistoryTrigger {
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
+}
+
+.top-right .orb-btn:focus-visible {
+  outline: 1px solid var(--gold-dim);
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .top-right {
+    gap: 5px;
+  }
+
+  .top-right .orb-btn {
+    min-height: 42px;
+    padding: 8px;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-indent: .08em;
+  }
+
+  #providerOrb {
+    gap: 5px;
+  }
+}

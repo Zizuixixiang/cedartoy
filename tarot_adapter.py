@@ -1312,6 +1312,8 @@ class TarotWeb:
             "platform/managed-ui.v2.css": ROOT / "assets" / "tarot" / "managed-ui.v2.css",
             "platform/managed-ui.v3.js": ROOT / "assets" / "tarot" / "managed-ui.v3.js",
             "platform/managed-ui.v3.css": ROOT / "assets" / "tarot" / "managed-ui.v3.css",
+            "platform/managed-ui.v4.js": ROOT / "assets" / "tarot" / "managed-ui.v4.js",
+            "platform/managed-ui.v4.css": ROOT / "assets" / "tarot" / "managed-ui.v4.css",
             "platform/managed-companion.v3.js": ROOT / "assets" / "tarot" / "managed-companion.v3.js",
             "platform/upstream-companion-adapter.v1.js": RITUAL_PUBLIC / "js" / "companion-adapter.js",
         }
@@ -1392,7 +1394,8 @@ class TarotWeb:
         source = source.replace(
             style_marker,
             style_marker
-            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v3.css">',
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v3.css">'
+            + '\n<link rel="stylesheet" href="/tarot/static/platform/managed-ui.v4.css">',
             1,
         )
         upstream_settings = """    <div class="settings-body">
@@ -1434,6 +1437,7 @@ class TarotWeb:
         managed = f"""
 <script type="application/json" id="companion-config">{config}</script>
 <script src="/tarot/static/platform/managed-ui.v3.js"></script>
+<script src="/tarot/static/platform/managed-ui.v4.js"></script>
 """
         source = source.replace(
             '<script type="module" src="./js/main.js"></script>',
