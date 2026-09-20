@@ -42,6 +42,65 @@ def make_handler(*, headers=None, body=b""):
     return handler
 
 
+class TarotOriginValidationTests(unittest.TestCase):
+    def test_allows_same_origin_for_supported_proxy_and_local_schemes(self):
+        cases = (
+            {
+                "Origin": "https://toy.cedarstar.org",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "https",
+            },
+            {
+                "Origin": "http://toy.cedarstar.org",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "http",
+            },
+            {"Origin": "http://localhost:8004", "Host": "localhost:8004"},
+            {"Origin": "http://127.0.0.1:8004", "Host": "127.0.0.1:8004"},
+        )
+
+        for headers in cases:
+            with self.subTest(headers=headers):
+                self.assertTrue(make_handler(headers=headers)._tarot_origin_allowed())
+
+    def test_rejects_cross_site_null_missing_and_proxy_scheme_mismatch(self):
+        cases = (
+            {
+                "Origin": "https://evil.example",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "https",
+            },
+            {
+                "Origin": "null",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "https",
+            },
+            {
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "https",
+            },
+            {
+                "Origin": "https://toy.cedarstar.org",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "http",
+            },
+            {
+                "Origin": "http://toy.cedarstar.org",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "https",
+            },
+            {
+                "Origin": "https://toy.cedarstar.org/forged",
+                "Host": "toy.cedarstar.org",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+
+        for headers in cases:
+            with self.subTest(headers=headers):
+                self.assertFalse(make_handler(headers=headers)._tarot_origin_allowed())
+
+
 class TarotMcpBoundaryTests(unittest.TestCase):
     def test_bound_machines_share_current_human_history_and_rebinding_revokes_access(self):
         with tempfile.TemporaryDirectory(prefix="tarot-mcp-history-") as temp_dir:

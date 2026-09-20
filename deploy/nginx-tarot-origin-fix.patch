@@ -1,0 +1,44 @@
+--- /etc/nginx/conf.d/cedartoy-tunnel-router.conf
++++ /etc/nginx/conf.d/cedartoy-tunnel-router.conf
+@@ -3,6 +3,14 @@
+     POST    http://127.0.0.1:8003;
+ }
+ 
++# This router is loopback-only. Preserve a single valid scheme from the local
++# ingress proxy; malformed, chained, or missing values fall back to this hop.
++map $http_x_forwarded_proto $cedartoy_tunnel_client_proto {
++    default $scheme;
++    http    http;
++    https   https;
++}
++
+ server {
+     listen 127.0.0.1:8002;
+     server_name _;
+@@ -20,7 +28,7 @@
+         proxy_set_header Host $host;
+         proxy_set_header X-Real-IP $remote_addr;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-        proxy_set_header X-Forwarded-Proto $scheme;
++        proxy_set_header X-Forwarded-Proto $cedartoy_tunnel_client_proto;
+         proxy_read_timeout 3600s;
+         proxy_send_timeout 3600s;
+         proxy_buffering off;
+@@ -32,7 +40,7 @@
+         proxy_set_header Host $host;
+         proxy_set_header X-Real-IP $remote_addr;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-        proxy_set_header X-Forwarded-Proto $scheme;
++        proxy_set_header X-Forwarded-Proto $cedartoy_tunnel_client_proto;
+         proxy_read_timeout 3600s;
+         proxy_send_timeout 3600s;
+         proxy_buffering off;
+@@ -44,7 +52,7 @@
+         proxy_set_header Host $host;
+         proxy_set_header X-Real-IP $remote_addr;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-        proxy_set_header X-Forwarded-Proto $scheme;
++        proxy_set_header X-Forwarded-Proto $cedartoy_tunnel_client_proto;
+         proxy_read_timeout 3600s;
+         proxy_send_timeout 3600s;
+         proxy_buffering off;
