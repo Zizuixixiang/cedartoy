@@ -2789,6 +2789,13 @@
       #machineTokenModal .modal-box {
         max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
       }
+      #loginModal .modal-box {
+        max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
       .pixel-toast {
         left: 18px;
         right: 18px;

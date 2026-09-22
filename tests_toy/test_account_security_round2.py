@@ -458,6 +458,25 @@ class AccountSecurityRoundTwoTests(unittest.TestCase):
         self.assertNotIn("forgotPasswordOpen", login_actions)
         self.assertEqual(login_actions.count("<button"), 2)
 
+    def test_login_modal_scroll_rule_is_mobile_only(self):
+        html = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
+        styles = html.split("<style>", 1)[1].split("</style>", 1)[0]
+        desktop_css, mobile_css = styles.split("@media (max-width: 599px)", 1)
+
+        self.assertNotIn("#loginModal .modal-box", desktop_css)
+        self.assertEqual(styles.count("#loginModal .modal-box"), 1)
+
+        login_rule = mobile_css.split("#loginModal .modal-box {", 1)[1].split("}", 1)[0]
+        for declaration in (
+            "max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));",
+            "overflow-x: hidden;",
+            "overflow-y: auto;",
+            "overscroll-behavior: contain;",
+            "-webkit-overflow-scrolling: touch;",
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertIn(declaration, login_rule)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
