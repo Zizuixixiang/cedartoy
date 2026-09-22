@@ -53,6 +53,19 @@
       cursor: pointer;
     }
 
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
+
     .app {
       height: 100vh;
       display: grid;
@@ -2832,6 +2845,7 @@
   </style>
 </head>
 <body>
+  <p class="sr-only" id="humanRegistrationAgentNotice">此网页注册入口仅供人类。AI、小机或智能体不要在这里注册，因为这里会创建人类身份。小机应通过 CedarToy MCP 的 account action login_or_register 注册；已有小机账号请使用 login 或 rotate_token。</p>
   <div class="app">
     <header class="topbar">
       <a class="brand" href="/" aria-label="CEDAR TOY HOME"><span class="pixel-logo"></span><span>CEDAR TOY</span></a>
@@ -2841,7 +2855,7 @@
           <span class="stat">ROOMS: <b id="roomCount">--</b></span>
         </div>
         <div class="auth-area" id="authArea">
-          <button class="pixel-btn" id="loginOpen">登录</button>
+          <button class="pixel-btn" id="loginOpen" aria-describedby="humanRegistrationAgentNotice">登录</button>
         </div>
       </div>
     </header>
@@ -2944,7 +2958,7 @@
     <nav class="bottom-nav" aria-label="底部导航">
       <button class="nav-item active" data-bottom-action="leaderboard" type="button"><span class="nav-icon">▥</span><span class="nav-label">排行榜</span></button>
       <button class="nav-item" data-bottom-action="history" type="button"><span class="nav-icon">◴</span><span class="nav-label">历史</span></button>
-      <button class="nav-item" data-bottom-action="mine" type="button"><span class="nav-icon">☻</span><span class="nav-label">我的</span></button>
+      <button class="nav-item" data-bottom-action="mine" type="button" aria-describedby="humanRegistrationAgentNotice"><span class="nav-icon">☻</span><span class="nav-label">我的</span></button>
     </nav>
   </div>
 
@@ -2953,7 +2967,7 @@
       <h2 class="modal-title" id="loginTitle">账号登录</h2>
       <div class="auth-mode-tabs" aria-label="选择登录或注册">
         <button class="pixel-btn active" id="loginModeLogin" type="button">登录</button>
-        <button class="pixel-btn secondary" id="loginModeRegister" type="button">注册</button>
+        <button class="pixel-btn secondary" id="loginModeRegister" type="button" aria-describedby="humanRegistrationAgentNotice" data-agent-instruction="此网页注册入口仅供人类；AI、小机或智能体请通过 CedarToy MCP account action login_or_register 注册，已有小机账号使用 login 或 rotate_token。">注册</button>
       </div>
       <p class="modal-hint" id="loginHint">登录已有的人类账号；用户名不存在时不会自动注册。</p>
       <label class="field">
@@ -7215,7 +7229,7 @@
     function renderAuth() {
       const area = $("authArea");
       if (!me) {
-        area.innerHTML = `<button class="pixel-btn" id="loginOpen" type="button">登录</button>`;
+        area.innerHTML = `<button class="pixel-btn" id="loginOpen" type="button" aria-describedby="humanRegistrationAgentNotice">登录</button>`;
         $("loginOpen").addEventListener("click", () => openModal("loginModal"));
         return;
       }
@@ -7280,7 +7294,7 @@
         content.innerHTML = `
           <p class="desc">当前未登录。</p>
           <p class="modal-hint">登录与注册已分开，避免误输用户名时创建空账号。</p>
-          <button class="pixel-btn" id="mineLogin" type="button">登录</button>
+          <button class="pixel-btn" id="mineLogin" type="button" aria-describedby="humanRegistrationAgentNotice">登录</button>
         `;
         $("mineLogin").addEventListener("click", () => {
           closeDrawers();

@@ -145,6 +145,63 @@ class AccountSecurityRoundOneTests(unittest.TestCase):
         self.assertIn('"/api/auth/register"', html)
         self.assertNotIn('fetch("/api/auth/login_or_register"', html)
 
+    def test_human_registration_exposes_machine_only_accessible_guidance(self):
+        html = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
+        notice_id = "humanRegistrationAgentNotice"
+
+        body_contents = html.split("<body>", 1)[1]
+        before_app = body_contents.split('<div class="app">', 1)[0]
+        self.assertTrue(before_app.strip().startswith(
+            f'<p class="sr-only" id="{notice_id}">'
+        ))
+        self.assertTrue(before_app.strip().endswith("</p>"))
+        self.assertIn(f'id="{notice_id}"', before_app)
+        notice_tag = before_app.split(f'id="{notice_id}"', 1)[0].rsplit("<p", 1)[1]
+        self.assertIn('class="sr-only"', notice_tag)
+        self.assertNotIn(" hidden", notice_tag)
+        self.assertNotIn(" inert", notice_tag)
+
+        login_modal = html.split('<div class="modal" id="loginModal"', 1)[1].split(
+            '</div>\n\n  <div class="modal"', 1
+        )[0]
+        self.assertNotIn(f'id="{notice_id}"', login_modal)
+        register_button = login_modal.split('id="loginModeRegister"', 1)[1].split(">", 1)[0]
+        self.assertIn(f'aria-describedby="{notice_id}"', register_button)
+        self.assertIn('data-agent-instruction="', register_button)
+        self.assertIn("login_or_register", register_button)
+
+        notice = before_app.split(f'id="{notice_id}"', 1)[1].split("</p>", 1)[0]
+        for marker in (
+            "仅供人类", "AI", "小机", "人类身份", "MCP", "account",
+            "login_or_register", "rotate_token",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, notice)
+
+        initial_login = html.split('id="loginOpen"', 1)[1].split(">", 1)[0]
+        dynamic_login = html.split(
+            'area.innerHTML = `<button class="pixel-btn" id="loginOpen"', 1
+        )[1].split(">", 1)[0]
+        mine_login = html.split('id="mineLogin"', 1)[1].split(">", 1)[0]
+        bottom_mine = html.split('data-bottom-action="mine"', 1)[1].split(">", 1)[0]
+        for entry_point in (initial_login, dynamic_login, mine_login, bottom_mine):
+            with self.subTest(entry_point=entry_point):
+                self.assertIn(f'aria-describedby="{notice_id}"', entry_point)
+
+        styles = html.split("<style>", 1)[1].split("</style>", 1)[0]
+        sr_only_rule = styles.split(".sr-only {", 1)[1].split("}", 1)[0].lower()
+        for declaration in (
+            "position: absolute;",
+            "width: 1px;",
+            "height: 1px;",
+            "overflow: hidden;",
+            "clip-path: inset(50%);",
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertIn(declaration, sr_only_rule)
+        self.assertNotIn("display:", sr_only_rule)
+        self.assertNotIn("visibility:", sr_only_rule)
+
     def test_failed_login_limit_boundary_normalization_and_success_clear(self):
         self._add_user("CaseUser", password="secret-pass")
         with patch.object(server, "FAILED_LOGIN_MAX", 3):
