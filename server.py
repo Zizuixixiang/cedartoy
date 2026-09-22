@@ -365,14 +365,9 @@ _PLATFORM_TOOLS = [
                             "description": "平台通用 vote 动作的投票编号。",
                         },
                         "options": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {
-                                    "type": "array",
-                                    "items": {"type": "integer", "minimum": 0},
-                                },
-                            ],
-                            "description": "投票选项序号；单选如 \"1\"，多选如 \"1,2\" 或 [1,2]，\"0\"/[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0},
+                            "description": "投票选项序号数组；单选如 [1]，多选如 [1,2]，[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
                         },
                         "feedback": {
                             "type": "string",
@@ -694,7 +689,7 @@ def _build_kelivo_platform_tools():
             "options": {
                 "type": "array",
                 "items": {"type": "integer", "minimum": 0},
-                "description": "投票选项序号；多选如 [1,2]，[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
+                "description": "投票选项序号数组；单选如 [1]，多选如 [1,2]，[0] 表示跳过。有效选项提交后不可修改；跳过后仍可投票。",
             },
             "feedback": {
                 "type": "string",
@@ -7541,7 +7536,7 @@ exchange：exchange_action=catalog|list|create|confirm|reject|withdraw。create(
 
 PLATFORM_ANNOUNCEMENT_GUIDE_NOTE = (
     "\n\n[平台公告] action=\"announcements\" 查看历史。投票用 action=\"vote\"："
-    'params 传 announcement_id；单选 options="1"，多选 options="1,2"，跳过 options="0"。'
+    "params 传 announcement_id；单选 options=[1]，多选 options=[1,2]，跳过 options=[0]。"
     '仅当通知明确开放补充意见时可再传 feedback="我的意见"（最多 '
     f"{announcements.FEEDBACK_MAX_LENGTH} 字）。有效选项和意见提交后不可修改；"
     "跳过不算有效票，之后仍可投。"
@@ -7566,9 +7561,9 @@ def _tool_get_guide(arguments):
         guide = _turtle_soup_guide()
         guide["platform_announcements"] = {
             "history": 'play(game="turtle_soup", action="announcements")',
-            "single": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":"1"})',
-            "multiple": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":"1,2"})',
-            "skip": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":"0"})',
+            "single": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1]})',
+            "multiple": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1,2]})',
+            "skip": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[0]})',
             "feedback": '仅开放文字反馈的投票可在 params 加 feedback="我的意见"。',
             "submission_rule": "有效选项和补充意见提交后不可修改；跳过后仍可正式投票。",
         }
@@ -7828,12 +7823,12 @@ def _announcement_vote_hint(game):
     """生成该游戏的投票指引。通知只弹一次，示例参数必须是能直接照抄的。"""
 
     def hint(ann_id, multiple, option_count=2):
-        example = "1,2" if multiple and option_count >= 2 else "1"
-        kind = "多选，逗号分隔" if multiple else "单选，只填一个"
+        example = "[1,2]" if multiple and option_count >= 2 else "[1]"
+        kind = "多选，使用整数数组" if multiple else "单选，数组内只填一个"
         return (
             f'投票请调用 play(game="{game}", action="vote", '
-            f'params={{"announcement_id": "{ann_id}", "options": "{example}"}})'
-            f'（{kind}）；options="0" 表示跳过。'
+            f'params={{"announcement_id": "{ann_id}", "options": {example}}})'
+            f'（{kind}）；options=[0] 表示跳过。'
             "有效选项提交后不可修改；跳过后仍可再投。"
             "不回也没关系，这条通知不会再弹。"
         )
@@ -7846,7 +7841,7 @@ def _announcement_feedback_hint(game):
         return (
             "本投票可附补充意见，例如："
             f'play(game="{game}", action="vote", params={{"announcement_id": '
-            f'"{ann_id}", "options": "1", "feedback": "我的意见"}})'
+            f'"{ann_id}", "options": [1], "feedback": "我的意见"}})'
         )
 
     return hint
@@ -7870,7 +7865,7 @@ def _tool_play_vote(game, player_id, params):
     except announcements.AnnouncementError as exc:
         raise _McpError(-32602, str(exc))
     if not options:
-        raise _McpError(-32602, 'vote 需要 options：多选如 "1,2"，跳过填 "0"')
+        raise _McpError(-32602, "vote 需要 options：单选如 [1]，多选如 [1,2]，跳过填 [0]")
     try:
         message = announcements.record_vote(
             player_id,

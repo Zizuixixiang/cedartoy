@@ -778,9 +778,9 @@ class AnnouncementTests(unittest.TestCase):
         old_block, feedback_block = sorted(
             text.split("\n\n"), key=lambda block: "旧投票" not in block
         )
-        self.assertIn('"options": "1"', old_block)
+        self.assertIn('"options": [1]', old_block)
         self.assertNotIn('"feedback"', old_block)
-        self.assertIn('"options": "1,2"', feedback_block)
+        self.assertIn('"options": [1,2]', feedback_block)
         self.assertIn('"feedback": "我的意见"', feedback_block)
         self.assertIn("有效选项提交后不可修改", old_block)
         self.assertIn("有效选项提交后不可修改", feedback_block)
@@ -806,6 +806,12 @@ class AnnouncementTests(unittest.TestCase):
         )
         self.assertTrue(result["ok"])
         self.assertIn("补充意见", result["text"])
+        self.assertEqual(
+            announcements.get_poll_results("hint-feedback")["options"][1][
+                "votes"
+            ],
+            1,
+        )
         with self.assertRaisesRegex(server._McpError, "不可修改"):
             server._tool_play_vote(
                 "eco",
@@ -883,9 +889,19 @@ class AnnouncementTests(unittest.TestCase):
         self.assertEqual(
             eco_act["inputSchema"]["properties"]["feedback"]["maxLength"], 500
         )
-        guide = server._tool_get_guide({"game": "eco"})
+        guide = json.loads(server._tool_get_guide({"game": "eco"}))["guide"]
         self.assertIn("feedback", guide)
         self.assertIn("不可修改", guide)
+        self.assertIn("单选 options=[1]", guide)
+        self.assertIn("多选 options=[1,2]", guide)
+        self.assertNotIn('options="1"', guide)
+
+        soup_guide = json.loads(
+            server._tool_get_guide({"game": "turtle_soup"})
+        )["platform_announcements"]
+        self.assertIn('"options":[1]', soup_guide["single"])
+        self.assertIn('"options":[1,2]', soup_guide["multiple"])
+        self.assertIn('"options":[0]', soup_guide["skip"])
 
         captured = {}
         with (

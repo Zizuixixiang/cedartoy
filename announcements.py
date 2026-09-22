@@ -196,7 +196,7 @@ def _parse_options(raw):
 def _resolve_vote_hint(vote_hint, ann_id, multiple, option_count):
     """vote_hint 可以是模板串（`{id}` 占位）或 `(ann_id, multiple) -> str` 的可调用对象。
 
-    可调用形式是给平台层用的：单选/多选的示例参数不一样（options="1" vs "1,2"），
+    可调用形式是给平台层用的：单选/多选的示例参数不一样（options=[1] vs [1,2]），
     给单选投票展示多选示例会直接把 AI 引到一个必然报错的调用上。
     """
     if callable(vote_hint):

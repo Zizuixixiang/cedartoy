@@ -191,6 +191,17 @@ class RootMcpProtocolTests(unittest.TestCase):
                 if server._is_kelivo_user_agent(user_agent):
                     self.assertIn("command", sanitized_params["properties"])
 
+                options_schema = schema["properties"]["params"]["properties"][
+                    "options"
+                ]
+                self.assertEqual(options_schema["type"], "array")
+                self.assertEqual(
+                    options_schema["items"],
+                    {"type": "integer", "minimum": 0},
+                )
+                self.assertNotIn("anyOf", options_schema)
+                self.assertIn("单选如 [1]", options_schema["description"])
+
                 source_schema = next(
                     tool["inputSchema"]
                     for tool in server._PLATFORM_TOOLS
