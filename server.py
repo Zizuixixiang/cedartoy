@@ -643,8 +643,20 @@ _PLATFORM_TOOLS = [
 ]
 
 
-def _build_kelivo_platform_tools():
+def _build_root_platform_tools():
     tools = copy.deepcopy(_PLATFORM_TOOLS)
+    play_tool = next(tool for tool in tools if tool.get("name") == "play")
+    # Some MCP clients reject a root allOf before invoking a tool.  The game
+    # backends still enforce every action-specific requirement themselves.
+    play_tool["inputSchema"].pop("allOf", None)
+    return tools
+
+
+_ROOT_PLATFORM_TOOLS = _build_root_platform_tools()
+
+
+def _build_kelivo_platform_tools():
+    tools = copy.deepcopy(_ROOT_PLATFORM_TOOLS)
     play_tool = next(tool for tool in tools if tool.get("name") == "play")
     play_tool["inputSchema"]["properties"]["params"].setdefault("properties", {}).update(
         {
@@ -833,11 +845,6 @@ def _build_kelivo_platform_tools():
             "player_emoji": {"type": "string", "maxLength": 32, "description": "ai_life 围观展示头像。"},
         }
     )
-    # Kelivo 1.2.6 flattens a root allOf into its first if/then branch, then
-    # drops if/then and the original type/properties.  Keep its outbound copy
-    # usable; the shared schema retains these conditions for other clients,
-    # while the same requirements remain enforced by each game backend.
-    play_tool["inputSchema"].pop("allOf", None)
     return tools
 
 
@@ -7334,7 +7341,11 @@ def _tool_list_games(path_token=None):
 
 
 def _root_tools(user_agent=""):
-    platform_tools = _KELIVO_PLATFORM_TOOLS if _is_kelivo_user_agent(user_agent) else _PLATFORM_TOOLS
+    platform_tools = (
+        _KELIVO_PLATFORM_TOOLS
+        if _is_kelivo_user_agent(user_agent)
+        else _ROOT_PLATFORM_TOOLS
+    )
     return [tool for tool in platform_tools if tool.get("name") in _ROOT_TOOL_NAMES]
 
 

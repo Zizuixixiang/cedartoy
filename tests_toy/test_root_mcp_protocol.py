@@ -153,14 +153,10 @@ class RootMcpProtocolTests(unittest.TestCase):
             if tool["name"] == "play"
         )
 
-    def test_kelivo_126_sanitizer_keeps_compatible_play_schema_usable(self):
-        regular_schema = self._play_schema("ExampleMcpClient/1.0")
-        self.assertIn("allOf", regular_schema)
-        broken = _kelivo_126_sanitize_node(regular_schema)
-        self.assertNotIn("type", broken)
-        self.assertNotIn("properties", broken)
-
+    def test_all_root_clients_get_play_schema_without_root_all_of(self):
         for user_agent in (
+            "ExampleMcpClient/1.0",
+            "Aru/1.0",
             "Kelivo/1.2.6",
             "Dart/3.9 (dart:io)",
             "ktor-client/3.0",
@@ -187,25 +183,27 @@ class RootMcpProtocolTests(unittest.TestCase):
                     "question",
                     "revision",
                     "game_action",
-                    "command",
                 ):
                     self.assertIn(
                         field,
                         sanitized_params["properties"],
                     )
+                if server._is_kelivo_user_agent(user_agent):
+                    self.assertIn("command", sanitized_params["properties"])
 
-    def test_regular_client_keeps_conditional_play_requirements(self):
-        schema = self._play_schema("ExampleMcpClient/1.0")
-        self.assertEqual(schema["type"], "object")
-        self.assertIn("allOf", schema)
-        self.assertEqual(
-            schema["allOf"][0]["then"]["properties"]["params"]["required"],
-            ["request_id", "question"],
-        )
-        self.assertEqual(
-            schema["allOf"][2]["then"]["properties"]["params"]["required"],
-            ["name", "difficulty"],
-        )
+                source_schema = next(
+                    tool["inputSchema"]
+                    for tool in server._PLATFORM_TOOLS
+                    if tool["name"] == "play"
+                )
+                self.assertEqual(
+                    schema["properties"]["action"]["description"],
+                    source_schema["properties"]["action"]["description"],
+                )
+                self.assertEqual(
+                    schema["properties"]["params"]["description"],
+                    source_schema["properties"]["params"]["description"],
+                )
 
     def test_backend_still_rejects_missing_tarot_and_detroit_parameters(self):
         tarot_store = Mock()
