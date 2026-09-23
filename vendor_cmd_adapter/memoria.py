@@ -333,6 +333,31 @@ def _has_save(player_id):
     return any((root / relative_path).exists() for relative_path in SAVE_FILES.values())
 
 
+def _restart_difficulty(command):
+    """Return a standalone ``new_game [difficulty]`` difficulty, if present."""
+    parts = command.split()
+    if not parts or parts[0].lower() != "new_game":
+        return None
+    if len(parts) > 2:
+        raise VendorCmdError("new_game 用法：new_game [normal/hard/hell]")
+    difficulty = parts[1].lower() if len(parts) == 2 else "normal"
+    if difficulty not in {"normal", "hard", "hell"}:
+        raise VendorCmdError("difficulty 支持 normal/hard/hell")
+    return difficulty
+
+
+def _saved_level(player_id):
+    root = SAVE_ROOT / "memoria" / require_player_id(player_id)
+    try:
+        progress = json.loads((root / "progress.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(progress, dict):
+        return None
+    level = progress.get("current_level")
+    return _normalize_level(level) if level is not None else None
+
+
 def play(arguments):
     action = (arguments.get("action") or "cmd").strip()
     player_id = arguments.get("player_id")
@@ -356,20 +381,22 @@ def play(arguments):
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
             raise VendorCmdError("command 参数必填")
-        if requested_level:
-            level = _normalize_level(requested_level)
-            extra["level"] = level
+        level = _normalize_level(requested_level) if requested_level else _saved_level(player_id)
+        restart_difficulty = _restart_difficulty(command)
+        if restart_difficulty is not None:
+            level = level or "1"
+            extra.update({"level": level, "difficulty": restart_difficulty})
+            # The vendor command dispatchers disagree on this command: L2 can
+            # report the requested difficulty while saving normal, L4 ignores
+            # it, and an ended L1 blocks it. Route the explicit restart through
+            # the same reset/new_game path as action=new instead.
+            text = GAME.run(player_id, "status", reset=True, extra=extra)
         else:
-            level = None
-        text = GAME.run(player_id, command, extra=extra)
-        if level is None:
-            root = SAVE_ROOT / "memoria" / require_player_id(player_id)
-            try:
-                progress = json.loads((root / "progress.json").read_text(encoding="utf-8"))
-                if isinstance(progress, dict):
-                    level = progress.get("current_level")
-            except (OSError, json.JSONDecodeError, ValueError):
-                pass
+            if level is not None:
+                extra["level"] = level
+            text = GAME.run(player_id, command, extra=extra)
+            if level is None:
+                level = _saved_level(player_id)
     elif action in {"levels", "memoria_levels"}:
         level = _normalize_level(requested_level)
         lines = ["Memoria Station 关卡："]

@@ -216,6 +216,30 @@ class RootMcpProtocolTests(unittest.TestCase):
                     source_schema["properties"]["params"]["description"],
                 )
 
+    def test_shared_difficulty_schema_preserves_each_games_values(self):
+        schema = self._play_schema("ExampleMcpClient/1.0")
+        difficulty = schema["properties"]["params"]["properties"]["difficulty"]
+        string_branch = next(
+            branch for branch in difficulty["anyOf"] if branch.get("type") == "string"
+        )
+        integer_branch = next(
+            branch for branch in difficulty["anyOf"] if branch.get("type") == "integer"
+        )
+
+        self.assertEqual(
+            set(string_branch["enum"]),
+            {
+                "casual",
+                "experienced",
+                "hardcore",
+                "normal",
+                "hard",
+                "hell",
+            },
+        )
+        self.assertEqual(integer_branch["minimum"], 1)
+        self.assertEqual(integer_branch["maximum"], 10)
+
     def test_backend_still_rejects_missing_tarot_and_detroit_parameters(self):
         tarot_store = Mock()
         tarot_ai = {"id": 201, "is_ai": 1}
@@ -253,6 +277,10 @@ class RootMcpProtocolTests(unittest.TestCase):
             for arguments, message_fragment in (
                 ({}, "name"),
                 ({"name": "测试周目"}, "difficulty"),
+                (
+                    {"name": "测试周目", "difficulty": "normal"},
+                    "casual、experienced 或 hardcore",
+                ),
             ):
                 with self.subTest(game="detroit", arguments=arguments):
                     with self.assertRaises(

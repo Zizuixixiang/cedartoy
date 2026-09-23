@@ -412,9 +412,21 @@ _PLATFORM_TOOLS = [
                             "description": "detroit create_save 的周目名称。",
                         },
                         "difficulty": {
-                            "type": "string",
-                            "enum": ["casual", "experienced", "hardcore"],
-                            "description": "detroit create_save 的难度。",
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "enum": [
+                                        "casual",
+                                        "experienced",
+                                        "hardcore",
+                                        "normal",
+                                        "hard",
+                                        "hell",
+                                    ],
+                                },
+                                {"type": "integer", "minimum": 1, "maximum": 10},
+                            ],
+                            "description": "detroit 使用 casual/experienced/hardcore；memoria 使用 normal/hard/hell；crucible_echoes 使用 1-10 整数。各游戏仍会独立校验。",
                         },
                         "confirm_retry": {
                             "type": "boolean",
