@@ -53,6 +53,8 @@ META_KEYS = [
     "unlocked_achievements", "heart_slots",
     "cross_word_stats", "game_diary",
     "cross_deform_count", "cross_swallow_count",
+    # Snapshot names (the upstream file-meta name for tavern visits omits '_').
+    "bonus_max_hp", "bonus_word_slots", "deform_resist", "_tavern_regular_visits",
 ]
 _PROGRESS_FLAG = "_adapter_has_substantive_progress"
 _PROGRESS_PHASES = {"explore", "combat", "fork", "judgment", "void", "dead", "dead_who", "dead_wipe", "ending"}
@@ -244,7 +246,7 @@ def ciyuwu_new(arguments):
         conn.execute("BEGIN IMMEDIATE")
         _cleanup_expired(conn, now)
         row = conn.execute(
-            "SELECT meta_data FROM ciyuwu_sessions WHERE player_id = ?",
+            "SELECT meta_data, save_data FROM ciyuwu_sessions WHERE player_id = ?",
             (player_id,),
         ).fetchone()
         active_count = conn.execute(
@@ -259,6 +261,13 @@ def ciyuwu_new(arguments):
             )
 
         meta = _parse_meta(row[0]) if row else {}
+        if row:
+            # Pre-update saves already contain these fields in the run snapshot.
+            # Preserve them on the first new game, before meta has been refreshed.
+            previous_state = _parse_meta(row[1])
+            for key in ("bonus_max_hp", "bonus_word_slots", "deform_resist", "_tavern_regular_visits"):
+                if key not in meta and key in previous_state:
+                    meta[key] = previous_state[key]
         state, intro = _engine_new(seed, meta)
         new_meta = _extract_meta(state)
 
@@ -479,7 +488,7 @@ def _apply_meta_to_state(state, meta):
 def _meta_without_unearned_rewards(old_meta, new_meta):
     sanitized = dict(new_meta)
     for key in META_KEYS:
-        if key == "runs":
+        if key in {"runs", "_tavern_regular_visits"}:
             continue
         if key in old_meta:
             sanitized[key] = old_meta[key]
@@ -490,7 +499,7 @@ def _meta_without_unearned_rewards(old_meta, new_meta):
 
 def _meta_has_unearned_rewards(old_meta, new_meta):
     for key in META_KEYS:
-        if key == "runs":
+        if key in {"runs", "_tavern_regular_visits"}:
             continue
         if old_meta.get(key) != new_meta.get(key):
             return True
