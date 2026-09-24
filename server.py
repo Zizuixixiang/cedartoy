@@ -3373,19 +3373,55 @@ def _set_avatar(raw_token, avatar):
     return {"ok": True, "user": _public_user(updated)}
 
 
-def _get_avatar_frames(raw_token):
-    user = _current_account(raw_token)
-    with _db_connect() as conn:
-        return avatar_appearances.owned(conn, user["id"])
+def _avatar_frame_target(conn, user, target_user_id):
+    if target_user_id is None:
+        return user
+    if isinstance(target_user_id, bool) or not re.fullmatch(r"[1-9][0-9]*", str(target_user_id)):
+        raise ValueError("target_user_id 必须为账号 ID")
+    target_user_id = int(target_user_id)
+    if target_user_id == user["id"]:
+        return user
+    if user.get("is_ai"):
+        raise _McpError(-32003, "只能修改自己的头像框")
+    target = _row_dict(conn.execute(
+        """
+        SELECT u.* FROM toy_users u
+        JOIN user_bindings b ON b.ai_user_id = u.id
+        WHERE b.human_user_id = ? AND u.id = ? AND u.is_ai = 1
+          AND u.deleted_at IS NULL AND u.deletion_requested_at_epoch IS NULL
+        """, (user["id"], str(target_user_id)),
+    ).fetchone())
+    if not target:
+        raise _McpError(-32003, "只能修改自己或已绑定小机的头像框")
+    return target
 
 
-def _set_avatar_frame(raw_token, selected):
+def _get_avatar_frames(raw_token, target_user_id=None):
     user = _current_account(raw_token)
     with _db_connect() as conn:
-        # Keep the ownership check and selection write in one transaction.
+        conn.execute("BEGIN")
+        target = _avatar_frame_target(conn, user, target_user_id)
+        result = avatar_appearances.owned(conn, target["id"])
+        machines = [] if user.get("is_ai") else conn.execute(
+            """
+            SELECT u.id, u.username FROM toy_users u
+            JOIN user_bindings b ON b.ai_user_id = u.id
+            WHERE b.human_user_id = ? AND u.is_ai = 1
+              AND u.deleted_at IS NULL AND u.deletion_requested_at_epoch IS NULL
+            ORDER BY u.id
+            """, (user["id"],),
+        ).fetchall()
+    return {**result, "user": _public_user(target), "machines": [dict(row) for row in machines]}
+
+
+def _set_avatar_frame(raw_token, selected, target_user_id=None):
+    user = _current_account(raw_token)
+    with _db_connect() as conn:
+        # Binding permission, inventory check and write share one transaction.
         conn.execute("BEGIN IMMEDIATE")
-        avatar_appearances.select(conn, user["id"], selected)
-    return {"ok": True, "user": _public_user(user)}
+        target = _avatar_frame_target(conn, user, target_user_id)
+        avatar_appearances.select(conn, target["id"], selected)
+    return {"ok": True, "user": _public_user(target)}
 
 
 def _rename_next_allowed_at(epoch):
@@ -11692,12 +11728,14 @@ a{{color:#c9afff}}
                 body = self._read_json_body()
                 if not isinstance(body, dict) or "selected" not in body:
                     raise ValueError("缺少 selected 字段")
-                result = _set_avatar_frame(raw_token, body["selected"])
+                result = _set_avatar_frame(raw_token, body["selected"], body.get("target_user_id"))
             else:
-                result = _get_avatar_frames(raw_token)
+                params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True)
+                result = _get_avatar_frames(raw_token, params.get("target_user_id", [None])[0])
             self._send_json(result, extra_headers={"Cache-Control": "no-store"})
         except _McpError as exc:
-            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+            status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else 400)
+            self._send_json({"error": exc.message}, status=status)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, status=400)
         except Exception:

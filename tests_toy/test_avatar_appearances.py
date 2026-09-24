@@ -68,7 +68,12 @@ class AvatarAppearanceTests(unittest.TestCase):
         self.assertEqual({item["key"] for item in data["items"]}, set(appearances.CATALOG))
         self.assertEqual(data["selected"], "cedartoy_1w_decoration")
         for user_id in (2, 3):
-            self.assertEqual(self.request(user_id=user_id), (200, {"items": [], "selected": None}))
+            status, data = self.request(user_id=user_id)
+            self.assertEqual(status, 200)
+            self.assertEqual(data["items"], [])
+            self.assertIsNone(data["selected"])
+            self.assertEqual(data["user"]["id"], user_id)
+            self.assertEqual(data["machines"], [])
         for raw_token in ("", "invalid"):
             self.assertEqual(self.request(raw_token=raw_token)[0], 401)
             self.assertEqual(self.request("POST", {"selected": None}, raw_token=raw_token)[0], 401)
@@ -107,6 +112,55 @@ class AvatarAppearanceTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM account_avatar_selection").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM account_avatar_inventory").fetchone()[0], 1)
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_bound_machine_inventory_and_save_are_independent(self):
+        with self._connect() as conn:
+            conn.execute("INSERT INTO user_bindings (human_user_id, ai_user_id) VALUES (1, 3)")
+        self.assertEqual(self.request()[1]["machines"], [{"id": 3, "username": "AppearanceUser3"}])
+        path = "/api/auth/avatar-frames?target_user_id=3"
+        status, data = self.request(path=path)
+        self.assertEqual(status, 200)
+        self.assertEqual(data["user"]["id"], 3)
+        self.assertEqual(data["items"], [])
+        body = {"target_user_id": 3, "selected": "cedartoy_1w"}
+        self.assertEqual(self.request("POST", body)[0], 400, "human inventory cannot supply machine items")
+        with self._connect() as conn:
+            appearances.grant(conn, [3], ["cedartoy_1w"])
+        status, saved = self.request("POST", body)
+        self.assertEqual(status, 200)
+        self.assertEqual(saved["user"]["id"], 3)
+        self.assertEqual(self.request(path=path)[1]["selected"], "cedartoy_1w")
+        self.assertEqual(self.request()[1]["selected"], "cedartoy_1w_decoration")
+        self.assertEqual(self.request("POST", {**body, "selected": None})[0], 200)
+
+    def test_target_permissions_are_rechecked_after_unbind(self):
+        path = "/api/auth/avatar-frames?target_user_id=3"
+        body = {"target_user_id": 3, "selected": None}
+        for actor, target in ((1, 2), (1, 3), (2, 1), (3, 1), (3, 2), (1, 999)):
+            self.assertEqual(self.request(user_id=actor, path=f"/api/auth/avatar-frames?target_user_id={target}")[0], 403)
+            self.assertEqual(self.request("POST", {"target_user_id": target, "selected": None}, user_id=actor)[0], 403)
+        with self._connect() as conn:
+            conn.execute("INSERT INTO user_bindings (human_user_id, ai_user_id) VALUES (1, 3)")
+        self.assertEqual(self.request(path=path)[0], 200)
+        with self._connect() as conn:
+            conn.execute("DELETE FROM user_bindings WHERE human_user_id = 1")
+        self.assertEqual(self.request("POST", body)[0], 403)
+        self.assertEqual(self.request(path=path)[0], 403)
+        self.assertEqual(self.request()[1]["machines"], [])
+        for invalid in (True, [], {}, 1.5, "", "-1", "invalid"):
+            self.assertEqual(self.request("POST", {"target_user_id": invalid, "selected": None})[0], 400)
+
+    def test_pending_or_deleted_machine_cannot_be_targeted(self):
+        with self._connect() as conn:
+            conn.execute("INSERT INTO user_bindings (human_user_id, ai_user_id) VALUES (1, 3)")
+        for field in ("deletion_requested_at_epoch", "deleted_at"):
+            with self._connect() as conn:
+                conn.execute(f"UPDATE toy_users SET {field} = 1 WHERE id = 3")
+            self.assertEqual(self.request()[1]["machines"], [])
+            self.assertEqual(self.request(path="/api/auth/avatar-frames?target_user_id=3")[0], 403)
+            self.assertEqual(self.request("POST", {"target_user_id": 3, "selected": None})[0], 403)
+            with self._connect() as conn:
+                conn.execute(f"UPDATE toy_users SET {field} = NULL WHERE id = 3")
 
 
 if __name__ == "__main__":

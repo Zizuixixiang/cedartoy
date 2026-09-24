@@ -203,6 +203,7 @@
     }
 
     .avatar-emoji { position: relative; z-index: 1; }
+    .avatar-frame, .avatar-decoration { z-index: 2; }
     .avatar-frame {
       position: absolute;
       width: 140%;
@@ -221,7 +222,7 @@
       width: 48px;
       height: 48px;
       max-width: none;
-      left: -11px;
+      left: -13px;
       bottom: -13px;
       pointer-events: none;
       image-rendering: auto;
@@ -1442,6 +1443,8 @@
       padding: 20px;
     }
     #avatarFrameModal .modal-title { padding-right: 42px; }
+    #avatarFrameModes[hidden] { display: none; }
+    #avatarFrameMachine { min-width: 0; }
     .avatar-frame-close {
       position: absolute;
       top: 6px;
@@ -2297,7 +2300,7 @@
     .mine-profile-avatar .avatar-decoration {
       width: 72px;
       height: 72px;
-      left: -13px;
+      left: -16px;
       bottom: -17px;
     }
 
@@ -3120,6 +3123,14 @@
     <div class="modal-box">
       <button class="avatar-frame-close" data-close-modal type="button" aria-label="关闭头像框选择">×</button>
       <h2 class="modal-title" id="avatarFrameTitle">修改头像框</h2>
+      <div class="auth-mode-tabs" id="avatarFrameModes" role="group" aria-label="选择头像框所属账号">
+        <button class="pixel-btn active" id="avatarFrameHuman" type="button" aria-pressed="true">人类</button>
+        <button class="pixel-btn secondary" id="avatarFrameAI" type="button" aria-pressed="false">小机</button>
+      </div>
+      <label class="field" id="avatarFrameMachineField" hidden>
+        <span class="field-label">选择已绑定的小机</span>
+        <select id="avatarFrameMachine" aria-label="选择已绑定的小机"></select>
+      </label>
       <p class="modal-hint">选择已拥有的外观，点击保存后生效。</p>
       <div class="avatar-frame-grid" id="avatarFrameGrid" role="group" aria-label="已拥有的头像外观"></div>
       <div class="modal-msg" id="avatarFrameMsg" role="status" aria-live="polite"></div>
@@ -6800,7 +6811,7 @@
       const items = [{key: null, name: "无"}, ...state.items];
       $("avatarFrameGrid").innerHTML = items.map((item, index) => {
         const preview = item.key
-          ? `<span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent({...me.user, avatar_frame: item.key})}</span>`
+          ? `<span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent({...state.user, avatar_frame: item.key})}</span>`
           : '<span class="avatar-frame-none" aria-hidden="true"></span>';
         return `<button class="avatar-frame-option" type="button" data-frame-index="${index}" aria-pressed="${item.key === state.selected}" ${state.saving ? "disabled" : ""}>
           ${preview}<span>${escapeHtml(item.name)}</span></button>`;
@@ -6816,49 +6827,106 @@
       });
     }
 
-    async function openAvatarFrameModal() {
-      if (!me) return;
-      closeDrawers();
-      openModal("avatarFrameModal");
-      const state = {items: [], selected: null, loaded: false, saving: false, token: token()};
-      avatarFrameState = state;
+    function syncAvatarFrameTargets() {
+      const state = avatarFrameState;
+      if (!state) return;
+      $("avatarFrameModes").hidden = Boolean(me?.user.is_ai);
+      for (const [id, mode] of [["avatarFrameHuman", "human"], ["avatarFrameAI", "machine"]]) {
+        const button = $(id);
+        button.classList.toggle("active", state.mode === mode);
+        button.classList.toggle("secondary", state.mode !== mode);
+        button.setAttribute("aria-pressed", String(state.mode === mode));
+        button.disabled = state.saving || (mode === "machine" && !state.machinesLoaded);
+      }
+      $("avatarFrameMachineField").hidden = state.mode !== "machine";
+      $("avatarFrameMachine").disabled = state.saving || !state.machines.length;
+      $("avatarFrameMachine").innerHTML = '<option value="">请选择小机</option>' + state.machines.map((machine) =>
+        `<option value="${Number(machine.id)}">${escapeHtml(machine.username)}</option>`
+      ).join("");
+      $("avatarFrameMachine").value = state.mode === "machine" ? String(state.targetId || "") : "";
+    }
+
+    async function loadAvatarFrameTarget() {
+      const state = avatarFrameState;
+      if (!state || state.saving) return;
+      const requestId = ++state.requestId;
+      state.loaded = false;
+      state.items = [];
+      state.selected = null;
+      state.user = null;
       $("avatarFrameGrid").innerHTML = "";
-      $("avatarFrameMsg").textContent = "读取中...";
       $("avatarFrameSubmit").disabled = true;
       $("avatarFrameSubmit").textContent = "保存";
-      $("avatarFrameModal").querySelector(".avatar-frame-close").focus();
+      syncAvatarFrameTargets();
+      if (!state.targetId) {
+        $("avatarFrameMsg").textContent = state.machines.length ? "请选择一只小机。" : "暂未绑定小机。";
+        return;
+      }
+      $("avatarFrameMsg").textContent = "读取中...";
+      const current = () => state === avatarFrameState && state.token === token() && state.requestId === requestId;
       try {
-        const res = await fetch("/api/auth/avatar-frames", {headers: headers(), cache: "no-store"});
+        const query = state.targetId === me.user.id ? "" : `?target_user_id=${encodeURIComponent(state.targetId)}`;
+        const res = await fetch(`/api/auth/avatar-frames${query}`, {headers: headers(), cache: "no-store"});
         const data = await res.json().catch(() => ({}));
-        if (state !== avatarFrameState || state.token !== token()) return;
+        if (!current()) return;
         if (!res.ok) throw new Error(data.error || "头像框读取失败");
         state.items = data.items;
         state.selected = data.selected;
+        state.user = data.user;
+        state.machines = data.machines;
+        state.machinesLoaded = true;
         state.loaded = true;
+        syncAvatarFrameTargets();
         renderAvatarFrameOptions();
         $("avatarFrameMsg").textContent = state.items.length ? "" : "暂未拥有头像框，可选择无。";
         $("avatarFrameSubmit").disabled = false;
       } catch (err) {
-        if (state === avatarFrameState) $("avatarFrameMsg").textContent = err.message || "头像框读取失败";
+        if (current()) $("avatarFrameMsg").textContent = err.message || "头像框读取失败";
       }
+    }
+
+    async function switchAvatarFrameMode(mode) {
+      const state = avatarFrameState;
+      if (!state || state.saving || me?.user.is_ai || (mode === "machine" && !state.machinesLoaded)) return;
+      state.mode = mode;
+      state.targetId = mode === "human" ? me.user.id : null;
+      await loadAvatarFrameTarget();
+    }
+
+    async function openAvatarFrameModal() {
+      if (!me) return;
+      closeDrawers();
+      openModal("avatarFrameModal");
+      avatarFrameState = {
+        items: [], selected: null, loaded: false, saving: false, token: token(),
+        mode: "human", targetId: me.user.id, user: null, machines: [], machinesLoaded: false, requestId: 0,
+      };
+      $("avatarFrameModal").querySelector(".avatar-frame-close").focus();
+      await loadAvatarFrameTarget();
     }
 
     async function saveAvatarFrame() {
       const state = avatarFrameState;
       if (!state || !state.loaded || state.saving || state.token !== token()) return;
       state.saving = true;
+      syncAvatarFrameTargets();
       $("avatarFrameSubmit").disabled = true;
       $("avatarFrameSubmit").textContent = "保存中...";
       $("avatarFrameMsg").textContent = "";
       renderAvatarFrameOptions();
       try {
         const res = await fetch("/api/auth/avatar-frames", {
-          method: "POST", headers: headers(true), body: JSON.stringify({selected: state.selected}),
+          method: "POST", headers: headers(true), body: JSON.stringify({selected: state.selected, target_user_id: state.targetId}),
         });
         const data = await res.json().catch(() => ({}));
         if (state.token !== token() || !me) return;
         if (!res.ok) throw new Error(data.error || "头像框保存失败");
-        me.user = data.user;
+        if (data.user.id === me.user.id) {
+          me.user = data.user;
+        } else {
+          me.bindings = (me.bindings || []).map((user) => user.id === data.user.id ? {...user, ...data.user} : user);
+          machineState.machines = machineState.machines.map((user) => user.id === data.user.id ? {...user, ...data.user} : user);
+        }
         renderAuth();
         renderMine();
         if (state === avatarFrameState) {
@@ -6870,6 +6938,7 @@
       } catch (err) {
         if (state !== avatarFrameState) return;
         state.saving = false;
+        syncAvatarFrameTargets();
         renderAvatarFrameOptions();
         $("avatarFrameMsg").textContent = err.message || "头像框保存失败";
         $("avatarFrameSubmit").disabled = false;
@@ -8390,6 +8459,13 @@
     $("loginModeRegister").addEventListener("click", () => setLoginMode("register"));
     $("avatarSubmit").addEventListener("click", saveAvatar);
     $("avatarFrameSubmit").addEventListener("click", saveAvatarFrame);
+    $("avatarFrameHuman").addEventListener("click", () => switchAvatarFrameMode("human"));
+    $("avatarFrameAI").addEventListener("click", () => switchAvatarFrameMode("machine"));
+    $("avatarFrameMachine").addEventListener("change", () => {
+      if (!avatarFrameState || avatarFrameState.saving) return;
+      avatarFrameState.targetId = Number($("avatarFrameMachine").value) || null;
+      loadAvatarFrameTarget();
+    });
     $("forgotPasswordOpen").addEventListener("click", openForgotPasswordModal);
     $("forgotPasswordSubmit").addEventListener("click", submitForgotPassword);
     $("emailSecuritySubmit").addEventListener("click", submitEmailSecurity);
