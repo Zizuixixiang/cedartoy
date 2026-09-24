@@ -164,7 +164,7 @@
       gap: 8px;
       color: #fff;
       max-width: 190px;
-      overflow: hidden;
+      overflow: visible;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -186,6 +186,7 @@
     }
 
     .account-avatar {
+      position: relative;
       display: inline-grid;
       place-items: center;
       flex: none;
@@ -199,6 +200,19 @@
       font-family: system-ui, sans-serif;
       font-size: 18px;
       line-height: 1;
+    }
+
+    .avatar-emoji { position: relative; z-index: 1; }
+    .avatar-frame {
+      position: absolute;
+      width: 140%;
+      height: 140%;
+      max-width: none;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      image-rendering: auto;
     }
 
     button.account-avatar {
@@ -2188,6 +2202,7 @@
     }
 
     .mine-profile-avatar {
+      position: relative;
       display: grid;
       place-items: center;
       flex: none;
@@ -4367,9 +4382,17 @@
       return user && user.is_ai ? "🤖" : "🙂";
     }
 
+    function accountAvatarContent(user) {
+      const avatar = escapeHtml(accountAvatar(user));
+      const frame = user?.avatar_frame === "cedartoy_1w"
+        ? '<img class="avatar-frame" src="/assets/cedartoy-1w-frame.webp" alt="" aria-hidden="true">'
+        : "";
+      return `<span class="avatar-emoji">${avatar}</span>${frame}`;
+    }
+
     function authAvatarHtml(user, {clickable = false} = {}) {
       if (!avatarFeatureEnabled) return '<span aria-hidden="true">●</span>';
-      const avatar = escapeHtml(accountAvatar(user));
+      const avatar = accountAvatarContent(user);
       if (clickable) {
         return `<button class="account-avatar" id="topAvatarOpen" type="button" aria-label="设置 Emoji 头像" title="设置头像">${avatar}</button>`;
       }
@@ -7333,7 +7356,7 @@
       const bindings = bindingUsers.map((user) => `<li><span>${avatarFeatureEnabled ? escapeHtml(accountAvatar(user)) : "AI"}</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
         ${avatarFeatureEnabled ? `<div class="mine-profile-row">
-          <span class="mine-profile-avatar" aria-hidden="true">${escapeHtml(accountAvatar(me.user))}</span>
+          <span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent(me.user)}</span>
           <div class="mine-profile-info">
             <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
             <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>

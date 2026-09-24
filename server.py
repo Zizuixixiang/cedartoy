@@ -2311,6 +2311,9 @@ def _public_user(user):
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }
+    # Temporary frame try-on for account 1; no persisted entitlement yet.
+    if user["id"] == 1:
+        result["avatar_frame"] = "cedartoy_1w"
     if user.get("deletion_requested_at_epoch") is not None:
         scheduled = int(user["scheduled_delete_at_epoch"])
         result["deletion"] = {
