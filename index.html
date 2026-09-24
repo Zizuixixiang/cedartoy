@@ -4385,7 +4385,7 @@
     function accountAvatarContent(user) {
       const avatar = escapeHtml(accountAvatar(user));
       const frame = user?.avatar_frame === "cedartoy_1w"
-        ? '<img class="avatar-frame" src="/assets/icons/cedartoy-1w-frame.webp" alt="" aria-hidden="true">'
+        ? '<img class="avatar-frame" src="/assets/icons/cedartoy-1w-frame.webp?v=20260925c" alt="" aria-hidden="true">'
         : "";
       return `<span class="avatar-emoji">${avatar}</span>${frame}`;
     }
