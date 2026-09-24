@@ -13339,7 +13339,10 @@ a{{color:#c9afff}}
         except OSError:
             self._send_json({"error": "not found"}, status=404)
             return
-        content_type = mimetypes.guess_type(asset_path.name)[0] or "application/octet-stream"
+        content_type = mimetypes.guess_type(asset_path.name)[0]
+        if content_type is None and asset_path.suffix.lower() == ".webp":
+            content_type = "image/webp"
+        content_type = content_type or "application/octet-stream"
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
