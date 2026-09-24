@@ -205,8 +205,8 @@
     .avatar-emoji { position: relative; z-index: 1; }
     .avatar-frame {
       position: absolute;
-      width: 140%;
-      height: 140%;
+      width: 170%;
+      height: 170%;
       max-width: none;
       top: 50%;
       left: 50%;
@@ -223,6 +223,23 @@
     button.account-avatar:focus-visible {
       background: rgba(255, 255, 255, 0.24);
       outline: none;
+    }
+
+    .account-avatar.has-avatar-frame {
+      border: 0;
+      /* Reserve the frame's 10.5px overhang without resizing the avatar. */
+      margin-inline: 11px;
+    }
+
+    .account-avatar.has-avatar-frame,
+    button.account-avatar.has-avatar-frame:hover,
+    button.account-avatar.has-avatar-frame:focus-visible {
+      background: transparent;
+    }
+
+    button.account-avatar.has-avatar-frame:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
     }
 
     .main {
@@ -2214,6 +2231,18 @@
       font-family: system-ui, sans-serif;
       font-size: 30px;
       line-height: 1;
+    }
+
+    .mine-profile-avatar.has-avatar-frame {
+      border: 0;
+      background: transparent;
+      /* Reserve the frame's 20.8px overhang on all sides. */
+      margin: 21px;
+    }
+
+    .mine-profile-avatar .avatar-frame {
+      width: 180%;
+      height: 180%;
     }
 
     .mine-profile-info { min-width: 0; flex: 1; }
@@ -4382,9 +4411,13 @@
       return user && user.is_ai ? "🤖" : "🙂";
     }
 
+    function hasAccountAvatarFrame(user) {
+      return user?.avatar_frame === "cedartoy_1w";
+    }
+
     function accountAvatarContent(user) {
       const avatar = escapeHtml(accountAvatar(user));
-      const frame = user?.avatar_frame === "cedartoy_1w"
+      const frame = hasAccountAvatarFrame(user)
         ? '<img class="avatar-frame" src="/assets/icons/cedartoy-1w-frame.webp" alt="" aria-hidden="true">'
         : "";
       return `<span class="avatar-emoji">${avatar}</span>${frame}`;
@@ -4393,10 +4426,11 @@
     function authAvatarHtml(user, {clickable = false} = {}) {
       if (!avatarFeatureEnabled) return '<span aria-hidden="true">●</span>';
       const avatar = accountAvatarContent(user);
+      const frameClass = hasAccountAvatarFrame(user) ? " has-avatar-frame" : "";
       if (clickable) {
-        return `<button class="account-avatar" id="topAvatarOpen" type="button" aria-label="设置 Emoji 头像" title="设置头像">${avatar}</button>`;
+        return `<button class="account-avatar${frameClass}" id="topAvatarOpen" type="button" aria-label="设置 Emoji 头像" title="设置头像">${avatar}</button>`;
       }
-      return `<span class="account-avatar" aria-hidden="true">${avatar}</span>`;
+      return `<span class="account-avatar${frameClass}" aria-hidden="true">${avatar}</span>`;
     }
 
     async function loadAvatarCapability() {
@@ -7356,7 +7390,7 @@
       const bindings = bindingUsers.map((user) => `<li><span>${avatarFeatureEnabled ? escapeHtml(accountAvatar(user)) : "AI"}</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
       content.innerHTML = `
         ${avatarFeatureEnabled ? `<div class="mine-profile-row">
-          <span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent(me.user)}</span>
+          <span class="mine-profile-avatar${hasAccountAvatarFrame(me.user) ? " has-avatar-frame" : ""}" aria-hidden="true">${accountAvatarContent(me.user)}</span>
           <div class="mine-profile-info">
             <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
             <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>
