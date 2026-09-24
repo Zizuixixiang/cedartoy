@@ -215,6 +215,18 @@
       image-rendering: auto;
     }
 
+    /* The decoration asset has transparent space on its right; anchor its robot to the left. */
+    .avatar-decoration {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      max-width: none;
+      left: -17px;
+      bottom: -11px;
+      pointer-events: none;
+      image-rendering: auto;
+    }
+
     button.account-avatar {
       cursor: pointer;
     }
@@ -1423,6 +1435,72 @@
       margin-top: 12px;
     }
 
+    #avatarFrameModal .modal-box {
+      position: relative;
+      max-height: calc(100dvh - 40px);
+      overflow-y: auto;
+      padding: 20px;
+    }
+    #avatarFrameModal .modal-title { padding-right: 42px; }
+    .avatar-frame-close {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      background: transparent;
+      color: var(--purple-dark);
+      font-size: 30px;
+      cursor: pointer;
+    }
+    .avatar-frame-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .avatar-frame-option {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      padding: 22px 8px 12px;
+      border: 3px solid var(--purple-light);
+      background: #fff;
+      color: var(--purple-dark);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.5;
+      cursor: pointer;
+    }
+    .avatar-frame-option[aria-pressed="true"] {
+      border-color: var(--pink-dark);
+      background: var(--bg);
+      box-shadow: inset 0 0 0 2px var(--pink-dark);
+    }
+    .avatar-frame-option:focus-visible,
+    .avatar-frame-close:focus-visible { outline: 3px solid var(--purple); outline-offset: 2px; }
+    .avatar-frame-none {
+      position: relative;
+      width: 52px;
+      height: 52px;
+      border: 3px solid var(--purple);
+      border-radius: 50%;
+    }
+    .avatar-frame-none::after {
+      content: "";
+      position: absolute;
+      width: 100%;
+      height: 3px;
+      top: calc(50% - 1.5px);
+      left: 0;
+      background: var(--purple);
+      transform: rotate(-45deg);
+    }
+    .mine-avatar-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+    .mine-avatar-actions .unbind-btn { min-height: 36px; }
+
     #deleteAccountModal [hidden] { display: none !important; }
     #deleteAccountModal .modal-box {
       width: min(360px, 100%);
@@ -2214,6 +2292,13 @@
       font-family: system-ui, sans-serif;
       font-size: 30px;
       line-height: 1;
+    }
+
+    .mine-profile-avatar .avatar-decoration {
+      width: 72px;
+      height: 72px;
+      left: -23px;
+      bottom: -14px;
     }
 
     .mine-profile-info { min-width: 0; flex: 1; }
@@ -3027,6 +3112,20 @@
       <div class="modal-actions">
         <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
         <button class="pixel-btn" id="avatarSubmit" type="button">保存头像</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="avatarFrameModal" role="dialog" aria-modal="true" aria-labelledby="avatarFrameTitle">
+    <div class="modal-box">
+      <button class="avatar-frame-close" data-close-modal type="button" aria-label="关闭头像框选择">×</button>
+      <h2 class="modal-title" id="avatarFrameTitle">修改头像框</h2>
+      <p class="modal-hint">选择已拥有的外观，点击保存后生效。</p>
+      <div class="avatar-frame-grid" id="avatarFrameGrid" role="group" aria-label="已拥有的头像外观"></div>
+      <div class="modal-msg" id="avatarFrameMsg" role="status" aria-live="polite"></div>
+      <div class="modal-actions">
+        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+        <button class="pixel-btn" id="avatarFrameSubmit" type="button" disabled>保存</button>
       </div>
     </div>
   </div>
@@ -4207,6 +4306,7 @@
     let filter = "mini";
     let me = null;
     let avatarFeatureEnabled = false;
+    let avatarFrameState = null;
     let loadMeAbort = null;
     const EMAIL_SECURITY_UI_ENABLED = false;
     let emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
@@ -4386,6 +4486,8 @@
       const avatar = escapeHtml(accountAvatar(user));
       const frame = user?.avatar_frame === "cedartoy_1w"
         ? '<img class="avatar-frame" src="/assets/icons/cedartoy-1w-frame.webp?v=20260925c" alt="" aria-hidden="true">'
+        : user?.avatar_frame === "cedartoy_1w_decoration"
+        ? '<img class="avatar-decoration" src="/assets/icons/cedartoy-1w-decoration.webp" alt="" aria-hidden="true">'
         : "";
       return `<span class="avatar-emoji">${avatar}</span>${frame}`;
     }
@@ -6692,6 +6794,89 @@
       $("avatarInput").select();
     }
 
+    function renderAvatarFrameOptions() {
+      const state = avatarFrameState;
+      if (!state || !me) return;
+      const items = [{key: null, name: "无"}, ...state.items];
+      $("avatarFrameGrid").innerHTML = items.map((item, index) => {
+        const preview = item.key
+          ? `<span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent({...me.user, avatar_frame: item.key})}</span>`
+          : '<span class="avatar-frame-none" aria-hidden="true"></span>';
+        return `<button class="avatar-frame-option" type="button" data-frame-index="${index}" aria-pressed="${item.key === state.selected}" ${state.saving ? "disabled" : ""}>
+          ${preview}<span>${escapeHtml(item.name)}</span></button>`;
+      }).join("");
+      $("avatarFrameGrid").querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (state !== avatarFrameState || state.saving) return;
+          state.selected = items[Number(button.dataset.frameIndex)].key;
+          $("avatarFrameGrid").querySelectorAll("button").forEach((option) => {
+            option.setAttribute("aria-pressed", String(option === button));
+          });
+        });
+      });
+    }
+
+    async function openAvatarFrameModal() {
+      if (!me) return;
+      closeDrawers();
+      openModal("avatarFrameModal");
+      const state = {items: [], selected: null, loaded: false, saving: false, token: token()};
+      avatarFrameState = state;
+      $("avatarFrameGrid").innerHTML = "";
+      $("avatarFrameMsg").textContent = "读取中...";
+      $("avatarFrameSubmit").disabled = true;
+      $("avatarFrameSubmit").textContent = "保存";
+      $("avatarFrameModal").querySelector(".avatar-frame-close").focus();
+      try {
+        const res = await fetch("/api/auth/avatar-frames", {headers: headers(), cache: "no-store"});
+        const data = await res.json().catch(() => ({}));
+        if (state !== avatarFrameState || state.token !== token()) return;
+        if (!res.ok) throw new Error(data.error || "头像框读取失败");
+        state.items = data.items;
+        state.selected = data.selected;
+        state.loaded = true;
+        renderAvatarFrameOptions();
+        $("avatarFrameMsg").textContent = state.items.length ? "" : "暂未拥有头像框，可选择无。";
+        $("avatarFrameSubmit").disabled = false;
+      } catch (err) {
+        if (state === avatarFrameState) $("avatarFrameMsg").textContent = err.message || "头像框读取失败";
+      }
+    }
+
+    async function saveAvatarFrame() {
+      const state = avatarFrameState;
+      if (!state || !state.loaded || state.saving || state.token !== token()) return;
+      state.saving = true;
+      $("avatarFrameSubmit").disabled = true;
+      $("avatarFrameSubmit").textContent = "保存中...";
+      $("avatarFrameMsg").textContent = "";
+      renderAvatarFrameOptions();
+      try {
+        const res = await fetch("/api/auth/avatar-frames", {
+          method: "POST", headers: headers(true), body: JSON.stringify({selected: state.selected}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (state.token !== token() || !me) return;
+        if (!res.ok) throw new Error(data.error || "头像框保存失败");
+        me.user = data.user;
+        renderAuth();
+        renderMine();
+        if (state === avatarFrameState) {
+          closeModals();
+          $("mineDrawer").classList.add("show");
+          $("mineAvatarFrameOpen")?.focus();
+        }
+        showToast("头像框已更新");
+      } catch (err) {
+        if (state !== avatarFrameState) return;
+        state.saving = false;
+        renderAvatarFrameOptions();
+        $("avatarFrameMsg").textContent = err.message || "头像框保存失败";
+        $("avatarFrameSubmit").disabled = false;
+        $("avatarFrameSubmit").textContent = "保存";
+      }
+    }
+
     function resetForgotPasswordModal() {
       forgotPasswordStep = "username";
       forgotPasswordUsername = "";
@@ -7231,6 +7416,7 @@
     }
 
     function closeModals() {
+      avatarFrameState = null;
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
       resetLoginModal();
@@ -7359,7 +7545,10 @@
           <span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent(me.user)}</span>
           <div class="mine-profile-info">
             <div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>
-            <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>
+            <div class="mine-avatar-actions">
+              <button class="unbind-btn" id="mineAvatarOpen" type="button">设置 / 修改 Emoji 头像</button>
+              <button class="unbind-btn" id="mineAvatarFrameOpen" type="button">修改头像框</button>
+            </div>
           </div>
         </div>` : `<div class="mine-user-row"><p class="desc mine-user-name">用户：<span class="mine-username-value username-text">${escapeHtml(me.user.username)}</span></p><button class="unbind-btn" id="mineRenameSelf" type="button">修改用户名</button></div>`}
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
@@ -7386,6 +7575,8 @@
       $("mineRenameSelf").addEventListener("click", () => openRenameModal("self", me.user.id, me.user.username));
       const mineAvatarOpen = $("mineAvatarOpen");
       if (mineAvatarOpen) mineAvatarOpen.addEventListener("click", openAvatarModal);
+      const mineAvatarFrameOpen = $("mineAvatarFrameOpen");
+      if (mineAvatarFrameOpen) mineAvatarFrameOpen.addEventListener("click", openAvatarFrameModal);
       $("mineBind").addEventListener("click", () => {
         closeDrawers();
         openModal("bindModal");
@@ -8198,6 +8389,7 @@
     $("loginModeLogin").addEventListener("click", () => setLoginMode("login"));
     $("loginModeRegister").addEventListener("click", () => setLoginMode("register"));
     $("avatarSubmit").addEventListener("click", saveAvatar);
+    $("avatarFrameSubmit").addEventListener("click", saveAvatarFrame);
     $("forgotPasswordOpen").addEventListener("click", openForgotPasswordModal);
     $("forgotPasswordSubmit").addEventListener("click", submitForgotPassword);
     $("emailSecuritySubmit").addEventListener("click", submitEmailSecurity);

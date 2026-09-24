@@ -28,6 +28,7 @@ from threading import BoundedSemaphore, Lock
 import httpx
 
 import account_deletion
+import avatar_appearances
 import detroit_adapter
 from admin_dashboard import build_activity_dashboard
 
@@ -1397,6 +1398,7 @@ def _init_username_changes_table(conn):
 
 def _init_account_security_schema(conn):
     """Idempotent account/token compatibility and query-performance schema."""
+    avatar_appearances.init_schema(conn)
     if _table_exists(conn, "toy_users"):
         _add_column_if_missing(
             conn,
@@ -1891,6 +1893,7 @@ def _migrate_platform_timestamps():
         _init_password_reset_tokens_table(conn)
         _init_username_changes_table(conn)
         _init_account_security_schema(conn)
+        avatar_appearances.seed_trial(conn)
         _init_operit_schema(conn)
         _init_account_email_schema(conn)
         _init_anti_addiction_tables(conn)
@@ -2311,9 +2314,8 @@ def _public_user(user):
         "created_at": user.get("created_at"),
         "last_active_at": user.get("last_active_at"),
     }
-    # Temporary frame try-on for account 1; no persisted entitlement yet.
-    if user["id"] == 1:
-        result["avatar_frame"] = "cedartoy_1w"
+    with _db_connect() as conn:
+        result["avatar_frame"] = avatar_appearances.selected(conn, user["id"])
     if user.get("deletion_requested_at_epoch") is not None:
         scheduled = int(user["scheduled_delete_at_epoch"])
         result["deletion"] = {
@@ -3369,6 +3371,21 @@ def _set_avatar(raw_token, avatar):
             (int(user["id"]),),
         ).fetchone())
     return {"ok": True, "user": _public_user(updated)}
+
+
+def _get_avatar_frames(raw_token):
+    user = _current_account(raw_token)
+    with _db_connect() as conn:
+        return avatar_appearances.owned(conn, user["id"])
+
+
+def _set_avatar_frame(raw_token, selected):
+    user = _current_account(raw_token)
+    with _db_connect() as conn:
+        # Keep the ownership check and selection write in one transaction.
+        conn.execute("BEGIN IMMEDIATE")
+        avatar_appearances.select(conn, user["id"], selected)
+    return {"ok": True, "user": _public_user(user)}
 
 
 def _rename_next_allowed_at(epoch):
@@ -10137,6 +10154,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_avatar()
             return
 
+        if path == "/api/auth/avatar-frames":
+            self._handle_api_avatar_frames(save=True)
+            return
+
         if path == "/api/auth/login_or_register":
             self._handle_api_login_or_register()
             return
@@ -10401,6 +10422,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/me":
             self._handle_api_me()
+            return
+
+        if path == "/api/auth/avatar-frames":
+            self._handle_api_avatar_frames()
             return
 
         if path == "/api/auth/avatar":
@@ -11659,6 +11684,25 @@ a{{color:#c9afff}}
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_avatar_frames(self, *, save=False):
+        try:
+            raw_token = _extract_bearer(self.headers)
+            if save:
+                body = self._read_json_body()
+                if not isinstance(body, dict) or "selected" not in body:
+                    raise ValueError("缺少 selected 字段")
+                result = _set_avatar_frame(raw_token, body["selected"])
+            else:
+                result = _get_avatar_frames(raw_token)
+            self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception:
+            logger.exception("Avatar appearance request failed")
+            self._send_json({"error": "server error"}, status=500)
 
     def _handle_api_machine_token(self):
         try:
