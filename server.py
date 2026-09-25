@@ -1764,10 +1764,11 @@ def _web_announcements(raw_token):
             FROM announcements AS a
             LEFT JOIN announcement_reads AS r
               ON r.player_id = ? AND r.announcement_id = a.id
-            WHERE a.expires_at IS NULL OR a.expires_at > ?
+            WHERE (a.expires_at IS NULL OR a.expires_at > ?)
+              AND (a.target_identity IS NULL OR a.target_identity = ?)
             ORDER BY a.created_at DESC, a.id DESC
             """,
-            (identity or "", now),
+            (identity or "", now, identity),
         ).fetchall()
 
     items = []
@@ -1829,8 +1830,9 @@ def _mark_web_announcements_read(raw_token, announcement_ids):
             FROM announcements
             WHERE id IN ({placeholders})
               AND (expires_at IS NULL OR expires_at > ?)
+              AND (target_identity IS NULL OR target_identity = ?)
             """,
-            (identity, now, *normalized_ids, now),
+            (identity, now, *normalized_ids, now, identity),
         )
         conn.execute(
             f"""
@@ -1839,8 +1841,13 @@ def _mark_web_announcements_read(raw_token, announcement_ids):
             WHERE player_id = ?
               AND announcement_id IN ({placeholders})
               AND read_at LIKE 'archived:%'
+              AND EXISTS (
+                  SELECT 1 FROM announcements AS a
+                  WHERE a.id = announcement_reads.announcement_id
+                    AND (a.target_identity IS NULL OR a.target_identity = ?)
+              )
             """,
-            (now, identity, *normalized_ids),
+            (now, identity, *normalized_ids, identity),
         )
         marked = conn.total_changes - before
     return {"marked": marked}

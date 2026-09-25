@@ -443,6 +443,7 @@ class AnnouncementTests(unittest.TestCase):
                 }
                 self.assertIn("allow_feedback", announcement_columns)
                 self.assertIn("force_mcp_push", announcement_columns)
+                self.assertIn("target_identity", announcement_columns)
                 self.assertIn("feedback", read_columns)
                 self.assertEqual(
                     conn.execute(
@@ -453,10 +454,10 @@ class AnnouncementTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     conn.execute(
-                        "SELECT allow_feedback, force_mcp_push FROM announcements"
+                        "SELECT allow_feedback, force_mcp_push, target_identity FROM announcements"
                         " WHERE id = 'legacy-poll'"
                     ).fetchone(),
-                    (0, 0),
+                    (0, 0, None),
                 )
                 self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
@@ -472,6 +473,147 @@ class AnnouncementTests(unittest.TestCase):
                     ).fetchone(),
                     ("[2]", None, "2026-09-01 12:01:00"),
                 )
+
+    def _create_targeted(self, ann_id="private", identity="human:10000", *, poll=False):
+        return announcements.create_announcement(
+            ann_id, "poll" if poll else "notice", ann_id, "定向内容", "all",
+            target_identity=identity,
+            options=["甲", "乙"] if poll else None,
+            force_mcp_push=poll,
+        )
+
+    def test_web_targeted_notice_visibility_and_read_authorization(self):
+        self._create_targeted()
+        self._create_targeted("global", None)
+        users = {
+            "A": {"id": 10000, "is_ai": 0},
+            "B": {"id": 10001, "is_ai": 0},
+        }
+        with patch.object(server, "_current_account", side_effect=users.__getitem__):
+            for token, expected in (("A", {"private", "global"}),
+                                    ("B", {"global"}), (None, {"global"})):
+                with self.subTest(token=token):
+                    result = server._web_announcements(token)
+                    self.assertEqual({a["id"] for a in result["announcements"]}, expected)
+                    self.assertEqual(result["unread_count"], len(expected) if token else 0)
+            self.assertEqual(
+                server._mark_web_announcements_read("B", ["private"]), {"marked": 0}
+            )
+            self.assertEqual(
+                server._mark_web_announcements_read("B", ["private", "global"]),
+                {"marked": 1},
+            )
+            self.assertEqual(
+                server._mark_web_announcements_read("A", ["private", "global"]),
+                {"marked": 2},
+            )
+            self.assertEqual(server._web_announcements("A")["unread_count"], 0)
+            self.assertEqual(server._web_announcements("B")["unread_count"], 0)
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(
+                set(conn.execute("SELECT player_id, announcement_id FROM announcement_reads")),
+                {("human:10000", "private"), ("human:10000", "global"),
+                 ("human:10001", "global")},
+            )
+            self.assertEqual(
+                dict(conn.execute("SELECT id, target_identity FROM announcements")),
+                {"private": "human:10000", "global": None},
+            )
+
+    def test_hidden_notice_existing_archived_receipt_is_not_promoted(self):
+        self._create_targeted()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO announcement_reads VALUES (?, ?, ?, ?, ?)",
+                ("human:10001", "private", "[]", "旧意见", "archived:old"),
+            )
+            before = conn.execute("SELECT * FROM announcement_reads").fetchall()
+        with patch.object(server, "_current_account", return_value={"id": 10001, "is_ai": 0}):
+            self.assertEqual(server._mark_web_announcements_read("B", ["private"]), {"marked": 0})
+            self.assertEqual(server._web_announcements("B")["announcements"], [])
+        self.assertEqual(announcements.check_announcements("human:10001", "eco"), "")
+        self.assertEqual(announcements.list_announcements("human:10001", "eco")["blocks"], [])
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(conn.execute("SELECT * FROM announcement_reads").fetchall(), before)
+
+    def test_targeted_auto_push_archive_and_history_are_identity_scoped(self):
+        self._insert([self._notice(n, target="all") for n in range(1, 6)])
+        self._create_targeted()
+        other = announcements.check_announcements("human:10001", "eco")
+        self.assertNotIn("private", other)
+        self.assertIn("另有 2 条旧公告", other)
+        target = announcements.check_announcements("human:10000", "eco")
+        self.assertIn("private", target)
+        self.assertIn("另有 3 条旧公告", target)
+        # The numeric machine account must not share the human account's notice.
+        self.assertNotIn("private", announcements.check_announcements("10000:2", "eco"))
+        for identity, expected in (("human:10001", 5), ("10000:3", 5), ("human:10000", 6)):
+            with self.subTest(identity=identity):
+                with patch.object(announcements, "HISTORY_PAGE_LIMIT", 2):
+                    blocks, before = [], None
+                    while True:
+                        page = announcements.list_announcements(identity, "eco", before=before)
+                        blocks.extend(page["blocks"])
+                        if not page["has_more"]:
+                            break
+                        before = page["next_before"]
+                self.assertEqual(len(blocks), expected)
+                self.assertEqual("private" in "\n".join(blocks), identity == "human:10000")
+        with self.assertRaisesRegex(announcements.AnnouncementError, "游标无效"):
+            announcements.list_announcements("human:10001", "eco", before="private")
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(
+                conn.execute("SELECT player_id FROM announcement_reads WHERE announcement_id = 'private'").fetchall(),
+                [("human:10000",)],
+            )
+
+    def test_targeted_forced_poll_uses_normalized_machine_identity(self):
+        self._create_targeted("machine-private", "42:2", poll=True)
+        self._create_targeted("human-private", poll=True)
+        self._create_targeted("global", None, poll=True)
+        other = announcements.check_forced_mcp_announcements("43")
+        self.assertIn("global", other)
+        self.assertNotIn("private", other)
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT target_identity FROM announcements WHERE id = 'machine-private'"
+            ).fetchone(), ("42",))
+            conn.execute(
+                "INSERT INTO announcement_reads (player_id, announcement_id, read_at) VALUES (?, ?, ?)",
+                ("42", "machine-private", "archived:old"),
+            )
+        own = announcements.check_announcements("42:3", "eco", include_forced_mcp=True)
+        self.assertIn("machine-private", own)
+        self.assertIn("global", own)
+        self.assertNotIn("human-private", own)
+        self.assertEqual(announcements.check_forced_mcp_announcements("42:4"), "")
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT player_id FROM announcement_reads WHERE announcement_id = 'machine-private'"
+            ).fetchall(), [("42",)])
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM announcement_reads WHERE announcement_id = 'human-private'"
+            ).fetchone()[0], 0)
+
+    def test_targeted_poll_rejects_non_target_votes_even_with_existing_receipt(self):
+        self._create_targeted(poll=True)
+        for mark_seen in (False, True):
+            with self.assertRaisesRegex(announcements.AnnouncementError, "没有编号"):
+                announcements.submit_vote("human:10001", "private", [1], mark_seen=mark_seen)
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM announcement_reads").fetchone()[0], 0)
+        self._mark_seen("human:10001", "private")
+        with patch.object(server, "_current_account", return_value={"id": 10001, "is_ai": 0}):
+            with self.assertRaisesRegex(server._McpError, "没有编号"):
+                server._submit_web_announcement_vote("B", "private", [1])
+        with self.assertRaisesRegex(announcements.AnnouncementError, "没有编号"):
+            announcements.record_vote("human:10001", "private", [1])
+        own = announcements.submit_vote("human:10000", "private", [1], mark_seen=True)
+        self.assertEqual(own["options"], [1])
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT votes, read_at FROM announcement_reads WHERE player_id = 'human:10001'"
+            ).fetchone(), (None, "2026-09-15 12:00:00"))
 
     def test_effective_vote_locks_options_feedback_and_timestamp(self):
         self._insert([self._poll("feedback-poll", "意见投票", 1, multiple=True)])

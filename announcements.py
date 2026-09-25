@@ -18,6 +18,7 @@
 * 一旦写入至少一个有效选项，该身份的选项、意见和提交时间永久锁定；跳过 `[]`
   不算有效票，之后仍可正式投票。
 * `target_game` 为具体游戏名（eco/fishing/...）或 `all`（所有游戏都弹）。
+* `target_identity` 为 NULL 时面向所有身份，否则仅对归一化后的指定身份可见。
 
 时间统一用 Asia/Shanghai 的 `%Y-%m-%d %H:%M:%S`，和 eco_adapter 里的
 `_now_iso` 一致——定宽零填充，所以字符串比较等价于时间比较，可以直接在
@@ -137,6 +138,7 @@ def init_db(conn):
             allow_feedback INTEGER NOT NULL DEFAULT 0,
             force_mcp_push INTEGER NOT NULL DEFAULT 0,
             target_game TEXT NOT NULL DEFAULT 'all',
+            target_identity TEXT,
             created_at TEXT NOT NULL,
             expires_at TEXT
         )
@@ -173,6 +175,8 @@ def init_db(conn):
             "ALTER TABLE announcements"
             " ADD COLUMN force_mcp_push INTEGER NOT NULL DEFAULT 0"
         )
+    if "target_identity" not in announcement_columns:
+        conn.execute("ALTER TABLE announcements ADD COLUMN target_identity TEXT")
     read_columns = {
         row[1] for row in conn.execute("PRAGMA table_info(announcement_reads)")
     }
@@ -297,11 +301,12 @@ def check_forced_mcp_announcements(
             WHERE a.type = 'poll'
               AND a.force_mcp_push = 1
               AND {target_clause}
+              AND (a.target_identity IS NULL OR a.target_identity = ?)
               AND (a.expires_at IS NULL OR a.expires_at > ?)
               AND (r.announcement_id IS NULL OR r.read_at LIKE ?)
             ORDER BY a.created_at DESC, a.id DESC
             """,
-            (player_id, *target_args, now, _ARCHIVED_READ_PREFIX + "%"),
+            (player_id, *target_args, player_id, now, _ARCHIVED_READ_PREFIX + "%"),
         ).fetchall()
         if not rows:
             return ""
@@ -368,13 +373,14 @@ def check_announcements(
             SELECT COUNT(*)
             FROM announcements AS a
             WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.target_identity IS NULL OR a.target_identity = ?)
               AND (a.expires_at IS NULL OR a.expires_at > ?)
               AND NOT EXISTS (
                     SELECT 1 FROM announcement_reads AS r
                     WHERE r.player_id = ? AND r.announcement_id = a.id
               )
             """,
-            (game_name, now, player_id),
+            (game_name, player_id, now, player_id),
         ).fetchone()[0]
         if not unread_count:
             return forced_text
@@ -385,6 +391,7 @@ def check_announcements(
                    a.allow_feedback
             FROM announcements AS a
             WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.target_identity IS NULL OR a.target_identity = ?)
               AND (a.expires_at IS NULL OR a.expires_at > ?)
               AND NOT EXISTS (
                     SELECT 1 FROM announcement_reads AS r
@@ -393,7 +400,7 @@ def check_announcements(
             ORDER BY a.created_at DESC, a.id DESC
             LIMIT ?
             """,
-            (game_name, now, player_id, AUTO_PUSH_LIMIT),
+            (game_name, player_id, now, player_id, AUTO_PUSH_LIMIT),
         ).fetchall()
 
         conn.executemany(
@@ -410,6 +417,7 @@ def check_announcements(
             SELECT ?, a.id, NULL, ?
             FROM announcements AS a
             WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.target_identity IS NULL OR a.target_identity = ?)
               AND (a.expires_at IS NULL OR a.expires_at > ?)
               AND NOT EXISTS (
                     SELECT 1 FROM announcement_reads AS r
@@ -420,6 +428,7 @@ def check_announcements(
                 player_id,
                 _ARCHIVED_READ_PREFIX + now,
                 game_name,
+                player_id,
                 now,
                 player_id,
             ),
@@ -464,8 +473,9 @@ def list_announcements(
                 raise AnnouncementError("before 须为公告游标。")
             before = before.strip()
             cursor = conn.execute(
-                "SELECT created_at, id FROM announcements WHERE id = ?",
-                (before,),
+                "SELECT created_at, id FROM announcements WHERE id = ?"
+                " AND (target_identity IS NULL OR target_identity = ?)",
+                (before, player_id),
             ).fetchone()
             if cursor is None:
                 raise AnnouncementError("before 公告游标无效。")
@@ -479,12 +489,13 @@ def list_announcements(
                    a.allow_feedback
             FROM announcements AS a
             WHERE (a.target_game = ? OR a.target_game = 'all')
+              AND (a.target_identity IS NULL OR a.target_identity = ?)
               AND (a.expires_at IS NULL OR a.expires_at > ?)
               {cursor_clause}
             ORDER BY a.created_at DESC, a.id DESC
             LIMIT ?
             """,
-            (game_name, now, *cursor_args, HISTORY_PAGE_LIMIT + 1),
+            (game_name, player_id, now, *cursor_args, HISTORY_PAGE_LIMIT + 1),
         ).fetchall()
         visible = rows[:HISTORY_PAGE_LIMIT]
         for row in visible:
@@ -575,8 +586,9 @@ def submit_vote(
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT type, options, multiple, expires_at, allow_feedback"
-            " FROM announcements WHERE id = ?",
-            (announcement_id,),
+            " FROM announcements WHERE id = ?"
+            " AND (target_identity IS NULL OR target_identity = ?)",
+            (announcement_id, player_id),
         ).fetchone()
         if row is None:
             raise AnnouncementError(f"没有编号为 {announcement_id} 的通知。")
@@ -817,11 +829,13 @@ def create_announcement(
     expires_at=None,
     allow_feedback=False,
     force_mcp_push=False,
+    target_identity=None,
 ):
     """运营侧写入一条通知/投票。重复 id 覆盖旧内容（已读记录不受影响）。
 
     ``force_mcp_push`` 默认关闭且只对 poll 生效；显式开启后，尚未真正展示过的
     小机身份会在下一次 MCP 工具请求中收到一次独立曝光。
+    ``target_identity=None`` 保持全员可见；指定身份如 ``human:10000`` 时仅其可见。
     """
     if ann_type not in ("notice", "poll"):
         raise AnnouncementError("type 须为 notice 或 poll。")
@@ -834,14 +848,18 @@ def create_announcement(
         raise AnnouncementError("content 必填。")
     if not isinstance(target_game, str) or not target_game.strip():
         raise AnnouncementError("target_game 必填（具体游戏名或 all）。")
+    if target_identity is not None:
+        if not isinstance(target_identity, str) or not target_identity.strip():
+            raise AnnouncementError("target_identity 须为非空身份字符串或 None。")
+        target_identity = _announcement_identity(target_identity.strip())
 
     with _connect() as conn:
         init_db(conn)
         conn.execute(
             "INSERT OR REPLACE INTO announcements"
             " (id, type, title, content, options, multiple, allow_feedback,"
-            "  force_mcp_push, target_game, created_at, expires_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  force_mcp_push, target_game, created_at, expires_at, target_identity)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(ann_id),
                 ann_type,
@@ -854,6 +872,7 @@ def create_announcement(
                 target_game.strip(),
                 _now_iso(),
                 expires_at,
+                target_identity,
             ),
         )
     return str(ann_id)
