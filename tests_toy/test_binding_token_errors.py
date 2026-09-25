@@ -16,6 +16,12 @@ class BindingTokenErrorTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as conn:
             conn.executescript(
                 """
+                CREATE TABLE toy_users (
+                    id INTEGER PRIMARY KEY,
+                    is_ai INTEGER NOT NULL,
+                    deleted_at TEXT
+                );
+                INSERT INTO toy_users (id, is_ai) VALUES (10, 0), (20, 1);
                 CREATE TABLE binding_tokens (
                     token TEXT NOT NULL,
                     ai_user_id INTEGER NOT NULL,
@@ -31,6 +37,7 @@ class BindingTokenErrorTests(unittest.TestCase):
                 );
                 """
             )
+            server.avatar_appearances.init_schema(conn)
         self.account_patch = patch.object(
             server, "_current_account", return_value={"id": 10, "is_ai": 0}
         )

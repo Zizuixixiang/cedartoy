@@ -23,7 +23,7 @@ from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore, Lock, Thread
 
 import httpx
 
@@ -2691,6 +2691,7 @@ def _recent_registration_exists(conn, client_ip):
 
 
 def _record_successful_registration(conn, user, client_ip):
+    avatar_appearances.grant_one_w(conn, user_id=int(user["id"]))
     if not client_ip:
         client_ip = "unknown"
     _init_registration_events_table(conn)
@@ -3945,6 +3946,7 @@ def _ensure_ai_binding(conn, human_user_id, ai_user_id):
         "INSERT OR IGNORE INTO user_bindings (human_user_id, ai_user_id) VALUES (?, ?)",
         (human_user_id, ai_user_id),
     )
+    avatar_appearances.grant_one_w(conn, user_id=ai_user_id)
 
 
 def _bind_account(human_token, binding_token):
@@ -14275,6 +14277,13 @@ class ThreadPoolHTTPServer(HTTPServer):
 
 def main():
     _migrate_platform_timestamps()
+    # Reconcile after the Beijing-time migration; ownership survives every restart.
+    avatar_appearances.reconcile_one_w(TURTLE_DB_PATH)
+    if time.time() < avatar_appearances.ONE_W_END_EPOCH:
+        Thread(
+            target=avatar_appearances.watch_one_w,
+            args=(TURTLE_DB_PATH,), name="avatar-1w-catchup", daemon=True,
+        ).start()
     _init_announcement_tables()
     server = ThreadPoolHTTPServer((HOST, PORT), CedarToyHandler)
     print(f"CedarToy listening on {HOST}:{PORT} with max_workers={MAX_WORKERS}")
