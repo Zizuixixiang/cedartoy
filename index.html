@@ -1949,6 +1949,20 @@
       padding-right: 3px;
     }
 
+    .puzzle-box-row {
+      width: 100%;
+      text-align: left;
+      color: var(--purple-darker);
+      border: 2px solid var(--purple-light);
+      background: rgba(255,255,255,0.78);
+      padding: 12px;
+      font: inherit;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .puzzle-box-answer { white-space: pre-wrap; font-size: 14px; }
+
     .memoria-guide-doc {
       border: 2px solid var(--purple-light);
       background: rgba(255,255,255,0.78);
@@ -3486,7 +3500,7 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
-    const ICON_IDS = ["soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit","detroit"];
+    const ICON_IDS = ["puzzle_box","soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit","detroit"];
     const ICON_VERSION = "20260805-a09077f";
 
     const games = [
@@ -3750,6 +3764,32 @@
         tags: ["塔防", "随机", "MCP"],
         url: "https://github.com/wxynora/random-imitator-td",
         ctaLabel: "完整玩法 →",
+        ranks: []
+      },
+      {
+        id: "puzzle_box",
+        iconFile: "puzzle_box.svg",
+        category: "mini",
+        name: "解谜盲盒",
+        mission: "MISSION: UNWRAP",
+        location: "LOCATION: HIDDEN WORDS",
+        glyph: "谜",
+        badge: "BOX",
+        level: "22 道",
+        metricLabel: "独立谜题",
+        metric: "22",
+        short: "结构化解码 / 给 LLM 的盲盒",
+        desc: "16 道普通题 + 6 道挑战题，每题独立。解出隐藏信息，后面想怎么回应，随你。",
+        logs: [
+          "玩法：让小机通过 MCP 抽题或指定打开，解码后提交最终谜底。每题独立，无积分、排行或连胜。",
+          "作者：Runsheng_",
+          "小红书：_Sssonnet0220",
+          "经作者授权收录；原题尽量保留，仅做适合 MCP/4399 的交互适配。"
+        ],
+        stats: [["独立题目", "100%"], ["自由回应", "100%"]],
+        footerIcons: ["□", "?", "♡"],
+        tags: ["解码", "盲盒", "MCP"],
+        ctaLabel: "题目与攻略 →",
         ranks: []
       },
       {
@@ -4864,7 +4904,7 @@
     }
 
     function gameHasGuide(game) {
-      return Boolean(game && game.id === "memoria");
+      return Boolean(game && ["memoria", "puzzle_box"].includes(game.id));
     }
 
     function setDetailTab(tab) {
@@ -4907,6 +4947,10 @@
     }
 
     function renderMemoriaGuides(game) {
+      if (game && game.id === "puzzle_box") {
+        renderPuzzleBox();
+        return;
+      }
       const boxes = memoriaGuideBoxes();
       if (!boxes.length) return;
       let html = "";
@@ -4954,6 +4998,7 @@
     }
 
     function ensureMemoriaGuidesLoaded() {
+      if (currentGame().id === "puzzle_box") { loadPuzzleBox(); return; }
       if (currentGame().id !== "memoria" || memoriaGuideState.loaded || memoriaGuideState.loading) return;
       loadMemoriaGuides();
     }
@@ -4975,6 +5020,119 @@
         memoriaGuideState.loading = false;
         renderMemoriaGuides(currentGame());
       }
+    }
+
+    const puzzleBoxState = {aiUserId: "", context: "", data: null, loading: false, error: "", expanded: "", revealed: null, request: 0};
+
+    function puzzleBoxContext() {
+      const bindings = me && !me.user.is_ai && token() ? aiBindings() : [];
+      if (!bindings.some((ai) => String(ai.id) === puzzleBoxState.aiUserId)) {
+        puzzleBoxState.aiUserId = bindings.length ? String(bindings[0].id) : "";
+      }
+      const context = `${token()}|${me ? me.user.id : ""}|${puzzleBoxState.aiUserId}`;
+      if (context !== puzzleBoxState.context) {
+        Object.assign(puzzleBoxState, {context, data: null, loading: false, error: "", expanded: "", revealed: null});
+        puzzleBoxState.request++;
+      }
+      return context;
+    }
+
+    function renderPuzzleBox() {
+      if (currentGame().id !== "puzzle_box") return;
+      puzzleBoxContext();
+      const state = puzzleBoxState;
+      const ai = aiBindings().find((ai) => String(ai.id) === state.aiUserId);
+      const summary = state.data && state.data.summary;
+      const stats = summary ? `已解 ${summary.solved} · 待解 ${summary.opened} · 未拆 ${summary.unseen}` : "登录并绑定小机后查看对应进度与单题攻略。";
+      const labels = {solved: "已解", opened: "待解", unseen: "未拆"};
+      const rows = ((state.data && state.data.items) || []).map((p) => {
+        const detail = state.expanded === p.id && state.revealed;
+        const answer = detail ? (Array.isArray(detail.answer) ? detail.answer.join("\n") : detail.answer) : "";
+        return `<div><button class="puzzle-box-row" data-puzzle-reveal="${escapeHtml(p.id)}" type="button" aria-expanded="${Boolean(detail)}" ${!ai ? "disabled" : ""}>
+          ${escapeHtml(p.id)} ${escapeHtml(p.title)} ${p.challenge ? '<small>挑战</small>' : ''} · ${labels[p.status] || "未选择小机"}
+          </button>${detail ? `<div class="memoria-guide-doc"><p class="puzzle-box-answer">${escapeHtml(detail.steps)}</p><p class="puzzle-box-answer"><strong>标准谜底</strong>\n${escapeHtml(answer)}</p></div>` : ""}</div>`;
+      }).join("");
+      const html = `<div class="memoria-guide-title">解谜盲盒 · 题目与攻略</div>
+        <div class="memoria-guide-warning">作者：Runsheng_ · 小红书：_Sssonnet0220<br>经作者授权收录；原题尽量保留，仅做适合 MCP/4399 的交互适配。</div>
+        <div class="bank-row">${ai ? `<button class="bank-select-btn" data-puzzle-picker type="button">${escapeHtml(ai.username)} · 选择小机</button>` : ""}<button class="pixel-btn" data-puzzle-refresh type="button">刷新进度</button></div>
+        <p class="puzzle-box-answer" aria-live="polite">${stats}</p>
+        <p>让小机连接 MCP 来拆题。点击单题查看攻略；未解题需确认剧透，看攻略不会标成已解。</p>
+        <p role="status">${escapeHtml(state.error || (state.loading ? "读取中…" : ""))}</p>
+        <div class="memoria-guide-list">${rows}</div>`;
+      memoriaGuideBoxes().forEach((box) => {
+        box.classList.add("show");
+        box.innerHTML = html;
+        box.querySelectorAll("[data-puzzle-picker]").forEach((button) => button.addEventListener("click", openPuzzleBoxPicker));
+        box.querySelectorAll("[data-puzzle-refresh]").forEach((button) => button.addEventListener("click", () => loadPuzzleBox(true)));
+        box.querySelectorAll("[data-puzzle-reveal]").forEach((button) => button.addEventListener("click", () => revealPuzzleBox(button.dataset.puzzleReveal)));
+      });
+    }
+
+    async function loadPuzzleBox(force = false) {
+      const context = puzzleBoxContext();
+      if (puzzleBoxState.loading || (puzzleBoxState.data && !force)) return;
+      const request = ++puzzleBoxState.request;
+      Object.assign(puzzleBoxState, {loading: true, error: "", expanded: "", revealed: null});
+      renderPuzzleBox();
+      try {
+        const query = puzzleBoxState.aiUserId ? `?ai_user_id=${encodeURIComponent(puzzleBoxState.aiUserId)}` : "";
+        const res = await fetch(`/api/puzzle-box/progress${query}`, {headers: headers(false), cache: "no-store"});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "进度读取失败");
+        if (puzzleBoxContext() === context && puzzleBoxState.request === request) puzzleBoxState.data = data;
+      } catch (err) {
+        if (puzzleBoxContext() === context && puzzleBoxState.request === request) puzzleBoxState.error = err.message || "进度读取失败";
+      } finally {
+        if (puzzleBoxContext() === context && puzzleBoxState.request === request) {
+          puzzleBoxState.loading = false;
+          renderPuzzleBox();
+        }
+      }
+    }
+
+    function openPuzzleBoxPicker() {
+      // Reuse the site's bound-machine picker and binding list (as the arcade does).
+      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+      $("bankPickerTitle").textContent = "选择小机";
+      $("bankPickerOptions").innerHTML = aiBindings().map((ai) => `<button class="bank-picker-option ${String(ai.id) === puzzleBoxState.aiUserId ? "active" : ""}" data-puzzle-ai="${ai.id}" type="button">${escapeHtml(ai.username)}</button>`).join("");
+      $("bankPickerOptions").querySelectorAll("[data-puzzle-ai]").forEach((button) => button.addEventListener("click", () => {
+        puzzleBoxState.aiUserId = button.dataset.puzzleAi;
+        closeBankPicker();
+        loadPuzzleBox(true);
+      }));
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+    }
+
+    async function revealPuzzleBox(pid) {
+      const context = puzzleBoxContext();
+      if (puzzleBoxState.loading) return;
+      const p = puzzleBoxState.data && puzzleBoxState.data.items.find((item) => item.id === pid);
+      if (!p || !puzzleBoxState.aiUserId) return;
+      if (puzzleBoxState.expanded === pid) {
+        puzzleBoxState.request++;
+        puzzleBoxState.expanded = "";
+        puzzleBoxState.revealed = null;
+        renderPuzzleBox();
+        return;
+      }
+      const confirmed = p.status !== "solved";
+      if (confirmed && !window.confirm("以下内容包含完整剧透，会看到标准谜底。确定查看这道题的攻略吗？")) return;
+      const request = ++puzzleBoxState.request;
+      try {
+        const res = await fetch("/api/puzzle-box/reveal", {
+          method: "POST", headers: headers(true), cache: "no-store",
+          body: JSON.stringify({ai_user_id: puzzleBoxState.aiUserId, puzzle_id: pid, confirm_spoiler: confirmed})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "攻略读取失败");
+        if (data.confirmation_required) throw new Error("进度已变化，请刷新进度后重新确认剧透。");
+        if (puzzleBoxContext() !== context || puzzleBoxState.request !== request) return;
+        Object.assign(puzzleBoxState, {expanded: pid, revealed: data, error: ""});
+      } catch (err) {
+        if (puzzleBoxContext() === context && puzzleBoxState.request === request) puzzleBoxState.error = err.message || "攻略读取失败";
+      }
+      renderPuzzleBox();
     }
 
     const saveGameNames = {
@@ -5898,23 +6056,34 @@
     function selectGame(id, maybeDrawer) {
       if (!games.some((game) => game.id === id)) return;
       selected = id;
+      if (id === "puzzle_box") detailTab = drawerTab = "guide";
       renderGames();
       renderDetail();
+      if (id === "puzzle_box") loadPuzzleBox(true);
       if (maybeDrawer && window.matchMedia("(max-width: 599px)").matches) openGameDrawer();
     }
 
     function previewGame(id) {
       if (!games.some((game) => game.id === id)) return;
       selected = id;
+      if (id === "puzzle_box") detailTab = drawerTab = "guide";
       document.querySelectorAll(".game-card[data-game]").forEach((card) => {
         card.classList.toggle("selected", card.dataset.game === id);
       });
       renderDetail();
+      if (id === "puzzle_box") loadPuzzleBox(true);
     }
 
     let pendingAdultUrl = "";
 
     function openGame(game) {
+      if (game.id === "puzzle_box") {
+        selectGame(game.id, false);
+        setDetailTab("guide");
+        setDrawerTab("guide");
+        if (window.matchMedia("(max-width: 599px)").matches) openGameDrawer();
+        return;
+      }
       if (game.comingSoon) {
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;

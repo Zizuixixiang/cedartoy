@@ -30,6 +30,7 @@ import httpx
 import account_deletion
 import avatar_appearances
 import detroit_adapter
+import puzzle_box
 from admin_dashboard import build_activity_dashboard
 
 try:
@@ -335,6 +336,18 @@ _PLATFORM_TOOLS = [
                     "type": "object",
                     "description": "该 action 的业务参数；duel 的 room_id/move/revision/wait/full_state/message，turtle_soup 的 room_id/content，投票的 announcement_id/options/feedback 均放这里；其他以 guide 为准。",
                     "properties": {
+                        "puzzle_id": {
+                            "anyOf": [{"type": "string"}, {"type": "integer"}],
+                            "description": "题号；puzzle_box 使用 N01–N16、H01–H06 或 1–22。",
+                        },
+                        "checkpoint_id": {
+                            "type": "string",
+                            "description": "puzzle_box check_step 使用当前题返回的步骤编号。",
+                        },
+                        "answer": {
+                            "anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "array", "items": {"type": "string"}}],
+                            "description": "puzzle_box 的最终答案或步骤结果；双断句可用字符串数组。",
+                        },
                         "room_id": {
                             "type": "string",
                             "description": "房间 ID（duel、turtle_soup 等）。",
@@ -5873,7 +5886,7 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
 PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
 VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat", "detroit")
@@ -7407,7 +7420,7 @@ def _tool_list_games(path_token=None):
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
         "防沉迷：人类可在前端设置，可告诉你的人类。\n"
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·底特律：变人，分支叙事、原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·底特律：变人，分支叙事、原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | puzzle_box·解谜盲盒，22道独立结构化解码题·Runsheng_（小红书 _Sssonnet0220） | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
     return base + "\n" + _today_game_line(path_token=path_token)
 
@@ -7634,6 +7647,8 @@ def _tool_get_guide(arguments):
     game = arguments.get("game")
     if not game or not isinstance(game, str):
         raise _McpError(-32602, "game 参数必填")
+    if game == "puzzle_box":
+        return json.dumps({"game": game, "guide": puzzle_box.GUIDE}, ensure_ascii=False)
     if game == "turtle_soup":
         guide = _turtle_soup_guide()
         guide["platform_announcements"] = {
@@ -8142,7 +8157,7 @@ def _tool_play(
     try:
         game = arguments.get("game") if isinstance(arguments, dict) else None
         if (path_token or authenticated_account is not None) and (
-            game in IDENTITY_GAMES or game == "turtle_soup"
+            (game in IDENTITY_GAMES and game != "puzzle_box") or game == "turtle_soup"
         ):
             slot_hint = _save_slot_from_arguments(arguments)
     except _McpError:
@@ -8244,8 +8259,9 @@ def _tool_play_inner(
                 if authenticated_account is not None
                 else _current_account(path_token)
             )
-            _auto_migrate_legacy_account_saves(account_user)
-            slot = _save_slot_from_arguments(arguments)
+            if game != "puzzle_box":
+                _auto_migrate_legacy_account_saves(account_user)
+                slot = _save_slot_from_arguments(arguments)
             account_player_id = _account_slot_player_id(account_user["id"], slot)
             arguments = _override_player_id(_without_slot_param(arguments), account_player_id)
         else:
@@ -8264,6 +8280,9 @@ def _tool_play_inner(
     else:
         arguments = _without_slot_param(arguments)
         params = arguments.get("params")
+
+    if game == "puzzle_box" and (not account_user or not account_user.get("is_ai")):
+        raise _McpError(-32001, "解谜盲盒需要已认证的小机账号；请使用该小机的统一 MCP 地址")
 
     # A claimed guest id is a permanent tombstone. Check the canonical guest id
     # before anti-addiction, announcements, or any concrete game/satellite call.
@@ -8368,6 +8387,11 @@ def _tool_play_inner(
         except detroit_adapter.DetroitError as exc:
             code = -32010 if exc.uncertain else (-32003 if exc.status == 403 else -32602)
             raise _McpError(code, exc.message) from None
+    elif game == "puzzle_box":
+        try:
+            response = puzzle_box.play(SESSIONS_DB_PATH, int(account_user["id"]), action, merged_arguments)
+        except ValueError as exc:
+            raise _McpError(-32602, str(exc)) from None
     elif game == "tarot":
         # Tarot is not a machine-playable card game.  The authenticated machine
         # may only create and observe an invitation bound to its one current
@@ -10113,6 +10137,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         internal_path = self.path.split("?", 1)[0]
+        if internal_path == "/api/puzzle-box/reveal":
+            self._handle_puzzle_box(reveal=True)
+            return
         if internal_path == "/_internal/duel-gateway/prepare":
             self._handle_duel_gateway_prepare()
             return
@@ -10463,6 +10490,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         if path == "/api/memoria/guides":
             include_content = (params.get("confirm") or [""])[0] == "human"
             self._send_json(_memoria_human_guides(include_content=include_content), extra_headers={"Cache-Control": "no-cache, no-store"})
+            return
+
+        if path == "/api/puzzle-box/progress":
+            self._handle_puzzle_box(params=params)
             return
 
         if path == "/api/auth/me":
@@ -12163,6 +12194,28 @@ a{{color:#c9afff}}
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_puzzle_box(self, params=None, reveal=False):
+        cache = {"Cache-Control": "no-cache, no-store"}
+        try:
+            if reveal:
+                body = self._read_json_body()
+                ai_id = body.get("ai_user_id")
+            else:
+                ai_id = (params.get("ai_user_id") or [None])[0]
+                if ai_id is None:
+                    self._send_json(puzzle_box.catalog(), extra_headers=cache)
+                    return
+            ai = _require_bound_ai(_extract_bearer(self.headers), ai_id, "查看解谜盲盒")
+            if reveal:
+                result = puzzle_box.reveal(SESSIONS_DB_PATH, ai["id"], body.get("puzzle_id"), body.get("confirm_spoiler") is True)
+            else:
+                result = puzzle_box.progress(SESSIONS_DB_PATH, ai["id"])
+            self._send_json(result, extra_headers=cache)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 403, extra_headers=cache)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400, extra_headers=cache)
 
     def _handle_api_arcade_status(self, params):
         try:
