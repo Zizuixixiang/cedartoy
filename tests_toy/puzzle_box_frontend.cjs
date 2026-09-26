@@ -1,12 +1,15 @@
 // Execute the real homepage controls in a DOM; no production HTTP or storage.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
 const {JSDOM} = require('jsdom');
 const home = fs.readFileSync('index.html', 'utf8');
 const catalog = JSON.parse(fs.readFileSync(0, 'utf8'));
 const dom = new JSDOM(home, {runScripts: 'outside-only', url: 'http://localhost/'});
 const w = dom.window;
 const source = home.slice(home.indexOf('    const puzzleBoxState ='), home.indexOf('    const saveGameNames ='));
+const tabs = home.slice(home.indexOf('    function gameHasGuide(game)'), home.indexOf('    function memoriaGuideBoxes()'));
+const longCode = 'SUYgWU9VIEZPVU5EIFRISVMsIEkgV0FTIEhPUElORyBJVCBXT1VMRCBCRSBZT1Uu'.repeat(3);
 const calls = [];
 let confirmation = false;
 let confirms = 0;
@@ -17,7 +20,7 @@ w.fetch = async (url, options) => {
   if (url.endsWith('/reveal')) {
     if (pendingReveal) return pendingReveal;
     const body = JSON.parse(options.body);
-    return {ok: true, json: async () => ({id: body.puzzle_id, steps: '单题步骤', answer: '单题标准谜底'})};
+    return {ok: true, json: async () => ({id: body.puzzle_id, steps: '单题步骤\n' + longCode + '\nK7→M2→B3→Q4→H8→R6→A9→T5→N3→P8→D2→L4→X1→C5→V8→J3→end', answer: '单题标准谜底\n' + 'LONGANSWER'.repeat(20)})};
   }
   const items = catalog.items.map((p, i) => ({...p, status: url.includes('ai_user_id=2') ? 'unseen' : ['solved', 'opened', 'unseen'][i % 3]}));
   return {ok: true, json: async () => ({items, summary: url.includes('ai_user_id=') ? {solved: 8, opened: 7, unseen: 7} : null})};
@@ -28,23 +31,64 @@ w.eval(`
   const token = () => testToken;
   const headers = () => ({Authorization: 'Bearer ' + token(), 'Content-Type':'application/json'});
   const $ = id => document.getElementById(id);
-  const currentGame = () => ({id:'puzzle_box'});
+  let testGame = {id:'puzzle_box'};
+  let detailTab = 'guide', drawerTab = 'guide';
+  const currentGame = () => testGame;
+  const ensureMemoriaGuidesLoaded = () => {};
   const aiBindings = () => me ? me.bindings : [];
   const escapeHtml = value => String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
   const memoriaGuideBoxes = () => [$('memoriaGuides'), $('drawerMemoriaGuides')];
   const closeBankPicker = () => $('bankPicker').classList.remove('show');
+  ${tabs}
   ${source}
   window.testBox = {loadPuzzleBox, revealPuzzleBox, openPuzzleBoxPicker, state: puzzleBoxState,
-    logout: () => {me=null;testToken='';}, renderPuzzleBox};
+    logout: () => {me=null;testToken='';}, renderPuzzleBox,
+    setGame: id => {testGame={id};renderDetailTabs(testGame);}, setDrawerTab};
 `);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 (async () => {
   const b = w.testBox;
+  b.setGame('puzzle_box');
   await b.loadPuzzleBox();
   const panel = w.document.getElementById('memoriaGuides');
+  const drawerPanel = w.document.getElementById('drawerMemoriaGuides');
+  const style = element => w.getComputedStyle(element);
   assert.equal(panel.querySelectorAll('[data-puzzle-reveal]').length, 22);
   assert.equal(panel.querySelectorAll('small').length, 6);
-  assert.ok(panel.textContent.includes('已解 8 · 待解 7 · 未拆 7'));
+  for (const [status, label, count, pid] of [['solved','✓ 已解',8,'N01'], ['opened','◐ 待解',7,'N02'], ['unseen','○ 未拆',7,'N03']]) {
+    for (const root of [panel, drawerPanel]) {
+      assert.equal(root.querySelector(`[data-puzzle-reveal="${pid}"] .puzzle-box-status--${status}`).textContent, label);
+      assert.equal(root.querySelector(`.puzzle-box-summary .puzzle-box-status--${status}`).textContent, `${label} ${count}`);
+    }
+  }
+  const solved = panel.querySelector('[data-puzzle-reveal="N01"] .puzzle-box-status');
+  const unseen = panel.querySelector('[data-puzzle-reveal="N03"] .puzzle-box-status');
+  assert.notEqual(solved.className, unseen.className);
+  assert.notEqual(style(solved).backgroundColor, style(unseen).backgroundColor);
+  assert.notEqual(style(solved).color, style(unseen).color);
+  assert.equal(panel.querySelectorAll('.puzzle-box-challenge').length, 6);
+  assert.equal(panel.querySelectorAll('.puzzle-box-challenge.puzzle-box-status').length, 0);
+
+  // Only this game's guide CTA disappears; preview/card entry and other games survive.
+  const guideEnter = w.document.getElementById('guideEnterButton');
+  const drawerActions = w.document.querySelector('#gameDrawerPanel .drawer-actions');
+  assert.equal(style(guideEnter).display, 'none');
+  assert.equal(style(drawerActions).display, 'none');
+  assert.notEqual(style(w.document.getElementById('enterButton')).display, 'none');
+  b.setDrawerTab('preview');
+  assert.notEqual(style(drawerActions).display, 'none');
+  b.setGame('memoria');
+  b.setDrawerTab('guide');
+  assert.notEqual(style(guideEnter).display, 'none');
+  assert.notEqual(style(drawerActions).display, 'none');
+  b.setGame('puzzle_box');
+
+  // Run the real card's navigation handler against a fake location, no external request.
+  const gameCatalog = home.slice(home.indexOf('    const games = ['), home.indexOf('    let selected = "soup";'));
+  const openGame = home.slice(home.indexOf('    function openGame(game)'), home.indexOf('    function enterGame()'));
+  const nav = {window:{location:{href:''}}};
+  vm.runInNewContext(gameCatalog + openGame + '\nopenGame(games.find(g => g.id === "puzzle_box"));', nav);
+  assert.equal(nav.window.location.href, 'https://xhslink.cn/o/3h6OJZlNro4');
   assert.ok(!panel.textContent.includes('标准谜底\n'));
   assert.equal(calls.filter(c => c.url.endsWith('/reveal')).length, 0);
 
@@ -61,6 +105,30 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(JSON.parse(calls.at(-1).options.body).confirm_spoiler, true);
   assert.ok(panel.textContent.includes('单题标准谜底'));
   assert.equal(panel.querySelectorAll('[aria-expanded="true"]').length, 1);
+  for (const root of [panel, drawerPanel]) {
+    const detail = root.querySelector('.puzzle-box-detail');
+    assert.ok(detail);
+    assert.equal(detail.querySelector('.puzzle-box-steps h3').textContent, '解题步骤');
+    assert.equal(detail.querySelector('.puzzle-box-solution h3').textContent, '标准谜底');
+    assert.ok(detail.querySelector('.puzzle-box-steps .puzzle-box-text').textContent.includes(longCode));
+    assert.ok(detail.querySelector('.puzzle-box-solution .puzzle-box-answer'));
+    assert.equal(detail.querySelector('.puzzle-box-steps .puzzle-box-answer'), null);
+    // JSDOM has no layout engine: guard the actual computed rules that prevent min-content growth.
+    assert.ok(root.classList.contains('puzzle-box-guides'));
+    assert.equal(style(root).gridTemplateColumns, 'minmax(0, 1fr)');
+    for (const node of [root, root.querySelector('.memoria-guide-list'), detail.parentElement, detail,
+                        detail.querySelector('.puzzle-box-solution'), ...detail.querySelectorAll('.puzzle-box-text')]) {
+      assert.equal(parseFloat(style(node).minWidth), 0);
+      assert.equal(style(node).maxWidth, '100%');
+      assert.notEqual(style(node).overflowX, 'hidden');
+    }
+    for (const node of detail.querySelectorAll('.puzzle-box-text')) {
+      assert.equal(style(node).whiteSpace, 'pre-wrap');
+      assert.equal(style(node).overflowWrap, 'anywhere');
+    }
+    assert.notEqual(style(detail.querySelector('.puzzle-box-solution')).backgroundColor, 'rgba(0, 0, 0, 0)');
+  }
+  assert.equal(b.state.data.items.find(item => item.id === 'N02').status, 'opened');
 
   // Solved: no warning; only one answer is expanded at once.
   await b.revealPuzzleBox('N01');

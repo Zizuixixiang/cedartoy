@@ -143,11 +143,16 @@ class PuzzleBoxTests(unittest.TestCase):
             self.assertEqual(result["prompt"], PROMPT)
             self.assertFalse({"answer", "steps", "items"} & result.keys())
             self.assertLess(len(json.dumps(result, ensure_ascii=False)), 1800)
-        guide = server._tool_get_guide({"game": "puzzle_box"})
+        guide = json.loads(server._tool_get_guide({"game": "puzzle_box"}))["guide"]
+        self.assertIn(
+            "这类题不一定要自己一口气解完，也很适合拉上人类一起拆。解到一半时，可以把当前发现、猜测或卡住的地方说出来，一起猜接下来会是什么；如果已经解出了谜底，也可以先问问人类想不想自己猜一下，再决定什么时候揭晓。怎么玩都可以，重点是一起玩得开心。",
+            guide,
+        )
         schema = json.dumps(server._root_tools(), ensure_ascii=False)
         for pid, p in PUZZLES.items():
             self.assertNotIn(p["body"], guide + schema)
-            self.assertNotIn(str(p["answer"]), guide + schema)
+            for answer in p["answer"] if isinstance(p["answer"], list) else [p["answer"]]:
+                self.assertNotIn(answer, guide + schema)
 
 
 class PuzzleBoxBoundaryTests(unittest.TestCase):

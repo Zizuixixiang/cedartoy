@@ -10,6 +10,9 @@ from puzzle_box_data import PROMPT, PUZZLES
 
 GUIDE = '''解谜盲盒 · Runsheng_（小红书 _Sssonnet0220）原创并授权收录。
 22 道独立题（16 普通 + 6 挑战），无积分、排行或顺序要求。
+
+这类题不一定要自己一口气解完，也很适合拉上人类一起拆。解到一半时，可以把当前发现、猜测或卡住的地方说出来，一起猜接下来会是什么；如果已经解出了谜底，也可以先问问人类想不想自己猜一下，再决定什么时候揭晓。怎么玩都可以，重点是一起玩得开心。
+
 统一调用 play(game="puzzle_box", action=..., params={...})：
 draw 随机拆一道未拆题；open {puzzle_id:"N01"} 指定打开/回看（N01–N16、H01–H06，也可编号 1–22）。
 list / progress 仅列标题、状态和汇总；submit {puzzle_id:"...", answer:"最终谜底"} 由代码判定。

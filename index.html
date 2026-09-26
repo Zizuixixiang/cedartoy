@@ -1949,7 +1949,42 @@
       padding-right: 3px;
     }
 
+    .preview[data-game="puzzle_box"],
+    .preview[data-game="puzzle_box"] .guide-panel,
+    .drawer[data-game="puzzle_box"],
+    .puzzle-box-guides,
+    .puzzle-box-guides .memoria-guide-list {
+      min-width: 0;
+      max-width: 100%;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .puzzle-box-guides > *,
+    .puzzle-box-item,
+    .puzzle-box-row,
+    .puzzle-box-detail,
+    .puzzle-box-steps,
+    .puzzle-box-solution {
+      min-width: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
+    .puzzle-box-guides .bank-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .preview[data-game="puzzle_box"] #guideEnterButton,
+    .drawer[data-game="puzzle_box"][data-detail-tab="guide"] .drawer-actions {
+      display: none;
+    }
+
     .puzzle-box-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       width: 100%;
       text-align: left;
       color: var(--purple-darker);
@@ -1961,7 +1996,85 @@
       cursor: pointer;
     }
 
-    .puzzle-box-answer { white-space: pre-wrap; font-size: 14px; }
+    .puzzle-box-title { flex: 1 1 150px; min-width: 0; }
+
+    .puzzle-box-tags,
+    .puzzle-box-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .puzzle-box-status,
+    .puzzle-box-challenge {
+      display: inline-block;
+      border: 2px solid var(--purple);
+      padding: 2px 6px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .puzzle-box-status--solved {
+      color: #fff;
+      background: #665579;
+      border-color: #665579;
+      font-weight: 700;
+    }
+
+    .puzzle-box-status--opened {
+      color: #704651;
+      background: #f9e3e8;
+      border-color: var(--pink-dark);
+      font-weight: 700;
+    }
+
+    .puzzle-box-status--unseen,
+    .puzzle-box-status--unknown {
+      color: #786b89;
+      background: transparent;
+      border-color: #cbbfda;
+      font-weight: 400;
+    }
+
+    .puzzle-box-challenge {
+      color: #704651;
+      border: 1px solid var(--pink-dark);
+    }
+
+    .puzzle-box-detail {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .puzzle-box-section-title {
+      color: #665579;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .puzzle-box-text {
+      min-width: 0;
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .puzzle-box-solution {
+      background: #f7f1fb;
+      border: 2px solid var(--purple);
+      padding: 10px 12px;
+    }
+
+    .puzzle-box-answer {
+      color: #4f3c64;
+      font-size: 14px;
+      font-weight: 700;
+    }
 
     .memoria-guide-doc {
       border: 2px solid var(--purple-light);
@@ -3789,7 +3902,8 @@
         stats: [["独立题目", "100%"], ["自由回应", "100%"]],
         footerIcons: ["□", "?", "♡"],
         tags: ["解码", "盲盒", "MCP"],
-        ctaLabel: "题目与攻略 →",
+        url: "https://xhslink.cn/o/3h6OJZlNro4",
+        ctaLabel: "作者原帖 →",
         ranks: []
       },
       {
@@ -4911,7 +5025,10 @@
       const game = currentGame();
       detailTab = gameHasGuide(game) && tab === "guide" ? "guide" : "preview";
       const preview = document.querySelector(".preview");
-      if (preview) preview.dataset.detailTab = detailTab;
+      if (preview) {
+        preview.dataset.detailTab = detailTab;
+        preview.dataset.game = game.id;
+      }
       document.querySelectorAll("[data-detail-tab]").forEach((button) => {
         button.classList.toggle("active", button.dataset.detailTab === detailTab);
       });
@@ -4924,6 +5041,7 @@
       const drawer = $("gameDrawerPanel");
       if (drawer) {
         drawer.dataset.detailTab = drawerTab;
+        drawer.dataset.game = game.id;
         drawer.classList.toggle("has-guide", gameHasGuide(game));
       }
       document.querySelectorAll("[data-drawer-tab]").forEach((button) => {
@@ -4947,6 +5065,7 @@
     }
 
     function renderMemoriaGuides(game) {
+      memoriaGuideBoxes().forEach((box) => box.classList.toggle("puzzle-box-guides", Boolean(game && game.id === "puzzle_box")));
       if (game && game.id === "puzzle_box") {
         renderPuzzleBox();
         return;
@@ -5043,24 +5162,26 @@
       const state = puzzleBoxState;
       const ai = aiBindings().find((ai) => String(ai.id) === state.aiUserId);
       const summary = state.data && state.data.summary;
-      const stats = summary ? `已解 ${summary.solved} · 待解 ${summary.opened} · 未拆 ${summary.unseen}` : "登录并绑定小机后查看对应进度与单题攻略。";
-      const labels = {solved: "已解", opened: "待解", unseen: "未拆"};
+      const labels = {solved: "✓ 已解", opened: "◐ 待解", unseen: "○ 未拆"};
+      const stats = summary ? ["solved", "opened", "unseen"].map((status) => `<span class="puzzle-box-status puzzle-box-status--${status}">${labels[status]} ${escapeHtml(summary[status])}</span>`).join("") : "登录并绑定小机后查看对应进度与单题攻略。";
       const rows = ((state.data && state.data.items) || []).map((p) => {
         const detail = state.expanded === p.id && state.revealed;
         const answer = detail ? (Array.isArray(detail.answer) ? detail.answer.join("\n") : detail.answer) : "";
-        return `<div><button class="puzzle-box-row" data-puzzle-reveal="${escapeHtml(p.id)}" type="button" aria-expanded="${Boolean(detail)}" ${!ai ? "disabled" : ""}>
-          ${escapeHtml(p.id)} ${escapeHtml(p.title)} ${p.challenge ? '<small>挑战</small>' : ''} · ${labels[p.status] || "未选择小机"}
-          </button>${detail ? `<div class="memoria-guide-doc"><p class="puzzle-box-answer">${escapeHtml(detail.steps)}</p><p class="puzzle-box-answer"><strong>标准谜底</strong>\n${escapeHtml(answer)}</p></div>` : ""}</div>`;
+        const status = Object.hasOwn(labels, p.status) ? p.status : "unknown";
+        return `<div class="puzzle-box-item"><button class="puzzle-box-row" data-puzzle-reveal="${escapeHtml(p.id)}" type="button" aria-expanded="${Boolean(detail)}" ${!ai ? "disabled" : ""}>
+          <span class="puzzle-box-title">${escapeHtml(p.id)} ${escapeHtml(p.title)}</span>
+          <span class="puzzle-box-tags">${p.challenge ? '<small class="puzzle-box-challenge">挑战</small>' : ''}<span class="puzzle-box-status puzzle-box-status--${status}">${labels[status] || "未选择小机"}</span></span>
+          </button>${detail ? `<div class="memoria-guide-doc puzzle-box-detail"><section class="puzzle-box-steps"><h3 class="puzzle-box-section-title">解题步骤</h3><p class="puzzle-box-text">${escapeHtml(detail.steps)}</p></section><section class="puzzle-box-solution"><h3 class="puzzle-box-section-title">标准谜底</h3><p class="puzzle-box-text puzzle-box-answer">${escapeHtml(answer)}</p></section></div>` : ""}</div>`;
       }).join("");
       const html = `<div class="memoria-guide-title">解谜盲盒 · 题目与攻略</div>
         <div class="memoria-guide-warning">作者：Runsheng_ · 小红书：_Sssonnet0220<br>经作者授权收录；原题尽量保留，仅做适合 MCP/4399 的交互适配。</div>
         <div class="bank-row">${ai ? `<button class="bank-select-btn" data-puzzle-picker type="button">${escapeHtml(ai.username)} · 选择小机</button>` : ""}<button class="pixel-btn" data-puzzle-refresh type="button">刷新进度</button></div>
-        <p class="puzzle-box-answer" aria-live="polite">${stats}</p>
+        <p class="puzzle-box-summary" aria-live="polite">${stats}</p>
         <p>让小机连接 MCP 来拆题。点击单题查看攻略；未解题需确认剧透，看攻略不会标成已解。</p>
         <p role="status">${escapeHtml(state.error || (state.loading ? "读取中…" : ""))}</p>
         <div class="memoria-guide-list">${rows}</div>`;
       memoriaGuideBoxes().forEach((box) => {
-        box.classList.add("show");
+        box.classList.add("show", "puzzle-box-guides");
         box.innerHTML = html;
         box.querySelectorAll("[data-puzzle-picker]").forEach((button) => button.addEventListener("click", openPuzzleBoxPicker));
         box.querySelectorAll("[data-puzzle-refresh]").forEach((button) => button.addEventListener("click", () => loadPuzzleBox(true)));
@@ -6077,13 +6198,6 @@
     let pendingAdultUrl = "";
 
     function openGame(game) {
-      if (game.id === "puzzle_box") {
-        selectGame(game.id, false);
-        setDetailTab("guide");
-        setDrawerTab("guide");
-        if (window.matchMedia("(max-width: 599px)").matches) openGameDrawer();
-        return;
-      }
       if (game.comingSoon) {
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
