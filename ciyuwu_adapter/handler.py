@@ -16,6 +16,7 @@
 import base64
 import importlib.util
 import json
+import game_activity
 import os
 import re
 import sqlite3
@@ -446,6 +447,9 @@ def _run_player_command(player_id, command):
                 text = _strip_unearned_reward_text(text)
                 text += "\n\n【本局尚无实质进度，未结算遗刻等跨局收益。】"
 
+        game_activity.observe_change(
+            (json.loads(row[0]), _parse_meta(row[1])), (new_state, new_meta)
+        )
         conn.execute(
             "UPDATE ciyuwu_sessions SET save_data = ?, meta_data = ?, last_active = ? WHERE player_id = ?",
             (_dumps(new_state), _dumps(new_meta), _now_iso(now), player_id),

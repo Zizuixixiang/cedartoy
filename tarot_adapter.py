@@ -1801,7 +1801,7 @@ _STORE: TarotStore | None = None
 _STORE_LOCK = threading.Lock()
 
 
-def count_saved_tarot_sessions(db_path: str | Path | None = None) -> int:
+def count_saved_tarot_sessions(db_path: str | Path | None = None, *, strict=False) -> int | None:
     """Count sessions with a durably committed draw, without creating a DB."""
     path = Path(
         db_path
@@ -1834,7 +1834,7 @@ def count_saved_tarot_sessions(db_path: str | Path | None = None) -> int:
             ).fetchone()
         return int(row[0] or 0) if row else 0
     except (OSError, sqlite3.Error, ValueError):
-        return 0
+        return None if strict else 0
 
 
 def get_store() -> TarotStore:

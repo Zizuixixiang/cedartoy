@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import game_activity
 from pathlib import Path
 
 from command_text import normalize_command_spaces
@@ -73,6 +74,7 @@ class VendorCmdGame:
 
         with lock_path.open("w", encoding="utf-8") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            before = game_activity.save_fingerprint(save_dir)
             proc = subprocess.run(
                 [sys.executable, "-c", self.runner_code],
                 input=json.dumps(payload, ensure_ascii=False),
@@ -83,6 +85,11 @@ class VendorCmdGame:
                 timeout=self.timeout,
                 check=False,
             )
+            after = game_activity.save_fingerprint(save_dir)
+            if before is None or after is None:
+                game_activity.observe_change(None, None)
+            else:
+                game_activity.observe_change(before, after)
 
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()

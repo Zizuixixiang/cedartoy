@@ -1,4 +1,5 @@
 import json
+import game_activity
 import re
 import sqlite3
 import threading
@@ -590,6 +591,7 @@ def _run_player_command(player_id, command):
             raise JsonRpcError(-32603, f"存档解析失败：{exc}")
 
         text, new_save_data = _engine_run(state, command)
+        game_activity.observe_change(json.loads(save_data), json.loads(new_save_data))
 
         conn.execute(
             "UPDATE eco_sessions SET save_data = ?, last_active = ? WHERE player_id = ?",

@@ -18,6 +18,7 @@ import ssl
 import time
 import urllib.parse
 from dataclasses import dataclass
+from contextlib import closing
 from email.message import EmailMessage
 from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
@@ -31,7 +32,8 @@ import account_deletion
 import avatar_appearances
 import detroit_adapter
 import puzzle_box
-from admin_dashboard import build_activity_dashboard
+import game_activity
+from admin_dashboard import build_activity_dashboard, _read_only_connect
 
 try:
     from passlib.context import CryptContext
@@ -3585,6 +3587,9 @@ def _admin_activity(range_name="1h"):
         DUEL_DB_PATH,
         TURTLE_DB_PATH,
         range_name or "1h",
+        sessions_db_path=SESSIONS_DB_PATH,
+        catalog_provider=_activity_catalog,
+        save_stats_provider=lambda: _public_game_stats(strict=True),
     )
 
 
@@ -4356,7 +4361,7 @@ def _game_overview(conn, user):
 def _count_table_rows(table_name):
     if not SESSIONS_DB_PATH.exists():
         return 0
-    with _sessions_db_connect() as conn:
+    with closing(_read_only_connect(SESSIONS_DB_PATH)) as conn:
         if not _table_exists(conn, table_name):
             return 0
         return int(conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0] or 0)
@@ -4365,7 +4370,7 @@ def _count_table_rows(table_name):
 def _count_puzzle_box_saves():
     if not SESSIONS_DB_PATH.exists():
         return 0
-    with _sessions_db_connect() as conn:
+    with closing(_read_only_connect(SESSIONS_DB_PATH)) as conn:
         if not _table_exists(conn, "puzzle_box_progress"):
             return 0
         return int(conn.execute(
@@ -4408,13 +4413,46 @@ def _vendor_save_stats(game):
         ]
     elif game == "detroit":
         player_dirs = [path for path in player_dirs if detroit_adapter.has_save(path.name)]
+    else:
+        adapter = globals().get(f"{game}_adapter")
+        filenames = tuple(getattr(adapter, "SAVE_FILES", {}).values())
+        if game == "bar":
+            filenames = (bar_adapter.FULL_SAVE_NAME, bar_adapter.LITE_SAVE_NAME)
+        elif game == "workkk":
+            filenames = ("game_state.json",)
+        elif game == "garden_cat":
+            filenames = ("state.json",)
+        if filenames:
+            player_dirs = [path for path in player_dirs if any((path / name).is_file() for name in filenames)]
+        else:
+            # A newly integrated game without a save contract is unknown, not 0.
+            return {"save_count": None, "file_count": 0}
     file_count = 0
     for path in player_dirs:
         file_count += sum(1 for child in path.iterdir() if child.is_file() and child.name != ".lock")
     return {"save_count": len(player_dirs), "file_count": file_count}
 
 
-def _public_game_stats():
+def _activity_catalog():
+    """Reuse homepage names; include MCP-only games without a second UI catalog."""
+    source = TOY_INDEX_PATH.read_text(encoding="utf-8")
+    block = re.search(r"const games = \[(.*?)\n    \];", source, re.S)
+    if block is None:
+        raise ValueError("Homepage catalog unavailable")
+    names = {}
+    for item in re.split(r'\n      \{', block.group(1)):
+        game = re.search(r'\bid: "([a-z_]+)"', item)
+        name = re.search(r'\bname: "([^"\n]+)"', item)
+        if game and name and game.group(1) != "admin":
+            names[{"soup": "turtle_soup"}.get(game.group(1), game.group(1))] = name.group(1)
+    names.setdefault("tarot", RITUAL_DISPLAY_NAME)
+    names.setdefault("bdsmtest", "BDSM倾向测试")
+    for game in IDENTITY_GAMES | {"turtle_soup"}:
+        names.setdefault(game, game)
+    return [{"game": game, "name": name} for game, name in names.items()]
+
+
+def _public_game_stats(*, strict=False):
     stats = {
         "puzzle_box": {
             "metric_label": "存档数",
@@ -4426,12 +4464,12 @@ def _public_game_stats():
         },
         "ciyuwu": {
             "metric_label": "对局数",
-            "metric": _sum_ciyuwu_runs(),
+            "metric": None if strict else _sum_ciyuwu_runs(),
             "save_count": _count_table_rows("ciyuwu_sessions"),
         },
         "tarot": {
             "metric_label": "存档数",
-            "metric": count_saved_tarot_sessions(),
+            "metric": count_saved_tarot_sessions(strict=strict),
         },
     }
     for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
@@ -4444,10 +4482,10 @@ def _public_game_stats():
     camping_count = 0
     if CAMPING_PLAZA_DB_PATH.is_file():
         try:
-            camping_stats = _camping_plaza_save_admin("stats")
-            camping_count = int(camping_stats.get("save_count") or 0)
-        except (TypeError, ValueError, _McpError):
-            camping_count = 0
+            camping_stats = _camping_plaza_save_admin("stats", timeout=2 if strict else 20)
+            camping_count = int(camping_stats["save_count"])
+        except (KeyError, TypeError, ValueError, _McpError):
+            camping_count = None if strict else 0
     stats["camping_plaza"] = {
         "metric_label": "存档数",
         "metric": camping_count,
@@ -5236,7 +5274,9 @@ def _eco_human_action(raw_token, ai_user_id, action, payload=None, slot=1):
 
     try:
         player_id = _account_slot_player_id(ai_user_id, _normalize_save_slot(slot))
-        return eco_handler.human_action(player_id, action, payload)
+        result = eco_handler.human_action(player_id, action, payload)
+        game_activity.record(SESSIONS_DB_PATH, "eco", action, human, result)
+        return result
     except eco_handler.JsonRpcError:
         # A missing/corrupt save did not reach the engine and should not consume
         # the user's one-second action allowance.
@@ -5803,6 +5843,7 @@ def _human_test_action(game, action, raw_token, body):
         session = _human_test_active_session(game, player_id)
         if session is None:
             raise RuntimeError("handler did not create a test session")
+        game_activity.record(SESSIONS_DB_PATH, game, "start", account_user, {"ok": True})
         return _human_test_public_state(game, player_id, identity, session)
     elif action == "answer_batch":
         answers = body.get("answers")
@@ -5841,6 +5882,7 @@ def _human_test_action(game, action, raw_token, body):
             }
             text = getattr(handler, f"{game}_answer_batch")(arguments)
             progress += batch_size
+        game_activity.record(SESSIONS_DB_PATH, game, "answer_batch", account_user, {"ok": True})
     elif action == "compare":
         player_id_b = body.get("player_id_b") or body.get("other_player_id")
         comparison = getattr(handler, f"{game}_compare_data")(
@@ -6322,13 +6364,13 @@ def _delete_garden_cat_save(player_id):
     }
 
 
-def _camping_plaza_save_admin(action, **payload):
+def _camping_plaza_save_admin(action, *, timeout=20, **payload):
     """Ask the resident Camping Plaza adapter to manage its SQLite snapshot."""
     try:
         response = httpx.post(
             f"{CAMPING_PLAZA_BASE}/internal/saves/{action}",
             json=payload,
-            timeout=20,
+            timeout=timeout,
         )
     except httpx.HTTPError as exc:
         raise _McpError(-32603, f"Camping Plaza 存档管理服务连接失败：{exc}") from exc
@@ -8150,6 +8192,7 @@ class _DeferredDuelCall:
     anti_context: dict | None
     announce_player_id: str | None
     slot_hint: int | None = None
+    activity_params: dict | None = None
 
 
 def _apply_play_slot_hint(text, slot_hint):
@@ -8177,12 +8220,13 @@ def _tool_play(
             slot_hint = _save_slot_from_arguments(arguments)
     except _McpError:
         slot_hint = None  # 非法 slot 交给内部逻辑报错
-    result = _tool_play_inner(
-        arguments,
-        path_token=path_token,
-        defer_duel=defer_duel,
-        authenticated_account=authenticated_account,
-    )
+    with game_activity.capture_changes():
+        result = _tool_play_inner(
+            arguments,
+            path_token=path_token,
+            defer_duel=defer_duel,
+            authenticated_account=authenticated_account,
+        )
     if isinstance(result, _DeferredDuelCall):
         result.slot_hint = slot_hint
         return result
@@ -8434,13 +8478,14 @@ def _tool_play_inner(
         }
         if defer_duel:
             return _DeferredDuelCall(
+                activity_params={key: merged_arguments.get(key) for key in ("op", "loan_action", "exchange_action")},
                 backend_payload=_prepare_duel_payload(
                     merged_arguments, **duel_kwargs
                 ),
                 game=game,
                 action=action,
                 account_user=(
-                    {"id": account_user["id"]} if account_user else None
+                    {"id": account_user["id"], "is_ai": account_user.get("is_ai", False)} if account_user else None
                 ),
                 account_player_id=account_player_id,
                 guest_player_id=guest_player_id,
@@ -8467,6 +8512,7 @@ def _tool_play_inner(
         slot=slot,
         anti_context=anti_context,
         announce_player_id=announce_player_id,
+        activity_params={**merged_arguments, **(params or {})},
     )
     return json.dumps(response, ensure_ascii=False)
 
@@ -8482,7 +8528,12 @@ def _finalize_play_response(
     slot,
     anti_context,
     announce_player_id,
+    activity_params=None,
 ):
+    game_activity.record(
+        SESSIONS_DB_PATH, game, action, account_user, response,
+        params=activity_params, changed=game_activity.observed_change(),
+    )
     succeeded = True
     if isinstance(response, dict):
         result = response.get("result")
@@ -9634,6 +9685,7 @@ def _finalize_deferred_duel_call(prepared, response):
         slot=prepared.slot,
         anti_context=prepared.anti_context,
         announce_player_id=prepared.announce_player_id,
+        activity_params=prepared.activity_params,
     )
     text = json.dumps(response, ensure_ascii=False)
     return _apply_play_slot_hint(text, prepared.slot_hint)
@@ -10045,6 +10097,29 @@ def _play_vendor_cmd(game, arguments):
 
 def _json_rpc_result(request_id, result):
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def _record_web_game_activity(game, method, path, status, raw, user, body=None):
+    if method != "POST" or not 200 <= status < 300 or not user:
+        return
+    routes = {
+        "workkk": {"/shop/buy": "shop_buy", "/reset": "new"},
+        "garden_cat": {"/web/cmd": "cmd", "/web/new_game": "new",
+                       "/web/move_with_cat": "move_with_cat", "/web/notes": "notes_write"},
+        "camping_plaza": {"/api/player/name": "set_player_name", "/api/turn/advance": "advance_turn",
+                          "/api/turn/plan": "execute_turn_plan", "/api/day/end": "submit_day_end_actions",
+                          "/api/day/start": "start_next_day", "/api/action": "action"},
+        "detroit": {"sessions": "create_save", "action": "play_step"},
+    }
+    action = routes.get(game, {}).get(path)
+    if not action:
+        return
+    try:
+        result = json.loads(raw)
+        params = json.loads(body) if body else {}
+    except (ValueError, TypeError):
+        return
+    game_activity.record(SESSIONS_DB_PATH, game, action, user, result, params=params)
 
 
 def _garden_cat_proxy_allowed(method, public_path):
@@ -10859,6 +10934,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         target = _bound_ai_slot_target_for_user(user, player)
         if target is None:
             raise _McpError(-32003, "你没有绑定这只小机或槽位无效")
+        target = {**target, "activity_user": {"id": user["id"], "is_ai": False}}
         return raw_token, target
 
     @staticmethod
@@ -10997,6 +11073,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             message = exc.message if hasattr(exc, "message") else str(exc)
             self._send_json({"error": message}, status=self._detroit_http_status(exc))
             return
+        _record_web_game_activity("detroit", method, endpoint, status, body, target.get("activity_user"))
         self._send_detroit_bytes(
             status,
             headers.get("content-type", "application/json; charset=utf-8"),
@@ -11567,6 +11644,7 @@ a{{color:#c9afff}}
                 ai_name=target["machine_name"],
                 **params,
             )
+            game_activity.record(SESSIONS_DB_PATH, "forest", action, user, result)
             result["player_id"] = target["player"]
             result["ai_user_id"] = target["ai_user_id"]
             result["machine_name"] = target["machine_name"]
@@ -12887,20 +12965,24 @@ a{{color:#c9afff}}
                 return
             if suffix == "draw":
                 result = store.commit_draw(session_id, int(human["id"]), body, csrf)
+                game_activity.record(SESSIONS_DB_PATH, "tarot", "draw", human, result)
                 self._send_json(result, extra_headers={"Cache-Control": "no-store"})
                 return
             if suffix == "reveal":
                 result = store.reveal(session_id, int(human["id"]), body, csrf)
+                game_activity.record(SESSIONS_DB_PATH, "tarot", "reveal", human, result)
                 self._send_json(result, extra_headers={"Cache-Control": "no-store"})
                 return
             if suffix == "return":
                 result = store.return_session(
                     session_id, int(human["id"]), body.get("revision"), csrf
                 )
+                game_activity.record(SESSIONS_DB_PATH, "tarot", "return", human, result)
                 self._send_json(result, extra_headers={"Cache-Control": "no-store"})
                 return
             if suffix == "stop":
                 result = store.stop_session(session_id, int(human["id"]), csrf)
+                game_activity.record(SESSIONS_DB_PATH, "tarot", "stop", human, result)
                 self._send_json(result, extra_headers={"Cache-Control": "no-store"})
                 return
             if suffix == "reading":
@@ -13642,6 +13724,7 @@ a{{color:#c9afff}}
             rewrite_html=(upstream_path == "/"), set_cookie=set_cookie,
             # 身份以服务端校验过的绑定 player 为准，杜绝客户端伪造 player/X-Player-Id 覆盖他人存档
             force_player=(None if is_static else player),
+            activity_user=(None if is_static else user),
         )
 
     def _rewrite_workkk_html(self, raw):
@@ -13657,7 +13740,7 @@ a{{color:#c9afff}}
         text = text.replace('src="/static/', 'src="/workkk/static/')
         return text.encode("utf-8")
 
-    def _proxy_to_workkk(self, method, upstream_path, query_string, rewrite_html=False, set_cookie=None, force_player=None):
+    def _proxy_to_workkk(self, method, upstream_path, query_string, rewrite_html=False, set_cookie=None, force_player=None, activity_user=None):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         params.pop("token", None)  # 不把人类 JWT 透传给 vendor 进程
         if force_player is not None:
@@ -13697,6 +13780,7 @@ a{{color:#c9afff}}
             return
         finally:
             conn.close()
+        _record_web_game_activity("workkk", method, upstream_path, status, raw, activity_user, body)
         if rewrite_html and "text/html" in content_type.lower():
             raw = self._rewrite_workkk_html(raw)
         try:
@@ -13930,6 +14014,16 @@ a{{color:#c9afff}}
         finally:
             conn.close()
 
+        if target and method == "POST" and 200 <= status < 300:
+            action = "new" if upstream_path == "/api/rooms" else upstream_path.rsplit("/", 1)[-1]
+            if action in {"new", "invitation", "join", "move", "resign", "leave"}:
+                try:
+                    result = json.loads(raw)
+                except (ValueError, TypeError):
+                    result = None
+                game_activity.record(SESSIONS_DB_PATH, "duel", action,
+                                     {"id": target["human_player"], "is_ai": False}, result)
+
         if rewrite_html and "text/html" in content_type.lower():
             raw = raw.replace(b'="/static/', b'="/duel/static/')
         try:
@@ -14034,12 +14128,13 @@ a{{color:#c9afff}}
             query_string,
             set_cookie=set_cookie,
             target=target,
+            activity_user=(None if is_static else user),
             human_name=(user.get("username") if not is_static else None),
         )
 
     def _proxy_to_garden_cat(
         self, method, upstream_path, query_string, set_cookie=None, target=None,
-        human_name=None,
+        human_name=None, activity_user=None,
     ):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         params.pop("token", None)
@@ -14088,6 +14183,7 @@ a{{color:#c9afff}}
             return
         finally:
             conn.close()
+        _record_web_game_activity("garden_cat", method, upstream_path, status, raw, activity_user, body)
         try:
             self.send_response(status, reason)
             for key, value in resp_headers:
@@ -14168,10 +14264,11 @@ a{{color:#c9afff}}
             query_string,
             set_cookies=set_cookies,
             target=target,
+            activity_user=(None if is_static else user),
         )
 
     def _proxy_to_camping_plaza(
-        self, method, upstream_path, query_string, set_cookies=None, target=None,
+        self, method, upstream_path, query_string, set_cookies=None, target=None, activity_user=None,
     ):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         params.pop("token", None)
@@ -14209,6 +14306,7 @@ a{{color:#c9afff}}
             return
         finally:
             conn.close()
+        _record_web_game_activity("camping_plaza", method, upstream_path, status, raw, activity_user, body)
 
         if upstream_path == "/" and status < 400:
             raw = raw.replace(b'href="styles/', b'href="/camping-plaza/styles/')

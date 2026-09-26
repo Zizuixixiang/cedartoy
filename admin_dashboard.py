@@ -737,8 +737,11 @@ def build_activity_dashboard(
     range_key: str = "1h",
     *,
     now: datetime | None = None,
+    sessions_db_path=None,
+    catalog_provider=None,
+    save_stats_provider=None,
 ) -> dict:
-    """Build both modules while isolating database failures from each other."""
+    """Build independent modules; providers run inside the overview boundary."""
     window = range_window(range_key, now)
     response = {
         "generated_at": _iso_utc(window["end"]),
@@ -749,6 +752,14 @@ def build_activity_dashboard(
             "end_at": window["end_at"],
         },
     }
+    response["overview"] = {"ok": False, "games": [], "error": "全站游戏活跃数据暂时不可用"}
+    if sessions_db_path is not None and catalog_provider is not None:
+        try:
+            response["overview"] = _collect_overview(
+                sessions_db_path, window, catalog_provider(), save_stats_provider,
+            )
+        except Exception:
+            logger.exception("Failed to collect game activity overview")
     try:
         response["duel"] = _collect_duel(duel_db_path, window)
     except Exception:
@@ -760,3 +771,48 @@ def build_activity_dashboard(
         logger.exception("Failed to collect Turtle Soup admin dashboard metrics")
         response["turtle"] = _empty_turtle("海龟汤数据暂时不可用")
     return response
+
+
+def _collect_overview(path, window, catalog, save_stats_provider):
+    # Missing table is a deployment/initial accumulation state, not historical 0s.
+    conn = _read_only_connect(path)
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='game_activity_events'"
+        ).fetchone()
+        metrics = conn.execute("""
+            SELECT game, identity_type, COUNT(DISTINCT identity_id) AS users,
+                   COUNT(*) AS operations, MAX(occurred_at) AS last_active
+            FROM game_activity_events
+            WHERE occurred_at >= ? AND occurred_at < ?
+            GROUP BY game, identity_type
+        """, (window["start"].timestamp(), window["end"].timestamp())).fetchall() if exists else []
+    finally:
+        conn.close()
+    stats = save_stats_provider() if save_stats_provider else {}
+    games = {item["game"]: {
+        "game": item["game"], "name": item["name"], "active_users": 0,
+        "human_users": 0, "ai_users": 0, "operations": 0, "save_count": None,
+    } for item in catalog}
+    last_active = {}
+    for row in metrics:
+        item = games.get(row["game"])
+        if item is None or row["identity_type"] not in {"human", "ai"}:
+            continue
+        item[row["identity_type"] + "_users"] = _int(row["users"])
+        item["active_users"] += _int(row["users"])
+        item["operations"] += _int(row["operations"])
+        last_active[row["game"]] = max(last_active.get(row["game"], 0), row["last_active"])
+    for game, item in games.items():
+        stat = stats.get(game, {})
+        count = stat.get("save_count")
+        if "save_count" not in stat and stat.get("metric_label") == "存档数":
+            count = stat.get("metric")
+        if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            item["save_count"] = count
+    return {
+        "ok": True,
+        "games": sorted(games.values(), key=lambda item: (
+            -item["active_users"], -last_active.get(item["game"], 0), item["game"],
+        )),
+    }

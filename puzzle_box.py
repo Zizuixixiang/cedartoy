@@ -4,6 +4,7 @@ import random
 import re
 import sqlite3
 import unicodedata
+import game_activity
 from contextlib import closing, contextmanager
 
 from puzzle_box_data import PROMPT, PUZZLES
@@ -160,6 +161,7 @@ def play(db_path, ai_id, action, params):
             pid = puzzle_id(params.get("puzzle_id", ""))
         status = _status(conn, ai_id, pid)
         if action in {"draw", "open"}:
+            game_activity.observe_change(status, "opened" if status == "unseen" else status)
             if status == "unseen":
                 conn.execute("INSERT INTO puzzle_box_progress(ai_user_id,puzzle_id,status) VALUES(?,?,'opened')", (ai_id, pid))
                 status = "opened"

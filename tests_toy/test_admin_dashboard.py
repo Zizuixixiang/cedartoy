@@ -19,6 +19,12 @@ class AdminDashboardFixtureTests(unittest.TestCase):
         root = Path(self.temp_dir.name)
         self.duel_db = root / "duel.db"
         self.turtle_db = root / "turtle.db"
+        sessions_db = root / "sessions.db"
+        sqlite3.connect(sessions_db).close()
+        for patcher in (patch.object(server, "SESSIONS_DB_PATH", sessions_db),
+                        patch.object(server, "_public_game_stats", return_value={})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self._create_duel_fixture()
         self._create_turtle_fixture()
 
@@ -445,6 +451,7 @@ class AdminDashboardFixtureTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(payload["range"]["key"], "1h")
             self.assertTrue(payload["duel"]["ok"])
+            self.assertTrue(payload["overview"]["ok"])
             self.assertEqual(kwargs["extra_headers"], {"Cache-Control": "no-cache, no-store"})
             self.assertEqual(call(admin_token, "forever")[0], 400)
             self.assertEqual(call(admin_token, "today")[0], 400)
@@ -496,7 +503,7 @@ class AdminDashboardFixtureTests(unittest.TestCase):
         self.assertNotIn("近10分钟实时", html)
         self.assertNotIn("function renderRealtime", html)
         self.assertNotIn('id="chipsDashboard"', html)
-        self.assertEqual(html.count('<section class="panel dashboard-section"'), 2)
+        self.assertEqual(html.count('<section class="panel dashboard-section"'), 3)
 
         duel_section = re.search(
             r'<section class="panel dashboard-section" id="duelDashboard".*?</section>',
