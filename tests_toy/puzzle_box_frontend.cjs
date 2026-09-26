@@ -9,6 +9,9 @@ const dom = new JSDOM(home, {runScripts: 'outside-only', url: 'http://localhost/
 const w = dom.window;
 const source = home.slice(home.indexOf('    const puzzleBoxState ='), home.indexOf('    const saveGameNames ='));
 const tabs = home.slice(home.indexOf('    function gameHasGuide(game)'), home.indexOf('    function memoriaGuideBoxes()'));
+const selection = home.slice(home.indexOf('    function selectGame(id, maybeDrawer)'), home.indexOf('    let pendingAdultUrl ='));
+const guideLoader = home.slice(home.indexOf('    function ensureMemoriaGuidesLoaded()'), home.indexOf('    async function loadMemoriaGuides()'));
+const gameCatalog = home.slice(home.indexOf('    const games = ['), home.indexOf('    let selected = "soup";'));
 const longCode = 'SUYgWU9VIEZPVU5EIFRISVMsIEkgV0FTIEhPUElORyBJVCBXT1VMRCBCRSBZT1Uu'.repeat(3);
 const calls = [];
 let confirmation = false;
@@ -31,27 +34,66 @@ w.eval(`
   const token = () => testToken;
   const headers = () => ({Authorization: 'Bearer ' + token(), 'Content-Type':'application/json'});
   const $ = id => document.getElementById(id);
-  let testGame = {id:'puzzle_box'};
+  ${gameCatalog}
+  let selected = 'memoria';
   let detailTab = 'guide', drawerTab = 'guide';
-  const currentGame = () => testGame;
-  const ensureMemoriaGuidesLoaded = () => {};
+  const currentGame = () => games.find(game => game.id === selected);
+  const memoriaGuideState = {loaded:true};
+  const renderGames = () => {};
+  const renderDetail = () => {renderDetailTabs(currentGame());renderPuzzleBox();};
+  const openGameDrawer = () => setDrawerTab(drawerTab);
   const aiBindings = () => me ? me.bindings : [];
   const escapeHtml = value => String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
   const memoriaGuideBoxes = () => [$('memoriaGuides'), $('drawerMemoriaGuides')];
   const closeBankPicker = () => $('bankPicker').classList.remove('show');
   ${tabs}
+  ${selection}
+  ${guideLoader}
   ${source}
   window.testBox = {loadPuzzleBox, revealPuzzleBox, openPuzzleBoxPicker, state: puzzleBoxState,
     logout: () => {me=null;testToken='';}, renderPuzzleBox,
-    setGame: id => {testGame={id};renderDetailTabs(testGame);}, setDrawerTab};
+    setGame: id => {selected=id;renderDetailTabs(currentGame());}, setDrawerTab, setDetailTab,
+    selectGame, previewGame};
 `);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 (async () => {
   const b = w.testBox;
-  b.setGame('puzzle_box');
-  await b.loadPuzzleBox();
+  // Carry a previous game's guide tab into selection: puzzle_box must reset both views.
+  w.matchMedia = () => ({matches:true});
+  b.selectGame('puzzle_box', true);
+  assert.equal(w.document.querySelector('.preview').dataset.detailTab, 'preview');
+  assert.equal(w.document.getElementById('gameDrawerPanel').dataset.detailTab, 'preview');
+  assert.equal(calls.length, 0);
+  b.setGame('memoria');
+  b.setDetailTab('guide');
+  b.setDrawerTab('guide');
+  b.previewGame('puzzle_box');
+  assert.equal(w.document.querySelector('.preview').dataset.detailTab, 'preview');
+  assert.equal(w.document.getElementById('gameDrawerPanel').dataset.detailTab, 'preview');
+  await tick();
+  assert.equal(calls.length, 0);
+  assert.equal(b.state.data, null);
+
+  // Only a deliberate guide click begins the progress request (desktop + mobile).
+  w.document.getElementById('guideTab').addEventListener('click', () => b.setDetailTab('guide'));
+  w.document.getElementById('guideTab').click();
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].url.startsWith('/api/puzzle-box/progress'));
+  b.selectGame('puzzle_box', true);
+  assert.equal(calls.length, 1);
+  b.state.data = null; // Exercise an uncached mobile guide entry as well.
+  const mobileGuide = w.document.querySelector('[data-drawer-tab="guide"]');
+  mobileGuide.addEventListener('click', () => b.setDrawerTab('guide'));
+  mobileGuide.click();
+  await tick();
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].url.startsWith('/api/puzzle-box/progress'));
   const panel = w.document.getElementById('memoriaGuides');
   const drawerPanel = w.document.getElementById('drawerMemoriaGuides');
+  for (const root of [panel, drawerPanel]) {
+    assert.equal(root.querySelector('[data-puzzle-picker]').textContent, '小机甲');
+  }
   const style = element => w.getComputedStyle(element);
   assert.equal(panel.querySelectorAll('[data-puzzle-reveal]').length, 22);
   assert.equal(panel.querySelectorAll('small').length, 6);
@@ -84,11 +126,16 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   b.setGame('puzzle_box');
 
   // Run the real card's navigation handler against a fake location, no external request.
-  const gameCatalog = home.slice(home.indexOf('    const games = ['), home.indexOf('    let selected = "soup";'));
   const openGame = home.slice(home.indexOf('    function openGame(game)'), home.indexOf('    function enterGame()'));
   const nav = {window:{location:{href:''}}};
-  vm.runInNewContext(gameCatalog + openGame + '\nopenGame(games.find(g => g.id === "puzzle_box"));', nav);
+  vm.runInNewContext(gameCatalog + openGame + '\nthis.puzzleGame = games.find(g => g.id === "puzzle_box");openGame(puzzleGame);', nav);
   assert.equal(nav.window.location.href, 'https://xhslink.cn/o/3h6OJZlNro4');
+  assert.equal(nav.puzzleGame.metricLabel, '存档数');
+  assert.equal(nav.puzzleGame.metric, '--');
+  assert.equal(nav.puzzleGame.level, '22 道');
+  assert.equal(nav.puzzleGame.iconFile, 'puzzle_box.png');
+  const cover = fs.readFileSync('assets/icons/' + nav.puzzleGame.iconFile);
+  assert.equal(cover.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   assert.ok(!panel.textContent.includes('标准谜底\n'));
   assert.equal(calls.filter(c => c.url.endsWith('/reveal')).length, 0);
 
@@ -146,6 +193,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   await tick();
   assert.ok(calls.at(-1).url.includes('ai_user_id=2'));
   assert.ok(panel.textContent.includes('小机乙'));
+  for (const root of [panel, drawerPanel]) {
+    assert.equal(root.querySelector('[data-puzzle-picker]').textContent, '小机乙');
+  }
   assert.equal(b.state.expanded, '');
   assert.ok(!panel.textContent.includes('单题标准谜底'));
 

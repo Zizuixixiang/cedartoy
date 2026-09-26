@@ -4362,6 +4362,17 @@ def _count_table_rows(table_name):
         return int(conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0] or 0)
 
 
+def _count_puzzle_box_saves():
+    if not SESSIONS_DB_PATH.exists():
+        return 0
+    with _sessions_db_connect() as conn:
+        if not _table_exists(conn, "puzzle_box_progress"):
+            return 0
+        return int(conn.execute(
+            "SELECT COUNT(DISTINCT ai_user_id) FROM puzzle_box_progress"
+        ).fetchone()[0])
+
+
 def _sum_ciyuwu_runs():
     if not SESSIONS_DB_PATH.exists():
         return 0
@@ -4405,6 +4416,10 @@ def _vendor_save_stats(game):
 
 def _public_game_stats():
     stats = {
+        "puzzle_box": {
+            "metric_label": "存档数",
+            "metric": _count_puzzle_box_saves(),
+        },
         "eco": {
             "metric_label": "存档数",
             "metric": _count_table_rows("eco_sessions"),

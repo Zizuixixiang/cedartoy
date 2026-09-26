@@ -3881,7 +3881,7 @@
       },
       {
         id: "puzzle_box",
-        iconFile: "puzzle_box.svg",
+        iconFile: "puzzle_box.png",
         category: "mini",
         name: "解谜盲盒",
         mission: "MISSION: UNWRAP",
@@ -3889,8 +3889,8 @@
         glyph: "谜",
         badge: "BOX",
         level: "22 道",
-        metricLabel: "独立谜题",
-        metric: "22",
+        metricLabel: "存档数",
+        metric: "--",
         short: "结构化解码 / 给 LLM 的盲盒",
         desc: "16 道普通题 + 6 道挑战题，每题独立。解出隐藏信息，后面想怎么回应，随你。",
         logs: [
@@ -5175,7 +5175,7 @@
       }).join("");
       const html = `<div class="memoria-guide-title">解谜盲盒 · 题目与攻略</div>
         <div class="memoria-guide-warning">作者：Runsheng_ · 小红书：_Sssonnet0220<br>经作者授权收录；原题尽量保留，仅做适合 MCP/4399 的交互适配。</div>
-        <div class="bank-row">${ai ? `<button class="bank-select-btn" data-puzzle-picker type="button">${escapeHtml(ai.username)} · 选择小机</button>` : ""}<button class="pixel-btn" data-puzzle-refresh type="button">刷新进度</button></div>
+        <div class="bank-row">${ai ? `<button class="bank-select-btn" data-puzzle-picker type="button">${escapeHtml(ai.username)}</button>` : ""}<button class="pixel-btn" data-puzzle-refresh type="button">刷新进度</button></div>
         <p class="puzzle-box-summary" aria-live="polite">${stats}</p>
         <p>让小机连接 MCP 来拆题。点击单题查看攻略；未解题需确认剧透，看攻略不会标成已解。</p>
         <p role="status">${escapeHtml(state.error || (state.loading ? "读取中…" : ""))}</p>
@@ -6177,22 +6177,20 @@
     function selectGame(id, maybeDrawer) {
       if (!games.some((game) => game.id === id)) return;
       selected = id;
-      if (id === "puzzle_box") detailTab = drawerTab = "guide";
+      if (id === "puzzle_box") detailTab = drawerTab = "preview";
       renderGames();
       renderDetail();
-      if (id === "puzzle_box") loadPuzzleBox(true);
       if (maybeDrawer && window.matchMedia("(max-width: 599px)").matches) openGameDrawer();
     }
 
     function previewGame(id) {
       if (!games.some((game) => game.id === id)) return;
       selected = id;
-      if (id === "puzzle_box") detailTab = drawerTab = "guide";
+      if (id === "puzzle_box") detailTab = drawerTab = "preview";
       document.querySelectorAll(".game-card[data-game]").forEach((card) => {
         card.classList.toggle("selected", card.dataset.game === id);
       });
       renderDetail();
-      if (id === "puzzle_box") loadPuzzleBox(true);
     }
 
     let pendingAdultUrl = "";

@@ -136,6 +136,35 @@ class PuzzleBoxTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT * FROM existing_data").fetchall(), [("keep me",)])
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
+    def test_public_save_count_counts_distinct_ai_and_empty_is_zero(self):
+        with patch.object(server, "SESSIONS_DB_PATH", self.db), \
+             patch.object(server, "VENDOR_SAVE_ROOT", Path(self.tmp.name) / "vendor"), \
+             patch.object(server, "CAMPING_PLAZA_DB_PATH", Path(self.tmp.name) / "camping.db"), \
+             patch.object(server, "count_saved_tarot_sessions", return_value=0):
+            def check_count(expected):
+                self.assertEqual(server._public_game_stats()["puzzle_box"],
+                                 {"metric_label": "存档数", "metric": expected})
+
+            check_count(0)
+            self.assertFalse(self.db.exists())  # Public stats must not initialize storage.
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("CREATE TABLE unrelated (value TEXT)")
+            check_count(0)
+            with sqlite3.connect(self.db) as conn:
+                self.assertIsNone(conn.execute(
+                    "SELECT name FROM sqlite_master WHERE name='puzzle_box_progress'"
+                ).fetchone())
+            box.init_db(self.db)
+            check_count(0)
+            self.play("open", "N01", ai=1)
+            self.play("open", "N02", ai=1)
+            self.play("submit", "N01", ai=1, answer=PUZZLES["N01"]["answer"])
+            check_count(1)
+            self.play("open", "N01", ai=2)
+            check_count(2)
+            self.play("open", "H06", ai=2)
+            check_count(2)
+
     def test_single_puzzle_response_and_safe_guide(self):
         for pid in PUZZLES:
             result = self.play("open", pid)
