@@ -812,7 +812,7 @@ def _collect_overview(path, window, catalog, save_stats_provider):
             item["save_count"] = count
     return {
         "ok": True,
-        "games": sorted(games.values(), key=lambda item: (
+        "games": sorted((item for item in games.values() if item["active_users"] > 0), key=lambda item: (
             -item["active_users"], -last_active.get(item["game"], 0), item["game"],
         )),
     }

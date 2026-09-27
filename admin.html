@@ -247,18 +247,24 @@
       gap: 12px;
       min-width: 0;
     }
-    .game-overview { overflow-x: auto; border: 2px solid var(--text); }
+    .game-overview { width: 100%; min-width: 0; border: 2px solid var(--text); }
     .game-overview-row {
       display: grid;
-      grid-template-columns: minmax(160px, 2fr) repeat(5, minmax(62px, 1fr));
-      min-width: 510px;
+      grid-template-columns: minmax(0, 1fr) 4.75em repeat(2, 4.25em);
+      min-width: 0;
       align-items: center;
       border-bottom: 1px solid #ddd;
       font-size: 13px;
     }
     .game-overview-row:last-child { border-bottom: 0; }
-    .game-overview-row > span { padding: 8px 6px; text-align: right; }
-    .game-overview-row > span:first-child { text-align: left; overflow-wrap: anywhere; }
+    .game-overview-row > span {
+      min-width: 0;
+      padding: 8px 4px;
+      text-align: right;
+      overflow-wrap: anywhere;
+      font-variant-numeric: tabular-nums;
+    }
+    .game-overview-row > span:first-child { text-align: left; }
     .game-overview-header { font-weight: bold; background: #f2eedf; }
     .section-head {
       display: flex;
@@ -692,7 +698,7 @@
           <h2 id="gameOverviewTitle">全站游戏活跃</h2>
           <span class="section-note" id="gameOverviewRangeLabel"></span>
         </div>
-        <p class="section-note">按活跃账号数排序 · 通用活跃从功能上线后开始积累。只计已登录账号的游戏操作，不含围观与状态刷新；部分人类入口尚未接入。存档数为当前值，— 表示不适用或暂不可统计。</p>
+        <p class="section-note">仅显示所选范围内有活跃账号的游戏，按活跃账号数排序。通用活跃从上线后积累，不含围观与状态刷新；部分人类入口尚未接入。</p>
         <div id="gameOverviewContent"><div class="dashboard-empty">切换到运营看板后加载</div></div>
       </section>
 
@@ -1123,18 +1129,21 @@
         $("gameOverviewContent").innerHTML = `<div class="module-error">${escapeHtml(data?.error || "全站游戏活跃数据暂时不可用")}</div>`;
         return;
       }
-      const rows = (data.games || []).map((game) => `
+      const games = (data.games || []).filter((game) => Number(game.active_users) > 0);
+      if (!games.length) {
+        $("gameOverviewContent").innerHTML = '<div class="dashboard-empty">当前范围暂无活跃游戏</div>';
+        return;
+      }
+      const rows = games.map((game) => `
         <div class="game-overview-row" role="row">
           <span role="cell">${escapeHtml(game.name)}</span>
           <span role="cell">${number(game.active_users)}</span>
           <span role="cell">${number(game.human_users)}</span>
           <span role="cell">${number(game.ai_users)}</span>
-          <span role="cell">${number(game.operations)}</span>
-          <span role="cell">${game.save_count == null ? "—" : number(game.save_count)}</span>
         </div>`).join("");
       $("gameOverviewContent").innerHTML = `<div class="game-overview" role="table" aria-label="全站游戏活跃统计">
         <div class="game-overview-row game-overview-header" role="row">
-          ${["游戏", "活跃账号", "人类", "小机", "成功操作", "当前存档"].map((label) => `<span role="columnheader">${label}</span>`).join("")}
+          ${["游戏", "活跃账号", "人类", "小机"].map((label) => `<span role="columnheader">${label}</span>`).join("")}
         </div>${rows}</div>`;
     }
 

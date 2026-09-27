@@ -102,10 +102,10 @@ class GameActivityTests(unittest.TestCase):
             self.assertEqual(item["game"], "puzzle_box")
             self.assertEqual((item["active_users"], item["human_users"], item["ai_users"]), (2, 1, 1))
             self.assertEqual(item["operations"], expected)
-            self.assertEqual({g["game"] for g in data["games"]}, {g["game"] for g in server._activity_catalog()})
-            self.assertTrue(all(g["operations"] == 0 for g in data["games"][1:]))
-        self.assertTrue(server.IDENTITY_GAMES <= {g["game"] for g in data["games"]})
-        names = {g["game"]: g["name"] for g in data["games"]}
+            self.assertEqual([g["game"] for g in data["games"]], ["puzzle_box"])
+        catalog = server._activity_catalog()
+        self.assertTrue(server.IDENTITY_GAMES <= {g["game"] for g in catalog})
+        names = {g["game"]: g["name"] for g in catalog}
         self.assertEqual(names["eco"], "瓶中生态")
         self.assertEqual(names["turtle_soup"], "海龟汤")
         self.assertNotIn("admin", names)
@@ -191,14 +191,32 @@ class GameActivityTests(unittest.TestCase):
         self.assertEqual([(row[2], row[3], row[4]) for row in self.events()],
                          [("17", "human", "start"), ("17", "human", "answer_batch")])
 
-    def test_future_homepage_game_is_included_without_activity_or_save_support(self):
+    def test_future_homepage_game_appears_only_after_activity(self):
         home = self.root / "index.html"
         home.write_text('const games = [\n      {id: "future_game", name: "未来游戏"}\n    ];')
         with patch.object(server, "TOY_INDEX_PATH", home):
+            self.assertEqual(self.overview(), {"ok": True, "games": []})
+            self.record("future_game", "start")
             item = next(item for item in self.overview()["games"] if item["game"] == "future_game")
         self.assertEqual(item["name"], "未来游戏")
-        self.assertEqual(item["active_users"], 0)
+        self.assertEqual(item["active_users"], 1)
         self.assertIsNone(item["save_count"])
+
+    def test_overview_filters_range_and_sorts_users_then_recent_activity(self):
+        with patch.object(activity.time, "time", return_value=self.NOW - 1200):
+            self.record("fishing", "new")
+        with patch.object(activity.time, "time", return_value=self.NOW - 60):
+            self.record("eco", "eco_new")
+            self.record("eco", "eco_new", user=self.human)
+            self.record("duel", "move")
+        self.record("turtle_soup", "ask")
+        self.assertEqual([g["game"] for g in self.overview("10m")["games"]],
+                         ["eco", "turtle_soup", "duel"])
+        self.assertEqual([g["game"] for g in self.overview("1h")["games"]],
+                         ["eco", "turtle_soup", "duel", "fishing"])
+        with patch.object(activity.time, "time", return_value=self.NOW - 90000):
+            self.record("bar", "new")
+        self.assertNotIn("bar", [g["game"] for g in self.overview("24h")["games"]])
 
     def test_failed_play_result_never_records_at_common_boundary(self):
         with patch.object(server, "_play_vendor_cmd", return_value={"ok": False}):
@@ -219,6 +237,9 @@ class GameActivityTests(unittest.TestCase):
             (directory / ".lock").touch()
         (directory / "fishing_save.json").write_text("{}")
         stats = server._public_game_stats(strict=True)
+        # Legacy API fields remain available for active games, but are not UI columns.
+        for game in ("fishing", "ciyuwu", "duel", "turtle_soup", "mbti", "tarot", "attribute"):
+            self.record(game, "start")
         rows = {row["game"]: row for row in self.overview(stats=stats)["games"]}
         self.assertEqual(rows["puzzle_box"]["save_count"], 1)
         self.assertEqual(rows["fishing"]["save_count"], 1)
@@ -258,7 +279,7 @@ class GameActivityTests(unittest.TestCase):
     def test_missing_schema_initially_empty_without_query_side_effects(self):
         with sqlite3.connect(self.db) as conn:
             conn.execute("DROP TABLE game_activity_events")
-        self.assertTrue(self.overview()["ok"])
+        self.assertEqual(self.overview(), {"ok": True, "games": []})
         with sqlite3.connect(self.db) as conn:
             self.assertEqual(conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [])
 
