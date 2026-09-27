@@ -112,6 +112,8 @@ Overview、Duel 与 turtle-soup 分模块查询；任一数据库打不开、被
 python3 -m py_compile server.py admin_dashboard.py game_activity.py tests_toy/test_admin_dashboard.py tests_toy/test_game_activity.py
 python3 -m unittest -v tests_toy.test_account_security_round1 tests_toy.test_admin_dashboard tests_toy.test_game_activity
 node scripts/check_admin_activity_ui.js
+# 需安装 Playwright 及 Chromium；使用拦截响应，不启动服务或访问真实账号。
+node scripts/check_admin_status_layout.js
 sed -n '/<script>/,/<\/script>/p' admin.html | sed '1d;$d' | node --check -
 git diff --check
 ```
@@ -119,3 +121,5 @@ git diff --check
 生产数据 smoke 必须直接调用 `admin_dashboard.build_activity_dashboard(...)`；该模块以 SQLite `mode=ro` 打开真实数据库。不要为 smoke 生成登录 token、请求写接口或手工插入统计行。验证全站模块时额外传入 `sessions_db_path`、`catalog_provider`、`save_stats_provider`；生产 smoke 的存档 provider 应使用预先读取的聚合或空字典，不调用可能初始化存档的游戏服务。正常情况下五档都应满足 `overview.ok=true`、`duel.ok=true`、`turtle.ok=true`，且序列化响应中不应出现逐房明细字段。
 
 页面只在运营看板可见且浏览器处于前台时每 30 秒刷新；手动刷新或自动刷新失败会保留上次成功数据。若只有一个区块报错，先看 `/var/log/cedartoy.err.log` 中对应的 `game activity overview`、`Duel admin dashboard metrics` 或 `Turtle Soup admin dashboard metrics` 日志，不要检查根目录的历史 `server.log`。
+
+用户管理与运营看板的工具栏下方共用空状态布局规则：status 无文字时 `display: none`，不保留高度、段落 margin 或 grid 行；加载、提示和错误有文字时正常显示。浏览器测试实测 320/375/390/430px，空状态下工具栏与首张内容卡只保留 10px grid 间距。可设置 `SCREENSHOT_DIR` 保存两页的各宽度截图。

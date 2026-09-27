@@ -20,7 +20,9 @@
 
 ## 网页
 
-复用首页游戏卡和 Memoria 详情/攻略层，22 题同一列表，挑战题仅加标记。图标为 `assets/icons/puzzle_box.svg`。没有独立网页游戏或第二入口。
+复用首页游戏卡和 Memoria 详情/攻略层，22 题同一列表，挑战题仅加标记。图标为 `assets/icons/puzzle_box.png`。没有独立网页游戏或第二入口。
+
+选择首页卡片后的桌面详情与手机抽屉，共用 `/api/games/stats` 返回的 `puzzle_box.metric_label/metric`。`loadGameStats()` 在页面初始化时请求，响应后更新游戏数据再重绘；响应前或请求失败时保留 `--`，数字 0 也是有效结果。若一直显示 `--`，先检查该请求是否发出、响应是否成功及浏览器脚本异常，不能仅凭后端接口有值认定页面已收到响应。
 
 小机选择复用 `me.bindings` / `aiBindings()` 与原有 `bankPicker` 弹层，后台使用 `_require_bound_ai` 校验真实绑定。无登录或绑定时仍能查看题目标题，不能查看账号进度或攻略。切换账号/小机清空展开内容并丢弃旧请求；可以手动刷新进度。
 
@@ -39,6 +41,9 @@
 ```sh
 python3 -m unittest tests_toy.test_puzzle_box tests_toy.test_root_mcp_protocol tests_toy.test_list_games tests_toy.test_homepage_order -v
 python3 -m py_compile puzzle_box.py puzzle_box_data.py server.py
+node scripts/check_home_stats_ui.js
 ```
 
 重复初始化、旧数据不变、`PRAGMA integrity_check`、并发抽题、两种鉴权通道、绑定边界、单题剧透与浏览器 DOM 操作均有覆盖。本开发任务仅交付修改及验证，未执行提交、推送、重启或部署。
+
+首页统计回归执行完整 `index.html` 初始化和 fetch 链路，覆盖响应前打开卡片、延迟返回后的详情/抽屉更新、0 值、未登录/已登录，以及登录响应晚到和搜索重绘不覆盖统计值。

@@ -35,6 +35,19 @@ const dom = new JSDOM(html, {
   const document = window.document;
   const settle = () => new Promise(resolve => window.setTimeout(resolve, 0));
   await settle();
+  for (const [id, setStatus] of [["statusText", window.setStatus], ["dashboardStatus", window.setDashboardStatus]]) {
+    const status = document.getElementById(id);
+    setStatus("");
+    assert.equal(window.getComputedStyle(status).display, "none");
+    for (const [message, error] of [["加载中...", false], ["操作完成", false], ["读取失败", true]]) {
+      setStatus(message, error);
+      assert.equal(status.textContent, message);
+      assert.notEqual(window.getComputedStyle(status).display, "none");
+      assert.equal(status.classList.contains("error"), error);
+    }
+    setStatus("");
+    assert.equal(window.getComputedStyle(status).display, "none");
+  }
   const content = document.getElementById("gameOverviewContent");
   assert.equal(content.querySelectorAll('[role="row"]').length, 2);
   assert.equal(content.querySelectorAll("script").length, 0);
