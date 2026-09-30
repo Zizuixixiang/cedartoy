@@ -3334,7 +3334,7 @@
             <label class="field"><span class="field-label">补充说明（选填）</span><textarea id="recoveryExplanation" maxlength="2000" rows="3" placeholder="请勿填写密码等敏感信息"></textarea></label>
           </div>
           <label class="field" id="recoveryQueryField" hidden><span class="field-label">查询码</span>
-            <input id="recoveryQueryCode" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="XXXX-XXXX-XXXX，也支持旧查询码">
+            <input id="recoveryQueryCode" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="XXXX-XXXX-XXXX">
           </label>
           <section class="recovery-status-card" id="recoveryResultPanel" role="status" aria-live="polite" aria-labelledby="recoveryResultTitle" tabindex="-1" hidden>
             <h3 id="recoveryResultTitle"></h3>
@@ -7342,7 +7342,7 @@
       $("recoveryApplyFields").hidden = mode !== "apply";
       $("recoveryQueryField").hidden = mode !== "query";
       if (mode === "query") {
-        $("forgotPasswordHint").textContent = "只需查询码即可查询，支持直接粘贴；新码可省略横杠，旧 6–8 位查询码区分大小写。通过后有 7 天领取窗口，链接过期可在窗口内再次查询领取。";
+        $("forgotPasswordHint").textContent = "只需查询码即可查询，可直接粘贴，横杠可省略。通过后有 7 天领取窗口，链接过期可在窗口内再次查询领取。";
         $("forgotPasswordSubmit").textContent = "查询进度";
         $("recoveryQueryCode").focus();
       }
@@ -7405,7 +7405,7 @@
       clearRecoveryResult();
       const query_code = $("recoveryQueryCode").value.trim();
       if (mode === "query" && !/^(?:[A-Za-z0-9]{6,8}|[A-HJ-NP-Z2-9]{12}|[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){2})$/i.test(query_code)) {
-        message.textContent = "请输入提交成功时显示的查询码：XXXX-XXXX-XXXX（可省略横杠），或旧 6–8 位查询码（区分大小写）";
+        message.textContent = "请输入提交成功时显示的查询码：XXXX-XXXX-XXXX（可省略横杠）";
         return;
       }
       const body = mode === "apply" ? {account_kind, account} : {query_code};
