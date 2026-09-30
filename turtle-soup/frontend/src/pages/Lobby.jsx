@@ -13,8 +13,8 @@ import RoomIdCopy from '../components/RoomIdCopy.jsx'
 import { stripSurfaceColorMarkers } from '../utils/display.js'
 
 const TITLE_MAX = 24
-const TAG_FILTERS = ['红汤', '黑汤', '本格', '变格']
-const PUZZLE_TAG_FILTERS = ['本格', '变格', '黑汤', '红汤']
+const TAG_FILTERS = ['本格', '变格', '清汤', '黑汤', '红汤', '规则怪谈']
+const PUZZLE_TAG_FILTERS = ['本格', '变格', '清汤', '黑汤', '红汤', '规则怪谈']
 const AI_STYLE_OPTIONS = [
   ['', '不指定风格'],
   ['cozy', '日常温馨风'],
