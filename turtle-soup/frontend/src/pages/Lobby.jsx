@@ -86,6 +86,7 @@ export default function Lobby() {
   const [selectedPuzzleId, setSelectedPuzzleId] = useState('')
   const [puzzleSearch, setPuzzleSearch] = useState('')
   const [puzzleTagFilters, setPuzzleTagFilters] = useState([])
+  const [puzzlePickerOpen, setPuzzlePickerOpen] = useState(false)
   const [custom, setCustom] = useState({ surface: '', answer: '' })
   const [generated, setGenerated] = useState(null)
   const [aiStyle, setAiStyle] = useState('')
@@ -267,12 +268,16 @@ export default function Lobby() {
   })
   const filteredRooms = displayRooms.filter((room) => matchesRoomFilters(room, roomSearch, activeTagFilters))
   const filteredPuzzles = puzzles.filter((puzzle) => matchesPuzzleFilters(puzzle, puzzleSearch, puzzleTagFilters))
-  const puzzleFiltersActive = Boolean(puzzleSearch.trim() || puzzleTagFilters.length)
   const puzzleNumber = new Map(puzzles.map((puzzle, index) => [String(puzzle.id), index + 1]))
   const togglePuzzleTagFilter = (tag) => {
     setPuzzleTagFilters((prev) => (
       prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
     ))
+    setPuzzlePickerOpen(true)
+  }
+  const choosePuzzle = (id) => {
+    selectPuzzle(id)
+    setPuzzlePickerOpen(false)
   }
   const toggleTagFilter = (tag) => {
     setActiveTagFilters((prev) => (
@@ -299,13 +304,21 @@ export default function Lobby() {
         <div className="create-body">
           <div className="terminal-label">
             <span>选题</span>
-            <div className="puzzle-picker-tools">
+            <div
+              className="puzzle-picker-tools"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setPuzzlePickerOpen(false)
+              }}
+            >
               <div className="puzzle-tag-filters" role="group" aria-label="按题目标签筛选">
                 <button
                   type="button"
                   className={`puzzle-tag-filter${puzzleTagFilters.length === 0 ? ' active' : ''}`}
                   aria-pressed={puzzleTagFilters.length === 0}
-                  onClick={() => setPuzzleTagFilters([])}
+                  onClick={() => {
+                    setPuzzleTagFilters([])
+                    setPuzzlePickerOpen(true)
+                  }}
                 >
                   全部
                 </button>
@@ -321,45 +334,44 @@ export default function Lobby() {
                   </button>
                 ))}
               </div>
-              <label className="puzzle-search">
-                <Search size={16} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={puzzleSearch}
-                  onChange={(event) => setPuzzleSearch(event.target.value)}
-                  placeholder="搜索汤名、汤面或题号…"
-                  aria-label="搜索题库"
-                />
-                <span className="puzzle-search-count">{filteredPuzzles.length}题</span>
-              </label>
-              {puzzleFiltersActive ? (
-                <div className="puzzle-search-results" role="listbox" aria-label="题目搜索结果">
-                  {filteredPuzzles.length > 0 ? filteredPuzzles.map((puzzle) => (
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={String(puzzle.id) === selectedPuzzleId}
-                      className={`puzzle-search-result${String(puzzle.id) === selectedPuzzleId ? ' selected' : ''}`}
-                      key={puzzle.id}
-                      onClick={() => selectPuzzle(String(puzzle.id))}
-                    >
-                      <span className="puzzle-result-title">#{puzzleNumber.get(String(puzzle.id))} {puzzle.title || puzzle.surface.slice(0, 10)}</span>
-                      <span className="puzzle-result-tags">
-                        {parseTags(puzzle.tags).map((tag) => <span key={tag}>{tag}</span>)}
-                      </span>
-                    </button>
-                  )) : <p className="puzzle-search-empty">没有匹配题目</p>}
-                </div>
-              ) : (
-                <select value={selectedPuzzleId} onChange={(event) => selectPuzzle(event.target.value)}>
-                  <option value="">经典推理题库（可选）</option>
-                  {puzzles.map((puzzle) => (
-                    <option value={String(puzzle.id)} key={puzzle.id}>
-                      #{puzzleNumber.get(String(puzzle.id))} {puzzle.title || puzzle.surface.slice(0, 10)}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <div className="puzzle-search-wrap">
+                <label className={`puzzle-search${puzzlePickerOpen ? ' open' : ''}`}>
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={puzzleSearch}
+                    onFocus={() => setPuzzlePickerOpen(true)}
+                    onChange={(event) => {
+                      setPuzzleSearch(event.target.value)
+                      setPuzzlePickerOpen(true)
+                    }}
+                    placeholder="搜索或直接选择题目…"
+                    aria-label="搜索题库"
+                    aria-expanded={puzzlePickerOpen}
+                    aria-controls="puzzle-search-results"
+                  />
+                  <span className="puzzle-search-count">{filteredPuzzles.length}题</span>
+                </label>
+                {puzzlePickerOpen && (
+                  <div id="puzzle-search-results" className="puzzle-search-results" role="listbox" aria-label="题目搜索结果">
+                    {filteredPuzzles.length > 0 ? filteredPuzzles.map((puzzle) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={String(puzzle.id) === selectedPuzzleId}
+                        className={`puzzle-search-result${String(puzzle.id) === selectedPuzzleId ? ' selected' : ''}`}
+                        key={puzzle.id}
+                        onClick={() => choosePuzzle(String(puzzle.id))}
+                      >
+                        <span className="puzzle-result-title">#{puzzleNumber.get(String(puzzle.id))} {puzzle.title || puzzle.surface.slice(0, 10)}</span>
+                        <span className="puzzle-result-tags">
+                          {parseTags(puzzle.tags).map((tag) => <span key={tag}>{tag}</span>)}
+                        </span>
+                      </button>
+                    )) : <p className="puzzle-search-empty">没有匹配题目</p>}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <p className="terminal-note">题库抽取的大多微恐，请酌情选择。</p>
