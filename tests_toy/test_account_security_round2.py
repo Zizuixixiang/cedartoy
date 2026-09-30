@@ -442,10 +442,12 @@ class AccountSecurityRoundTwoTests(unittest.TestCase):
             'id="forgotPasswordOpen"',
             'id="forgotPasswordModal"',
             'id="emailSecurityModal"',
-            '"/api/auth/forgot-password/reset"',
             '"/api/account/email/send-code"',
             'method: "DELETE"',
-            "系统会根据账号类型提供找回方式",
+            'data-recovery-mode="apply"',
+            'data-recovery-mode="query"',
+            'id="recoverySuccess"',
+            'id="recoveryResultPanel"',
         ):
             self.assertIn(marker, html)
 

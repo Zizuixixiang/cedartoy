@@ -1094,8 +1094,26 @@
       width: 100%; padding: 8px; font: inherit; color: var(--purple-dark);
       border: 2px solid var(--purple); background: var(--bg);
     }
-    #recoveryResult { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .recovery-account-row { display: grid; grid-template-columns: minmax(0, 86px) minmax(0, 1fr); gap: 8px; min-width: 0; }
+    .recovery-account-row > * { min-width: 0; }
+    #recoveryResult, #recoverySuccessDetails { white-space: pre-wrap; overflow-wrap: anywhere; }
+    #recoverySuccess .modal-actions { flex-wrap: wrap; }
+    #recoverySuccess .modal-actions button { flex: 1 1 auto; padding: 8px; font-size: 11px; }
+    .recovery-status-card {
+      margin: 16px 0; padding: 14px; border: 4px solid var(--purple-dark);
+      box-shadow: 4px 4px 0 var(--purple-light); background: #fff; color: var(--text);
+      font-size: 13px; line-height: 1.7; overflow-wrap: anywhere;
+    }
+    .recovery-status-card h3 { margin: 0 0 8px; font-size: 18px; color: var(--purple-darker); }
+    .recovery-status-card p { margin: 8px 0 0; white-space: pre-wrap; }
+    .recovery-status-card[data-status="pending"] { border-color: #9B742D; background: #FFF9E8; }
+    .recovery-status-card[data-status="pending"] h3 { color: #795619; }
+    .recovery-status-card[data-status="approved"], .recovery-status-card[data-status="completed"] { border-color: #527A62; background: #F1FAF3; }
+    .recovery-status-card[data-status="approved"] h3, .recovery-status-card[data-status="completed"] h3 { color: #355C43; }
+    .recovery-status-card[data-status="rejected"] { border-color: #A05A65; }
+    #recoveryLinkBox { margin-top: 12px; padding-top: 10px; border-top: 2px dashed var(--purple); }
     #recoveryLink { display: block; overflow-wrap: anywhere; margin: 8px 0; }
+    #recoveryCopy { max-width: 100%; font-size: 11px; }
 
     .modal-title {
       color: var(--pink);
@@ -3282,55 +3300,55 @@
   <div class="modal" id="forgotPasswordModal" role="dialog" aria-modal="true" aria-labelledby="forgotPasswordTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="forgotPasswordTitle">忘记密码</h2>
-      <div class="recovery-modes" aria-label="找回方式">
-        <button class="pixel-btn secondary" type="button" data-recovery-mode="self" aria-pressed="true">自助找回</button>
-        <button class="pixel-btn secondary" type="button" data-recovery-mode="apply" aria-pressed="false">申请找回</button>
-        <button class="pixel-btn secondary" type="button" data-recovery-mode="query" aria-pressed="false">查询进度</button>
-      </div>
-      <p class="modal-hint" id="forgotPasswordHint">输入账号名，系统会根据账号类型提供找回方式。</p>
-      <label class="field" id="forgotUsernameField">
-        <span class="field-label">用户名</span>
-        <input id="forgotUsername" type="text" maxlength="20" autocomplete="username">
-      </label>
-      <div id="forgotCodeFields" hidden>
-        <label class="field">
-          <span class="field-label">邮箱验证码</span>
-          <input id="forgotCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-        </label>
-        <label class="field">
-          <span class="field-label">新密码</span>
-          <input id="forgotNewPassword" type="password" autocomplete="new-password">
-          <span class="field-hint">至少 6 位</span>
-        </label>
-        <label class="field">
-          <span class="field-label">确认新密码</span>
-          <input id="forgotConfirmPassword" type="password" autocomplete="new-password">
-        </label>
-      </div>
-      <div id="recoveryFields" hidden>
-        <label class="field"><span class="field-label">人类账号</span>
-          <select id="recoveryAccountKind" aria-label="账号输入类型"><option value="username">账号名</option><option value="id">数字 ID</option></select>
-          <input id="recoveryAccount" maxlength="20" autocomplete="username" placeholder="填写提交申请时使用的账号名或 ID">
-        </label>
-        <div id="recoveryApplyFields">
-          <label class="field"><span class="field-label">绑定小机的名字 / ID</span><input id="recoveryMachine" maxlength="100" placeholder="没有绑定或记不清请注明"></label>
-          <label class="field"><span class="field-label">大概注册时间</span><input id="recoveryRegistered" maxlength="100" placeholder="例如 2026 年 8 月，记不清请注明"></label>
-          <label class="field"><span class="field-label">玩过的游戏</span><input id="recoveryGames" maxlength="500" placeholder="尽量填写记得的游戏名称"></label>
-          <label class="field"><span class="field-label">补充说明（选填）</span><textarea id="recoveryExplanation" maxlength="2000" rows="3" placeholder="请勿填写密码等敏感信息"></textarea></label>
+      <div id="recoveryForm">
+        <div class="recovery-modes" aria-label="找回方式">
+          <button class="pixel-btn secondary" type="button" data-recovery-mode="apply" aria-pressed="true">申请找回</button>
+          <button class="pixel-btn secondary" type="button" data-recovery-mode="query" aria-pressed="false">查询进度</button>
         </div>
-        <label class="field" id="recoveryQueryField" hidden><span class="field-label">查询码（区分大小写）</span>
-          <input id="recoveryQueryCode" maxlength="8" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="输入提交成功时显示的 6–8 位字母数字查询码">
-        </label>
-        <p class="modal-hint" id="recoveryResult" aria-live="polite"></p>
-        <div id="recoveryLinkBox" hidden>
-          <a id="recoveryLink" href="#">重置密码</a>
-          <button class="pixel-btn secondary" id="recoveryCopy" type="button">一键复制链接</button>
+        <p class="modal-hint" id="forgotPasswordHint">请填写信息供管理员核验，一般会在 24 小时内完成审核，提交成功后请保存工单号和查询码。</p>
+        <div id="recoveryFields">
+          <div class="field"><label class="field-label" for="recoveryAccount">人类账号</label>
+            <div class="recovery-account-row">
+              <select id="recoveryAccountKind" aria-label="账号输入类型"><option value="" selected disabled>请选择</option><option value="username">账号名</option><option value="id">数字 ID</option></select>
+              <input id="recoveryAccount" maxlength="20" autocomplete="off" placeholder="填写提交申请时使用的账号名或 ID">
+            </div>
+          </div>
+          <div id="recoveryApplyFields">
+            <label class="field"><span class="field-label">绑定小机的名字 / ID</span><input id="recoveryMachine" maxlength="100" placeholder="没有绑定或记不清请注明"></label>
+            <label class="field"><span class="field-label">大概注册时间</span><input id="recoveryRegistered" maxlength="100" placeholder="例如 2026 年 8 月，记不清请注明"></label>
+            <label class="field"><span class="field-label">玩过的游戏</span><input id="recoveryGames" maxlength="500" placeholder="尽量填写记得的游戏名称"></label>
+            <label class="field"><span class="field-label">补充说明（选填）</span><textarea id="recoveryExplanation" maxlength="2000" rows="3" placeholder="请勿填写密码等敏感信息"></textarea></label>
+          </div>
+          <label class="field" id="recoveryQueryField" hidden><span class="field-label">查询码（区分大小写）</span>
+            <input id="recoveryQueryCode" maxlength="8" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="输入提交成功时显示的 6–8 位字母数字查询码">
+          </label>
+          <section class="recovery-status-card" id="recoveryResultPanel" role="status" aria-live="polite" aria-labelledby="recoveryResultTitle" tabindex="-1" hidden>
+            <h3 id="recoveryResultTitle"></h3>
+            <p id="recoveryResult"></p>
+            <p id="recoveryAdminNote" hidden></p>
+            <div id="recoveryLinkBox" hidden>
+              <p>重置链接生成后 24 小时内有效，仅可使用一次。</p>
+              <a id="recoveryLink">重置密码</a>
+              <p id="recoveryLinkExpiry"></p>
+              <button class="pixel-btn secondary" id="recoveryCopy" type="button">一键复制链接</button>
+            </div>
+          </section>
+        </div>
+        <div class="modal-msg" id="forgotPasswordMsg"></div>
+        <div class="modal-actions">
+          <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
+          <button class="pixel-btn" id="forgotPasswordSubmit" type="button">提交申请</button>
         </div>
       </div>
-      <div class="modal-msg" id="forgotPasswordMsg"></div>
-      <div class="modal-actions">
-        <button class="pixel-btn secondary" data-close-modal type="button">取消</button>
-        <button class="pixel-btn" id="forgotPasswordSubmit" type="button">下一步</button>
+      <div id="recoverySuccess" hidden>
+        <p class="modal-hint" id="recoverySuccessDetails" aria-live="polite"></p>
+        <p class="modal-hint">一般会在 24 小时内完成审核，请保存工单号和查询码，稍后查询进度。</p>
+        <div class="modal-msg" id="recoverySuccessMsg" aria-live="polite"></div>
+        <div class="modal-actions">
+          <button class="pixel-btn secondary" id="recoveryCopyCode" type="button">复制查询码</button>
+          <button class="pixel-btn" id="recoverySuccessQuery" type="button">查询进度</button>
+          <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
+        </div>
       </div>
     </div>
   </div>
@@ -4513,10 +4531,10 @@
     let emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
     let emailSecurityMode = "bind";
     let emailSecurityStep = "email";
-    let recoveryMode = "self";
+    let recoveryMode = "apply";
     let recoveryBusy = false;
-    let forgotPasswordStep = "username";
-    let forgotPasswordUsername = "";
+    let recoverySubmission = null;
+    let recoveryViewVersion = 0;
     let announcementState = {
       loaded: false,
       loading: false,
@@ -7266,166 +7284,115 @@
     }
 
     function resetForgotPasswordModal() {
-      recoveryMode = "self";
-      $("recoveryFields").hidden = true;
+      recoveryViewVersion++;
+      recoverySubmission = null;
+      $("recoveryForm").hidden = false;
+      $("recoverySuccess").hidden = true;
+      $("recoverySuccessDetails").textContent = "";
+      $("recoverySuccessMsg").textContent = "";
+      $("forgotPasswordTitle").textContent = "忘记密码";
+      recoveryMode = "apply";
+      $("recoveryAccountKind").value = "";
+      $("recoveryAccount").value = "";
       $("recoveryQueryCode").value = "";
-      $("recoveryResult").textContent = "";
-      $("recoveryLinkBox").hidden = true;
-      $("recoveryLink").removeAttribute("href");
+      clearRecoveryResult();
       document.querySelectorAll("[data-recovery-mode]").forEach(button => {
-        button.setAttribute("aria-pressed", String(button.dataset.recoveryMode === "self"));
+        button.setAttribute("aria-pressed", String(button.dataset.recoveryMode === "apply"));
       });
-      forgotPasswordStep = "username";
-      forgotPasswordUsername = "";
-      $("forgotUsername").value = "";
-      $("forgotUsernameField").hidden = !EMAIL_SECURITY_UI_ENABLED;
-      $("forgotCodeFields").hidden = true;
-      $("forgotCode").value = "";
-      $("forgotNewPassword").value = "";
-      $("forgotConfirmPassword").value = "";
-      $("forgotPasswordHint").textContent = EMAIL_SECURITY_UI_ENABLED
-        ? "输入账号名，系统会根据账号类型提供找回方式。"
-        : "暂不支持邮箱自助找回，可选择「申请找回」。";
+      $("recoveryApplyFields").hidden = false;
+      $("recoveryQueryField").hidden = true;
+      $("forgotPasswordHint").textContent = "请填写信息供管理员核验，一般会在 24 小时内完成审核，提交成功后请保存工单号和查询码。";
       $("forgotPasswordMsg").textContent = "";
-      $("forgotPasswordSubmit").textContent = EMAIL_SECURITY_UI_ENABLED ? "下一步" : "知道了";
+      $("forgotPasswordSubmit").textContent = "提交申请";
       $("forgotPasswordSubmit").disabled = false;
     }
 
     function openForgotPasswordModal() {
-      const suggestedUsername = $("loginUser").value.trim();
       closeModals();
       openModal("forgotPasswordModal");
-      $("forgotUsername").value = suggestedUsername;
-      $("forgotUsername").focus();
+      $("recoveryAccount").focus();
     }
 
     async function submitForgotPassword() {
-      if (recoveryBusy) return;
-      if (recoveryMode !== "self") return submitRecovery();
-      const message = $("forgotPasswordMsg");
-      const submit = $("forgotPasswordSubmit");
-      if (!EMAIL_SECURITY_UI_ENABLED) {
-        closeModals();
-        return;
-      }
-      if (submit.disabled) return;
-      message.textContent = "";
-      if (forgotPasswordStep === "username") {
-        const username = $("forgotUsername").value.trim();
-        if (!username) {
-          message.textContent = "请输入用户名";
-          return;
-        }
-        submit.disabled = true;
-        try {
-          const res = await fetch("/api/auth/forgot-password", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({username}),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || "找回请求失败");
-          if (data.state !== "code_sent") {
-            message.textContent = data.message || "该账号无法自助找回，请联系管理员";
-            return;
-          }
-          forgotPasswordStep = "code";
-          forgotPasswordUsername = username;
-          $("forgotUsernameField").hidden = true;
-          $("forgotCodeFields").hidden = false;
-          $("forgotPasswordHint").textContent = `验证码已发送至 ${data.masked_email || "绑定邮箱"}，10 分钟内有效。`;
-          submit.textContent = "重置密码";
-          $("forgotCode").focus();
-        } catch (err) {
-          message.textContent = err.message || "找回请求失败";
-        } finally {
-          submit.disabled = false;
-        }
-        return;
-      }
-
-      const code = $("forgotCode").value.trim();
-      const new_password = $("forgotNewPassword").value;
-      const confirmPassword = $("forgotConfirmPassword").value;
-      if (!/^\d{6}$/.test(code)) {
-        message.textContent = "请输入 6 位验证码";
-        return;
-      }
-      if (new_password.length < 6) {
-        message.textContent = "新密码至少 6 位";
-        return;
-      }
-      if (new_password !== confirmPassword) {
-        message.textContent = "两次输入的新密码不一致";
-        return;
-      }
-      submit.disabled = true;
-      try {
-        const res = await fetch("/api/auth/forgot-password/reset", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({username: forgotPasswordUsername, code, new_password}),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "密码重置失败");
-        const username = forgotPasswordUsername;
-        closeModals();
-        openModal("loginModal");
-        $("loginUser").value = username;
-        $("loginPass").focus();
-        $("loginMsg").textContent = data.message || "密码已重置，请用新密码登录";
-      } catch (err) {
-        message.textContent = err.message || "密码重置失败";
-      } finally {
-        submit.disabled = false;
-      }
+      if (recoveryBusy || recoverySubmission || $("forgotPasswordSubmit").disabled) return;
+      return submitRecovery();
     }
 
     function setRecoveryMode(mode) {
       if (recoveryBusy || $("forgotPasswordSubmit").disabled) return;
-      const username = $("forgotUsername").value.trim();
       resetForgotPasswordModal();
-      $("forgotUsername").value = username;
       recoveryMode = mode;
       document.querySelectorAll("[data-recovery-mode]").forEach(button => {
         button.setAttribute("aria-pressed", String(button.dataset.recoveryMode === mode));
       });
-      $("recoveryFields").hidden = mode === "self";
-      if (mode === "self") return;
-      $("forgotUsernameField").hidden = true;
       $("recoveryApplyFields").hidden = mode !== "apply";
       $("recoveryQueryField").hidden = mode !== "query";
-      if (!$("recoveryAccount").value && username) $("recoveryAccount").value = username;
-      $("forgotPasswordHint").textContent = mode === "apply"
-        ? "无法通过邮箱找回？请填写信息供管理员核验，提交成功后请保存工单号和查询码。"
-        : "使用提交申请时的账号名或 ID + 查询码查询；换设备也可手动输入。通过后有 7 天领取窗口，链接过期可在窗口内再次查询领取。";
-      $("forgotPasswordSubmit").textContent = mode === "apply" ? "提交申请" : "查询进度";
-      fillRecoveryQueryCode();
+      if (mode === "query") {
+        $("forgotPasswordHint").textContent = "使用提交申请时的账号名或 ID + 查询码查询；换设备也可手动输入。通过后有 7 天领取窗口，链接过期可在窗口内再次查询领取。";
+        $("forgotPasswordSubmit").textContent = "查询进度";
+      }
     }
 
     function recoveryStorageKey(kind, account) {
       return "cedartoy_recovery_query:" + kind + ":" + (kind === "id" ? account.replace(/^0+(?=\d)/, "") : account);
     }
 
-    function fillRecoveryQueryCode() {
-      let code = "";
-      try { code = localStorage.getItem(recoveryStorageKey($("recoveryAccountKind").value, $("recoveryAccount").value.trim())) || ""; }
-      catch (_) { /* Manual entry works even when storage is blocked. */ }
-      $("recoveryQueryCode").value = /^[A-Za-z0-9]{6,8}$/.test(code) ? code : "";
+    function clearRecoveryResult() {
+      $("recoveryResultPanel").hidden = true;
+      $("recoveryResultPanel").removeAttribute("data-status");
+      $("recoveryResultTitle").textContent = "";
       $("recoveryResult").textContent = "";
+      $("recoveryAdminNote").textContent = "";
+      $("recoveryAdminNote").hidden = true;
       $("recoveryLinkBox").hidden = true;
       $("recoveryLink").removeAttribute("href");
+      $("recoveryLink").textContent = "";
+      $("recoveryLinkExpiry").textContent = "";
+    }
+
+    function clearRecoveryQueryCode() {
+      recoveryViewVersion++;
+      $("recoveryQueryCode").value = "";
+      clearRecoveryResult();
+    }
+
+    function renderRecoveryResult(data) {
+      const states = {
+        pending: ["审批中", "一般会在 24 小时内完成审核，请稍后回来查询。"],
+        rejected: ["未通过", "本次申请未通过审核，请查看管理员备注。"],
+        approved: ["已通过", "请使用下方链接重置密码。"],
+        completed: ["已完成", "密码已重置，请使用新密码登录。"],
+        expired: ["已过期", "7 天领取窗口已结束，请重新提交申请。"],
+        unavailable: ["暂不可领取", "申请暂不可领取，请联系管理员。"],
+      };
+      const state = Object.hasOwn(states, data.status) ? states[data.status] : null;
+      if (!state) throw new Error("查询状态异常，请稍后重试");
+      $("recoveryResultTitle").textContent = state[0];
+      $("recoveryResult").textContent = state[1];
+      $("recoveryAdminNote").hidden = !data.admin_note;
+      $("recoveryAdminNote").textContent = data.admin_note ? "管理员备注：" + data.admin_note : "";
+      if (data.status === "approved" && data.reset_url) {
+        $("recoveryLink").href = data.reset_url;
+        $("recoveryLink").textContent = data.reset_url;
+        $("recoveryLinkBox").hidden = false;
+        $("recoveryLinkExpiry").textContent = "链接有效至：" + new Date(data.expires_at_epoch * 1000).toLocaleString();
+      } else if (data.status === "approved") {
+        $("recoveryResult").textContent = "重置链接暂不可用，请稍后重新查询领取。";
+      }
+      $("recoveryResultPanel").dataset.status = data.status;
+      $("recoveryResultPanel").hidden = false;
+      $("recoveryResultPanel").focus();
     }
 
     async function submitRecovery() {
       const message = $("forgotPasswordMsg");
       const mode = recoveryMode;
+      const viewVersion = recoveryViewVersion;
       const account_kind = $("recoveryAccountKind").value;
       const account = $("recoveryAccount").value.trim();
       message.textContent = "";
-      $("recoveryResult").textContent = "";
-      $("recoveryLinkBox").hidden = true;
-      $("recoveryLink").removeAttribute("href");
+      clearRecoveryResult();
+      if (!["username", "id"].includes(account_kind)) { message.textContent = "请选择账号输入类型"; return; }
       if (!account) { message.textContent = "请输入人类账号名或 ID"; return; }
       const key = recoveryStorageKey(account_kind, account);
       let query_code = $("recoveryQueryCode").value.trim();
@@ -7455,24 +7422,22 @@
         if (mode === "apply") {
           try { localStorage.setItem(key, data.query_code); }
           catch (_) { /* The displayed query code remains usable on any device. */ }
-          if (recoveryMode !== mode || $("recoveryAccount").value.trim() !== account || $("recoveryAccountKind").value !== account_kind) return;
+          if (viewVersion !== recoveryViewVersion || recoveryMode !== mode || $("recoveryAccount").value.trim() !== account || $("recoveryAccountKind").value !== account_kind) return;
           $("recoveryQueryCode").value = data.query_code;
-          $("recoveryResult").textContent = `申请已提交\n工单号：${data.ticket_id}\n查询码：${data.query_code}\n${data.message}`;
+          recoverySubmission = {account_kind, account, query_code: data.query_code};
+          $("forgotPasswordTitle").textContent = "申请已提交";
+          $("recoverySuccessDetails").textContent = `工单号：${data.ticket_id}\n查询码：${data.query_code}`;
+          $("recoveryForm").hidden = true;
+          $("recoverySuccess").hidden = false;
+          $("recoverySuccessQuery").focus();
         } else {
-          if (recoveryMode !== mode || $("recoveryAccount").value.trim() !== account || $("recoveryAccountKind").value !== account_kind) return;
+          if (viewVersion !== recoveryViewVersion || recoveryMode !== mode || $("recoveryAccount").value.trim() !== account || $("recoveryAccountKind").value !== account_kind) return;
           try { localStorage.setItem(key, query_code); } catch (_) {}
-          const labels = {pending: "审批中，一般会在 24 小时内完成审核，请稍后回来查询。", rejected: "未通过",
-            approved: "已通过。重置链接生成后 24 小时内有效，仅可使用一次。", completed: "已完成，密码已重置，请使用新密码登录。",
-            expired: "7 天领取窗口已结束，请重新提交申请。", unavailable: "申请暂不可领取，请联系管理员。"};
-          $("recoveryResult").textContent = (labels[data.status] || "请稍后重试") + (data.admin_note ? "\n管理员备注：" + data.admin_note : "");
-          if (data.reset_url) {
-            $("recoveryLink").href = data.reset_url;
-            $("recoveryLink").textContent = data.reset_url;
-            $("recoveryLinkBox").hidden = false;
-            $("recoveryResult").textContent += "\n链接有效至：" + new Date(data.expires_at_epoch * 1000).toLocaleString();
-          }
+          renderRecoveryResult(data);
         }
-      } catch (err) { message.textContent = err.message || "请求失败，请稍后重试"; }
+      } catch (err) {
+        if (viewVersion === recoveryViewVersion) message.textContent = err.message || "请求失败，请稍后重试";
+      }
       finally { recoveryBusy = false; $("forgotPasswordSubmit").disabled = false; }
     }
 
@@ -8896,8 +8861,31 @@
     document.querySelectorAll("[data-recovery-mode]").forEach(button => {
       button.addEventListener("click", () => setRecoveryMode(button.dataset.recoveryMode));
     });
-    $("recoveryAccount").addEventListener("input", fillRecoveryQueryCode);
-    $("recoveryAccountKind").addEventListener("change", fillRecoveryQueryCode);
+    $("recoveryAccount").addEventListener("input", clearRecoveryQueryCode);
+    $("recoveryAccountKind").addEventListener("change", clearRecoveryQueryCode);
+    $("recoveryQueryCode").addEventListener("input", () => {
+      recoveryViewVersion++;
+      clearRecoveryResult();
+    });
+    $("recoverySuccessQuery").addEventListener("click", () => {
+      if (recoveryBusy || !recoverySubmission) return;
+      const submitted = recoverySubmission;
+      setRecoveryMode("query");
+      $("recoveryAccountKind").value = submitted.account_kind;
+      $("recoveryAccount").value = submitted.account;
+      $("recoveryQueryCode").value = submitted.query_code;
+      $("forgotPasswordSubmit").focus();
+    });
+    $("recoveryCopyCode").addEventListener("click", async () => {
+      const submitted = recoverySubmission;
+      if (!submitted) return;
+      try {
+        await navigator.clipboard.writeText(submitted.query_code);
+        if (recoverySubmission === submitted) $("recoverySuccessMsg").textContent = "查询码已复制";
+      } catch (_) {
+        if (recoverySubmission === submitted) $("recoverySuccessMsg").textContent = "复制失败，请长按或选中上方查询码复制。";
+      }
+    });
     $("recoveryCopy").addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText($("recoveryLink").href);

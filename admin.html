@@ -640,20 +640,9 @@
       </div>
     </header>
 
-    <section class="panel recovery-panel" aria-labelledby="recoveryHeading">
-      <div class="row-actions">
-        <h2 id="recoveryHeading">账号找回工单</h2><span class="badge" id="recoveryCount">待审批 —</span>
-        <label>记录 <select id="recoveryView"><option value="pending">待审批</option><option value="processed">已处理记录</option></select></label>
-        <button id="recoveryRefresh" type="button">刷新工单</button>
-      </div>
-      <p class="sub">请核验申请信息后审核。通过后由申请人回来领取链接；备注会向申请人显示，请勿填写内部核验资料。</p>
-      <p class="status" id="recoveryStatus" aria-live="polite"></p>
-      <div id="recoveryTickets"></div>
-      <div class="row-actions"><button id="recoveryPrev" type="button">上一页</button><span id="recoveryPage"></span><button id="recoveryNext" type="button">下一页</button></div>
-    </section>
-
     <nav class="admin-tabs" aria-label="管理后台页面">
       <button id="usersTab" type="button" role="tab" aria-selected="true" aria-controls="usersPanel">用户管理</button>
+      <button id="recoveryTab" type="button" role="tab" aria-selected="false" aria-controls="recoveryPanel">找回工单</button>
       <button id="dashboardTab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">运营看板</button>
     </nav>
 
@@ -697,6 +686,20 @@
         <span id="pageText">第 1 / 1 页</span>
         <button id="nextPage" type="button">下一页</button>
       </nav>
+    </div>
+
+    <div class="tab-panel" id="recoveryPanel" role="tabpanel" aria-labelledby="recoveryTab" hidden>
+      <section class="panel recovery-panel" aria-labelledby="recoveryHeading">
+        <div class="row-actions">
+          <h2 id="recoveryHeading">账号找回工单</h2><span class="badge" id="recoveryCount">待审批 —</span>
+          <label>记录 <select id="recoveryView"><option value="pending">待审批</option><option value="processed">已处理记录</option></select></label>
+          <button id="recoveryRefresh" type="button">刷新工单</button>
+        </div>
+        <p class="sub">请核验申请信息后审核。通过后由申请人回来领取链接；备注会向申请人显示，请勿填写内部核验资料。</p>
+        <p class="status" id="recoveryStatus" aria-live="polite"></p>
+        <div id="recoveryTickets"></div>
+        <div class="row-actions"><button id="recoveryPrev" type="button">上一页</button><span id="recoveryPage"></span><button id="recoveryNext" type="button">下一页</button></div>
+      </section>
     </div>
 
     <div class="tab-panel" id="dashboardPanel" role="tabpanel" aria-labelledby="dashboardTab" hidden>
@@ -1285,15 +1288,16 @@
     }
 
     function switchTab(tab) {
-      activeTab = tab === "dashboard" ? "dashboard" : "users";
-      const dashboardActive = activeTab === "dashboard";
-      $("usersPanel").hidden = dashboardActive;
-      $("dashboardPanel").hidden = !dashboardActive;
-      $("usersTab").setAttribute("aria-selected", String(!dashboardActive));
-      $("dashboardTab").setAttribute("aria-selected", String(dashboardActive));
-      history.replaceState(null, "", dashboardActive ? "#dashboard" : "#users");
-      if (dashboardActive) {
+      activeTab = ["users", "recovery", "dashboard"].includes(tab) ? tab : "users";
+      for (const name of ["users", "recovery", "dashboard"]) {
+        $(name + "Panel").hidden = activeTab !== name;
+        $(name + "Tab").setAttribute("aria-selected", String(activeTab === name));
+      }
+      history.replaceState(null, "", "#" + activeTab);
+      if (activeTab === "dashboard") {
         if (!dashboardData || Date.now() - dashboardLastLoadedAt >= DASHBOARD_REFRESH_MS) loadDashboard();
+      } else if (activeTab === "recovery") {
+        loadRecoveryTickets();
       } else if (!usersLoaded) {
         loadUsers();
       }
@@ -1423,10 +1427,9 @@
     $("recoveryTickets").addEventListener("click", handleRecoveryAction);
     $("recoveryPrev").addEventListener("click", () => { if (!recoveryLoading && !recoveryReviewBusy && recoveryPage > 1) { recoveryPage--; loadRecoveryTickets(); } });
     $("recoveryNext").addEventListener("click", () => { if (!recoveryLoading && !recoveryReviewBusy) { recoveryPage++; loadRecoveryTickets(); } });
-    loadRecoveryTickets();
-
     $("refreshBtn").addEventListener("click", loadUsers);
     $("usersTab").addEventListener("click", () => switchTab("users"));
+    $("recoveryTab").addEventListener("click", () => switchTab("recovery"));
     $("dashboardTab").addEventListener("click", () => switchTab("dashboard"));
     $("dashboardRefreshBtn").addEventListener("click", () => loadDashboard());
     $("dashboardRange").addEventListener("change", () => loadDashboard());
@@ -1484,7 +1487,7 @@
       ) loadDashboard({silent: Boolean(dashboardData)});
     });
 
-    switchTab(location.hash === "#dashboard" ? "dashboard" : "users");
+    switchTab(location.hash.slice(1));
   </script>
 </body>
 </html>
