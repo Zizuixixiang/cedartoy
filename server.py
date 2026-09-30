@@ -1383,6 +1383,41 @@ def _init_password_reset_tokens_table(conn):
         """
     )
 
+    _init_account_recovery_table(conn)
+
+
+def _init_account_recovery_table(conn):
+    # Epoch timestamps here; password_reset_tokens retains its UTC text dates.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS account_recovery_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_kind TEXT NOT NULL,
+            account TEXT NOT NULL,
+            machine TEXT NOT NULL,
+            registered_about TEXT NOT NULL,
+            games TEXT NOT NULL,
+            explanation TEXT NOT NULL,
+            query_code_hash TEXT NOT NULL UNIQUE,
+            ip_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            admin_note TEXT NOT NULL DEFAULT '',
+            user_id INTEGER REFERENCES toy_users(id) ON DELETE CASCADE,
+            reviewed_by INTEGER,
+            created_at_epoch INTEGER NOT NULL,
+            reviewed_at_epoch INTEGER,
+            claim_until_epoch INTEGER,
+            completed_at_epoch INTEGER,
+            reset_token_id INTEGER,
+            reset_nonce TEXT
+        )
+    """)
+    # Preserve unfinished-version rows if its schema was already initialized.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(account_recovery_tickets)")}
+    if "access_hash" in columns and "query_code_hash" not in columns:
+        conn.execute("ALTER TABLE account_recovery_tickets RENAME COLUMN access_hash TO query_code_hash")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_recovery_status ON account_recovery_tickets(status, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_recovery_ip ON account_recovery_tickets(ip_hash, created_at_epoch)")
+
 
 def _init_username_changes_table(conn):
     """Create the append-only rename ledger without rewriting historical users."""
@@ -3760,6 +3795,7 @@ def _admin_reset_user_password(user_id, body):
             (_hash_password(password), user_id),
         )
         _invalidate_operit_credentials_in_transaction(conn, user_id)
+        _complete_recovery_tickets(conn, user_id)
         conn.commit()
     return {"ok": True}
 
@@ -3768,6 +3804,7 @@ def _generate_reset_link(user_id):
     with _db_connect() as conn:
         account_deletion.init_schema(conn)
         conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
         existing = _row_dict(conn.execute(
             "SELECT id, is_ai, deletion_requested_at_epoch FROM toy_users WHERE id = ?", (user_id,)
         ).fetchone())
@@ -3785,21 +3822,206 @@ def _generate_reset_link(user_id):
                     -32602,
                     f"该小机绑定了 {owners} 个人类账号，请先解绑到只剩一个再重置密码",
                 )
-        token = secrets.token_urlsafe(32)
-        expires_at = int(time.time()) + 60 * 60
-        conn.execute(
-            """
-            INSERT INTO password_reset_tokens (user_id, token, expires_at)
-            VALUES (?, ?, datetime(?, 'unixepoch'))
-            """,
-            (user_id, token, expires_at),
+        token, _, _ = _create_reset_token(conn, user_id, lifetime_seconds=3600)
+        conn.commit()
+    return {"ok": True, "reset_url": _reset_url(token), "expires_in": "1小时"}
+
+
+def _reset_token_hash(token):
+    return "sha256:" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _reset_url(token):
+    return f"https://toy.cedarstar.org/?reset_token={token}"
+
+
+def _create_reset_token(conn, user_id, *, lifetime_seconds, token=None):
+    token = token or secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + lifetime_seconds
+    cursor = conn.execute(
+        """INSERT INTO password_reset_tokens (user_id, token, expires_at)
+           VALUES (?, ?, datetime(?, 'unixepoch'))""",
+        (user_id, _reset_token_hash(token), expires_at),
+    )
+    return token, cursor.lastrowid, expires_at
+
+
+_RECOVERY_MISSING = "账号或查询码不正确，请核对后重试。"
+_RECOVERY_SUBMITTED = "请保存查询码，用于查看审核结果；一般会在24小时内完成审核"
+
+
+def _recovery_text(body, key, limit, *, optional=False):
+    value = body.get(key, "")
+    if not isinstance(value, str) or len(value) > limit or (not optional and not value.strip()):
+        raise _McpError(-32602, "请完整填写申请信息，并遵守字段长度限制")
+    return value.strip()
+
+
+def _recovery_identity(body):
+    kind = body.get("account_kind", "username")
+    account = _recovery_text(body, "account", 20)
+    if kind not in ("username", "id") or (kind == "id" and not re.fullmatch(r"[0-9]{1,18}", account)):
+        raise _McpError(-32602, "请选择账号名或数字 ID，并填写对应信息")
+    return kind, str(int(account)) if kind == "id" else account
+
+
+def _recovery_query_hash(body):
+    code = body.get("query_code", "")
+    if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9]{6,8}", code):
+        code = ""
+    kind, account = _recovery_identity(body)
+    # A domain-separated, account-bound keyed hash prevents offline code guessing
+    # from a database copy alone. The application secret is kept outside the DB.
+    return _email_hmac("recovery-query-v1", kind, account, code)
+
+
+def _submit_recovery_ticket(body, client_ip):
+    kind, account = _recovery_identity(body)
+    fields = [_recovery_text(body, k, n, optional=(k == "explanation")) for k, n in (
+        ("machine", 100), ("registered_about", 100), ("games", 500), ("explanation", 2000))]
+    now = int(time.time())
+    ip_hash = _reset_token_hash(str(client_ip))
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        # Only the correct explicit query code allows deduplication or reuse.
+        existing = conn.execute(
+            """SELECT id FROM account_recovery_tickets
+               WHERE query_code_hash=? AND account_kind=? AND account=?
+               AND (status='pending' OR (status='approved' AND claim_until_epoch>?))""",
+            (_recovery_query_hash(body), kind, account, now),
+        ).fetchone()
+        if existing:
+            return {"ok": True, "message": _RECOVERY_SUBMITTED, "ticket_id": existing["id"], "query_code": body["query_code"]}
+        # Limits depend only on the submitter, never on account existence or others' tickets.
+        count = conn.execute(
+            "SELECT COUNT(*) FROM account_recovery_tickets WHERE ip_hash=? AND created_at_epoch>?",
+            (ip_hash, now - 86400),
+        ).fetchone()[0]
+        if count >= 5:
+            raise _McpError(RATE_LIMIT_ERROR_CODE, "此网络今日申请次数较多，请稍后再试")
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        while True:
+            query_code = "".join(secrets.choice(alphabet) for _ in range(8))
+            query_hash = _recovery_query_hash({**body, "query_code": query_code})
+            if not conn.execute("SELECT 1 FROM account_recovery_tickets WHERE query_code_hash=?", (query_hash,)).fetchone():
+                break
+        cursor = conn.execute(
+            """INSERT INTO account_recovery_tickets
+               (account_kind, account, machine, registered_about, games, explanation,
+                query_code_hash, ip_hash, created_at_epoch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (kind, account, *fields, query_hash, ip_hash, now),
         )
         conn.commit()
-    return {
-        "ok": True,
-        "reset_url": f"https://toy.cedarstar.org/?reset_token={token}",
-        "expires_in": "1小时",
-    }
+    return {"ok": True, "message": _RECOVERY_SUBMITTED, "ticket_id": cursor.lastrowid, "query_code": query_code}
+
+
+def _complete_recovery_tickets(conn, user_id):
+    # Some legacy test/maintenance databases predate the ticket table.
+    if not _table_exists(conn, "account_recovery_tickets"):
+        return
+    conn.execute(
+        """UPDATE password_reset_tokens SET used=1 WHERE id IN
+           (SELECT reset_token_id FROM account_recovery_tickets WHERE user_id=?)""", (user_id,))
+    conn.execute(
+        """UPDATE account_recovery_tickets SET status='completed', completed_at_epoch=?, reset_nonce=NULL
+           WHERE user_id=? AND status='approved'""", (int(time.time()), user_id))
+
+
+def _query_recovery_ticket(body):
+    try:
+        kind, account = _recovery_identity(body)
+    except _McpError:
+        raise _McpError(-32602, _RECOVERY_MISSING) from None
+    now = int(time.time())
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        ticket = _row_dict(conn.execute(
+            "SELECT * FROM account_recovery_tickets WHERE query_code_hash=? AND account_kind=? AND account=?",
+            (_recovery_query_hash(body), kind, account),
+        ).fetchone())
+        if not ticket:
+            raise _McpError(-32602, _RECOVERY_MISSING)
+        result = {"ok": True, "status": ticket["status"], "admin_note": ticket["admin_note"]}
+        if ticket["status"] != "approved":
+            return result
+        user = conn.execute(
+            "SELECT is_ai, deleted_at, deletion_requested_at_epoch FROM toy_users WHERE id=?",
+            (ticket["user_id"],),
+        ).fetchone()
+        if not user or user[0] or user[1] is not None or user[2] is not None:
+            return {"ok": True, "status": "unavailable", "message": "申请暂不可领取，请联系管理员。"}
+        reset = conn.execute(
+            "SELECT used, CAST(strftime('%s', expires_at) AS INTEGER) FROM password_reset_tokens WHERE id=?",
+            (ticket["reset_token_id"],),
+        ).fetchone()
+        if reset and reset[0]:
+            _complete_recovery_tickets(conn, ticket["user_id"])
+            conn.commit()
+            return {**result, "status": "completed"}
+        # The window limits issuance; a link already issued remains valid for its full 24h.
+        if reset and reset[1] > now:
+            expires_at = reset[1]
+        else:
+            if ticket["claim_until_epoch"] <= now:
+                return {**result, "status": "expired"}
+            if ticket["reset_token_id"]:
+                conn.execute("UPDATE password_reset_tokens SET used=1 WHERE id=?", (ticket["reset_token_id"],))
+            ticket["reset_nonce"] = secrets.token_urlsafe(32)
+            token = _email_hmac("recovery-reset-v1", body["query_code"], ticket["reset_nonce"])
+            _, token_id, expires_at = _create_reset_token(conn, ticket["user_id"], lifetime_seconds=86400, token=token)
+            conn.execute(
+                "UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
+                (token_id, ticket["reset_nonce"], ticket["id"]),
+            )
+        # Reconstruct only after query-code verification; neither credential is stored in plaintext.
+        token = _email_hmac("recovery-reset-v1", body["query_code"], ticket["reset_nonce"])
+        conn.commit()
+        return {**result, "reset_url": _reset_url(token), "expires_at_epoch": expires_at,
+                "claim_until_epoch": ticket["claim_until_epoch"]}
+
+
+def _admin_recovery_tickets(view="pending", page=1):
+    page = max(1, min(int(page), 1000000))
+    clause = "status='pending'" if view == "pending" else "status!='pending'"
+    with _db_connect() as conn:
+        pending = conn.execute("SELECT COUNT(*) FROM account_recovery_tickets WHERE status='pending'").fetchone()[0]
+        total = conn.execute(f"SELECT COUNT(*) FROM account_recovery_tickets WHERE {clause}").fetchone()[0]
+        rows = conn.execute(
+            f"""SELECT id, account_kind, account, machine, registered_about, games, explanation,
+                       status, admin_note, user_id, created_at_epoch, reviewed_at_epoch, claim_until_epoch
+                FROM account_recovery_tickets WHERE {clause} ORDER BY id DESC LIMIT 20 OFFSET ?""",
+            ((page - 1) * 20,),
+        ).fetchall()
+    return {"tickets": [dict(row) for row in rows], "pending_count": pending, "total": total, "page": page}
+
+
+def _review_recovery_ticket(ticket_id, body, admin):
+    decision = body.get("decision")
+    if decision not in ("approved", "rejected"):
+        raise _McpError(-32602, "请选择通过或不通过")
+    note = _recovery_text(body, "admin_note", 2000, optional=decision == "approved")
+    with _db_connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        ticket = conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (ticket_id,)).fetchone()
+        if not ticket or ticket["status"] != "pending":
+            raise _McpError(-32602, "工单不存在或已处理，请刷新")
+        user_id = None
+        if decision == "approved":
+            column = "id" if ticket["account_kind"] == "id" else "username"
+            user = conn.execute(
+                f"SELECT * FROM toy_users WHERE {column}=?", (ticket["account"],)
+            ).fetchone()
+            if not user or user["is_ai"] or user["deleted_at"] is not None or user["deletion_requested_at_epoch"] is not None:
+                raise _McpError(-32602, "目标不是可找回的人类账号，请核验后拒绝此申请")
+            user_id = user["id"]
+        now = int(time.time())
+        conn.execute(
+            """UPDATE account_recovery_tickets SET status=?, admin_note=?, user_id=?, reviewed_by=?,
+               reviewed_at_epoch=?, claim_until_epoch=? WHERE id=?""",
+            (decision, note, user_id, admin["id"], now, now + 7 * 86400 if user_id else None, ticket_id),
+        )
+        conn.commit()
+    return {"ok": True}
 
 
 def _reset_machine_password(raw_token, ai_user_id, new_password):
@@ -3864,17 +4086,17 @@ def _reset_machine_password(raw_token, ai_user_id, new_password):
 
 
 def _reset_password_by_token(reset_token, new_password):
-    reset_token = reset_token or ""
+    reset_token = reset_token if isinstance(reset_token, str) else ""
     new_password = _normalize_credential_field(new_password, "new_password")
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         reset = _row_dict(conn.execute(
             """
-            SELECT *, expires_at < datetime('now') AS expired
+            SELECT *, expires_at <= datetime('now') AS expired
             FROM password_reset_tokens
-            WHERE token = ?
+            WHERE token = ? OR (token = ? AND token NOT LIKE 'sha256:%')
             """,
-            (reset_token,),
+            (_reset_token_hash(reset_token), reset_token),
         ).fetchone())
         if not reset:
             raise _McpError(-32602, "无效的重置链接")
@@ -3901,6 +4123,7 @@ def _reset_password_by_token(reset_token, new_password):
             "UPDATE password_reset_tokens SET used = 1 WHERE id = ?",
             (int(reset["id"]),),
         )
+        _complete_recovery_tickets(conn, int(reset["user_id"]))
         conn.commit()
     return {"ok": True, "message": "密码已重置，请用新密码登录"}
 
@@ -5013,6 +5236,7 @@ def _reset_human_password_by_email(username, code, new_password, client_ip=None)
             (_hash_password(new_password), int(user["id"])),
         )
         _invalidate_operit_credentials_in_transaction(conn, int(user["id"]))
+        _complete_recovery_tickets(conn, int(user["id"]))
         conn.commit()
     return {"ok": True, "message": "密码已重置，请用新密码登录"}
 
@@ -10352,6 +10576,14 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_account_email_confirm()
             return
 
+        if path in ("/api/auth/recovery/submit", "/api/auth/recovery/query"):
+            self._handle_api_recovery(path)
+            return
+
+        if path == "/api/admin/recovery/review":
+            self._handle_admin_recovery(review=True)
+            return
+
         if path == "/api/auth/forgot-password":
             self._handle_api_forgot_password()
             return
@@ -10676,6 +10908,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
         if path == "/api/admin/activity":
             self._handle_admin_activity(params)
+            return
+
+        if path == "/api/admin/recovery":
+            self._handle_admin_recovery()
             return
 
         if path == "/api/admin/users":
@@ -12029,6 +12265,48 @@ a{{color:#c9afff}}
             )
         except Exception:
             self._send_json({"error": "server error"}, status=500)
+
+    def _handle_api_recovery(self, path):
+        headers = {"Cache-Control": "no-store"}
+        try:
+            if not _check_request_rate_limit(f"recovery:{self._client_ip()}", max_count=30):
+                raise _McpError(RATE_LIMIT_ERROR_CODE, "请求较多，请稍后再试")
+            body = self._read_json_body()
+            if not isinstance(body, dict):
+                raise _McpError(-32602, "请求格式错误")
+            if path.endswith("/query"):
+                try:
+                    kind, account = _recovery_identity(body)
+                except _McpError:
+                    raise _McpError(-32602, _RECOVERY_MISSING) from None
+                identity = _email_hmac("recovery-query-limit-v1", kind, account)
+                if not _check_request_rate_limit(f"recovery-account:{identity}", max_count=10):
+                    raise _McpError(RATE_LIMIT_ERROR_CODE, "请求较多，请稍后再试")
+            result = (_submit_recovery_ticket(body, self._client_ip())
+                      if path.endswith("/submit") else _query_recovery_ticket(body))
+            self._send_json(result, extra_headers=headers)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=_account_security_http_status(exc), extra_headers=headers)
+        except Exception:
+            self._send_json({"error": "server error"}, status=500, extra_headers=headers)
+
+    def _handle_admin_recovery(self, review=False):
+        headers = {"Cache-Control": "no-store"}
+        try:
+            admin = _require_admin_account(_extract_bearer(self.headers))
+            if review:
+                body = self._read_json_body()
+                result = _review_recovery_ticket(int(body.get("ticket_id", 0)), body, admin)
+            else:
+                params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                result = _admin_recovery_tickets(params.get("view", ["pending"])[0], params.get("page", ["1"])[0])
+            self._send_json(result, extra_headers=headers)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._admin_error_status(exc), extra_headers=headers)
+        except (ValueError, TypeError):
+            self._send_json({"error": "请求格式错误"}, status=400, extra_headers=headers)
+        except Exception:
+            self._send_json({"error": "server error"}, status=500, extra_headers=headers)
 
     def _handle_api_forgot_password(self):
         try:

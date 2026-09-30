@@ -1087,6 +1087,16 @@
       padding: 24px;
     }
 
+    #forgotPasswordModal .modal-box { max-height: calc(100dvh - 36px); overflow-y: auto; }
+    .recovery-modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .recovery-modes button { flex: 1; padding: 8px 4px; font-size: 11px; }
+    #forgotPasswordModal textarea, #forgotPasswordModal select {
+      width: 100%; padding: 8px; font: inherit; color: var(--purple-dark);
+      border: 2px solid var(--purple); background: var(--bg);
+    }
+    #recoveryResult { white-space: pre-wrap; overflow-wrap: anywhere; }
+    #recoveryLink { display: block; overflow-wrap: anywhere; margin: 8px 0; }
+
     .modal-title {
       color: var(--pink);
       font-size: 18px;
@@ -3032,6 +3042,7 @@
       #machineTokenModal .modal-box {
         max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
       }
+      #forgotPasswordModal .modal-box { max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom)); }
       #loginModal .modal-box {
         max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
         overflow-x: hidden;
@@ -3271,6 +3282,11 @@
   <div class="modal" id="forgotPasswordModal" role="dialog" aria-modal="true" aria-labelledby="forgotPasswordTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="forgotPasswordTitle">忘记密码</h2>
+      <div class="recovery-modes" aria-label="找回方式">
+        <button class="pixel-btn secondary" type="button" data-recovery-mode="self" aria-pressed="true">自助找回</button>
+        <button class="pixel-btn secondary" type="button" data-recovery-mode="apply" aria-pressed="false">申请找回</button>
+        <button class="pixel-btn secondary" type="button" data-recovery-mode="query" aria-pressed="false">查询进度</button>
+      </div>
       <p class="modal-hint" id="forgotPasswordHint">输入账号名，系统会根据账号类型提供找回方式。</p>
       <label class="field" id="forgotUsernameField">
         <span class="field-label">用户名</span>
@@ -3290,6 +3306,26 @@
           <span class="field-label">确认新密码</span>
           <input id="forgotConfirmPassword" type="password" autocomplete="new-password">
         </label>
+      </div>
+      <div id="recoveryFields" hidden>
+        <label class="field"><span class="field-label">人类账号</span>
+          <select id="recoveryAccountKind" aria-label="账号输入类型"><option value="username">账号名</option><option value="id">数字 ID</option></select>
+          <input id="recoveryAccount" maxlength="20" autocomplete="username" placeholder="填写提交申请时使用的账号名或 ID">
+        </label>
+        <div id="recoveryApplyFields">
+          <label class="field"><span class="field-label">绑定小机的名字 / ID</span><input id="recoveryMachine" maxlength="100" placeholder="没有绑定或记不清请注明"></label>
+          <label class="field"><span class="field-label">大概注册时间</span><input id="recoveryRegistered" maxlength="100" placeholder="例如 2026 年 8 月，记不清请注明"></label>
+          <label class="field"><span class="field-label">玩过的游戏</span><input id="recoveryGames" maxlength="500" placeholder="尽量填写记得的游戏名称"></label>
+          <label class="field"><span class="field-label">补充说明（选填）</span><textarea id="recoveryExplanation" maxlength="2000" rows="3" placeholder="请勿填写密码等敏感信息"></textarea></label>
+        </div>
+        <label class="field" id="recoveryQueryField" hidden><span class="field-label">查询码（区分大小写）</span>
+          <input id="recoveryQueryCode" maxlength="8" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="输入提交成功时显示的 6–8 位字母数字查询码">
+        </label>
+        <p class="modal-hint" id="recoveryResult" aria-live="polite"></p>
+        <div id="recoveryLinkBox" hidden>
+          <a id="recoveryLink" href="#">重置密码</a>
+          <button class="pixel-btn secondary" id="recoveryCopy" type="button">一键复制链接</button>
+        </div>
       </div>
       <div class="modal-msg" id="forgotPasswordMsg"></div>
       <div class="modal-actions">
@@ -4477,6 +4513,8 @@
     let emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
     let emailSecurityMode = "bind";
     let emailSecurityStep = "email";
+    let recoveryMode = "self";
+    let recoveryBusy = false;
     let forgotPasswordStep = "username";
     let forgotPasswordUsername = "";
     let announcementState = {
@@ -7228,6 +7266,15 @@
     }
 
     function resetForgotPasswordModal() {
+      recoveryMode = "self";
+      $("recoveryFields").hidden = true;
+      $("recoveryQueryCode").value = "";
+      $("recoveryResult").textContent = "";
+      $("recoveryLinkBox").hidden = true;
+      $("recoveryLink").removeAttribute("href");
+      document.querySelectorAll("[data-recovery-mode]").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.recoveryMode === "self"));
+      });
       forgotPasswordStep = "username";
       forgotPasswordUsername = "";
       $("forgotUsername").value = "";
@@ -7238,7 +7285,7 @@
       $("forgotConfirmPassword").value = "";
       $("forgotPasswordHint").textContent = EMAIL_SECURITY_UI_ENABLED
         ? "输入账号名，系统会根据账号类型提供找回方式。"
-        : "暂不支持自助找回密码，请联系管理员处理。";
+        : "暂不支持邮箱自助找回，可选择「申请找回」。";
       $("forgotPasswordMsg").textContent = "";
       $("forgotPasswordSubmit").textContent = EMAIL_SECURITY_UI_ENABLED ? "下一步" : "知道了";
       $("forgotPasswordSubmit").disabled = false;
@@ -7253,6 +7300,8 @@
     }
 
     async function submitForgotPassword() {
+      if (recoveryBusy) return;
+      if (recoveryMode !== "self") return submitRecovery();
       const message = $("forgotPasswordMsg");
       const submit = $("forgotPasswordSubmit");
       if (!EMAIL_SECURITY_UI_ENABLED) {
@@ -7330,6 +7379,101 @@
       } finally {
         submit.disabled = false;
       }
+    }
+
+    function setRecoveryMode(mode) {
+      if (recoveryBusy || $("forgotPasswordSubmit").disabled) return;
+      const username = $("forgotUsername").value.trim();
+      resetForgotPasswordModal();
+      $("forgotUsername").value = username;
+      recoveryMode = mode;
+      document.querySelectorAll("[data-recovery-mode]").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.recoveryMode === mode));
+      });
+      $("recoveryFields").hidden = mode === "self";
+      if (mode === "self") return;
+      $("forgotUsernameField").hidden = true;
+      $("recoveryApplyFields").hidden = mode !== "apply";
+      $("recoveryQueryField").hidden = mode !== "query";
+      if (!$("recoveryAccount").value && username) $("recoveryAccount").value = username;
+      $("forgotPasswordHint").textContent = mode === "apply"
+        ? "无法通过邮箱找回？请填写信息供管理员核验，提交成功后请保存工单号和查询码。"
+        : "使用提交申请时的账号名或 ID + 查询码查询；换设备也可手动输入。通过后有 7 天领取窗口，链接过期可在窗口内再次查询领取。";
+      $("forgotPasswordSubmit").textContent = mode === "apply" ? "提交申请" : "查询进度";
+      fillRecoveryQueryCode();
+    }
+
+    function recoveryStorageKey(kind, account) {
+      return "cedartoy_recovery_query:" + kind + ":" + (kind === "id" ? account.replace(/^0+(?=\d)/, "") : account);
+    }
+
+    function fillRecoveryQueryCode() {
+      let code = "";
+      try { code = localStorage.getItem(recoveryStorageKey($("recoveryAccountKind").value, $("recoveryAccount").value.trim())) || ""; }
+      catch (_) { /* Manual entry works even when storage is blocked. */ }
+      $("recoveryQueryCode").value = /^[A-Za-z0-9]{6,8}$/.test(code) ? code : "";
+      $("recoveryResult").textContent = "";
+      $("recoveryLinkBox").hidden = true;
+      $("recoveryLink").removeAttribute("href");
+    }
+
+    async function submitRecovery() {
+      const message = $("forgotPasswordMsg");
+      const mode = recoveryMode;
+      const account_kind = $("recoveryAccountKind").value;
+      const account = $("recoveryAccount").value.trim();
+      message.textContent = "";
+      $("recoveryResult").textContent = "";
+      $("recoveryLinkBox").hidden = true;
+      $("recoveryLink").removeAttribute("href");
+      if (!account) { message.textContent = "请输入人类账号名或 ID"; return; }
+      const key = recoveryStorageKey(account_kind, account);
+      let query_code = $("recoveryQueryCode").value.trim();
+      if (mode === "apply") {
+        try { query_code = localStorage.getItem(key) || ""; } catch (_) { query_code = ""; }
+      }
+      if (mode === "query" && !/^[A-Za-z0-9]{6,8}$/.test(query_code)) {
+        message.textContent = "请输入提交成功时显示的 6–8 位字母数字查询码（区分大小写）";
+        return;
+      }
+      const body = {account_kind, account, query_code};
+      if (mode === "apply") {
+        Object.assign(body, {machine: $("recoveryMachine").value.trim(), registered_about: $("recoveryRegistered").value.trim(),
+          games: $("recoveryGames").value.trim(), explanation: $("recoveryExplanation").value.trim()});
+        if (!body.machine || !body.registered_about || !body.games) {
+          message.textContent = "请填写绑定小机、大概注册时间和玩过的游戏；记不清可注明。"; return;
+        }
+      }
+      recoveryBusy = true;
+      $("forgotPasswordSubmit").disabled = true;
+      try {
+        const res = await fetch("/api/auth/recovery/" + (mode === "apply" ? "submit" : "query"), {
+          method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), cache: "no-store",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "请求失败，请稍后重试");
+        if (mode === "apply") {
+          try { localStorage.setItem(key, data.query_code); }
+          catch (_) { /* The displayed query code remains usable on any device. */ }
+          if (recoveryMode !== mode || $("recoveryAccount").value.trim() !== account || $("recoveryAccountKind").value !== account_kind) return;
+          $("recoveryQueryCode").value = data.query_code;
+          $("recoveryResult").textContent = `申请已提交\n工单号：${data.ticket_id}\n查询码：${data.query_code}\n${data.message}`;
+        } else {
+          if (recoveryMode !== mode || $("recoveryAccount").value.trim() !== account || $("recoveryAccountKind").value !== account_kind) return;
+          try { localStorage.setItem(key, query_code); } catch (_) {}
+          const labels = {pending: "审批中，一般会在 24 小时内完成审核，请稍后回来查询。", rejected: "未通过",
+            approved: "已通过。重置链接生成后 24 小时内有效，仅可使用一次。", completed: "已完成，密码已重置，请使用新密码登录。",
+            expired: "7 天领取窗口已结束，请重新提交申请。", unavailable: "申请暂不可领取，请联系管理员。"};
+          $("recoveryResult").textContent = (labels[data.status] || "请稍后重试") + (data.admin_note ? "\n管理员备注：" + data.admin_note : "");
+          if (data.reset_url) {
+            $("recoveryLink").href = data.reset_url;
+            $("recoveryLink").textContent = data.reset_url;
+            $("recoveryLinkBox").hidden = false;
+            $("recoveryResult").textContent += "\n链接有效至：" + new Date(data.expires_at_epoch * 1000).toLocaleString();
+          }
+        }
+      } catch (err) { message.textContent = err.message || "请求失败，请稍后重试"; }
+      finally { recoveryBusy = false; $("forgotPasswordSubmit").disabled = false; }
     }
 
     function resetEmailSecurityModal() {
@@ -8749,6 +8893,17 @@
     });
     $("forgotPasswordOpen").addEventListener("click", openForgotPasswordModal);
     $("forgotPasswordSubmit").addEventListener("click", submitForgotPassword);
+    document.querySelectorAll("[data-recovery-mode]").forEach(button => {
+      button.addEventListener("click", () => setRecoveryMode(button.dataset.recoveryMode));
+    });
+    $("recoveryAccount").addEventListener("input", fillRecoveryQueryCode);
+    $("recoveryAccountKind").addEventListener("change", fillRecoveryQueryCode);
+    $("recoveryCopy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText($("recoveryLink").href);
+        $("forgotPasswordMsg").textContent = "链接已复制";
+      } catch (_) { $("forgotPasswordMsg").textContent = "复制失败，请长按或选中上方链接复制。"; }
+    });
     $("emailSecuritySubmit").addEventListener("click", submitEmailSecurity);
     $("machineTokenBound").addEventListener("change", () => {
       $("machineTokenPass").value = "";
@@ -8806,7 +8961,7 @@
       }
       if (event.key === "Enter" && $("loginModal").classList.contains("show")) login();
       if (event.key === "Enter" && $("avatarModal").classList.contains("show")) saveAvatar();
-      if (event.key === "Enter" && $("forgotPasswordModal").classList.contains("show")) submitForgotPassword();
+      if (event.key === "Enter" && event.target.tagName !== "TEXTAREA" && event.target.tagName !== "BUTTON" && $("forgotPasswordModal").classList.contains("show")) submitForgotPassword();
       if (event.key === "Enter" && $("emailSecurityModal").classList.contains("show")) submitEmailSecurity();
       if (event.key === "Enter" && $("machineTokenModal").classList.contains("show")
           && ["machineTokenUser", "machineTokenPass"].includes(event.target.id)) getMachineToken();

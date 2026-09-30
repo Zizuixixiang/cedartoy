@@ -65,6 +65,12 @@
       background: #fff;
       color: var(--text);
     }
+    .recovery-panel { padding: 14px; min-width: 0; }
+    .recovery-panel h2 { margin: 0; font-size: 18px; }
+    .recovery-card { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+    .recovery-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; }
+    .recovery-card textarea { display: block; width: 100%; margin: 8px 0; padding: 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; }
+    #recoveryTickets { max-height: 60vh; overflow-y: auto; }
     .shell {
       width: min(1180px, calc(100vw - 28px));
       margin: 0 auto;
@@ -634,6 +640,18 @@
       </div>
     </header>
 
+    <section class="panel recovery-panel" aria-labelledby="recoveryHeading">
+      <div class="row-actions">
+        <h2 id="recoveryHeading">账号找回工单</h2><span class="badge" id="recoveryCount">待审批 —</span>
+        <label>记录 <select id="recoveryView"><option value="pending">待审批</option><option value="processed">已处理记录</option></select></label>
+        <button id="recoveryRefresh" type="button">刷新工单</button>
+      </div>
+      <p class="sub">请核验申请信息后审核。通过后由申请人回来领取链接；备注会向申请人显示，请勿填写内部核验资料。</p>
+      <p class="status" id="recoveryStatus" aria-live="polite"></p>
+      <div id="recoveryTickets"></div>
+      <div class="row-actions"><button id="recoveryPrev" type="button">上一页</button><span id="recoveryPage"></span><button id="recoveryNext" type="button">下一页</button></div>
+    </section>
+
     <nav class="admin-tabs" aria-label="管理后台页面">
       <button id="usersTab" type="button" role="tab" aria-selected="true" aria-controls="usersPanel">用户管理</button>
       <button id="dashboardTab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">运营看板</button>
@@ -867,6 +885,72 @@
         throw new Error(apiError(data));
       }
       return data;
+    }
+
+    let recoveryTickets = [];
+    let recoveryPage = 1;
+    let recoveryLoading = false;
+    let recoveryReviewBusy = false;
+
+    function recoveryVerificationText(ticket) {
+      return `工单 ID：${ticket.id}\n账号${ticket.account_kind === "id" ? " ID" : "名"}：${ticket.account}\n绑定小机：${ticket.machine}\n约注册时间：${ticket.registered_about}\n玩过游戏：${ticket.games}\n补充说明：${ticket.explanation || "无"}\n提交时间：${formatEpoch(ticket.created_at_epoch)}`;
+    }
+
+    async function loadRecoveryTickets() {
+      if (recoveryLoading || recoveryReviewBusy) return;
+      recoveryLoading = true;
+      $("recoveryStatus").textContent = "加载中…";
+      $("recoveryView").disabled = true;
+      try {
+        const data = await request(`/api/admin/recovery?view=${$("recoveryView").value}&page=${recoveryPage}`);
+        recoveryTickets = data.tickets || [];
+        $("recoveryCount").textContent = `待审批 ${data.pending_count || 0}`;
+        $("recoveryPage").textContent = `第 ${recoveryPage} / ${Math.max(1, Math.ceil(data.total / 20))} 页`;
+        $("recoveryPrev").disabled = recoveryPage <= 1;
+        $("recoveryNext").disabled = recoveryPage * 20 >= data.total;
+        const labels = {pending: "审批中", approved: "已通过", rejected: "未通过", completed: "已完成"};
+        $("recoveryTickets").innerHTML = recoveryTickets.map(ticket => `
+          <article class="recovery-card" data-ticket="${ticket.id}">
+            <strong>${labels[ticket.status] || "已处理"}（${escapeHtml(ticket.status)}）</strong>
+            <pre>${escapeHtml(recoveryVerificationText(ticket))}</pre>
+            ${ticket.reviewed_at_epoch ? `<p class="sub">审核时间：${escapeHtml(formatEpoch(ticket.reviewed_at_epoch))}</p>` : ""}
+            <button type="button" data-recovery-action="copy">复制核验信息</button>
+            <label>管理员备注<textarea maxlength="2000" rows="2" ${ticket.status === "pending" ? "" : "readonly"}>${escapeHtml(ticket.admin_note || "")}</textarea></label>
+            ${ticket.status === "pending" ? `<div class="row-actions"><button class="primary" type="button" data-recovery-action="approved">通过</button><button class="danger" type="button" data-recovery-action="rejected">不通过</button></div>` : ""}
+          </article>`).join("") || '<p class="sub">暂无工单</p>';
+        $("recoveryStatus").textContent = "";
+      } catch (err) {
+        $("recoveryTickets").textContent = "";
+        $("recoveryStatus").textContent = err.message;
+      } finally { recoveryLoading = false; $("recoveryView").disabled = false; }
+    }
+
+    async function handleRecoveryAction(event) {
+      const button = event.target.closest("button[data-recovery-action]");
+      if (!button || recoveryReviewBusy || recoveryLoading) return;
+      const card = button.closest("[data-ticket]");
+      const ticket = recoveryTickets.find(item => String(item.id) === card.dataset.ticket);
+      if (!ticket) return;
+      const decision = button.dataset.recoveryAction;
+      if (decision === "copy") {
+        try { await navigator.clipboard.writeText(recoveryVerificationText(ticket)); $("recoveryStatus").textContent = "核验信息已复制"; }
+        catch (_) { $("recoveryStatus").textContent = "复制失败，请选中工单中的核验文本复制。"; }
+        return;
+      }
+      const admin_note = card.querySelector("textarea").value.trim();
+      if (decision === "rejected" && !admin_note) { $("recoveryStatus").textContent = "请填写不通过的原因，方便申请人补充信息。"; return; }
+      recoveryReviewBusy = true;
+      card.querySelectorAll("button").forEach(item => { item.disabled = true; });
+      let reviewed = false;
+      try {
+        await request("/api/admin/recovery/review", {method: "POST", body: JSON.stringify({ticket_id: ticket.id, decision, admin_note})});
+        reviewed = true;
+      } catch (err) { $("recoveryStatus").textContent = err.message; }
+      finally {
+        recoveryReviewBusy = false;
+        card.querySelectorAll("button").forEach(item => { item.disabled = false; });
+      }
+      if (reviewed) { recoveryPage = 1; await loadRecoveryTickets(); }
     }
 
     function boolBadge(value, yes, no) {
@@ -1333,6 +1417,13 @@
         setStatus(err.message, true);
       }
     }
+
+    $("recoveryRefresh").addEventListener("click", loadRecoveryTickets);
+    $("recoveryView").addEventListener("change", () => { recoveryPage = 1; loadRecoveryTickets(); });
+    $("recoveryTickets").addEventListener("click", handleRecoveryAction);
+    $("recoveryPrev").addEventListener("click", () => { if (!recoveryLoading && !recoveryReviewBusy && recoveryPage > 1) { recoveryPage--; loadRecoveryTickets(); } });
+    $("recoveryNext").addEventListener("click", () => { if (!recoveryLoading && !recoveryReviewBusy) { recoveryPage++; loadRecoveryTickets(); } });
+    loadRecoveryTickets();
 
     $("refreshBtn").addEventListener("click", loadUsers);
     $("usersTab").addEventListener("click", () => switchTab("users"));
