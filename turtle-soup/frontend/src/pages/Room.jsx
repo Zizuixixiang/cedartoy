@@ -60,6 +60,7 @@ export default function Room() {
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   const [closeLoading, setCloseLoading] = useState(false)
   const [surfaceCollapsed, setSurfaceCollapsed] = useState(false)
+  const [answerRevealCollapsed, setAnswerRevealCollapsed] = useState(false)
   const [hintConfirmOpen, setHintConfirmOpen] = useState(false)
   const [revealConfirmOpen, setRevealConfirmOpen] = useState(false)
   const [revealFinalConfirmOpen, setRevealFinalConfirmOpen] = useState(false)
@@ -209,6 +210,11 @@ export default function Room() {
   const hintDisabled = actionLocked || hintRemaining <= 0 || pendingHint || hintLoading
   const askCount = Math.max(Number(room?.ask_count || 0), logs.filter((row) => row.type === 'ask').length)
   const revealPromptProgressKey = `answer_reveal_prompt_last_${roomId}`
+  const answerRevealPromptVisible = revealConfirmOpen && !revealFinalConfirmOpen
+
+  useEffect(() => {
+    if (!answerRevealPromptVisible) setAnswerRevealCollapsed(false)
+  }, [answerRevealPromptVisible])
 
   useEffect(() => {
     if (!room || actionLocked || answerRevealPromptCount <= 0 || askCount <= 0) return
@@ -419,22 +425,33 @@ export default function Room() {
         </aside>
 
         <section className="room-play">
-          {revealConfirmOpen && !revealFinalConfirmOpen && (
-            <div className="answer-reveal-prompt" role="region" aria-label="公布汤底提示">
-              <div>
-                <div className="answer-reveal-prompt-label">&gt; 【公布汤底】</div>
-                <p>
-                  本房间已经累计 {askCount} 次提问。是否查看汤底？查看后你将不能继续提问、猜测或操作记事板。
-                </p>
-              </div>
-              <div className="answer-reveal-actions">
-                <button type="button" disabled={revealLoading} onClick={rejectRevealPrompt}>
-                  拒绝
-                </button>
-                <button type="button" className="pixel-primary" disabled={revealLoading} onClick={acceptRevealPrompt}>
-                  接受
-                </button>
-              </div>
+          {answerRevealPromptVisible && (
+            <div className={`answer-reveal-prompt${answerRevealCollapsed ? ' collapsed' : ''}`} role="region" aria-label="公布汤底提示">
+              <div className="answer-reveal-prompt-label">{answerRevealCollapsed ? '公布汤底' : '> 【公布汤底】'}</div>
+              <button
+                type="button"
+                className="surface-toggle answer-reveal-toggle"
+                onClick={() => setAnswerRevealCollapsed((collapsed) => !collapsed)}
+                aria-label={answerRevealCollapsed ? '展开公布汤底' : '收起公布汤底'}
+                aria-expanded={!answerRevealCollapsed}
+              >
+                {answerRevealCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+              </button>
+              {!answerRevealCollapsed && (
+                <>
+                  <p>
+                    本房间已经累计 {askCount} 次提问。是否查看汤底？查看后你将不能继续提问、猜测或操作记事板。
+                  </p>
+                  <div className="answer-reveal-actions">
+                    <button type="button" disabled={revealLoading} onClick={rejectRevealPrompt}>
+                      拒绝
+                    </button>
+                    <button type="button" className="pixel-primary" disabled={revealLoading} onClick={acceptRevealPrompt}>
+                      接受
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

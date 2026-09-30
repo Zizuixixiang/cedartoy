@@ -2602,10 +2602,10 @@ body:has(.room-page) {
 }
 
 .answer-reveal-prompt {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  gap: 8px 14px;
   padding: 12px 14px;
   border: 2px solid #fde047;
   background: rgba(113, 63, 18, 0.2);
@@ -2614,8 +2614,20 @@ body:has(.room-page) {
   box-shadow: inset 0 0 0 1px rgba(253, 224, 71, 0.2);
 }
 
+.answer-reveal-prompt.collapsed {
+  padding-block: 6px;
+}
+
+.answer-reveal-prompt .answer-reveal-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  order: 0;
+}
+
 .answer-reveal-prompt-label {
-  margin-bottom: 6px;
+  margin: 0;
   color: #fde047;
   font-family: "Silkscreen", cursive;
   font-size: 15px;
@@ -3393,8 +3405,6 @@ body:has(.room-page) {
     font-size: 12px;
   }
   .answer-reveal-prompt {
-    flex-direction: column;
-    align-items: stretch;
     gap: 8px;
     padding: 8px 9px;
     border-width: 1px;
@@ -3405,7 +3415,6 @@ body:has(.room-page) {
     font-size: 12px;
   }
   .answer-reveal-prompt-label {
-    margin-bottom: 4px;
     font-size: 12px;
   }
   .log-hint-banner p {
@@ -3413,9 +3422,11 @@ body:has(.room-page) {
     line-height: 1.45;
   }
   .answer-reveal-prompt p {
+    grid-column: 1 / -1;
     line-height: 1.45;
   }
   .answer-reveal-actions {
+    grid-column: 1 / -1;
     gap: 6px;
   }
   .hint-actions {
