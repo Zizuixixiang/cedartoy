@@ -32,11 +32,11 @@ class AccountRecoveryTests(unittest.TestCase):
         body["query_code"] = result["query_code"]
         with self._connect() as conn:
             row = conn.execute("SELECT id FROM account_recovery_tickets WHERE query_code_hash=?",
-                               (server._recovery_query_hash(body),)).fetchone()
+                               (server._recovery_query_hash(body["query_code"]),)).fetchone()
         self.assertEqual(result["ticket_id"], row[0])
-        self.assertRegex(result["query_code"], r"^[A-Za-z0-9]{8}$")
+        self.assertRegex(result["query_code"], r"^[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){2}$")
         self.assertEqual(result["message"], "请保存查询码，用于查看审核结果；一般会在24小时内完成审核")
-        return body, row[0]
+        return {"query_code": result["query_code"]}, row[0]
 
     def approve(self, ticket_id, decision="approved", note="核验通过"):
         return server._review_recovery_ticket(ticket_id, {"decision": decision, "admin_note": note}, {"id": 999})
@@ -134,18 +134,21 @@ class AccountRecoveryTests(unittest.TestCase):
         self.assertEqual(server._query_recovery_ticket(body)["status"], "expired")
         self.assertEqual(self.tokens(), [])
 
-    def test_missing_wrong_cross_account_credentials_reveal_nothing(self):
+    def test_missing_wrong_codes_reveal_nothing_and_valid_codes_are_isolated(self):
         body, tid = self.submit()
         self.approve(tid, note="仅本人可见的备注")
         other, _ = self.submit("OtherHuman", ip="192.0.2.11")
         messages = []
-        for account, credential in [("Human", ""), ("Human", "Wrong123"), ("Human", other["query_code"]),
-                                    ("OtherHuman", body["query_code"]), ("Missing", body["query_code"]), ("", body["query_code"]), ("Human", None), ("Human", "x" * 43)]:
+        for credential in ("", "Wrong123", None, 123456, [], {}, "x" * 43,
+                           "ABCD-EFGH-JKLM", "ABCD--EFGH-JKLM", "ABCD EFGH JKLM",
+                           "OOOO-OOOO-OOOO", "ＡＢＣＤ-EFGH-JKLM"):
             with self.assertRaises(server._McpError) as caught:
-                server._query_recovery_ticket({"account": account, "query_code": credential})
-            messages.append(caught.exception.message)
-        self.assertEqual(len(set(messages)), 1)
+                server._query_recovery_ticket({"query_code": credential})
+            messages.append((caught.exception.code, caught.exception.message))
+        self.assertEqual(set(messages), {(-32602, server._RECOVERY_MISSING)})
         self.assertEqual(self.tokens(), [])
+        self.assertEqual(server._query_recovery_ticket(other),
+                         {"ok": True, "status": "pending", "admin_note": ""})
         self.assertEqual(server._query_recovery_ticket(body)["admin_note"], "仅本人可见的备注")
 
     def test_submit_nonexistent_and_duplicate_without_secret_is_indistinguishable(self):
@@ -161,12 +164,18 @@ class AccountRecoveryTests(unittest.TestCase):
         with self._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM account_recovery_tickets").fetchone()[0], 3)
 
-    def test_duplicate_with_secret_reuses_pending_and_approved(self):
+    def test_submission_ignores_old_client_query_code_and_still_counts_toward_limit(self):
         body, tid = self.submit()
-        for _ in range(8):
-            self.assertEqual(self.submit(query_code=body["query_code"])[1], tid)
         self.approve(tid)
-        self.assertEqual(self.submit(query_code=body["query_code"])[1], tid)
+        ids = {tid}
+        for code in (body["query_code"], "Wrong123", None, {"invalid": "code"}):
+            fresh, fresh_id = self.submit(query_code=code)
+            self.assertNotIn(fresh_id, ids)
+            self.assertNotEqual(fresh["query_code"], body["query_code"])
+            ids.add(fresh_id)
+        with self.assertRaises(server._McpError) as caught:
+            self.submit(query_code=body["query_code"])
+        self.assertEqual(caught.exception.code, server.RATE_LIMIT_ERROR_CODE)
         self.assertEqual(self.tokens(), [])
 
     def test_ip_limit_persists_and_is_not_account_based(self):
@@ -295,13 +304,16 @@ class AccountRecoveryTests(unittest.TestCase):
         with self._connect() as conn:
             ticket = dict(conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (tid,)).fetchone())
             self.assertNotIn(body["query_code"], "\n".join(conn.iterdump()))
-        self.assertEqual(ticket["query_code_hash"], server._recovery_query_hash(body))
+            self.assertNotIn(body["query_code"].replace("-", ""), "\n".join(conn.iterdump()))
+        self.assertEqual(ticket["query_code_hash"], server._recovery_query_hash(body["query_code"]))
         self.assertNotEqual(ticket["query_code_hash"], server._reset_token_hash(body["query_code"]))
+        with patch.object(server, "TOY_SECRET", "different-application-key"):
+            self.assertNotEqual(ticket["query_code_hash"], server._recovery_query_hash(body["query_code"]))
         with self.assertRaises(server._McpError) as caught:
             server._query_recovery_ticket({"account": "Human", "access_token": body["query_code"]})
         self.assertEqual(caught.exception.message, server._RECOVERY_MISSING)
         # No cookie, token or original submission fields are needed on another device.
-        result = server._query_recovery_ticket({"account": "Human", "query_code": body["query_code"]})
+        result = server._query_recovery_ticket({"query_code": body["query_code"]})
         self.assertEqual(result["status"], "pending")
 
     def test_processed_records_keep_all_statuses_notes_and_review_time(self):
@@ -324,11 +336,11 @@ class AccountRecoveryTests(unittest.TestCase):
             self.assertNotIn("query_code_hash", records[tid])
         self.assertEqual(server._admin_recovery_tickets()["tickets"], [])
 
-    def test_query_rate_limits_apply_to_missing_accounts_and_distributed_attempts(self):
+    def test_query_rate_limits_apply_to_missing_codes_and_distributed_attempts(self):
         handler = object.__new__(server.CedarToyHandler)
         handler._send_json = Mock()
         handler._client_ip = lambda: "192.0.2.200"
-        handler._read_json_body = Mock(return_value={"account": "Missing", "query_code": "Wrong123"})
+        handler._read_json_body = Mock(return_value={"query_code": "Wrong123"})
         with patch.object(server, "_REQUEST_RATE_LIMIT", {}):
             for i in range(10):
                 handler._client_ip = lambda i=i: f"192.0.2.{i}"
@@ -339,8 +351,10 @@ class AccountRecoveryTests(unittest.TestCase):
         handler._client_ip = lambda: "192.0.2.200"
         with patch.object(server, "_REQUEST_RATE_LIMIT", {}):
             for i in range(31):
-                handler._read_json_body.return_value = {"account": f"Missing{i}", "query_code": "Wrong123"}
+                handler._read_json_body.return_value = {"query_code": f"Wrong{i:03}"}
                 handler._handle_api_recovery("/api/auth/recovery/query")
+                if i < 30:
+                    self.assertEqual(handler._send_json.call_args.kwargs["status"], 400)
             self.assertEqual(handler._send_json.call_args.kwargs["status"], 429)
             self.assertEqual(handler._send_json.call_args.kwargs["extra_headers"], {"Cache-Control": "no-store"})
 
@@ -356,6 +370,135 @@ class AccountRecoveryTests(unittest.TestCase):
             outcomes = list(executor.map(review, ("approved", "rejected")))
         self.assertEqual(sum(outcomes), 1)
         self.assertEqual(self.tokens(), [])
+
+    def test_new_code_variants_reconstruct_the_same_reset_link(self):
+        body, tid = self.submit()
+        code = body["query_code"]
+        self.approve(tid)
+        first = server._query_recovery_ticket({"query_code": "  " + code.lower() + "\n"})
+        for variant in (code, code.lower(), code.replace("-", ""), " " + code.replace("-", "").lower() + " "):
+            self.assertEqual(server._query_recovery_ticket({"query_code": variant}), first)
+        self.assertEqual(len(self.tokens()), 1)
+        server._reset_password_by_token(first["reset_url"].split("=", 1)[1], "variant-pass")
+        self.assertEqual(server._query_recovery_ticket(body)["status"], "completed")
+
+    def legacy_ticket(self, code, **kwargs):
+        _, tid = self.submit(**kwargs)
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (tid,)).fetchone()
+            legacy_hash = server._email_hmac("recovery-query-v1", row["account_kind"], row["account"], code)
+            conn.execute("UPDATE account_recovery_tickets SET query_code_hash=? WHERE id=?", (legacy_hash, tid))
+        return {"query_code": code}, tid, legacy_hash
+
+    def test_legacy_codes_migrate_atomically_preserving_case_and_other_rows(self):
+        for code, identity in [("Ab0I9z", {}), ("aB1O9zQ", {"account": "Missing"}),
+                               ("Ab3X9k2Q", {"account": str(self.human_id), "account_kind": "id"})]:
+            with self.subTest(code=code):
+                body, tid, legacy_hash = self.legacy_ticket(code, **identity)
+                with self._connect() as conn:
+                    before = [dict(r) for r in conn.execute("SELECT * FROM account_recovery_tickets ORDER BY id")]
+                for wrong in (code.upper(), code.lower()):
+                    with self.assertRaises(server._McpError) as caught:
+                        server._query_recovery_ticket({"query_code": wrong})
+                    self.assertEqual(caught.exception.message, server._RECOVERY_MISSING)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    results = list(executor.map(lambda _: server._query_recovery_ticket(body), range(2)))
+                self.assertEqual(results, [{"ok": True, "status": "pending", "admin_note": ""}] * 2)
+                with self._connect() as conn:
+                    after = [dict(r) for r in conn.execute("SELECT * FROM account_recovery_tickets ORDER BY id")]
+                    self.assertNotIn(code, "\n".join(conn.iterdump()))
+                    self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                expected = [dict(row, query_code_hash=server._recovery_query_hash(code)) if row["id"] == tid else row
+                            for row in before]
+                self.assertEqual(after, expected)
+                self.assertNotEqual(expected[-1]["query_code_hash"], legacy_hash)
+                self.assertEqual(server._query_recovery_ticket({"query_code": " " + code + " "}), results[0])
+                with self.assertRaises(server._McpError):
+                    server._query_recovery_ticket({"query_code": code.upper()})
+
+    def test_legacy_already_issued_link_survives_migration_and_reissue(self):
+        body, tid, _ = self.legacy_ticket("Ab0I9zQ2")
+        self.approve(tid)
+        nonce = "legacy-reset-nonce"
+        token = server._email_hmac("recovery-reset-v1", body["query_code"], nonce)
+        with self._connect() as conn:
+            _, token_id, expiry = server._create_reset_token(conn, self.human_id, lifetime_seconds=86400, token=token)
+            conn.execute("UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
+                         (token_id, nonce, tid))
+        first = server._query_recovery_ticket({"query_code": " " + body["query_code"] + " "})
+        self.assertEqual(first["reset_url"], server._reset_url(token))
+        self.assertEqual(first["expires_at_epoch"], expiry)
+        self.assertEqual(server._query_recovery_ticket(body), first)
+        self.assertEqual(len(self.tokens()), 1)
+        with self._connect() as conn:
+            conn.execute("UPDATE password_reset_tokens SET expires_at=datetime('now','-1 second')")
+        fresh = server._query_recovery_ticket(body)
+        self.assertNotEqual(fresh["reset_url"], first["reset_url"])
+        self.assertEqual(server._query_recovery_ticket(body), fresh)
+        with self.assertRaises(server._McpError):
+            server._reset_password_by_token(token, "old-link-pass")
+        server._reset_password_by_token(fresh["reset_url"].split("=", 1)[1], "legacy-new-pass")
+        self.assertEqual(server._query_recovery_ticket(body)["status"], "completed")
+
+    def test_legacy_migration_on_consistent_snapshot_preserves_usable_old_link(self):
+        body, tid, legacy_hash = self.legacy_ticket("aB0I1zQ9")
+        self.approve(tid)
+        nonce = "snapshot-legacy-nonce"
+        token = server._email_hmac("recovery-reset-v1", body["query_code"], nonce)
+        with self._connect() as conn:
+            _, token_id, _ = server._create_reset_token(conn, self.human_id, lifetime_seconds=86400, token=token)
+            conn.execute("UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
+                         (token_id, nonce, tid))
+        snapshot_path = self.db_path.with_name("migration-snapshot.db")
+        with self._connect() as source, sqlite3.connect(snapshot_path) as snapshot:
+            source.backup(snapshot)
+        with patch.object(server, "TURTLE_DB_PATH", snapshot_path):
+            first = server._query_recovery_ticket(body)
+            with sqlite3.connect(snapshot_path) as snapshot:
+                migrated = list(snapshot.iterdump())
+            self.assertEqual(server._query_recovery_ticket(body), first)
+            self.assertEqual(first["reset_url"], server._reset_url(token))
+            with sqlite3.connect(snapshot_path) as snapshot:
+                self.assertEqual(list(snapshot.iterdump()), migrated)
+                self.assertEqual(snapshot.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            # The exact credential issued before migration still resets the password.
+            server._reset_password_by_token(token, "snapshot-legacy-pass")
+            self.assertEqual(server._query_recovery_ticket(body)["status"], "completed")
+        with self._connect() as source:
+            row = source.execute("SELECT query_code_hash, status FROM account_recovery_tickets WHERE id=?", (tid,)).fetchone()
+            self.assertEqual(tuple(row), (legacy_hash, "approved"))
+        self.assertEqual(self.tokens()[0]["used"], 0)
+
+    def test_legacy_duplicate_codes_do_not_expose_either_ticket(self):
+        body, tid, first_hash = self.legacy_ticket("Ab3X9k2Q")
+        _, other_id, other_hash = self.legacy_ticket("Ab3X9k2Q", account="OtherHuman")
+        self.approve(tid, note="private first")
+        self.approve(other_id, note="private second")
+        with self.assertRaises(server._McpError) as caught:
+            server._query_recovery_ticket(body)
+        self.assertEqual(caught.exception.message, server._RECOVERY_MISSING)
+        self.assertEqual(self.tokens(), [])
+        with self._connect() as conn:
+            self.assertEqual([r[0] for r in conn.execute("SELECT query_code_hash FROM account_recovery_tickets ORDER BY id")],
+                             [first_hash, other_hash])
+
+    def test_query_code_rate_limit_normalizes_new_code_variants(self):
+        body, _ = self.submit()
+        code = body["query_code"]
+        handler = object.__new__(server.CedarToyHandler)
+        handler._send_json = Mock()
+        handler._read_json_body = Mock()
+        with patch.object(server, "_REQUEST_RATE_LIMIT", {}) as limits:
+            for i in range(11):
+                handler._client_ip = lambda i=i: f"192.0.2.{i}"
+                variant = (code, code.replace("-", "").lower(), " " + code + " ")[i % 3]
+                handler._read_json_body.return_value = {"query_code": variant}
+                handler._handle_api_recovery("/api/auth/recovery/query")
+                if i < 10:
+                    self.assertEqual(handler._send_json.call_args.args[0]["status"], "pending")
+            self.assertEqual(handler._send_json.call_args.kwargs["status"], 429)
+            self.assertNotIn(code, repr(limits))
+            self.assertNotIn(code.replace("-", ""), repr(limits))
 
     def test_routes(self):
         for path, method, target in [

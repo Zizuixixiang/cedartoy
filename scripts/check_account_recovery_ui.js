@@ -11,7 +11,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 async function checkForgotPassword(emailEnabled) {
   const calls = [], clipboard = [];
   let status = "pending", queryError = false;
-  const secret = "Ab3X9k2Q";
+  const secret = "AB3X-9K2Q-7MNP";
+  let expectedCode = secret;
   const resetUrl = "https://toy.cedarstar.org/?reset_token=fixture";
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8").replace("const EMAIL_SECURITY_UI_ENABLED = false;", `const EMAIL_SECURITY_UI_ENABLED = ${emailEnabled};`);
   const dom = new JSDOM(html, {
@@ -21,10 +22,13 @@ async function checkForgotPassword(emailEnabled) {
       window.fetch = async (url, options = {}) => {
         const body = options.body ? JSON.parse(options.body) : {};
         calls.push({url, body});
-        if (url === "/api/auth/recovery/submit") return reply({ticket_id: 17, query_code: secret, message: "请保存查询码，用于查看审核结果；一般会在24小时内完成审核"});
+        if (url === "/api/auth/recovery/submit") {
+          assert.deepEqual(Object.keys(body).sort(), ["account", "account_kind", "explanation", "games", "machine", "registered_about"]);
+          return reply({ticket_id: 17, query_code: secret, message: "请保存查询码，用于查看审核结果；一般会在24小时内完成审核"});
+        }
         if (url === "/api/auth/recovery/query") {
-          if (queryError) return reply({error: "账号或查询码错误"}, false);
-          assert.equal(body.query_code, secret);
+          assert.deepEqual(body, {query_code: expectedCode});
+          if (queryError) return reply({error: "查询码错误"}, false);
           return reply({status, admin_note: status === "rejected" ? "请补充信息 <script>" : "",
             ...(status === "approved" ? {reset_url: resetUrl, expires_at_epoch: 2000000000} : {})});
         }
@@ -43,6 +47,16 @@ async function checkForgotPassword(emailEnabled) {
       assert.equal($("recoverySuccess").hidden, true);
       assert.equal($("recoveryApplyFields").hidden, mode !== "apply");
       assert.equal($("recoveryQueryField").hidden, mode !== "query");
+      const visibleFields = [...$("recoveryFields").querySelectorAll("input, select, textarea")].filter(el => !el.closest("[hidden]"));
+      assert.deepEqual(visibleFields.map(el => el.id), mode === "query" ? ["recoveryQueryCode"] :
+        ["recoveryAccountKind", "recoveryAccount", "recoveryMachine", "recoveryRegistered", "recoveryGames", "recoveryExplanation"]);
+      if (mode === "query") {
+        assert.equal(w.getComputedStyle($("recoveryApplyFields")).display, "none");
+        assert.ok($("recoveryAccount").closest("[hidden]"));
+        assert.ok($("recoveryAccountKind").closest("[hidden]"));
+        assert.match($("forgotPasswordHint").textContent, /只需查询码/);
+        assert.doesNotMatch($("forgotPasswordHint").textContent, /账号|ID/);
+      }
       assert.equal($("forgotPasswordSubmit").textContent, mode === "apply" ? "提交申请" : "查询进度");
     }
     function assertBlank() {
@@ -71,17 +85,21 @@ async function checkForgotPassword(emailEnabled) {
       assert.match($("recoverySuccess").textContent, /24\s*小时内完成审核/);
       assert.deepEqual([...$("recoverySuccess").querySelectorAll("button")].map(b => b.textContent), ["复制查询码", "查询进度", "关闭"]);
     }
-    function assertHandoff(kind, account) {
+    function assertHandoff() {
       $("recoverySuccessQuery").click();
       assertMode("query");
-      assert.equal($("recoveryAccountKind").value, kind);
-      assert.equal($("recoveryAccount").value, account);
+      assert.equal($("recoveryAccountKind").value, "");
+      assert.equal($("recoveryAccount").value, "");
       assert.equal($("recoveryQueryCode").value, secret);
     }
     await tick();
     assert.deepEqual(tabs.map(tab => tab.dataset.recoveryMode), ["apply", "query"]);
     assert.deepEqual(tabs.map(tab => tab.textContent), ["申请找回", "查询进度"]);
     assertMode("apply"); assertBlank();
+    const accountRow = $("recoveryAccountKind").parentElement;
+    assert.equal(accountRow, $("recoveryAccount").parentElement);
+    assert.equal(w.getComputedStyle(accountRow).gridTemplateColumns, "minmax(0, 104px) minmax(0, 1fr)");
+    assert.equal(w.getComputedStyle($("recoveryAccountKind")).paddingLeft, "4px");
     $("loginUser").value = "Human";
     w.localStorage.setItem("cedartoy_recovery_query:username:Human", secret);
     w.openForgotPasswordModal();
@@ -99,7 +117,7 @@ async function checkForgotPassword(emailEnabled) {
     assert.equal(countCalls("/api/auth/recovery/submit"), 1, "success view must not resubmit on Enter");
     $("recoveryCopyCode").click(); await tick();
     assert.equal(clipboard.at(-1), secret);
-    assertHandoff("username", "Human");
+    assertHandoff();
     const titles = {pending: "审批中", approved: "已通过", rejected: "未通过", completed: "已完成", expired: "已过期", unavailable: "暂不可领取"};
     for (const [nextStatus, title] of Object.entries(titles)) {
       status = nextStatus;
@@ -134,7 +152,7 @@ async function checkForgotPassword(emailEnabled) {
     }
     queryError = true;
     await w.submitForgotPassword();
-    assert.match($("forgotPasswordMsg").textContent, /账号或查询码错误/);
+    assert.match($("forgotPasswordMsg").textContent, /查询码错误/);
     assert.equal($("recoveryResultPanel").hidden, true);
     queryError = false;
     // A handoff is consumed once: manual tab changes and reopening start empty.
@@ -142,26 +160,35 @@ async function checkForgotPassword(emailEnabled) {
     enterAccount();
     tabs.find(tab => tab.dataset.recoveryMode === "query").click();
     assertMode("query"); assertBlank();
-    enterAccount();
-    assert.equal($("recoveryQueryCode").value, "", "saved codes must not be displayed after typing an account");
+    assert.equal($("recoveryQueryCode").value, "", "saved codes must not be displayed on query entry");
     const before = countCalls("/api/auth/recovery/query");
     await w.submitForgotPassword();
     assert.match($("forgotPasswordMsg").textContent, /请输入.*查询码/);
     assert.equal(countCalls("/api/auth/recovery/query"), before);
-    // A fresh device can query by manually entering all three fields.
+    // A fresh device can query with only the code, preserving legacy case and pasted formatting.
     w.localStorage.clear();
-    $("recoveryQueryCode").value = secret;
     status = "approved";
-    await w.submitForgotPassword();
-    assert.equal($("recoveryLink").href, resetUrl);
-    assert.equal(w.localStorage.getItem("cedartoy_recovery_query:username:Human"), secret);
-    enterAccount("username", "OtherHuman");
-    assert.equal($("recoveryQueryCode").value, "");
+    let successfulQueries = 0;
+    for (const pasted of [secret, secret.replaceAll("-", ""), "  " + secret.toLowerCase() + "  ", "Ab0I9z", "aB1O9zQ", "Ab3X9k2Q"]) {
+      expectedCode = pasted.trim();
+      $("recoveryQueryCode").value = pasted;
+      $("recoveryQueryCode").dispatchEvent(new w.Event("input"));
+      await w.submitForgotPassword();
+      successfulQueries++;
+      assert.equal($("recoveryLink").href, resetUrl);
+      assert.equal(w.localStorage.getItem("cedartoy_recovery_query:username:Human"), null);
+    }
+    expectedCode = secret;
+    $("recoveryQueryCode").value = "";
+    $("recoveryQueryCode").dispatchEvent(new w.Event("input"));
     assert.equal($("recoveryResultPanel").hidden, true);
     assert.equal($("recoveryLink").hasAttribute("href"), false);
-    await w.submitForgotPassword();
-    assert.match($("forgotPasswordMsg").textContent, /请输入.*查询码/);
-    assert.equal(countCalls("/api/auth/recovery/query"), before + 1);
+    for (const invalid of ["", "abc", "ABCD--EFGH-JKLM", "OOOO-OOOO-OOOO"]) {
+      $("recoveryQueryCode").value = invalid;
+      await w.submitForgotPassword();
+      assert.match($("forgotPasswordMsg").textContent, /请输入.*查询码/);
+    }
+    assert.equal(countCalls("/api/auth/recovery/query"), before + successfulQueries);
     w.closeModals(); w.openForgotPasswordModal();
     assertMode("apply"); assertBlank();
     // Blocked storage must not break submission or the one-time handoff, including numeric IDs.
@@ -174,14 +201,14 @@ async function checkForgotPassword(emailEnabled) {
       assert.equal(countCalls("/api/auth/recovery/submit"), submits + 1);
       assert.equal($("forgotPasswordMsg").textContent, "");
       assertSuccess();
-      assertHandoff("id", "42");
+      assertHandoff();
       await w.submitForgotPassword();
       assert.equal($("recoveryLink").href, resetUrl);
       assert.deepEqual(calls.filter(c => c.url === "/api/auth/recovery/query").at(-1).body,
-        {account_kind: "id", account: "42", query_code: secret});
+        {query_code: secret});
       w.setRecoveryMode("query");
       assertBlank();
-      enterAccount("id", "42"); $("recoveryQueryCode").value = secret;
+      $("recoveryQueryCode").value = secret;
       await w.submitForgotPassword();
       assert.equal($("forgotPasswordMsg").textContent, "");
       assert.equal($("recoveryLink").href, resetUrl);
@@ -196,7 +223,7 @@ async function checkForgotPassword(emailEnabled) {
     w.openForgotPasswordModal(); assertMode("apply"); assertBlank();
     w.setRecoveryMode("query"); assertMode("query"); assertBlank();
     assert.ok(!calls.some(c => c.url.startsWith("/api/auth/forgot-password")), "the email UI flag must not restore self-service recovery");
-    console.log(`Forgot-password DOM (email flag ${emailEnabled}): two tabs, default apply, independent success, blank query, one-time handoff, six status cards, escaped notes, errors, copy and storage failure passed`);
+    console.log(`Forgot-password DOM (email flag ${emailEnabled}): two tabs, default apply, independent success, blank code-only query, new/legacy codes, code-only handoff, six status cards, escaped notes, errors, copy and storage failure passed`);
   } finally { dom.window.close(); }
 }
 

@@ -3846,8 +3846,9 @@ def _create_reset_token(conn, user_id, *, lifetime_seconds, token=None):
     return token, cursor.lastrowid, expires_at
 
 
-_RECOVERY_MISSING = "账号或查询码不正确，请核对后重试。"
+_RECOVERY_MISSING = "查询码不正确，请核对后重试。"
 _RECOVERY_SUBMITTED = "请保存查询码，用于查看审核结果；一般会在24小时内完成审核"
+_RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def _recovery_text(body, key, limit, *, optional=False):
@@ -3865,14 +3866,23 @@ def _recovery_identity(body):
     return kind, str(int(account)) if kind == "id" else account
 
 
-def _recovery_query_hash(body):
-    code = body.get("query_code", "")
-    if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9]{6,8}", code):
-        code = ""
-    kind, account = _recovery_identity(body)
-    # A domain-separated, account-bound keyed hash prevents offline code guessing
-    # from a database copy alone. The application secret is kept outside the DB.
-    return _email_hmac("recovery-query-v1", kind, account, code)
+def _normalize_recovery_code(code):
+    if isinstance(code, str):
+        code = code.strip()
+        # Legacy credentials and their already-issued reset links are case-sensitive.
+        if re.fullmatch(r"[A-Za-z0-9]{6,8}", code):
+            return code
+        if re.fullmatch(r"[A-Za-z0-9]{12}|[A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){2}", code):
+            compact = code.replace("-", "").upper()
+            if all(char in _RECOVERY_CODE_ALPHABET for char in compact):
+                return compact
+    raise _McpError(-32602, _RECOVERY_MISSING)
+
+
+def _recovery_query_hash(code):
+    # Versioning excludes migrated rows from the legacy scan. The application
+    # secret stays outside the DB; no plaintext query credential is persisted.
+    return "v2:" + _email_hmac("recovery-query-v2", _normalize_recovery_code(code))
 
 
 def _submit_recovery_ticket(body, client_ip):
@@ -3883,15 +3893,6 @@ def _submit_recovery_ticket(body, client_ip):
     ip_hash = _reset_token_hash(str(client_ip))
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        # Only the correct explicit query code allows deduplication or reuse.
-        existing = conn.execute(
-            """SELECT id FROM account_recovery_tickets
-               WHERE query_code_hash=? AND account_kind=? AND account=?
-               AND (status='pending' OR (status='approved' AND claim_until_epoch>?))""",
-            (_recovery_query_hash(body), kind, account, now),
-        ).fetchone()
-        if existing:
-            return {"ok": True, "message": _RECOVERY_SUBMITTED, "ticket_id": existing["id"], "query_code": body["query_code"]}
         # Limits depend only on the submitter, never on account existence or others' tickets.
         count = conn.execute(
             "SELECT COUNT(*) FROM account_recovery_tickets WHERE ip_hash=? AND created_at_epoch>?",
@@ -3899,10 +3900,10 @@ def _submit_recovery_ticket(body, client_ip):
         ).fetchone()[0]
         if count >= 5:
             raise _McpError(RATE_LIMIT_ERROR_CODE, "此网络今日申请次数较多，请稍后再试")
-        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         while True:
-            query_code = "".join(secrets.choice(alphabet) for _ in range(8))
-            query_hash = _recovery_query_hash({**body, "query_code": query_code})
+            code = "".join(secrets.choice(_RECOVERY_CODE_ALPHABET) for _ in range(12))
+            query_code = "-".join(code[i:i + 4] for i in range(0, 12, 4))
+            query_hash = _recovery_query_hash(code)
             if not conn.execute("SELECT 1 FROM account_recovery_tickets WHERE query_code_hash=?", (query_hash,)).fetchone():
                 break
         cursor = conn.execute(
@@ -3928,17 +3929,29 @@ def _complete_recovery_tickets(conn, user_id):
 
 
 def _query_recovery_ticket(body):
-    try:
-        kind, account = _recovery_identity(body)
-    except _McpError:
-        raise _McpError(-32602, _RECOVERY_MISSING) from None
+    code = _normalize_recovery_code(body.get("query_code"))
+    query_hash = _recovery_query_hash(code)
     now = int(time.time())
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         ticket = _row_dict(conn.execute(
-            "SELECT * FROM account_recovery_tickets WHERE query_code_hash=? AND account_kind=? AND account=?",
-            (_recovery_query_hash(body), kind, account),
+            "SELECT * FROM account_recovery_tickets WHERE query_code_hash=?",
+            (query_hash,),
         ).fetchone())
+        if not ticket and re.fullmatch(r"[A-Za-z0-9]{6,8}", code):
+            matches = []
+            for candidate in conn.execute(
+                "SELECT * FROM account_recovery_tickets WHERE query_code_hash NOT LIKE 'v2:%'"
+            ):
+                legacy_hash = _email_hmac(
+                    "recovery-query-v1", candidate["account_kind"], candidate["account"], code)
+                if hmac.compare_digest(candidate["query_code_hash"], legacy_hash):
+                    matches.append(dict(candidate))
+            # Never choose an arbitrary account if old credentials collide.
+            if len(matches) == 1:
+                ticket = matches[0]
+                conn.execute("UPDATE account_recovery_tickets SET query_code_hash=? WHERE id=?",
+                             (query_hash, ticket["id"]))
         if not ticket:
             raise _McpError(-32602, _RECOVERY_MISSING)
         result = {"ok": True, "status": ticket["status"], "admin_note": ticket["admin_note"]}
@@ -3967,14 +3980,14 @@ def _query_recovery_ticket(body):
             if ticket["reset_token_id"]:
                 conn.execute("UPDATE password_reset_tokens SET used=1 WHERE id=?", (ticket["reset_token_id"],))
             ticket["reset_nonce"] = secrets.token_urlsafe(32)
-            token = _email_hmac("recovery-reset-v1", body["query_code"], ticket["reset_nonce"])
+            token = _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
             _, token_id, expires_at = _create_reset_token(conn, ticket["user_id"], lifetime_seconds=86400, token=token)
             conn.execute(
                 "UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
                 (token_id, ticket["reset_nonce"], ticket["id"]),
             )
         # Reconstruct only after query-code verification; neither credential is stored in plaintext.
-        token = _email_hmac("recovery-reset-v1", body["query_code"], ticket["reset_nonce"])
+        token = _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
         conn.commit()
         return {**result, "reset_url": _reset_url(token), "expires_at_epoch": expires_at,
                 "claim_until_epoch": ticket["claim_until_epoch"]}
@@ -12275,12 +12288,9 @@ a{{color:#c9afff}}
             if not isinstance(body, dict):
                 raise _McpError(-32602, "请求格式错误")
             if path.endswith("/query"):
-                try:
-                    kind, account = _recovery_identity(body)
-                except _McpError:
-                    raise _McpError(-32602, _RECOVERY_MISSING) from None
-                identity = _email_hmac("recovery-query-limit-v1", kind, account)
-                if not _check_request_rate_limit(f"recovery-account:{identity}", max_count=10):
+                code = _normalize_recovery_code(body.get("query_code"))
+                identity = _email_hmac("recovery-query-limit-v2", code)
+                if not _check_request_rate_limit(f"recovery-code:{identity}", max_count=10):
                     raise _McpError(RATE_LIMIT_ERROR_CODE, "请求较多，请稍后再试")
             result = (_submit_recovery_ticket(body, self._client_ip())
                       if path.endswith("/submit") else _query_recovery_ticket(body))
