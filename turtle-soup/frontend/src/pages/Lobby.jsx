@@ -14,6 +14,7 @@ import { stripSurfaceColorMarkers } from '../utils/display.js'
 
 const TITLE_MAX = 24
 const TAG_FILTERS = ['红汤', '黑汤', '本格', '变格']
+const PUZZLE_TAG_FILTERS = ['本格', '变格', '黑汤', '红汤']
 const AI_STYLE_OPTIONS = [
   ['', '不指定风格'],
   ['cozy', '日常温馨风'],
@@ -56,6 +57,18 @@ function matchesRoomFilters(room, query, activeTags) {
   return true
 }
 
+function matchesPuzzleFilters(puzzle, query, activeTag) {
+  const q = query.trim().toLowerCase()
+  if (q) {
+    const title = String(puzzle.title || '').toLowerCase()
+    const surface = stripSurfaceColorMarkers(puzzle.surface || '').toLowerCase()
+    const id = String(puzzle.id || '')
+    if (!title.includes(q) && !surface.includes(q) && !id.includes(q)) return false
+  }
+  if (activeTag && !parseTags(puzzle.tags).includes(activeTag)) return false
+  return true
+}
+
 function initials(player) {
   const name = player?.username || player?.player?.username || 'A'
   return name.slice(0, 1).toUpperCase()
@@ -68,6 +81,8 @@ export default function Lobby() {
   const [puzzles, setPuzzles] = useState([])
   const [random, setRandom] = useState(null)
   const [selectedPuzzleId, setSelectedPuzzleId] = useState('')
+  const [puzzleSearch, setPuzzleSearch] = useState('')
+  const [puzzleTagFilter, setPuzzleTagFilter] = useState('')
   const [custom, setCustom] = useState({ surface: '', answer: '' })
   const [generated, setGenerated] = useState(null)
   const [aiStyle, setAiStyle] = useState('')
@@ -248,6 +263,10 @@ export default function Lobby() {
     return tb.localeCompare(ta)
   })
   const filteredRooms = displayRooms.filter((room) => matchesRoomFilters(room, roomSearch, activeTagFilters))
+  const filteredPuzzles = puzzles.filter((puzzle) => matchesPuzzleFilters(puzzle, puzzleSearch, puzzleTagFilter))
+  const selectedPuzzle = puzzles.find((puzzle) => String(puzzle.id) === selectedPuzzleId) || null
+  const selectedPuzzleHiddenByFilter = selectedPuzzle && !filteredPuzzles.some((puzzle) => puzzle.id === selectedPuzzle.id)
+  const puzzleNumber = new Map(puzzles.map((puzzle, index) => [String(puzzle.id), index + 1]))
   const toggleTagFilter = (tag) => {
     setActiveTagFilters((prev) => (
       prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
@@ -272,16 +291,58 @@ export default function Lobby() {
       {createTab === 'random' && (
         <div className="create-body">
           <label className="terminal-label">选题
+            <div className="puzzle-picker-tools">
+              <div className="puzzle-tag-filters" role="group" aria-label="按题目标签筛选">
+                <button
+                  type="button"
+                  className={`puzzle-tag-filter${!puzzleTagFilter ? ' active' : ''}`}
+                  aria-pressed={!puzzleTagFilter}
+                  onClick={() => setPuzzleTagFilter('')}
+                >
+                  全部
+                </button>
+                {PUZZLE_TAG_FILTERS.map((tag) => (
+                  <button
+                    type="button"
+                    key={tag}
+                    className={`puzzle-tag-filter${puzzleTagFilter === tag ? ' active' : ''}`}
+                    aria-pressed={puzzleTagFilter === tag}
+                    onClick={() => setPuzzleTagFilter((current) => current === tag ? '' : tag)}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+              <label className="puzzle-search">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={puzzleSearch}
+                  onChange={(event) => setPuzzleSearch(event.target.value)}
+                  placeholder="搜索汤名、汤面或题号…"
+                  aria-label="搜索题库"
+                />
+              </label>
+              <span className="puzzle-match-count">找到 {filteredPuzzles.length} 题</span>
+            </div>
             <select value={selectedPuzzleId} onChange={(event) => selectPuzzle(event.target.value)}>
               <option value="">经典推理题库（可选）</option>
-              {puzzles.map((puzzle, i) => (
+              {selectedPuzzleHiddenByFilter && (
+                <option value={String(selectedPuzzle.id)}>
+                  当前 · #{puzzleNumber.get(String(selectedPuzzle.id))} {selectedPuzzle.title || selectedPuzzle.surface.slice(0, 10)}
+                </option>
+              )}
+              {filteredPuzzles.map((puzzle) => (
                 <option value={String(puzzle.id)} key={puzzle.id}>
-                  #{i + 1} {puzzle.title || puzzle.surface.slice(0, 10)}
+                  #{puzzleNumber.get(String(puzzle.id))} {puzzle.title || puzzle.surface.slice(0, 10)}
                 </option>
               ))}
+              {filteredPuzzles.length === 0 && !selectedPuzzleHiddenByFilter && (
+                <option value="" disabled>没有匹配题目</option>
+              )}
             </select>
           </label>
-          <p className="terminal-note">题库抽取的大多微恐，请酌情选择。</p>
+          <p className="terminal-note">标签和搜索可叠加筛选；题库抽取的大多微恐，请酌情选择。</p>
           <div className="terminal-preview" aria-live="polite">
             {!random && <p>&gt; 正在等待选题...</p>}
             <p>&gt; 当前题目：<b>{random?.title || '尚未抽取'}</b></p>
