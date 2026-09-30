@@ -123,6 +123,7 @@ main { width: min(1280px, 100%); margin: 0 auto; padding: 18px; }
 .colored-surface-token.color-yellow { color: #8a6116; }
 .colored-surface-token.color-green { color: #067647; }
 .colored-surface-token.color-blue { color: #175cd3; }
+.colored-surface-token.color-cyan { color: #0891b2; }
 .colored-surface-token.color-purple { color: #6941c6; }
 .colored-surface-token.color-pink { color: #c11574; }
 .colored-surface-token.color-gray { color: #475467; }
