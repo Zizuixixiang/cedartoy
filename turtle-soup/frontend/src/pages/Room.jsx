@@ -427,7 +427,14 @@ export default function Room() {
         <section className="room-play">
           {answerRevealPromptVisible && (
             <div className={`answer-reveal-prompt${answerRevealCollapsed ? ' collapsed' : ''}`} role="region" aria-label="公布汤底提示">
-              <div className="answer-reveal-prompt-label">{answerRevealCollapsed ? '公布汤底' : '> 【公布汤底】'}</div>
+              <div className="answer-reveal-copy">
+                <div className="answer-reveal-prompt-label">{answerRevealCollapsed ? '公布汤底' : '> 【公布汤底】'}</div>
+                {!answerRevealCollapsed && (
+                  <p>
+                    本房间已经累计 {askCount} 次提问。是否查看汤底？查看后你将不能继续提问、猜测或操作记事板。
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 className="surface-toggle answer-reveal-toggle"
@@ -438,19 +445,14 @@ export default function Room() {
                 {answerRevealCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
               </button>
               {!answerRevealCollapsed && (
-                <>
-                  <p>
-                    本房间已经累计 {askCount} 次提问。是否查看汤底？查看后你将不能继续提问、猜测或操作记事板。
-                  </p>
-                  <div className="answer-reveal-actions">
-                    <button type="button" disabled={revealLoading} onClick={rejectRevealPrompt}>
-                      拒绝
-                    </button>
-                    <button type="button" className="pixel-primary" disabled={revealLoading} onClick={acceptRevealPrompt}>
-                      接受
-                    </button>
-                  </div>
-                </>
+                <div className="answer-reveal-actions">
+                  <button type="button" disabled={revealLoading} onClick={rejectRevealPrompt}>
+                    拒绝
+                  </button>
+                  <button type="button" className="pixel-primary" disabled={revealLoading} onClick={acceptRevealPrompt}>
+                    接受
+                  </button>
+                </div>
               )}
             </div>
           )}

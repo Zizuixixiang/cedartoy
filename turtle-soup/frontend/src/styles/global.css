@@ -2602,10 +2602,11 @@ body:has(.room-page) {
 }
 
 .answer-reveal-prompt {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 8px 14px;
+  justify-content: space-between;
+  gap: 14px;
   padding: 12px 14px;
   border: 2px solid #fde047;
   background: rgba(113, 63, 18, 0.2);
@@ -2618,12 +2619,17 @@ body:has(.room-page) {
   padding-block: 6px;
 }
 
+.answer-reveal-copy {
+  min-width: 0;
+}
+
 .answer-reveal-prompt .answer-reveal-toggle {
+  position: absolute;
+  top: 8px;
+  right: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  justify-self: end;
-  order: 0;
   width: 24px;
   min-width: 24px;
   height: 24px;
@@ -2633,10 +2639,15 @@ body:has(.room-page) {
 }
 
 .answer-reveal-prompt-label {
-  margin: 0;
+  margin-bottom: 6px;
+  padding-right: 32px;
   color: #fde047;
   font-family: "Silkscreen", cursive;
   font-size: 15px;
+}
+
+.answer-reveal-prompt.collapsed .answer-reveal-prompt-label {
+  margin-bottom: 0;
 }
 
 .answer-reveal-prompt p {
@@ -3411,6 +3422,8 @@ body:has(.room-page) {
     font-size: 12px;
   }
   .answer-reveal-prompt {
+    flex-direction: column;
+    align-items: stretch;
     gap: 8px;
     padding: 8px 9px;
     border-width: 1px;
@@ -3421,18 +3434,20 @@ body:has(.room-page) {
     font-size: 12px;
   }
   .answer-reveal-prompt-label {
+    margin-bottom: 4px;
     font-size: 12px;
+  }
+  .answer-reveal-prompt.collapsed .answer-reveal-prompt-label {
+    margin-bottom: 0;
   }
   .log-hint-banner p {
     margin-bottom: 7px;
     line-height: 1.45;
   }
   .answer-reveal-prompt p {
-    grid-column: 1 / -1;
     line-height: 1.45;
   }
   .answer-reveal-actions {
-    grid-column: 1 / -1;
     gap: 6px;
   }
   .hint-actions {
