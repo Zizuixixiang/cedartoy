@@ -1079,11 +1079,80 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   color: rgba(255,255,255,0.34);
 }
 
-.puzzle-match-count {
-  justify-self: end;
-  color: rgba(255,255,255,0.46);
+.puzzle-search-count {
+  flex: 0 0 auto;
+  color: rgba(255,255,255,0.42);
   font-size: 11px;
-  font-weight: 400;
+  white-space: nowrap;
+}
+
+.puzzle-search-results {
+  max-height: 168px;
+  overflow: auto;
+  border: 2px solid #514064;
+  background: #1f1729;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pixel-scrollbar-dark-thumb) var(--pixel-scrollbar-dark-track);
+}
+
+.puzzle-search-result {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid rgba(118, 98, 141, 0.45);
+  background: transparent;
+  color: rgba(255,255,255,0.82);
+  text-align: left;
+  cursor: pointer;
+}
+
+.puzzle-search-result:last-child {
+  border-bottom: 0;
+}
+
+.puzzle-search-result:hover,
+.puzzle-search-result.selected {
+  background: rgba(231, 144, 164, 0.12);
+}
+
+.puzzle-search-result.selected {
+  box-shadow: inset 3px 0 0 var(--pixel-pink);
+}
+
+.puzzle-result-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Courier New", ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.puzzle-result-tags {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.puzzle-result-tags span {
+  padding: 2px 4px;
+  border: 1px solid rgba(118, 98, 141, 0.7);
+  color: rgba(255,255,255,0.5);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.puzzle-search-empty {
+  margin: 0;
+  padding: 12px;
+  color: rgba(255,255,255,0.46);
+  font-size: 12px;
 }
 
 .terminal-note {
@@ -1692,6 +1761,16 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   }
   .create-drawer .puzzle-search {
     min-height: 34px;
+  }
+  .create-drawer .puzzle-search-results {
+    max-height: 132px;
+  }
+  .create-drawer .puzzle-search-result {
+    min-height: 34px;
+    padding: 6px 8px;
+  }
+  .create-drawer .puzzle-result-title {
+    font-size: 12px;
   }
   .create-drawer .terminal-label textarea {
     min-height: 72px;

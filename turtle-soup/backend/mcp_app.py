@@ -107,10 +107,15 @@ async def play(body: PlayBody):
         where = ["enabled = 1"]
         params: list[object] = []
         tag = (body.tag or "").strip()
+        tags = [item for item in re.split(r"[,，、;；\s]+", (body.tags or "").strip()) if item]
+        selected_tags = []
+        for item in [tag, *tags]:
+            if item and item not in selected_tags:
+                selected_tags.append(item)
         q = (body.q or "").strip()
-        if tag:
+        for selected_tag in selected_tags:
             where.append("COALESCE(tags, '') LIKE ?")
-            params.append(f"%{tag}%")
+            params.append(f"%{selected_tag}%")
         if q:
             where.append("title LIKE ?")
             params.append(f"%{q}%")

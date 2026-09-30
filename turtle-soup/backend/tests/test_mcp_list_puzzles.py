@@ -100,6 +100,19 @@ class ListPuzzlesTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["has_next"])
         self.assertTrue(result["has_prev"])
 
+    async def test_tags_supports_multi_select_and_keeps_single_tag_compatibility(self):
+        result, fetch_one, fetch_all = await self.call(
+            count=4, page=1, page_size=20, tag="本格", tags="红汤， 本格",
+        )
+
+        count_sql, count_params = fetch_one.await_args.args
+        items_sql, items_params = fetch_all.await_args.args
+        self.assertEqual(count_sql.count("COALESCE(tags, '') LIKE ?"), 2)
+        self.assertEqual(items_sql.count("COALESCE(tags, '') LIKE ?"), 2)
+        self.assertEqual(count_params, ("%本格%", "%红汤%"))
+        self.assertEqual(items_params, ("%本格%", "%红汤%", 20, 0))
+        self.assertEqual(result["total"], 4)
+
     async def test_q_filters_only_real_title_not_surface(self):
         _result, fetch_one, fetch_all = await self.call(count=1, q="失踪")
 
