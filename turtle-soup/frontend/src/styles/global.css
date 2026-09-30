@@ -2650,6 +2650,11 @@ body:has(.room-page) {
   margin-bottom: 0;
 }
 
+.answer-reveal-prompt.collapsed .answer-reveal-toggle {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .answer-reveal-prompt p {
   margin: 0;
   line-height: 1.55;
