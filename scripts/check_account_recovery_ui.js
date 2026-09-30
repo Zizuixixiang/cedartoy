@@ -229,18 +229,22 @@ async function checkForgotPassword(emailEnabled) {
 
 async function checkAdmin() {
   const calls = [], clipboard = [];
-  let tickets = [{id: 7, account_kind: "username", account: "Human", machine: "<img src=x onerror=alert(1)>",
-    registered_about: "八月", games: "海龟汤", explanation: "补充信息", created_at_epoch: 1800000000, status: "pending", admin_note: ""}];
+  const pending = {id: 7, account_kind: "username", account: "Human", machine: "<img src=x onerror=alert(1)>",
+    registered_about: "八月", games: "海龟汤", explanation: "补充信息", created_at_epoch: 1800000000, status: "pending", admin_note: ""};
+  let tickets = [pending], total = 1, pendingCount = 1, listError = false, copyError = false;
   const dom = new JSDOM(fs.readFileSync(path.join(root, "admin.html"), "utf8"), {
     url: "https://toy.cedarstar.org/admin", runScripts: "dangerously", pretendToBeVisual: true,
     beforeParse(window) {
       window.localStorage.setItem("cedartoy_token", "admin-fixture");
-      window.navigator.clipboard = {writeText: async text => clipboard.push(text)};
+      window.navigator.clipboard = {writeText: async text => {
+        if (copyError) throw new Error("clipboard unavailable");
+        clipboard.push(text);
+      }};
       window.fetch = async (url, options = {}) => {
         const body = options.body ? JSON.parse(options.body) : {};
         calls.push({url, body, options});
-        if (url.startsWith("/api/admin/recovery?")) return reply({tickets, total: tickets.length, pending_count: tickets.filter(t => t.status === "pending").length});
-        if (url === "/api/admin/recovery/review") { tickets = []; return reply({ok: true}); }
+        if (url.startsWith("/api/admin/recovery?")) return listError ? reply({error: "加载失败"}, false) : reply({tickets, total, pending_count: pendingCount});
+        if (url === "/api/admin/recovery/review") { tickets = []; total = pendingCount = 0; return reply({ok: true}); }
         if (url.startsWith("/api/admin/users")) return reply({users: [], total: 0, page: 1, page_size: 50});
         return reply({});
       };
@@ -248,16 +252,15 @@ async function checkAdmin() {
   });
   try {
     const w = dom.window, d = w.document, $ = id => d.getElementById(id);
-    await tick();
-    const tabs = d.querySelector(".admin-tabs");
-    assert.deepEqual([...tabs.querySelectorAll("button")].map(button => button.textContent),
-      ["用户管理", "找回工单", "运营看板"]);
-    assert.equal(tabs.previousElementSibling.tagName, "HEADER");
-    const panel = $("recoveryHeading").closest('[role="tabpanel"]');
-    assert.equal(panel, $("recoveryPanel"));
-    assert.equal($("recoveryTab").getAttribute("aria-controls"), panel.id);
-    assert.equal(panel.getAttribute("aria-labelledby"), "recoveryTab");
-    assert.ok(tabs.compareDocumentPosition(panel) & w.Node.DOCUMENT_POSITION_FOLLOWING);
+    const style = el => w.getComputedStyle(el);
+    const lastListCall = () => calls.filter(c => c.url.startsWith("/api/admin/recovery?")).at(-1);
+    const refresh = async () => { $("recoveryRefresh").click(); await tick(); };
+    const filter = async value => { $("recoveryView").value = value; $("recoveryView").dispatchEvent(new w.Event("change")); await tick(); };
+    function assertCount(text, hidden = false) {
+      assert.equal($("recoveryCount").textContent, text);
+      assert.equal($("recoveryCount").hidden, hidden);
+      if (hidden) assert.equal(style($("recoveryCount")).display, "none");
+    }
     function assertActiveTab(name) {
       for (const tab of ["users", "recovery", "dashboard"]) {
         assert.equal($(tab + "Panel").hidden, tab !== name);
@@ -265,46 +268,216 @@ async function checkAdmin() {
       }
       assert.equal(w.location.hash, "#" + name);
     }
+    function assertEmptyStatus() {
+      assert.equal($("recoveryStatus").textContent, "");
+      assert.equal(style($("recoveryStatus")).display, "none");
+      assert.equal(style($("recoveryStatus")).minHeight, "0px");
+      assert.equal(style($("recoveryStatus")).margin, "0px");
+    }
+    await tick();
+    const tabs = d.querySelector(".admin-tabs"), panel = $("recoveryPanel");
+    assert.deepEqual([...tabs.children].map(button => button.firstChild.textContent), ["用户管理", "找回工单", "运营看板"]);
+    assert.equal(tabs.previousElementSibling.tagName, "HEADER");
+    assert.equal($("recoveryTab").getAttribute("aria-controls"), panel.id);
+    assert.equal(panel.getAttribute("aria-labelledby"), "recoveryTab");
+    assert.ok(tabs.compareDocumentPosition(panel) & w.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal($("recoveryCount").parentElement, $("recoveryTab"));
+    assert.equal(style($("recoveryCount")).position, "absolute");
+    assert.equal(style($("recoveryCount")).backgroundColor, "rgb(198, 55, 55)");
+    assert.equal(style($("recoveryTab")).position, "relative");
     assertActiveTab("users");
-    assert.equal(w.getComputedStyle(panel).display, "none");
-    assert.ok(!calls.some(c => c.url.startsWith("/api/admin/recovery?")));
-    $("recoveryTab").click(); await tick();
+    assert.equal(style(panel).display, "none");
+    assert.equal(calls.filter(c => c.url.startsWith("/api/admin/recovery?")).length, 1, "badge loads before entering recovery");
+    assert.equal(lastListCall().options.headers.Authorization, "Bearer admin-fixture");
+    assertCount("1");
+    assert.match($("recoveryTab").getAttribute("aria-label"), /待审批 1 条/);
+    assert.equal($("recoveryTickets").children.length, 0, "startup badge does not render the queue");
+    assertEmptyStatus();
+    assert.equal(panel.querySelector("h1, h2, .sub, .badge"), null);
+    const assertQueueChrome = () => assert.doesNotMatch(panel.textContent, /账号找回工单|记录|请核验|备注会|待审批\s*\d|[（(](?:pending|approved|rejected|completed)[）)]/);
+    assertQueueChrome();
+    const toolbar = panel.querySelector(".recovery-toolbar");
+    assert.deepEqual([...toolbar.children].map(el => el.id), ["recoveryView", "recoveryRefresh"]);
+    assert.deepEqual([...$("recoveryView").options].map(el => [el.value, el.textContent]), [["pending", "待审批"], ["processed", "已处理"]]);
+    assert.equal($("recoveryRefresh").textContent, "刷新");
+    assert.equal(style(toolbar).display, "flex");
+    assert.equal(style(toolbar).flexWrap, "nowrap");
+    assert.equal(style(toolbar).justifyContent, "flex-end");
+    assert.equal(style(toolbar).alignItems, "center");
+    assert.equal(style($("recoveryView")).height, style($("recoveryRefresh")).height);
+    assert.equal(style($("recoveryView")).borderRadius, style($("recoveryRefresh")).borderRadius);
+    assert.equal($("recoveryPagination").previousElementSibling, $("recoveryTickets"));
+    $("recoveryTab").click();
+    assert.equal($("recoveryStatus").textContent, "加载中…");
+    assert.notEqual(style($("recoveryStatus")).display, "none");
+    assert.equal($("recoveryView").disabled, true);
+    await tick();
     assertActiveTab("recovery");
-    assert.notEqual(w.getComputedStyle(panel).display, "none");
+    assert.notEqual(style(panel).display, "none");
     assert.equal($("recoveryView").value, "pending");
-    assert.match($("recoveryCount").textContent, /待审批 1/);
-    assert.equal($("recoveryTickets").querySelector("img"), null, "submitted text must be escaped");
-    assert.match($("recoveryTickets").textContent, /绑定小机/);
+    assert.equal($("recoveryPagination").hidden, true);
+    assert.equal(style($("recoveryPagination")).display, "none");
+    assertEmptyStatus();
+    const card = $("recoveryTickets").firstElementChild;
+    assert.deepEqual([...card.children].map(el => el.className), ["recovery-card-header", "recovery-facts", "recovery-review"]);
+    assert.equal(card.querySelector("h3").textContent, "工单 #7");
+    assert.equal(style(card.querySelector("h3")).fontSize, "16px");
+    assert.equal(style(card.querySelector("h3")).fontWeight, "700");
+    assert.equal(card.querySelector(".recovery-pill").textContent, "审批中");
+    assert.doesNotMatch(card.textContent, /pending/);
+    assert.equal(card.querySelector("pre, img"), null, "facts are structured and submitted text is escaped");
+    assert.deepEqual([...card.querySelectorAll("dt")].map(el => el.textContent), ["账号名", "绑定小机", "约注册时间", "玩过游戏", "补充说明", "提交时间"]);
+    for (const value of card.querySelectorAll("dd")) assert.equal(style(value).fontSize, "14px");
+    assert.equal(style(card.querySelector(".recovery-pill")).fontSize, "12px");
+    assert.equal(style(card.querySelector(".recovery-pill")).fontWeight, "700");
+    assert.equal(card.querySelectorAll("dd")[1].textContent, pending.machine);
+    assert.equal(card.querySelector(".recovery-copy").parentElement, card.querySelector("header"));
+    assert.equal(style(card.querySelector("header")).flexWrap, "nowrap");
+    assert.equal(style(card.querySelector(".recovery-copy")).flexShrink, "0");
+    const reviewArea = card.querySelector(".recovery-review");
+    assert.equal(reviewArea.querySelector("label").control, reviewArea.querySelector("textarea"));
+    assert.deepEqual([...reviewArea.querySelectorAll("button")].map(el => el.textContent), ["通过", "不通过"]);
+    assert.equal(style(reviewArea.querySelector(".recovery-review-actions")).gridTemplateColumns, "repeat(2, minmax(0, 1fr))");
+    assert.equal(style(reviewArea.querySelector("button")).height, style(reviewArea.querySelector("button.danger")).height);
+    assert.equal(style(card.querySelector(".recovery-copy")).height, style($("recoveryRefresh")).height);
+    assert.equal(style(reviewArea.querySelector("textarea")).borderRadius, style($("recoveryRefresh")).borderRadius);
+    assert.equal(style(reviewArea.querySelector("label")).fontSize, "13px");
+    assert.equal(style(reviewArea.querySelector("label")).fontWeight, "600");
+    assertQueueChrome();
     d.querySelector('[data-recovery-action="copy"]').click(); await tick();
-    for (const label of ["工单 ID：7", "账号名：Human", "绑定小机：", "约注册时间：", "玩过游戏：", "补充说明：", "提交时间："]) assert.ok(clipboard[0].includes(label));
+    assert.equal($("recoveryStatus").textContent, "核验信息已复制");
+    assert.notEqual(style($("recoveryStatus")).display, "none");
+    assert.equal(clipboard[0], `工单 ID：7\n账号名：Human\n绑定小机：${pending.machine}\n约注册时间：八月\n玩过游戏：海龟汤\n补充说明：补充信息\n提交时间：${w.formatEpoch(pending.created_at_epoch)}`);
+    copyError = true;
+    d.querySelector('[data-recovery-action="copy"]').click(); await tick();
+    assert.match($("recoveryStatus").textContent, /复制失败/);
+    assert.notEqual(style($("recoveryStatus")).display, "none");
+    copyError = false;
     d.querySelector('[data-recovery-action="rejected"]').click(); await tick();
     assert.match($("recoveryStatus").textContent, /不通过的原因/);
+    assert.notEqual(style($("recoveryStatus")).display, "none");
     assert.equal(calls.filter(c => c.url === "/api/admin/recovery/review").length, 0);
-    $("recoveryTickets").querySelector("textarea").value = "已核验";
+    reviewArea.querySelector("textarea").value = "已核验";
     d.querySelector('[data-recovery-action="approved"]').click(); await tick();
     const review = calls.find(c => c.url === "/api/admin/recovery/review");
     assert.deepEqual(review.body, {ticket_id: 7, decision: "approved", admin_note: "已核验"});
     assert.equal(review.options.headers.Authorization, "Bearer admin-fixture");
     assert.ok(!calls.some(c => c.url.includes("generate-reset-link")), "approval never requests a token");
-    assert.match($("recoveryCount").textContent, /待审批 0/);
-    tickets = ["rejected", "approved", "completed"].map((status, i) => ({id: 8 + i, account_kind: "id", account: "42", machine: "小机", registered_about: "夏天", games: "花园", explanation: "", created_at_epoch: 1800000000, status, admin_note: "补充资料", reviewed_at_epoch: 1800000010}));
-    $("recoveryView").value = "processed";
-    $("recoveryView").dispatchEvent(new w.Event("change")); await tick();
-    assert.match($("recoveryTickets").textContent, /补充资料/);
-    for (const status of ["rejected", "approved", "completed"]) assert.ok($("recoveryTickets").textContent.includes(status));
-    assert.equal($("recoveryTickets").querySelectorAll("textarea[readonly]").length, 3);
-    assert.match($("recoveryTickets").textContent, /审核时间/);
-    assert.ok(!$("recoveryTickets").textContent.includes("查看详情"));
-    assert.equal(d.querySelector('[data-recovery-action="approved"]'), null);
-    $("dashboardTab").click(); await tick();
-    assertActiveTab("dashboard");
-    $("usersTab").click(); await tick();
-    assertActiveTab("users");
-    $("recoveryTab").click(); await tick();
-    assertActiveTab("recovery");
+    assertCount("0", true);
+    assertEmptyStatus();
+    assert.equal($("recoveryPagination").hidden, true);
+    tickets = ["rejected", "approved", "completed"].map((status, i) => ({id: 8 + i, account_kind: "id", account: "42", machine: "小机", registered_about: "夏天", games: "花园", explanation: "", created_at_epoch: 1800000000, status, admin_note: i === 2 ? "  " : "补充资料 <script>", reviewed_at_epoch: i === 2 ? null : 1800000010}));
+    total = 3;
+    await filter("processed");
+    assert.equal(lastListCall().url, "/api/admin/recovery?view=processed&page=1");
+    assert.deepEqual([...$("recoveryTickets").querySelectorAll(".recovery-pill")].map(el => el.textContent), ["未通过", "已通过", "已完成"]);
+    for (const processed of $("recoveryTickets").children) {
+      assert.equal(processed.querySelector("textarea, .recovery-review, script"), null);
+      assert.equal(processed.querySelectorAll("button").length, 1);
+      assert.equal(processed.querySelector("button").dataset.recoveryAction, "copy");
+      const facts = Object.fromEntries([...processed.querySelectorAll(".recovery-fact")].map(el => [el.querySelector("dt").textContent, el.querySelector("dd").textContent]));
+      assert.equal(facts["账号ID"], "42");
+      assert.equal(facts["补充说明"], "—");
+      assert.equal(facts["管理员备注"], processed.dataset.status === "completed" ? "—" : "补充资料 <script>");
+      assert.equal(facts["审核时间"], processed.dataset.status === "completed" ? "—" : w.formatEpoch(1800000010));
+    }
+    assertQueueChrome();
+    d.querySelector('[data-recovery-action="copy"]').click(); await tick();
+    assert.match(clipboard.at(-1), /账号 ID：42/);
+    assert.match(clipboard.at(-1), /补充说明：无/);
+    assert.equal(d.querySelector('[data-recovery-action="approved"], [data-recovery-action="rejected"]'), null);
+    $("dashboardTab").click(); await tick(); assertActiveTab("dashboard");
+    $("usersTab").click(); await tick(); assertActiveTab("users");
+    $("recoveryTab").click(); await tick(); assertActiveTab("recovery");
     assert.equal($("recoveryView").value, "processed");
-    assert.equal($("recoveryTickets").querySelectorAll("textarea[readonly]").length, 3);
-    console.log("Admin DOM: three peer tabs, default users, recovery visibility, inline escaped evidence, copy, review and processed records passed");
+    assert.equal($("recoveryTickets").querySelector("textarea"), null);
+
+    total = 41; pendingCount = 105;
+    await refresh(); assertCount("99+");
+    assert.equal($("recoveryPagination").hidden, false);
+    assert.notEqual(style($("recoveryPagination")).display, "none");
+    assert.equal($("recoveryPrev").disabled, true);
+    $("recoveryNext").click(); await tick();
+    assert.equal(lastListCall().url, "/api/admin/recovery?view=processed&page=2");
+    $("recoveryNext").click(); await tick();
+    assert.equal($("recoveryPage").textContent, "第 3 / 3 页");
+    assert.equal($("recoveryNext").disabled, true);
+    $("recoveryPrev").click(); await tick();
+    assert.equal(lastListCall().url, "/api/admin/recovery?view=processed&page=2");
+    tickets = [pending]; total = 20; pendingCount = 99;
+    await filter("pending"); assertCount("99");
+    assert.equal(lastListCall().url, "/api/admin/recovery?view=pending&page=1");
+    assert.equal($("recoveryPagination").hidden, true);
+    $("recoveryTickets").querySelector("textarea").value = "请补充资料";
+    d.querySelector('[data-recovery-action="rejected"]').click(); await tick();
+    assert.deepEqual(calls.filter(c => c.url === "/api/admin/recovery/review").at(-1).body, {ticket_id: 7, decision: "rejected", admin_note: "请补充资料"});
+    tickets = [{id: 99, status: "pending"}]; total = 1;
+    await refresh();
+    assert.ok([...$("recoveryTickets").querySelectorAll("dd")].every(el => el.textContent === "—"));
+    listError = true; await refresh();
+    assertCount("0", true);
+    assert.equal($("recoveryStatus").textContent, "加载失败");
+    assert.equal($("recoveryPagination").hidden, true);
+    assert.equal($("recoveryView").disabled, false);
+    listError = false; await refresh(); assertEmptyStatus();
+
+    // jsdom does not lay out media queries: inspect CSSOM for mobile rules explicitly.
+    const rules = [...d.styleSheets[0].cssRules];
+    const mobile = rules.find(rule => rule.conditionText === "(max-width: 760px)");
+    const mobileStyle = selector => [...mobile.cssRules].filter(rule => rule.selectorText === selector).at(-1).style;
+    const mobileTabs = [...mobile.cssRules].find(rule => rule.selectorText === ".admin-tabs button").style;
+    // jsdom's CSS parser drops the existing unitless-zero flex shorthand.
+    assert.match(d.querySelector("style").textContent, /@media \(max-width: 760px\)[\s\S]*?\.admin-tabs button\s*\{[^}]*flex: 1 1 0;/);
+    assert.equal(parseFloat(mobileTabs.getPropertyValue("min-width")), 0);
+    assert.equal(mobileStyle(".admin-tabs button").getPropertyValue("font-size"), "14px");
+    assert.equal(mobileStyle(".recovery-card").getPropertyValue("padding"), "12px");
+    assert.equal(mobileStyle(".recovery-facts").getPropertyValue("grid-template-columns"), "minmax(0, 1fr)");
+    assert.ok(["none", ""].includes(style($("recoveryTickets")).maxHeight), "the queue must use page scrolling");
+    assert.ok(!toolbar.classList.contains("toolbar"), "generic mobile toolbar grid must not affect recovery");
+    console.log("Admin DOM/CSS: peer tabs, startup badge/zero/99+, compact toolbar, structured cards, escaped facts/notes, unchanged copy, approve/reject, processed fields, pagination, tab/filter changes, empty status and mobile layout rules passed");
   } finally { dom.window.close(); }
 }
-(async () => { await checkForgotPassword(false); await checkForgotPassword(true); await checkAdmin(); })().catch(error => { console.error(error); process.exitCode = 1; });
+
+async function checkAdminBadgeFailure() {
+  for (const failure of ["http", "network", "json", "stale"]) {
+    let finishBadge, recoveryCalls = 0;
+    const dom = new JSDOM(fs.readFileSync(path.join(root, "admin.html"), "utf8"), {
+      url: "https://toy.cedarstar.org/admin", runScripts: "dangerously", pretendToBeVisual: true,
+      beforeParse(window) {
+        window.localStorage.setItem("cedartoy_token", "admin-fixture");
+        window.fetch = async url => {
+          if (url.startsWith("/api/admin/users")) return reply({users: [], total: 0, page: 1, page_size: 50});
+          if (url.startsWith("/api/admin/recovery?")) {
+            recoveryCalls++;
+            if (failure === "stale") {
+              if (recoveryCalls === 1) return new Promise(resolve => { finishBadge = resolve; });
+              return reply({tickets: [], total: 0, pending_count: 2});
+            }
+            if (failure === "network") throw new Error("offline");
+            if (failure === "json") return {ok: true, json: async () => { throw new Error("bad JSON"); }};
+            return {ok: false, status: 401};
+          }
+          return reply({});
+        };
+      },
+    });
+    try {
+      await tick();
+      const w = dom.window, $ = id => w.document.getElementById(id);
+      if (failure === "stale") {
+        $("recoveryTab").click(); await tick();
+        finishBadge(reply({pending_count: 77})); await tick();
+        assert.equal($("recoveryCount").textContent, "2", "slow startup badge must not overwrite the queue count");
+      } else {
+        assert.equal($("recoveryCount").hidden, true);
+        assert.equal($("usersPanel").hidden, false);
+        assert.equal($("statusText").textContent, "");
+        assert.equal($("recoveryStatus").textContent, "");
+        assert.equal(w.localStorage.getItem("cedartoy_token"), "admin-fixture", "badge failure must not log out another panel");
+      }
+    } finally { dom.window.close(); }
+  }
+  console.log("Admin badge: HTTP/network/JSON failures remain silent; stale startup response cannot replace the current count");
+}
+
+(async () => { await checkForgotPassword(false); await checkForgotPassword(true); await checkAdmin(); await checkAdminBadgeFailure(); })().catch(error => { console.error(error); process.exitCode = 1; });

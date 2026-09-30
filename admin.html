@@ -65,12 +65,58 @@
       background: #fff;
       color: var(--text);
     }
-    .recovery-panel { padding: 14px; min-width: 0; }
-    .recovery-panel h2 { margin: 0; font-size: 18px; }
-    .recovery-card { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
-    .recovery-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; }
-    .recovery-card textarea { display: block; width: 100%; margin: 8px 0; padding: 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; }
-    #recoveryTickets { max-height: 60vh; overflow-y: auto; }
+    /* Recovery queue: shared type, spacing and controls within this panel only. */
+    .recovery-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .recovery-panel button, .recovery-panel select, .recovery-panel textarea {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+    .recovery-panel button, .recovery-panel select { height: 36px; padding-block: 0; }
+    .recovery-panel button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .recovery-panel button.danger { background: #fff7f7; border-color: #e7b3b3; color: var(--danger); }
+    .recovery-panel :is(button, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .recovery-toolbar { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; }
+    .recovery-toolbar select { min-width: 120px; }
+    #recoveryStatus { min-height: 0; margin: 0; font-size: 13px; }
+    #recoveryStatus:empty { display: none; }
+    #recoveryTickets { display: grid; gap: 12px; min-width: 0; }
+    .recovery-card { display: grid; gap: 16px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    .recovery-card-header { display: flex; flex-wrap: nowrap; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .recovery-card-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+    .recovery-card h3 { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+    .recovery-pill { padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: #f0ece8; color: var(--muted); }
+    .recovery-card[data-status="pending"] .recovery-pill { background: #fff1dc; color: var(--warn); }
+    .recovery-card[data-status="approved"] .recovery-pill { background: #edf4f4; color: var(--accent-dark); }
+    .recovery-panel .recovery-copy { flex: 0 0 auto; padding-inline: 8px; color: var(--muted); background: transparent; }
+    .recovery-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 0; }
+    .recovery-fact { min-width: 0; }
+    .recovery-fact-wide { grid-column: 1 / -1; }
+    .recovery-facts dt { margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+    .recovery-facts dd { margin: 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .recovery-facts .recovery-time { color: var(--muted); }
+    .recovery-review { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 16px; }
+    .recovery-review label { font-size: 13px; font-weight: 600; }
+    .recovery-review textarea { display: block; width: 100%; min-height: 80px; resize: vertical; }
+    .recovery-review-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .recovery-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .recovery-pagination[hidden] { display: none; }
+    #recoveryPage, .recovery-empty { color: var(--muted); font-size: 13px; }
+    .recovery-empty { margin: 0; padding: 16px; text-align: center; }
+    #recoveryTab { position: relative; }
+    .recovery-count { position: absolute; top: -12px; right: 0; min-width: 20px; padding: 0 4px; border-radius: 999px; background: #c63737; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; pointer-events: none; }
+    .recovery-count[hidden] { display: none; }
     .shell {
       width: min(1180px, calc(100vw - 28px));
       margin: 0 auto;
@@ -550,7 +596,9 @@
       .toolbar { display: grid; grid-template-columns: 1fr 1fr; }
       .toolbar .search, .toolbar .count, .toolbar button { width: 100%; margin-left: 0; }
       .admin-tabs { gap: 4px; padding: 4px; }
-      .admin-tabs button { flex: 1 1 0; min-width: 0; min-height: 34px; padding: 5px 7px; }
+      .admin-tabs button { flex: 1 1 0; min-width: 0; min-height: 34px; padding: 5px 7px; font-size: 14px; }
+      .recovery-card { padding: 12px; }
+      .recovery-facts { grid-template-columns: minmax(0, 1fr); }
       .tab-panel { gap: 10px; }
       .dashboard-toolbar {
         display: grid;
@@ -642,7 +690,7 @@
 
     <nav class="admin-tabs" aria-label="管理后台页面">
       <button id="usersTab" type="button" role="tab" aria-selected="true" aria-controls="usersPanel">用户管理</button>
-      <button id="recoveryTab" type="button" role="tab" aria-selected="false" aria-controls="recoveryPanel">找回工单</button>
+      <button id="recoveryTab" type="button" role="tab" aria-selected="false" aria-controls="recoveryPanel">找回工单<span class="recovery-count" id="recoveryCount" hidden></span></button>
       <button id="dashboardTab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">运营看板</button>
     </nav>
 
@@ -689,16 +737,14 @@
     </div>
 
     <div class="tab-panel" id="recoveryPanel" role="tabpanel" aria-labelledby="recoveryTab" hidden>
-      <section class="panel recovery-panel" aria-labelledby="recoveryHeading">
-        <div class="row-actions">
-          <h2 id="recoveryHeading">账号找回工单</h2><span class="badge" id="recoveryCount">待审批 —</span>
-          <label>记录 <select id="recoveryView"><option value="pending">待审批</option><option value="processed">已处理记录</option></select></label>
-          <button id="recoveryRefresh" type="button">刷新工单</button>
+      <section class="recovery-panel" aria-label="找回工单审核队列">
+        <div class="recovery-toolbar" aria-label="工单筛选">
+          <select id="recoveryView" aria-label="工单状态"><option value="pending">待审批</option><option value="processed">已处理</option></select>
+          <button id="recoveryRefresh" type="button">刷新</button>
         </div>
-        <p class="sub">请核验申请信息后审核。通过后由申请人回来领取链接；备注会向申请人显示，请勿填写内部核验资料。</p>
         <p class="status" id="recoveryStatus" aria-live="polite"></p>
         <div id="recoveryTickets"></div>
-        <div class="row-actions"><button id="recoveryPrev" type="button">上一页</button><span id="recoveryPage"></span><button id="recoveryNext" type="button">下一页</button></div>
+        <nav class="recovery-pagination" id="recoveryPagination" aria-label="工单分页" hidden><button id="recoveryPrev" type="button">上一页</button><span id="recoveryPage"></span><button id="recoveryNext" type="button">下一页</button></nav>
       </section>
     </div>
 
@@ -895,6 +941,32 @@
     let recoveryLoading = false;
     let recoveryReviewBusy = false;
 
+    let recoveryCountVersion = 0;
+
+    function updateRecoveryCount(value) {
+      const count = Math.max(0, Number(value) || 0);
+      $("recoveryCount").textContent = count > 99 ? "99+" : String(count);
+      $("recoveryCount").hidden = count === 0;
+      $("recoveryTab").setAttribute("aria-label", count ? `找回工单，待审批 ${count} 条` : "找回工单");
+    }
+
+    async function loadRecoveryCount() {
+      const version = recoveryCountVersion;
+      try {
+        // A badge failure must not change the active panel or its authentication state.
+        const res = await fetch("/api/admin/recovery?view=pending&page=1", {headers: headers()});
+        if (!res.ok) throw new Error("工单数量暂不可用");
+        const data = await res.json();
+        if (version === recoveryCountVersion) updateRecoveryCount(data.pending_count);
+      } catch (_) {
+        if (version === recoveryCountVersion) updateRecoveryCount(0);
+      }
+    }
+
+    function recoveryFact(label, value, wide = false, time = false) {
+      return `<div class="recovery-fact${wide ? " recovery-fact-wide" : ""}"><dt>${label}</dt><dd${time ? ' class="recovery-time"' : ""}>${escapeHtml(String(value ?? "").trim() || "—")}</dd></div>`;
+    }
+
     function recoveryVerificationText(ticket) {
       return `工单 ID：${ticket.id}\n账号${ticket.account_kind === "id" ? " ID" : "名"}：${ticket.account}\n绑定小机：${ticket.machine}\n约注册时间：${ticket.registered_about}\n玩过游戏：${ticket.games}\n补充说明：${ticket.explanation || "无"}\n提交时间：${formatEpoch(ticket.created_at_epoch)}`;
     }
@@ -902,28 +974,44 @@
     async function loadRecoveryTickets() {
       if (recoveryLoading || recoveryReviewBusy) return;
       recoveryLoading = true;
+      recoveryCountVersion++;
       $("recoveryStatus").textContent = "加载中…";
       $("recoveryView").disabled = true;
       try {
         const data = await request(`/api/admin/recovery?view=${$("recoveryView").value}&page=${recoveryPage}`);
         recoveryTickets = data.tickets || [];
-        $("recoveryCount").textContent = `待审批 ${data.pending_count || 0}`;
+        updateRecoveryCount(data.pending_count);
+        $("recoveryPagination").hidden = data.total <= 20;
         $("recoveryPage").textContent = `第 ${recoveryPage} / ${Math.max(1, Math.ceil(data.total / 20))} 页`;
         $("recoveryPrev").disabled = recoveryPage <= 1;
         $("recoveryNext").disabled = recoveryPage * 20 >= data.total;
         const labels = {pending: "审批中", approved: "已通过", rejected: "未通过", completed: "已完成"};
         $("recoveryTickets").innerHTML = recoveryTickets.map(ticket => `
-          <article class="recovery-card" data-ticket="${ticket.id}">
-            <strong>${labels[ticket.status] || "已处理"}（${escapeHtml(ticket.status)}）</strong>
-            <pre>${escapeHtml(recoveryVerificationText(ticket))}</pre>
-            ${ticket.reviewed_at_epoch ? `<p class="sub">审核时间：${escapeHtml(formatEpoch(ticket.reviewed_at_epoch))}</p>` : ""}
-            <button type="button" data-recovery-action="copy">复制核验信息</button>
-            <label>管理员备注<textarea maxlength="2000" rows="2" ${ticket.status === "pending" ? "" : "readonly"}>${escapeHtml(ticket.admin_note || "")}</textarea></label>
-            ${ticket.status === "pending" ? `<div class="row-actions"><button class="primary" type="button" data-recovery-action="approved">通过</button><button class="danger" type="button" data-recovery-action="rejected">不通过</button></div>` : ""}
-          </article>`).join("") || '<p class="sub">暂无工单</p>';
+          <article class="recovery-card" data-ticket="${escapeHtml(ticket.id)}" data-status="${escapeHtml(ticket.status)}">
+            <header class="recovery-card-header">
+              <div class="recovery-card-heading"><h3>工单 #${escapeHtml(ticket.id)}</h3><span class="recovery-pill">${labels[ticket.status] || "已处理"}</span></div>
+              <button class="recovery-copy" type="button" data-recovery-action="copy">复制核验信息</button>
+            </header>
+            <dl class="recovery-facts">
+              ${recoveryFact(ticket.account_kind === "id" ? "账号ID" : "账号名", ticket.account)}
+              ${recoveryFact("绑定小机", ticket.machine)}
+              ${recoveryFact("约注册时间", ticket.registered_about)}
+              ${recoveryFact("玩过游戏", ticket.games)}
+              ${recoveryFact("补充说明", ticket.explanation, true)}
+              ${recoveryFact("提交时间", ticket.created_at_epoch ? formatEpoch(ticket.created_at_epoch) : "", true, true)}
+              ${ticket.status !== "pending" ? `${recoveryFact("管理员备注", ticket.admin_note, true)}${recoveryFact("审核时间", ticket.reviewed_at_epoch ? formatEpoch(ticket.reviewed_at_epoch) : "", true, true)}` : ""}
+            </dl>
+            ${ticket.status === "pending" ? `<div class="recovery-review">
+              <label for="recoveryNote-${escapeHtml(ticket.id)}">管理员备注</label>
+              <textarea id="recoveryNote-${escapeHtml(ticket.id)}" maxlength="2000" rows="2">${escapeHtml(ticket.admin_note || "")}</textarea>
+              <div class="recovery-review-actions"><button class="primary" type="button" data-recovery-action="approved">通过</button><button class="danger" type="button" data-recovery-action="rejected">不通过</button></div>
+            </div>` : ""}
+          </article>`).join("") || '<p class="recovery-empty">暂无工单</p>';
         $("recoveryStatus").textContent = "";
       } catch (err) {
         $("recoveryTickets").textContent = "";
+        $("recoveryPagination").hidden = true;
+        updateRecoveryCount(0);
         $("recoveryStatus").textContent = err.message;
       } finally { recoveryLoading = false; $("recoveryView").disabled = false; }
     }
@@ -1488,6 +1576,7 @@
     });
 
     switchTab(location.hash.slice(1));
+    if (activeTab !== "recovery" && token()) loadRecoveryCount();
   </script>
 </body>
 </html>
