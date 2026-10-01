@@ -158,6 +158,9 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
                 await self._chat_with(response(503))
             status = judge.get_config_runtime_status(CONFIG["id"])
             self.assertEqual(status["consecutive_failures"], expected_failures)
+            if expected_failures < 3:
+                self.assertEqual(status["runtime_status"], "healthy")
+                self.assertEqual(status["cooldown_remaining_seconds"], 0)
 
         status = judge.get_config_runtime_status(CONFIG["id"])
         self.assertEqual(status["runtime_status"], "cooling")
@@ -209,29 +212,47 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status["last_error"].startswith("connect: ConnectError"))
 
     async def test_429_cools_immediately_and_honors_longer_retry_after(self):
-        with self.assertRaises(HTTPException):
-            await self._chat_with(response(429, headers={"Retry-After": "240"}))
+        for retry_after, expected_seconds in (
+            (None, 30),
+            ("10", 30),
+            ("30", 30),
+            ("240", 240),
+            ("9000", 9000),
+            ("invalid", 30),
+            ("Thu, 01 Jan 1970 00:20:40 GMT", 240),
+        ):
+            with self.subTest(retry_after=retry_after):
+                judge.reset_fail_counts(CONFIG["id"])
+                headers = {} if retry_after is None else {"Retry-After": retry_after}
+                with patch.object(judge.time, "time", return_value=1_000):
+                    with self.assertRaises(HTTPException):
+                        await self._chat_with(response(429, headers=headers))
 
-        status = judge.get_config_runtime_status(CONFIG["id"])
-        self.assertEqual(status["runtime_status"], "cooling")
-        self.assertEqual(status["consecutive_failures"], 1)
-        self.assertEqual(status["cooldown_remaining_seconds"], 240)
-        self.assertTrue(status["last_error"].startswith("429: HTTP 429"))
+                status = judge.get_config_runtime_status(CONFIG["id"])
+                self.assertEqual(status["runtime_status"], "cooling")
+                self.assertEqual(status["consecutive_failures"], 1)
+                self.assertEqual(status["cooldown_remaining_seconds"], expected_seconds)
+                self.assertTrue(status["last_error"].startswith("429: HTTP 429"))
 
-        judge.reset_fail_counts(CONFIG["id"])
-        with self.assertRaises(HTTPException):
-            await self._chat_with(response(429, headers={"Retry-After": "30"}))
+    async def test_429_cooldown_grows_caps_and_resets_after_success(self):
+        for expected_seconds in (30, 60, 120, 300, 600, 1800, 3600, 7200, 7200):
+            with self.subTest(expected_seconds=expected_seconds):
+                with self.assertRaises(HTTPException):
+                    await self._chat_with(response(429))
+                status = judge.get_config_runtime_status(CONFIG["id"])
+                self.assertEqual(status["runtime_status"], "cooling")
+                self.assertEqual(status["cooldown_remaining_seconds"], expected_seconds)
+                self.clock += expected_seconds
+
+        self.assertEqual(await self._chat_with(response(200)), "ok")
         self.assertEqual(
-            judge.get_config_runtime_status(CONFIG["id"])["cooldown_remaining_seconds"],
-            120,
+            judge.get_config_runtime_status(CONFIG["id"])["runtime_status"], "healthy"
         )
-
-        judge.reset_fail_counts(CONFIG["id"])
         with self.assertRaises(HTTPException):
-            await self._chat_with(response(429, headers={"Retry-After": "9000"}))
+            await self._chat_with(response(429))
         self.assertEqual(
             judge.get_config_runtime_status(CONFIG["id"])["cooldown_remaining_seconds"],
-            9000,
+            30,
         )
 
     async def test_429_health_is_independent_between_models_on_same_credential(self):
@@ -1112,7 +1133,7 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             judge.get_config_runtime_status(2)["cooldown_remaining_seconds"],
-            120,
+            30,
         )
         self.assertIs(judge._config_lock(npc_cfg), judge._config_lock(judge_cfg))
 

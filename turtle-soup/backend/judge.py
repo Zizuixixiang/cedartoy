@@ -45,7 +45,7 @@ _config_lock_keys: dict[int, str] = {}
 _guess_lock = asyncio.Lock()
 FAIL_LIMIT = 3
 COOLDOWN_SECONDS = (60, 120, 300, 600, 1800, 3600, 7200)
-RATE_LIMIT_MIN_COOLDOWN_SECONDS = 120
+RATE_LIMIT_COOLDOWN_SECONDS = (30, *COOLDOWN_SECONDS)
 DEEPSEEK_V4_NODE_TIMEOUT = 30.0
 DEEPSEEK_V4_MIN_MAX_TOKENS = 8192
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
@@ -387,13 +387,10 @@ def _record_failure(config_id: int, exc: Exception, *, was_probe: bool) -> str:
     retry_after = _retry_after_seconds(exc)
     should_cool = was_probe or state.consecutive_failures >= FAIL_LIMIT or category == "429"
     if should_cool:
-        next_stage = min(state.cooldown_stage + 1, len(COOLDOWN_SECONDS) - 1)
-        if category == "429":
-            next_stage = max(next_stage, 1)
+        cooldowns = RATE_LIMIT_COOLDOWN_SECONDS if category == "429" else COOLDOWN_SECONDS
+        next_stage = min(state.cooldown_stage + 1, len(cooldowns) - 1)
         state.cooldown_stage = next_stage
-        duration = float(COOLDOWN_SECONDS[next_stage])
-        if category == "429":
-            duration = max(duration, RATE_LIMIT_MIN_COOLDOWN_SECONDS)
+        duration = float(cooldowns[next_stage])
         if retry_after is not None:
             duration = max(duration, retry_after)
         state.cooldown_until = _now() + duration
