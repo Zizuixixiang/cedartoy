@@ -9,8 +9,8 @@
      - sessions.db 内 eco_sessions（eco 存档）非空
      - data/vendor_saves 的游戏子目录与线上一致（线上只读对照）
      - progress.json / save.json 抽样可被 json 解析
-  5. 新布局附加库（turtle-soup、toy-platform 快照）缺失时记 WARN
-     （2026-07-17 之前的旧格式归档没有这两个快照）
+  5. 双弈生产库 vendor/duel/data/duel.db 必须存在；
+     旧布局附加库（turtle-soup、toy-platform 快照）缺失时记 WARN。
 
 输出 PASS / PASS_WITH_WARNINGS / FAIL；退出码 0 = 通过（含警告），1 = 失败。
 由 /etc/cron.d/cedartoy-backup-check 每周一 4:30 调用。
@@ -28,6 +28,10 @@ from pathlib import Path
 BACKUP_DIR = Path("/home/backups/cedartoy")
 LIVE_VENDOR_SAVES = Path("/opt/cedartoy/data/vendor_saves")
 # 新布局中应存在的 data 之外生产库快照（旧归档缺失时仅告警）
+REQUIRED_DBS = [
+    "vendor/duel/data/duel.db",
+]
+
 OPTIONAL_DBS = [
     "turtle-soup/backend/turtle_soup.db",
     "toy-platform/toy_accounts.db",
@@ -169,6 +173,9 @@ def main():
             check_eco_sessions(sessions_db)
         else:
             fail("归档内缺少 data/sessions.db")
+        for rel in REQUIRED_DBS:
+            if not (dest / rel).is_file():
+                fail(f"归档缺少必需生产库 {rel}")
         for rel in OPTIONAL_DBS:
             if not (dest / rel).is_file():
                 warn(f"归档缺少 {rel}（2026-07-17 前的旧格式归档属正常）")

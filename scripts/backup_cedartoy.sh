@@ -6,6 +6,7 @@
 #   data/...                              JSON 存档等原样打包，其中 *.db 为一致性快照
 #   turtle-soup/backend/turtle_soup.db    快照（生产库，位于 data 之外）
 #   toy-platform/toy_accounts.db          快照（生产库，位于 data 之外）
+#   vendor/duel/data/duel.db               快照（双弈生产库，位于 data 之外）
 #
 # 生产数据只读：所有 sqlite 库先用 .backup 导出到临时 staging 目录再打包。
 #
@@ -30,6 +31,7 @@ RCLONE_BIN="/snap/bin/rclone"
 EXTRA_DBS=(
   "turtle-soup/backend/turtle_soup.db"
   "toy-platform/toy_accounts.db"
+  "vendor/duel/data/duel.db"
 )
 
 DATE_STR="$(date +%Y%m%d)"
@@ -127,7 +129,7 @@ backup_once() {
     log "Failed: cannot create $BACKUP_ROOT"
     return 1
   }
-  for top in data turtle-soup toy-platform; do
+  for top in data turtle-soup toy-platform vendor; do
     [[ -d "$STAGE/$top" ]] && stage_tops+=("$top")
   done
   if ! tar -zcf "$ARCHIVE.tmp" -C "$STAGE" "${stage_tops[@]}"; then
