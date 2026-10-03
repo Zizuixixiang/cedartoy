@@ -672,6 +672,17 @@ def _build_root_platform_tools():
     # Some MCP clients reject a root allOf before invoking a tool.  The game
     # backends still enforce every action-specific requirement themselves.
     play_tool["inputSchema"].pop("allOf", None)
+    # Gemini function declarations reject numeric enum values even when the
+    # property itself is an integer. Keep backend validation authoritative and
+    # omit this enum only from the MCP tool schema exposed to model clients.
+    takeover_schema = (
+        play_tool["inputSchema"].get("properties", {})
+        .get("params", {})
+        .get("properties", {})
+        .get("timeout_takeover_seconds")
+    )
+    if isinstance(takeover_schema, dict):
+        takeover_schema.pop("enum", None)
     return tools
 
 
