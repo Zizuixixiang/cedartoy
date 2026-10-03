@@ -20,7 +20,7 @@ class BridgeMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Literal["system", "user", "assistant"]
-    content: str = Field(min_length=1, max_length=4000)
+    content: str = Field(min_length=1)
 
 
 class DuelNpcBridgeBody(BaseModel):

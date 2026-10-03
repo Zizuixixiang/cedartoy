@@ -341,7 +341,7 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
 
 @router.post("/guess")
 async def guess(body: GuessBody, player: dict = Depends(current_player)):
-    guess_text = clean_content(body.content, 1000)
+    guess_text = clean_content(body.content, 3000)
     room = await _room(body.room_id)
     _ensure_active(room)
     await _ensure_player_can_play(body.room_id, player)

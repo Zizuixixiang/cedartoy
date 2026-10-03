@@ -58,8 +58,6 @@ TAROT_API_QUEUE_TIMEOUT_SECONDS = max(
     0.1, float(os.getenv("TAROT_API_QUEUE_TIMEOUT_SECONDS", "5"))
 )
 NPC_CHAT_MAX_MESSAGES = 20
-NPC_CHAT_MAX_CONTENT_LENGTH = 4000
-NPC_CHAT_MAX_TOTAL_CONTENT_LENGTH = 12000
 logger = logging.getLogger(__name__)
 
 
@@ -812,7 +810,6 @@ async def _npc_chat(
     ):
         raise ValueError(f"messages 必须包含 1–{NPC_CHAT_MAX_MESSAGES} 条消息")
     compact: list[dict[str, str]] = []
-    total_length = 0
     for message in messages:
         if not isinstance(message, dict) or set(message) != {"role", "content"}:
             raise ValueError("每条 NPC message 只能包含 role 和 content")
@@ -823,12 +820,7 @@ async def _npc_chat(
         if not isinstance(content, str) or not content.strip():
             raise ValueError("NPC message content 不能为空")
         content = content.strip()
-        if len(content) > NPC_CHAT_MAX_CONTENT_LENGTH:
-            raise ValueError("单条 NPC message 过长")
-        total_length += len(content)
         compact.append({"role": role, "content": content})
-    if total_length > NPC_CHAT_MAX_TOTAL_CONTENT_LENGTH:
-        raise ValueError("NPC messages 总长度过长")
     if (
         isinstance(max_tokens, bool)
         or not isinstance(max_tokens, int)
@@ -1434,7 +1426,7 @@ def public_answer_from_full_answer(answer: str) -> str:
     return answer.strip()
 
 
-def _recent_user_utterances(game_log: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+def _recent_user_utterances(game_log: list[dict[str, Any]], limit: int = 60) -> list[dict[str, Any]]:
     utterances: list[dict[str, Any]] = []
     for log in game_log:
         if not log.get("player_id"):
@@ -1457,11 +1449,7 @@ def _recent_user_utterances(game_log: list[dict[str, Any]], limit: int = 20) -> 
 
 
 async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]]) -> str | None:
-    compact = [
-        {"q": r.get("content"), "a": r.get("judgment")}
-        for r in game_log
-        if r.get("type") == "ask"
-    ][-40:]
+    recent_records = _recent_user_utterances(game_log, limit=60)
     previous_hints = [
         log["hint_text"] for log in game_log
         if log.get("hint_text") and log.get("judgment") != "auto_hint"
@@ -1494,8 +1482,7 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
                 "用户申请提示。\n"
                 f"汤面：{surface}\n"
                 f"汤底：{answer}\n"
-                f"已问记录：{json.dumps(compact, ensure_ascii=False)}\n"
-                f"最近20条用户发言：{json.dumps(_recent_user_utterances(game_log), ensure_ascii=False)}"
+                f"最近60条玩家记录（提问与猜汤底）：{json.dumps(recent_records, ensure_ascii=False)}"
             ),
         },
     ]

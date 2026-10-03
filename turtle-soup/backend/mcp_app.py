@@ -277,7 +277,7 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
-        return await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 1000)), player)
+        return await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 3000)), player)
     if body.action == "hint_respond":
         raise HTTPException(status_code=400, detail="自动提示请在下一次 ask 中传 auto_hint_log_id 和 accept_auto_hint=true/false 处理")
     if body.action == "hint_request":
@@ -298,11 +298,11 @@ async def play(body: PlayBody):
     if body.action == "note_add":
         if not body.room_id or not body.content:
             raise HTTPException(status_code=400, detail="room_id 和 content 必填")
-        return await add_note(body.room_id, NoteBody(content=clean_content(body.content, 50)), player)
+        return await add_note(body.room_id, NoteBody(content=clean_content(body.content, 200)), player)
     if body.action == "note_edit":
         if body.note_id is None or not body.content:
             raise HTTPException(status_code=400, detail="note_id 和 content 必填")
-        return await update_note(body.note_id, NoteBody(content=clean_content(body.content, 50)), player)
+        return await update_note(body.note_id, NoteBody(content=clean_content(body.content, 200)), player)
     if body.action == "note_delete":
         if body.note_id is None:
             raise HTTPException(status_code=400, detail="note_id 必填")

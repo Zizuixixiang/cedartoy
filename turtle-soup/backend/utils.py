@@ -9,7 +9,7 @@ SAFE_TEXT_RE = re.compile(r"[<>{}]")
 ROOM_ALPHABET = string.ascii_letters + string.digits
 TITLE_LIMIT = 20
 SURFACE_LIMIT = 1000
-ANSWER_LIMIT = 3000
+ANSWER_LIMIT = 6000
 TAGS_LIMIT = 100
 
 # SQLite CURRENT_TIMESTAMP / datetime('now') are UTC; store/compare China wall time (server TZ).

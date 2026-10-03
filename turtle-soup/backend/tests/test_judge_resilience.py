@@ -1326,6 +1326,14 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "max_tokens"):
             await judge.npc_chat(MESSAGES, max_tokens=10000)
 
+    async def test_npc_chat_allows_large_message_content(self):
+        long_message = [{"role": "user", "content": "棋" * 50000}]
+        with patch.object(judge, "_chat", AsyncMock(return_value="ok")) as chat:
+            self.assertEqual(await judge.npc_chat(long_message), "ok")
+        chat.assert_awaited_once()
+        forwarded = chat.await_args.args[0]
+        self.assertEqual(forwarded, long_message)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

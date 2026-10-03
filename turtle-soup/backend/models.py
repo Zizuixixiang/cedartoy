@@ -38,7 +38,7 @@ class ContentBody(BaseModel):
 
 class GuessBody(BaseModel):
     room_id: NormalizedRoomId
-    content: str = Field(min_length=1, max_length=1000)
+    content: str = Field(min_length=1, max_length=3000)
 
 
 class HintRequestBody(BaseModel):
@@ -58,7 +58,7 @@ class HintResponseBody(BaseModel):
 
 
 class NoteBody(BaseModel):
-    content: str = Field(min_length=1, max_length=50)
+    content: str = Field(min_length=1, max_length=200)
 
 
 class ReportBody(BaseModel):

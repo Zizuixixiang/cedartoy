@@ -56,7 +56,7 @@ async def add_note(room_id: NormalizedRoomId, body: NoteBody, player: dict = Dep
     if room["status"] == "finished":
         raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
     await _ensure_player_can_note(room_id, player["id"])
-    content = clean_content(body.content, 50)
+    content = clean_content(body.content, 200)
     nid = await execute(
         "INSERT INTO room_notes (room_id, player_id, content) VALUES (?, ?, ?)",
         (room_id, player["id"], content),
@@ -82,7 +82,7 @@ async def update_note(note_id: int, body: NoteBody, player: dict = Depends(curre
     if room and room["status"] == "finished":
         raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
     await _ensure_player_can_note(note["room_id"], player["id"])
-    content = clean_content(body.content, 50)
+    content = clean_content(body.content, 200)
     await execute(
         f"UPDATE room_notes SET content = ?, updated_at = {SQL_NOW} WHERE id = ?",
         (content, note_id),
