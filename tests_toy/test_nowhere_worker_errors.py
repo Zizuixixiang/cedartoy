@@ -106,6 +106,17 @@ Engine.run = run
 asyncio.run(main())
 '''
 
+# Exercise real actions/validation/persistence with deterministic offline
+# provider fallback, rather than waiting on external network availability.
+_OFFLINE_WORKER = '''
+import asyncio, httpx
+async def offline(*args, **kwargs):
+    raise httpx.ConnectError("offline regression fixture")
+httpx.AsyncClient.send = offline
+from nowhere_adapter.worker import main
+asyncio.run(main())
+'''
+
 
 @unittest.skipUnless(os.environ.get("NOWHERE_REAL_TEST") == "1", "set NOWHERE_REAL_TEST=1 for real worker IPC")
 class RealWorkerErrorTests(TemporaryStores):
@@ -123,6 +134,12 @@ class RealWorkerErrorTests(TemporaryStores):
         return server._play_vendor_cmd("nowhere", {"game": "nowhere", "player_id": "guest:workererror",
                                                     "slot": 1, "action": action, "params": params})
 
+    def use_offline_worker(self):
+        popen = subprocess.Popen
+        def launch(args, **kwargs):
+            return popen([args[0], "-c", _OFFLINE_WORKER, args[-1]], **kwargs)
+        self.stack.enter_context(patch.object(pool.subprocess, "Popen", side_effect=launch))
+
     def test_exact_screenshot_sequence_through_handler_and_real_worker(self):
         self.play("open_door", intent="安静", cotraveler="1")
         worker = self.pool.workers["guest:workererror"]
@@ -133,6 +150,30 @@ class RealWorkerErrorTests(TemporaryStores):
         saved = storage.read("guest:workererror")
         self.assertEqual(saved["runtime"]["metadata"]["cotraveler"], "1")
         self.assertIn(text, json.dumps(saved, ensure_ascii=False))
+
+    def test_cached_cross_game_false_defaults_do_not_pollute_actions(self):
+        self.use_offline_worker()
+        self.play("open_door", to="北京", cotraveler="0")
+        self.play("walk", direction="N", distance_km=3,
+                  is_locked=False, include_finished=False)
+        self.play("say", text="默认字段兼容回归", is_locked=False, include_finished=False)
+        self.play("look", is_locked=False, include_finished=False)
+        saved = storage.read("guest:workererror")
+        self.assertIn("默认字段兼容回归", json.dumps(saved, ensure_ascii=False))
+        self.assertGreater(saved["files"]["journey.json"]["total_distance_km"], 0)
+
+    def test_cross_game_nondefaults_and_unknown_fields_remain_strict(self):
+        self.use_offline_worker()
+        self.play("open_door", to="北京", cotraveler="0")
+        path = storage.ROOT / "guest:workererror/save.json"
+        before = path.read_bytes()
+        for key in ("is_locked", "include_finished", "other_unknown"):
+            for value in (True, "false", 0, None, False) if key == "other_unknown" else (True, "false", 0, None):
+                with self.subTest(key=key, value=value), self.assertLogs("nowhere_adapter.handler", level="ERROR") as logs:
+                    with self.assertRaises(server._McpError):
+                        self.play("walk", direction="N", distance_km=3, **{key: value})
+                    self.assertIn("additionalProperties", "\n".join(logs.output))
+                    self.assertEqual(path.read_bytes(), before)
 
     def test_internal_failure_after_mutation_preserves_archive_and_next_call_is_fresh(self):
         player = "guest:workererror"

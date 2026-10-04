@@ -744,6 +744,10 @@ def _build_kelivo_platform_tools():
         takeover_schema.pop("enum", None)
     # Nowhere exposes its full action-specific contracts via play(schema).
     properties = play_tool["inputSchema"]["properties"]["params"].setdefault("properties", {})
+    # Some clients inject JSON Schema defaults into every game's params.
+    # Keep turtle_soup's default semantics in its descriptions/backend only.
+    for name in ("is_locked", "include_finished"):
+        properties[name].pop("default", None)
     for name, kind in {"to": "string", "direction": "string", "distance_km": "number",
                        "traveler_name": "string", "cotraveler": "string", "blind": "boolean",
                        "key": "string", "intent": "string", "topic": "string",

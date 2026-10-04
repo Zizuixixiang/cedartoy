@@ -18,6 +18,7 @@ import tempfile
 
 from . import shared, storage
 from .diagnostics import PUBLIC_ERROR, internal_error
+from .radio_state import clear_dead_radio, is_dead
 
 RUNTIME_KEYS = ("_postcard_counter", "_hint_counter", "_mishap_last_step", "_mishap_echoed_id")
 
@@ -36,6 +37,11 @@ class Engine:
             raise RuntimeError("上游版本不匹配，须先验收升级")
         from nowhere import server, state, web
         self.server, self.state, self.web = server, state, web
+        # Worker-only compatibility patch: keep upstream country/distance and
+        # online selection rules, but never offer explicitly dead fallbacks.
+        # No vendor file writes or upstream imports in the HTTP process.
+        original_fallback = server.radio._load_fallback
+        server.radio._load_fallback = lambda: [s for s in original_fallback() if not is_dead(s)]
         self.player = player
         self.home = Path(os.environ["NOWHERE_HOME"])
         self.files = self.home / "private"
@@ -65,7 +71,8 @@ class Engine:
         def to_dict(world):
             return {**original_to(world), "cotraveler_alone": bool(getattr(world, "cotraveler_alone", False))}
         def from_dict(cls, data):
-            world = original_from(data)
+            # Also covers continue/switch_journey loading an inactive old save.
+            world = original_from(clear_dead_radio(data))
             world.cotraveler_alone = bool(data.get("cotraveler_alone", False))
             return world
         state.WorldState.to_dict = to_dict
@@ -231,6 +238,12 @@ class Engine:
         self.diagnostic_stage = "prepare"
         action = request.pop("action")
         request.pop("confirm", None)
+        # Old cached Kelivo/Dart/Ktor fat schemas inject these turtle_soup
+        # defaults into unrelated actions. Ignore ONLY the literal bool False;
+        # true, strings, 0, null and all other extras still reach strict validation.
+        for key in ("is_locked", "include_finished"):
+            if request.get(key) is False:
+                request.pop(key)
         if action == "validate_import":
             self.diagnostic_stage = "snapshot"
             return {"result": {"text": "完整私人旅程导入成功"}, "archive": self.snapshot()}

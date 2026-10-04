@@ -1,6 +1,9 @@
 """Bounded streaming fallback for mobile WebViews; never an arbitrary URL proxy."""
 import http.client as http_client
 import ipaddress
+import json
+from functools import lru_cache
+from pathlib import Path
 import re
 import select
 import socket
@@ -9,6 +12,7 @@ import threading
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from . import storage
+from .radio_state import clear_dead_radio, is_dead
 
 SLOTS = threading.BoundedSemaphore(8)
 CHUNK = 32768
@@ -84,6 +88,46 @@ def canonical_url(url):
     return result
 
 
+@lru_cache(maxsize=1)
+def _dead_fallback_urls():
+    # Read immutable data only, never import/patch upstream in the HTTP process.
+    path = Path(__file__).resolve().parents[1] / 'vendor/nowhere/nowhere/data/radio_fallback.json'
+    return tuple(station.get('stream_url') for station in json.loads(path.read_text(encoding='utf-8'))
+                 if is_dead(station))
+
+
+def _radio_states(saved):
+    files = (saved or {}).get('files', {})
+    yield files.get('journey.json', {})
+    for entry in files.get('journeys/index.json', {}).get('journeys', []):
+        yield files.get('journeys/' + entry['slug'] + '.json', {})
+
+
+def _stations(state):
+    env = state.get('last_env') or {}
+    return (state.get('radio_station'), env.get('radio') if isinstance(env, dict) else None)
+
+
+def dead_streams(saved):
+    """Known-dead URLs also block old listen footprints that omitted dead flags."""
+    urls = list(_dead_fallback_urls())
+    for state in _radio_states(saved):
+        urls.extend(s.get('stream_url') for s in _stations(state) if is_dead(s))
+    return {canonical_url(url) for url in urls if _valid_url(url)}
+
+
+def _valid_url(url):
+    try:
+        canonical_url(url)
+        return True
+    except ValueError:
+        return False
+
+
+def stream_is_dead(url, dead_urls):
+    return _valid_url(url) and canonical_url(url) in dead_urls
+
+
 def persisted_streams(saved):
     """Only upstream's explicit radio fields, never a recursive URL search.
 
@@ -92,16 +136,14 @@ def persisted_streams(saved):
     inactive journeys are the WorldState files referenced by journeys/index.json.
     """
     files = (saved or {}).get('files', {})
+    dead_urls = dead_streams(saved)
     for item in files.get('footprints.json', {}).get('items', []):
-        if isinstance(item, dict):
+        if (isinstance(item, dict) and not is_dead(item.get('station'))
+                and not stream_is_dead(item.get('stream_url'), dead_urls)):
             yield item.get('stream_url')
-    states = [files.get('journey.json', {})]
-    for entry in files.get('journeys/index.json', {}).get('journeys', []):
-        states.append(files.get('journeys/' + entry['slug'] + '.json', {}))
-    for state in states:
-        env = state.get('last_env') or {}
-        for station in (state.get('radio_station'), env.get('radio') if isinstance(env, dict) else None):
-            if isinstance(station, dict):
+    for state in _radio_states(saved):
+        for station in _stations(clear_dead_radio(state)):
+            if isinstance(station, dict) and not stream_is_dead(station.get('stream_url'), dead_urls):
                 yield station.get('stream_url')
 
 

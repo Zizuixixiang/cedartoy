@@ -3,7 +3,8 @@ import copy
 from datetime import datetime
 import re
 
-from .radio import canonical_url
+from .radio import canonical_url, dead_streams, stream_is_dead
+from .radio_state import clear_dead_radio, is_dead
 
 
 def _time(value):
@@ -33,6 +34,7 @@ def _journeys(files):
 
 
 def _station(state):
+    state = clear_dead_radio(state)
     env = state.get('last_env') or {}
     for station in (state.get('radio_station'), env.get('radio') if isinstance(env, dict) else None):
         if not isinstance(station, dict):
@@ -60,7 +62,13 @@ def enrich_history(body, saved):
     """
     result = copy.deepcopy(body)
     journeys = list(_journeys(saved['files']))
+    dead_urls = dead_streams(saved)
     for item in result.get('footprints', []):
+        if isinstance(item, dict) and (is_dead(item.get('station'))
+                                      or stream_is_dead(item.get('stream_url'), dead_urls)):
+            # Response only: retain the user's historical text/station metadata.
+            item.pop('stream_url', None)
+            continue
         # Preserve listen fields (including its station) exactly. Malformed
         # nonempty URLs also stay untouched: safeHttpUrl will hide them.
         if not isinstance(item, dict) or item.get('stream_url'):
@@ -87,6 +95,6 @@ def enrich_history(body, saved):
                 if journey[1] is not None and journey[2] is not None:
                     continue
         station = _station(journey[3])
-        if station:
+        if station and not stream_is_dead(station[0], dead_urls):
             item['stream_url'], item['station'] = station
     return result

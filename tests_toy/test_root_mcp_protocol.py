@@ -364,6 +364,8 @@ class RootMcpProtocolTests(unittest.TestCase):
                     expected = dict(definition)
                     if name == "timeout_takeover_seconds":
                         expected.pop("enum")  # Existing Gemini numeric-enum workaround.
+                    if name in {"is_locked", "include_finished"}:
+                        expected.pop("default")  # Do not inject cross-game defaults.
                     self.assertEqual(params[name], expected, name)
                 for name in ("command", "species", "a_scores", "answers", "before", "page",
                              "to", "direction", "distance_km", "traveler_name", "cotraveler",
@@ -371,6 +373,15 @@ class RootMcpProtocolTests(unittest.TestCase):
                     self.assertIn(name, params)
                 for seed in (42, "existing-string-seed"):
                     self.assertTrue(Draft202012Validator(params["seed"]).is_valid(seed))
+
+    def test_compatibility_schema_does_not_inject_turtle_soup_defaults(self):
+        for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
+            params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+            for name in ("is_locked", "include_finished"):
+                self.assertNotIn("default", params[name])
+                self.assertEqual(params[name]["type"], "boolean")
+                self.assertIn("默认 false", params[name]["description"])
+        self.assertEqual(set(self._play_schema("ExampleMcpClient/1.0")["properties"]["params"]["properties"]), {"slot"})
 
     def test_kelivo_puzzle_id_and_answer_accept_all_supported_types(self):
         for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
