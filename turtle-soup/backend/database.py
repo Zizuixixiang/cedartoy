@@ -242,6 +242,8 @@ async def init_db() -> None:
                 answer TEXT NOT NULL,
                 status TEXT DEFAULT 'waiting',
                 created_by INTEGER REFERENCES players(id),
+                is_locked INTEGER NOT NULL DEFAULT 0,
+                lock_owner_user_id INTEGER,
                 winner_id INTEGER REFERENCES players(id),
                 manual_hint_count INTEGER DEFAULT 0,
                 last_hint_at_ask_count INTEGER DEFAULT 0,
@@ -268,6 +270,12 @@ async def init_db() -> None:
                 updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
             );
             CREATE TABLE IF NOT EXISTS room_answer_reveals (
+                room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+                player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
+                PRIMARY KEY (room_id, player_id)
+            );
+            CREATE TABLE IF NOT EXISTS room_answer_reveal_prompts (
                 room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
                 player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
                 created_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
@@ -372,6 +380,10 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE puzzles ADD COLUMN title TEXT DEFAULT ''")
         async with db.execute("PRAGMA table_info(rooms)") as cur:
             room_cols = {row[1] for row in await cur.fetchall()}
+        if "is_locked" not in room_cols:
+            await db.execute("ALTER TABLE rooms ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0")
+        if "lock_owner_user_id" not in room_cols:
+            await db.execute("ALTER TABLE rooms ADD COLUMN lock_owner_user_id INTEGER")
         if "title" not in room_cols:
             await db.execute("ALTER TABLE rooms ADD COLUMN title TEXT DEFAULT ''")
         if "manual_hint_count" not in room_cols:

@@ -1,0 +1,23 @@
+# Include INSIDE the server listening on 127.0.0.1:8002.
+# Exact matches take precedence over the existing single-segment MCP regex.
+location = /mcp-test {
+    client_max_body_size 64k;
+    proxy_pass http://127.0.0.1:8784;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_request_buffering on;
+    proxy_buffering off;
+    proxy_read_timeout 15s;
+}
+
+location = /mcp-test/ {
+    client_max_body_size 64k;
+    proxy_pass http://127.0.0.1:8784;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_request_buffering on;
+    proxy_buffering off;
+    proxy_read_timeout 15s;
+}

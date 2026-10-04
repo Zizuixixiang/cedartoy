@@ -13,6 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 auth_utils_stub = types.ModuleType("auth_utils")
 auth_utils_stub.current_player = lambda: None
+auth_utils_stub.authenticated_player = lambda: None
 sys.modules["auth_utils"] = auth_utils_stub
 database_stub = types.ModuleType("database")
 database_stub.execute = AsyncMock(return_value=1)

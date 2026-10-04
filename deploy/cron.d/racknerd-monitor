@@ -1,0 +1,3 @@
+# Template for /etc/cron.d; host timezone must be Asia/Shanghai.
+# Only twice daily. Script owns bounded logs, a process lock and atomic state.
+0 9,21 * * * root /usr/bin/python3 /opt/cedartoy/scripts/racknerd_monitor.py >/dev/null 2>&1

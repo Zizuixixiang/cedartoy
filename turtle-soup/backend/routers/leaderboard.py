@@ -5,10 +5,11 @@ import sqlite3
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from auth_utils import current_player
 from database import DB_PATH, fetch_all
+from utils import SQL_NOW
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 
@@ -228,8 +229,10 @@ async def platform_stats():
 
 
 @router.get("/{metric}")
-async def leaderboard(metric: str, player: dict = Depends(current_player)):
+async def leaderboard(metric: str, player: dict = Depends(current_player), scope: str = "all"):
     del player
+    if scope not in ("all", "today"):
+        raise HTTPException(status_code=400, detail="scope must be all or today")
     columns = {
         "games": "game_count",
         "wins": "win_count",
@@ -238,6 +241,45 @@ async def leaderboard(metric: str, player: dict = Depends(current_player)):
         "no": "ask_count_n",
     }
     col = columns.get(metric, "game_count")
+    if scope == "today":
+        # Stored timestamps and SQL_NOW use local Beijing time. Room participation
+        # may precede today: only the room's finish time bounds the games metric.
+        if col == "game_count":
+            scores = f"""
+                SELECT l.player_id, COUNT(DISTINCT r.id) AS score
+                FROM rooms r JOIN game_logs l ON l.room_id = r.id
+                WHERE r.status = 'finished'
+                  AND r.finished_at >= date({SQL_NOW}) || ' 00:00:00'
+                  AND r.finished_at <= {SQL_NOW}
+                  AND l.type IN ('ask', 'guess')
+                GROUP BY l.player_id
+            """
+        elif col == "win_count":
+            scores = f"""
+                SELECT winner_id AS player_id, COUNT(*) AS score
+                FROM rooms
+                WHERE status = 'finished'
+                  AND finished_at >= date({SQL_NOW}) || ' 00:00:00'
+                  AND finished_at <= {SQL_NOW}
+                GROUP BY winner_id
+            """
+        else:
+            judgment = {"ask_count_y": "AND judgment = 'yes'", "ask_count_n": "AND judgment = 'no'"}.get(col, "")
+            scores = f"""
+                SELECT player_id, COUNT(*) AS score FROM game_logs
+                WHERE type = 'ask' {judgment}
+                  AND created_at >= date({SQL_NOW}) || ' 00:00:00'
+                  AND created_at <= {SQL_NOW}
+                GROUP BY player_id
+            """
+        return await fetch_all(f"""
+            SELECT p.id, COALESCE(NULLIF(TRIM(p.username), ''), '玩家' || p.id) AS username,
+                   p.is_ai, s.score
+            FROM ({scores}) s JOIN players p ON p.id = s.player_id
+            WHERE p.is_guest = 0 AND s.score > 0
+            ORDER BY s.score DESC, p.id ASC
+            LIMIT 20
+        """)
     return await fetch_all(
         f"""
         SELECT id, COALESCE(NULLIF(TRIM(username), ''), '玩家' || id) AS username, is_ai, {col} AS score

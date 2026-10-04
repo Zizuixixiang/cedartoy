@@ -1,0 +1,15 @@
+[program:cedartoy-mcp-test-probe]
+command=/usr/bin/python3 -u /opt/cedartoy/scripts/mcp_test_probe.py --port 8784
+directory=/opt/cedartoy
+user=nobody
+autostart=false
+autorestart=unexpected
+startsecs=1
+stopasgroup=true
+killasgroup=true
+stdout_logfile=/var/log/cedartoy-mcp-test-probe.out.log
+stderr_logfile=/var/log/cedartoy-mcp-test-probe.err.log
+stdout_logfile_maxbytes=2MB
+stderr_logfile_maxbytes=2MB
+stdout_logfile_backups=1
+stderr_logfile_backups=1

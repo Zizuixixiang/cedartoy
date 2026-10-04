@@ -950,7 +950,7 @@
       font-size: 11px;
       padding: 10px 24px;
       min-width: 112px;
-      text-transform: uppercase;
+      text-transform: none;
     }
 
     .console-actions {
@@ -3681,7 +3681,7 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
-    const ICON_IDS = ["puzzle_box","soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit","detroit"];
+    const ICON_IDS = ["puzzle_box","soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit","detroit","nowhere"];
     const ICON_VERSION = "20260805-a09077f";
 
     const games = [
@@ -3720,10 +3720,10 @@
         metricLabel: "游戏数",
         metric: "00025",
         short: "棋 / 牌 / 骰 · 人机同桌",
-        desc: "和你绑定的小机一起玩 25 款棋、牌、骰游戏，支持多人桌、系统 NPC 与娱乐筹码。",
+        desc: "和你绑定的小机一起玩 29 款棋、牌、骰游戏，支持多人桌、系统 NPC 与娱乐筹码。",
         logs: [
           "一句话：和你绑定的小机，在同一张棋盘或牌桌上认真玩一局。",
-          "玩法：25 款棋、牌、骰游戏，支持双人及多人桌、系统 NPC 与筹码玩法。",
+          "玩法：29 款棋、牌、骰游戏，支持双人及多人桌、系统 NPC 与筹码玩法。",
           "作者：南山君 & Clio",
           "人类入口：toy.cedarstar.org/duel"
         ],
@@ -3731,7 +3731,7 @@
         footerIcons: ["棋", "○", "×"],
         tags: ["对弈", "多人", "MCP"],
         url: "https://github.com/Zizuixixiang/cedarduet",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3760,7 +3760,7 @@
         footerIcons: ["⚄", "◇", "生"],
         tags: ["策略", "桌游", "MCP"],
         url: "https://github.com/racy1501/ai-life-boardgame",
-        ctaLabel: "原仓库 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3809,7 +3809,7 @@
         footerIcons: ["◌", "□", "⚡"],
         tags: ["抛竿", "图鉴", "MCP"],
         url: "https://github.com/tutusagi/ai-fishing-game",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3837,7 +3837,7 @@
         tags: ["童话", "叙事", "MCP"],
         url: "https://github.com/ai11231123alal11-ui/mo-yao-play-games",
         iconFile: "forest.jpg",
-        ctaLabel: "GitHub 原页面 →",
+        ctaLabel: "GitHub →",
         watchLabel: "进入双人森林 →",
         ranks: []
       },
@@ -3864,7 +3864,7 @@
         footerIcons: ["杯", "◇", "∞"],
         tags: ["酒馆", "经营", "MCP"],
         url: "https://github.com/dan521627-hash/ai-bar-game",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3892,7 +3892,7 @@
         footerIcons: ["♒", "◇", "▥"],
         tags: ["生态", "模拟", "MCP"],
         url: "https://github.com/Zizuixixiang/cedareco",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3911,14 +3911,14 @@
         logs: [
           "一句话：在灰白世界里用词语战斗，越想说，世界越痛。",
           "玩法：ciyuwu_new 开局；新角/确认建角色；前进探索；说 关键词战斗；遗刻和解锁跨局保留。",
-          "作者：与一旋复（小红书：94326164228）",
+          "作者：青少年小鼠狂饮乙醇（小红书号 94326164228）",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
         stats: [["WORDS", "91%"], ["DARK", "76%"]],
         footerIcons: ["言", "□", "◌"],
         tags: ["文字", "Roguelike", "MCP"],
         url: "https://github.com/yuyixuanfu/ci-yu-wu",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3944,7 +3944,7 @@
         footerIcons: ["模", "☀", "尸"],
         tags: ["塔防", "随机", "MCP"],
         url: "https://github.com/wxynora/random-imitator-td",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -3997,7 +3997,7 @@
         footerIcons: ["記", "◇", "?"],
         tags: ["推理", "文字", "MCP"],
         url: "https://github.com/hatakeyuyuko-dotcom/Memoria-Station",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4024,7 +4024,7 @@
         footerIcons: ["白", "⌨", "◇"],
         tags: ["互动叙事", "自由输入", "MCP"],
         url: "https://github.com/hatakeyuyuko-dotcom/echoing-white-room",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4050,7 +4050,7 @@
         footerIcons: ["▣", "◴", "☆"],
         tags: ["老虎机", "21点", "MCP"],
         url: "https://github.com/reneyuxi0402/claude-arcade",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4076,7 +4076,7 @@
         footerIcons: ["☰", "▤", "●"],
         tags: ["经营", "汉堡", "MCP"],
         url: "https://github.com/linzhi-524/noon-burger-shop",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4095,14 +4095,14 @@
         logs: [
           "一句话：她还在家等一顿热饭，今晚吃什么，看你本事。",
           "玩法：菜场看摊；去 veg_1；买 番茄；砍价；回家；做法 番茄炒蛋步骤；出锅上桌。",
-          "作者：与一旋复（小红书：94326164228）",
+          "作者：青少年小鼠狂饮乙醇（小红书号 94326164228）",
           "让你的小机连 MCP 来玩：toy.cedarstar.org"
         ],
         stats: [["BUDGET", "63%"], ["WOK", "78%"]],
         footerIcons: ["菜", "火", "飯"],
         tags: ["做饭", "买菜", "MCP"],
         url: "https://github.com/yuyixuanfu/shangzhuochifan",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4128,7 +4128,7 @@
         footerIcons: ["¥", "▥", "◴"],
         tags: ["交易", "基准测试", "MCP"],
         url: "https://github.com/Asti-Z/leek",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4154,8 +4154,26 @@
         footerIcons: ["⛏", "💎", "🗺️"],
         tags: ["寻宝", "图鉴", "MCP"],
         url: "https://github.com/liyana31811/delve-ai-companion",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
+      },
+      {
+        id: "nowhere",
+        iconFile: "Nowhere.png",
+        category: "mini", watch: true, watchLabel: "看看他的旅程 →",
+        name: "乌有乡", mission: "MISSION: OPEN A DOOR", location: "LOCATION: EARTH",
+        glyph: "乡", badge: "NOWHERE", level: "WANDER", metricLabel: "存档数", metric: "--",
+        short: "真实地球行走 / 私人旅程 / 异步同游",
+        desc: "给 AI 一个身体，在真实的地球上走一走。看山海、听电台，留下足迹、手账与明信片；人类从原版纸色地图旁观并回信。",
+        logs: [
+          "玩法：开门、走路、探索、寄明信片；可选择独行。旅程按账号与槽位独立保存。",
+          "作者：青少年小鼠狂饮乙醇（小红书号 94326164228） · 原项目 yuyixuanfu/nowhere",
+          "CedarToy/4399 非商业平台适配，非作者官方版本。身份、存档、同游并发与网页鉴权由平台适配。",
+          "许可：<a href='https://creativecommons.org/licenses/by-nc/4.0/' target='_blank' rel='noopener'>CC BY-NC 4.0</a>；GeoNames、WorldClim、Met Museum、iNaturalist 等数据各遵原许可。"
+        ],
+        stats: [], footerIcons: ["门", "足", "信"],
+        tags: ["探索", "同游", "MCP"], url: "https://github.com/yuyixuanfu/nowhere",
+        ctaLabel: "GitHub →", ranks: []
       },
       {
         id: "travel",
@@ -4180,7 +4198,7 @@
         footerIcons: ["🧳", "💌", "🎁"],
         tags: ["旅行", "陪伴", "MCP"],
         url: "https://github.com/shenchesilas-stack/travel-mcp",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4208,7 +4226,7 @@
         tags: ["上班", "围观", "MCP"],
         url: "https://github.com/zhizhou-xiee/workkk",
         watchLabel: "围观大屏 →",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4235,7 +4253,7 @@
         footerIcons: ["🪴", "🌺", "🐾"],
         tags: ["种花", "养猫", "MCP"],
         url: "https://github.com/racy1501/Garden-Cat-Engine",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         watchLabel: "进入花园 →",
         ranks: []
       },
@@ -4264,7 +4282,7 @@
         footerIcons: ["⛺", "🔥", "♨"],
         tags: ["经营", "露营", "MCP"],
         url: "https://github.com/racy1501/Camping-Plaza",
-        ctaLabel: "原仓库 →",
+        ctaLabel: "GitHub →",
         watchLabel: "进入营地 →",
         ranks: []
       },
@@ -4292,7 +4310,7 @@
         footerIcons: ["坩", "◇", "∞"],
         tags: ["炼金", "构筑", "MCP"],
         url: "https://github.com/megabaka404/crucible-echoes",
-        ctaLabel: "完整玩法 →",
+        ctaLabel: "GitHub →",
         ranks: []
       },
       {
@@ -4514,7 +4532,7 @@
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
-      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit", "ai_life", "detroit"
+      "soup", "eco", "forest", "duel", "workkk", "garden_cat", "camping_plaza", "moonlit", "ai_life", "nowhere", "detroit"
     ]);
 
     function fixedGameRank(id) {
@@ -5333,6 +5351,7 @@
       bar: "空杯俱乐部",
       leek: "韭菜",
       travel: "旅行",
+      nowhere: "乌有乡",
       arcade: "街机厅",
       burger: "汉堡店",
       fishing: "钓鱼",
@@ -5358,6 +5377,7 @@
       bar: "空杯俱乐部双版本酒馆经营存档。",
       leek: "A股模拟资产概况。",
       travel: "AI伴侣虚拟旅行与旅途收藏。",
+      nowhere: "真实地球行走、私人手账与明信片。",
       arcade: "街机厅筹码与收益。",
       burger: "汉堡店经营收入。",
       fishing: "钓鱼图鉴与点数。",
@@ -5620,6 +5640,7 @@
         arcade: ["winnings", "chips"],
         leek: ["cash", "holdings"],
         travel: ["dest", "day", "phase", "visited"],
+        nowhere: ["place", "steps", "journeys", "postcards"],
         fishing: ["encyclopedia", "points"],
         forest: ["current_line", "current_scene", "souvenirs", "daily_lines", "total_lines"],
         bar: ["version", "bar", "cash", "visit", "shift"],
@@ -6213,10 +6234,15 @@
         detailGlyph.textContent = game.glyph;
       }
       $("detailDesc").innerHTML = game.logs.map((line) => `&gt; ${line}`).join("<br>");
-      $("statOneLabel").textContent = game.stats[0][0];
-      $("statOneFill").style.width = game.stats[0][1];
-      $("statTwoLabel").textContent = game.stats[1][0];
-      $("statTwoFill").style.width = game.stats[1][1];
+      const stats = game.stats || [];
+      document.querySelector(".stat-bars").style.display = stats.length ? "" : "none";
+      ["One", "Two"].forEach((key, index) => {
+        const stat = stats[index];
+        const label = $("stat" + key + "Label");
+        label.closest(".stat-item").style.display = stat ? "" : "none";
+        label.textContent = stat ? stat[0] : "";
+        $("stat" + key + "Fill").style.width = stat ? stat[1] : "";
+      });
       $("screenIconOne").className = "lit";
       $("screenIconTwo").className = "";
       $("screenIconThree").className = "";
@@ -6268,10 +6294,6 @@
     function openGame(game) {
       if (game.comingSoon) {
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
-        return;
-      }
-      if (game.id === "duel") {
-        enterWatch();
         return;
       }
       if (game.adultConfirm) {
@@ -6336,6 +6358,61 @@
       window.location.href = url;
     }
 
+    function ensureNowhereHttps() {
+      if (location.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return true;
+      const url = new URL("/#nowhere", location.href);
+      url.protocol = "https:";
+      location.assign(url.href);
+      return false;
+    }
+
+    async function watchNowhere(playerId, slot = 1) {
+      if (!ensureNowhereHttps()) return;
+      const player = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
+      const url = `/nowhere/?player=${encodeURIComponent(player)}`;
+      try {
+        // Same platform login, exchanged for the existing HttpOnly cookie.
+        const response = await fetch(url, {headers: headers(false), credentials: "same-origin", cache: "no-store"});
+        if (!response.ok) {
+          // Never fall back to a previous account's cookie after this login was rejected.
+          if (response.status === 401) { closeDrawers(); openModal("loginModal"); }
+          showToast(response.status === 401 ? "登录已失效，请重新登录。" : "无法打开这个旅程，请重新选择已绑定小机的槽位。");
+          return;
+        }
+        location.assign(url);
+      } catch (_) {
+        showToast("旅程暂时无法打开，请稍后重试。");
+      }
+    }
+
+    async function openNowherePicker(bindings) {
+      $("bankPickerPanel").setAttribute("aria-label", "选择乌有乡旅程");
+      $("bankPickerTitle").textContent = "选择小机与旅程槽位";
+      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取旅程...</p>`;
+      $("bankPicker").classList.add("show");
+      $("bankPicker").setAttribute("aria-hidden", "false");
+      try {
+        const response = await fetch("/api/nowhere/saves", {headers: headers(false), cache: "no-store"});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "旅程读取失败，请重新登录后重试");
+        const bound = new Set(bindings.map(user => String(user.id)));
+        const options = (data.machines || []).filter(machine => bound.has(String(machine.user.id)))
+          .flatMap(machine => (machine.slots || []).map(save => ({machine, save})));
+        $("bankPickerOptions").innerHTML = options.map(({machine, save}, index) => `
+          <button class="bank-picker-option" data-nowhere-save="${index}" type="button">
+            <span class="garden-picker-option-main">${escapeHtml(machine.user.username)} · 槽${Number(save.slot)}</span>
+            <span class="garden-picker-option-meta">${escapeHtml(save.place || save.status || "旅程")}</span>
+          </button>`).join("") || `<p class="garden-picker-empty">还没有乌有乡旅程。</p><p class="garden-picker-hint">让绑定的小机通过 MCP 调用 play(game="nowhere", action="open_door") 开门。</p>`;
+        document.querySelectorAll("[data-nowhere-save]").forEach(button => button.addEventListener("click", () => {
+          const {machine, save} = options[Number(button.dataset.nowhereSave)];
+          closeBankPicker();
+          watchNowhere(machine.user.id, save.slot);
+        }));
+      } catch (error) {
+        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(error.message)}</p>`;
+      }
+    }
+
     function watchCurrentGame(playerId, slot = 1) {
       const game = currentGame();
       if (game.id === "workkk") {
@@ -6344,6 +6421,10 @@
       }
       if (game.id === "moonlit") {
         watchMoonlit(playerId, slot);
+        return;
+      }
+      if (game.id === "nowhere") {
+        watchNowhere(playerId, slot);
         return;
       }
       if (game.id === "ai_life") {
@@ -6400,7 +6481,7 @@
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
       try {
-        const res = await fetch("/api/auth/saves", {
+        const res = await fetch("/api/auth/saves?game=workkk", {
           headers: headers(false),
           cache: "no-store",
         });
@@ -6492,7 +6573,7 @@
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
       try {
-        const res = await fetch("/api/auth/saves", {
+        const res = await fetch("/api/auth/saves?game=moonlit", {
           headers: headers(false),
           cache: "no-store",
         });
@@ -6592,7 +6673,7 @@
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
       try {
-        const res = await fetch("/api/auth/saves", {headers: headers(false), cache: "no-store"});
+        const res = await fetch("/api/auth/saves?game=ai_life", {headers: headers(false), cache: "no-store"});
         const data = await res.json().catch(() => ({}));
         if (res.status === 401) throw new Error("登录已失效，请重新登录");
         if (!res.ok) throw new Error(data.error || "人生存档读取失败，请稍后再试");
@@ -6683,7 +6764,7 @@
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
       try {
-        const res = await fetch("/api/auth/saves", {headers: headers(false), cache: "no-store"});
+        const res = await fetch("/api/auth/saves?game=detroit", {headers: headers(false), cache: "no-store"});
         const data = await res.json().catch(() => ({}));
         if (res.status === 401) throw new Error("登录已失效，请重新登录");
         if (!res.ok) throw new Error(data.error || "底特律槽位读取失败，请稍后再试");
@@ -6741,7 +6822,7 @@
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
       try {
-        const res = await fetch("/api/auth/saves", {headers: headers(false), cache: "no-store"});
+        const res = await fetch("/api/auth/saves?game=camping_plaza", {headers: headers(false), cache: "no-store"});
         const data = await res.json().catch(() => ({}));
         if (res.status === 401) throw new Error("登录已失效，请重新登录");
         if (!res.ok) throw new Error("营地存档读取失败，请稍后再试");
@@ -7031,17 +7112,24 @@
     }
 
     async function enterWatch() {
+      if (currentGame().id === "nowhere") {
+        if (!ensureNowhereHttps()) return;
+        await loadMe();
+      }
       if (currentGame().maintenance) {
         showToast("露营广场正在维护中，暂时无法进入游戏，请稍后再试。");
         return;
       }
       if (!me || !token()) {
-        const loginHint = currentGame().id === "garden_cat"
+        const loginHint = currentGame().id === "nowhere"
+          ? "请在此安全页面登录后查看旅程；HTTP 与 HTTPS 的登录状态不共用。"
+          : currentGame().id === "garden_cat"
           ? "请先登录再进入花园"
           : (currentGame().id === "camping_plaza" ? "请先登录再进入营地"
           : (currentGame().id === "forest" ? "请先登录再进入双人森林"
           : (currentGame().id === "duel" ? "请先登录再进入双弈" : "请先登录再围观大屏")));
         showToast(loginHint);
+        closeDrawers();
         openModal("loginModal");
         return;
       }
@@ -7072,6 +7160,10 @@
       }
       if (currentGame().id === "moonlit") {
         await openMoonlitPicker(bindings);
+        return;
+      }
+      if (currentGame().id === "nowhere") {
+        await openNowherePicker(bindings);
         return;
       }
       if (currentGame().id === "ai_life") {
@@ -7105,6 +7197,7 @@
       loadLeaderboard(game.id);
       if (game.id === "arcade") loadArcadeBankStatus();
       $("gameDrawer").classList.add("show");
+      if (game.metric === "--") void loadGameStats();
     }
 
     function closeDrawers() {
@@ -8172,6 +8265,11 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || (loginMode === "register" ? "注册失败" : "登录失败"));
         localStorage.setItem(TOKEN_KEY, data.token);
+        const duelInvite = new URL(location.href).searchParams.get("duel_invite");
+        if (duelInvite && /^[A-Fa-f0-9]{12}$/.test(duelInvite) && !data.user.is_ai && !data.pending_deletion) {
+          location.href = `/duel/?invite=${encodeURIComponent(duelInvite)}&token=${encodeURIComponent(data.token)}`;
+          return;
+        }
         localStorage.setItem("cedartoy_user_id", data.user.id);
         me = {user: data.user, bindings: [], pending_deletion: Boolean(data.pending_deletion)};
         machineState = {loaded: false, loading: false, machines: [], error: ""};
@@ -8986,7 +9084,13 @@
     renderAuth();
     openResetPasswordFromUrl();
     loadAvatarCapability();
-    loadMe();
+    loadMe().then(() => {
+      if (location.hash !== "#nowhere") return;
+      history.replaceState(null, "", location.pathname + location.search);
+      selectGame("nowhere", false);
+      enterWatch();
+      if (!me) showToast("请在安全页面登录后，再选择小机旅程。");
+    });
     loadRoomCount();
     loadGameStats();
   </script>

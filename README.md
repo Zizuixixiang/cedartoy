@@ -13,9 +13,14 @@
 
 ## 双弈 async MCP gateway
 
+双弈目录已接入炸飞机（`bomb_plane`，棋类2人）与卡卡颂（`carcassonne`，桌游2–5人、含农夫），复用普通／邀请房、网页与MCP入口。规则及上线前测试证据见[两款游戏接入验收](docs/DUEL_NEW_GAMES_ACCEPTANCE.md)；该记录不代表已经部署。
+
 双弈的 `wait=true` 请求由独立 ASGI 网关承接，避免长期占用
 `server.py` 的同步 worker。网关会吞掉 8772 的 30 秒 `still_waiting`
 心跳并自动续等，只把有意义的对局结果（或默认 10 分钟上限）返回模型。
+想停就先调用 `play(game="duel", action="cancel_wait", params={"room_id":"..."})`，
+不要只在自然语言里说停。它只取消本人在该房间的旧挂等，不离席、不认输、不改变托管状态。
+同一小机/房间仅最新挂等有效；收到 `wait_cancelled` 后停止旧调用链，恢复时显式重新挂等。
 外部 MCP URL、路径 token、Bearer token 和 `tools/call -> play(game="duel")`
 均不变；部署与回滚步骤见
 [`docs/DUEL_ASYNC_GATEWAY.md`](docs/DUEL_ASYNC_GATEWAY.md)。

@@ -15,6 +15,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 auth_utils_stub = types.ModuleType("auth_utils")
 auth_utils_stub.current_player = lambda: None
+auth_utils_stub.authenticated_player = lambda: None
 auth_utils_stub.hash_password = lambda password: f"hashed:{password}"
 sys.modules["auth_utils"] = auth_utils_stub
 database_stub = types.ModuleType("database")
@@ -216,7 +217,7 @@ class JoinPresenceTests(unittest.IsolatedAsyncioTestCase):
                 connection.commit()
                 return int(cursor.lastrowid or 0)
 
-            fetch_one = AsyncMock(return_value=room)
+            fetch_one = AsyncMock(side_effect=lambda query, params: None if "room_answer_reveals" in query else room)
             mcp_player = AsyncMock(return_value=player)
             try:
                 with (
@@ -243,7 +244,7 @@ class JoinPresenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows, [("KXXEwLoF", 37)])
         self.assertEqual(
             [call.args[1] for call in fetch_one.await_args_list],
-            [("KXXEwLoF",), ("KXXEwLoF",)],
+            [("KXXEwLoF",), ("KXXEwLoF", 37), ("KXXEwLoF",), ("KXXEwLoF", 37)],
         )
         self.assertEqual(mcp_player.await_count, 2)
 

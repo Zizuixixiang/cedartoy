@@ -15,6 +15,7 @@ class AuthBody(BaseModel):
 
 
 class RoomCreateBody(BaseModel):
+    is_locked: bool = False
     mode: str = "random"
     puzzle_id: int | None = None
     title: str = Field(default="", max_length=TITLE_LIMIT)

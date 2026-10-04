@@ -1,0 +1,11 @@
+--- /etc/nginx/conf.d/cedartoy-tunnel-router.conf
++++ /etc/nginx/conf.d/cedartoy-tunnel-router.conf
+@@ -17,6 +17,8 @@
+     access_log off;
+     client_max_body_size 50m;
+
++    include /etc/nginx/snippets/cedartoy-mcp-test-probe.conf;
++
+     location = /files {
+         return 308 /files/;
+     }

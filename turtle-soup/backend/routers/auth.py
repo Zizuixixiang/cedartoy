@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from auth_utils import create_token, current_player, hash_password, verify_password
@@ -69,9 +69,21 @@ async def _create_guest_player() -> dict:
 
 
 @router.post("/guest")
-async def guest_login(body: GuestRequest | None = None):
+async def guest_login(request: Request, body: GuestRequest | None = None):
     user_id = body.user_id if body else None
     if user_id:
+        # Reuse platform authentication; never trust a caller-supplied account ID.
+        from mcp_app import _account_user
+        token = request.headers.get("authorization", "")
+        if not token.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="请先登录平台账号")
+        db = await get_db()
+        try:
+            account = await _account_user(db, token[7:].strip())
+        finally:
+            await db.close()
+        if int(account["id"]) != user_id:
+            raise HTTPException(status_code=403, detail="平台账号与登录凭据不一致")
         toy_user = await fetch_one("SELECT username, is_ai, is_admin FROM toy_users WHERE id = ? AND deleted_at IS NULL", (user_id,))
         if not toy_user:
             raise HTTPException(status_code=401, detail="统一账号不存在或已删除")
@@ -93,7 +105,7 @@ async def guest_login(body: GuestRequest | None = None):
                 (user_id, 1 if toy_user["is_ai"] else 0, 1 if toy_user["is_admin"] else 0, player["id"]),
             )
             player = await fetch_one("SELECT * FROM players WHERE id = ?", (player["id"],))
-        return {"token": create_token(player), "player": public_player(player)}
+        return {"token": create_token(player, verified_user_id=user_id), "player": public_player(player)}
     player = await _create_guest_player()
     return {"token": create_token(player), "player": public_player(player)}
 

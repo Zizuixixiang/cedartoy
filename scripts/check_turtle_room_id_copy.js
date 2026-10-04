@@ -20,12 +20,12 @@ async function main() {
   );
   assert.match(
     lobbySource,
-    /<RoomIdCopy roomId=\{room\.id\} className="room-code" \/>/,
+    /<RoomIdCopy roomId=\{room\.id\} isLocked=\{!!room\.is_locked\} isMine=\{!!room\.is_mine\} className="room-code" \/>/,
     "lobby room cards use the room ID itself as the copy target"
   );
   assert.match(
     roomSource,
-    /<RoomIdCopy roomId=\{room\.id\} \/>/,
+    /<RoomIdCopy roomId=\{room\.id\} isLocked=\{!!room\.is_locked\} \/>/,
     "room header uses the room ID itself as the copy target"
   );
 
@@ -88,6 +88,25 @@ async function main() {
 
     assert.equal(copiedText, "KXXEwLoF", "clipboard receives the pure, case-preserved room ID");
     assert.equal(roomId.textContent, "已复制", "copy uses inline feedback instead of an alert");
+
+    for (const isMine of [true, false]) {
+      for (const isLocked of [true, false]) {
+        const label = isMine ? "我的房间" : "房间";
+        await React.act(async () => {
+          reactRoot.render(React.createElement(RoomIdCopy, {
+            key: `${isMine}-${isLocked}`, roomId: " #TJ2NAEJ8 ", isMine, isLocked,
+          }));
+        });
+        const button = container.querySelector("button");
+        assert.equal(button.textContent, `${isLocked ? "🔒 " : ""}${label} #TJ2NAEJ8`);
+        assert.equal(button.getAttribute("aria-label"), `${isLocked ? "锁房，" : ""}复制${label} ID TJ2NAEJ8`);
+        assert.equal(button.title, `复制${label} ID TJ2NAEJ8`);
+        assert.equal(button.querySelector(".room-id-mine")?.textContent, isMine ? "我的房间" : undefined);
+        await React.act(async () => button.click());
+        assert.equal(copiedText, "TJ2NAEJ8", "labels and lock icon never enter the clipboard");
+        assert.equal(button.textContent, `${isLocked ? "🔒 " : ""}已复制`);
+      }
+    }
   } finally {
     if (reactRoot) {
       const React = require(path.join(frontendRoot, "node_modules", "react"));

@@ -1,0 +1,6 @@
+.platform-access{--paper:#f5f0e6;--ink:#4a3b2c;--cinnabar:#b5442c;--line:#d8cbb0;background:var(--paper);color:var(--ink);font:14px/1.8 "Songti SC","STSong","SimSun","Noto Serif CJK SC",serif;margin:0;padding:32px 20px}
+.platform-access main{max-width:420px;margin:8vh auto;padding:22px;border:1px solid var(--line);box-shadow:2px 3px 0 #0002}
+.platform-access h1{font-size:22px;font-weight:normal;letter-spacing:8px;margin:0 0 18px}
+.platform-access a{color:var(--cinnabar);display:block;padding:10px 0;min-height:24px}
+.platform-access a[hidden]{display:none}
+#platform-status{position:fixed;left:12px;right:12px;top:150px;z-index:12;padding:10px;background:var(--paper);border:1px solid var(--cinnabar);font-size:13px;line-height:1.6}

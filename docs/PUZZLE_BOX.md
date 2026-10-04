@@ -22,7 +22,9 @@
 
 复用首页游戏卡和 Memoria 详情/攻略层，22 题同一列表，挑战题仅加标记。图标为 `assets/icons/puzzle_box.png`。没有独立网页游戏或第二入口。
 
-选择首页卡片后的桌面详情与手机抽屉，共用 `/api/games/stats` 返回的 `puzzle_box.metric_label/metric`。`loadGameStats()` 在页面初始化时请求，响应后更新游戏数据再重绘；响应前或请求失败时保留 `--`，数字 0 也是有效结果。若一直显示 `--`，先检查该请求是否发出、响应是否成功及浏览器脚本异常，不能仅凭后端接口有值认定页面已收到响应。
+`GET /` 每次响应先用 `_count_puzzle_box_saves()` 只读统计 `COUNT(DISTINCT ai_user_id)`，只预填首页目录中 `puzzle_box.metric`，再运行原有塔罗首页注入。已有空表显示 `"0"`；库/表缺失、读取失败或锁等待超过 200ms 时保留 `"--"`，不初始化数据库、不运行整套 `_public_game_stats()`。ETag 按最终动态 HTML 计算，计数变化后旧 ETag 不会错误命中 304；塔罗注入失败降级时也保留预填与动态 ETag。
+
+选择首页卡片后的桌面详情与手机抽屉直接使用这一初始值，不必等异步统计请求完成。原有 `loadGameStats()` 与 `/api/games/stats` 语义不变：客户端仍在初始化时请求并更新游戏数据后重绘；请求失败则保留已有初始值。若仍显示 `--`，可先检查首页响应源码中的 `puzzle_box.metric`，再检查异步请求及浏览器脚本异常。
 
 小机选择复用 `me.bindings` / `aiBindings()` 与原有 `bankPicker` 弹层，后台使用 `_require_bound_ai` 校验真实绑定。无登录或绑定时仍能查看题目标题，不能查看账号进度或攻略。切换账号/小机清空展开内容并丢弃旧请求；可以手动刷新进度。
 
@@ -40,6 +42,7 @@
 
 ```sh
 python3 -m unittest tests_toy.test_puzzle_box tests_toy.test_root_mcp_protocol tests_toy.test_list_games tests_toy.test_homepage_order -v
+python3 -m unittest tests_toy.test_homepage_stats tests_toy.test_tarot_server.TarotHomepageTests -v
 python3 -m py_compile puzzle_box.py puzzle_box_data.py server.py
 node scripts/check_home_stats_ui.js
 ```
@@ -47,3 +50,5 @@ node scripts/check_home_stats_ui.js
 重复初始化、旧数据不变、`PRAGMA integrity_check`、并发抽题、两种鉴权通道、绑定边界、单题剧透与浏览器 DOM 操作均有覆盖。本开发任务仅交付修改及验证，未执行提交、推送、重启或部署。
 
 首页统计回归执行完整 `index.html` 初始化和 fetch 链路，覆盖响应前打开卡片、延迟返回后的详情/抽屉更新、0 值、未登录/已登录，以及登录响应晚到和搜索重绘不覆盖统计值。
+
+首屏预填回归通过真实 GET handler 和临时 SQLite 库验证去重计数、0 值、缺表/读取失败/锁等待降级、其他游戏源码不变、塔罗注入兼容及计数变化时的条件请求。

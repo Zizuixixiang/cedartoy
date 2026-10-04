@@ -11,10 +11,10 @@ function authLocked(task) {
   return next
 }
 
-async function exchangeSoupToken(userId) {
+async function exchangeSoupToken(userId, token = localStorage.getItem(CEDARTOY_TOKEN_KEY)) {
   const res = await fetch('/soup/api/auth/guest', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ user_id: userId }),
   })
   const data = await res.json().catch(() => ({}))
@@ -42,7 +42,7 @@ export async function loginAccount(username, password, mode = 'login') {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || data.detail || (registering ? '注册失败' : '登录失败'))
-    const soupAuth = await exchangeSoupToken(data.user.id)
+    const soupAuth = await exchangeSoupToken(data.user.id, data.token)
     localStorage.setItem(CEDARTOY_TOKEN_KEY, data.token)
     localStorage.setItem(CEDARTOY_USER_ID_KEY, String(data.user.id))
     setToken(soupAuth.token)
@@ -59,7 +59,7 @@ export async function ensureGuestToken(options = {}) {
   const toyUserId = localStorage.getItem(CEDARTOY_USER_ID_KEY)
   if (toyUserId && !forceGuest) {
     try {
-      const data = await post('/auth/guest', { user_id: parseInt(toyUserId) })
+      const data = await exchangeSoupToken(Number(toyUserId))
       setToken(data.token)
       return data.token
     } catch (e) {

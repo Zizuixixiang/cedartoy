@@ -873,9 +873,9 @@ function showDeleteDialog'''
         text = re.sub(
             r'<details class="usage-note">.*?</details>',
             '<details class="usage-note"><summary>來源與許可</summary><div class="tiny">'
-            '<p><a href="https://github.com/cfzdgbw42k-pixel/detroit-ai-player" target="_blank" rel="noopener noreferrer">老師倉庫</a>；老師註明本作的創作來源為 '
-            '<a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">Baba88611 原項目</a>。</p>'
-            '<p>非商用實驗；劇情資料依原項目的 <a href="https://github.com/Baba88611/detroit-ai-player/blob/main/docs/legal/CC-BY-NC-4.0.txt" target="_blank" rel="noopener noreferrer">CC BY-NC 4.0</a> 授權。</p>'
+            '<p>老師倉庫：<a href="https://github.com/cfzdgbw42k-pixel/detroit-ai-player" target="_blank" rel="noopener noreferrer">GitHub</a>；老師註明本作的創作來源為 Baba88611 原項目：'
+            '<a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">GitHub</a>。</p>'
+            '<p>非商用實驗；劇情資料依原項目的 CC BY-NC 4.0（<a href="https://github.com/Baba88611/detroit-ai-player/blob/main/docs/legal/CC-BY-NC-4.0.txt" target="_blank" rel="noopener noreferrer">GitHub</a>）授權。</p>'
             '</div></details>',
             text,
             count=1,

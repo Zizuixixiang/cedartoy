@@ -134,6 +134,7 @@ class DuelGatewayPrepareTests(unittest.TestCase):
             )
 
         self.assertEqual(prepared["kind"], "ready")
+        self.assertIsInstance(prepared["backend_payload"].pop("wait_generation"), int)
         self.assertEqual(prepared["backend_payload"], {
             "action": "state",
             "player_id": "42",
@@ -914,8 +915,16 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(response.content)["id"], 103)
 
     async def test_client_disconnect_cancels_backend_abandons_ticket_and_releases_slot(self):
+        await self._check_disconnect_cleanup("2.4")
+
+    async def test_asgi_receive_disconnect_cleans_up_under_cancel_scope(self):
+        await self._check_disconnect_cleanup("2.0")
+
+    async def _check_disconnect_cleanup(self, spec_version):
         abandoned = []
         backend_cancelled = asyncio.Event()
+        released_generations = []
+        generation = time.time_ns()
 
         async def cedartoy_upstream(request):
             if request.url.path.endswith("/prepare"):
@@ -927,6 +936,7 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
                         "player_id": "42",
                         "room_id": "ABCDEFGH",
                         "wait": True,
+                        "wait_generation": generation,
                     },
                 })
             if request.url.path.endswith("/abandon"):
@@ -937,6 +947,10 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.fail(f"unexpected CedarToy request: {request.url}")
 
         async def duel_upstream(_request):
+            payload = json.loads(_request.content)
+            if payload["action"] == "cancel_wait":
+                released_generations.append(payload["wait_generation"])
+                return httpx.Response(200, json={"ok": True, "status": "wait_cancelled"})
             try:
                 await asyncio.sleep(10)
             except asyncio.CancelledError:
@@ -960,7 +974,7 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
         scope = {
             "type": "http",
             "http_version": "1.1",
-            "asgi": {"spec_version": "2.4"},
+            "asgi": {"spec_version": spec_version},
             "method": "POST",
             "scheme": "http",
             "path": "/mcp",
@@ -973,14 +987,18 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
         }
         request = Request(scope)
         sent = []
+        disconnect = asyncio.Event()
 
         async def receive():
-            return {"type": "http.request", "body": b"", "more_body": False}
+            await disconnect.wait()
+            return {"type": "http.disconnect"}
 
         async def send(message):
             sent.append(message)
             if message["type"] == "http.response.body":
-                raise OSError("client disconnected")
+                if spec_version == "2.4":
+                    raise OSError("client disconnected")
+                disconnect.set()
 
         try:
             response = await duel_async_gateway._handle_duel(
@@ -988,8 +1006,11 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsInstance(response, StreamingResponse)
             self.assertEqual(app.state.duel_slots._value, 99)
-            with self.assertRaises(ClientDisconnect):
-                await response(scope, receive, send)
+            if spec_version == "2.4":
+                with self.assertRaises(ClientDisconnect):
+                    await response(scope, receive, send)
+            else:
+                await asyncio.wait_for(response(scope, receive, send), 1)
         finally:
             await cedartoy_client.aclose()
             await duel_client.aclose()
@@ -997,6 +1018,7 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sent[-1]["body"].isspace())
         self.assertTrue(backend_cancelled.is_set())
         self.assertEqual(abandoned, ["cancel-ticket"])
+        self.assertEqual(released_generations, [generation])
         self.assertEqual(app.state.duel_slots._value, 100)
 
     async def test_default_duel_and_cedartoy_connection_pools_are_independent(self):

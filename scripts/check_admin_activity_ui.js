@@ -24,7 +24,7 @@ const dom = new JSDOM(html, {
           {game: "eco", name: "瓶中生态<script>bad()</script>", active_users: 3, human_users: 1, ai_users: 2, operations: 6, save_count: 12},
           {game: "duel", name: "双弈", active_users: 0, human_users: 0, ai_users: 0, operations: 0, save_count: null},
         ]},
-        duel: {ok: true}, turtle: {ok: true},
+        duel: {ok: true, range: {invite_rooms: 7, started_invite_rooms: 3}}, turtle: {ok: true},
       })};
     };
   },
@@ -35,6 +35,17 @@ const dom = new JSDOM(html, {
   const document = window.document;
   const settle = () => new Promise(resolve => window.setTimeout(resolve, 0));
   await settle();
+  function assertInviteMetric(value, started) {
+    const grid = document.querySelector("#duelContent > .metric-grid");
+    const card = Array.from(grid.children).find(card => card.querySelector(".metric-label").textContent === "邀请联机房");
+    assert.ok(card, "invitation metric must reuse the selected-range metric grid");
+    assert.equal(card.querySelector(".metric-value").textContent, String(value));
+    assert.equal(card.querySelector(".metric-detail").textContent, `已开局 ${started}`);
+    assert.equal(card.previousElementSibling.querySelector(".metric-label").textContent, "完成房");
+  }
+  assertInviteMetric(7, 3);
+  window.renderDuel({ok: true, range: {invite_rooms: 0, started_invite_rooms: 0}}, "1h");
+  assertInviteMetric(0, 0);
   for (const [id, setStatus] of [["statusText", window.setStatus], ["dashboardStatus", window.setDashboardStatus]]) {
     const status = document.getElementById(id);
     setStatus("");
@@ -70,6 +81,7 @@ const dom = new JSDOM(html, {
     select.dispatchEvent(new window.Event("change"));
     await settle();
     assert.ok(requests.includes(`/api/admin/activity?range=${range}`));
+    assertInviteMetric(7, 3);
     for (const id of ["gameOverviewRangeLabel", "duelActivityRangeLabel", "turtleActivityRangeLabel"]) {
       assert.ok(document.getElementById(id).textContent.startsWith(range));
     }

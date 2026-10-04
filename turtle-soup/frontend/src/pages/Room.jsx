@@ -47,6 +47,7 @@ export default function Room() {
   const { roomId } = useParams()
   const navigate = useNavigate()
   const [room, setRoom] = useState(null)
+  const [loadedRoomId, setLoadedRoomId] = useState(null)
   const [logs, setLogs] = useState([])
   const [notes, setNotes] = useState([])
   const [content, setContent] = useState('')
@@ -70,8 +71,10 @@ export default function Room() {
   const [mineOpen, setMineOpen] = useState(false)
   const [bindOpen, setBindOpen] = useState(false)
   const [cedartoyMe, setCedartoyMe] = useState(null)
+  const [loadError, setLoadError] = useState('')
   const logRef = useRef(null)
   const followLogRef = useRef(true)
+  const adminReadonly = Boolean(room?.admin_readonly)
 
   const load = async () => {
     await ensureGuestToken()
@@ -80,6 +83,7 @@ export default function Room() {
       api('/auth/me').catch(() => null),
     ])
     setRoom(data)
+    setLoadedRoomId(roomId)
     setLogs(data.logs || [])
     setNotes(data.notes || [])
     setMe(profile?.player || null)
@@ -115,7 +119,8 @@ export default function Room() {
   }
 
   useEffect(() => {
-    load().catch((err) => alert(err.message || '加载房间失败'))
+    setLoadError('')
+    load().catch((err) => setLoadError(err.message || '加载房间失败'))
     api('/game/public-settings')
       .then((settings) => {
         const count = Number(settings.answer_reveal_prompt_count || 100)
@@ -125,6 +130,7 @@ export default function Room() {
   }, [roomId])
 
   useEffect(() => {
+    if (!room || loadedRoomId !== roomId || loadError || adminReadonly) return
     let es
     let cancelled = false
     ;(async () => {
@@ -184,12 +190,12 @@ export default function Room() {
         const data = JSON.parse(event.data)
         setNotes((items) => items.filter((note) => note.id !== data.id))
       })
-    })().catch(() => {})
+    })().catch((err) => { if (!cancelled) setLoadError(err.message || '加载房间失败') })
     return () => {
       cancelled = true
       es?.close()
     }
-  }, [roomId])
+  }, [roomId, loadedRoomId, loadError, adminReadonly])
 
   useLayoutEffect(() => {
     const stream = logRef.current
@@ -206,25 +212,25 @@ export default function Room() {
   const hintRemaining = Math.max(0, 3 - manualUsed)
   const finished = room?.status === 'finished'
   const answerRevealed = Boolean(room?.answer_revealed)
-  const actionLocked = finished || answerRevealed
+  const actionLocked = adminReadonly || finished || answerRevealed
   const hintDisabled = actionLocked || hintRemaining <= 0 || pendingHint || hintLoading
   const askCount = Math.max(Number(room?.ask_count || 0), logs.filter((row) => row.type === 'ask').length)
   const revealPromptProgressKey = `answer_reveal_prompt_last_${roomId}`
-  const answerRevealPromptVisible = revealConfirmOpen && !revealFinalConfirmOpen
+  const answerRevealPromptVisible = !adminReadonly && revealConfirmOpen && !revealFinalConfirmOpen
 
   useEffect(() => {
     if (!answerRevealPromptVisible) setAnswerRevealCollapsed(false)
   }, [answerRevealPromptVisible])
 
   useEffect(() => {
-    if (!room || actionLocked || answerRevealPromptCount <= 0 || askCount <= 0) return
+    if (!room || loadedRoomId !== roomId || actionLocked || answerRevealPromptCount <= 0 || askCount <= 0) return
     const milestone = Math.floor(askCount / answerRevealPromptCount) * answerRevealPromptCount
     if (milestone <= 0) return
     const promptedCount = Number(localStorage.getItem(revealPromptProgressKey) || 0)
     if (promptedCount >= milestone) return
     setRevealPromptMilestone(milestone)
     setRevealConfirmOpen(true)
-  }, [room, actionLocked, askCount, answerRevealPromptCount, revealPromptProgressKey, roomId])
+  }, [room, loadedRoomId, actionLocked, askCount, answerRevealPromptCount, revealPromptProgressKey, roomId])
 
   const send = async () => {
     if (!content.trim() || actionLocked || sendLoading) return
@@ -285,7 +291,7 @@ export default function Room() {
   }
 
   const respondHint = async (logId, accept) => {
-    if (hintBusy) return
+    if (adminReadonly || hintBusy) return
     setHintBusy(true)
     try {
       await post('/game/hint/respond', { room_id: roomId, log_id: logId, accept })
@@ -303,7 +309,7 @@ export default function Room() {
   }
 
   const closeRoom = async () => {
-    if (closeLoading) return
+    if (adminReadonly || closeLoading) return
     setCloseLoading(true)
     try {
       await post(`/rooms/${roomId}/close`)
@@ -351,13 +357,30 @@ export default function Room() {
     setRevealFinalConfirmOpen(false)
   }
 
-  if (!room) {
+  if (loadError) {
+    const isLockedRoom = loadError.includes('锁房') || loadError.includes('仅限创建者本人和同一绑定关系')
+    const errorMessage = isLockedRoom ? loadError.replace(/^这是锁房[，,:：\s]*/, '') : loadError
+    return (
+      <div className="toy-modal show room-error-modal">
+        <section className="modal-box" aria-labelledby="roomErrorTitle">
+          <h2 className="modal-title" id="roomErrorTitle">
+            {isLockedRoom ? '🔒 这个房间已上锁' : '无法进入房间'}
+          </h2>
+          <p className="modal-hint" role="alert">{errorMessage}</p>
+          <div className="modal-actions">
+            <Link className="pixel-btn" to="/">返回大厅</Link>
+          </div>
+        </section>
+      </div>
+    )
+  }
+  if (!room || loadedRoomId !== roomId) {
     return <div className="room-page loading-screen">加载中…</div>
   }
 
   const tags = parseTags(room.tags)
   const displayLogs = logs.filter((row) => row.type !== 'hint_accept' && row.type !== 'hint_reject')
-  const canCloseRoom = !finished && me && (me.is_admin || Number(room.created_by) === Number(me.id))
+  const canCloseRoom = !adminReadonly && !finished && me && (me.is_admin || Number(room.created_by) === Number(me.id))
 
   return (
     <div className="room-page">
@@ -367,7 +390,7 @@ export default function Room() {
           <div className="lobby-title"><span className="pixel-mark">▣</span><span>游戏大厅</span></div>
           <div className={`lobby-status${finished ? '' : ' playing'}`}>
             <span className="online-dot" />
-            <RoomIdCopy roomId={room.id} />
+            <RoomIdCopy roomId={room.id} isLocked={!!room.is_locked} />
             <span>{finished ? '已结束' : '进行中'}</span>
           </div>
         </div>
@@ -400,7 +423,7 @@ export default function Room() {
             <div className="surface-head-meta" aria-label="房间状态">
               <span className={`surface-state ${finished ? 'pale' : 'playing'}`}>{finished ? '已结束' : '进行中'}</span>
               <span>提问 {askCount}</span>
-              <span>在房 {room.active_players || 1}</span>
+              <span>在房 {adminReadonly ? (room.active_players ?? 0) : (room.active_players || 1)}</span>
             </div>
             {canCloseRoom && (
               <button
@@ -425,6 +448,7 @@ export default function Room() {
         </aside>
 
         <section className="room-play">
+          {adminReadonly && <p className="room-readonly-notice" role="status">管理员只读查看</p>}
           {answerRevealPromptVisible && (
             <div className={`answer-reveal-prompt${answerRevealCollapsed ? ' collapsed' : ''}`} role="region" aria-label="公布汤底提示">
               <div className="answer-reveal-copy">
@@ -474,12 +498,13 @@ export default function Room() {
                 logs={displayLogs}
                 roomId={roomId}
                 roomStatus={room?.status}
+                readOnly={adminReadonly}
                 onHintRespond={respondHint}
                 hintBusy={hintBusy}
                 currentPlayerId={me?.id}
                 answerRevealPromptCount={answerRevealPromptCount}
               />
-              {answerRevealed && (
+              {!adminReadonly && answerRevealed && (
                 <div className="log-game-over private-answer-reveal" role="region" aria-label="已公布汤底" style={{ marginTop: 10 }}>
                   <div className="log-game-over-label">&gt; 已查看汤底</div>
                   <p>{room.revealed_answer || room.answer}</p>
@@ -488,100 +513,106 @@ export default function Room() {
             </div>
           </section>
 
-          <section className="room-composer">
-            <div className="composer-head">
-              <div className="composer-tabs" role="tablist" aria-label="输入模式">
+          {!adminReadonly && (
+            <section className="room-composer">
+              <div className="composer-head">
+                <div className="composer-tabs" role="tablist" aria-label="输入模式">
+                  <button
+                    type="button"
+                    className={inputMode === 'ask' ? 'active' : ''}
+                    disabled={actionLocked}
+                    onClick={() => setInputMode('ask')}
+                  >
+                    提问
+                  </button>
+                  <button
+                    type="button"
+                    className={inputMode === 'guess' ? 'active' : ''}
+                    disabled={actionLocked}
+                    onClick={() => setInputMode('guess')}
+                  >
+                    猜测汤底
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className={inputMode === 'ask' ? 'active' : ''}
-                  disabled={actionLocked}
-                  onClick={() => setInputMode('ask')}
+                  className={`hint-request-btn${hintDisabled ? ' exhausted' : ''}`}
+                  disabled={hintDisabled}
+                  onClick={openHintConfirm}
                 >
-                  提问
-                </button>
-                <button
-                  type="button"
-                  className={inputMode === 'guess' ? 'active' : ''}
-                  disabled={actionLocked}
-                  onClick={() => setInputMode('guess')}
-                >
-                  猜测汤底
+                  请求提示
+                  <span>{hintRemaining}/3</span>
                 </button>
               </div>
-              <button
-                type="button"
-                className={`hint-request-btn${hintDisabled ? ' exhausted' : ''}`}
-                disabled={hintDisabled}
-                onClick={openHintConfirm}
-              >
-                请求提示
-                <span>{hintRemaining}/3</span>
-              </button>
-            </div>
-            <div className="composer-row">
-              <textarea
-                maxLength={200}
-                value={content}
-                disabled={actionLocked}
-                onChange={(event) => setContent(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    send()
-                  }
-                }}
-                placeholder={inputMode === 'guess' ? '写下你的汤底猜测…' : '输入你的提问…'}
-                rows={1}
-              />
-              <button
-                type="button"
-                className="pixel-primary send-btn"
-                disabled={actionLocked || !content.trim() || sendLoading}
-                onClick={send}
-              >
-                {sendLoading ? '发送中…' : '发送'}
-              </button>
-            </div>
-            {finished && <p className="composer-finished-hint">游戏已结束</p>}
-            {!finished && answerRevealed && <p className="composer-finished-hint">你已查看汤底，不能继续答题或操作记事板</p>}
-          </section>
+              <div className="composer-row">
+                <textarea
+                  maxLength={200}
+                  value={content}
+                  disabled={actionLocked}
+                  onChange={(event) => setContent(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      send()
+                    }
+                  }}
+                  placeholder={inputMode === 'guess' ? '写下你的汤底猜测…' : '输入你的提问…'}
+                  rows={1}
+                />
+                <button
+                  type="button"
+                  className="pixel-primary send-btn"
+                  disabled={actionLocked || !content.trim() || sendLoading}
+                  onClick={send}
+                >
+                  {sendLoading ? '发送中…' : '发送'}
+                </button>
+              </div>
+              {finished && <p className="composer-finished-hint">游戏已结束</p>}
+              {!finished && answerRevealed && <p className="composer-finished-hint">你已查看汤底，不能继续答题或操作记事板</p>}
+            </section>
+          )}
         </section>
       </div>
 
-      <button
-        type="button"
-        className="notepad-drawer-tab"
-        aria-expanded={notesOpen}
-        aria-controls="room-notepad-drawer"
-        onClick={() => setNotesOpen(true)}
-      >
-        <span>📝记事板</span>
-      </button>
+      {!adminReadonly && (
+        <>
+          <button
+            type="button"
+            className="notepad-drawer-tab"
+            aria-expanded={notesOpen}
+            aria-controls="room-notepad-drawer"
+            onClick={() => setNotesOpen(true)}
+          >
+            <span>📝记事板</span>
+          </button>
 
-      <div
-        className={`notepad-drawer${notesOpen ? ' show' : ''}`}
-        onClick={() => setNotesOpen(false)}
-        aria-hidden={!notesOpen}
-      >
-        <div
-          id="room-notepad-drawer"
-          className="notepad-drawer-panel"
-          role="dialog"
-          aria-label="记事板"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <NoteBoard
-            roomId={roomId}
-            notes={notes}
-            setNotes={setNotes}
-            currentPlayer={me}
-            disabled={actionLocked}
-            disabledLabel={answerRevealed ? '你已查看汤底' : '游戏已结束'}
-          />
-        </div>
-      </div>
+          <div
+            className={`notepad-drawer${notesOpen ? ' show' : ''}`}
+            onClick={() => setNotesOpen(false)}
+            aria-hidden={!notesOpen}
+          >
+            <div
+              id="room-notepad-drawer"
+              className="notepad-drawer-panel"
+              role="dialog"
+              aria-label="记事板"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <NoteBoard
+                roomId={roomId}
+                notes={notes}
+                setNotes={setNotes}
+                currentPlayer={me}
+                disabled={actionLocked}
+                disabledLabel={answerRevealed ? '你已查看汤底' : '游戏已结束'}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
-      {revealFinalConfirmOpen && (
+      {!adminReadonly && revealFinalConfirmOpen && (
         <div className="modal-backdrop room-close-backdrop" onClick={() => setRevealFinalConfirmOpen(false)}>
           <div
             className="modal room-close-modal"
@@ -607,7 +638,7 @@ export default function Room() {
         </div>
       )}
 
-      {hintConfirmOpen && (
+      {!adminReadonly && hintConfirmOpen && (
         <div className="modal-backdrop room-close-backdrop" onClick={() => setHintConfirmOpen(false)}>
           <div
             className="modal room-close-modal"
@@ -633,7 +664,7 @@ export default function Room() {
         </div>
       )}
 
-      {closeConfirmOpen && (
+      {!adminReadonly && closeConfirmOpen && (
         <div className="modal-backdrop room-close-backdrop" onClick={() => setCloseConfirmOpen(false)}>
           <div className="modal room-close-modal" role="dialog" aria-modal="true" aria-label="关闭房间确认" onClick={(event) => event.stopPropagation()}>
             <h2>关闭房间？</h2>

@@ -38,6 +38,7 @@ Authorization: Bearer <cedartoy_token>
 - 双弈活跃房要求当前仍在进行或等待，且 `updated_at` 或 `last_move_at` 落在所选范围；活跃人/机是这些房间中已加入的 `human/bound_machine` 去重，`system_npc` 单列。
 - 海龟汤活跃房要求尚未结束，且房间创建、`room_presence.last_active_at` 或 `game_logs.created_at` 落在所选范围；活跃人/机只按有时间证据的 player 去重。
 - 双弈“开始过”是所选范围新开房中 `revision>0`、已有 `terminal_at` 或当前为 `finished/archived`；参与者、游戏分布和 NPC 占比使用同一开始房 cohort。
+- 双弈“邀请联机房”（`invite_rooms`）按 `room_invites` 存在并 JOIN `rooms`、房间 `created_at` 落在所选 `[start,end)` 内计数；“已开局”（`started_invite_rooms`）仅统计其中符合上述“开始过”口径的房间。
 - 筹码结算按 `chip_settlement_batches.reference_id` 去重到房间，stake 读取 `rooms.stake`，不累加 ledger 正负流水。
 - 海龟汤完成按 `finished_at` 落入范围，`winner_id` 非空记为答出；参与者由范围内 presence、日志、创建者和胜者证据合并。
 

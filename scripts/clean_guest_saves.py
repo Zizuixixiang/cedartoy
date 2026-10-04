@@ -203,7 +203,13 @@ def delete_vendor_dirs(rows: list[dict]) -> int:
     for row in rows:
         path = row["path"]
         if path.is_dir():
-            shutil.rmtree(path)
+            if path.parent.name == "nowhere":
+                from nowhere_adapter import storage as nowhere_storage
+                if nowhere_storage.ROOT.resolve() != path.parent.resolve():
+                    raise RuntimeError("nowhere save root mismatch")
+                nowhere_storage.delete(path.name)
+            else:
+                shutil.rmtree(path)
             deleted += 1
     return deleted
 

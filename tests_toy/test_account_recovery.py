@@ -151,18 +151,46 @@ class AccountRecoveryTests(unittest.TestCase):
                          {"ok": True, "status": "pending", "admin_note": ""})
         self.assertEqual(server._query_recovery_ticket(body)["admin_note"], "仅本人可见的备注")
 
-    def test_submit_nonexistent_and_duplicate_without_secret_is_indistinguishable(self):
+    def test_exact_username_exists_and_duplicates_get_independent_tickets(self):
         body, tid = self.submit()
         duplicate, duplicate_id = self.submit()
-        missing, missing_id = self.submit("Missing")
         self.assertNotEqual(tid, duplicate_id)
         self.assertNotEqual(body["query_code"], duplicate["query_code"])
         self.assertEqual(server._query_recovery_ticket(duplicate)["status"], "pending")
-        self.assertEqual(server._query_recovery_ticket(missing)["status"], "pending")
-        with self.assertRaises(server._McpError):
-            self.approve(missing_id)
         with self._connect() as conn:
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM account_recovery_tickets").fetchone()[0], 3)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM account_recovery_tickets").fetchone()[0], 2)
+            self.assertEqual(conn.execute("SELECT account FROM account_recovery_tickets WHERE id=?", (tid,)).fetchone()[0], "Human")
+
+    def test_invalid_username_returns_same_error_without_creating_ticket(self):
+        deleted = self._add_user("DeletedHuman")
+        deleting = self._add_user("DeletingHuman")
+        scheduled = self._add_user("ScheduledHuman")
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET deleted_at=CURRENT_TIMESTAMP WHERE id=?", (deleted,))
+            conn.execute("UPDATE toy_users SET deletion_requested_at_epoch=? WHERE id=?", (int(time.time()), deleting))
+            conn.execute("UPDATE toy_users SET scheduled_delete_at_epoch=? WHERE id=?", (int(time.time()) + 86400, scheduled))
+        for account in ("human", "HUMAN", "Missing", "Machine", "DeletedHuman", "DeletingHuman", "ScheduledHuman"):
+            with self.subTest(account=account), self.assertRaises(server._McpError) as caught:
+                self.submit(account)
+            self.assertEqual((caught.exception.code, caught.exception.message), (-32602, "账号名不存在"))
+        with self._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM account_recovery_tickets").fetchone()[0], 0)
+
+    def test_username_check_uses_current_database_name(self):
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET username='RenamedHuman' WHERE id=?", (self.human_id,))
+        with self.assertRaises(server._McpError) as caught:
+            self.submit("Human")
+        self.assertEqual(caught.exception.message, "账号名不存在")
+        self.submit("RenamedHuman")
+
+    def test_numeric_id_submission_still_accepts_missing_ai_and_deleted(self):
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET deleted_at=CURRENT_TIMESTAMP WHERE id=?", (self.other_human_id,))
+        for account in (self.human_id, self.ai_id, self.other_human_id, 99999999):
+            with self.subTest(account=account):
+                body, _ = self.submit(str(account), account_kind="id")
+                self.assertEqual(server._query_recovery_ticket(body)["status"], "pending")
 
     def test_submission_ignores_old_client_query_code_and_still_counts_toward_limit(self):
         body, tid = self.submit()
@@ -180,7 +208,7 @@ class AccountRecoveryTests(unittest.TestCase):
 
     def test_ip_limit_persists_and_is_not_account_based(self):
         for i in range(5):
-            self.submit("Human" if i % 2 else "Missing")
+            self.submit("Human" if i % 2 else "OtherHuman")
         for account in ("Human", "Missing"):
             with self.assertRaises(server._McpError) as caught:
                 self.submit(account)
@@ -209,7 +237,7 @@ class AccountRecoveryTests(unittest.TestCase):
         server._query_recovery_ticket(by_id)
 
     def test_ai_and_pending_deletion_cannot_be_approved_or_claimed(self):
-        _, tid = self.submit("Machine")
+        _, tid = self.submit(str(self.ai_id), account_kind="id")
         with self.assertRaises(server._McpError):
             self.approve(tid)
         body, human_tid = self.submit()
@@ -218,7 +246,7 @@ class AccountRecoveryTests(unittest.TestCase):
             conn.execute("UPDATE toy_users SET deletion_requested_at_epoch=? WHERE id=?", (int(time.time()), self.human_id))
         self.assertEqual(server._query_recovery_ticket(body)["status"], "unavailable")
         self.assertEqual(self.tokens(), [])
-        _, tid = self.submit()
+        _, tid = self.submit(str(self.human_id), account_kind="id")
         with self.assertRaises(server._McpError):
             self.approve(tid)
 
@@ -383,8 +411,13 @@ class AccountRecoveryTests(unittest.TestCase):
         self.assertEqual(server._query_recovery_ticket(body)["status"], "completed")
 
     def legacy_ticket(self, code, **kwargs):
-        _, tid = self.submit(**kwargs)
+        # Historical tickets could name nonexistent users; seed that old state
+        # without expecting the new submit endpoint to accept it.
+        missing = kwargs.get("account") == "Missing"
+        _, tid = self.submit(**({**kwargs, "account": "Human"} if missing else kwargs))
         with self._connect() as conn:
+            if missing:
+                conn.execute("UPDATE account_recovery_tickets SET account='Missing' WHERE id=?", (tid,))
             row = conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (tid,)).fetchone()
             legacy_hash = server._email_hmac("recovery-query-v1", row["account_kind"], row["account"], code)
             conn.execute("UPDATE account_recovery_tickets SET query_code_hash=? WHERE id=?", (legacy_hash, tid))

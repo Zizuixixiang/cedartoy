@@ -115,6 +115,8 @@ def _empty_duel(error: str | None = None) -> dict:
             "new_rooms": 0,
             "started_rooms": 0,
             "completed_rooms": 0,
+            "invite_rooms": 0,
+            "started_invite_rooms": 0,
             "participants": {"human": 0, "bound_machine": 0},
             "game_distribution": [],
         },
@@ -276,6 +278,17 @@ def _collect_duel(path, window: dict) -> dict:
             """,
             (start, end),
         ).fetchone()
+        invite_funnel = conn.execute(
+            f"""
+            SELECT
+                COUNT(*) AS invite_rooms,
+                COALESCE(SUM(CASE WHEN {started_sql} THEN 1 ELSE 0 END), 0) AS started_invite_rooms
+            FROM room_invites i
+            JOIN rooms r ON r.room_id = i.room_id
+            WHERE r.created_at >= ? AND r.created_at < ?
+            """,
+            (start, end),
+        ).fetchone()
         completed_rooms = conn.execute(
             """
             SELECT COUNT(*)
@@ -317,6 +330,8 @@ def _collect_duel(path, window: dict) -> dict:
             "new_rooms": _int(room_funnel["new_rooms"]),
             "started_rooms": _int(room_funnel["started_rooms"]),
             "completed_rooms": _int(completed_rooms),
+            "invite_rooms": _int(invite_funnel["invite_rooms"]),
+            "started_invite_rooms": _int(invite_funnel["started_invite_rooms"]),
             "participants": participant_counts,
             "game_distribution": game_distribution,
         }

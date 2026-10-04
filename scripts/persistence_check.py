@@ -16,13 +16,20 @@
 指令与断言关键词参考 audit_persistence_report.md / final_acceptance_report.md 中实测用例。
 
 用法：python3 scripts/persistence_check.py
+双弈大富翁（仅临时SQLite，不运行上述文件存档清理）：
+  python3 scripts/persistence_check.py --duel-monopoly
+炸飞机/卡卡颂（仅临时SQLite）：
+  DUEL_TEST_PYTHON=<已有解释器> python3 scripts/persistence_check.py --duel-bomb-plane
+  DUEL_TEST_PYTHON=<已有解释器> python3 scripts/persistence_check.py --duel-carcassonne
 """
 
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +49,15 @@ STEP_TIMEOUT = 60
 #   save_files   每步之后必须存在且可 json.loads 的存档文件（相对玩家存档目录）
 # ---------------------------------------------------------------------------
 GAMES = [
+    {
+        "game": "nowhere", "label": "nowhere",
+        "new_args": {"action": "open_door", "to": "北京", "cotraveler": "0", "confirm": True},
+        "mutate_args": {"action": "say", "text": "跨进程乌有乡持久化检查"},
+        "mutate_expect": [],
+        "query_args": {"action": "quotes"},
+        "query_expect": ["跨进程乌有乡持久化检查"],
+        "save_files": ["save.json"],
+    },
     {
         "game": "ai_life",
         "label": "ai_life",
@@ -297,11 +313,11 @@ def check_saves(game, save_files, step_name):
     for rel in save_files:
         path = player_dir / rel
         if not path.exists():
-            raise StepError(f"[{step_name}] 存档缺失: {path.relative_to(ROOT)}")
+            raise StepError(f"[{step_name}] 存档缺失: {path}")
         try:
             json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise StepError(f"[{step_name}] 存档不可解析: {path.relative_to(ROOT)}: {exc}")
+            raise StepError(f"[{step_name}] 存档不可解析: {path}: {exc}")
 
 
 def check_scale_save(game, step_name):
@@ -413,4 +429,40 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] in (["--duel-bomb-plane"], ["--duel-carcassonne"]):
+        duel = ROOT / "vendor" / "duel"
+        python = os.environ.get("DUEL_TEST_PYTHON", str(duel / ".venv" / "bin" / "python"))
+        test = {
+            "--duel-bomb-plane": "tests.test_bomb_plane.BombPlaneRooms.test_cross_process_restore_and_resign_reveal",
+            "--duel-carcassonne": "tests.test_carcassonne_integration.CarcassonneIntegration.test_cross_process_persistence_same_deck_and_next_move",
+        }[sys.argv[1]]
+        sys.exit(subprocess.call([
+            python if Path(python).exists() else sys.executable, "-m", "unittest", "-v", test,
+        ], cwd=duel))
+    if sys.argv[1:] == ["--nowhere"]:
+        STEP_TIMEOUT = 180
+        # Same three independent-process chain, but entirely temporary storage.
+        with tempfile.TemporaryDirectory(prefix="nowhere-persistence-") as temp:
+            SAVE_ROOT = Path(temp) / "vendor_saves"
+            os.environ["NOWHERE_SAVE_ROOT"] = str(SAVE_ROOT / "nowhere")
+            os.environ["NOWHERE_SHARED_DB"] = str(Path(temp) / "shared.db")
+            case = next(case for case in GAMES if case["game"] == "nowhere")
+            try:
+                run_case(case)
+                print("PASS nowhere: 三个独立进程，临时存档已清理")
+            except (StepError, subprocess.TimeoutExpired) as exc:
+                print(f"FAIL nowhere: {exc}")
+                sys.exit(1)
+        sys.exit(0)
+    if sys.argv[1:] == ["--duel-monopoly"]:
+        duel = ROOT / "vendor" / "duel"
+        python = duel / ".venv" / "bin" / "python"
+        sys.exit(subprocess.call([
+            str(python) if python.exists() else sys.executable, "-m", "unittest", "-v",
+            "tests.test_monopoly_integration.MonopolyIntegrationTests.test_cross_process_restore_preserves_roll_property_auction_and_sequence",
+            "tests.test_monopoly_integration.MonopolyIntegrationTests.test_event_payments_and_nonturn_debt_survive_restore_without_double_collection",
+            "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
+        ], cwd=duel))
+    if sys.argv[1:]:
+        sys.exit("用法：persistence_check.py [--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere]")
     sys.exit(main())

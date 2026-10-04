@@ -3,24 +3,24 @@ import { Bot } from 'lucide-react'
 import JudgeBadge from './JudgeBadge.jsx'
 import { formatDbDateTime, formatDbLogClock, formatDbTime } from '../utils/display.js'
 
-function HintBanner({ log, answerRevealPromptCount = 100 }) {
+function HintBanner({ log, answerRevealPromptCount = 100, readOnly = false }) {
   const hintText = log.hint_text || ''
   const requester = log.username || (log.player_id ? `游客${log.player_id}` : '')
 
   return (
     <div className="log-hint-banner hint-offer readonly" role="region" aria-label="请求提示">
-      <div className="log-hint-label">&gt; 【请求提示】<span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span></div>
+      <div className="log-hint-label">&gt; 【请求提示】{!readOnly && <span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span>}</div>
       <p>{hintText || `${requester || '玩家'}请求了一条提示`}</p>
     </div>
   )
 }
 
-function AutoHintBanner({ log, special = false, accepted, onAccept, onReject, answerRevealPromptCount = 100 }) {
+function AutoHintBanner({ log, special = false, accepted, onAccept, onReject, answerRevealPromptCount = 100, readOnly = false }) {
   const hintText = log.hint_text || log.content
   if (special || accepted) {
     return (
       <div className={`log-hint-banner readonly${special ? ' special-clue' : ' auto-prompt'}`} role="region" aria-label={special ? '特殊线索' : '提示'}>
-        <div className="log-hint-label">&gt; {special ? '【特殊线索】' : <>{'【提示】'}<span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span></>}</div>
+        <div className="log-hint-label">&gt; {special ? '【特殊线索】' : <>{'【提示】'}{!readOnly && <span className="log-hint-label-note">（满 {answerRevealPromptCount} 题可查看汤底）</span>}</>}</div>
         <p>{hintText}</p>
       </div>
     )
@@ -127,13 +127,14 @@ function saveHintDecisions(roomId, obj) {
   localStorage.setItem(`hint_decisions_${roomId}`, JSON.stringify(obj))
 }
 
-export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCount = 100 }) {
+export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCount = 100, readOnly = false }) {
   const ordered = sortLogs(logs)
   const [hintDecisions, setHintDecisions] = useState(() => loadHintDecisions(roomId))
   useEffect(() => {
     setHintDecisions(loadHintDecisions(roomId))
   }, [roomId])
   useEffect(() => {
+    if (readOnly) return
     if (roomStatus === 'finished') {
       if (hintDecisions.__expired) return
       const expiresAt = Number(hintDecisions.__expiresAt || 0)
@@ -149,7 +150,7 @@ export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCo
         setHintDecisions(next)
       }
     }
-  }, [roomStatus, roomId, hintDecisions])
+  }, [roomStatus, roomId, hintDecisions, readOnly])
   const [compactLogTime, setCompactLogTime] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
   )
@@ -175,6 +176,7 @@ export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCo
             <HintBanner
               key={`hint-${log.id}`}
               log={log}
+              readOnly={readOnly}
               answerRevealPromptCount={answerRevealPromptCount}
             />
           )
@@ -182,14 +184,15 @@ export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCo
         if (log.type === 'auto_hint' || log.judgment === 'auto_hint') {
           const special = log.judgment === 'auto_hint'
           const decision = hintDecisions[log.id]
-          if (decision === 'reject') return null
+          if (!readOnly && decision === 'reject') return null
           return (
             <AutoHintBanner
               key={`auto-${log.id}`}
               log={log}
+              readOnly={readOnly}
               answerRevealPromptCount={answerRevealPromptCount}
               special={special}
-              accepted={decision === 'accept'}
+              accepted={readOnly || decision === 'accept'}
               onAccept={(id) => {
                 const next = { ...hintDecisions, [id]: 'accept' }
                 saveHintDecisions(roomId, next)

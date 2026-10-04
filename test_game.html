@@ -407,12 +407,12 @@
     $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
     $("pageDisclaimer").hidden = !CONFIG.disclaimer;
     if (CONFIG.game === "enneagram") {
-      $("source").textContent = "题库来自 ";
+      $("source").textContent = "题库来自 kcdjmaxx/enneagram-llm-evaluator · ";
       const sourceLink = document.createElement("a");
       sourceLink.href = "https://github.com/kcdjmaxx/enneagram-llm-evaluator";
       sourceLink.target = "_blank";
       sourceLink.rel = "noopener noreferrer";
-      sourceLink.textContent = "kcdjmaxx/enneagram-llm-evaluator";
+      sourceLink.textContent = "GitHub";
       $("source").append(sourceLink, "（MIT），感谢原作者。");
     } else {
       $("source").textContent = CONFIG.source;

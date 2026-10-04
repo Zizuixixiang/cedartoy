@@ -1,3 +1,5 @@
+from links import AUTHORS
+
 SAVE_SLOT_GUIDE_NOTE = (
     "\n\n[存档槽] 每游戏5槽，params 传 slot=1-5（缺省1；即 player_id 加 :2~:5 后缀；游客单槽）。"
     "export/import 按槽生效：空槽导入免 confirm，覆盖需 confirm=true。"
@@ -401,5 +403,5 @@ Original source: https://github.com/dan521627-hash/ai-bar-game
 存档导入：play(game="market", action="import", params={"save_data":{...},"confirm":true})（已有存档时 confirm 必须为 true）
 
 原作信息：
-作者：与一旋复（小红书号 94326164228）／仓库：github.com/yuyixuanfu/shangzhuochifan／经作者授权接入。""",
+作者：""" + AUTHORS["market"]["name"] + """／仓库：github.com/yuyixuanfu/shangzhuochifan／经作者授权接入。""",
 }

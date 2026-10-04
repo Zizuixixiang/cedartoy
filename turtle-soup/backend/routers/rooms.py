@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from auth_utils import current_player
+from auth_utils import authenticated_player, current_player
 from database import execute, fetch_all, fetch_one, get_setting
+from room_access import require_room_access, room_read_access_mode, verified_account
 from judge import public_answer_from_full_answer, scan_text
 from models import NormalizedRoomId, RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT, SQL_NOW, clean_content, public_player, room_id
@@ -14,7 +15,7 @@ NANSHAN_TOY_USER_ID = 118
 
 
 def _public_room(row: dict) -> dict:
-    out = {k: row[k] for k in row.keys() if k != "answer"}
+    out = {k: row[k] for k in row.keys() if k not in {"answer", "lock_owner_user_id"}}
     return out
 
 
@@ -155,11 +156,11 @@ async def history(player: dict = Depends(current_player)):
 
 @router.get("/")
 async def list_rooms(player: dict = Depends(current_player)):
-    del player
     finished_visible_hours = int(await get_setting("lobby_finished_visible_hours", "3"))
     rows = await fetch_all(
         """
-        SELECT r.id, r.surface, r.status, r.created_by, r.winner_id, r.created_at, r.finished_at,
+        SELECT r.id, r.is_locked, r.surface, r.status, r.created_by, r.winner_id, r.created_at, r.finished_at,
+               CASE WHEN r.created_by = ? THEN 1 ELSE 0 END AS is_mine,
                COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
                COALESCE(pz.tags, '') AS tags,
                p.username AS creator_name,
@@ -181,13 +182,16 @@ async def list_rooms(player: dict = Depends(current_player)):
         ORDER BY CASE r.status WHEN 'finished' THEN 2 ELSE 0 END, COALESCE((SELECT MAX(gl.created_at) FROM game_logs gl WHERE gl.room_id = r.id), r.created_at) DESC
         LIMIT 100
         """,
-        (f"-{finished_visible_hours} hours",),
+        (player["id"], f"-{finished_visible_hours} hours"),
     )
     return rows
 
 
 @router.post("/create")
 async def create_room(body: RoomCreateBody, player: dict = Depends(current_player)):
+    owner = await verified_account(player) if body.is_locked else None
+    if body.is_locked and not owner:
+        raise HTTPException(status_code=403, detail="请先登录平台账号后创建锁房")
     unlimited_creator = (
         bool(player.get("is_admin"))
         or int(player.get("user_id") or 0) == NANSHAN_TOY_USER_ID
@@ -233,8 +237,8 @@ async def create_room(body: RoomCreateBody, player: dict = Depends(current_playe
     while await fetch_one("SELECT id FROM rooms WHERE id = ?", (rid,)):
         rid = room_id()
     await execute(
-        "INSERT INTO rooms (id, puzzle_id, title, surface, answer, status, created_by) VALUES (?, ?, ?, ?, ?, 'playing', ?)",
-        (rid, puzzle_id, title, surface, answer, player["id"]),
+        "INSERT INTO rooms (id, puzzle_id, title, surface, answer, status, created_by, is_locked, lock_owner_user_id) VALUES (?, ?, ?, ?, ?, 'playing', ?, ?, ?)",
+        (rid, puzzle_id, title, surface, answer, player["id"], int(body.is_locked), owner["id"] if owner else None),
     )
     await execute(
         "INSERT INTO game_logs (room_id, player_id, type, content) VALUES (?, ?, 'system', ?)",
@@ -244,10 +248,10 @@ async def create_room(body: RoomCreateBody, player: dict = Depends(current_playe
 
 
 @router.get("/{room_id}")
-async def get_room(room_id: NormalizedRoomId, player: dict = Depends(current_player)):
+async def get_room(room_id: NormalizedRoomId, player: dict = Depends(authenticated_player)):
     room = await fetch_one(
         """
-        SELECT r.id, r.puzzle_id,
+        SELECT r.id, r.puzzle_id, r.is_locked, r.lock_owner_user_id,
                COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
                r.surface, r.answer, r.status, r.created_by, r.winner_id,
                r.manual_hint_count, r.last_hint_at_ask_count, r.created_at, r.finished_at,
@@ -260,6 +264,9 @@ async def get_room(room_id: NormalizedRoomId, player: dict = Depends(current_pla
     )
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")
+    access_mode = await room_read_access_mode(room_id, player, room=room)
+    if access_mode == "member":
+        await current_player(player)
     logs = await fetch_all(
         """
         SELECT gl.id, gl.room_id, gl.player_id, gl.type, gl.content, gl.judgment,
@@ -272,6 +279,19 @@ async def get_room(room_id: NormalizedRoomId, player: dict = Depends(current_pla
         """,
         (room_id,),
     )
+    data = _public_room(room)
+    data["admin_readonly"] = access_mode == "admin_readonly"
+    data["ask_count"] = len([log for log in logs if log["type"] == "ask"])
+    data["logs"] = logs
+    if data["admin_readonly"]:
+        # No private notes, personal reveals, presence, or gameplay side effects.
+        presence = await fetch_one(
+            "SELECT COUNT(*) AS c FROM room_presence WHERE room_id = ? "
+            "AND last_active_at > datetime('now', 'localtime', '-1 hour')",
+            (room_id,),
+        )
+        data["active_players"] = presence["c"]
+        return data
     notes = await fetch_all(
         """
         SELECT rn.*, p.username, p.is_guest FROM room_notes rn
@@ -287,9 +307,7 @@ async def get_room(room_id: NormalizedRoomId, player: dict = Depends(current_pla
         "SELECT COUNT(*) AS c FROM game_logs WHERE room_id = ? AND player_id = ? AND type = 'hint_offer'",
         (room_id, player["id"]),
     )
-    data = _public_room(room)
     data["manual_hint_count"] = int(manual_hint_row["c"] if manual_hint_row else 0)
-    data["ask_count"] = len([log for log in logs if log["type"] == "ask"])
     reveal_row = await fetch_one(
         "SELECT 1 FROM room_answer_reveals WHERE room_id = ? AND player_id = ?",
         (room_id, player["id"]),
@@ -297,7 +315,6 @@ async def get_room(room_id: NormalizedRoomId, player: dict = Depends(current_pla
     data["answer_revealed"] = reveal_row is not None
     if reveal_row is not None:
         data["revealed_answer"] = public_answer_from_full_answer(room["answer"])
-    data["logs"] = logs
     data["notes"] = notes
     return data
 
@@ -307,6 +324,7 @@ async def close_room(room_id: NormalizedRoomId, player: dict = Depends(current_p
     room = await fetch_one("SELECT * FROM rooms WHERE id = ?", (room_id,))
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")
+    await require_room_access(room_id, player, room=room)
     if room["created_by"] != player["id"] and not player.get("is_admin"):
         raise HTTPException(status_code=403, detail="只能关闭自己的房间")
     await execute(

@@ -893,6 +893,10 @@
       zhajinhua: "炸金花",
       texas_holdem: "德州扑克",
       mahjong: "麻将",
+      monopoly: "大富翁",
+      bomb_plane: "炸飞机",
+      rummikub: "拉密",
+      carcassonne: "卡卡颂",
     });
 
     function duelGameLabel(gameType) {
@@ -1198,6 +1202,7 @@
           ${metricCard("新开房", number(summary.new_rooms))}
           ${metricCard("真正开始过", number(summary.started_rooms), "有实际对局动作或已经结束")}
           ${metricCard("完成房", number(summary.completed_rooms), "在所选时间内完成")}
+          ${metricCard("邀请联机房", number(summary.invite_rooms), `已开局 ${number(summary.started_invite_rooms)}`)}
           ${metricCard("参与人类", number(participants.human), "开始房内去重")}
           ${metricCard("参与小机", number(participants.bound_machine), "不含系统 NPC")}
           ${metricCard("NPC 房间", number(npc.rooms), `占开始房 ${percent(npc.started_room_share)}`)}

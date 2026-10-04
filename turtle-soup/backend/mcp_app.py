@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from auth_utils import hash_password
+from room_access import require_room_access
 from database import execute, fetch_all, fetch_one, get_db, get_setting
 from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody, NormalizedRoomId, NoteBody, RevealAnswerBody, RoomCreateBody
 from presence import enter_room
@@ -27,6 +28,7 @@ from utils import ANSWER_LIMIT, ROOM_FINISHED_STATUS_HINT, SQL_NOW, SURFACE_LIMI
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 logger = logging.getLogger(__name__)
+MCP_ANSWER_REVEALED_MESSAGE = "你已查看本局汤底，不能继续参与或进入本局。房主仍可使用 close_room 收房。"
 
 TOY_SECRET = os.getenv("TOY_SECRET", "change-me-before-production")
 JWT_ALGORITHM = "HS256"
@@ -53,6 +55,8 @@ class PlayBody(BaseModel):
     avatar: str | None = None
     room_id: NormalizedRoomId | None = None
     content: str | None = None
+    is_locked: bool = False
+    include_finished: bool = False
     puzzle_id: int | None = None
     title: str | None = None
     surface: str | None = None
@@ -67,6 +71,7 @@ class PlayBody(BaseModel):
     log_id: int | None = None
     log_limit: int | None = None
     accept: bool | None = None
+    # Retained only to identify and reject obsolete ask calls.
     auto_hint_log_id: int | None = None
     accept_auto_hint: bool | None = None
     accept_auto_hint_log_id: int | None = None
@@ -82,10 +87,48 @@ async def play(body: PlayBody):
         raise HTTPException(status_code=404, detail="未知游戏")
     if not body.action:
         raise HTTPException(status_code=400, detail="action 必填")
-    if body.action == "list_rooms":
+    if body.action == "my_rooms":
+        if not body.path_token:
+            raise HTTPException(status_code=401, detail="path_token 必填")
+        player = await _mcp_player(body.path_token)
         return await fetch_all(
             """
-            SELECT r.id,
+            SELECT r.id, r.is_locked,
+                   COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
+                   r.surface, r.status, r.created_at,
+                   COALESCE(NULLIF(TRIM(creator.username), ''), p.username, '') AS creator_name,
+                   CASE WHEN r.created_by = ? THEN 'self' ELSE 'human' END AS creator_type,
+                   activity.last_active_at
+            FROM rooms r
+            JOIN players p ON p.id = r.created_by
+            LEFT JOIN toy_users creator ON creator.id = p.user_id
+            LEFT JOIN puzzles pz ON pz.id = r.puzzle_id
+            LEFT JOIN (
+                SELECT room_id, MAX(last_active_at) AS last_active_at
+                FROM room_presence GROUP BY room_id
+            ) activity ON activity.room_id = r.id
+            WHERE (r.status IN ('waiting','playing') OR (? AND r.status = 'finished'))
+              AND (r.created_by = ? OR EXISTS (
+                  SELECT 1 FROM user_bindings b
+                  JOIN toy_users h ON h.id = b.human_user_id AND h.is_ai = 0
+                  JOIN toy_users a ON a.id = b.ai_user_id AND a.is_ai = 1
+                  WHERE b.ai_user_id = ? AND h.id = p.user_id
+                    AND h.deleted_at IS NULL AND h.deletion_requested_at_epoch IS NULL
+                    AND a.deleted_at IS NULL AND a.deletion_requested_at_epoch IS NULL
+              ))
+            ORDER BY CASE WHEN r.status IN ('waiting','playing') THEN 0 ELSE 1 END,
+                     COALESCE(activity.last_active_at, r.created_at) DESC, r.created_at DESC
+            """,
+            (player["id"], body.include_finished, player["id"], player["verified_user_id"]),
+        )
+    if body.action == "list_rooms":
+        if not body.path_token:
+            raise HTTPException(status_code=401, detail="path_token 必填")
+        player = await _mcp_player(body.path_token)
+        return await fetch_all(
+            """
+            SELECT r.id, r.is_locked,
+                   CASE WHEN r.created_by = ? THEN 1 ELSE 0 END AS is_mine,
                    COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
                    r.surface, r.status, r.created_at,
                    (SELECT MAX(rp.last_active_at) FROM room_presence rp
@@ -93,8 +136,9 @@ async def play(body: PlayBody):
             FROM rooms r
             LEFT JOIN puzzles pz ON pz.id = r.puzzle_id
             WHERE r.status IN ('waiting','playing')
-            ORDER BY r.created_at DESC
-            """
+            ORDER BY is_mine DESC, r.created_at DESC
+            """,
+            (player["id"],),
         )
     if body.action == "list_puzzles":
         page = body.page if body.page is not None else 1
@@ -170,6 +214,8 @@ async def play(body: PlayBody):
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
         player = await _mcp_player(body.path_token) if body.path_token else None
+        await require_room_access(body.room_id, player)
+        await _ensure_mcp_can_participate(body.room_id, player)
         return await _room_context(body.room_id, body.log_limit, player)
     if body.action == "register":
         return await _register_toy_user(body.username, body.password, body.avatar)
@@ -178,7 +224,7 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=400, detail="room_id 必填")
         room = await fetch_one(
             """
-            SELECT r.id,
+            SELECT r.id, r.is_locked, r.lock_owner_user_id,
                    COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
                    r.surface, r.status, r.created_at
             FROM rooms r
@@ -190,6 +236,9 @@ async def play(body: PlayBody):
         if not room:
             raise HTTPException(status_code=404, detail="房间不存在")
         player = await _mcp_player(body.path_token)
+        await require_room_access(body.room_id, player, room=room)
+        await _ensure_mcp_can_participate(body.room_id, player)
+        room.pop("lock_owner_user_id", None)
         await enter_room(body.room_id, player["id"])
         return room
     if body.action == "generate":
@@ -197,6 +246,9 @@ async def play(body: PlayBody):
     if body.action == "note_list":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
+        player = await _mcp_player(body.path_token) if body.path_token else None
+        await require_room_access(body.room_id, player)
+        await _ensure_mcp_can_participate(body.room_id, player)
         notes = await fetch_all(
             """
             SELECT rn.*, p.username, p.is_guest
@@ -212,8 +264,19 @@ async def play(body: PlayBody):
                 note["username"] = f"游客{note['player_id']}"
         return notes
     player = await _mcp_player(body.path_token)
+    if body.room_id:
+        await require_room_access(body.room_id, player)
+        if body.action in {"ask", "guess", "hint_request", "hint_respond", "view_auto_hint", "note_add", "note_edit", "note_delete"}:
+            await _ensure_mcp_can_participate(body.room_id, player)
+    # Edits/deletes identify the actual room by note_id, even if room_id is absent
+    # or names another room.
+    if body.action in {"note_edit", "note_delete"} and body.note_id is not None:
+        note = await fetch_one("SELECT room_id FROM room_notes WHERE id = ?", (body.note_id,))
+        if note:
+            await require_room_access(note["room_id"], player)
+            await _ensure_mcp_can_participate(note["room_id"], player)
     if body.action == "create_random":
-        result = await create_room(RoomCreateBody(mode="random", puzzle_id=body.puzzle_id), player)
+        result = await create_room(RoomCreateBody(mode="random", puzzle_id=body.puzzle_id, is_locked=body.is_locked), player)
         return await _public_room(result["room_id"])
     if body.action == "create_custom":
         surface = clean_content(body.surface or "", SURFACE_LIMIT)
@@ -222,11 +285,11 @@ async def play(body: PlayBody):
         if not surface or not answer:
             raise HTTPException(status_code=400, detail="surface 和 answer 必填")
         result = await create_room(
-            RoomCreateBody(mode="custom", title=(body.title or "").strip()[:TITLE_LIMIT], surface=surface, answer=answer, tags=tags),
+            RoomCreateBody(mode="custom", is_locked=body.is_locked, title=(body.title or "").strip()[:TITLE_LIMIT], surface=surface, answer=answer, tags=tags),
             player,
         )
         return await fetch_one(
-            "SELECT id, title, surface, status, created_by, winner_id, created_at, finished_at FROM rooms WHERE id = ?",
+            "SELECT id, is_locked, title, surface, status, created_by, winner_id, created_at, finished_at FROM rooms WHERE id = ?",
             (result["room_id"],),
         )
     if body.action == "close_room":
@@ -236,11 +299,10 @@ async def play(body: PlayBody):
     if body.action == "ask":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
-        if body.confirm_reveal:
-            return await game_reveal_answer(
-                RevealAnswerBody(room_id=body.room_id, confirm_reveal=True),
-                player,
-            )
+        if "confirm_reveal" in body.model_fields_set:
+            raise HTTPException(status_code=400, detail="达到汤底查看门槛后，请调用 reveal_answer，传 room_id；查看后不能再进入或操作本房间。")
+        if body.model_fields_set & {"auto_hint_log_id", "accept_auto_hint", "accept_auto_hint_log_id", "reject_auto_hint_log_id"}:
+            raise HTTPException(status_code=400, detail="自动提示请改用 view_auto_hint，传 room_id 和 log_id 查看。")
         if not body.content:
             raise HTTPException(status_code=400, detail="content 必填")
         room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (body.room_id,))
@@ -248,15 +310,10 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
-        auto_hint_decision = await _auto_hint_decision_from_ask(body, player)
         previous_own_log = await _previous_own_public_log(body.room_id, player["id"])
         payload, hint_task = await _ask_impl(ContentBody(room_id=body.room_id, content=clean_content(body.content, 200)), player)
-        if auto_hint_decision is not None:
-            payload["auto_hint_decision"] = auto_hint_decision
         hint_result = await hint_task
-        if hint_result:
-            payload["auto_hint"] = _masked_auto_hint_prompt(hint_result["log_id"])
-        prompt = await _answer_reveal_prompt(body.room_id)
+        prompt = await _answer_reveal_prompt(body.room_id, player["id"])
         if prompt:
             payload["answer_reveal_prompt"] = prompt
         # join/status already provide the full surface; avoid repeating it on every ask.
@@ -268,6 +325,10 @@ async def play(body: PlayBody):
             current_log_id=payload.get("id"),
             player_id=player["id"],
         )
+        if hint_result:
+            for log in payload["logs_since_last_own_action"]:
+                if log["id"] == hint_result["log_id"] and "auto_hint_notification" in log:
+                    payload["auto_hint"] = log.pop("auto_hint_notification")
         return payload
     if body.action == "guess":
         if not body.room_id or not body.content:
@@ -279,22 +340,42 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
         return await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 3000)), player)
     if body.action == "hint_respond":
-        raise HTTPException(status_code=400, detail="自动提示请在下一次 ask 中传 auto_hint_log_id 和 accept_auto_hint=true/false 处理")
+        raise HTTPException(status_code=400, detail="自动提示改用 view_auto_hint(room_id, log_id)；主动提示直接 hint_request(room_id) 返回。")
+    if body.action == "view_auto_hint":
+        if not body.room_id or body.log_id is None:
+            raise HTTPException(status_code=400, detail="room_id 和 log_id 必填")
+        result = await _view_auto_hint(body.room_id, body.log_id, player)
+        if result is None:
+            raise HTTPException(status_code=404, detail="自动提示不存在")
+        return result
     if body.action == "hint_request":
         if not body.room_id:
             raise HTTPException(status_code=400, detail="room_id 必填")
-        payload = await game_hint_request(
+        return await game_hint_request(
             HintRequestBody(room_id=body.room_id, confirm_hint=bool(body.confirm_hint or body.confirm)),
             player,
         )
-        trigger = int(await get_setting("answer_reveal_prompt_count", "100"))
-        if trigger > 0:
-            row = await fetch_one("SELECT COUNT(*) AS c FROM game_logs WHERE room_id = ? AND type = 'ask'", (body.room_id,))
-            ask_count = int(row["c"] if row else 0)
-            payload["tip"] = f"本房间累计满 {trigger} 题后可选择查看汤底（当前已提问 {ask_count} 题）"
-        return payload
     if body.action == "reveal_answer":
-        raise HTTPException(status_code=400, detail="查看汤底确认请在下一次 ask 中传 confirm_reveal=true 处理")
+        if not body.room_id:
+            raise HTTPException(status_code=400, detail="room_id 必填")
+        if await _mcp_has_revealed(body.room_id, player):
+            return {"answer_revealed": True, "message": MCP_ANSWER_REVEALED_MESSAGE}
+        room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (body.room_id,))
+        if not room:
+            raise HTTPException(status_code=404, detail="房间不存在")
+        if room["status"] == "finished":
+            raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
+        trigger = int(await get_setting("answer_reveal_prompt_count", "100"))
+        if trigger <= 0:
+            raise HTTPException(status_code=400, detail="查看汤底功能当前未开放。")
+        row = await fetch_one(
+            "SELECT COUNT(*) AS c FROM game_logs WHERE room_id = ? AND type = 'ask'",
+            (body.room_id,),
+        )
+        ask_count = int(row["c"])
+        if ask_count < trigger:
+            raise HTTPException(status_code=400, detail=f"本房间需累计 {trigger} 次提问后才能查看汤底（当前 {ask_count} 次）。")
+        return await game_reveal_answer(RevealAnswerBody(room_id=body.room_id, confirm_reveal=True), player)
     if body.action == "note_add":
         if not body.room_id or not body.content:
             raise HTTPException(status_code=400, detail="room_id 和 content 必填")
@@ -310,10 +391,22 @@ async def play(body: PlayBody):
     raise HTTPException(status_code=400, detail="未知 action")
 
 
+async def _mcp_has_revealed(room_id: str, player: dict | None) -> bool:
+    return player is not None and await fetch_one(
+        "SELECT 1 FROM room_answer_reveals WHERE room_id = ? AND player_id = ?",
+        (room_id, player["id"]),
+    ) is not None
+
+
+async def _ensure_mcp_can_participate(room_id: str, player: dict | None) -> None:
+    if await _mcp_has_revealed(room_id, player):
+        raise HTTPException(status_code=400, detail=MCP_ANSWER_REVEALED_MESSAGE)
+
+
 async def _public_room(room_id: str, *, include_surface: bool = True) -> dict:
     room = await fetch_one(
         """
-        SELECT r.id, r.surface, r.status, r.winner_id, r.created_at, r.finished_at,
+        SELECT r.id, r.is_locked, r.surface, r.status, r.winner_id, r.created_at, r.finished_at,
                COALESCE(NULLIF(TRIM(r.title), ''), NULLIF(TRIM(pz.title), ''), '') AS title,
                COALESCE(pz.tags, '') AS tags
         FROM rooms r
@@ -334,28 +427,42 @@ async def _room_context(room_id: str, log_limit: int | None = None, player: dict
         "room": await _public_room(room_id),
         "logs": await _room_logs_after(room_id, None, log_limit, latest_limit=True, player_id=player["id"] if player else None),
     }
-    prompt = await _answer_reveal_prompt(room_id)
+    prompt = await _answer_reveal_prompt(room_id, player["id"] if player else None)
     if prompt:
         data["answer_reveal_prompt"] = prompt
     return data
 
 
-async def _answer_reveal_prompt(room_id: str) -> dict | None:
-    room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (room_id,))
-    if not room or room["status"] == "finished":
+async def _answer_reveal_prompt(room_id: str, player_id: int | None) -> dict | None:
+    if player_id is None:
         return None
     trigger = int(await get_setting("answer_reveal_prompt_count", "100"))
     if trigger <= 0:
         return None
-    row = await fetch_one("SELECT COUNT(*) AS c FROM game_logs WHERE room_id = ? AND type = 'ask'", (room_id,))
-    ask_count = int(row["c"] if row else 0)
-    if ask_count <= 0 or ask_count % trigger != 0:
-        return None
+    db = await get_db()
+    try:
+        # Claim the notification atomically, including eligibility and reveal checks.
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute(
+            """
+            INSERT OR IGNORE INTO room_answer_reveal_prompts (room_id, player_id)
+            SELECT id, ? FROM rooms WHERE id = ? AND status != 'finished'
+              AND (SELECT COUNT(*) FROM game_logs WHERE room_id = ? AND type = 'ask') >= ?
+              AND NOT EXISTS (SELECT 1 FROM room_answer_reveals WHERE room_id = ? AND player_id = ?)
+            """,
+            (player_id, room_id, room_id, trigger, room_id, player_id),
+        )
+        if not cur.rowcount:
+            await db.commit()
+            return None
+        async with db.execute("SELECT COUNT(*) FROM game_logs WHERE room_id = ? AND type = 'ask'", (room_id,)) as cur:
+            ask_count = (await cur.fetchone())[0]
+        await db.commit()
+    finally:
+        await db.close()
     return {
         "ask_count": ask_count,
-        "message": f"本房间已经累计 {ask_count} 次提问。若用户接受查看汤底提示，请在下一次 ask 中顺便传 confirm_reveal=true；房间不会结束，但你查看后不能继续 ask/guess/hint_request 或操作记事本。",
-        "requires_confirmation": True,
-        "next_ask_confirm_parameters": {"confirm_reveal": True},
+        "message": f"本房间已达到 {trigger} 题查看门槛。调用 reveal_answer，传当前 room_id；查看后不能再进入或操作本房间。",
     }
 
 
@@ -438,70 +545,76 @@ async def _room_logs_after(
 def _masked_auto_hint_prompt(log_id: int) -> dict:
     return {
         "log_id": log_id,
-        "confirmation_required": True,
-        "message": "收到一条自动提示，是否查看？请在下一次 ask 里带 auto_hint_log_id 和 accept_auto_hint=true/false；不要调用其它 action。",
-        "next_ask_confirm_parameters": {"auto_hint_log_id": log_id, "accept_auto_hint": True},
-        "next_ask_reject_parameters": {"auto_hint_log_id": log_id, "accept_auto_hint": False},
+        "message": "收到一条自动提示。调用 view_auto_hint，传当前 room_id 和 log_id 查看。",
     }
 
 
 async def _mask_auto_hints_for_mcp(rows: list[dict], player_id: int | None) -> None:
-    auto_ids = [
-        int(row["id"]) for row in rows
+    auto_rows = [
+        row for row in rows
         if row.get("type") == "auto_hint" or row.get("judgment") == "auto_hint"
     ]
-    if not auto_ids:
+    if not auto_rows:
         return
-    accepted: set[int] = set()
-    rejected: set[int] = set()
+    decisions = {}
+    notified = set()
     if player_id is not None:
-        placeholders = ",".join("?" for _ in auto_ids)
-        decisions = await fetch_all(
-            f"SELECT log_id, accepted FROM room_hint_views WHERE player_id = ? AND log_id IN ({placeholders})",
-            (player_id, *auto_ids),
-        )
-        accepted = {int(row["log_id"]) for row in decisions if int(row.get("accepted") or 0) == 1}
-        rejected = {int(row["log_id"]) for row in decisions if int(row.get("accepted") or 0) != 1}
-    for row in rows:
-        if row.get("type") != "auto_hint" and row.get("judgment") != "auto_hint":
-            continue
+        db = await get_db()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            for row in auto_rows:
+                log_id = int(row["id"])
+                # NULL = notified only; legacy 0/1 remain rejected/viewed and
+                # already notified. INSERT OR IGNORE arbitrates concurrent reads.
+                cur = await db.execute(
+                    "INSERT OR IGNORE INTO room_hint_views (log_id, player_id, accepted) VALUES (?, ?, NULL)",
+                    (log_id, player_id),
+                )
+                if cur.rowcount:
+                    notified.add(log_id)
+                async with db.execute(
+                    "SELECT accepted FROM room_hint_views WHERE log_id = ? AND player_id = ?",
+                    (log_id, player_id),
+                ) as cur:
+                    decisions[log_id] = (await cur.fetchone())[0]
+            await db.commit()
+        finally:
+            await db.close()
+    for row in auto_rows:
         log_id = int(row["id"])
-        if log_id in accepted:
+        if decisions.get(log_id) == 1:
             row["auto_hint_accepted"] = True
             continue
+        # Clue logs may duplicate the secret in content as well as hint_text.
         row["hint_text"] = None
-        row["content"] = "收到一条自动提示，是否查看？"
-        row["auto_hint_confirmation_required"] = True
-        row["next_ask_confirm_parameters"] = {"auto_hint_log_id": log_id, "accept_auto_hint": True}
-        row["next_ask_reject_parameters"] = {"auto_hint_log_id": log_id, "accept_auto_hint": False}
-        if log_id in rejected:
+        row["content"] = "自动提示（未查看）"
+        if log_id in notified:
+            row["auto_hint_notification"] = _masked_auto_hint_prompt(log_id)
+        if decisions.get(log_id) == 0:
             row["auto_hint_rejected"] = True
 
 
-async def _auto_hint_decision_from_ask(body: PlayBody, player: dict) -> dict | None:
-    log_id = body.auto_hint_log_id or body.accept_auto_hint_log_id or body.reject_auto_hint_log_id
-    if log_id is None:
-        return None
-    accept = False if body.reject_auto_hint_log_id is not None else bool(body.accept_auto_hint if body.accept_auto_hint is not None else True)
-    decision = await _respond_auto_hint(body.room_id, log_id, accept, player)
-    if decision is None:
-        raise HTTPException(status_code=404, detail="自动提示不存在")
-    return decision
-
-
-async def _respond_auto_hint(room_id: str, log_id: int, accept: bool, player: dict) -> dict | None:
-    hint = await fetch_one(
-        "SELECT * FROM game_logs WHERE id = ? AND room_id = ? AND (type = 'auto_hint' OR judgment = 'auto_hint')",
-        (log_id, room_id),
-    )
-    if not hint:
-        return None
-    await execute(
-        "INSERT OR REPLACE INTO room_hint_views (log_id, player_id, accepted) VALUES (?, ?, ?)",
-        (log_id, player["id"], 1 if accept else 0),
-    )
-    if not accept:
-        return {"log_id": log_id, "accept": False, "message": "已拒绝查看这条自动提示。"}
+async def _view_auto_hint(room_id: str, log_id: int, player: dict) -> dict | None:
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        async with db.execute(
+            "SELECT * FROM game_logs WHERE id = ? AND room_id = ? AND (type = 'auto_hint' OR judgment = 'auto_hint')",
+            (log_id, room_id),
+        ) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            await db.commit()
+            return None
+        hint = dict(row)
+        await db.execute(
+            "INSERT INTO room_hint_views (log_id, player_id, accepted) VALUES (?, ?, ?) "
+            "ON CONFLICT(log_id, player_id) DO UPDATE SET accepted = excluded.accepted",
+            (log_id, player["id"], 1),
+        )
+        await db.commit()
+    finally:
+        await db.close()
     return {"log_id": log_id, "accept": True, "hint_text": hint.get("hint_text") or hint.get("content")}
 
 
@@ -509,7 +622,9 @@ async def _mcp_player(path_token: str | None) -> dict:
     if path_token:
         db = await get_db()
         try:
-            return await get_player_from_token(db, path_token)
+            player = await get_player_from_token(db, path_token)
+            player["verified_user_id"] = player["user_id"]
+            return player
         finally:
             await db.close()
     # 分配游客编号（1-9999），与网页游客共用编号池

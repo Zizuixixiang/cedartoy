@@ -1,0 +1,11 @@
+{
+  "ram_mb": 4096,
+  "max_annual_cents": 3000,
+  "failure_threshold": 3,
+  "telegram_env": "/opt/cedarclio/.env",
+  "sources": [
+    "https://www.racknerd.com/specials/",
+    "https://www.racknerd.com/BlackFriday/",
+    "https://www.racknerd.com/NewYear/"
+  ]
+}

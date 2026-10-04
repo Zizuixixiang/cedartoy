@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, History, House, ListPlus, LogOut, Plus, RefreshCw, Search, Shield, Trophy, UserRound } from 'lucide-react'
+import { ArrowLeft, History, House, ListPlus, LogOut, Plus, RefreshCw, Search, Shield, TriangleAlert, Trophy, UserRound } from 'lucide-react'
 import { api, ensureGuestToken, logoutToGuest, post } from '../api'
 import BindModal from '../components/BindModal.jsx'
 import AccountActionModal from '../components/AccountActionModal.jsx'
@@ -97,11 +97,13 @@ export default function Lobby() {
   const [me, setMe] = useState(null)
   const [createTab, setCreateTab] = useState('random')
   const [bottomTab, setBottomTab] = useState('rooms')
+  const [leaderboardScope, setLeaderboardScope] = useState('all')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [roomSearch, setRoomSearch] = useState('')
   const [activeTagFilters, setActiveTagFilters] = useState([])
   const [loginOpen, setLoginOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [isLocked, setIsLocked] = useState(false)
   const [mineOpen, setMineOpen] = useState(false)
   const [bindOpen, setBindOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -229,7 +231,7 @@ export default function Lobby() {
     setCreating(true)
     setError('')
     try {
-      const data = await post('/rooms/create', body)
+      const data = await post('/rooms/create', { ...body, is_locked: isLocked })
       nav(`/room/${data.room_id}`)
     } catch (e) {
       setError(e.message)
@@ -259,6 +261,10 @@ export default function Lobby() {
   const activeRooms = rooms.filter((room) => room.status === 'waiting' || room.status === 'playing')
   const online = activeRooms.reduce((sum, room) => sum + Number(room.active_players || 0), 0)
   const displayRooms = [...rooms].sort((a, b) => {
+    const finished = Number(a.status === 'finished') - Number(b.status === 'finished')
+    if (finished) return finished
+    const mine = Number(!!b.is_mine) - Number(!!a.is_mine)
+    if (a.status !== 'finished' && mine) return mine
     const tier = (r) => r.status === 'finished' ? 2 : (r.ask_count || 0) === 0 ? 1 : 0
     const da = tier(a) - tier(b)
     if (da) return da
@@ -284,6 +290,12 @@ export default function Lobby() {
       prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
     ))
   }
+  const lockOption = (
+    <label className="room-lock-option">
+      <input type="checkbox" checked={isLocked} onChange={(event) => setIsLocked(event.target.checked)} />
+      <span>🔒 仅限自己与小机</span>
+    </label>
+  )
   const createPanel = (
     <section className="pixel-create">
       <div className="terminal-head">
@@ -303,7 +315,7 @@ export default function Lobby() {
       {createTab === 'random' && (
         <div className="create-body">
           <div className="terminal-label">
-            <span>选题</span>
+            <div className="create-label-row"><span>选题</span>{lockOption}</div>
             <div
               className="puzzle-picker-tools"
               onBlur={(event) => {
@@ -374,7 +386,10 @@ export default function Lobby() {
               </div>
             </div>
           </div>
-          <p className="terminal-note">题库抽取的大多微恐，请酌情选择。</p>
+          <p className="terminal-note">
+            <TriangleAlert size={14} aria-hidden="true" />
+            <span>题库抽取的大多<strong>微恐</strong>，请酌情选择。</span>
+          </p>
           <div className="terminal-preview" aria-live="polite">
             {!random && <p>&gt; 正在等待选题...</p>}
             <p>&gt; 当前题目：<b>{random?.title || '尚未抽取'}</b></p>
@@ -389,7 +404,10 @@ export default function Lobby() {
       )}
       {createTab === 'custom' && (
         <div className="create-body">
-          <label className="terminal-label">汤面<textarea value={custom.surface} onChange={(e) => setCustom({ ...custom, surface: e.target.value })} /></label>
+          <div className="terminal-label">
+            <div className="create-label-row"><span>汤面</span>{lockOption}</div>
+            <textarea aria-label="汤面" value={custom.surface} onChange={(e) => setCustom({ ...custom, surface: e.target.value })} />
+          </div>
           <label className="terminal-label">
             汤底
             <textarea
@@ -407,13 +425,14 @@ export default function Lobby() {
       )}
       {createTab === 'ai' && (
         <div className="create-body">
-          <label className="terminal-label">风格（可选）
-            <select value={aiStyle} onChange={(event) => selectAiStyle(event.target.value)}>
+          <div className="terminal-label">
+            <div className="create-label-row"><span>风格（可选）</span>{lockOption}</div>
+            <select aria-label="风格（可选）" value={aiStyle} onChange={(event) => selectAiStyle(event.target.value)}>
               {AI_STYLE_OPTIONS.map(([value, label]) => (
                 <option value={value} key={value}>{label}</option>
               ))}
             </select>
-          </label>
+          </div>
           <div className="terminal-preview">
             <p>&gt; {aiGenerating ? '生成中...' : '生成器已就绪'}</p>
             <p>&gt; 题目：<b>{generated?.title || '尚未生成'}</b></p>
@@ -452,10 +471,17 @@ export default function Lobby() {
         {bottomTab === 'leaderboard' && (
           <section className="lobby-view">
             <div className="rooms-head">
-              <h1><span>▥</span>排行榜</h1>
+              <div className="leaderboard-heading">
+                <h1><span>▥</span>排行榜</h1>
+                <div className="leaderboard-scope" role="group" aria-label="排行榜时间范围">
+                  {[['all', '总榜'], ['today', '今日']].map(([id, label]) => (
+                    <button type="button" key={id} aria-pressed={leaderboardScope === id} onClick={() => setLeaderboardScope(id)}>{label}</button>
+                  ))}
+                </div>
+              </div>
               <button type="button" onClick={() => setBottomTab('rooms')}>返回房间列表</button>
             </div>
-            <Leaderboard />
+            <Leaderboard scope={leaderboardScope} />
           </section>
         )}
         {bottomTab === 'mine' && (
@@ -517,14 +543,14 @@ export default function Lobby() {
                     setSpoilerConfirm(room)
                   }
                 }}>
-                  <RoomIdCopy roomId={room.id} className="room-code" />
+                  <RoomIdCopy roomId={room.id} isLocked={!!room.is_locked} isMine={!!room.is_mine} className="room-code" />
                   <div className="room-glyph" aria-hidden="true">?</div>
                   <div className="room-copy">
                     <h2>{roomTitle(room)}</h2>
                     <ColoredSurface text={room.surface} />
                     <div className="room-footer">
                       <div className="room-meta">
-                        {tags.map((tag) => <span className="soup-badge" key={tag}>{tag}</span>)}
+                        {tags.map((tag) => <span className={`soup-badge${tag === '红汤' ? ' red' : ''}`} key={tag}>{tag}</span>)}
                         <span className={`soup-badge ${room.status === 'finished' ? 'pale' : 'playing'}`}>{room.status === 'finished' ? '已结束' : '进行中'}</span>
                       </div>
                       <div className="room-stats"><span>提问 {room.ask_count || 0}</span><span>在房 {room.active_players || 0}</span></div>

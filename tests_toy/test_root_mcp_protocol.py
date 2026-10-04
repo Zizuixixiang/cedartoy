@@ -1,6 +1,10 @@
+import json
+import re
 import unittest
 from contextlib import nullcontext
 from unittest.mock import Mock, patch
+
+from jsonschema import Draft202012Validator
 
 import server
 
@@ -178,46 +182,135 @@ class RootMcpProtocolTests(unittest.TestCase):
                     set(sanitized_params["properties"]),
                     set(schema["properties"]["params"]["properties"]),
                 )
-                for field in (
-                    "room_id",
-                    "question",
-                    "revision",
-                    "game_action",
-                ):
-                    self.assertIn(
-                        field,
-                        sanitized_params["properties"],
-                    )
                 if server._is_kelivo_user_agent(user_agent):
-                    self.assertIn("command", sanitized_params["properties"])
-
-                options_schema = schema["properties"]["params"]["properties"][
-                    "options"
-                ]
-                self.assertEqual(options_schema["type"], "array")
-                self.assertEqual(
-                    options_schema["items"],
-                    {"type": "integer", "minimum": 0},
-                )
-                self.assertNotIn("anyOf", options_schema)
-                self.assertIn("单选如 [1]", options_schema["description"])
+                    for field in (
+                        "room_id", "move", "question", "revision", "game_action",
+                        "command", "puzzle_id", "checkpoint_id", "answer",
+                        "distance_km", "direction", "traveler_name", "invite_code",
+                    ):
+                        self.assertIn(field, sanitized_params["properties"])
+                    options_schema = schema["properties"]["params"]["properties"]["options"]
+                    self.assertEqual(options_schema["type"], "array")
+                    self.assertEqual(options_schema["items"], {"type": "integer", "minimum": 0})
+                    self.assertNotIn("anyOf", options_schema)
+                    self.assertIn("单选如 [1]", options_schema["description"])
+                else:
+                    self.assertEqual(set(sanitized_params["properties"]), {"slot"})
 
                 source_schema = next(
                     tool["inputSchema"]
                     for tool in server._PLATFORM_TOOLS
                     if tool["name"] == "play"
                 )
-                self.assertEqual(
-                    schema["properties"]["action"]["description"],
-                    source_schema["properties"]["action"]["description"],
+                if server._is_kelivo_user_agent(user_agent):
+                    for name in ("game", "action", "params"):
+                        self.assertEqual(
+                            schema["properties"][name]["description"],
+                            source_schema["properties"][name]["description"],
+                        )
+
+    def test_ordinary_play_copy_keeps_guide_first_contract_without_game_examples(self):
+        for user_agent in ("", "ExampleMcpClient/1.0", "Aru/1.0"):
+            with self.subTest(user_agent=user_agent):
+                listed = server._handle_root_mcp(
+                    {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+                    user_agent=user_agent,
                 )
-                self.assertEqual(
-                    schema["properties"]["params"]["description"],
-                    source_schema["properties"]["params"]["description"],
-                )
+                tool = next(t for t in listed["result"]["tools"] if t["name"] == "play")
+                description = tool["description"]
+                self.assertIn("需要时用 list_games", description)
+                self.assertIn("调用 play 前先读 get_guide(game)", description)
+                self.assertIn("action 与参数以 guide 为准", description)
+                self.assertIn("业务参数放 params", description)
+                properties = tool["inputSchema"]["properties"]
+                self.assertIn("游戏名", properties["game"]["description"])
+                self.assertIn("按 get_guide(game)", properties["action"]["description"])
+                params_copy = properties["params"]["description"]
+                for guidance in ("业务参数对象", "get_guide(game)", "可选 slot=1..5", "平台存档槽"):
+                    self.assertIn(guidance, params_copy)
+                serialized = json.dumps(tool, ensure_ascii=False)
+                for example in ("duel", "nowhere", "detroit", "tarot", "ai_life", "turtle_soup",
+                                "room_id", "move", "revision", "distance_km", "export", "import",
+                                "open_door", "cancel_wait", "start_game", "record_choice"):
+                    self.assertNotIn(example, serialized)
+
+    def test_play_schemas_keep_gemini_numeric_enum_compatibility(self):
+        def check_enums(node):
+            if isinstance(node, dict):
+                if "enum" in node:
+                    self.assertTrue(all(isinstance(value, str) for value in node["enum"]), node)
+                for value in node.values():
+                    check_enums(value)
+            elif isinstance(node, list):
+                for value in node:
+                    check_enums(value)
+
+        for user_agent in ("", "Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
+            with self.subTest(user_agent=user_agent):
+                schema = self._play_schema(user_agent)
+                check_enums(schema)
+                if user_agent:
+                    takeover = schema["properties"]["params"]["properties"]["timeout_takeover_seconds"]
+                    self.assertEqual(takeover["type"], "integer")
+                    self.assertNotIn("enum", takeover)
+
+    def test_removed_play_examples_remain_discoverable_in_each_guide(self):
+        # Keep this inventory independent of the shortened schema so deleting
+        # an action from both surfaces cannot make the coverage check pass.
+        examples = {
+            "nowhere": "open_door walk continue_journey schema to direction distance_km",
+            "duel": "invite join start chat reclaim new move state rooms cancel_wait "
+                    "room_id revision wait full_state message game_type invite_code",
+            "turtle_soup": "join ask guess status room_id content",
+            "ai_life": "start_game current_decision submit_action decision_id game_action",
+            "detroit": "list_saves create_save read_current_scene record_choice play_step "
+                       "continue_scene read_progress read_record_card save_chapter_reflection "
+                       "start_next_chapter revision node_id label reason reflection",
+            "tarot": "invite status result history history_detail request_id question session_id",
+            "forest": "lines start observe choose status line content option",
+            "crucible_echoes": "new state spin choose skip reroll remove inventory use index item_id",
+            "mbti": "mbti_start",
+            "dnd": "dnd_start",
+        }
+        catalog = server._tool_list_games()
+        for game, terms in examples.items():
+            with self.subTest(game=game):
+                self.assertIn(game + "·", catalog)
+                guide = server._tool_get_guide({"game": game})
+                for term in terms.split():
+                    self.assertRegex(guide, r"\b" + re.escape(term) + r"\b")
+                self.assertIn("params", guide)
+
+    def test_removed_export_import_support_and_usage_remain_in_guides(self):
+        for game in (
+            "ai_life", "arcade", "bar", "burger", "camping_plaza", "crucible_echoes",
+            "delve", "fishing", "forest", "imitator_td", "leek", "market", "memoria",
+            "moonlit", "travel", "white_room",
+        ):
+            with self.subTest(game=game):
+                guide = server._tool_get_guide({"game": game})
+                for term in ("export", "import", "save_data", "confirm", "slot"):
+                    self.assertRegex(guide, r"\b" + term + r"\b")
+                self.assertIn("覆盖", guide)
+
+    def test_platform_actions_and_slot_remain_discoverable_outside_play(self):
+        # Rest is platform-wide: one catalog sentence avoids repeating it in
+        # every guide, and still makes it discoverable before any lock notice.
+        catalog = server._tool_list_games()
+        self.assertIn('play(game="当前游戏", action="rest")', catalog)
+        self.assertIn("休息", catalog)
+        self.assertIn("能否重置按人类设置", catalog)
+        account_guide = server._tool_get_guide({"game": "account"})
+        self.assertIn("slot=1-5", account_guide)
+        self.assertIn("缺省1", account_guide)
+        for game in ("account", "duel", "nowhere", "turtle_soup", "mbti", "eco"):
+            with self.subTest(game=game):
+                guide = server._tool_get_guide({"game": game})
+                for term in ("announcements", "vote", "announcement_id", "options", "feedback"):
+                    self.assertRegex(guide, r"\b" + term + r"\b")
 
     def test_shared_difficulty_schema_preserves_each_games_values(self):
-        schema = self._play_schema("ExampleMcpClient/1.0")
+        schema = self._play_schema("Kelivo/1.2.6")
         difficulty = schema["properties"]["params"]["properties"]["difficulty"]
         string_branch = next(
             branch for branch in difficulty["anyOf"] if branch.get("type") == "string"
@@ -239,6 +332,66 @@ class RootMcpProtocolTests(unittest.TestCase):
         )
         self.assertEqual(integer_branch["minimum"], 1)
         self.assertEqual(integer_branch["maximum"], 10)
+
+    def test_ordinary_play_params_only_declare_slot_and_allow_game_parameters(self):
+        for user_agent in ("", "ExampleMcpClient/1.0", "Aru/1.0"):
+            with self.subTest(user_agent=user_agent):
+                schema = self._play_schema(user_agent)
+                params = schema["properties"]["params"]
+                self.assertEqual(set(schema["properties"]), {"game", "action", "params"})
+                self.assertEqual(set(params["properties"]), {"slot"})
+                self.assertIs(params["additionalProperties"], True)
+                self.assertEqual(params["properties"]["slot"]["type"], "integer")
+                validator = Draft202012Validator(schema)
+                for slot in range(1, 6):
+                    validator.validate({"game": "puzzle_box", "action": "open", "params": {
+                        "slot": slot, "puzzle_id": "N10",
+                    }})
+                for slot in (0, 6):
+                    self.assertFalse(validator.is_valid({"game": "puzzle_box", "action": "open",
+                                                         "params": {"slot": slot}}))
+
+    def test_kelivo_keeps_shared_definitions_and_all_compatibility_fields(self):
+        shared = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")
+        shared_params = shared["inputSchema"]["properties"]["params"]["properties"]
+        for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
+            with self.subTest(user_agent=user_agent):
+                params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+                self.assertGreaterEqual(len(params), 104)
+                tool = next(t for t in server._root_tools(user_agent) if t["name"] == "play")
+                self.assertEqual(tool["description"], shared["description"])
+                for name, definition in shared_params.items():
+                    expected = dict(definition)
+                    if name == "timeout_takeover_seconds":
+                        expected.pop("enum")  # Existing Gemini numeric-enum workaround.
+                    self.assertEqual(params[name], expected, name)
+                for name in ("command", "species", "a_scores", "answers", "before", "page",
+                             "to", "direction", "distance_km", "traveler_name", "cotraveler",
+                             "blind", "key", "intent", "topic", "volume", "place", "hours"):
+                    self.assertIn(name, params)
+                for seed in (42, "existing-string-seed"):
+                    self.assertTrue(Draft202012Validator(params["seed"]).is_valid(seed))
+
+    def test_kelivo_puzzle_id_and_answer_accept_all_supported_types(self):
+        for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
+            with self.subTest(user_agent=user_agent):
+                schema = self._play_schema(user_agent)
+                Draft202012Validator.check_schema(schema)
+                params = schema["properties"]["params"]["properties"]
+                for name, accepted, rejected in (
+                    ("puzzle_id", ["N10", "H06", 10], [None, {}, [], 1.5, True]),
+                    ("answer", ["答案", 42, ["断句一", "断句二"]], [None, {}, [1], 1.5, True]),
+                ):
+                    validator = Draft202012Validator(params[name])
+                    for value in accepted:
+                        self.assertTrue(validator.is_valid(value), (name, value))
+                    for value in rejected:
+                        self.assertFalse(validator.is_valid(value), (name, value))
+                # v1.2.6 flattens anyOf to its first branch; N10 must still be a string.
+                sanitized = _kelivo_126_sanitize_node(schema)
+                Draft202012Validator(sanitized).validate({
+                    "game": "puzzle_box", "action": "open", "params": {"puzzle_id": "N10"},
+                })
 
     def test_backend_still_rejects_missing_tarot_and_detroit_parameters(self):
         tarot_store = Mock()

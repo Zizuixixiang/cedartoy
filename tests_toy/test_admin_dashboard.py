@@ -48,6 +48,12 @@ class AdminDashboardFixtureTests(unittest.TestCase):
                 );
                 CREATE INDEX idx_rooms_updated_at ON rooms(updated_at);
                 CREATE INDEX idx_rooms_last_move_at ON rooms(status, last_move_at);
+                CREATE TABLE room_invites (
+                    room_id TEXT PRIMARY KEY REFERENCES rooms(room_id) ON DELETE CASCADE,
+                    invite_code TEXT UNIQUE,
+                    target_player_count INTEGER NOT NULL,
+                    turn_started_at TEXT
+                );
                 CREATE TABLE room_participants (
                     room_id TEXT NOT NULL,
                     player_id TEXT NOT NULL,
@@ -111,6 +117,11 @@ class AdminDashboardFixtureTests(unittest.TestCase):
                     ("PENDING1", "othello", 0, "pending", 0, None, "2026-09-01T09:57:00+00:00", "2026-09-01T09:58:00+00:00", "2026-09-01T09:58:00+00:00"),
                     ("FINISH01", "othello", 2, "finished", 20, "2026-09-01T09:30:00+00:00", "2026-09-01T09:00:00+00:00", "2026-09-01T09:30:00+00:00", "2026-09-01T09:30:00+00:00"),
                 ],
+            )
+            conn.executemany(
+                "INSERT INTO room_invites (room_id, invite_code, target_player_count) VALUES (?,?,?)",
+                [(room_id, f"SECRET_INVITE_{room_id}", 4)
+                 for room_id in ("ACTIVE01", "OLDPLAY1", "PENDING1")],
             )
             conn.executemany(
                 "INSERT INTO room_participants VALUES (?,?,?,?,?)",
@@ -279,6 +290,47 @@ class AdminDashboardFixtureTests(unittest.TestCase):
         self.assertAlmostEqual(data["npc"]["started_room_share"], 1 / 3, places=4)
         self.assertNotIn("recent_rooms", data)
 
+    def test_invite_rooms_use_room_creation_range_and_existing_started_definition(self):
+        # FINISH01 is a normal room, even though it has an invited participant.
+        for range_key, expected in (("10m", (1, 0)), ("1h", (2, 1)), ("6h", (3, 2))):
+            with self.subTest(range_key=range_key):
+                data = self._dashboard(range_key)["duel"]
+                self.assertTrue(data["ok"])
+                self.assertEqual(
+                    (data["range"]["invite_rooms"], data["range"]["started_invite_rooms"]),
+                    expected,
+                )
+
+        cases = [
+            # name, created_at, revision, status, terminal_at, counted, started
+            ("start", "09:00:00", 1, "playing", None, 1, 1),
+            ("before", "08:59:59", 1, "playing", None, 0, 0),
+            ("end", "10:00:00", 1, "playing", None, 0, 0),
+            ("playing", "09:30:00", 0, "playing", None, 1, 0),
+            ("pending", "09:30:00", 0, "pending", None, 1, 0),
+            ("terminal", "09:30:00", 0, "pending", "2026-09-01T08:00:00+00:00", 1, 1),
+            ("finished", "09:30:00", 0, "finished", None, 1, 1),
+            ("archived", "09:30:00", 0, "archived", None, 1, 1),
+        ]
+        for name, created, revision, status, terminal, counted, started in cases:
+            with self.subTest(case=name):
+                with sqlite3.connect(self.duel_db) as conn:
+                    conn.execute(
+                        "UPDATE rooms SET created_at=?, revision=?, status=?, terminal_at=? WHERE room_id='PENDING1'",
+                        (f"2026-09-01T{created}+00:00", revision, status, terminal),
+                    )
+                    # Invitation code may be cleared; turn timestamps do not define started.
+                    conn.execute(
+                        "UPDATE room_invites SET invite_code=NULL, turn_started_at=? WHERE room_id='PENDING1'",
+                        ("2026-09-01T09:45:00+00:00",),
+                    )
+                summary = self._dashboard("1h")["duel"]["range"]
+                self.assertEqual(summary["invite_rooms"], 1 + counted)
+                self.assertEqual(summary["started_invite_rooms"], 1 + started)
+        summary = self._dashboard("10m")["duel"]["range"]
+        self.assertEqual(summary["invite_rooms"], 0)
+        self.assertEqual(summary["started_invite_rooms"], 0)
+
     def test_chip_active_data_is_counted_without_double_counting_ledger_stakes(self):
         chips = self._dashboard()["duel"]["chips"]
         self.assertEqual(chips["daily_check_ins"]["count"], 3)
@@ -390,6 +442,8 @@ class AdminDashboardFixtureTests(unittest.TestCase):
                 now=self.NOW,
             )
         self.assertFalse(degraded["duel"]["ok"])
+        self.assertEqual(degraded["duel"]["range"]["invite_rooms"], 0)
+        self.assertEqual(degraded["duel"]["range"]["started_invite_rooms"], 0)
         self.assertTrue(degraded["turtle"]["ok"])
         with self.assertLogs("admin_dashboard", level="ERROR"):
             turtle_degraded = admin_dashboard.build_activity_dashboard(
@@ -404,6 +458,7 @@ class AdminDashboardFixtureTests(unittest.TestCase):
         serialized = json.dumps(self._dashboard(), ensure_ascii=False)
         for secret in (
             "SECRET_DUEL_MESSAGE",
+            "SECRET_INVITE_",
             "SECRET_REQUEST_NOTE",
             "SECRET_SURFACE",
             "SECRET_ANSWER",
@@ -418,6 +473,8 @@ class AdminDashboardFixtureTests(unittest.TestCase):
             self.assertNotIn(forbidden_key, serialized)
         self.assertNotIn('"recent_rooms"', serialized)
         self.assertNotIn('"room_id"', serialized)
+        self.assertNotIn('"invite_code"', serialized)
+        self.assertNotIn('"player_id"', serialized)
         for developer_term in (
             "playing/pending",
             "revision>0",
@@ -451,6 +508,10 @@ class AdminDashboardFixtureTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(payload["range"]["key"], "1h")
             self.assertTrue(payload["duel"]["ok"])
+            self.assertIsInstance(payload["duel"]["range"]["invite_rooms"], int)
+            self.assertIsInstance(payload["duel"]["range"]["started_invite_rooms"], int)
+            for private_field in ('"room_id"', '"recent_rooms"', '"invite_code"', '"player_id"', "SECRET_INVITE_"):
+                self.assertNotIn(private_field, json.dumps(payload))
             self.assertTrue(payload["overview"]["ok"])
             self.assertEqual(kwargs["extra_headers"], {"Cache-Control": "no-cache, no-store"})
             self.assertEqual(call(admin_token, "forever")[0], 400)

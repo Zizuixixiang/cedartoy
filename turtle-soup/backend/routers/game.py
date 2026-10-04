@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 import judge
 from auth_utils import current_player
+from room_access import require_room_access
 from database import execute, fetch_all, fetch_one, get_db, get_setting
 from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody, RevealAnswerBody
 from presence import touch_room
@@ -269,6 +270,7 @@ async def _maybe_auto_hint_safely(room: dict, ask_count: int) -> dict | None:
 
 async def _ask_impl(body: ContentBody, player: dict) -> tuple[dict, asyncio.Task]:
     """Core ask logic. Returns (payload, hint_task)."""
+    await require_room_access(body.room_id, player)
     async with _ask_lock(body.room_id):
         question = clean_content(body.content, 200)
         room = await _room(body.room_id)
@@ -341,6 +343,7 @@ async def ask(body: ContentBody, player: dict = Depends(current_player)):
 
 @router.post("/guess")
 async def guess(body: GuessBody, player: dict = Depends(current_player)):
+    await require_room_access(body.room_id, player)
     guess_text = clean_content(body.content, 3000)
     room = await _room(body.room_id)
     _ensure_active(room)
@@ -408,6 +411,7 @@ async def guess(body: GuessBody, player: dict = Depends(current_player)):
 
 @router.post("/reveal-answer")
 async def reveal_answer(body: RevealAnswerBody, player: dict = Depends(current_player)):
+    await require_room_access(body.room_id, player)
     room = await _room(body.room_id)
     _ensure_active(room)
     if not body.confirm_reveal:
@@ -427,6 +431,7 @@ async def reveal_answer(body: RevealAnswerBody, player: dict = Depends(current_p
 
 @router.post("/hint/request")
 async def hint_request(body: HintRequestBody, player: dict = Depends(current_player)):
+    await require_room_access(body.room_id, player)
     room = await _room(body.room_id)
     _ensure_active(room)
     await _ensure_player_can_play(body.room_id, player)
@@ -439,6 +444,7 @@ async def hint_request(body: HintRequestBody, player: dict = Depends(current_pla
 
 @router.post("/hint/respond")
 async def hint_respond(body: HintResponseBody, player: dict = Depends(current_player)):
+    await require_room_access(body.room_id, player)
     hint = await fetch_one(
         "SELECT * FROM game_logs WHERE id = ? AND room_id = ? AND type = 'hint_offer'",
         (body.log_id, body.room_id),

@@ -14,7 +14,7 @@ Cloudflare -> Nginx 127.0.0.1:8002
                                   non-duel -> 127.0.0.1:8004
 ```
 
-网关不处理网页 GET，也不修改 `vendor/duel`。
+网关不处理网页 GET；挂等控制由平台与 `vendor/duel` 后端共同校验。
 
 ## Duel 自动挂等
 
@@ -37,7 +37,8 @@ server-push。客户端/ChatGPT 一旦结束或取消这次工具请求，CedarT
 3. 8003 直接 async await `127.0.0.1:8772/mcp/play`。第一次请求保留原始受信
    payload，因此 `move(wait=true)` 的落子和附言只执行一次。
 4. 如果 8772 返回内部 `still_waiting`，8003 不完成外层 MCP 请求，而是改用只含
-   canonical `player_id`、`room_id`、`action=state`、`wait=true` 的无副作用 payload
+   canonical `player_id`、`room_id`、`action=state`、`wait=true`，以及相同
+   `wait_generation`、`wait_resume=true` 的无副作用 payload
    继续等待。后续心跳绝不重放 move、message、resign 等动作。若 8772 因等待槽瞬时
    满载返回 `wait_downgraded=true`，8003 也会短暂退避后继续 `state(wait=true)`，不会
    提前结束外层挂等或形成热循环。
@@ -59,6 +60,31 @@ coroutine 取消会取消当前 8772 请求，并 best-effort 调用 abandon 立
 > 8003 的 `MAX_CONTINUOUS_WAIT_SECONDS` 默认是 600 秒：它把多个 30 秒短轮询隐藏在
 > 一次外层 POST 内，并不是请求结束后仍运行 600 秒的后台 watcher。到时返回
 > `still_waiting` 和新的 `next_call`；宿主若仍允许同一回复继续，可再发一次挂等请求。
+
+## 显式停止与旧链失效
+
+想停就先调用 `play(game="duel", action="cancel_wait", params={"room_id":"..."})`，
+不要只在自然语言里说停。它只取消 canonical player + room 的挂等；不读写棋局、
+revision、事件、席位、筹码或在线状态，也不改变邀请房 90/180 秒托管规则。
+收到 `wait_cancelled` 必须停止旧调用链，不行动、不自动续等；恢复时显式发起新的
+`state(wait=true)` 或 `move(wait=true)`。
+
+每次显式房间请求由平台生成有序 `wait_generation`；心跳和满载重试始终沿用它。
+新 wait 替代旧链，同房间非 wait 操作使旧链失效。后端通过独立取消事件及时结束等待，
+并保留有界、带 TTL 的代际墓碑，拒绝迟到的旧请求。终局仍可返回终局通知，旧链不能续等。
+平台 finalize 再核验代际，丢弃已取消但在网络中缓冲的“轮到你”响应。
+断线/超时清理仅释放对应 generation，不会取消新链；普通操作有独立网关容量。
+日志 `duel_wait created/superseded/cancelled/finished/abandoned` 只含 player、room，
+不含 token。控制状态为单进程内存，最长保留 3720 秒；后端重启后拒绝未知续等，
+也拒绝早于本次启动时间的迟到首请求。过期代际在墓碑清理后仍被拒绝。
+同代际仅允许串行 `state(wait=true, wait_resume=true)` 心跳；重复首请求或并发续等
+不会重放落子/附言，也不会占用第二条 wait。内部代际字段不向公共 MCP schema 暴露。
+网关断线清理在有界、免受 ASGI 任务组取消的区域内执行，分别释放后端代际与平台 ticket；
+本地 stdio adapter 在断线或达到等待上限时也按代际释放。
+平台与后端应配套更新，各保持单 worker，并使用同一主机时钟生成有序代际。
+平台重启后旧 ticket 失效，不能 finalize 旧结果；不支持跨 worker 共享内存控制状态。
+已完成最终校验并交付的响应无法撤回；
+该接口不能阻止宿主无视取消提示后主动提交新的动作。
 
 ## 安全与生命周期
 

@@ -1675,14 +1675,14 @@ class TarotWeb:
     </div>
     </div>"""
         managed_settings = f"""    <div class="settings-body managed-settings">
-      <p class="managed-model-note">本站暂仅支持所提供的模型。如需自行配置模型，请克隆<a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">原版</a>。</p>
+      <p class="managed-model-note">本站暂仅支持所提供的模型。如需自行配置模型，请从 <a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">GitHub</a> 克隆原版。</p>
       <div id="providerList" class="provider-list" aria-label="本站塔罗模型"></div>
       <div class="managed-compat" hidden aria-hidden="true">
         <div id="dshBanner"></div><button id="dshImportBtn" disabled></button>
         <p id="dshConsentNote"></p><input id="cpName"><select id="cpKind"><option value="openai"></option></select>
         <input id="cpBase"><input id="cpKey" type="password"><button id="cpAdd" disabled></button>
       </div>
-      <p class="managed-model-note managed-credit">原作：林默Moon · <a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">项目来源</a></p>
+      <p class="managed-model-note managed-credit">原作：林默Moon · <a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">GitHub</a></p>
     </div>"""
         if source.count(upstream_settings) != 1:
             raise TarotError(500, "塔罗原版模型面板结构已变化")

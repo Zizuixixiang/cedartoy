@@ -662,8 +662,11 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                         path_token="trusted-token",
                     ))
                     self.assertTrue(result["ok"])
+                    forwarded = dict(post.call_args.kwargs["json"])
+                    if "room_id" in forwarded:
+                        self.assertIsInstance(forwarded.pop("wait_generation"), int)
                     self.assertEqual(
-                        post.call_args.kwargs["json"],
+                        forwarded,
                         {
                             "action": action,
                             "player_id": "42",
@@ -1049,7 +1052,8 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
     def test_guide_is_compact_and_discovers_every_room_capability(self):
         guide = server.DUEL_GUIDE
-        self.assertLessEqual(len(guide), 4000)
+        # Two game discovery/action notes extend the existing 4000-char budget.
+        self.assertLessEqual(len(guide), 4400)
         self.assertEqual(guide.count('play(game="duel"'), 1)
         self.assertNotIn("[存档槽]", guide)
         for expected in (
@@ -1068,13 +1072,26 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "3人=doudizhu",
             "4人=guandan/mahjong",
             "dots_boxes=2/3/4",
-            "aeroplane_chess/gandengyan=2/3/4",
+            "aeroplane_chess/gandengyan/rummikub=2/3/4",
             "chinese_checkers=2/3/4/6",
-            "liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6",
+            "liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem/monopoly=2..6",
+            "大富翁 monopoly 推荐4人",
+            "动作需附 action_seq",
+            "拉密 rummikub：",
+            "炸飞机 bomb_plane（寻机头）",
+            "carcassonne=2..5",
+            "卡卡颂 carcassonne：",
+            "private_state.placements",
+            "current_tile.regions",
+            "所有动作必须带 params.revision",
+            "每次 melds 提交最终完整桌面",
+            "牌面局分不扣钱包",
+            "交易仅接收方本人确认",
             "NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可",
             "target_player_count/fill_with_npcs",
-            "yahtzee 固定娱乐局；其余按 catalog 支持 stake",
-            "liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手",
+            "yahtzee/monopoly/rummikub 固定娱乐局",
+            "大富翁局内现金与平台筹码分离；其余按 catalog 支持 stake",
+            "liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong/rummikub 私手",
             "开房能力以 catalog",
             "supports_npcs/supports_stakes",
             "bootstrap 后也按上述方式继续挂等",
@@ -1089,7 +1106,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "游戏动作对象放 params.move",
             "内部 action 提到外层",
             "room_id/revision/wait/full_state/message 均在 params 内与 move 同级",
-            "message 仅 join/move/state/resign/leave 支持",
+            "message 支持 chat，旧 join/move/state/resign/leave 保留兼容",
             "列表型 legal_actions/legal_moves 的选中对象直接作为 move",
             "紧凑/参数化规格按 legal_action_spec 或 submit 构造",
             "allowed_player_counts",

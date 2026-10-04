@@ -214,7 +214,6 @@ class SinsVirtuesTests(unittest.TestCase):
         self.assertIn("sins_virtues", server.IDENTITY_GAMES)
         self.assertIn("sins_virtues", server.ANTI_ADDICTION_TEST_GAMES)
         self.assertIn("sins_virtues", server.HUMAN_TEST_GAMES)
-        self.assertIn(questions.DISCLAIMER, dict(server.GAME_RECOMMENDATIONS)["sins_virtues"])
         self.assertIn(questions.DISCLAIMER, server._tool_list_games())
 
         index = server.TOY_INDEX_PATH.read_text(encoding="utf-8")

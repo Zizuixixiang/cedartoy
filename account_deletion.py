@@ -317,7 +317,13 @@ def _delete_file_saves(save_root: Path, player_ids: list[str]) -> dict:
             if target.is_symlink():
                 raise RuntimeError(f"refusing symlink save directory: {target}")
             if target.is_dir():
-                shutil.rmtree(target)
+                if game_dir.name == "nowhere":
+                    from nowhere_adapter import storage as nowhere_storage
+                    if nowhere_storage.ROOT.resolve() != game_dir.resolve():
+                        raise RuntimeError("nowhere save root mismatch")
+                    nowhere_storage.delete(player_id)
+                else:
+                    shutil.rmtree(target)
                 removed += 1
     return {"directories": removed}
 

@@ -35,3 +35,7 @@ vendor/
 backups/
 *.bak
 *.bak_before_edit
+
+# Optional Python >=3.11 environment for Nowhere warm workers.
+/.venv-nowhere/
+/.nowhere-runtime/

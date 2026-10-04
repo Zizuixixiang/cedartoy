@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth_utils import current_player
+from room_access import require_room_access
 from database import execute, fetch_one
 from models import NormalizedRoomId, NoteBody
 from sse import broadcast
@@ -50,6 +51,7 @@ async def _note_log_payload(log_id: int) -> dict:
 
 @router.post("/{room_id}")
 async def add_note(room_id: NormalizedRoomId, body: NoteBody, player: dict = Depends(current_player)):
+    await require_room_access(room_id, player)
     room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (room_id,))
     if not room:
         raise HTTPException(status_code=404, detail="房间不存在")
@@ -76,6 +78,7 @@ async def update_note(note_id: int, body: NoteBody, player: dict = Depends(curre
     note = await fetch_one("SELECT * FROM room_notes WHERE id = ?", (note_id,))
     if not note:
         raise HTTPException(status_code=404, detail="记事不存在")
+    await require_room_access(note["room_id"], player)
     if note["player_id"] != player["id"]:
         raise HTTPException(status_code=403, detail="只能修改自己的记事")
     room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (note["room_id"],))
@@ -97,6 +100,7 @@ async def delete_note(note_id: int, player: dict = Depends(current_player)):
     note = await fetch_one("SELECT * FROM room_notes WHERE id = ?", (note_id,))
     if not note:
         raise HTTPException(status_code=404, detail="记事不存在")
+    await require_room_access(note["room_id"], player)
     if note["player_id"] != player["id"]:
         raise HTTPException(status_code=403, detail="只能删除自己的记事")
     room = await fetch_one("SELECT status FROM rooms WHERE id = ?", (note["room_id"],))

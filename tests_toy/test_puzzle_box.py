@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from jsonschema import Draft202012Validator
+
 import puzzle_box as box
 from puzzle_box_data import PUZZLES, PROMPT, _ROWS
 import server
@@ -214,6 +216,32 @@ class PuzzleBoxBoundaryTests(unittest.TestCase):
                   patch.object(server, "_duel_unread_request_reminder", return_value="")]:
             p.start()
             self.addCleanup(p.stop)
+
+    def test_n10_standard_call_survives_schema_and_reaches_puzzle(self):
+        from tests_toy.test_root_mcp_protocol import _kelivo_126_sanitize_node
+
+        arguments = {"game": "puzzle_box", "action": "open", "params": {"puzzle_id": "N10"}}
+        for user_agent in ("", "Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
+            with self.subTest(user_agent=user_agent):
+                listed = server._handle_root_mcp(
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, user_agent=user_agent)
+                schema = next(t["inputSchema"] for t in listed["result"]["tools"] if t["name"] == "play")
+                Draft202012Validator(schema).validate(arguments)
+                if user_agent:
+                    schema = _kelivo_126_sanitize_node(schema)
+                    Draft202012Validator(schema).validate(arguments)
+                    # Explicit declarations must retain the ID even in clients
+                    # that only forward params keys present in the schema.
+                    declared = schema["properties"]["params"]["properties"]
+                    self.assertEqual({k: v for k, v in arguments["params"].items() if k in declared},
+                                     {"puzzle_id": "N10"})
+                result = server._handle_root_mcp(
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                     "params": {"name": "play", "arguments": arguments}},
+                    path_token="ai-token", user_agent=user_agent)
+                self.assertFalse(result["result"]["isError"], result)
+                reply = json.loads(result["result"]["content"][0]["text"])
+                self.assertEqual(reply["id"], "N10")
 
     def test_mcp_path_and_bearer_use_authenticated_machine_ignore_forgery(self):
         for channel in ("path_token", "bearer_token"):

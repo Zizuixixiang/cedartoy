@@ -1,0 +1,609 @@
+[
+  {
+    "name": "open_door",
+    "description": "Open the door.  No arg = random landing; pass a place name or bookmark name.\nblind=True: hide place name (guess to reveal).\nkey=\"...\": deterministic landing by key (same key = same place).\nintent biases what you see (e.g. \"后 boosts food, \"孤独\" boosts quiet).\nAppend \" 斯 to place name (e.g. \"拉萨 斯) to force a fresh landing,\ncreating a new journey even if one already exists for that place.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "blind": {
+          "type": "boolean",
+          "default": false
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "intent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "platformParameters": {
+      "confirm": {
+        "type": "boolean"
+      },
+      "traveler_name": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "cotraveler": {
+        "type": "string",
+        "enum": [
+          "0",
+          "1",
+          "quiet"
+        ]
+      }
+    }
+  },
+  {
+    "name": "continue_journey",
+    "description": "Continue from where you left off. Resumes saved journey state.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "walk",
+    "description": "Walk in a direction.  Compass: N/NE/E/SE/S/SW/W/NW.  Semantic: uphill/toward_sea/forward.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "default": "forward"
+        },
+        "distance_km": {
+          "type": "number",
+          "default": 2.0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "listen",
+    "description": "Tune into the nearest radio station and listen for a few seconds.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "seconds": {
+          "type": "integer",
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "look_around",
+    "description": "Look around for nearby wildlife, art, or human messages.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "ask",
+    "description": "对眼前的地方发问。离线知识库，不联网。问火山就有火山，问北京就有北京。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "mark",
+    "description": "Save your current position as a named bookmark.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string",
+          "default": ""
+        },
+        "overwrite": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "marks",
+    "description": "List all saved bookmarks.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "where_am_i",
+    "description": "Show your current location, simulated time, and journey status.",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "souvenir",
+    "description": "看看身上带了什么东西。旅行途中的纪念品。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "give_souvenir",
+    "description": "把身上的东西放下（留给下一个人，或放回原处）。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bury",
+    "description": "把身上的东西埋在当前坐标。可以留一句话。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deliver",
+    "description": "送达身上的差了保铁盒)。需要在收信地附近5km)。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "postcards",
+    "description": "看看收到的明信片。来自不同时空的问候。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "walk_to",
+    "description": "朝一个命名地点走过去(山河城古迹)。探索从此有方向。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "place": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "place"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "journeys_list",
+    "description": "看看以前的旅程。每段旅程一个世界。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "atlas",
+    "description": "看看你去过哪些地方。世界迷雨一点一点亮起来。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "wait",
+    "description": "原地待着,让时间流过去(0.25-12 小时)。天黑温附城会换班。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hours": {
+          "type": "number",
+          "default": 1.0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "look",
+    "description": "朝一个方向看。不动位置,不计时。给方位:前后左右或 N/NE/E/SE/S/SW/W/NW。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "default": "前"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "say",
+    "description": "说一句话。世界会记住。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "quotes",
+    "description": "看看本旅程说过的原话。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "talk",
+    "description": "和最近遇见的人搭话。不传参教最近的人说下一口传路怎么走问路。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "journal",
+    "description": "回看本次旅程的时间线。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "notebook",
+    "description": "旅行手账——五册自然志(植物/动物/电台/水文/人物)。\"\n\n不传参数: 列出所有册概况。\"\n传册后flora/fauna/radio/water/people): 指定册全列。\"",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "volume": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "walk_alone",
+    "description": "本次旅程屏蔽同游者文案。注册表保留,标记独行。下次open_door 恢复。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "guess",
+    "description": "盲开模式下猜地名。猜对揭晚猜错给线索。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "place": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "place"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "reveal",
+    "description": "盲开模式下认边直接揭晓地名。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "drift",
+    "description": "抽一张漂流卡,给个方向建议。脚是你的。",
+    "source": "upstream_mcp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "send_postcard",
+    "description": "调用上游已有寄明信片实现（上游网页有此动作，MCP 未注册）",
+    "source": "platform",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "switch_journey",
+    "description": "按已有地名或 slug 切换旅程，委托上游开门返回旧旅程",
+    "source": "platform",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "place": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "place"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "new",
+    "description": "重置完整私人存档；已有存档必须 confirm=true",
+    "source": "platform",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "blind": {
+          "type": "boolean",
+          "default": false
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "intent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "platformParameters": {
+      "confirm": {
+        "type": "boolean"
+      },
+      "traveler_name": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "cotraveler": {
+        "type": "string",
+        "enum": [
+          "0",
+          "1",
+          "quiet"
+        ]
+      }
+    }
+  },
+  {
+    "name": "export",
+    "description": "导出全部私人文件、随机数及明信片图片",
+    "source": "platform",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "import",
+    "description": "导入完整 export；覆盖必须 confirm=true",
+    "source": "platform",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "save_data": {
+          "type": [
+            "object",
+            "string"
+          ]
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "save_data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "schema",
+    "description": "查询全部动作与参数",
+    "source": "platform",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+]

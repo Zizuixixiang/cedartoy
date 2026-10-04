@@ -143,26 +143,25 @@ class DuelNpcBridgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("secret provider failure", response.text)
                 self.assertNotIn("private invalid detail", response.text)
 
-    async def test_large_messages_are_forwarded_without_character_cap(self):
-        decision_chat = AsyncMock(return_value='{"action_id":"a_step"}')
-        messages = [{"role": "user", "content": "棋" * 50000}]
-        with (
-            patch.dict(
-                "os.environ", {"DUEL_NPC_BRIDGE_TOKEN": "server-only-token"}
-            ),
-            patch.object(internal_duel, "npc_decision_chat", decision_chat),
-        ):
-            response = await self.client.post(
-                "/internal/duel/npc-decision",
-                headers={"Authorization": "Bearer server-only-token"},
-                json={**self.payload, "messages": messages},
-            )
-        self.assertEqual(response.status_code, 200, response.text)
-        decision_chat.assert_awaited_once_with(
-            messages, max_tokens=123, timeout=7.0
-        )
+    async def test_large_single_messages_are_forwarded_without_char_cap(self):
+        for task in ("decision", "speech"):
+            for length in (4001, 20000, 50000):
+                with self.subTest(task=task, length=length):
+                    messages = [{"role": "user", "content": "棋" * length}]
+                    chat = AsyncMock(return_value="ok")
+                    with (
+                        patch.dict("os.environ", {"DUEL_NPC_BRIDGE_TOKEN": "test"}),
+                        patch.object(internal_duel, f"npc_{task}_chat", chat),
+                    ):
+                        response = await self.client.post(
+                            "/internal/duel/npc-decision",
+                            headers={"Authorization": "Bearer test"},
+                            json={**self.payload, "task": task, "messages": messages},
+                        )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    chat.assert_awaited_once_with(messages, max_tokens=123, timeout=7.0)
 
-    async def test_schema_rejects_invalid_control_fields_before_pool_call(self):
+    async def test_schema_still_rejects_invalid_control_fields_before_pool_call(self):
         decision_chat = AsyncMock()
         with (
             patch.dict(

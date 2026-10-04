@@ -23,7 +23,7 @@ from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 NPC_POOL_NAMES = ("npc_decision", "npc_speech")
 SOUP_DUEL_POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
 TAROT_POOL_NAME = "tarot"
-TAROT_FLASH_MODEL = "gemini-3.5-flash"
+TAROT_FLASH_MODEL = "gemini-3.8-flash"
 TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
 TAROT_ALLOWED_MODELS = frozenset({TAROT_FLASH_MODEL, TAROT_PRO_MODEL})
 TAROT_MODEL_LABELS = {
@@ -32,7 +32,7 @@ TAROT_MODEL_LABELS = {
 }
 POOL_NAMES = (*SOUP_DUEL_POOL_NAMES, TAROT_POOL_NAME)
 TAROT_EXCLUSIVE_MODEL_RE = re.compile(
-    r"(?:^|[^a-z0-9])gemini[._ -]?3[._ -]?5[._ -]?flash(?:$|[^a-z0-9])",
+    r"(?:^|[^a-z0-9])gemini[._ -]?3[._ -]?(?:5|8)[._ -]?flash(?:$|[^a-z0-9])",
     re.IGNORECASE,
 )
 _rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}

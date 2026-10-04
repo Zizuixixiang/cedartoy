@@ -10,6 +10,7 @@ import json
 import os
 from contextlib import asynccontextmanager
 
+import anyio
 import httpx
 from fastapi import FastAPI, Request
 from starlette.responses import Response, StreamingResponse
@@ -330,12 +331,16 @@ def _canonical_state_wait_payload(initial_payload):
     room_id = initial_payload.get("room_id")
     if player_id in {None, ""} or room_id in {None, ""}:
         return None
-    return {
+    payload = {
         "action": "state",
         "player_id": player_id,
         "room_id": room_id,
         "wait": True,
     }
+    if initial_payload.get("wait_generation") is not None:
+        payload["wait_generation"] = initial_payload["wait_generation"]
+        payload["wait_resume"] = True
+    return payload
 
 
 async def _cancel_backend_task(task):
@@ -369,23 +374,44 @@ async def _abandon_ticket(application, ticket, secret):
 class _DuelStreamLease:
     """Release a wait slot and its one-shot ticket exactly once."""
 
-    def __init__(self, application, ticket, secret, slot_semaphore):
+    def __init__(self, application, ticket, secret, slot_semaphore, backend_payload=None):
         self.application = application
         self.ticket = ticket
         self.secret = secret
         self.slot_semaphore = slot_semaphore
         self.ticket_closed = False
         self.released = False
+        self.backend_payload = backend_payload or {}
 
     async def release(self):
         if self.released:
             return
         self.released = True
         try:
-            if not self.ticket_closed and self.ticket:
-                await _abandon_ticket(
-                    self.application, self.ticket, self.secret
-                )
+            # ASGI disconnect cancels the surrounding AnyIO task group.
+            # Shield bounded cleanup so abandon is actually sent on that path.
+            with anyio.move_on_after(PREPARE_TIMEOUT_SECONDS * 2, shield=True):
+                payload = self.backend_payload
+                if payload.get("wait_generation") and str(payload.get("wait")).lower() == "true":
+                    # Conditional release: an old disconnect must never cancel a
+                    # newer chain. Also closes a lease between heartbeat requests.
+                    try:
+                        await self.application.state.duel_client.post(
+                            DUEL_ORIGIN + "/mcp/play",
+                            json={
+                                "action": "cancel_wait",
+                                "player_id": payload["player_id"],
+                                "room_id": payload["room_id"],
+                                "wait_generation": payload["wait_generation"],
+                            },
+                            timeout=PREPARE_TIMEOUT_SECONDS,
+                        )
+                    except httpx.HTTPError:
+                        pass  # Backend lease TTL is the final cleanup fallback.
+                if not self.ticket_closed and self.ticket:
+                    await _abandon_ticket(
+                        self.application, self.ticket, self.secret
+                    )
         finally:
             self.slot_semaphore.release()
 
@@ -424,7 +450,7 @@ async def _duel_response_stream(
     initial_payload = prepared.get("backend_payload")
     auto_wait = (
         isinstance(initial_payload, dict)
-        and initial_payload.get("wait") is True
+        and str(initial_payload.get("wait")).lower() == "true"
     )
     canonical_wait_payload = _canonical_state_wait_payload(initial_payload)
     current_payload = initial_payload
@@ -551,7 +577,20 @@ async def _handle_duel(request, payload):
         return _json_response(
             _gateway_tool_error(request_id, "duel async gateway 尚未配置共享密钥")
         )
-    slot_semaphore = request.app.state.duel_slots
+    arguments = (payload.get("params") or {}).get("arguments") or {}
+    params = arguments.get("params") or {}
+    for _ in range(3):
+        if not isinstance(params, str):
+            break
+        try:
+            params = json.loads(params)
+        except (TypeError, ValueError):
+            break
+    if not isinstance(params, dict):
+        params = {}  # The authenticated prepare step reports invalid params.
+    waiting = arguments.get("action") in {"state", "move"} and str(params.get("wait", arguments.get("wait"))).lower() == "true"
+    # Stopping or acting must remain available even with all long waits full.
+    slot_semaphore = request.app.state.duel_slots if waiting else request.app.state.control_slots
     await slot_semaphore.acquire()
     stream_owns_slot = False
     try:
@@ -585,6 +624,7 @@ async def _handle_duel(request, payload):
             prepared.get("ticket"),
             secret,
             slot_semaphore,
+            prepared.get("backend_payload"),
         )
         response = _DuelStreamingResponse(
             _duel_response_stream(
@@ -660,7 +700,7 @@ def create_app(
             application.state.duel_client = httpx.AsyncClient(
                 trust_env=False,
                 limits=httpx.Limits(
-                    max_connections=configured_concurrency,
+                    max_connections=configured_concurrency + MAX_INTERNAL_CONCURRENCY,
                     max_keepalive_connections=40,
                 ),
             )
@@ -688,6 +728,7 @@ def create_app(
     application.state.max_wait_seconds = configured_max_wait
     application.state.keepalive_seconds = configured_keepalive
     application.state.duel_slots = asyncio.Semaphore(configured_concurrency)
+    application.state.control_slots = asyncio.Semaphore(MAX_INTERNAL_CONCURRENCY)
     application.state.internal_slots = asyncio.Semaphore(MAX_INTERNAL_CONCURRENCY)
 
     @application.get("/health")

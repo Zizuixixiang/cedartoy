@@ -30,10 +30,11 @@ async function writeClipboard(text) {
   if (!copied) throw new Error('copy failed')
 }
 
-export default function RoomIdCopy({ roomId, className = '' }) {
+export default function RoomIdCopy({ roomId, isLocked = false, isMine = false, className = '' }) {
   const [feedback, setFeedback] = useState('')
   const timerRef = useRef(null)
   const id = plainRoomId(roomId)
+  const label = isMine ? '我的房间' : '房间'
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
@@ -56,10 +57,11 @@ export default function RoomIdCopy({ roomId, className = '' }) {
         type="button"
         className="room-id-copy"
         onClick={copy}
-        aria-label={`复制房间 ID ${id}`}
-        title={`复制房间 ID ${id}`}
+        aria-label={`${isLocked ? '锁房，' : ''}复制${label} ID ${id}`}
+        title={`复制${label} ID ${id}`}
       >
-        <span aria-live="polite">{feedback || `房间 #${id}`}</span>
+        {isLocked && <span role="img" aria-label="锁房">🔒 </span>}
+        <span aria-live="polite">{feedback || <><span className={isMine ? 'room-id-mine' : undefined}>{label}</span>{` #${id}`}</>}</span>
       </button>
     </span>
   )

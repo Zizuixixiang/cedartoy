@@ -14,19 +14,19 @@
 
 ## 每日备份（backup_cedartoy.sh）
 
+现行入口是 `/etc/cron.d/cedartoy-backup` 调用 `scripts/backup_cedartoy.sh`。仓库 `deploy/cron.d/cedartoy-backup` 仍是旧的直接 tar 模板，缺少 SQLite 一致性快照、data 外数据库与 R2 推送，不要覆盖到生产配置。恢复时先核对覆盖发生在所选日期 03:50 备份之前还是之后。
+
 旧方案直接 `tar` 打包 `/opt/cedartoy/data`，对启用 WAL 的 sqlite 库（sessions.db）有拿到不一致快照的风险，且遗漏了 data 之外的两个生产库。新流程（生产数据全程只读）：
 
 1. 把 `data/` 复制到临时 staging 目录，排除 `*.db` / `*.db-wal` / `*.db-shm`（历史 `*.db.bak-*` 文件原样保留）；
-2. 对全部生产 sqlite 库用 `sqlite3 .backup` 导出一致性快照到 staging 对应路径，并逐个跑 `PRAGMA quick_check` 验证：
-   - `data/sessions.db`（WAL，主库）
-   - `data/soup.db`、`data/toy.db`（当前为 0 字节占位，一并快照）
-   - `turtle-soup/backend/turtle_soup.db`（**在 data 之外**，旧方案漏备）
-   - `toy-platform/toy_accounts.db`（**在 data 之外**，旧方案漏备）
+2. 对 `data/` 下递归找到的全部 `*.db`（含 sessions、花园便签、塔罗等）及脚本 `EXTRA_DBS` 中的 `turtle-soup/backend/turtle_soup.db`、`toy-platform/toy_accounts.db` 用 `sqlite3 .backup` 导出一致性快照到 staging 对应路径，并逐个跑 `PRAGMA quick_check`。空占位库也在扫描范围；不要因此把它们当业务主库。`vendor/` 下数据库不在该脚本扫描范围，服务自定义数据库路径也不会由环境变量自动加入；新增/迁移存储时必须核对覆盖范围。
 3. 打包为 `data_YYYYMMDD.tar.gz`（先写 `.tmp` 再原子改名）。归档内路径相对 `/opt/cedartoy`：`data/...`、`turtle-soup/backend/turtle_soup.db`、`toy-platform/toy_accounts.db`；
 4. `rclone copy` 推送 R2（失败不影响本地备份与滚动清理，退出码 2 上报）；
 5. 本地 7 天滚动删除（同旧方案）。
 
 环境变量可覆盖（自测用）：`BACKUP_ROOT`、`R2_REMOTE`（置空跳过推送）、`RETENTION_DAYS`。
+
+任一步失败最多执行 3 次尝试，间隔由 `RETRY_DELAY_SECONDS` 控制（默认 300 秒）；全败以非零状态退出并打印 `BACKUP FAILED AFTER 3 ATTEMPTS`。R2 失败保留已生成的本地归档，仍参与重试。
 
 ## 每周恢复演练（backup_restore_check.py）
 

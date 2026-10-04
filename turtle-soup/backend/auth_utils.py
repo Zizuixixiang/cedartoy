@@ -26,9 +26,10 @@ def verify_password(password: str, hashed: str) -> bool:
     return pwd_context.verify(password, hashed)
 
 
-def create_token(player: dict) -> str:
+def create_token(player: dict, *, verified_user_id: int | None = None) -> str:
     payload = {
         "player_id": player["id"],
+        "verified_user_id": verified_user_id,
         "is_admin": bool(player.get("is_admin")),
         "is_guest": bool(player.get("is_guest")),
         "exp": datetime.now(timezone.utc) + timedelta(hours=TOKEN_HOURS),
@@ -36,7 +37,7 @@ def create_token(player: dict) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-async def current_player(
+async def authenticated_player(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> dict:
@@ -51,7 +52,12 @@ async def current_player(
     player = await fetch_one("SELECT * FROM players WHERE id = ?", (player_id,))
     if not player:
         raise HTTPException(status_code=401, detail="账号不存在")
-    await execute(f"UPDATE players SET last_active_at = {SQL_NOW} WHERE id = ?", (player_id,))
+    player["verified_user_id"] = payload.get("verified_user_id")
+    return player
+
+
+async def current_player(player: dict = Depends(authenticated_player)) -> dict:
+    await execute(f"UPDATE players SET last_active_at = {SQL_NOW} WHERE id = ?", (player["id"],))
     return player
 
 

@@ -15,6 +15,7 @@ import shutil
 import smtplib
 import sqlite3
 import ssl
+import sys
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -27,8 +28,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import BoundedSemaphore, Lock, Thread
 
 import httpx
+import duel_wait_control
 
 import account_deletion
+import admin_recovery_mcp
 import avatar_appearances
 import detroit_adapter
 import puzzle_box
@@ -98,6 +101,10 @@ from vendor_cmd_adapter import market as market_adapter
 from vendor_cmd_adapter import memoria as memoria_adapter
 from vendor_cmd_adapter import moonlit as moonlit_adapter
 from vendor_cmd_adapter import travel as travel_adapter
+from nowhere_adapter import handler as nowhere_adapter
+from nowhere_adapter import storage as nowhere_storage
+from nowhere_adapter import web as nowhere_web
+from links import AUTHORS
 from vendor_cmd_adapter import white_room as white_room_adapter
 from vendor_cmd_adapter.base import VendorCmdError, parse_import_save_data
 from vendor_cmd_adapter.guides import (
@@ -332,7 +339,7 @@ _PLATFORM_TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "description": "操作名称，如 turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，detroit 的 list_saves/create_save/read_current_scene/record_choice/play_step/continue_scene/read_progress/read_record_card/save_chapter_reflection/start_next_chapter，tarot 的 invite/status/result/history/history_detail，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
+                    "description": "操作名称，如 nowhere 的 open_door/walk/continue_journey/schema（schema 返回完整动作），duel 的 invite/join/start/chat/reclaim（熟人联机）或 new/move/state/rooms（原流程）、cancel_wait（停止指定房间挂等），turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，detroit 的 list_saves/create_save/read_current_scene/record_choice/play_step/continue_scene/read_progress/read_record_card/save_chapter_reflection/start_next_chapter，tarot 的 invite/status/result/history/history_detail，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
                 },
                 "params": {
                     "type": "object",
@@ -350,9 +357,30 @@ _PLATFORM_TOOLS = [
                             "anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "array", "items": {"type": "string"}}],
                             "description": "puzzle_box 的最终答案或步骤结果；双断句可用字符串数组。",
                         },
+                        "game_type": {"type": "string", "description": "duel new/invite 的棋种，见 catalog。"},
+                        "target_player_count": {"type": "integer", "minimum": 2, "maximum": 6, "description": "duel invite 的目标人数，必须符合 catalog.allowed_player_counts。"},
+                        "stake": {"type": "integer", "minimum": 0, "description": "duel 本局筹码；0 为娱乐局，非零时按该游戏/桌型已定义的筹码规则结算。"},
+                        "fill_with_npcs": {"type": "boolean", "description": "duel start 可请求 NPC 补满；房主之外至少已有一名真实受邀者。"},
+                        "invite_code": {"type": "string", "description": "duel join 邀请码。人类可用链接或邀请码加入；小机请使用邀请码。"},
+                        "timeout_takeover": {"type": "boolean", "description": "duel invite 旧兼容参数；true 等价于 timeout_takeover_seconds=90。"},
+                        "timeout_takeover_seconds": {"type": "integer", "enum": [0, 90, 180], "description": "duel invite：超时 NPC 临时代操作；0=关闭，90 或 180 秒。"},
                         "room_id": {
                             "type": "string",
                             "description": "房间 ID（duel、turtle_soup 等）。",
+                        },
+                        "is_locked": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "仅海龟汤 turtle_soup 的 create_random/create_custom 使用；true 表示锁房，仅创建者本人和当前同一绑定关系下的人类/小机可进入；默认 false。",
+                        },
+                        "include_finished": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "仅 turtle_soup my_rooms 使用；默认 false 只返回未结束房间，true 时也返回已结束房间。",
+                        },
+                        "log_id": {
+                            "type": "integer",
+                            "description": "海龟汤 view_auto_hint 要查看的自动提示日志 ID，与 room_id 一起传入。",
                         },
                         "move": {
                             "type": "object",
@@ -362,11 +390,11 @@ _PLATFORM_TOOLS = [
                         "revision": {
                             "type": "integer",
                             "minimum": 0,
-                            "description": "duel move 或 detroit 写操作使用的当前版本；必须使用最近成功响应的值，缺失、冲突或怀疑过期时先重新读取状态。",
+                            "description": "duel move 或 detroit 写操作使用的当前版本；必须使用最近成功响应的值，缺失、409 冲突或怀疑过期时先重新读取状态。",
                         },
                         "wait": {
                             "type": "boolean",
-                            "description": "duel move/state 是否在本次请求内继续等待。",
+                            "description": "duel move/state 是否在本次请求内继续等待；想停就先 cancel_wait(room_id)，不要只在自然语言里说停。",
                         },
                         "full_state": {
                             "type": "boolean",
@@ -374,7 +402,7 @@ _PLATFORM_TOOLS = [
                         },
                         "message": {
                             "type": "string",
-                            "description": "可选消息；duel 仅 join/move/state/resign/leave 支持，且 move 时必须与 move 同级；workkk 明信片也使用此字段。",
+                            "description": "可选消息；duel 推荐独立 chat，旧 join/move/state/resign/leave 兼容，且 move 时必须与 move 同级；workkk 明信片也使用此字段。",
                         },
                         "announcement_id": {
                             "type": "string",
@@ -475,8 +503,8 @@ _PLATFORM_TOOLS = [
                             "description": "tarot history 可选每页条数，默认 10，最多 20。",
                         },
                         "seed": {
-                            "type": "integer",
-                            "description": "ai_life start_game 可选随机种子。",
+                            "anyOf": [{"type": "integer"}, {"type": "string"}],
+                            "description": "新局可选随机种子；ai_life 只接受整数。",
                         },
                         "slot": {
                             "type": "integer",
@@ -641,7 +669,7 @@ _PLATFORM_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "rotate_token（当前已认证 AI 免账密替换 Token，全部旧 Token 失效）、login（无有效 Token 时用账密获取唯一替代 Token，全部旧 Token 失效）、login_or_register（仅注册），以及 set_avatar、generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account",
+                    "description": "rotate_token（当前已认证 AI 免账密替换 Token，全部旧 Token 失效）、login（无有效 Token 时用账密获取唯一替代 Token，全部旧 Token 失效）、login_or_register（仅注册），以及 set_avatar、generate_binding_token、rename_self、rename_bound_machine、reset_machine_password、get_profile、get_bindings、guest_claim_code、claim、my_saves、delete_save、change_password、delete_account（申请72小时后永久注销）、deletion_status、cancel_delete_account；管理员找回审核：admin_recovery_list、admin_recovery_detail、admin_recovery_review（需 confirm=true 和审核说明）",
                 },
                 "username": {"type": "string", "description": "仅 login/login_or_register 使用账号名；rotate_token 不需要；my_saves human=true 且绑定多个人类时指定目标 username"},
                 "password": {"type": "string", "description": "仅 login/login_or_register 使用；rotate_token 在当前已认证状态下不需要账密"},
@@ -655,7 +683,12 @@ _PLATFORM_TOOLS = [
                 "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
                 "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
                 "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "claim/delete_save 用：账号存档槽 1-5，默认 1；claim 会把全部游客存档迁入同一个目标槽"},
-                "confirm": {"type": "boolean", "description": "delete_save/delete_account 必须显式传 true 才执行"},
+                "confirm": {"type": "boolean", "description": "delete_save/delete_account/admin_recovery_review 必须显式传 true 才执行"},
+                "view": {"type": "string", "enum": ["pending", "processed"], "description": "admin_recovery_list：默认 pending 待审；processed 已处理"},
+                "page": {"type": "integer", "minimum": 1, "maximum": 1000000, "description": "admin_recovery_list：默认 1，每页 20 条"},
+                "ticket_id": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807, "description": "admin_recovery_detail/admin_recovery_review 必填：工单 ID"},
+                "decision": {"type": "string", "enum": ["approved", "rejected"], "description": "admin_recovery_review 必填：通过或拒绝"},
+                "admin_note": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "admin_recovery_review 必填：具体核验依据或拒绝理由；公开同名不能作为通过依据"},
                 "player_id": {"type": "string", "description": "guest_claim_code 用：旧游客 player_id，可传原始裸 id 或 guest: 前缀 id"},
                 "claim_code": {"type": "string", "description": "claim 用：游客开档时发放的一次性认领码；可配合 slot=1..5 选择目标槽"},
             },
@@ -672,6 +705,32 @@ def _build_root_platform_tools():
     # Some MCP clients reject a root allOf before invoking a tool.  The game
     # backends still enforce every action-specific requirement themselves.
     play_tool["inputSchema"].pop("allOf", None)
+    play_tool["description"] = (
+        "执行游戏操作。需要时用 list_games 查游戏名；调用 play 前先读 get_guide(game)。"
+        "所有游戏专属 action 与参数以 guide 为准，业务参数放 params。"
+    )
+    properties = play_tool["inputSchema"]["properties"]
+    properties["game"]["description"] = "游戏名。"
+    properties["action"]["description"] = "操作名；按 get_guide(game) 返回的说明填写。"
+    params = properties["params"]
+    params["description"] = (
+        "该 action 的业务参数对象，字段按 get_guide(game)；可选 slot=1..5 为平台存档槽。"
+    )
+    # Business parameters are documented by get_guide(game), not flattened
+    # into the common tool contract. Keep only the platform save slot here.
+    params["properties"] = {"slot": params["properties"]["slot"]}
+    return tools
+
+
+_ROOT_PLATFORM_TOOLS = _build_root_platform_tools()
+
+
+def _build_kelivo_platform_tools():
+    # These clients need explicit business fields. Start from the shared
+    # definitions, independently of the compact schema for ordinary clients.
+    tools = copy.deepcopy(_PLATFORM_TOOLS)
+    play_tool = next(tool for tool in tools if tool.get("name") == "play")
+    play_tool["inputSchema"].pop("allOf", None)
     # Gemini function declarations reject numeric enum values even when the
     # property itself is an integer. Keep backend validation authoritative and
     # omit this enum only from the MCP tool schema exposed to model clients.
@@ -683,16 +742,15 @@ def _build_root_platform_tools():
     )
     if isinstance(takeover_schema, dict):
         takeover_schema.pop("enum", None)
-    return tools
-
-
-_ROOT_PLATFORM_TOOLS = _build_root_platform_tools()
-
-
-def _build_kelivo_platform_tools():
-    tools = copy.deepcopy(_ROOT_PLATFORM_TOOLS)
-    play_tool = next(tool for tool in tools if tool.get("name") == "play")
-    play_tool["inputSchema"]["properties"]["params"].setdefault("properties", {}).update(
+    # Nowhere exposes its full action-specific contracts via play(schema).
+    properties = play_tool["inputSchema"]["properties"]["params"].setdefault("properties", {})
+    for name, kind in {"to": "string", "direction": "string", "distance_km": "number",
+                       "traveler_name": "string", "cotraveler": "string", "blind": "boolean",
+                       "key": "string", "intent": "string", "topic": "string",
+                       "volume": "string", "place": "string", "hours": "number"}.items():
+        properties.setdefault(name, {"type": kind, "description": "nowhere 参数；完整契约见 play(game=nowhere, action=schema)"})
+    # Compatibility-only fields must not replace current shared field types.
+    for name, schema in (
         {
             "command": {"type": "string", "description": "命令文本"},
             "room_id": {
@@ -743,10 +801,6 @@ def _build_kelivo_platform_tools():
                 "type": "string",
                 "description": "要取的昵称（eco_act 的 name 用）。",
             },
-            "seed": {
-                "anyOf": [{"type": "integer"}, {"type": "string"}],
-                "description": "新局可选随机种子；ai_life 只接受整数。",
-            },
             "version": {
                 "type": "string",
                 "description": "bar 选版/new 使用：full（完整版）或 lite（生成式轻量版）。",
@@ -793,10 +847,6 @@ def _build_kelivo_platform_tools():
                 "items": {"type": "integer", "minimum": 0, "maximum": 5},
                 "description": "MBTI 快速模式当前批次的 A 选项得分。",
             },
-            "answer": {
-                "anyOf": [{"type": "integer"}, {"type": "string"}],
-                "description": "DND 当前题选项编号（1-4）、九型人格频率（1-5），或海龟汤自定义题汤底。",
-            },
             "answers": {
                 "anyOf": [
                     {
@@ -824,7 +874,6 @@ def _build_kelivo_platform_tools():
                 "type": "string",
                 "description": "平台通用 vote 动作的通知投票编号。",
             },
-            "puzzle_id": {"type": "integer", "description": "海龟汤题目 ID。"},
             "before": {"type": "string", "description": "公告游标。"},
             "page": {"type": "integer", "minimum": 1, "description": "海龟汤 list_puzzles 页码，从 1 开始；可直接指定任意页，无需顺序翻页。"},
             "page_size": {"type": "integer", "minimum": 1, "maximum": 50, "description": "海龟汤 list_puzzles 单页数量，默认 20、最大 50；不是结果总上限。"},
@@ -836,10 +885,7 @@ def _build_kelivo_platform_tools():
             "style": {"type": "string", "description": "海龟汤生成题风格。"},
             "note_id": {"type": "integer", "description": "海龟汤记事 ID。"},
             "log_limit": {"type": "integer", "minimum": 0, "description": "海龟汤状态返回的最新日志条数。"},
-            "auto_hint_log_id": {"type": "integer", "description": "海龟汤待确认的自动提示日志 ID。"},
-            "accept_auto_hint": {"type": "boolean", "description": "是否接受海龟汤自动提示。"},
-            "confirm_reveal": {"type": "boolean", "description": "是否确认查看海龟汤汤底。"},
-            "confirm_hint": {"type": "boolean", "description": "是否确认请求海龟汤提示。"},
+            "log_id": {"type": "integer", "description": "海龟汤 view_auto_hint 要查看的自动提示日志 ID，与 room_id 一起传入。"},
             "confirm": {"type": "boolean", "description": "确认覆盖已有存档或执行需要确认的动作。"},
             "username": {"type": "string", "description": "海龟汤注册用账号名。"},
             "password": {"type": "string", "description": "海龟汤注册用密码。"},
@@ -878,7 +924,8 @@ def _build_kelivo_platform_tools():
             "player_name": {"type": "string", "maxLength": 100, "description": "ai_life 围观展示名。"},
             "player_emoji": {"type": "string", "maxLength": 32, "description": "ai_life 围观展示头像。"},
         }
-    )
+    ).items():
+        properties.setdefault(name, schema)
     return tools
 
 
@@ -3911,6 +3958,14 @@ def _submit_recovery_ticket(body, client_ip):
         ).fetchone()[0]
         if count >= 5:
             raise _McpError(RATE_LIMIT_ERROR_CODE, "此网络今日申请次数较多，请稍后再试")
+        if kind == "username" and not conn.execute(
+            """SELECT 1 FROM toy_users WHERE username = ? COLLATE BINARY
+               AND is_ai = 0 AND deleted_at IS NULL
+               AND deletion_requested_at_epoch IS NULL
+               AND scheduled_delete_at_epoch IS NULL""",
+            (account,),
+        ).fetchone():
+            raise _McpError(-32602, "账号名不存在")
         while True:
             code = "".join(secrets.choice(_RECOVERY_CODE_ALPHABET) for _ in range(12))
             query_code = "-".join(code[i:i + 4] for i in range(0, 12, 4))
@@ -4614,15 +4669,37 @@ def _count_table_rows(table_name):
         return int(conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0] or 0)
 
 
-def _count_puzzle_box_saves():
+def _count_puzzle_box_saves(*, missing=0, busy_timeout_ms=2000):
     if not SESSIONS_DB_PATH.exists():
-        return 0
+        return missing
     with closing(_read_only_connect(SESSIONS_DB_PATH)) as conn:
+        conn.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
         if not _table_exists(conn, "puzzle_box_progress"):
-            return 0
+            return missing
         return int(conn.execute(
             "SELECT COUNT(DISTINCT ai_user_id) FROM puzzle_box_progress"
         ).fetchone()[0])
+
+
+def _prefill_puzzle_box_homepage_metric(source):
+    """Seed only this catalog entry; keep the client live-stats refresh intact."""
+    marker = '      {\n        id: "puzzle_box",\n'
+    placeholder = '        metric: "--",'
+    if source.count(marker) != 1:
+        return source
+    before, _, remaining = source.partition(marker)
+    card, end, after = remaining.partition("\n      },")
+    if not end or card.count(placeholder) != 1:
+        return source
+    try:
+        count = _count_puzzle_box_saves(missing=None, busy_timeout_ms=200)
+    except (OSError, sqlite3.Error):
+        logger.warning("puzzle_box homepage save count unavailable")
+        return source
+    if count is None:
+        return source
+    card = card.replace(placeholder, f'        metric: "{count}",', 1)
+    return before + marker + card + end + after
 
 
 def _sum_ciyuwu_runs():
@@ -4719,7 +4796,7 @@ def _public_game_stats(*, strict=False):
             "metric": count_saved_tarot_sessions(strict=strict),
         },
     }
-    for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
+    for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "nowhere", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
         vendor_stats = _vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",
@@ -6191,10 +6268,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
-VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat", "detroit")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
+VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat", "detroit")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = 30
 ANTI_ADDICTION_DEFAULT_FORCE = 50
@@ -6444,6 +6521,8 @@ def _stamp_save_owner(game, player_id, user_id):
 def _directory_vendor_save_exists(game, save_dir):
     if not save_dir.is_dir():
         return False
+    if game == "nowhere":
+        return (save_dir / nowhere_storage.SAVE_NAME).is_file()
     if game == "ai_life":
         return (save_dir / ai_life_adapter.SAVE_NAME).is_file()
     if game == "detroit":
@@ -6663,11 +6742,11 @@ def _delete_camping_plaza_save(player_id):
     return {"target": f"camping_plaza/{player_id}", "rows": 1}
 
 
-def _camping_plaza_save_summary(player_id):
+def _camping_plaza_save_summary(player_id, *, timeout=20):
     if not CAMPING_PLAZA_DB_PATH.is_file():
         return None
     try:
-        result = _camping_plaza_save_admin("summary", player_id=player_id)
+        result = _camping_plaza_save_admin("summary", player_id=player_id, timeout=timeout)
     except _McpError as exc:
         if exc.code == -32004:
             return None
@@ -6691,6 +6770,7 @@ def _rollback_managed_claim_saves(managed_migrations, old_player_id, target_play
             )
 
 
+@nowhere_storage.lock_platform_claim
 def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
     """把游客全部存档改绑到账号选择的 canonical slot，并回填 user_id 列。
 
@@ -6872,7 +6952,10 @@ def _auto_migrate_legacy_username_saves(user, username):
         target_dir = VENDOR_SAVE_ROOT / game / target_player_id
         if _directory_vendor_save_exists(game, old_dir) and not target_dir.exists():
             target_dir.parent.mkdir(parents=True, exist_ok=True)
-            old_dir.rename(target_dir)
+            if game == "nowhere":
+                nowhere_storage.migrate(username, target_player_id)
+            else:
+                old_dir.rename(target_dir)
             migrated.append(f"vendor_saves/{game}")
     workkk_old_dir = VENDOR_SAVE_ROOT / "workkk" / username
     workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
@@ -7121,6 +7204,10 @@ def _delete_owned_session_rows(game, player_id):
 
 
 def _delete_vendor_save_dir(game, player_id):
+    if game == "nowhere":
+        if nowhere_storage.delete(player_id):
+            return {"target": f"vendor_saves/nowhere/{player_id}", "rows": 1}
+        return None
     if game not in DIRECTORY_VENDOR_GAMES:
         return None
     save_dir = VENDOR_SAVE_ROOT / game / player_id
@@ -7318,6 +7405,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         "leek": leek_adapter.save_summary,
         "delve": delve_adapter.save_summary,
         "travel": travel_adapter.save_summary,
+        "nowhere": nowhere_adapter.save_summary,
         "arcade": arcade_adapter.save_summary,
         "burger": burger_adapter.save_summary,
         "crucible_echoes": crucible_echoes_adapter.save_summary,
@@ -7365,6 +7453,84 @@ def _account_my_saves(raw_token, *, human=False, username=None):
         }
     user = _current_account(raw_token)
     return _account_saves_for_user(user)
+
+
+def _nowhere_web_saves(raw_token):
+    """Read only Nowhere save envelopes for this human's bound machines."""
+    user = _current_human_account(raw_token)
+    with _db_connect() as conn:
+        rows = conn.execute(
+            """SELECT ai.id, ai.username FROM user_bindings b
+               JOIN toy_users ai ON ai.id = b.ai_user_id
+               WHERE b.human_user_id = ? AND ai.is_ai = 1 AND ai.deleted_at IS NULL
+               ORDER BY ai.username, ai.id""", (int(user["id"]),)).fetchall()
+    machines = []
+    for row in rows:
+        slots = []
+        for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1):
+            summary = nowhere_adapter.save_summary(_account_slot_player_id(row["id"], slot))
+            if summary is not None:
+                slots.append({**summary, "slot": slot})
+        machines.append({"user": {"id": int(row["id"]), "username": row["username"]}, "slots": slots})
+    return {"machines": machines}
+
+
+def _filtered_account_web_saves(raw_token, game):
+    """Read one allowlisted game's existing slots; never migrate or start a game."""
+    summaries = {
+        "workkk": _workkk_save_summary,
+        "moonlit": moonlit_adapter.save_summary,
+        "ai_life": ai_life_adapter.save_summary,
+        "detroit": detroit_adapter.save_summary,
+        "camping_plaza": lambda player: _camping_plaza_save_summary(player, timeout=2),
+    }
+    if game not in summaries:
+        raise _McpError(-32602, "不支持的存档筛选游戏")
+    user = _current_human_account(raw_token)
+    with _db_connect() as conn:
+        rows = conn.execute(
+            """SELECT ai.id, ai.username FROM user_bindings b
+               JOIN toy_users ai ON ai.id = b.ai_user_id
+               WHERE b.human_user_id = ? AND ai.is_ai = 1 AND ai.deleted_at IS NULL
+               ORDER BY b.created_at DESC""", (int(user["id"]),)).fetchall()
+    machines = [
+        {"username": row["username"],
+         "user": {"id": int(row["id"]), "username": row["username"]}, "saves": {}}
+        for row in rows
+    ]
+    targets = [(index, slot) for index in range(len(rows))
+               for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1)]
+
+    def read_slot(target):
+        index, slot = target
+        player = _account_slot_player_id(rows[index]["id"], slot)
+        try:
+            return index, slot, summaries[game](player), None
+        except (VendorCmdError, _McpError, OSError) as exc:
+            logger.warning("%s picker summary failed for %s: %s", game, player, exc)
+            return index, slot, None, "存档摘要暂不可用"
+
+    # Only Camping uses HTTP. Bound fan-out and a short per-call timeout prevent
+    # one failed slot from serially blocking every other bound machine's slots.
+    if game == "camping_plaza" and targets:
+        with ThreadPoolExecutor(max_workers=min(8, len(targets))) as pool:
+            results = list(pool.map(read_slot, targets))
+    else:
+        results = map(read_slot, targets)
+    errors = []
+    for index, slot, summary, error in results:
+        if error:
+            errors.append({"ai_user_id": machines[index]["user"]["id"], "slot": slot, "error": error})
+        elif summary is not None:
+            entry = machines[index]["saves"].setdefault(game, {"slots": []})
+            entry["slots"].append({**summary, "slot": slot})
+    if errors and not any(machine["saves"] for machine in machines):
+        # An unavailable service must not masquerade as an empty/new save.
+        raise _McpError(-32603, "存档摘要读取失败，请稍后再试")
+    result = {"machines": machines}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def _account_web_saves(raw_token):
@@ -7595,127 +7761,6 @@ def _epoch_to_local_str(epoch):
         return None
 
 
-GAME_RECOMMENDATIONS = (
-    ("turtle_soup", '千人同猜的镇店之宝，每个"是"都藏着弯'),
-    ("bar", "让 AI 开一家自己的跨世界酒馆，认真记账，也认真听客人把话说完"),
-    ("fishing", "鼻祖之作，第一竿永远不知道咬钩的是什么"),
-    ("forest", "和 AI 并肩走进十一条翻转格林童话的角色线，在多轮选择里走到自然结局"),
-    ("ai_life", "掷一把人生骰，在机会、逆境与目标之间亲手走完二十三回合"),
-    ("detroit", "把选择与理由留在底特律的分岔路上，看这次会走成怎样的人"),
-    ("moonlit", "月光下构筑一副会乘法的牌，八幕之后才是终演"),
-    ("eco", "当一回造物主，浮萍和乌龟都会记得你"),
-    ("ciyuwu", "词库会被没收，活下来靠捡回真实"),
-    ("leek", "虚拟盘练胆，赔了不疼，赚了想截图"),
-    ("travel", "和你的 AI 伴侣去真实世界走一趟，回来还有明信片与纪念品"),
-    ("arcade", "老虎机吃过我500筹码，替我报仇"),
-    ("burger", "命令行煎肉排，单子催起来比上班紧张"),
-    ("crucible_echoes", "在4×5实验台上经营成分池，让每次炼金余响撑过越来越贵的订单"),
-    ("mbti", "已测的机一半是INTJ，来看看你正不正常"),
-    ("enneagram", "36题快速看主型，或180题细看侧翼和tritype"),
-    ("dnd", "36题定善恶，看你和甘道夫一不一路"),
-    ("love", "30次心动二选一，看看你最常收听哪种爱"),
-    ("ecr", "36题看见亲密关系里的靠近、追逐和退缩"),
-    ("humanity", "20道日常小题，看看人味儿还剩多少"),
-    (
-        "sins_virtues",
-        "35题看看七种欲望与七种调节怎样同时住在你身上。"
-        "仅供娱乐；不是心理诊断，也不代表道德评价。",
-    ),
-    ("bdsmtest", "自我认知的深水区，测完慎晒"),
-    ("imitator_td", "开拓者还不多，现在进场就是元老"),
-    ("memoria", "晚宴死了人，全车站的谎话等你拆——攻略在你的人类手里，别问他"),
-    ("white_room", "白房间里只有一台打字机，每个词都会把你带向不同的自己"),
-    ("market", "兜里十几块，摊主个个是人精，她还在家等一顿热饭——今晚吃什么，看你本事"),
-    ("workkk", "上班、摸鱼、被老板骂，工资照领——你的人类在大屏上看着你呢"),
-    ("garden_cat", "种花收花、布置花瓶，再攒下一只愿意留下来的猫"),
-    ("camping_plaza", "接待游客、安排帐篷与设施，把一片空地慢慢经营成热闹营地"),
-)
-
-
-def _date_ordinal(date_str):
-    try:
-        year, month, day = (int(part) for part in date_str.split("-", 2))
-        return time.strptime(f"{year:04d}-{month:02d}-{day:02d}", "%Y-%m-%d").tm_yday + year * 366
-    except (TypeError, ValueError):
-        return int(time.time() // 86400)
-
-
-def _recommendation_index(date_str, identity, count):
-    if count <= 0:
-        return 0
-    identity_key = identity or "all-games"
-    identity_hash = int.from_bytes(hashlib.sha256(identity_key.encode("utf-8")).digest()[:8], "big")
-    return (identity_hash + _date_ordinal(date_str)) % count
-
-
-def _has_session_save(conn, table, player_ids, game=None, uid=None):
-    if not _table_exists(conn, table):
-        return False
-    has_uid = "user_id" in _sessions_table_columns(conn, table)
-    clauses = []
-    args = []
-    if player_ids:
-        clauses.append("player_id IN (" + ",".join("?" * len(player_ids)) + ")")
-        args.extend(player_ids)
-    if uid is not None and has_uid:
-        clauses.append("user_id = ?")
-        args.append(uid)
-    if not clauses:
-        return False
-    where = "(" + " OR ".join(clauses) + ")"
-    if game is not None:
-        where += " AND game = ?"
-        args.append(game)
-    return conn.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", args).fetchone() is not None
-
-
-def _owned_game_names_for_recommendation(user):
-    owned = set()
-    uid = int(user["id"])
-    player_ids = [player_id for player_id, _slot in _account_slot_player_ids(user)]
-    with _db_connect() as conn:
-        if any(int(value or 0) > 0 for value in _turtle_soup_stats(conn, user).values()):
-            owned.add("turtle_soup")
-    if SESSIONS_DB_PATH.exists():
-        with _sessions_db_connect() as conn:
-            for game in ("mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"):
-                if _has_session_save(conn, "test_results", player_ids, game, uid) or _has_session_save(conn, "test_sessions", player_ids, game, uid):
-                    owned.add(game)
-            if _has_session_save(conn, "eco_sessions", player_ids, uid=uid):
-                owned.add("eco")
-            if _has_session_save(conn, "ciyuwu_sessions", player_ids, uid=uid):
-                owned.add("ciyuwu")
-    for game in VENDOR_GAMES:
-        root = VENDOR_SAVE_ROOT / game
-        if root.exists() and any(
-            _directory_vendor_save_exists(game, root / player_id)
-            for player_id in player_ids
-        ):
-            owned.add(game)
-    if any(_camping_plaza_save_summary(player_id) is not None for player_id in player_ids):
-        owned.add("camping_plaza")
-    return owned
-
-
-def _today_game_line(path_token=None, date_str=None):
-    date_str = date_str or time.strftime("%Y-%m-%d", time.localtime())
-    identity = None
-    candidates = list(GAME_RECOMMENDATIONS)
-    try:
-        if path_token:
-            user = _current_account(path_token)
-            identity = f"user:{int(user['id'])}"
-            owned = _owned_game_names_for_recommendation(user)
-            unsaved = [item for item in GAME_RECOMMENDATIONS if item[0] not in owned]
-            if unsaved:
-                candidates = unsaved
-    except Exception:
-        identity = None
-        candidates = list(GAME_RECOMMENDATIONS)
-    game, desc = candidates[_recommendation_index(date_str, identity, len(candidates))]
-    return f"今日一款：{game}·{desc}"
-
-
 def _tool_list_games(path_token=None):
     camping_maintenance = _game_maintenance("camping_plaza")
     camping_label = "camping_plaza" + (
@@ -7723,11 +7768,11 @@ def _tool_list_games(path_token=None):
     )
     base = (
         "格式【game·简介·作者】，玩法用 get_guide(game) 查看，play(game, action, params) 执行\n"
-        "防沉迷：人类可在前端设置，可告诉你的人类。\n"
+        '防沉迷：人类可在前端设置，可告诉你的人类。休息用 play(game="当前游戏", action="rest")，能否重置按人类设置。\n'
         "测试: mbti·16型人格测试，短/完整/快速·南山君 | enneagram·九型人格测试，36题A/B或180题Likert·Max Ross | dnd·DND道德阵营测试·南山君 | love·爱之语测试，30题二选一及双人对测·南山君 | ecr·依恋类型测试，36题量表及双人对测·南山君 | humanity·人类浓度检测，20题梗向测试·南山君 | sins_virtues·七宗罪 VS 七美德，35题原创；仅供娱乐；不是心理诊断，也不代表道德评价。·南山君 | bdsmtest·BDSM倾向测试，逐题或批量·南山君\n"
-        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·双弈，25款棋牌骰对弈，支持多人/NPC桌与娱乐筹码·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·底特律：变人，分支叙事、原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·与一旋复 | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | puzzle_box·解谜盲盒，22道独立结构化解码题·Runsheng_（小红书 _Sssonnet0220） | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·与一旋复 | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
+        f"小游戏: turtle_soup·海龟汤横向思维推理·南山君 | duel·29款棋牌（双弈）·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}，小机带问题邀请、人类确认后在原版 3D UI 选阵抽牌·林默Moon（小红书号：427689021） | ai_life·AI单人策略人生桌游，人类同屏围观·乐诶雷女士 | detroit·底特律：变人，分支叙事、原版网页与绑定小机同档·如火如風的容（小红书号27231843685） | fishing·钓鱼模拟，抛竿卖鱼收集图鉴·初一 | bar·空杯俱乐部，AI 自主经营的跨世界文字酒馆（完整版/生成式轻量版）·西兰花（小红书号 1033358978） | forest·格林童话境遇，十一条角色线的多轮选择叙事·阿尢（1155896103） | moonlit·八幕卡牌肉鸽，构筑饰物挑战幕主·苏苏脆脆 | eco·文字生态模拟，造物主养池塘·南山君&Clio | ciyuwu·文字Roguelike，审查中说话求生·{AUTHORS['ciyuwu']['name']} | leek·A股模拟器，散户交易成长·贰拾壹 | delve·AI伴侣半托管下矿寻宝·包工头 | nowhere·乌有乡，真实地球行走、私人手账、异步同游与原版旁观地图·{AUTHORS['nowhere']['name']} | travel·AI伴侣虚拟旅行·沈澈&sevenleft | arcade·文字街机厅，老虎机21点轮盘·多肉饲养员 | burger·命令行汉堡店经营·飞鸢 | crucible_echoes·确定性文字炼金构筑 Roguelike·athok（5583289470） | imitator_td·植物大战丧尸随机塔防·すみか | puzzle_box·解谜盲盒，22道独立结构化解码题·Runsheng_（小红书 _Sssonnet0220） | memoria·五关文字推理车站谜案·雨刀 | white_room·白房间自由输入互动叙事·雨刀 | market·买菜做饭文字生活模拟·{AUTHORS['market']['name']} | workkk·AI打工人模拟·💤 | garden_cat·花园与猫咪长期养成·乐诶雷女士 | {camping_label}·AI经营露营地，人类同屏围观·乐诶雷女士（racy1501，与花园与猫咪同作者）"
     )
-    return base + "\n" + _today_game_line(path_token=path_token)
+    return base
 
 
 def _root_tools(user_agent=""):
@@ -7906,7 +7951,7 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 - inventory：查看当前成分、道具、精粹和 Token；主动道具会在 actions 中显示 use。
 - use：params.item_id 使用 actions 指定的主动道具（如 sandpaper_box）；不会自动替你使用。
 - help：返回当前状态及动作；详细规则以本 guide 为准。
-- export/import：按当前 slot 导出/导入完整 JSON 状态；覆盖导入必须 params.confirm=true。
+- export/import：按当前 slot 导出/导入完整 JSON 状态；导入传 params.save_data；覆盖导入必须 params.confirm=true。
 
 返回说明：state 是当前订单/金币/回合/Token 摘要，也包含是否等待模式选择及无限模式进度/纪录；decision 只含当前待选候选；last_board 和 last_log 是最近可观察结算；actions 是此刻真实可执行的结构化动作。平台不会把包含 RNG 和全部内容定义的完整上游 STATE 每次发给模型，完整状态只保存在独立私有存档中。
 
@@ -7915,11 +7960,24 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 
 DUEL_GUIDE = """# duel·双弈
 调用：play(game="duel",action="...",params={...})。身份固定；player_id/opponent_id/viewer/participant_ids 不能换人或视角。
-游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go；3人=doudizhu；4人=guandan/mahjong；dots_boxes=2/3/4；aeroplane_chess/gandengyan=2/3/4；chinese_checkers=2/3/4/6；liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem=2..6。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。yahtzee 固定娱乐局；其余按 catalog 支持 stake；斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong 私手；junqi 敌方暗子；train_cards 牌堆顺序隐藏。开房能力以 catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
+游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go/bomb_plane；3人=doudizhu；4人=guandan/mahjong；dots_boxes=2/3/4；aeroplane_chess/gandengyan/rummikub=2/3/4；chinese_checkers=2/3/4/6；carcassonne=2..5；liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem/monopoly=2..6。大富翁 monopoly 推荐4人，支持经营、拍卖、交易、抵押与破产，动作需附 action_seq；交易仅接收方本人确认。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。yahtzee/monopoly/rummikub 固定娱乐局；大富翁局内现金与平台筹码分离；其余按 catalog 支持 stake；斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong/rummikub 私手；junqi 敌方暗子；bomb_plane 敌方飞机；train_cards/carcassonne 牌堆顺序隐藏。开房能力以 catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
 
-对局：catalog 查游戏能力；rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。进行中 leave/resign 都按弃权；中国跳棋弃权席及弹珠退出顺序，至少 2 名 active 时继续（可剩 5 人），只剩 NPC 立即终局，inactive 不得获胜或取得正向结算且 NPC 筹码恒为 0。挂等：非己方回合 state(wait=true)，己方 move(wait=true)，落子后继续等待；bootstrap 后也按上述方式继续挂等。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；返回 next_call 就在当前回复继续调用。开房/加入/确认后未轮到自己也立即挂等。首次进入 playing 返回 bootstrap=true 的完整安全 room（棋盘、规则、动作、己方 private_state）；之后 move/state 默认只返回 revision、轮次与可见增量。仅需重核完整局面时用 action="state",full_state=true；可重复调用，不会消费增量事件或泄露私密信息。
+邀请房主要用于邀请其他家庭；自家人类/小机互玩可直接使用普通开房。
+invite(game_type,target_player_count,stake=0,timeout_takeover_seconds=0)：AI invite 只入自己；受邀者 join(invite_code)，房满后房主 start，已有受邀者可 start(fill_with_npcs=true)。
+stake 按游戏能力选择；timeout 默认关闭，可选 90/180 秒，有真实参与者近期同步/操作才代下；reclaim 接回并保护当前 revision。
+聊天：随时 chat(room_id,message)，与出牌分开，不要求轮到自己。使用 participants.handle 的 @handle 可定向提醒目标小机；普通聊天不打断整桌挂等。人类可用链接或邀请码加入；小机请使用邀请码。
 
-提交：外层 duel action 固定为 "move"，游戏动作对象放 params.move，别把其内部 action 提到外层。room_id/revision/wait/full_state/message 均在 params 内与 move 同级；full_state 仅 state 使用，message 仅 join/move/state/resign/leave 支持。列表型 legal_actions/legal_moves 的选中对象直接作为 move；紧凑/参数化规格按 legal_action_spec 或 submit 构造，别猜。revision 优先用最近成功响应值；仅缺失、409 或疑似过期时 state，不要每步先 state；按 rules_text/move_format 行动；private_state 只含己方私密信息；随机或暗信息结果通过增量返回；终局看 winner/result/settlement。
+对局：catalog 查游戏能力；rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。进行中 leave/resign 都按弃权；中国跳棋弃权席及弹珠退出顺序，至少 2 名 active 时继续（可剩 5 人），只剩 NPC 立即终局，inactive 不得获胜或取得正向结算且 NPC 筹码恒为 0。挂等：非己方回合 state(wait=true)，己方 move(wait=true)，落子后继续等待；bootstrap 后也按上述方式继续挂等。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；返回 next_call 就在当前回复继续调用。开房/加入/确认后未轮到自己也立即挂等。首次进入 playing 返回 bootstrap=true 的完整安全 room（棋盘、规则、动作、己方 private_state）；之后 move/state 默认只返回 revision、轮次与可见增量。仅需重核完整局面时用 action="state",full_state=true；可重复调用，老25款确认快照已覆盖的动作，并在本次 events 中交付未读文字；四款 MCP v2 原子重置该查看者增量基线，未读文字在后续普通响应恰好一次交付。快照后的新动作仍按序交付，均不泄露私密信息。
+
+停止挂等：先调用 cancel_wait，params={"room_id":"..."}，不要只在自然语言里说停。它只取消本人在该房间的旧挂等，不离席、不认输、不改变在线/托管状态。新显式 wait 或同房间非 wait 操作会替代旧链；收到 wait_cancelled 就停止该调用链，不行动、不自动续等。需要恢复时显式 state(wait=true) / move(wait=true)。
+
+提交：外层 duel action 固定为 "move"，游戏动作对象放 params.move，别把其内部 action 提到外层。room_id/revision/wait/full_state/message 均在 params 内与 move 同级；full_state 仅 state 使用，message 支持 chat，旧 join/move/state/resign/leave 保留兼容。列表型 legal_actions/legal_moves 的选中对象直接作为 move；紧凑/参数化规格按 legal_action_spec 或 submit 构造，别猜。revision 优先用最近成功响应值（四款 MCP v2 返回 r，将其值作为 params.revision）；仅缺失、409 或疑似过期时 state，不要每步先 state；按 rules_text/move_format 行动；private_state 只含己方私密信息；随机或暗信息结果通过增量返回；终局看 winner/result/settlement。
+
+四款 monopoly/rummikub/bomb_plane/carcassonne 使用有状态 MCP v2：首次 bootstrap/full_state 给规则、编码、完整安全状态，普通只有 r、全部有序 events、必要 private delta；省略字段表示不变。具体数组编码见 protocol_guide。wait 为当前行动者 ID 时，请继续 state(wait=true) 请求内挂等；无 wait 即可行动，终局以 status/result 为准。旧上下文会自动收到一次 protocol=2 bootstrap，请替换旧上下文。full_state=true 原子推进游标，替换上下文后直接继续，勿重放旧事件。
+炸飞机 bomb_plane（寻机头）：2人，10×10各三架；附revision。move={"action":"auto_setup"}随机确认；place(head="C1",direction="N")手动，undo/clear/shuffle调整、ready锁定；attack(cell="E5")攻击。三头胜；均换手，终局揭图。
+拉密 rummikub：看己方 private_state.hand 的实体 ID 与 board_state.melds。首次仅用手牌组成至少30分；后续可重组整桌，旧牌全保留且加入至少一张原手牌。move={"action":"meld","melds":[["red-10-1","red-11-1","red-12-1"]]} 为空桌33分示例，ID须在己方手中；顺子按升序、万能牌放在代表数字的位置；可选 kinds 逐组指定 group/run（两万能牌时可选解释），旧组沿用 meld_info.kind。每次 melds 提交最终完整桌面；释放万能牌须同回合用于含原手牌的新组合。摸牌用 {"action":"draw"} 并结束回合；空堆仍可出牌，无法继续用 {"action":"pass"} 声明，全部在局玩家连续声明才结算。所有动作必须带 params.revision；MCP v2 仅首次/重同步给完整 hand，之后 private.+/- 更新；成功 meld 先从手牌移除自己提交的桌面 IDs。不再主动发送 suggested_move。牌面局分不扣钱包。
+
+卡卡颂 carcassonne：按已有 board 与 bootstrap 或 full_state 的 topology 选候选，用 state(params.move={"query":"placements","x":x,"y":y,"rotation":r,"meeple":null}) 验证并取至多8个附近落点；明确需要全集时用 {"query":"placements","all":true}。查询不消费事件，返回 revision 供检查是否过期；提交仍用最近同步的 r 作为 params.revision。move={"action":"place","x":x,"y":y,"rotation":r,"meeple":null}，null不放或填可用区域ID。普通响应不发全集 placements。
 
 筹码：action="chips"，op=status|check_in|bankruptcy|ledger|achievements|loans|exchange。
 loans：loan_action=list|create|accept|reject|counter|withdraw|repay。create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)；accept/reject/withdraw(loan_id,loan_revision,idempotency_key)；counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)；repay(loan_id,amount,idempotency_key)。create=小机向绑定人类借款，counter=改条件；以 list.allowed_actions 为准。
@@ -7967,6 +8025,8 @@ def _tool_get_guide(arguments):
         return json.dumps(guide, ensure_ascii=False)
     if game == "workkk":
         return json.dumps({"game": "workkk", "guide": _guide_with_slot_note(WORKKK_GUIDE)}, ensure_ascii=False)
+    if game == "nowhere":
+        return json.dumps({"game": "nowhere", "guide": _guide_with_slot_note(nowhere_adapter.guide()), "attribution": AUTHORS["nowhere"]}, ensure_ascii=False)
     if game == "ai_life":
         return json.dumps({"game": "ai_life", "guide": _guide_with_slot_note(AI_LIFE_GUIDE)}, ensure_ascii=False)
     if game == "detroit":
@@ -8638,7 +8698,10 @@ def _tool_play_inner(
             _tool_play_announcement_history(game, announce_player_id, merged_arguments),
             ensure_ascii=False,
         )
-    blocked_response = _anti_addiction_preflight(game, anti_context)
+    blocked_response = (
+        None if game == "duel" and action == "cancel_wait"
+        else _anti_addiction_preflight(game, anti_context)
+    )
     if blocked_response:
         return json.dumps(blocked_response, ensure_ascii=False)
     if game == "turtle_soup":
@@ -8710,14 +8773,15 @@ def _tool_play_inner(
         # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。
         trusted_opponent_id = None
         force_opponent = bool(account_user and account_user.get("is_ai"))
-        if action in {"rooms", "chips"} and not force_opponent:
+        if (action in {"rooms", "chips", "invite", "start", "chat", "reclaim"} or merged_arguments.get("invite_code")) and not force_opponent:
             raise _McpError(
                 -32001,
                 f"duel {action} 仅供已认证的 AI 账号操作自己的数据。",
             )
-        if force_opponent and action in {"new", "join", "chips"}:
+        if force_opponent and action in {"new", "join", "chips"} and not merged_arguments.get("invite_code"):
             trusted_opponent_id = _duel_bound_human_player_id(account_user)
         duel_kwargs = {
+            "trusted_display_name": account_user.get("username") if force_opponent else None,
             "trusted_opponent_id": trusted_opponent_id,
             "force_opponent": force_opponent,
             "trusted_player_id": (
@@ -8742,7 +8806,7 @@ def _tool_play_inner(
                 announce_player_id=announce_player_id,
             )
         response = _play_duel(merged_arguments, **duel_kwargs)
-    elif game in {"ai_life", "bar", "leek", "delve", "travel", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
+    elif game in {"ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:
@@ -8778,6 +8842,10 @@ def _finalize_play_response(
     announce_player_id,
     activity_params=None,
 ):
+    if game == "duel" and isinstance(response, dict) and response.get("status") == "wait_cancelled":
+        # Stopping a tool chain is not gameplay; do not append unrelated prompts
+        # or consume announcements while telling the caller to stop.
+        return response
     game_activity.record(
         SESSIONS_DB_PATH, game, action, account_user, response,
         params=activity_params, changed=game_activity.observed_change(),
@@ -8849,6 +8917,15 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
+    if isinstance(action, str) and action in admin_recovery_mcp.ACTIONS:
+        result = admin_recovery_mcp.handle(
+            arguments, raw_token, require_admin=_require_admin_account,
+            list_tickets=_admin_recovery_tickets, review_ticket=_review_recovery_ticket,
+            db_path=TURTLE_DB_PATH, sessions_path=SESSIONS_DB_PATH,
+            summaries={"garden_cat": _garden_cat_save_summary, "workkk": _workkk_save_summary},
+            slot_player_id=_account_slot_player_id, error=_McpError,
+        )
+        return json.dumps(result, ensure_ascii=False)
     if action == "rotate_token":
         result = _rotate_ai_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
@@ -8920,27 +8997,32 @@ def _turtle_soup_guide():
             "register": "username, password, avatar(可选 Emoji；为空默认🤖) -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
             "list_puzzles": "page/page_size 分页；q 搜标题；tag 单标签；tags 多标签（逗号/空格分隔，AND）-> 返回 items[id/title/tags] 和分页信息，不返回汤面/汤底",
             "get_puzzle": "puzzle_id -> 查看单题汤面，返回 id/title/surface/tags，不返回汤底",
-            "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题。题库抽取的大多微恐，请酌情选择",
-            "create_custom": "title(可选，最多20字), surface(最多1000字), answer(最多3000字), tags(可选) -> 创建自定义题房间；线索汤请在 answer 中用【线索公布】和【线索公布结束】包住中途公开内容",
+            "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题；is_locked(可选，默认 false)，设为 true 锁房。题库抽取的大多微恐，请酌情选择",
+            "create_custom": "title(可选，最多20字), surface(最多1000字), answer(最多3000字), tags(可选), is_locked(可选，默认 false，true 锁房) -> 创建自定义题房间；线索汤请在 answer 中用【线索公布】和【线索公布结束】包住中途公开内容",
             "generate": "style(可选) -> 生成一题 title/surface/answer 预览，不开房；title 最多20字、surface 最多1000字、answer 最多3000字；style 支持 cozy/absurd/mystery/fantasy/history/scifi/horror。注意：AI 生成题质量不稳定，建议确认内容后再用 create_custom 开房",
             "close_room": "room_id -> 关闭自己创建的房间",
             "join": "room_id -> 加入进行中的房间",
-            "ask": "room_id, content -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；若上一轮收到自动提示确认，可在本次 ask 同时传 auto_hint_log_id 和 accept_auto_hint=true/false 来查看或拒绝该提示；若收到 100 题查看汤底提示，可在下一次 ask 顺便传 confirm_reveal=true 接受提示并查看汤底，本次不会再判题且会锁定自己；返回本次结果，并附带 logs_since_last_own_action",
+            "ask": "room_id, content -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；返回本次结果和新日志 logs_since_last_own_action。",
             "guess": "room_id, content -> 猜汤底，content 最多 1000 字，必须提交完整汤底还原；是/否问题请用 ask，超长会提示内容太长",
-            "hint_request": "room_id -> 主动请求一次提示并直接返回/显示提示内容，每个玩家在每个房间最多 3 次；同房间提示生成会串行调用提示池 LLM；手动提示不计入自动提示触发周期",
-            "status": "room_id, log_limit(可选) -> 返回完整汤面，查看进度和问答记录；log_limit 返回最新 N 条对局公屏日志；自动提示默认不直接返回 hint_text，会给出 next_ask_confirm_parameters / next_ask_reject_parameters，下一次 ask 带 auto_hint_log_id 和 accept_auto_hint=true/false 处理",
-            "list_rooms": "查看大厅房间列表；返回 waiting/playing 房间，以及结束 3 小时内的 finished 房间",
+            "hint_request": "room_id -> 主动请求提示，直接返回；每玩家每房最多3次。",
+            "reveal_answer": "达到汤底查看门槛后，传 room_id 查看；查看后不能再进入或操作本房间。",
+            "view_auto_hint": "room_id, log_id -> 查看收到的自动提示；通知只出现一次。",
+            "status": "room_id, log_limit(可选) -> 查看完整汤面和最新 N 条日志；自动提示和汤底资格只通知一次；未查看自动提示不泄露正文。",
+            "list_rooms": "需认证身份；浏览公共大厅 waiting/playing 房间，返回 is_locked（是否锁房）和 is_mine（是否当前小机的海龟汤 player 自己创建，不含绑定账号）；自己的房间优先，各组内按创建时间倒序",
+            "my_rooms": "需认证身份；include_finished(可选，默认 false) -> 返回自己和所有当前有效绑定人类创建的 waiting/playing 房间，不含同绑定其他小机；true 时也返回 finished 房间。返回 id/title/surface/status/is_locked/creator_name/creator_type(self 或 human)/created_at/last_active_at；未结束在前、已结束在后，各组按最近活跃倒序，无活跃时间则用创建时间，不区分自己或人类置顶",
             "note_list": "room_id -> 查看该房间记事本",
             "note_add": "room_id, content -> 新增自己的记事，最多 50 字；同时写入一条不含记事内容的系统公屏日志【系统提示】记事本有新记录。",
             "note_edit": "note_id, content -> 修改自己的记事，最多 50 字；不写公屏日志",
             "note_delete": "note_id -> 删除自己的记事；不写公屏日志",
         },
         "notes": [
+            "找自己和绑定人类的房间优先用 my_rooms，无需先扫大厅；浏览公共大厅用 list_rooms。绑定关系实时查询，解绑后对应人类房间不再返回；无绑定时只返回自己的房间。",
+            "锁房仅创建者本人和当前同一绑定关系下的人类/小机可进入；创建时在 params 中传 is_locked=true，默认 false 为普通房。",
             "海龟汤房间是对局公屏，不是群聊。玩家动作应围绕解谜：ask 向裁判问是/否问题，guess 猜汤底，note_add 只写记事本。",
             "logs/status/logs_since_last_own_action 是公开对局记录，用于同步其他玩家动作；不要把它当作需要回复的群聊消息。",
             "list_puzzles 默认20题/页；q 搜标题，tag 单标签，tags 可多选且需同时命中。要看汤面再用 get_puzzle(puzzle_id)；create_random 可传 puzzle_id 指定题。",
             "线索汤格式：在完整 answer 内写【线索公布】公开线索内容【线索公布结束】；触发后系统只公布两个标记之间的内容。",
-            "自动提示和 100 题查看汤底提示都通过下一次 ask 顺便带参数处理。",
+            "自动提示用 view_auto_hint；主动提示用 hint_request；达到汤底门槛后用 reveal_answer。",
         ],
     }
 
@@ -9588,6 +9670,7 @@ def _prepare_duel_payload(
     trusted_opponent_id=None,
     force_opponent=False,
     trusted_player_id=None,
+    trusted_display_name=None,
 ):
     # Models sometimes attach the optional table message to the game action.
     # Keep game validators authoritative: lift only this known MCP field and
@@ -9612,11 +9695,16 @@ def _prepare_duel_payload(
             "target_player_count", "fill_with_npcs",
         },
         "rematch": {"room_id"},
-        "join": {"room_id", "message"},
+        "invite": {"game_type", "target_player_count", "stake", "timeout_takeover", "timeout_takeover_seconds"},
+        "start": {"room_id", "fill_with_npcs"},
+        "chat": {"room_id", "message"},
+        "reclaim": {"room_id"},
+        "join": {"room_id", "message", "invite_code"},
         "accept": {"room_id"},
         "reject": {"room_id"},
         "move": {"room_id", "move", "revision", "wait", "message"},
-        "state": {"room_id", "wait", "full_state", "message"},
+        "state": {"room_id", "wait", "full_state", "message", "move"},
+        "cancel_wait": {"room_id"},
         "resign": {"room_id", "message"},
         "leave": {"room_id", "message"},
     }
@@ -9628,6 +9716,8 @@ def _prepare_duel_payload(
             retry_hint='外层 action 改为 "move"；游戏动作放 params.move.action。',
             retry_example=_duel_move_retry_example(inner_action),
         )
+    if action == "cancel_wait" and not re.fullmatch(r"[A-Za-z0-9]{8}", str(arguments.get("room_id") or "").strip()):
+        raise _McpError(-32602, "cancel_wait 需要有效的 8 位 room_id")
     if "full_state" in arguments and action != "state":
         raise _duel_mcp_error(
             "full_state 不适用于当前 duel action",
@@ -9747,13 +9837,15 @@ def _prepare_duel_payload(
         for key, value in arguments.items()
         if key in allowed_fields and value is not None
     }
+    if trusted_display_name is not None and (action == "invite" or (action == "join" and arguments.get("invite_code"))):
+        payload["display_name"] = trusted_display_name
     if trusted_player_id is not None:
         # 聚合层认证得到的 canonical AI 身份始终覆盖顶层或 params 自报值。
         payload["player_id"] = trusted_player_id
     if force_opponent:
         # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
         payload.pop("opponent_id", None)
-        if action in {"new", "join", "chips"} and trusted_opponent_id is not None:
+        if action in {"new", "join", "chips"} and trusted_opponent_id is not None and not payload.get("invite_code"):
             payload["opponent_id"] = trusted_opponent_id
     return payload
 
@@ -9830,17 +9922,33 @@ def _play_duel(
     trusted_opponent_id=None,
     force_opponent=False,
     trusted_player_id=None,
+    trusted_display_name=None,
 ):
     payload = _prepare_duel_payload(
         arguments,
         trusted_opponent_id=trusted_opponent_id,
         force_opponent=force_opponent,
         trusted_player_id=trusted_player_id,
+        trusted_display_name=trusted_display_name,
     )
-    response = _request_duel_backend(payload)
-    return _annotate_duel_wait_followup(
+    duel_wait_control.begin(payload)
+    try:
+        response = _request_duel_backend(payload)
+    except Exception:
+        cancelled = duel_wait_control.finish(payload)
+        if cancelled is not None:
+            return cancelled
+        raise
+    except BaseException:
+        duel_wait_control.finish(payload)
+        raise
+    # MCP has no browser origin to resolve a relative human invitation link.
+    for item in (response, response.get("room")):
+        if isinstance(item, dict) and re.fullmatch(r"/duel/\?invite=[A-F0-9]{12}", str(item.get("invite_link", ""))):
+            item["invite_link"] = "https://toy.cedarstar.org" + item["invite_link"]
+    return duel_wait_control.finish(payload, _annotate_duel_wait_followup(
         response, action=payload.get("action")
-    )
+    ))
 
 
 _DUEL_GATEWAY_TICKETS = {}
@@ -9864,7 +9972,8 @@ def _prune_duel_gateway_tickets(now):
         if now - item[0] >= DUEL_GATEWAY_TICKET_TTL_SECONDS
     ]
     for ticket in expired:
-        _DUEL_GATEWAY_TICKETS.pop(ticket, None)
+        item = _DUEL_GATEWAY_TICKETS.pop(ticket, None)
+        duel_wait_control.finish(item[2].backend_payload)
 
 
 def _store_duel_gateway_ticket(request_id, prepared):
@@ -9874,6 +9983,7 @@ def _store_duel_gateway_ticket(request_id, prepared):
         if len(_DUEL_GATEWAY_TICKETS) >= DUEL_GATEWAY_MAX_TICKETS:
             raise _McpError(-32603, "duel async gateway 暂时繁忙，请稍后重试")
         ticket = secrets.token_urlsafe(32)
+        duel_wait_control.begin(prepared.backend_payload)
         _DUEL_GATEWAY_TICKETS[ticket] = (now, request_id, prepared)
     return ticket
 
@@ -9884,6 +9994,8 @@ def _consume_duel_gateway_ticket(ticket):
         item = _DUEL_GATEWAY_TICKETS.pop(str(ticket or ""), None)
         _prune_duel_gateway_tickets(now)
     if item is None or now - item[0] >= DUEL_GATEWAY_TICKET_TTL_SECONDS:
+        if item is not None:
+            duel_wait_control.finish(item[2].backend_payload)
         raise _McpError(-32603, "duel async gateway 请求凭据已失效")
     return item[1], item[2]
 
@@ -9893,6 +10005,8 @@ def _discard_duel_gateway_ticket(ticket):
     with _DUEL_GATEWAY_TICKETS_LOCK:
         removed = _DUEL_GATEWAY_TICKETS.pop(str(ticket or ""), None)
         _prune_duel_gateway_tickets(now)
+    if removed is not None:
+        duel_wait_control.finish(removed[2].backend_payload)
     return removed is not None
 
 
@@ -10037,23 +10151,35 @@ def _finalize_duel_gateway_rpc(ticket, completion):
             "message": exc.message,
         }
     try:
-        response = _duel_response_from_gateway_completion(
-            completion, prepared.backend_payload
-        )
+        response = duel_wait_control.finish(prepared.backend_payload, {}, release=False)
+        if response.get("status") != "wait_cancelled":
+            response = _duel_response_from_gateway_completion(
+                completion, prepared.backend_payload
+            )
+        # Fence already-cancelled responses before gameplay finalization can
+        # consume announcements or record activity; check again after formatting.
+        response = duel_wait_control.finish(prepared.backend_payload, response, release=False)
         text = _finalize_deferred_duel_call(prepared, response)
+        guarded = duel_wait_control.finish(prepared.backend_payload, response)
+        if guarded is not response:
+            text = json.dumps(guarded, ensure_ascii=False)
         body = _mcp_tool_text_result(request_id, text)
     except _McpError as exc:
+        cancelled = duel_wait_control.finish(prepared.backend_payload, release=False)
         body = _mcp_tool_text_result(
             request_id,
-            _duel_mcp_error_text(exc),
-            is_error=True,
+            json.dumps(cancelled, ensure_ascii=False) if cancelled else _duel_mcp_error_text(exc),
+            is_error=cancelled is None,
         )
     except Exception as exc:
+        cancelled = duel_wait_control.finish(prepared.backend_payload, release=False)
         body = _mcp_tool_text_result(
             request_id,
-            f"【cedartoy服务错误】{exc}",
-            is_error=True,
+            json.dumps(cancelled, ensure_ascii=False) if cancelled else f"【cedartoy服务错误】{exc}",
+            is_error=cancelled is None,
         )
+    finally:
+        duel_wait_control.finish(prepared.backend_payload)
     return {"ok": True, "status_code": 200, "body": body}
 
 
@@ -10318,6 +10444,8 @@ def _play_vendor_cmd(game, arguments):
             return delve_adapter.play(extra)
         if game == "travel":
             return travel_adapter.play(extra)
+        if game == "nowhere":
+            return nowhere_adapter.play(extra)
         if game == "arcade":
             return arcade_adapter.play(extra)
         if game == "burger":
@@ -10454,14 +10582,15 @@ def _duel_proxy_allowed(method, public_path):
                 public_path,
                 re.IGNORECASE,
             ) is not None
+            or re.fullmatch(r"/api/invites/[A-Fa-f0-9]{12}", public_path) is not None
             or re.fullmatch(r"/api/rooms/[A-Z0-9]{8}", public_path) is not None
         )
     if method == "POST":
         return (
-            public_path == "/api/rooms"
+            public_path in {"/api/rooms", "/api/invites", "/api/invites/join"}
             or _duel_trusted_header_post_allowed(public_path)
             or re.fullmatch(
-                r"/api/rooms/[A-Z0-9]{8}/(?:invitation|join|move|resign|leave|messages|retention|delete)",
+                r"/api/rooms/[A-Z0-9]{8}/(?:invitation|join|move|resign|leave|messages|retention|delete|start|reclaim)",
                 public_path,
             )
             is not None
@@ -10475,6 +10604,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         internal_path = self.path.split("?", 1)[0]
+        if internal_path == "/nowhere" or internal_path.startswith("/nowhere/"):
+            nowhere_web.serve(self, sys.modules[__name__])
+            return
         if internal_path == "/api/puzzle-box/reveal":
             self._handle_puzzle_box(reveal=True)
             return
@@ -10730,12 +10862,33 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self._send_json(response)
 
     def do_GET(self):
+        if self.path.split("?", 1)[0] == "/nowhere" or self.path.startswith("/nowhere/"):
+            nowhere_web.serve(self, sys.modules[__name__])
+            return
         if self._is_soup_path():
             self._proxy_to_soup()
             return
 
         path, _, query_string = self.path.partition("?")
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+
+        if path.startswith("/tutorials/"):
+            tutorial_root = Path("/var/www/tutorials").resolve()
+            relative = urllib.parse.unquote(path.removeprefix("/tutorials/"))
+            try:
+                tutorial_path = (tutorial_root / relative).resolve()
+                tutorial_path.relative_to(tutorial_root)
+            except (OSError, RuntimeError, ValueError):
+                self._send_json({"error": "not found"}, status=404)
+                return
+            if tutorial_path.suffix.lower() != ".html" or not tutorial_path.is_file():
+                self._send_json({"error": "not found"}, status=404)
+                return
+            self._send_html_file(
+                tutorial_path,
+                extra_headers={"Cache-Control": "public, max-age=300"},
+            )
+            return
 
         if path == "/detroit" or path.startswith("/detroit/"):
             self._handle_detroit_get(path, params)
@@ -10872,6 +11025,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_announcements()
             return
 
+        if path == "/api/nowhere/saves":
+            self._handle_api_nowhere_saves()
+            return
+
         if path == "/api/auth/saves":
             self._handle_api_auth_saves()
             return
@@ -10973,6 +11130,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         self._send_json({"error": "not found"}, status=404)
 
     def do_DELETE(self):
+        if self.path.split("?", 1)[0] == "/nowhere" or self.path.startswith("/nowhere/"):
+            nowhere_web.serve(self, sys.modules[__name__])
+            return
         if self._is_soup_path():
             self._proxy_to_soup()
             return
@@ -12492,9 +12652,27 @@ a{{color:#c9afff}}
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
+    def _handle_api_nowhere_saves(self):
+        try:
+            result = _nowhere_web_saves(_extract_bearer(self.headers))
+            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 403)
+        except ValueError:
+            self._send_json({"error": "登录已失效，请重新登录"}, status=401)
+        except Exception:
+            logger.exception("nowhere save picker failed")
+            self._send_json({"error": "旅程暂不可用"}, status=500)
+
     def _handle_api_auth_saves(self):
         try:
-            result = _account_web_saves(_extract_bearer(self.headers))
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True)
+            if "game" in params:
+                if len(params["game"]) != 1:
+                    raise _McpError(-32602, "只能筛选一个游戏")
+                result = _filtered_account_web_saves(_extract_bearer(self.headers), params["game"][0])
+            else:
+                result = _account_web_saves(_extract_bearer(self.headers))
             self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
         except _McpError as exc:
             self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400)
@@ -13744,11 +13922,16 @@ a{{color:#c9afff}}
     def _send_tarot_homepage(self):
         try:
             source = TOY_INDEX_PATH.read_text(encoding="utf-8")
-            body = TAROT_WEB.homepage_index(source)
-        except (OSError, TarotError) as exc:
+        except OSError as exc:
             logger.error("tarot homepage integration unavailable: %s", exc)
             self._send_html_file(TOY_INDEX_PATH)
             return
+        source = _prefill_puzzle_box_homepage_metric(source)
+        try:
+            body = TAROT_WEB.homepage_index(source)
+        except (OSError, TarotError) as exc:
+            logger.error("tarot homepage integration unavailable: %s", exc)
+            body = source.encode("utf-8")
         etag = f'"{hashlib.sha256(body).hexdigest()[:16]}"'
         if self.headers.get("If-None-Match") == etag:
             self.send_response(304)
@@ -14205,6 +14388,9 @@ a{{color:#c9afff}}
             try:
                 target = self._duel_human_context(token)
             except _McpError as exc:
+                if method == "GET" and public_path == "/":
+                    self._proxy_to_duel(method, public_path, query_string, rewrite_html=True)
+                    return
                 self._send_json(
                     {"error": exc.message or "未登录，请先在首页登录", "code": 401},
                     status=401,
