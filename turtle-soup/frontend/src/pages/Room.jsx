@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -17,6 +17,8 @@ import MineDrawer from '../components/MineDrawer.jsx'
 import NoteBoard from '../components/NoteBoard.jsx'
 import RoomIdCopy from '../components/RoomIdCopy.jsx'
 import { soupName } from '../utils/display.js'
+
+const ASK_QUOTA_MESSAGE = '今日个人次数已达上限（300 次），0 点重置'
 
 function parseTags(tags) {
   if (!tags) return []
@@ -47,6 +49,8 @@ export default function Room() {
   const { roomId } = useParams()
   const navigate = useNavigate()
   const [room, setRoom] = useState(null)
+  const [askQuota, setAskQuota] = useState(null)
+  const quotaRequestRef = useRef(0)
   const [loadedRoomId, setLoadedRoomId] = useState(null)
   const [logs, setLogs] = useState([])
   const [notes, setNotes] = useState([])
@@ -76,6 +80,21 @@ export default function Room() {
   const followLogRef = useRef(true)
   const adminReadonly = Boolean(room?.admin_readonly)
 
+  const refreshQuota = useCallback(async () => {
+    const request = ++quotaRequestRef.current
+    const token = getToken()
+    try {
+      const quota = await api('/game/ask-quota')
+      if (request === quotaRequestRef.current && token === getToken()) setAskQuota(quota)
+    } catch { /* Keep the last known quota; retry on focus, timer or next action. */ }
+  }, [])
+
+  const handleQuotaError = (err) => {
+    if (err.status !== 429 || err.message !== ASK_QUOTA_MESSAGE) return false
+    setAskQuota((current) => ({ ...current, used: 300, limit: 300 }))
+    return true
+  }
+
   const load = async () => {
     await ensureGuestToken()
     const [data, profile] = await Promise.all([
@@ -83,6 +102,8 @@ export default function Room() {
       api('/auth/me').catch(() => null),
     ])
     setRoom(data)
+    ++quotaRequestRef.current
+    setAskQuota(data.ask_quota || null)
     setLoadedRoomId(roomId)
     setLogs(data.logs || [])
     setNotes(data.notes || [])
@@ -128,6 +149,24 @@ export default function Room() {
       })
       .catch(() => {})
   }, [roomId])
+
+  useEffect(() => {
+    if (!me || loadedRoomId !== roomId || adminReadonly) return
+    const refreshVisible = () => { if (!document.hidden) refreshQuota() }
+    const interval = setInterval(refreshVisible, 30000)
+    const resetDelay = Date.parse(askQuota?.reset_at) - Date.now()
+    const midnight = Number.isFinite(resetDelay)
+      ? setTimeout(refreshQuota, Math.max(1000, resetDelay + 100)) : null
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      clearInterval(interval)
+      clearTimeout(midnight)
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
+      ++quotaRequestRef.current
+    }
+  }, [me?.id, loadedRoomId, roomId, adminReadonly, askQuota?.reset_at, refreshQuota])
 
   useEffect(() => {
     if (!room || loadedRoomId !== roomId || loadError || adminReadonly) return
@@ -213,7 +252,10 @@ export default function Room() {
   const finished = room?.status === 'finished'
   const answerRevealed = Boolean(room?.answer_revealed)
   const actionLocked = adminReadonly || finished || answerRevealed
-  const hintDisabled = actionLocked || hintRemaining <= 0 || pendingHint || hintLoading
+  const quotaExhausted = askQuota?.limit != null && askQuota.used >= askQuota.limit
+  // Product policy locks the whole web composer; backend quota only counts asks.
+  const composerLocked = actionLocked || quotaExhausted
+  const hintDisabled = composerLocked || hintRemaining <= 0 || pendingHint || hintLoading
   const askCount = Math.max(Number(room?.ask_count || 0), logs.filter((row) => row.type === 'ask').length)
   const revealPromptProgressKey = `answer_reveal_prompt_last_${roomId}`
   const answerRevealPromptVisible = !adminReadonly && revealConfirmOpen && !revealFinalConfirmOpen
@@ -233,7 +275,7 @@ export default function Room() {
   }, [room, loadedRoomId, actionLocked, askCount, answerRevealPromptCount, revealPromptProgressKey, roomId])
 
   const send = async () => {
-    if (!content.trim() || actionLocked || sendLoading) return
+    if (!content.trim() || composerLocked || sendLoading) return
     const kind = inputMode === 'guess' ? 'guess' : 'ask'
     followLogRef.current = true
     setSendLoading(true)
@@ -247,8 +289,9 @@ export default function Room() {
         setContent('')
       }
     } catch (err) {
-      alert(err.message || '发送失败')
+      if (!handleQuotaError(err)) alert(err.message || '发送失败')
     } finally {
+      await refreshQuota()
       setSendLoading(false)
     }
   }
@@ -279,8 +322,9 @@ export default function Room() {
         }))
       }
     } catch (err) {
-      alert(err.message || '请求提示失败')
+      if (!handleQuotaError(err)) alert(err.message || '请求提示失败')
     } finally {
+      await refreshQuota()
       setHintLoading(false)
     }
   }
@@ -306,6 +350,7 @@ export default function Room() {
     await logoutToGuest()
     setCedartoyMe(null)
     setMe(null)
+    await load()
   }
 
   const closeRoom = async () => {
@@ -520,7 +565,7 @@ export default function Room() {
                   <button
                     type="button"
                     className={inputMode === 'ask' ? 'active' : ''}
-                    disabled={actionLocked}
+                    disabled={composerLocked}
                     onClick={() => setInputMode('ask')}
                   >
                     提问
@@ -528,7 +573,7 @@ export default function Room() {
                   <button
                     type="button"
                     className={inputMode === 'guess' ? 'active' : ''}
-                    disabled={actionLocked}
+                    disabled={composerLocked}
                     onClick={() => setInputMode('guess')}
                   >
                     猜测汤底
@@ -547,8 +592,9 @@ export default function Room() {
               <div className="composer-row">
                 <textarea
                   maxLength={200}
-                  value={content}
-                  disabled={actionLocked}
+                  value={quotaExhausted ? '' : content}
+                  disabled={composerLocked}
+                  aria-label={quotaExhausted ? ASK_QUOTA_MESSAGE : (inputMode === 'guess' ? '猜测汤底' : '提问')}
                   onChange={(event) => setContent(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
@@ -556,13 +602,13 @@ export default function Room() {
                       send()
                     }
                   }}
-                  placeholder={inputMode === 'guess' ? '写下你的汤底猜测…' : '输入你的提问…'}
-                  rows={1}
+                  placeholder={quotaExhausted ? ASK_QUOTA_MESSAGE : (inputMode === 'guess' ? '写下你的汤底猜测…' : '输入你的提问…')}
+                  rows={quotaExhausted ? 2 : 1}
                 />
                 <button
                   type="button"
                   className="pixel-primary send-btn"
-                  disabled={actionLocked || !content.trim() || sendLoading}
+                  disabled={composerLocked || !content.trim() || sendLoading}
                   onClick={send}
                 >
                   {sendLoading ? '发送中…' : '发送'}
@@ -656,7 +702,7 @@ export default function Room() {
               <button type="button" disabled={hintLoading} onClick={() => setHintConfirmOpen(false)}>
                 取消
               </button>
-              <button type="button" className="pixel-primary" disabled={hintLoading} onClick={requestHint}>
+              <button type="button" className="pixel-primary" disabled={hintDisabled} onClick={requestHint}>
                 {hintLoading ? '生成中…' : '确认请求'}
               </button>
             </div>

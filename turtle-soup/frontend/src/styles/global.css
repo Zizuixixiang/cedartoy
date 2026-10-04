@@ -3060,9 +3060,12 @@ body:has(.room-page) {
   box-shadow: inset 0 -4px 0 var(--pixel-pink);
 }
 
-.composer-tabs button:disabled {
+.composer-tabs button:disabled,
+.composer-tabs button.active:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  color: var(--pixel-muted);
+  box-shadow: none;
 }
 
 .composer-finished-hint {
@@ -3089,6 +3092,18 @@ body:has(.room-page) {
   color: var(--pixel-text);
   padding: 6px 10px;
   line-height: 1.4;
+}
+
+.composer-row textarea:disabled {
+  background: #f6f7f8;
+  color: var(--pixel-muted);
+  cursor: not-allowed;
+}
+
+.composer-row textarea:disabled::placeholder {
+  color: var(--pixel-text);
+  font-size: 0.9em;
+  opacity: 1;
 }
 
 .hint-request-btn {
@@ -3130,6 +3145,10 @@ body:has(.room-page) {
   border-bottom: 4px solid var(--pixel-pink-dark);
   font-family: "Silkscreen", cursive;
   padding: 0 16px;
+}
+
+.composer-row .send-btn:disabled {
+  filter: grayscale(1);
 }
 
 .room-notepad {

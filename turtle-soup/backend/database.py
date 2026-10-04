@@ -215,6 +215,12 @@ async def init_db() -> None:
                 last_active_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
                 created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
             );
+            CREATE TABLE IF NOT EXISTS player_daily_asks (
+                player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                beijing_date TEXT NOT NULL,
+                ask_count INTEGER NOT NULL DEFAULT 0 CHECK (ask_count >= 0),
+                PRIMARY KEY (player_id, beijing_date)
+            );
             CREATE TABLE IF NOT EXISTS puzzles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT DEFAULT '',

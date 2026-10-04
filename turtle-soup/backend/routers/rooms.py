@@ -4,6 +4,7 @@ from auth_utils import authenticated_player, current_player
 from database import execute, fetch_all, fetch_one, get_setting
 from room_access import require_room_access, room_read_access_mode, verified_account
 from judge import public_answer_from_full_answer, scan_text
+from ask_quota import get_ask_quota
 from models import NormalizedRoomId, RoomCreateBody
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT, SQL_NOW, clean_content, public_player, room_id
 
@@ -316,6 +317,7 @@ async def get_room(room_id: NormalizedRoomId, player: dict = Depends(authenticat
     if reveal_row is not None:
         data["revealed_answer"] = public_answer_from_full_answer(room["answer"])
     data["notes"] = notes
+    data["ask_quota"] = await get_ask_quota(player)
     return data
 
 

@@ -5,9 +5,10 @@ import logging
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 import judge
-from auth_utils import current_player
+from auth_utils import authenticated_player, current_player
 from room_access import require_room_access
 from database import execute, fetch_all, fetch_one, get_db, get_setting
+from ask_quota import get_ask_quota, reserve_daily_ask
 from models import ContentBody, GuessBody, HintRequestBody, HintResponseBody, RevealAnswerBody
 from presence import touch_room
 from sse import broadcast
@@ -300,6 +301,7 @@ async def _ask_impl(body: ContentBody, player: dict) -> tuple[dict, asyncio.Task
                 )
                 if int(too_fast["c"]) >= n:
                     raise HTTPException(status_code=429, detail="AI 提问太快了，请先思考已有线索，稍等几秒后再问。")
+        await reserve_daily_ask(player)
         try:
             result = await judge.judge_ask(room["surface"], room["answer"], question)
         except HTTPException as exc:
@@ -333,6 +335,11 @@ async def _ask_impl(body: ContentBody, player: dict) -> tuple[dict, asyncio.Task
         ask_count = await _ask_count(body.room_id)
         hint_task = asyncio.create_task(_maybe_auto_hint_safely(room, ask_count))
         return payload, hint_task
+
+
+@router.get("/ask-quota")
+async def ask_quota(player: dict = Depends(authenticated_player)):
+    return await get_ask_quota(player)
 
 
 @router.post("/ask")
