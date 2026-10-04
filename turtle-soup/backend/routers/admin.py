@@ -8,7 +8,6 @@ from database import execute, fetch_all, fetch_one
 from judge import (
     get_config_runtime_status,
     get_pool_runtime_status,
-    is_tarot_exclusive_model,
     list_models,
     mark_config_success,
     model_node_fingerprint,
@@ -121,15 +120,6 @@ async def require_api_config_assignment(
     candidate: dict, *, exclude_id: int | None = None
 ) -> None:
     purpose = normalize_api_config_purpose(candidate.get("purpose"))
-    if is_tarot_exclusive_model(candidate) and purpose != "tarot":
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "本站预留的 Gemini Flash / Pro 是塔罗解读专用模型，"
-                "purpose 必须为 tarot；"
-                "不能分配给海龟汤或双弈。"
-            ),
-        )
     rows = await fetch_all(
         "SELECT id, name, api_url, api_key, model, purpose, enabled "
         "FROM judge_api_configs ORDER BY id ASC"

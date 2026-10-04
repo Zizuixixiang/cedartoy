@@ -1,5 +1,7 @@
 import asyncio
+import json
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -72,6 +74,14 @@ class FakeClient:
     async def __aexit__(self, *_args):
         return None
 
+    def build_request(self, method, url, *, headers, json):
+        return httpx.Request(method, url, headers=headers, json=json)
+
+    async def send(self, request):
+        return await self.post(
+            str(request.url), headers=request.headers, json=json.loads(request.content)
+        )
+
     async def post(self, url, *, headers, json):
         del headers
         self.urls.append(url)
@@ -126,6 +136,11 @@ class ClueParsingTests(unittest.IsolatedAsyncioTestCase):
 
 class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        db_patch = patch.object(database_stub, "DB_PATH", Path(temp.name) / "calls.db", create=True)
+        db_patch.start()
+        self.addCleanup(db_patch.stop)
         judge.reset_fail_counts()
         judge._config_locks.clear()
         judge._rr_index = {pool: {} for pool in judge.POOL_NAMES}
@@ -642,6 +657,11 @@ class AdminApiConfigRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        db_patch = patch.object(database_stub, "DB_PATH", Path(temp.name) / "calls.db", create=True)
+        db_patch.start()
+        self.addCleanup(db_patch.stop)
         judge.reset_fail_counts()
         judge._config_locks.clear()
         judge._rr_index = {pool: {} for pool in judge.POOL_NAMES}
@@ -699,57 +719,43 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             admin_router.normalize_api_config_purpose("tarot"), "tarot"
         )
 
-    def test_gemini_35_flash_is_exclusive_to_tarot_pool(self):
-        ordinary_judge = {
-            **CONFIG,
-            "id": 50,
-            "purpose": "judge",
-            "model": "gemini-3-flash-preview",
-        }
-        ordinary_both = {
-            **CONFIG,
-            "id": 49,
-            "purpose": "both",
-            "model": "gemini-3.1-flash-preview",
-        }
-        deepseek = {
-            **CONFIG,
-            "id": 51,
-            "purpose": "all",
-            "model": "deepseek-v4-flash",
-        }
-        reserved = [
-            {
-                **CONFIG,
-                "id": 52 + index,
-                "purpose": purpose,
-                "model": (
-                    "gemini-3.5-flash"
-                    if index % 2 == 0
-                    else "google/gemini-3.5-flash-preview"
-                ),
-            }
-            for index, purpose in enumerate(
-                ("judge", "hint", "both", "npc", "npc_decision", "npc_speech", "all")
-            )
-        ]
-        rows = [ordinary_judge, ordinary_both, deepseek, *reserved]
+    def test_flash_configs_are_routed_by_purpose_not_model_name(self):
+        for model in ("gemini-3.5-flash", "gemini-3.8-flash", "gcli-gemini-3.8-flash"):
+            with self.subTest(model=model):
+                both = {**CONFIG, "id": 5, "purpose": "both", "model": model}
+                npc = {**CONFIG, "id": 15, "purpose": "npc", "model": model}
+                tarot = {**CONFIG, "id": 19, "purpose": "tarot", "model": model}
+                rows = [tarot, both, npc]
+                for pool in ("judge", "hint"):
+                    self.assertEqual(judge._select_configs_for_pool(rows, pool), [both])
+                for pool in judge.NPC_POOL_NAMES:
+                    self.assertEqual(judge._select_configs_for_pool(rows, pool), [npc])
+                self.assertEqual(judge._select_configs_for_pool([both, npc], "tarot"), [])
+                self.assertEqual(
+                    judge._select_configs_for_pool(rows, "tarot"),
+                    [tarot] if model in judge.TAROT_ALLOWED_MODELS else [],
+                )
 
-        self.assertEqual(
-            judge._select_configs_for_pool(rows, "judge"),
-            [ordinary_judge, ordinary_both, deepseek],
-        )
-        self.assertEqual(
-            judge._select_configs_for_pool(rows, "npc_decision"),
-            [deepseek],
-        )
-        reserved_ids = {row["id"] for row in reserved}
+    async def test_flash_routing_tries_gg_before_sakura_by_priority(self):
         for pool in judge.SOUP_DUEL_POOL_NAMES:
-            selected_ids = {
-                row["id"] for row in judge._select_configs_for_pool(rows, pool)
-            }
-            self.assertTrue(reserved_ids.isdisjoint(selected_ids), pool)
-        self.assertFalse(judge.is_tarot_exclusive_model(ordinary_both))
+            with self.subTest(pool=pool):
+                judge.reset_fail_counts()
+                purpose = "npc" if pool in judge.NPC_POOL_NAMES else "both"
+                gg = {**CONFIG, "id": 5, "purpose": purpose, "priority": 1,
+                      "api_url": "https://gg.test/v1", "model": "gemini-3.8-flash"}
+                sakura = {**CONFIG, "id": 4, "purpose": purpose, "priority": 2,
+                          "api_url": "https://sakura.test/v1", "model": "gcli-gemini-3.8-flash"}
+                FakeClient.urls = []
+                FakeClient.outcomes = [response(503), response(200)]
+                with (
+                    patch.object(judge, "fetch_all", AsyncMock(return_value=[sakura, gg])),
+                    patch.object(judge.httpx, "AsyncClient", FakeClient),
+                ):
+                    self.assertEqual(await judge._chat(MESSAGES, pool=pool), "ok")
+                self.assertEqual(FakeClient.urls, [
+                    "https://gg.test/v1/chat/completions",
+                    "https://sakura.test/v1/chat/completions",
+                ])
 
     def test_tarot_pool_is_exact_and_does_not_absorb_all_or_other_models(self):
         tarot = {
@@ -781,14 +787,6 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             "id": 56,
             "name": "duplicate tarot row",
         }
-        self.assertTrue(judge.is_tarot_exclusive_model(tarot))
-        self.assertTrue(judge.is_tarot_exclusive_model(pro))
-        self.assertTrue(judge.is_tarot_exclusive_model(unapproved_tarot))
-        self.assertFalse(judge.is_tarot_exclusive_model({
-            **CONFIG,
-            "model": "gcli-gemini-3.1-pro-preview",
-        }))
-        self.assertFalse(judge.is_tarot_exclusive_model(ordinary))
         self.assertEqual(
             judge._select_configs_for_pool(
                 [ordinary, tarot, pro, unapproved_tarot, duplicate_tarot], "tarot"
@@ -899,44 +897,27 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-    async def test_admin_rejects_gemini_35_for_every_non_tarot_purpose(self):
-        existing = {
-            **CONFIG,
-            "id": 58,
-            "name": "existing soup",
-            "purpose": "judge",
-            "model": "gemini-3-flash-preview",
-        }
-        execute = AsyncMock(return_value=59)
-        for purpose in (
-            "judge",
-            "hint",
-            "both",
-            "npc",
-            "npc_decision",
-            "npc_speech",
-            "all",
-        ):
-            body = admin_router.ApiConfigBody(
-                name="misassigned gemini 3.5",
-                api_url=CONFIG["api_url"],
-                api_key=CONFIG["api_key"],
-                model="gemini-3.5-flash",
-                purpose=purpose,
-                enabled=1,
-                priority=0,
-            )
-            with (
-                patch.object(
-                    admin_router, "fetch_all", AsyncMock(return_value=[existing])
-                ),
-                patch.object(admin_router, "execute", execute),
-                self.assertRaises(HTTPException) as raised,
-            ):
-                await admin_router.add_api_config(body, admin={"id": 1})
-            self.assertEqual(raised.exception.status_code, 422, purpose)
-            self.assertIn("purpose 必须为 tarot", raised.exception.detail)
-        execute.assert_not_awaited()
+    async def test_admin_allows_flash_for_non_tarot_purposes_on_create_and_update(self):
+        for model in ("gemini-3.5-flash", "gemini-3.8-flash", "gcli-gemini-3.8-flash"):
+            for purpose in ("judge", "hint", "both", "npc", "npc_decision", "npc_speech", "all"):
+                with self.subTest(model=model, purpose=purpose):
+                    # The same model name on a different Tarot endpoint is fine.
+                    tarot = {**CONFIG, "id": 19, "purpose": "tarot", "model": model,
+                             "api_url": "https://tarot.test/v1"}
+                    body = admin_router.ApiConfigBody(
+                        name="ordinary flash", api_url=CONFIG["api_url"],
+                        api_key=CONFIG["api_key"], model=model,
+                        purpose=purpose, enabled=1, priority=1,
+                    )
+                    execute = AsyncMock(return_value=59)
+                    with (
+                        patch.object(admin_router, "fetch_all", AsyncMock(return_value=[tarot, CONFIG])),
+                        patch.object(admin_router, "fetch_one", AsyncMock(return_value=CONFIG)),
+                        patch.object(admin_router, "execute", execute),
+                    ):
+                        self.assertEqual(await admin_router.add_api_config(body, admin={"id": 1}), {"id": 59})
+                        self.assertEqual(await admin_router.update_api_config(CONFIG["id"], body, admin={"id": 1}), {"ok": True})
+                    self.assertEqual(execute.await_count, 2)
 
     async def test_admin_allows_shared_credential_for_different_model(self):
         existing = {
@@ -968,26 +949,17 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"id": 61})
         execute.assert_awaited_once()
 
-    async def test_admin_rejects_exact_managed_pro_outside_tarot(self):
-        body = admin_router.ApiConfigBody(
-            name="misassigned managed pro",
-            api_url=CONFIG["api_url"],
-            api_key=CONFIG["api_key"],
-            model=judge.TAROT_PRO_MODEL,
-            purpose="npc",
-            enabled=1,
-            priority=0,
-        )
-        execute = AsyncMock(return_value=91)
-        with (
-            patch.object(admin_router, "fetch_all", AsyncMock(return_value=[])),
-            patch.object(admin_router, "execute", execute),
-            self.assertRaises(HTTPException) as raised,
-        ):
-            await admin_router.add_api_config(body, admin={"id": 1})
-        self.assertEqual(raised.exception.status_code, 422)
-        self.assertIn("purpose 必须为 tarot", raised.exception.detail)
-        execute.assert_not_awaited()
+    async def test_admin_still_rejects_duplicate_or_cross_purpose_tarot_node(self):
+        for model in judge.TAROT_ALLOWED_MODELS:
+            existing = {**CONFIG, "id": 19, "model": model, "purpose": "tarot"}
+            for purpose in ("tarot", "both", "npc"):
+                with self.subTest(model=model, purpose=purpose):
+                    with (
+                        patch.object(admin_router, "fetch_all", AsyncMock(return_value=[existing])),
+                        self.assertRaises(HTTPException) as raised,
+                    ):
+                        await admin_router.require_api_config_assignment({**existing, "purpose": purpose})
+                    self.assertEqual(raised.exception.status_code, 409)
 
     async def test_tarot_does_not_join_soup_priority_waiter_signal(self):
         observed = []

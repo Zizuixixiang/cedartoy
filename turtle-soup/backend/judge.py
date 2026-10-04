@@ -17,6 +17,11 @@ import httpx
 from fastapi import HTTPException
 
 from database import DEFAULT_SETTINGS, fetch_all, fetch_one
+from provider_daily_calls import (
+    ProviderDailyCallsUnavailable,
+    is_official_deepseek_endpoint,
+    reserve_deepseek_call,
+)
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
 
@@ -31,10 +36,6 @@ TAROT_MODEL_LABELS = {
     TAROT_PRO_MODEL: "Gemini 3.1 Pro",
 }
 POOL_NAMES = (*SOUP_DUEL_POOL_NAMES, TAROT_POOL_NAME)
-TAROT_EXCLUSIVE_MODEL_RE = re.compile(
-    r"(?:^|[^a-z0-9])gemini[._ -]?3[._ -]?(?:5|8)[._ -]?flash(?:$|[^a-z0-9])",
-    re.IGNORECASE,
-)
 _rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}
 _rr_locks: dict[str, asyncio.Lock] = {pool: asyncio.Lock() for pool in POOL_NAMES}
 # Locks belong to the physical API credential; health belongs to one model on
@@ -137,12 +138,6 @@ def _pool_name(pool: str) -> str:
     if pool == "npc":
         return "npc_decision"
     return pool if pool in POOL_NAMES else "judge"
-
-
-def is_tarot_exclusive_model(cfg: dict[str, Any]) -> bool:
-    """Keep existing Flash variants and the exact managed Pro model in Tarot."""
-    model = str(cfg.get("model") or "").strip()
-    return bool(TAROT_EXCLUSIVE_MODEL_RE.search(model)) or model.lower() == TAROT_PRO_MODEL
 
 
 def _credential_key(cfg: dict[str, Any]) -> str:
@@ -469,7 +464,7 @@ def _select_configs_for_pool(
             seen_nodes.add(node)
             selected.append(row)
         return selected
-    rows = [row for row in rows if not is_tarot_exclusive_model(row)]
+    # Purpose owns pool isolation; ordinary configs may use the same model names.
     if pool in NPC_POOL_NAMES:
         dedicated = [
             row
@@ -565,11 +560,20 @@ async def _post_chat_completion(
     timeout: float,
 ) -> httpx.Response:
     async with httpx.AsyncClient(timeout=_request_timeout(cfg, timeout)) as client:
-        return await client.post(
-            _endpoint(cfg["api_url"]),
-            headers={"Authorization": f"Bearer {cfg['api_key']}"},
-            json=payload,
-        )
+        return await _send_chat_completion(client, cfg["api_url"], cfg["api_key"], payload)
+
+
+async def _send_chat_completion(
+    client: httpx.AsyncClient, api_url: str, api_key: str, payload: dict[str, Any]
+) -> httpx.Response:
+    endpoint = _endpoint(api_url)
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if not is_official_deepseek_endpoint(endpoint):
+        return await client.post(endpoint, headers=headers, json=payload)
+    # Build/serialize first: local preparation failures must not consume quota.
+    request = client.build_request("POST", endpoint, headers=headers, json=payload)
+    reserve_deepseek_call(str(request.url), api_key)
+    return await client.send(request)
 
 
 async def _layer_start(pool: str, priority: int, size: int) -> int:
@@ -779,6 +783,10 @@ async def _chat_from_pool(
                 except asyncio.CancelledError:
                     _release_probe(cid)
                     raise
+                except ProviderDailyCallsUnavailable as exc:
+                    _release_probe(cid)
+                    errors.append(str(exc))
+                    continue
                 except Exception as exc:
                     error = _record_failure(cid, exc, was_probe=is_probe)
                     errors.append(f"{cfg.get('name')}: {error}")
@@ -1033,10 +1041,8 @@ async def test_config(cfg: dict[str, Any]) -> dict[str, Any]:
     t0 = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=45) as client:
-            resp = await client.post(
-                _endpoint(api_url),
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
+            resp = await _send_chat_completion(
+                client, api_url, api_key, {
                     "model": model,
                     "messages": messages,
                     "temperature": 0.1,
