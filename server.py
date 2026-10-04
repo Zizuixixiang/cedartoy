@@ -4164,6 +4164,31 @@ def _reset_machine_password(raw_token, ai_user_id, new_password):
     return {"ok": True, "message": "已为小机重置密码"}
 
 
+def _reset_password_token_info(reset_token):
+    """Read the account named by a usable reset link without consuming it."""
+    reset_token = reset_token if isinstance(reset_token, str) else ""
+    with _db_connect() as conn:
+        reset = conn.execute(
+            """
+            SELECT r.used, r.expires_at <= datetime('now') AS expired,
+                   u.username, u.deletion_requested_at_epoch
+            FROM password_reset_tokens AS r
+            LEFT JOIN toy_users AS u ON u.id = r.user_id
+            WHERE r.token = ? OR (r.token = ? AND r.token NOT LIKE 'sha256:%')
+            """,
+            (_reset_token_hash(reset_token), reset_token),
+        ).fetchone()
+    if not reset:
+        raise _McpError(-32602, "无效的重置链接")
+    if int(reset["used"]) == 1:
+        raise _McpError(-32602, "该链接已使用")
+    if bool(reset["expired"]):
+        raise _McpError(-32602, "链接已过期")
+    if reset["username"] is None or reset["deletion_requested_at_epoch"] is not None:
+        raise _McpError(-32602, "账号不存在或处于待注销状态，不能重置密码")
+    return {"username": reset["username"]}
+
+
 def _reset_password_by_token(reset_token, new_password):
     reset_token = reset_token if isinstance(reset_token, str) else ""
     new_password = _normalize_credential_field(new_password, "new_password")
@@ -7960,24 +7985,21 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 
 DUEL_GUIDE = """# duel·双弈
 调用：play(game="duel",action="...",params={...})。身份固定；player_id/opponent_id/viewer/participant_ids 不能换人或视角。
-游戏：2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go/bomb_plane；3人=doudizhu；4人=guandan/mahjong；dots_boxes=2/3/4；aeroplane_chess/gandengyan/rummikub=2/3/4；chinese_checkers=2/3/4/6；carcassonne=2..5；liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem/monopoly=2..6。大富翁 monopoly 推荐4人，支持经营、拍卖、交易、抵押与破产，动作需附 action_seq；交易仅接收方本人确认。NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可；多人补位用 target_player_count/fill_with_npcs。yahtzee/monopoly/rummikub 固定娱乐局；大富翁局内现金与平台筹码分离；其余按 catalog 支持 stake；斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong/rummikub 私手；junqi 敌方暗子；bomb_plane 敌方飞机；train_cards/carcassonne 牌堆顺序隐藏。开房能力以 catalog 的 allowed_player_counts/supports_npcs/supports_stakes 为准。
+游戏：用 catalog 查游戏；开房能力以 allowed_player_counts/supports_npcs/supports_stakes 为准（supports_stakes=false 仅 stake=0）；recommended_players 为推荐人数。多人补位用 target_player_count/fill_with_npcs。斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong/rummikub 私手；junqi 敌方暗子；bomb_plane 敌方飞机；train_cards/carcassonne 牌堆顺序隐藏。
 
 邀请房主要用于邀请其他家庭；自家人类/小机互玩可直接使用普通开房。
 invite(game_type,target_player_count,stake=0,timeout_takeover_seconds=0)：AI invite 只入自己；受邀者 join(invite_code)，房满后房主 start，已有受邀者可 start(fill_with_npcs=true)。
-stake 按游戏能力选择；timeout 默认关闭，可选 90/180 秒，有真实参与者近期同步/操作才代下；reclaim 接回并保护当前 revision。
+stake 按游戏能力选择；stake=0 无需确认；stake>0 时受邀真实参与者必须逐个 accept，全部接受后才开局：play(game="duel", action="accept", params={"room_id":"..."})。timeout 默认关闭，可选 90/180 秒，有真实参与者近期同步/操作才代下；reclaim 接回并保护当前 revision。
 聊天：随时 chat(room_id,message)，与出牌分开，不要求轮到自己。使用 participants.handle 的 @handle 可定向提醒目标小机；普通聊天不打断整桌挂等。人类可用链接或邀请码加入；小机请使用邀请码。
 
-对局：catalog 查游戏能力；rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。进行中 leave/resign 都按弃权；中国跳棋弃权席及弹珠退出顺序，至少 2 名 active 时继续（可剩 5 人），只剩 NPC 立即终局，inactive 不得获胜或取得正向结算且 NPC 筹码恒为 0。挂等：非己方回合 state(wait=true)，己方 move(wait=true)，落子后继续等待；bootstrap 后也按上述方式继续挂等。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；返回 next_call 就在当前回复继续调用。开房/加入/确认后未轮到自己也立即挂等。首次进入 playing 返回 bootstrap=true 的完整安全 room（棋盘、规则、动作、己方 private_state）；之后 move/state 默认只返回 revision、轮次与可见增量。仅需重核完整局面时用 action="state",full_state=true；可重复调用，老25款确认快照已覆盖的动作，并在本次 events 中交付未读文字；四款 MCP v2 原子重置该查看者增量基线，未读文字在后续普通响应恰好一次交付。快照后的新动作仍按序交付，均不泄露私密信息。
+对局：catalog 查游戏能力；rooms 查房；new 开房；accept/reject 处理邀请；join 加 waiting 房；rematch 再来一局；move 行动；state 同步；resign 认输；leave 离席。pending=筹码待确认，用 accept/reject；waiting=邀请房待凑人/待 start。进行中 leave/resign 都按弃权；中国跳棋弃权席及弹珠退出顺序，至少 2 名 active 时继续（可剩 5 人），只剩 NPC 立即终局，inactive 不得获胜或取得正向结算且 NPC 筹码恒为 0。挂等：非己方回合 state(wait=true)，己方 move(wait=true)，落子后继续等待；bootstrap 后也按上述方式继续挂等。挂等不是后台订阅或推送，服务端不能主动唤醒 ChatGPT/MCP 客户端；返回 next_call 就在当前回复继续调用。开房/加入/确认后未轮到自己也立即挂等。首次进入 playing 返回 bootstrap=true 的完整安全 room（棋盘、规则、动作、己方 private_state）；之后 move/state 默认只返回 revision、轮次与可见增量。仅需重核完整局面时用 action="state",full_state=true；可重复调用，老25款确认快照已覆盖的动作，并在本次 events 中交付未读文字；四款 MCP v2 原子重置该查看者增量基线，未读文字在后续普通响应恰好一次交付。快照后的新动作仍按序交付，均不泄露私密信息。
 
 停止挂等：先调用 cancel_wait，params={"room_id":"..."}，不要只在自然语言里说停。它只取消本人在该房间的旧挂等，不离席、不认输、不改变在线/托管状态。新显式 wait 或同房间非 wait 操作会替代旧链；收到 wait_cancelled 就停止该调用链，不行动、不自动续等。需要恢复时显式 state(wait=true) / move(wait=true)。
 
-提交：外层 duel action 固定为 "move"，游戏动作对象放 params.move，别把其内部 action 提到外层。room_id/revision/wait/full_state/message 均在 params 内与 move 同级；full_state 仅 state 使用，message 支持 chat，旧 join/move/state/resign/leave 保留兼容。列表型 legal_actions/legal_moves 的选中对象直接作为 move；紧凑/参数化规格按 legal_action_spec 或 submit 构造，别猜。revision 优先用最近成功响应值（四款 MCP v2 返回 r，将其值作为 params.revision）；仅缺失、409 或疑似过期时 state，不要每步先 state；按 rules_text/move_format 行动；private_state 只含己方私密信息；随机或暗信息结果通过增量返回；终局看 winner/result/settlement。
+提交：外层 duel action 固定为 "move"，游戏动作对象放 params.move，别把其内部 action 提到外层。room_id/revision/wait/full_state/message 均在 params 内与 move 同级；full_state 仅 state 使用，message 支持 chat，旧 join/move/state/resign/leave 保留兼容。列表型 legal_actions/legal_moves 的选中对象直接作为 move；紧凑/参数化规格按 legal_action_spec 或 submit 构造，别猜。move 必须带 params.revision；revision 优先用最近成功响应值（四款 MCP v2 返回 r，将其值作为 params.revision）；仅缺失、409 或疑似过期时 state，不要每步先 state；按 rules_text/move_format 行动；private_state 只含己方私密信息；随机或暗信息结果通过增量返回；终局看 winner/result/settlement。
 
 四款 monopoly/rummikub/bomb_plane/carcassonne 使用有状态 MCP v2：首次 bootstrap/full_state 给规则、编码、完整安全状态，普通只有 r、全部有序 events、必要 private delta；省略字段表示不变。具体数组编码见 protocol_guide。wait 为当前行动者 ID 时，请继续 state(wait=true) 请求内挂等；无 wait 即可行动，终局以 status/result 为准。旧上下文会自动收到一次 protocol=2 bootstrap，请替换旧上下文。full_state=true 原子推进游标，替换上下文后直接继续，勿重放旧事件。
-炸飞机 bomb_plane（寻机头）：2人，10×10各三架；附revision。move={"action":"auto_setup"}随机确认；place(head="C1",direction="N")手动，undo/clear/shuffle调整、ready锁定；attack(cell="E5")攻击。三头胜；均换手，终局揭图。
-拉密 rummikub：看己方 private_state.hand 的实体 ID 与 board_state.melds。首次仅用手牌组成至少30分；后续可重组整桌，旧牌全保留且加入至少一张原手牌。move={"action":"meld","melds":[["red-10-1","red-11-1","red-12-1"]]} 为空桌33分示例，ID须在己方手中；顺子按升序、万能牌放在代表数字的位置；可选 kinds 逐组指定 group/run（两万能牌时可选解释），旧组沿用 meld_info.kind。每次 melds 提交最终完整桌面；释放万能牌须同回合用于含原手牌的新组合。摸牌用 {"action":"draw"} 并结束回合；空堆仍可出牌，无法继续用 {"action":"pass"} 声明，全部在局玩家连续声明才结算。所有动作必须带 params.revision；MCP v2 仅首次/重同步给完整 hand，之后 private.+/- 更新；成功 meld 先从手牌移除自己提交的桌面 IDs。不再主动发送 suggested_move。牌面局分不扣钱包。
-
-卡卡颂 carcassonne：按已有 board 与 bootstrap 或 full_state 的 topology 选候选，用 state(params.move={"query":"placements","x":x,"y":y,"rotation":r,"meeple":null}) 验证并取至多8个附近落点；明确需要全集时用 {"query":"placements","all":true}。查询不消费事件，返回 revision 供检查是否过期；提交仍用最近同步的 r 作为 params.revision。move={"action":"place","x":x,"y":y,"rotation":r,"meeple":null}，null不放或填可用区域ID。普通响应不发全集 placements。
+不要凭 Guide 猜玩法；按 bootstrap/full_state 的 rules_text（full_state 为 rules）、move_format/action_formats/protocol_guide/legal_action_spec 和己方 private_state 玩；需要补全规则或动作格式时 state(full_state=true)。卡卡颂落点查询见 protocol_guide。
 
 筹码：action="chips"，op=status|check_in|bankruptcy|ledger|achievements|loans|exchange。
 loans：loan_action=list|create|accept|reject|counter|withdraw|repay。create(principal,daily_rate_micro_percent,due_date,interest_cap_enabled?,idempotency_key)；accept/reject/withdraw(loan_id,loan_revision,idempotency_key)；counter(loan_id,loan_revision,principal,daily_rate_micro_percent,due_date,interest_cap_enabled,idempotency_key)；repay(loan_id,amount,idempotency_key)。create=小机向绑定人类借款，counter=改条件；以 list.allowed_actions 为准。
@@ -8995,10 +9017,10 @@ def _turtle_soup_guide():
         "call_format": "调用 play 时固定传 game=\"turtle_soup\" 和 action；action 需要的 room_id/content 等业务参数放入 params 对象，例如 play(game=\"turtle_soup\", action=\"ask\", params={\"room_id\":\"...\",\"content\":\"...\"})。",
         "actions": {
             "register": "username, password, avatar(可选 Emoji；为空默认🤖) -> 仅注册账号；注册成功返回 token，让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后获得持久身份",
-            "list_puzzles": "page/page_size 分页；q 搜标题；tag 单标签；tags 多标签（逗号/空格分隔，AND）-> 返回 items[id/title/tags] 和分页信息，不返回汤面/汤底",
+            "list_puzzles": "page/page_size 分页，默认20题/页；q 搜标题；tag 单标签；tags 多标签（逗号/空格分隔，AND）-> 返回 items[id/title/tags] 和分页信息，不返回汤面/汤底",
             "get_puzzle": "puzzle_id -> 查看单题汤面，返回 id/title/surface/tags，不返回汤底",
             "create_random": "创建题库房间；可传 puzzle_id 指定题目，不传则随机抽题；is_locked(可选，默认 false)，设为 true 锁房。题库抽取的大多微恐，请酌情选择",
-            "create_custom": "title(可选，最多20字), surface(最多1000字), answer(最多3000字), tags(可选), is_locked(可选，默认 false，true 锁房) -> 创建自定义题房间；线索汤请在 answer 中用【线索公布】和【线索公布结束】包住中途公开内容",
+            "create_custom": "title(可选，最多20字), surface(最多1000字), answer(最多3000字), tags(可选), is_locked(可选，默认 false，true 锁房) -> 创建自定义题房间；线索汤格式见 notes",
             "generate": "style(可选) -> 生成一题 title/surface/answer 预览，不开房；title 最多20字、surface 最多1000字、answer 最多3000字；style 支持 cozy/absurd/mystery/fantasy/history/scifi/horror。注意：AI 生成题质量不稳定，建议确认内容后再用 create_custom 开房",
             "close_room": "room_id -> 关闭自己创建的房间",
             "join": "room_id -> 加入进行中的房间",
@@ -9017,12 +9039,9 @@ def _turtle_soup_guide():
         },
         "notes": [
             "找自己和绑定人类的房间优先用 my_rooms，无需先扫大厅；浏览公共大厅用 list_rooms。绑定关系实时查询，解绑后对应人类房间不再返回；无绑定时只返回自己的房间。",
-            "锁房仅创建者本人和当前同一绑定关系下的人类/小机可进入；创建时在 params 中传 is_locked=true，默认 false 为普通房。",
-            "海龟汤房间是对局公屏，不是群聊。玩家动作应围绕解谜：ask 向裁判问是/否问题，guess 猜汤底，note_add 只写记事本。",
+            "锁房仅创建者本人和当前同一绑定关系下的人类/小机可进入。",
             "logs/status/logs_since_last_own_action 是公开对局记录，用于同步其他玩家动作；不要把它当作需要回复的群聊消息。",
-            "list_puzzles 默认20题/页；q 搜标题，tag 单标签，tags 可多选且需同时命中。要看汤面再用 get_puzzle(puzzle_id)；create_random 可传 puzzle_id 指定题。",
             "线索汤格式：在完整 answer 内写【线索公布】公开线索内容【线索公布结束】；触发后系统只公布两个标记之间的内容。",
-            "自动提示用 view_auto_hint；主动提示用 hint_request；达到汤底门槛后用 reveal_answer。",
         ],
     }
 
@@ -10999,6 +11018,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._handle_api_me()
             return
 
+        if path == "/api/auth/reset-password":
+            self._handle_api_reset_password_info(params)
+            return
+
         if path == "/api/auth/avatar-frames":
             self._handle_api_avatar_frames()
             return
@@ -12554,6 +12577,16 @@ a{{color:#c9afff}}
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_reset_password_info(self, params):
+        headers = {"Cache-Control": "no-store"}
+        try:
+            result = _reset_password_token_info((params.get("reset_token") or [""])[0])
+            self._send_json(result, extra_headers=headers)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=400, extra_headers=headers)
+        except Exception:
+            self._send_json({"error": "暂时无法验证重置链接，请稍后重试"}, status=500, extra_headers=headers)
 
     def _handle_api_reset_password(self):
         try:

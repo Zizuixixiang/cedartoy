@@ -1,5 +1,6 @@
 """Python 3.10-compatible platform facade; no upstream import in server.py."""
 import json
+import logging
 from pathlib import Path
 import uuid
 
@@ -7,6 +8,9 @@ from links import AUTHORS
 from vendor_cmd_adapter.base import VendorCmdError, require_player_id, require_save_confirm
 from . import storage, history
 from .pool import POOL
+from .diagnostics import PUBLIC_ERROR, action_name
+
+LOGGER = logging.getLogger(__name__)
 
 SCHEMA_PATH = Path(__file__).with_name("schema.json")
 SAVE_FILES = {"save.json": "save.json"}
@@ -59,7 +63,16 @@ def execute(player, request):
             generation = archive["generation"]
         with POOL.acquire(player) as worker:
             result = worker.call({"request": request, "archive": archive, "generation": generation})
-        if result.get("error"):
+        if result.get("error") or "internal_error" in result:
+            # Still under the stable player lock, but outside acquire: discard
+            # cannot race a subsequent call or interfere with pool release.
+            # Never replay an action: shared/postcard side effects may exist.
+            POOL.discard(player)
+            if "internal_error" in result:
+                LOGGER.error("Nowhere internal error player=%s action=%s metadata=%s",
+                             player, action_name({"action": action}),
+                             json.dumps(result["internal_error"], ensure_ascii=True, sort_keys=True))
+                raise VendorCmdError(PUBLIC_ERROR)
             raise VendorCmdError(result["error"])
         next_archive = result.get("archive")
         if next_archive is not None:

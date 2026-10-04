@@ -1052,9 +1052,9 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
     def test_guide_is_compact_and_discovers_every_room_capability(self):
         guide = server.DUEL_GUIDE
-        # Two game discovery/action notes extend the existing 4000-char budget.
+        # Budget is secondary to the coverage tests here and in the root integration suite.
         self.assertLessEqual(len(guide), 4400)
-        self.assertEqual(guide.count('play(game="duel"'), 1)
+        self.assertEqual(guide.count('play(game="duel"'), 2)
         self.assertNotIn("[存档槽]", guide)
         for expected in (
             "rooms 查房",
@@ -1068,39 +1068,27 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "leave 离席",
             "中国跳棋弃权席及弹珠退出顺序",
             "inactive 不得获胜或取得正向结算且 NPC 筹码恒为 0",
-            "2人=tictactoe/gomoku/othello/connect4/jungle/xiangqi/checkers/banqi/chess/junqi/go",
-            "3人=doudizhu",
-            "4人=guandan/mahjong",
-            "dots_boxes=2/3/4",
-            "aeroplane_chess/gandengyan/rummikub=2/3/4",
-            "chinese_checkers=2/3/4/6",
-            "liars_dice/yahtzee/uno/blackjack/train_cards/zhajinhua/texas_holdem/monopoly=2..6",
-            "大富翁 monopoly 推荐4人",
-            "动作需附 action_seq",
-            "拉密 rummikub：",
-            "炸飞机 bomb_plane（寻机头）",
-            "carcassonne=2..5",
-            "卡卡颂 carcassonne：",
-            "private_state.placements",
-            "current_tile.regions",
-            "所有动作必须带 params.revision",
-            "每次 melds 提交最终完整桌面",
-            "牌面局分不扣钱包",
-            "交易仅接收方本人确认",
-            "NPC：除 tictactoe/gomoku/othello/connect4/jungle/xiangqi 外均可",
+            "用 catalog 查游戏",
+            "allowed_player_counts/supports_npcs/supports_stakes",
+            "supports_stakes=false 仅 stake=0",
+            "recommended_players",
             "target_player_count/fill_with_npcs",
-            "yahtzee/monopoly/rummikub 固定娱乐局",
-            "大富翁局内现金与平台筹码分离；其余按 catalog 支持 stake",
             "liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong/rummikub 私手",
-            "开房能力以 catalog",
-            "supports_npcs/supports_stakes",
+            "不要凭 Guide 猜玩法",
+            "rules_text（full_state 为 rules）",
+            "move_format/action_formats/protocol_guide/legal_action_spec",
             "bootstrap 后也按上述方式继续挂等",
             "挂等不是后台订阅或推送",
             "不能主动唤醒 ChatGPT/MCP 客户端",
             "next_call",
             "full_state=true",
             "之后 move/state 默认只返回",
-            "不会消费增量事件",
+            "老25款确认快照已覆盖的动作",
+            "未读文字在后续普通响应恰好一次交付",
+            "快照后的新动作仍按序交付",
+            "省略字段表示不变",
+            "终局以 status/result 为准",
+            "勿重放旧事件",
             "按 rules_text/move_format 行动",
             '外层 duel action 固定为 "move"',
             "游戏动作对象放 params.move",
@@ -1111,6 +1099,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             "紧凑/参数化规格按 legal_action_spec 或 submit 构造",
             "allowed_player_counts",
             "private_state 只含己方私密信息",
+            "move 必须带 params.revision",
             "revision 优先用最近成功响应值",
             "仅缺失、409 或疑似过期时 state",
             "不要每步先 state",
@@ -1124,6 +1113,46 @@ class DuelRoomsPlatformTests(unittest.TestCase):
         delivered = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
         self.assertEqual(delivered, guide)
         self.assertNotIn("[存档槽]", delivered)
+
+    def test_guide_keeps_room_wait_and_private_information_safety(self):
+        guide = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
+        for expected in (
+            "身份固定；player_id/opponent_id/viewer/participant_ids 不能换人或视角",
+            "自家人类/小机互玩可直接使用普通开房",
+            "AI invite 只入自己；受邀者 join(invite_code)",
+            "房满后房主 start",
+            "start(fill_with_npcs=true)",
+            "timeout 默认关闭，可选 90/180 秒",
+            "有真实参与者近期同步/操作才代下",
+            "reclaim 接回并保护当前 revision",
+            "chat(room_id,message)，与出牌分开，不要求轮到自己",
+            "participants.handle 的 @handle",
+            "普通聊天不打断整桌挂等",
+            "非己方回合 state(wait=true)，己方 move(wait=true)",
+            "开房/加入/确认后未轮到自己也立即挂等",
+            'cancel_wait，params={"room_id":"..."}',
+            "只取消本人在该房间的旧挂等，不离席、不认输、不改变在线/托管状态",
+            "新显式 wait 或同房间非 wait 操作会替代旧链",
+            "收到 wait_cancelled 就停止该调用链，不行动、不自动续等",
+            "需要恢复时显式 state(wait=true) / move(wait=true)",
+            "首次进入 playing 返回 bootstrap=true 的完整安全 room",
+            "均不泄露私密信息",
+            "private_state 只含己方私密信息",
+            "四款 MCP v2 返回 r，将其值作为 params.revision",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, guide)
+
+    def test_root_guide_documents_stake_confirmation_and_accept_call(self):
+        guide = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
+        for expected in (
+            "stake=0 无需确认",
+            "stake>0 时受邀真实参与者必须逐个 accept，全部接受后才开局",
+            'play(game="duel", action="accept", params={"room_id":"..."})',
+            "pending=筹码待确认，用 accept/reject；waiting=邀请房待凑人/待 start",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, guide)
 
     def test_guide_discovers_chip_center_roles_fields_and_unread_entries(self):
         guide = server.DUEL_GUIDE

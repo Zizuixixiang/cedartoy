@@ -3550,21 +3550,22 @@
     </div>
   </div>
 
-  <div class="modal" id="resetPasswordModal" role="dialog" aria-modal="true" aria-labelledby="resetPasswordTitle">
+  <div class="modal" id="resetPasswordModal" role="dialog" aria-modal="true" aria-labelledby="resetPasswordTitle" aria-describedby="resetPasswordHint resetPasswordMsg">
     <div class="modal-box">
       <h2 class="modal-title" id="resetPasswordTitle">重置密码</h2>
-      <label class="field">
+      <p class="modal-hint" id="resetPasswordHint"></p>
+      <label class="field" hidden>
         <span class="field-label">新密码</span>
-        <input id="resetNewPassword" type="password" autocomplete="new-password">
+        <input id="resetNewPassword" type="password" autocomplete="new-password" disabled>
         <span class="field-hint">至少 6 位</span>
       </label>
-      <label class="field">
+      <label class="field" hidden>
         <span class="field-label">确认密码</span>
-        <input id="resetConfirmPassword" type="password" autocomplete="new-password">
+        <input id="resetConfirmPassword" type="password" autocomplete="new-password" disabled>
       </label>
-      <div class="modal-msg" id="resetPasswordMsg"></div>
+      <div class="modal-msg" id="resetPasswordMsg" role="alert"></div>
       <div class="modal-actions">
-        <button class="pixel-btn" id="resetPasswordSubmit" type="button">确认</button>
+        <button class="pixel-btn" id="resetPasswordSubmit" type="button" disabled>确认</button>
       </div>
     </div>
   </div>
@@ -8768,11 +8769,20 @@
       }
     }
 
+    let resetPasswordRequest = 0;
+    let verifiedResetToken = "";
+
     function clearResetPasswordModal() {
-      $("resetNewPassword").value = "";
-      $("resetConfirmPassword").value = "";
+      resetPasswordRequest++;
+      verifiedResetToken = "";
+      $("resetPasswordHint").textContent = "";
+      for (const id of ["resetNewPassword", "resetConfirmPassword"]) {
+        $(id).value = "";
+        $(id).disabled = true;
+        $(id).closest(".field").hidden = true;
+      }
       $("resetPasswordMsg").textContent = "";
-      $("resetPasswordSubmit").disabled = false;
+      $("resetPasswordSubmit").disabled = true;
     }
 
     function resetTokenFromUrl() {
@@ -8793,7 +8803,8 @@
       const submit = $("resetPasswordSubmit");
       if (submit.disabled) return;
       message.textContent = "";
-      if (!reset_token) {
+      if (!reset_token || reset_token !== verifiedResetToken) {
+        clearResetPasswordModal();
         message.textContent = "无效的重置链接";
         return;
       }
@@ -8810,6 +8821,7 @@
         return;
       }
       submit.disabled = true;
+      const request = resetPasswordRequest;
       try {
         const res = await fetch("/api/auth/reset-password", {
           method: "POST",
@@ -8817,18 +8829,53 @@
           body: JSON.stringify({reset_token, new_password})
         });
         const data = await res.json().catch(() => ({}));
+        if (request !== resetPasswordRequest || reset_token !== resetTokenFromUrl()) return;
         if (!res.ok) throw new Error(data.error || "密码重置失败");
         removeResetTokenFromUrl();
         closeModals();
         showToast("密码已重置");
       } catch (err) {
+        if (request !== resetPasswordRequest || reset_token !== resetTokenFromUrl()) return;
         message.textContent = err.message || "密码重置失败";
         submit.disabled = false;
       }
     }
 
-    function openResetPasswordFromUrl() {
-      if (resetTokenFromUrl()) openModal("resetPasswordModal");
+    async function openResetPasswordFromUrl() {
+      clearResetPasswordModal();
+      $("resetPasswordModal").classList.remove("show");
+      const reset_token = resetTokenFromUrl();
+      if (!reset_token) return;
+      const request = resetPasswordRequest;
+      let username = "", error = "";
+      try {
+        const res = await fetch(`/api/auth/reset-password?reset_token=${encodeURIComponent(reset_token)}`, {cache: "no-store"});
+        const data = await res.json();
+        if (!res.ok) {
+          error = data.error || "无法验证重置链接";
+        } else if (typeof data.username !== "string" || !data.username) {
+          error = "无法验证重置链接";
+        } else {
+          username = data.username;
+        }
+      } catch {
+        error = "无法验证重置链接，请稍后重试";
+      }
+      // A closed dialog or a newer link must not be overwritten by a late response.
+      if (request !== resetPasswordRequest || reset_token !== resetTokenFromUrl()) return;
+      openModal("resetPasswordModal");
+      if (error) {
+        $("resetPasswordMsg").textContent = error;
+        return;
+      }
+      verifiedResetToken = reset_token;
+      $("resetPasswordHint").textContent = `正在为账号「${username}」重置密码`;
+      for (const id of ["resetNewPassword", "resetConfirmPassword"]) {
+        $(id).disabled = false;
+        $(id).closest(".field").hidden = false;
+      }
+      $("resetPasswordSubmit").disabled = false;
+      $("resetNewPassword").focus();
     }
 
     async function unbindAccount(aiUserId) {

@@ -42,11 +42,17 @@ class TurtleMcpTests(unittest.TestCase):
                 {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, user_agent=client,
             )
             play = next(t for t in listed['result']['tools'] if t['name'] == 'play')
-            field = play['inputSchema']['properties']['params']['properties']['is_locked']
+            fields = play['inputSchema']['properties']['params']['properties']
+            if not client:
+                # Ordinary clients get business parameters from the Guide.
+                self.assertNotIn('is_locked', fields)
+                self.assertNotIn('include_finished', fields)
+                continue
+            field = fields['is_locked']
             self.assertEqual(field['type'], 'boolean')
             for text in ['仅海龟汤', 'create_random/create_custom', 'true', '创建者本人', '当前同一绑定关系', '人类/小机', '默认 false']:
                 self.assertIn(text, field['description'])
-            finished = play['inputSchema']['properties']['params']['properties']['include_finished']
+            finished = fields['include_finished']
             self.assertEqual(finished['type'], 'boolean')
             for text in ['仅 turtle_soup my_rooms', '默认 false', 'true', '已结束']:
                 self.assertIn(text, finished['description'])
@@ -133,7 +139,9 @@ class TurtleMcpTests(unittest.TestCase):
         for obsolete in ['下一次 ask', 'next_ask', '兼容', 'confirm_reveal', 'auto_hint_log_id', 'accept_auto_hint', 'hint_respond']:
             self.assertNotIn(obsolete, str(guide))
         hint_notes = [note for note in guide['notes'] if any(action in note for action in ['view_auto_hint', 'hint_request', 'reveal_answer'])]
-        self.assertEqual(hint_notes, ['自动提示用 view_auto_hint；主动提示用 hint_request；达到汤底门槛后用 reveal_answer。'])
+        # The three action descriptions above retain the parameters, conditions
+        # and consequences; notes need not repeat their routing summary.
+        self.assertEqual(hint_notes, [])
         self.assertTrue(any('线索汤格式' in note for note in guide['notes']))
         for client in ['', 'Kelivo/1.2.6']:
             listed = server._handle_root_mcp(
@@ -141,10 +149,79 @@ class TurtleMcpTests(unittest.TestCase):
             )
             play = next(t for t in listed['result']['tools'] if t['name'] == 'play')
             fields = play['inputSchema']['properties']['params']['properties']
-            self.assertEqual(fields['log_id']['type'], 'integer')
-            self.assertIn('view_auto_hint', fields['log_id']['description'])
+            if client:
+                self.assertEqual(fields['log_id']['type'], 'integer')
+                self.assertIn('view_auto_hint', fields['log_id']['description'])
+            else:
+                self.assertNotIn('log_id', fields)
             for name in ['auto_hint_log_id', 'accept_auto_hint', 'accept_auto_hint_log_id', 'reject_auto_hint_log_id', 'confirm_reveal', 'confirm_hint']:
                 self.assertNotIn(name, json.dumps(play['inputSchema']))
+
+    def test_guide_keeps_puzzle_discovery_in_actions(self):
+        guide = self.call('get_guide', {'game': 'turtle_soup'})
+        expected = {
+            'list_puzzles': ['page/page_size', '默认20题/页', 'q 搜标题', 'tag 单标签',
+                             'tags 多标签', '逗号/空格分隔，AND', 'items[id/title/tags]',
+                             '分页信息', '不返回汤面/汤底'],
+            'get_puzzle': ['puzzle_id', '单题汤面', 'id/title/surface/tags', '不返回汤底'],
+            'create_random': ['puzzle_id 指定题目', '不传则随机抽题', '大多微恐'],
+        }
+        for action, knowledge in expected.items():
+            with self.subTest(action=action):
+                for text in knowledge:
+                    self.assertIn(text, guide['actions'][action])
+                self.assertNotIn(action, '\n'.join(guide['notes']))
+
+    def test_guide_keeps_play_semantics_limits_and_clue_format(self):
+        guide = self.call('get_guide', {'game': 'turtle_soup'})
+        self.assertIn('业务参数放入 params 对象', guide['call_format'])
+        self.assertIn('play(game="turtle_soup", action="ask", params=', guide['call_format'])
+        expected = {
+            'register': ['username, password', 'avatar', '默认🤖', '仅注册账号', '{token}', '持久身份'],
+            'ask': ['room_id, content', '是/否问题', '不是群聊', '最多 200 字', 'logs_since_last_own_action'],
+            'guess': ['room_id, content', '最多 1000 字', '完整汤底还原', '是/否问题请用 ask', '超长'],
+            'create_custom': ['title(可选，最多20字)', 'surface(最多1000字)',
+                              'answer(最多3000字)', 'tags(可选)', '线索汤格式见 notes'],
+            'generate': ['style(可选)', 'title/surface/answer 预览，不开房', 'title 最多20字',
+                         'surface 最多1000字', 'answer 最多3000字',
+                         'cozy/absurd/mystery/fantasy/history/scifi/horror',
+                         '质量不稳定', '确认内容后再用 create_custom'],
+            'join': ['room_id', '进行中的房间'],
+            'close_room': ['room_id', '自己创建的房间'],
+            'note_list': ['room_id', '记事本'],
+            'note_add': ['room_id, content', '自己的记事', '最多 50 字', '不含记事内容',
+                         '【系统提示】记事本有新记录'],
+            'note_edit': ['note_id, content', '自己的记事', '最多 50 字', '不写公屏日志'],
+            'note_delete': ['note_id', '自己的记事', '不写公屏日志'],
+        }
+        for action, knowledge in expected.items():
+            with self.subTest(action=action):
+                for text in knowledge:
+                    self.assertIn(text, guide['actions'][action])
+        notes = '\n'.join(guide['notes'])
+        for text in [
+            '绑定关系实时查询', '解绑后对应人类房间不再返回', '无绑定时只返回自己的房间',
+            '锁房仅创建者本人和当前同一绑定关系下的人类/小机可进入',
+            'logs/status/logs_since_last_own_action 是公开对局记录',
+            '同步其他玩家动作', '不要把它当作需要回复的群聊消息',
+            '在完整 answer 内写【线索公布】公开线索内容【线索公布结束】',
+            '触发后系统只公布两个标记之间的内容',
+        ]:
+            self.assertIn(text, notes)
+        # The full clue syntax has one accessible home, referenced by create_custom.
+        self.assertEqual(json.dumps(guide, ensure_ascii=False).count('【线索公布】'), 1)
+        self.assertEqual(json.dumps(guide, ensure_ascii=False).count('【线索公布结束】'), 1)
+
+    def test_guide_platform_announcements_unchanged(self):
+        guide = self.call('get_guide', {'game': 'turtle_soup'})
+        self.assertEqual(guide['platform_announcements'], {
+            'history': 'play(game="turtle_soup", action="announcements")',
+            'single': 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1]})',
+            'multiple': 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1,2]})',
+            'skip': 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[0]})',
+            'feedback': '仅开放文字反馈的投票可在 params 加 feedback="我的意见"。',
+            'submission_rule': '有效选项和补充意见提交后不可修改；跳过后仍可正式投票。',
+        })
 
     def test_independent_view_actions_forward_params_and_authenticated_identity(self):
         response = Mock(status_code=200)

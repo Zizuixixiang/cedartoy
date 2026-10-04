@@ -130,6 +130,151 @@ class NewGamesRootIntegration(unittest.TestCase):
                     self.assertEqual(projected['snapshot']['private_state']['planes'], after['board_state']['planes']['202'])
                 self.rpc('resign',{'room_id':rid},auth=auth)
 
+    def test_guide_removed_game_enumeration_is_available_in_real_catalog(self):
+        # This is the knowledge removed from DUEL_GUIDE, not a comparison with
+        # internal plugin constants. Both supported auth paths must expose it.
+        counts = {}
+        for names, allowed in (
+            ('tictactoe gomoku othello connect4 jungle xiangqi checkers banqi chess junqi go bomb_plane', [2]),
+            ('doudizhu', [3]),
+            ('guandan mahjong', [4]),
+            ('dots_boxes aeroplane_chess gandengyan rummikub', [2, 3, 4]),
+            ('chinese_checkers', [2, 3, 4, 6]),
+            ('carcassonne', [2, 3, 4, 5]),
+            ('liars_dice yahtzee uno blackjack train_cards zhajinhua texas_holdem monopoly', [2, 3, 4, 5, 6]),
+        ):
+            counts.update(dict.fromkeys(names.split(), allowed))
+        without_npcs = set('tictactoe gomoku othello connect4 jungle xiangqi'.split())
+        without_stakes = {'yahtzee', 'monopoly', 'rummikub'}
+        for auth in ('path_token', 'bearer_token'):
+            catalog = {g['game_type']: g for g in self.rpc('catalog', auth=auth)['games']}
+            self.assertEqual(set(catalog), set(counts))
+            for name, allowed in counts.items():
+                with self.subTest(auth=auth, game=name):
+                    game = catalog[name]
+                    self.assertEqual(game['allowed_player_counts'], allowed)
+                    self.assertIs(game['supports_npcs'], name not in without_npcs)
+                    self.assertIs(game['supports_stakes'], name not in without_stakes)
+            self.assertEqual(catalog['monopoly']['recommended_players'], 4)
+
+    def test_guide_removed_v2_details_are_delivered_and_usable(self):
+        # Exercise the model-visible root MCP responses on disposable databases.
+        # full_state must stand alone, even when bootstrap is no longer in context.
+        for name in ('monopoly', 'rummikub', 'bomb_plane', 'carcassonne'):
+            with self.subTest(game=name):
+                seats = [dict(player_id=pid, role='ai', participant_kind='bound_machine', display_name=pid)
+                         for pid in ('202', '303')]
+                room = framework.create_room(name, 'ai_first', 'ai', '202',
+                    ordered_participants=seats, require_confirmations=False)
+                rid = room['room_id']
+                boot = self.rpc('state', {'room_id': rid})
+                self.assertTrue(boot['bootstrap'])
+                self.assertEqual(boot['protocol'], 2)
+                initial = boot['room']
+                self.assertTrue(initial['rules_text'])
+                self.assertTrue(initial['move_format'])
+                self.assertTrue(initial['private_state'])
+                full = self.rpc('state', {'room_id': rid, 'full_state': True}, auth='bearer_token')
+                self.assertTrue(full['full_state'])
+                snap = full['snapshot']
+                rules, formats = snap['rules'], snap['action_formats']
+                self.assertEqual(snap['viewer_player_id'], '202')
+                self.assertEqual(snap['protocol'], 2)
+                self.assertEqual(snap['revision'], full['r'])
+                self.assertTrue(rules)
+                self.assertTrue(formats)
+                for protocol in (boot['protocol_guide'], snap['protocol_guide']):
+                    self.assertIn('including your own', protocol)
+                    self.assertIn('unchanged', protocol)
+                    self.assertIn('private', protocol)
+
+                if name == 'monopoly':
+                    for text in ('拍卖', '交易', '抵押', '破产', '局内现金与平台筹码完全分离', '接收方'):
+                        self.assertIn(text, initial['rules_text'])
+                    for actions in (initial['action_formats'], formats):
+                        self.assertIn('action_seq', actions['all'])
+                        self.assertEqual(actions['respond_trade'], {'accept': 'boolean'})
+                        self.assertEqual(set(actions['propose_trade']),
+                            {'to', 'give_cash', 'take_cash', 'give_tiles', 'take_tiles'})
+                        self.assertIn('auction', actions['no_args'])
+                        self.assertIn('mortgage', actions['tile_id'])
+                        self.assertIn('bankrupt', actions['no_args'])
+                    self.assertIn('only the recipient responds', rules['trade'])
+                    self.assertIn('local cash never changes platform chips', rules['debt'])
+                    self.assertTrue(snap['trade_options']['partners'])
+                    move = snap['legal_actions'][0]
+                    self.assertEqual(move['action_seq'], snap['board_state']['action_seq'])
+                elif name == 'rummikub':
+                    for text in ('至少 30 分', '原桌面牌必须全部留在桌上', '释放后必须在本回合',
+                                 '全部在局玩家连续一圈', '牌面局分不扣平台钱包'):
+                        self.assertIn(text, initial['rules_text'])
+                    self.assertEqual(initial['private_state']['legal_action_spec']['action'], 'meld')
+                    self.assertEqual(initial['private_state']['hand'], snap['private_state']['hand'])
+                    self.assertEqual(len(snap['private_state']['hand']), 14)
+                    self.assertIn('melds', snap['board_state'])
+                    self.assertIn('meld_kinds', snap['board_state'])
+                    self.assertEqual(rules['opening_threshold'], 30)
+                    self.assertIn('only original own hand', rules['opening'])
+                    self.assertIn('every old table ID remains exactly once', rules['rearrange'])
+                    self.assertIn('at least one original hand ID', rules['rearrange'])
+                    self.assertIn('reused this turn', rules['joker'])
+                    self.assertIn('containing an original hand tile', rules['joker'])
+                    self.assertIn('all active players consecutively pass', rules['turn'])
+                    self.assertIn('No platform chip stakes', rules['scoring'])
+                    for text in ('FULL final table', 'physical tile IDs', 'runs ascending', 'joker at substituted position'):
+                        self.assertIn(text, formats['meld']['melds'])
+                    self.assertIn('group|run', formats['meld']['kinds'])
+                    self.assertIn('preserve old meld_kinds', formats['meld']['kinds'])
+                    self.assertEqual(formats['no_args'], ['draw', 'pass'])
+                    for protocol in (boot['protocol_guide'], snap['protocol_guide']):
+                        self.assertIn('private.+/- adds/removes hand IDs', protocol)
+                        self.assertIn('first remove the submitted table IDs from your hand', protocol)
+                        self.assertIn('No automatic suggestion', protocol)
+                    move = {'action': formats['no_args'][0]}
+                elif name == 'bomb_plane':
+                    self.assertIn('10×10', initial['rules_text'])
+                    self.assertIn('三个不同机头获胜', initial['rules_text'])
+                    self.assertIn('终局（含认输）', initial['rules_text'])
+                    self.assertEqual(snap['board_state']['rows'], 10)
+                    self.assertEqual(snap['board_state']['cols'], 10)
+                    self.assertEqual(snap['private_state']['planes'], [])
+                    self.assertEqual(formats['place'], {'head': 'A1..J10', 'direction': ['N', 'E', 'S', 'W']})
+                    self.assertEqual(set(formats['no_args']), {'undo', 'clear', 'shuffle', 'ready', 'auto_setup'})
+                    self.assertIn('AND ready', formats['no_args']['auto_setup'])
+                    self.assertIn('NOT ready', formats['no_args']['shuffle'])
+                    self.assertIn('cell', formats['attack'])
+                    self.assertIn('Exactly 3 planes', rules['layout'])
+                    self.assertIn('All outcomes switch turn', rules['shots'])
+                    self.assertIn('First 3 heads wins', rules['shots'])
+                    self.assertIn('only terminal revealed_planes', rules['shots'])
+                    move = {'action': 'auto_setup'}
+                    self.assertIn(move, initial['private_state']['legal_actions'])
+                else:
+                    self.assertTrue(initial['board_state']['topology'])
+                    self.assertEqual(initial['board_state']['topology'], snap['board_state']['topology'])
+                    self.assertTrue(snap['board_state']['board'])
+                    self.assertEqual(set(formats['place']), {'x', 'y', 'rotation', 'meeple'})
+                    self.assertIn('null or available region ID', formats['place']['meeple'])
+                    self.assertEqual(formats['place']['rotation'], [0, 1, 2, 3])
+                    self.assertEqual(initial['private_state']['legal_action_spec']['action'], 'place')
+                    for protocol in (boot['protocol_guide'], snap['protocol_guide']):
+                        for text in ('No default placements', 'query:placements,x,y,rotation?,meeple?',
+                                     'up to 8 nearby', 'query:placements,all:true',
+                                     'Queries do not consume events', 'last consumed response', 'stale detection'):
+                            self.assertIn(text, protocol)
+                    query = self.rpc('state', {'room_id': rid, 'move': {'query': 'placements', 'all': True}})
+                    x, y, rotation, regions = query['placements'][0]
+                    self.assertEqual(query['revision'], full['r'])
+                    self.assertIsInstance(regions, list)
+                    move = dict(action='place', x=x, y=y, rotation=rotation, meeple=None)
+
+                # A move constructed from the replacement surface really works;
+                # no engine helper chooses a move and no static guide example is needed.
+                reply = self.rpc('move', {'room_id': rid, 'revision': full['r'], 'move': move})
+                self.assertEqual(reply['r'], full['r'] + 1)
+                self.assertNotIn('bootstrap', reply)
+                self.assertNotIn('rules_text', json.dumps(reply))
+
     def test_merged_schema_recovery_and_query_cursors(self):
         listed = server._handle_root_mcp({'jsonrpc':'2.0','id':8,'method':'tools/list'}, path_token=self.token)
         schema = next(t['inputSchema'] for t in listed['result']['tools'] if t['name']=='play')

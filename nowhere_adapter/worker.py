@@ -17,6 +17,7 @@ import sys
 import tempfile
 
 from . import shared, storage
+from .diagnostics import PUBLIC_ERROR, internal_error
 
 RUNTIME_KEYS = ("_postcard_counter", "_hint_counter", "_mishap_last_step", "_mishap_echoed_id")
 
@@ -222,13 +223,19 @@ class Engine:
         raise ValueError("不支持的网页动作")
 
     async def run(self, payload):
+        self.diagnostic_request = payload.get("request")
+        self.diagnostic_stage = "restore"
         self.restore(payload.get("archive"), payload["generation"])
         request = dict(payload["request"])
+        self.diagnostic_request = request
+        self.diagnostic_stage = "prepare"
         action = request.pop("action")
         request.pop("confirm", None)
         if action == "validate_import":
+            self.diagnostic_stage = "snapshot"
             return {"result": {"text": "完整私人旅程导入成功"}, "archive": self.snapshot()}
         if action == "_web":
+            self.diagnostic_stage = "action"
             result = await self.web_action(request)
             if result["status"] >= 400 or request["method"] == "GET":
                 return {"result": result}
@@ -252,13 +259,16 @@ class Engine:
                 action = "open_door"
             if action == "send_postcard":
                 from jsonschema import validate
+                self.diagnostic_stage = "validate"
                 validate(request, {"type": "object", "properties": {"text": {"type": "string", "maxLength": 1000}}, "required": ["text"], "additionalProperties": False})
+                self.diagnostic_stage = "action"
                 result = await self.server._run_serialized(self.server.send_postcard_impl, **request)
             elif action == "switch_journey":
                 place = request.get("place")
                 if set(request) != {"place"} or not isinstance(place, str) or not place.strip():
                     raise ValueError("switch_journey 需要 place（已有地名或 slug）")
                 # Delegate return narrative and journey selection to upstream.
+                self.diagnostic_stage = "action"
                 if self.journeys.get_journey_meta(place) is None:
                     raise ValueError("旅程不存在")
                 result = await self.server.open_door_impl(to=place)
@@ -266,7 +276,9 @@ class Engine:
                 from jsonschema import validate
                 tool = self.tools[action]
                 parameters = {**tool.parameters, "additionalProperties": False}
+                self.diagnostic_stage = "validate"
                 validate(request, parameters)
+                self.diagnostic_stage = "action"
                 # Upstream continue reuses open_door_impl(resume=True), whose
                 # cotraveler block also resets solo and publishes a registration.
                 # Suppress that block before it can publish; retain the loaded
@@ -283,6 +295,7 @@ class Engine:
                     shared.forget(self.player)
         if isinstance(result, dict) and (result.get("ok") is False or (isinstance(result.get("data"), dict) and result["data"].get("error"))):
             return {"error": result.get("text") or result.get("error", "上游动作失败")}
+        self.diagnostic_stage = "snapshot"
         return {"result": result, "archive": self.snapshot()}
 
 
@@ -293,14 +306,20 @@ async def main():
     try:
         engine = Engine(sys.argv[1])
         await engine.initialize()
-    except Exception:
+    except Exception as exc:
+        output.write(json.dumps({"error": PUBLIC_ERROR,
+                                 "internal_error": internal_error(exc, None, "initialize")}) + "\n")
+        output.flush()
         return
     while line := await asyncio.to_thread(sys.stdin.readline):
+        engine.diagnostic_request = None
+        engine.diagnostic_stage = "decode"
         try:
             result = await asyncio.wait_for(engine.run(json.loads(line)), timeout=140)
         except Exception as exc:
             # No traceback, input echo, provider URLs or credentials in response.
-            result = {"error": "乌有乡动作或存档校验失败（" + type(exc).__name__ + "）；私人存档未提交"}
+            result = {"error": PUBLIC_ERROR, "internal_error": internal_error(
+                exc, engine.diagnostic_request, engine.diagnostic_stage)}
         output.write(json.dumps(result, ensure_ascii=False, allow_nan=False) + "\n")
         output.flush()
     for task in engine.poster_tasks:

@@ -260,6 +260,73 @@ class AccountRecoveryTests(unittest.TestCase):
         server._reset_password_by_token("legacy-token", "legacy-pass")
         server._reset_password_by_token(generated["reset_url"].split("=", 1)[1], "manual-pass")
 
+    def test_reset_token_info_is_read_only_and_then_password_can_be_reset(self):
+        body, tid = self.submit()
+        self.approve(tid)
+        recovery_token = server._query_recovery_ticket(body)["reset_url"].split("=", 1)[1]
+        admin_token = server._generate_reset_link(self.other_human_id)["reset_url"].split("=", 1)[1]
+        with self._connect() as conn:
+            conn.execute("INSERT INTO password_reset_tokens(user_id,token,expires_at) VALUES (?, 'legacy-info', datetime('now','+1 hour'))", (self.human_id,))
+        def snapshot():
+            with self._connect() as conn:
+                return list(conn.iterdump())
+        before = snapshot()
+        for token, username in ((recovery_token, "Human"), (admin_token, "OtherHuman"), ("legacy-info", "Human")):
+            for _ in range(2):
+                self.assertEqual(server._reset_password_token_info(token), {"username": username})
+        self.assertEqual(snapshot(), before, "GET must not change tokens, tickets or credentials")
+        server._reset_password_by_token(recovery_token, "after-info-pass")
+        self.assertTrue(server._verify_password("after-info-pass", self._user(self.human_id)["password_hash"]))
+        self.assertEqual(server._query_recovery_ticket(body)["status"], "completed")
+        with self.assertRaisesRegex(server._McpError, "已使用"):
+            server._reset_password_token_info(recovery_token)
+
+    def test_reset_token_info_rejects_unusable_links(self):
+        token = server._generate_reset_link(self.human_id)["reset_url"].split("=", 1)[1]
+        for invalid in ("", "unknown", None, [], server._reset_token_hash(token)):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(server._McpError, "无效"):
+                server._reset_password_token_info(invalid)
+        cases = (
+            ("UPDATE password_reset_tokens SET used=1", "已使用"),
+            ("UPDATE password_reset_tokens SET expires_at=datetime('now','-1 second')", "过期"),
+            ("UPDATE password_reset_tokens SET expires_at=datetime('now')", "过期"),
+            (f"UPDATE toy_users SET deletion_requested_at_epoch=1 WHERE id={self.human_id}", "待注销"),
+            ("UPDATE password_reset_tokens SET user_id=999999", "账号不存在"),
+        )
+        for sql, error in cases:
+            with self.subTest(error=error):
+                with self._connect() as conn:
+                    conn.execute("UPDATE password_reset_tokens SET used=0, expires_at=datetime('now','+1 hour'), user_id=?", (self.human_id,))
+                    conn.execute("UPDATE toy_users SET deletion_requested_at_epoch=NULL")
+                    conn.execute(sql)
+                before = self.tokens()
+                with self.assertRaisesRegex(server._McpError, error):
+                    server._reset_password_token_info(token)
+                self.assertEqual(self.tokens(), before)
+
+    def test_reset_token_info_get_route_is_public_minimal_and_no_store(self):
+        token = server._generate_reset_link(self.human_id)["reset_url"].split("=", 1)[1]
+        handler = object.__new__(server.CedarToyHandler)
+        handler.headers = {}
+        handler._send_json = Mock()
+        for query, expected, status in (
+            (f"reset_token={token}&username=WrongAccount", {"username": "Human"}, 200),
+            ("reset_token=invalid", {"error": "无效的重置链接"}, 400),
+            ("", {"error": "无效的重置链接"}, 400),
+        ):
+            handler.path = "/api/auth/reset-password?" + query
+            handler.do_GET()
+            call = handler._send_json.call_args
+            self.assertEqual(call.args[0], expected)
+            self.assertEqual(call.kwargs.get("status", 200), status)
+            self.assertEqual(call.kwargs["extra_headers"]["Cache-Control"], "no-store")
+        with patch.object(server, "_reset_password_token_info", side_effect=RuntimeError("private details")):
+            handler.do_GET()
+            call = handler._send_json.call_args
+            self.assertEqual(call.kwargs["status"], 500)
+            self.assertEqual(call.kwargs["extra_headers"]["Cache-Control"], "no-store")
+            self.assertNotIn("private details", str(call.args[0]))
+
     def test_email_recovery_closes_approved_tickets_and_revokes_links(self):
         self._bind_email()
         self._age_all_codes()

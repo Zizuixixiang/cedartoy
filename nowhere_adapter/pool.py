@@ -2,6 +2,7 @@
 import atexit
 from contextlib import contextmanager
 import json
+import logging
 import os
 from pathlib import Path
 import select
@@ -16,6 +17,7 @@ from vendor_cmd_adapter.base import VendorCmdError
 from . import storage
 
 PROJECT = Path(__file__).resolve().parents[1]
+LOGGER = logging.getLogger(__name__)
 
 
 class Worker:
@@ -31,11 +33,21 @@ class Worker:
                    NOWHERE_SAVE_ROOT=str(storage.ROOT), PYTHONUNBUFFERED="1",
                    MPLCONFIGDIR=str(Path(self.home) / "matplotlib"),
                    PYTHONPATH=str(PROJECT) + os.pathsep + str(PROJECT / "vendor/nowhere"))
-        # Child stderr contains upstream diagnostics, never request credentials.
+        # Upstream stderr is untrusted: drain it without retaining or logging
+        # raw bytes. Detailed value-free exception metadata travels over IPC.
         self.proc = subprocess.Popen([python, "-m", "nowhere_adapter.worker", player],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=subprocess.DEVNULL, cwd=self.home, env=env,
+                                     stderr=subprocess.PIPE, cwd=self.home, env=env,
                                      start_new_session=True)
+        self.stderr_thread = threading.Thread(target=self._drain_stderr, args=(player,), daemon=True)
+        self.stderr_thread.start()
+
+    def _drain_stderr(self, player):
+        reported = False
+        while self.proc.stderr.read(4096):
+            if not reported:
+                LOGGER.warning("Nowhere worker stderr suppressed player=%s (content omitted)", player)
+                reported = True
 
     def close(self):
         try:
@@ -49,6 +61,8 @@ class Worker:
             self.proc.wait()
         self.proc.stdin.close()
         self.proc.stdout.close()
+        self.stderr_thread.join(timeout=5)
+        self.proc.stderr.close()
         shutil.rmtree(self.home, ignore_errors=True)
 
     def call(self, payload):
