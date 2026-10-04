@@ -47,23 +47,23 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
     async def status(self, rid, uid=102, **params):
         return self.ok(await self.mcp('status', rid, uid, **params))
 
-    async def test_answer_prompt_persists_at_100_through_200_and_isolates_players_rooms(self):
+    async def test_answer_prompt_persists_at_50_through_100_and_isolates_players_rooms(self):
         rid = await self.create()
-        await self.seed_asks(rid, 99)
+        await self.seed_asks(rid, 49)
         self.assertNotIn('answer_reveal_prompt', await self.status(rid))
         await self.seed_asks(rid, 1)
         first = await self.status(rid)
-        self.assertEqual(first['answer_reveal_prompt']['ask_count'], 100)
+        self.assertEqual(first['answer_reveal_prompt']['ask_count'], 50)
         self.assertNotIn('next_ask', json.dumps(first))
         for _ in range(3):
             self.assertNotIn('answer_reveal_prompt', await self.status(rid))
         await database.init_db()
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         self.assertNotIn('answer_reveal_prompt', await self.status(rid))
-        self.assertEqual((await self.status(rid, 103))['answer_reveal_prompt']['ask_count'], 200)
+        self.assertEqual((await self.status(rid, 103))['answer_reveal_prompt']['ask_count'], 100)
         self.assertNotIn('answer_reveal_prompt', await self.status(rid, 103))
         other = await self.create(201)
-        await self.seed_asks(other, 101)
+        await self.seed_asks(other, 51)
         self.assertIn('answer_reveal_prompt', await self.status(other))
 
     async def test_answer_prompt_message_uses_configured_trigger(self):
@@ -83,18 +83,18 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(late['message'], result['message'])
         self.assertNotIn('answer_reveal_prompt', await self.status(rid, 103))
 
-    async def test_ask_delivers_prompt_once_above_threshold(self):
+    async def test_ask_delivers_prompt_once_at_threshold(self):
         rid = await self.create()
-        await self.seed_asks(rid, 103)
+        await self.seed_asks(rid, 49)
         with patch.object(game.judge, 'judge_ask', AsyncMock(return_value={'judgment': 'yes'})), patch.object(game, '_maybe_auto_hint_safely', AsyncMock(return_value=None)):
             first = self.ok(await self.mcp('ask', rid, 102, content='问题'))
-            self.assertEqual(first['answer_reveal_prompt']['ask_count'], 104)
+            self.assertEqual(first['answer_reveal_prompt']['ask_count'], 50)
             self.assertNotIn('answer_reveal_prompt', self.ok(await self.mcp('ask', rid, 102, content='下一个问题')))
         self.assertNotIn('answer_reveal_prompt', await self.status(rid))
 
     async def test_concurrent_status_claims_each_notification_once(self):
         rid = await self.create()
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         lid = await self.hint(rid)
         results = await asyncio.gather(*(self.status(rid) for _ in range(4)))
         self.assertEqual(sum('answer_reveal_prompt' in r for r in results), 1)
@@ -103,7 +103,7 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_notifications_survive_a_new_process(self):
         rid = await self.create()
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         await self.hint(rid)
         await self.status(rid)
         script = '''import asyncio, json, mcp_app
@@ -144,9 +144,36 @@ asyncio.run(main())
         revealed = await database.fetch_all('SELECT player_id FROM room_answer_reveals WHERE room_id=?', (rid,))
         self.assertEqual({r['player_id'] for r in revealed}, {self.players[102]['id'], self.players[103]['id']})
 
-    async def test_reveal_default_threshold_and_missing_setting_fallback(self):
+    async def test_reveal_default_threshold(self):
+        self.assertEqual(await database.get_setting('answer_reveal_prompt_count'), '50')
+        await self.assert_reveal_threshold(50)
+
+    async def test_reveal_missing_setting_fallback(self):
         await database.execute("DELETE FROM settings WHERE key='answer_reveal_prompt_count'")
-        await self.assert_reveal_threshold(100)
+        await self.assert_reveal_threshold(50)
+
+    async def test_public_settings_and_room_context_default_fallback(self):
+        for missing in [False, True]:
+            with self.subTest(missing=missing):
+                if missing:
+                    await database.execute("DELETE FROM settings WHERE key='answer_reveal_prompt_count'")
+                settings = self.ok(await self.client.get('/soup/api/game/public-settings', headers=self.headers(101)))
+                self.assertEqual(settings['answer_reveal_prompt_count'], 50)
+                rid = await self.create(201 if missing else 101)
+                await self.seed_asks(rid, 49)
+                self.assertNotIn('answer_reveal_prompt', await self.status(rid))
+                await self.seed_asks(rid, 1)
+                result = await self.status(rid)
+                self.assertEqual(result['answer_reveal_prompt']['ask_count'], 50)
+                self.assertIn('50 题查看门槛', result['answer_reveal_prompt']['message'])
+                self.assertNotIn('answer_reveal_prompt', await self.status(rid))
+
+    async def test_startup_preserves_existing_threshold(self):
+        await database.execute("UPDATE settings SET value='100' WHERE key='answer_reveal_prompt_count'")
+        await database.init_db()
+        self.assertEqual(await database.get_setting('answer_reveal_prompt_count'), '100')
+        settings = self.ok(await self.client.get('/soup/api/game/public-settings', headers=self.headers(101)))
+        self.assertEqual(settings['answer_reveal_prompt_count'], 100)
 
     async def test_reveal_custom_threshold(self):
         await database.execute("UPDATE settings SET value='7' WHERE key='answer_reveal_prompt_count'")
@@ -154,7 +181,7 @@ asyncio.run(main())
 
     async def test_reveal_disabled_for_nonpositive_threshold(self):
         rid = await self.create()
-        await self.seed_asks(rid, 101)
+        await self.seed_asks(rid, 51)
         for trigger in [0, -7]:
             await database.execute("UPDATE settings SET value=? WHERE key='answer_reveal_prompt_count'", (str(trigger),))
             response = await self.mcp('reveal_answer', rid, 102)
@@ -164,7 +191,7 @@ asyncio.run(main())
 
     async def test_reveal_idempotency_survives_later_threshold_changes(self):
         rid = await self.create()
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         self.assertTrue(self.ok(await self.mcp('reveal_answer', rid, 102))['answer_revealed'])
         before = await database.fetch_all('SELECT * FROM room_answer_reveals')
         for trigger in [200, 0, -1]:
@@ -175,7 +202,7 @@ asyncio.run(main())
     async def test_finished_room_keeps_existing_reveal_rejection(self):
         rid = await self.create()
         await database.execute("UPDATE rooms SET status='finished' WHERE id=?", (rid,))
-        for trigger in [100, 0]:
+        for trigger in [50, 0]:
             await database.execute("UPDATE settings SET value=? WHERE key='answer_reveal_prompt_count'", (str(trigger),))
             response = await self.mcp('reveal_answer', rid, 102)
             self.assertEqual(response.status_code, 400)
@@ -184,7 +211,7 @@ asyncio.run(main())
 
     async def test_reveal_independent_idempotent_and_locks_all_participation(self):
         rid = await self.create(102)
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         other = await self.create(103)
         nid = self.ok(await self.mcp('note_add', rid, 102, content='自己的笔记'))['id']
         lid = await self.hint(rid)
@@ -268,7 +295,7 @@ asyncio.run(main())
 
     async def test_obsolete_ask_parameters_are_rejected_without_gameplay_side_effects(self):
         rid = await self.create()
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         lid = await self.hint(rid)
         cases = [({'confirm_reveal': value}, 'reveal_answer') for value in [True, False, None]]
         for name in ['auto_hint_log_id', 'accept_auto_hint_log_id', 'reject_auto_hint_log_id']:
@@ -354,6 +381,6 @@ asyncio.run(main())
         self.assertEqual((await database.fetch_one('PRAGMA integrity_check'))['integrity_check'], 'ok')
         self.assertEqual(await database.fetch_all('PRAGMA foreign_key_check'), [])
         self.assertEqual((await database.fetch_one('SELECT accepted FROM room_hint_views WHERE log_id=?', (lid,)))['accepted'], 0)
-        await self.seed_asks(rid, 100)
+        await self.seed_asks(rid, 50)
         self.assertIn('answer_reveal_prompt', await self.status(rid))
         self.assertNotIn('answer_reveal_prompt', await self.status(rid))

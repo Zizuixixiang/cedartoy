@@ -486,5 +486,5 @@ async def public_settings(player: dict = Depends(current_player)):
     del player
     return {
         "generate_cooldown_seconds": int(await get_setting("generate_cooldown_seconds", "5")),
-        "answer_reveal_prompt_count": int(await get_setting("answer_reveal_prompt_count", "100")),
+        "answer_reveal_prompt_count": int(await get_setting("answer_reveal_prompt_count", "50")),
     }

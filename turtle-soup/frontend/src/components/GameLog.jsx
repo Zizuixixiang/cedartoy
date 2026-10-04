@@ -3,7 +3,7 @@ import { Bot } from 'lucide-react'
 import JudgeBadge from './JudgeBadge.jsx'
 import { formatDbDateTime, formatDbLogClock, formatDbTime } from '../utils/display.js'
 
-function HintBanner({ log, answerRevealPromptCount = 100, readOnly = false }) {
+function HintBanner({ log, answerRevealPromptCount = 50, readOnly = false }) {
   const hintText = log.hint_text || ''
   const requester = log.username || (log.player_id ? `游客${log.player_id}` : '')
 
@@ -15,7 +15,7 @@ function HintBanner({ log, answerRevealPromptCount = 100, readOnly = false }) {
   )
 }
 
-function AutoHintBanner({ log, special = false, accepted, onAccept, onReject, answerRevealPromptCount = 100, readOnly = false }) {
+function AutoHintBanner({ log, special = false, accepted, onAccept, onReject, answerRevealPromptCount = 50, readOnly = false }) {
   const hintText = log.hint_text || log.content
   if (special || accepted) {
     return (
@@ -127,7 +127,7 @@ function saveHintDecisions(roomId, obj) {
   localStorage.setItem(`hint_decisions_${roomId}`, JSON.stringify(obj))
 }
 
-export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCount = 100, readOnly = false }) {
+export default function GameLog({ logs, roomId, roomStatus, answerRevealPromptCount = 50, readOnly = false }) {
   const ordered = sortLogs(logs)
   const [hintDecisions, setHintDecisions] = useState(() => loadHintDecisions(roomId))
   useEffect(() => {

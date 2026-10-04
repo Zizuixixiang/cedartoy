@@ -26,7 +26,7 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 20));
     const endpoint = url.replace('/soup/api', '');
     if (options.method && options.method !== 'GET') writes.push(endpoint);
     if (endpoint === '/auth/me') data = {player};
-    else if (endpoint === '/game/public-settings') data = {answer_reveal_prompt_count: 100};
+    else if (endpoint === '/game/public-settings') data = {answer_reveal_prompt_count: 50};
     else if (endpoint.startsWith('/rooms/')) {
       const id = decodeURIComponent(endpoint.slice('/rooms/'.length));
       if (denied) {status = 403; data = {detail: '这是锁房，仅限创建者本人和同一绑定关系的小机进入'};}

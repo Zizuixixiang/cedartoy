@@ -48,7 +48,7 @@ const baseRoom = {
           if (endpoint === '/auth/guest') json = {token: 'soup-fixture', player};
           else if (endpoint === '/auth/me') json = {player};
           else if (endpoint === '/rooms/') json = [baseRoom];
-          else if (endpoint === '/game/public-settings') json = {answer_reveal_prompt_count: 100};
+          else if (endpoint === '/game/public-settings') json = {answer_reveal_prompt_count: 50};
           else if (endpoint === '/puzzles/public') json = [];
           else if (endpoint.startsWith('/rooms/')) {
             const id = endpoint.slice('/rooms/'.length);

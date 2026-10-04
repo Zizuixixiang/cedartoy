@@ -131,7 +131,7 @@ class TurtleMcpTests(unittest.TestCase):
             'ask': 'room_id, content -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；返回本次结果和新日志 logs_since_last_own_action。',
             'hint_request': 'room_id -> 主动请求提示，直接返回；每玩家每房最多3次。',
             'view_auto_hint': 'room_id, log_id -> 查看收到的自动提示；通知只出现一次。',
-            'reveal_answer': '达到汤底查看门槛后，传 room_id 查看；查看后不能再进入或操作本房间。',
+            'reveal_answer': '达到当前查看门槛（默认 50 题）后，传 room_id 查看；查看后不能再进入或操作本房间。',
             'status': 'room_id, log_limit(可选) -> 查看完整汤面和最新 N 条日志；自动提示和汤底资格只通知一次；未查看自动提示不泄露正文。',
         }
         for action, description in expected.items():

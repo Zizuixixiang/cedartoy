@@ -39,7 +39,7 @@ fs.mkdirSync(output, {recursive: true});
           if (req.method() !== 'GET') writes.push(endpoint);
           if (endpoint === '/auth/me') json = {player: player()};
           else if (endpoint === '/game/ask-quota') json = quota();
-          else if (endpoint === '/game/public-settings') json = {answer_reveal_prompt_count: 100};
+          else if (endpoint === '/game/public-settings') json = {answer_reveal_prompt_count: 50};
           else if (endpoint.startsWith('/rooms/')) json = {
             id: 'QUOTA123', title: '电梯与雨伞', surface: '男人每天坐电梯到十楼，再爬楼梯回家。下雨时却能直接回家。为什么？', tags: '日常',
             status: 'playing', created_by: 7, active_players: 2, ask_count: 100,

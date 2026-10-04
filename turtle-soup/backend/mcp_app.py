@@ -365,7 +365,7 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
-        trigger = int(await get_setting("answer_reveal_prompt_count", "100"))
+        trigger = int(await get_setting("answer_reveal_prompt_count", "50"))
         if trigger <= 0:
             raise HTTPException(status_code=400, detail="查看汤底功能当前未开放。")
         row = await fetch_one(
@@ -436,7 +436,7 @@ async def _room_context(room_id: str, log_limit: int | None = None, player: dict
 async def _answer_reveal_prompt(room_id: str, player_id: int | None) -> dict | None:
     if player_id is None:
         return None
-    trigger = int(await get_setting("answer_reveal_prompt_count", "100"))
+    trigger = int(await get_setting("answer_reveal_prompt_count", "50"))
     if trigger <= 0:
         return None
     db = await get_db()
