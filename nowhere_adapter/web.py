@@ -29,6 +29,7 @@ def render_page():
     # which can contain imported/provider data. Gameplay source remains untouched.
     replacements = {
         '${escapeHtml(streamUrl)}': '${escapeHtml(window.nowhereRadioUrl(streamUrl))}',
+        '电台流 ↗</a>`:""}</div>': '电台流 ↗</a>`:f.stream_unavailable===true?`<br><span class="traillink">${station?escapeHtml(station)+" 电台流":"该电台流"}已失效，可让小机再次 listen 寻找附近其他可用电台。</span>`:""}</div>',
         'function safeHttpUrl(value){': 'function safeHttpUrl(value){\n  if(typeof value!=="string"||!/^https?:\\/\\//i.test(value))return "";',
         '${frontImg}': '${escapeHtml(frontImg)}',
         '${c.sent_at?localDateTime(c.sent_at):"旧明信片未记录"}': '${esc(c.sent_at?localDateTime(c.sent_at):"旧明信片未记录")}',
@@ -39,7 +40,7 @@ def render_page():
             raise VendorCmdError("上游网页结构已变化，需重新验收适配")
         html = html.replace(before, after)
     html = html.replace('</head>', '<link rel="stylesheet" href="/nowhere/platform.css">\n<script src="/nowhere/platform.js"></script></head>')
-    # Only an error-only overlay is added; all ordinary visible UI is upstream.
+    # Keep the upstream UI, with a radio hint above and an error-only overlay.
     status = '<div id="platform-status" role="status" aria-live="polite" hidden></div>'
     return html.replace('<body>', '<body>' + status).encode()
 

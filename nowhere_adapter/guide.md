@@ -22,6 +22,9 @@ open_door、continue_journey、walk、listen、look_around、ask、mark、marks�
 
 平台补接上游已有 `send_postcard(text)` 实现，以及 `switch_journey(place)`（已有旅程名或 slug）；另有 new、schema、export、import。
 
+- `say(text)`：旅者在当前旅程说一句话，保存为本旅程的“原话”，可用 `quotes` 回看。
+- `send_postcard(text)`：寄一张给绑定人类看的明信片，出现在该存档的人类旁观页明信片墙，可由人类查看和回复。
+
 例如：
 - `play(game="nowhere", action="mark", params={"name":"出发点","note":"想再回来"})`
 - `play(game="nowhere", action="send_postcard", params={"text":"这里的风很轻。"})`

@@ -326,7 +326,20 @@ class PlatformTests(TemporaryStores):
             if ua:
                 self.assertIn("distance_km", params["properties"])
             else:
-                self.assertEqual(set(params["properties"]), {"slot"})
+                self.assertEqual(set(params["properties"]), {"slot", "command"})
+
+    def test_guide_and_schema_explain_say_and_send_postcard(self):
+        guide = json.loads(server._tool_get_guide({"game": "nowhere"}))["guide"]
+        actions = {item["name"]: item for item in handler.play({"player_id": "101", "action": "schema"})["actions"]}
+        for action, phrases in {
+            "say": ("旅者", "当前旅程", "保存", "本旅程的“原话”", "quotes", "回看"),
+            "send_postcard": ("寄一张", "绑定人类", "该存档", "人类旁观页明信片墙", "查看和回复"),
+        }.items():
+            guide_line = next(line for line in guide.splitlines() if line.startswith(f"- `{action}(text)`："))
+            for source, description in (("guide", guide_line), ("schema", actions[action]["description"])):
+                with self.subTest(action=action, source=source):
+                    for phrase in phrases:
+                        self.assertIn(phrase, description)
 
     def test_root_mcp_path_and_bearer_override_forged_identity_and_slots(self):
         patches = [patch.object(server, "_current_account", return_value={"id": 101, "is_ai": True, "username": "test"}),
@@ -429,16 +442,17 @@ class WebTests(TemporaryStores):
         self.assertEqual(self.call('/nowhere/radio?player=101:2&url=https://radio.test/fip',extra_headers={'X-Forwarded-Proto':'http'}).status,426)
         self.assertEqual(self.call('/nowhere/radio?player=101:2&url=https://radio.test/fip',method='POST').status,404)
 
-    def test_main_page_retains_upstream_markup_with_only_security_bridge(self):
+    def test_main_page_retains_upstream_markup_with_security_bridge_and_radio_hint(self):
         original = (web.STATIC / "index.html").read_text()
         rendered = web.render_page().decode()
         self.assertNotIn("platform-credit", rendered)
         # An exact document comparison limits the adapter to these security
-        # escapes, bridge assets and the hidden error-only status element.
+        # escapes, radio hint, bridge assets and hidden error-only status element.
         restored = rendered.replace('<link rel="stylesheet" href="/nowhere/platform.css">\n<script src="/nowhere/platform.js"></script>', '')
         restored = restored.replace('<div id="platform-status" role="status" aria-live="polite" hidden></div>', '')
         restored = restored.replace('${escapeHtml(frontImg)}', '${frontImg}')
         restored = restored.replace('${escapeHtml(window.nowhereRadioUrl(streamUrl))}', '${escapeHtml(streamUrl)}')
+        restored = restored.replace('电台流 ↗</a>`:f.stream_unavailable===true?`<br><span class="traillink">${station?escapeHtml(station)+" 电台流":"该电台流"}已失效，可让小机再次 listen 寻找附近其他可用电台。</span>`:""}</div>', '电台流 ↗</a>`:""}</div>')
         restored = restored.replace('${esc(c.sent_at?localDateTime(c.sent_at):"旧明信片未记录")}', '${c.sent_at?localDateTime(c.sent_at):"旧明信片未记录"}')
         restored = restored.replace('${esc(st.elevation!=null?"海拔 "+st.elevation+"m":"")} ${esc(st.weather||"")}', '${st.elevation!=null?"海拔 "+st.elevation+"m":""} ${st.weather||""}')
         restored = restored.replace('function safeHttpUrl(value){\n  if(typeof value!=="string"||!/^https?:\\/\\//i.test(value))return "";', 'function safeHttpUrl(value){')

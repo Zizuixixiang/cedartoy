@@ -67,6 +67,8 @@ def enrich_history(body, saved):
         if isinstance(item, dict) and (is_dead(item.get('station'))
                                       or stream_is_dead(item.get('stream_url'), dead_urls)):
             # Response only: retain the user's historical text/station metadata.
+            if item.get('stream_url'):
+                item['stream_unavailable'] = True
             item.pop('stream_url', None)
             continue
         # Preserve listen fields (including its station) exactly. Malformed

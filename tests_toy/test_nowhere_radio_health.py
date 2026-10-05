@@ -2,12 +2,14 @@
 import asyncio
 from collections import OrderedDict
 import copy
+import json
+import subprocess
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from nowhere_adapter import history, radio, radio_health, radio_state
-from tests_toy.test_nowhere import TemporaryStores, archive, storage, web
+from tests_toy.test_nowhere import ROOT, TemporaryStores, archive, storage, web
 
 JORDAN = {'name': 'Radio Jordan', 'country': 'JO',
           'homepage': 'https://jrtv.gov.jo',
@@ -24,10 +26,13 @@ class HealthTests(TemporaryStores):
         saved = archive('Amman')
         state = saved['files']['journey.json']
         state.update(radio_station=JORDAN, radio_pos=[31, 35], last_env={'radio': JORDAN, 'weather': 'keep'})
-        items = [{'place': 'Amman', 'text': 'walk'}, {'text': 'listen', 'stream_url': JORDAN['stream_url']}]
+        items = [{'place': 'Amman', 'text': 'walk'},
+                 {'text': 'listen', 'stream_url': JORDAN['stream_url'], 'station': {'name': 'Radio Jordan'}}]
         saved['files']['footprints.json'] = {'items': items}
         before = copy.deepcopy(saved)
         self.put('guest:radiohealth', saved)
+        save_path = storage.ROOT / 'guest:radiohealth/save.json'
+        save_bytes = save_path.read_bytes()
         with patch.object(radio, 'open_stream', side_effect=AssertionError('read must not probe')):
             cleaned = radio_state.clear_dead_radio(state)
             self.assertIsNone(cleaned['radio_station'])
@@ -35,10 +40,13 @@ class HealthTests(TemporaryStores):
             self.assertEqual(cleaned['last_env'], {'radio': None, 'weather': 'keep'})
             output = history.enrich_history({'footprints': items}, saved)
             self.assertTrue(all('stream_url' not in item for item in output['footprints']))
+            self.assertEqual(output['footprints'], [items[0], {
+                'text': 'listen', 'station': {'name': 'Radio Jordan'}, 'stream_unavailable': True}])
             with self.assertRaises(radio.RadioError):
                 radio.authorize('guest:radiohealth', JORDAN['stream_url'] + '#fragment')
         self.assertEqual(saved, before)
         self.assertEqual(storage.read('guest:radiohealth'), before)
+        self.assertEqual(save_path.read_bytes(), save_bytes)
 
     def test_only_200_audio_passes_and_failures_hide_cached_links(self):
         saved = archive()
@@ -65,7 +73,55 @@ class HealthTests(TemporaryStores):
                         response.close.assert_called_once()
                         with self.assertRaises(radio.RadioError):
                             radio.authorize('guest:radiohealth', LIVE['stream_url'])
-                        self.assertNotIn('stream_url', history.enrich_history({'footprints': saved['files']['footprints.json']['items']}, saved)['footprints'][0])
+                        self.assertEqual(history.enrich_history({'footprints': saved['files']['footprints.json']['items']}, saved)['footprints'][0], {'stream_unavailable': True})
+
+    def test_history_radio_hint_and_live_proxy_link_in_rendered_trail(self):
+        ert = 'https://radiostreaming.ert.gr/ert-proto'
+        items = [
+            {'text': '听过约旦电台', 'stream_url': JORDAN['stream_url'], 'station': {'name': 'Radio Jordan'}},
+            {'text': '听见希腊电台', 'stream_url': ert, 'station': {'name': 'ERT Proto'}},
+            {'text': '沿街散步'},
+        ]
+        radio_state.remember_health(ert, True)
+        output = history.enrich_history({'footprints': items}, archive())
+        self.assertEqual(output['footprints'][1:], items[1:])
+        script = r'''
+const assert = require('node:assert/strict');
+const {JSDOM} = require('jsdom');
+const {page, bridge, history} = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+const dom = new JSDOM(page, {url:'https://nowhere.test/nowhere/?player=101%3A2', runScripts:'outside-only'});
+const w = dom.window;
+w.fetch = async () => {throw new Error('no network expected');};
+w.eval(bridge);
+w.$ = id => w.document.getElementById(id);
+w.escapeHtml = text => {const node=w.document.createElement('span');node.textContent=text;return node.innerHTML;};
+w.eval(page.slice(page.indexOf('const ACTION_ZH='), page.indexOf('function frontHTML(')));
+w.renderTrail(history.footprints);
+const rows = w.document.querySelectorAll('.trailitem');
+assert.equal(rows.length, 3);
+assert(rows[0].textContent.includes('听过约旦电台'));
+assert(rows[0].textContent.includes('Radio Jordan 电台流已失效，可让小机再次 listen 寻找附近其他可用电台。'));
+assert.equal(rows[0].querySelectorAll('[href]').length, 0);
+assert(!rows[0].innerHTML.includes('jrtv.gov.jo'));
+const link = rows[1].querySelector('a');
+assert.equal(link.textContent, '打开 ERT Proto电台流 ↗');
+const url = new URL(link.href);
+assert.equal(url.origin, 'https://nowhere.test');
+assert.equal(url.pathname, '/nowhere/radio');
+assert.equal(url.searchParams.get('player'), '101:2');
+assert.equal(url.searchParams.get('url'), history.footprints[1].stream_url);
+for (const row of [rows[1], rows[2]]) assert(!row.textContent.includes('已失效'));
+assert.equal(rows[2].querySelectorAll('.traillink, [href]').length, 0);
+// Imported station names remain text in the new hint.
+w.renderTrail([{text:'old', station:{name:'<img src=x onerror=alert(1)>'}, stream_unavailable:true}]);
+assert.equal(w.document.querySelectorAll('#traillist img').length, 0);
+dom.window.close();
+'''
+        result = subprocess.run(['node', '-e', script], cwd=ROOT, text=True, timeout=20,
+                                input=json.dumps({'page': web.render_page().decode(),
+                                                  'bridge': (web.ASSETS / 'platform.js').read_text(),
+                                                  'history': output}), capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_cache_expiry_and_size_are_bounded(self):
         with patch.object(radio_state.time, 'monotonic', return_value=0):
