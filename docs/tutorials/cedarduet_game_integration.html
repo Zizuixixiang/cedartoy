@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="给桌游作者的一份温和接入建议：了解 CedarDuet 已有的平台能力，保留自己的玩法，通过薄适配让朋友与小机一起入座。">
+  <title>CedarDuet 新游戏接入建议</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #F7F3EA;
+      --paper: #FFFDF8;
+      --ink: #1F221F;
+      --muted: #62685F;
+      --line: #D8D2C7;
+      --sage: #74856F;
+      --sage-ink: #4C6046;
+      --sage-soft: #E9EEE6;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); scroll-padding-top: 24px; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font: 16px/1.85 "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-wrap: anywhere;
+    }
+    a { color: var(--sage-ink); text-underline-offset: 4px; }
+    a:hover { text-decoration-thickness: 2px; }
+    a:focus-visible, summary:focus-visible { outline: 2px solid var(--sage-ink); outline-offset: 4px; border-radius: 3px; }
+    .skip { position: absolute; left: 16px; top: -100px; padding: 10px 16px; background: var(--paper); z-index: 1; }
+    .skip:focus { top: 12px; }
+    .paper { max-width: 960px; margin: 32px auto; padding: 54px 70px 36px; background: var(--paper); border: 1px solid var(--line); }
+    .masthead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+    .masthead span, .eyebrow, .meta { font-size: 13px; color: var(--muted); }
+    .masthead strong { font-size: 14px; color: var(--sage-ink); letter-spacing: .04em; }
+    h1, h2 { font-family: "Noto Serif CJK SC", "Songti SC", serif; line-height: 1.4; text-wrap: balance; }
+    h1 { font-size: clamp(30px, 5vw, 44px); margin: 32px 0 20px; letter-spacing: -.5px; }
+    h1 span { display: block; }
+    h2 { font-size: 26px; margin: 6px 0 18px; }
+    h3 { font-size: 17px; line-height: 1.6; margin: 0 0 6px; }
+    p { margin: 10px 0; }
+    .lead { font-size: 17px; line-height: 1.9; }
+    .eyebrow { color: var(--sage-ink); font-weight: 700; letter-spacing: .06em; margin: 0; }
+    .toc { margin-top: 26px; padding: 18px 22px; background: var(--bg); border-radius: 12px; }
+    .toc p { margin: 0 0 6px; font-size: 14px; color: var(--muted); }
+    .toc ol { display: grid; grid-template-columns: 1fr 1fr; list-style: none; margin: 0; padding: 0; gap: 0 24px; }
+    .toc a { display: flex; align-items: center; min-height: 44px; font-size: 14px; }
+    section { margin-top: 42px; padding-top: 32px; border-top: 1px solid var(--line); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 32px; margin-top: 22px; }
+    .grid p { margin: 0; }
+    .note { margin-top: 22px; padding: 18px 22px; border-left: 3px solid var(--sage); background: var(--sage-soft); border-radius: 0 12px 12px 0; }
+    .note p { margin: 0; }
+    .suggestions { margin: 18px 0 0; padding-left: 1.4em; }
+    .suggestions li { padding-left: 4px; margin: 12px 0; }
+    .steps { list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0; margin: 22px 0; }
+    .steps li { counter-increment: step; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+    .steps li::before { content: "0" counter(step); display: block; color: var(--sage-ink); font-size: 13px; margin-bottom: 6px; }
+    .steps strong { display: block; }
+    .steps span { font-size: 14px; color: var(--muted); }
+    code, pre { font-family: "Noto Sans Mono CJK SC", "SFMono-Regular", Consolas, monospace; }
+    code { font-size: .88em; }
+    p code, dd code, li code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+    .interface { margin: 20px 0; }
+    .interface > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px 24px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+    dt { font-weight: 700; }
+    dd { margin: 0; }
+    .codebox { background: var(--bg); border: 1px solid var(--line); padding: 18px 22px; border-radius: 12px; margin-top: 20px; }
+    .codebox p { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; margin: 0; }
+    pre code { font-size: inherit; }
+    details { border: 1px solid var(--line); border-radius: 12px; margin-top: 20px; padding: 0 20px; }
+    summary { cursor: pointer; padding: 14px 0; font-weight: 700; }
+    details .interface { margin: 0 0 16px; }
+    details .interface > div:last-child { border-bottom: 0; }
+    .references { list-style: none; padding: 0; margin: 20px 0; }
+    .references li { margin: 20px 0; }
+    .references p { margin: 4px 0; }
+    .file-link { font-size: 14px; }
+    footer { margin-top: 36px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 24px; font-size: 13px; color: var(--muted); }
+    footer a { display: inline-flex; align-items: center; min-height: 44px; }
+    @media (max-width: 640px) {
+      .paper { margin: 0; padding: 28px 24px; border: 0; }
+      h2 { font-size: 23px; }
+      .lead { font-size: 16px; }
+      .toc { padding: 16px; }
+      .toc ol, .grid, .steps { grid-template-columns: 1fr; }
+      .grid { gap: 20px; }
+      section { margin-top: 32px; padding-top: 26px; }
+      .interface > div { grid-template-columns: 1fr; gap: 4px; }
+      .note, .codebox { padding: 16px; }
+      details { padding: 0 16px; }
+    }
+    @media print {
+      html, body { background: white; }
+      .paper { max-width: none; margin: 0; padding: 0; border: 0; }
+      .skip, .toc, footer a { display: none; }
+      h2, h3, dt { break-after: avoid; }
+      .note, .codebox, .steps li { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#content">跳到正文</a>
+  <main class="paper" id="top">
+    <header>
+      <div class="masthead"><strong>CedarDuet · 双弈</strong><span>写给做桌游的你</span></div>
+      <h1><span>CedarDuet</span>新游戏接入建议</h1>
+      <p class="lead">如果你正在做一款桌游，并且愿意把它接入 CedarDuet，下面整理了一些目前比较容易适配的方式。游戏不需要为了双弈改成固定架构，保留自己的玩法和设计就好。如果愿意让状态、动作和存档稍微清晰一些，后续接入会顺利很多。</p>
+      <p class="meta">这是一份合作时的参考，不是强制 SDK 规范。还在原型阶段，也可以先从规则说明和一局能跑通的例子开始。</p>
+      <nav class="toc" aria-label="本页目录">
+        <p>按你关心的部分阅读</p>
+        <ol>
+          <li><a href="#platform">A · 平台已经提供什么</a></li>
+          <li><a href="#author">B · 作者可以说明什么</a></li>
+          <li><a href="#invite">01 · 邀请朋友一起入座</a></li>
+          <li><a href="#interface">02 · 目前的 GamePlugin 接口</a></li>
+          <li><a href="#adaptation">03 · 原有游戏怎样接过来</a></li>
+          <li><a href="#examples">04 · 按复杂度选参考</a></li>
+        </ol>
+      </nav>
+    </header>
+
+    <div id="content">
+      <section id="platform" aria-labelledby="platform-title">
+        <p class="eyebrow">A / 双弈已经有的能力</p>
+        <h2 id="platform-title">桌子已经摆好，带来你的玩法就好</h2>
+        <p>CedarDuet 已有通用房间框架。下面这些能力通常可以在接入时复用，作者不用再为自己的游戏搭一套联机大厅。</p>
+        <div class="grid">
+          <div><h3>普通房与邀请房</h3><p>支持普通房、邀请房、邀请码与邀请链接，以及房主开局和房间生命周期。人类朋友、绑定小机可以按游戏支持的人数混合组桌。</p></div>
+          <div><h3>同桌交流与房间状态</h3><p>聊天、@ 提及、参与者和当前行动状态由公共框架承接，不必每款游戏重新设计一套房间交互。</p></div>
+          <div><h3>补位与临时托管</h3><p>游戏允许时可用 NPC 补位；支持的房间还可启用超时托管，玩家回来后通过收回控制权恢复本人操作。具体是否可用取决于游戏能力和房间设置。</p></div>
+          <div><h3>身份、存档与公共入口</h3><p>官方接入链路已有身份鉴权、SQLite 持久化与房间恢复、MCP 外层协议和 Web 公共框架。游戏专属棋盘与操作展示可再做对应适配。</p></div>
+        </div>
+        <aside class="note"><p><strong>平台保存一局，游戏解释一局。</strong>框架负责把状态保存下来；哪些字段足以恢复玩法、哪些信息可以展示给谁，由游戏规则和适配层一起明确。</p></aside>
+      </section>
+
+      <section id="author" aria-labelledby="author-title">
+        <p class="eyebrow">B / 如果方便，可以提前说清楚</p>
+        <h2 id="author-title">让一局游戏能被读懂、推进和接续</h2>
+        <p>这里说的是能力，不规定函数名。文档、现有命令、接口或一段可运行示例，都可以帮助我们理解你的游戏。</p>
+        <ul class="suggestions">
+          <li><strong>怎样开始。</strong>怎么创建一局，支持哪些人数，推荐几人，开局前有哪些选择或准备。</li>
+          <li><strong>现在发生了什么。</strong>如何读取当前状态，处于哪个阶段，轮到谁行动；若有抢答、响应或多人确认，也可以按自己的规则描述。</li>
+          <li><strong>下一步怎么做。</strong>一次操作如何表达、如何执行，什么情况下无效，以及执行后状态如何变化。</li>
+          <li><strong>怎样结束。</strong>什么时候算终局，如何判断胜负、平局、并列或团队结果。</li>
+          <li><strong>怎样接着玩。</strong>如何保存和恢复；除了棋盘，待处理动作、牌堆顺序、阶段进度等会影响后续玩法的内容，也适合随状态保存。</li>
+          <li><strong>谁能看到什么。</strong>有隐藏信息时，区分全桌公开、仅本人可见，以及按规则揭晓后才公开的内容。</li>
+        </ul>
+        <div class="note">
+          <h3>动作可以保留自己的表达方式</h3>
+          <p>如果动作适合枚举，提供 legal actions（当前合法动作）会很方便。但自由指令、叙事型玩法或特殊阶段，可以保留自己的 command / action，我们在适配层转换即可；不必为了接入把所有选择硬列成按钮。</p>
+        </div>
+        <p>随机结果最好由游戏核心产生并记录，例如掷骰、发牌或抽取事件，而不是只靠网页临时生成。核心玩法若也能通过函数、命令或接口推进，AI / MCP 接入会更轻松；如果只能点击网页按钮，适配成本通常会高一些。</p>
+      </section>
+
+      <section id="invite" aria-labelledby="invite-title">
+        <p class="eyebrow">01 / 邀请联机是平台能力</p>
+        <h2 id="invite-title">朋友和小机，坐到同一桌</h2>
+        <p>接入后的游戏通常可以直接复用邀请房：平台处理邀请入口、入座和开局流程，作者不用实现邀请码服务或另造联机大厅。</p>
+        <ol class="steps" aria-label="平台邀请流程">
+          <li><strong>创建邀请房</strong><span>选游戏与人数，设置房间</span></li>
+          <li><strong>分享邀请</strong><span>朋友通过邀请码或链接入座</span></li>
+          <li><strong>房主开局</strong><span>达到开局条件，一起开始玩</span></li>
+        </ol>
+        <p>作者主要可以帮助说明游戏自身的语义：<strong>支持人数与开局条件、当前行动者、有人离席或认输后能否继续，以及是否适合 NPC 参与。</strong>离席和认输在平台上是不同动作，适配时会分别结合游戏规则处理。</p>
+        <p class="meta">NPC 创建时补空座与超时临时托管是两种机制。托管是否开启、何时收回控制权，沿用平台流程；特殊阶段里哪些动作适合代行，可按游戏语义再讨论。</p>
+      </section>
+
+      <section id="interface" aria-labelledby="interface-title">
+        <p class="eyebrow">02 / 想看代码时，从这里开始</p>
+        <h2 id="interface-title">目前的 GamePlugin 长什么样</h2>
+        <p>以下来自当前 <a href="https://github.com/Zizuixixiang/cedarduet/blob/main/app/games/base.py">app/games/base.py</a>。这是双弈内部接插件的方式，可由适配层实现；不代表作者的原项目也要采用相同类名或结构。</p>
+        <dl class="interface">
+          <div><dt><code>game_type / display_name / category</code></dt><dd>游戏标识、显示名称与分类；分类默认是 <code>board</code>。</dd></div>
+          <div><dt><code>min_players / max_players</code><br><code>allowed_player_counts</code><br><code>recommended_players</code></dt><dd>人数范围、可选的离散人数集合与推荐人数。当前框架接受 2–6 人；未声明集合时按最小至最大人数推导，默认双人。</dd></div>
+          <div><dt><code>rules_text / move_format</code></dt><dd>给玩家和小机看的规则，以及动作参数的说明。</dd></div>
+          <div><dt><code>initial_state()</code></dt><dd>创建并返回初始状态字典。</dd></div>
+          <div><dt><code>validate_move(state, move, mark)</code></dt><dd>检查动作；合法时正常返回，无效动作以异常说明原因。井字棋使用 <code>ValueError</code>。</dd></div>
+          <div><dt><code>apply_move(state, move, mark)</code></dt><dd>执行已经校验的动作，返回更新后的状态字典。</dd></div>
+          <div><dt><code>check_winner(state)</code></dt><dd>基础双人约定返回 <code>"X"</code>、<code>"O"</code>、<code>"draw"</code> 或 <code>None</code>（尚未结束）；复杂结果另有扩展。</dd></div>
+        </dl>
+        <p class="meta">上面四个方法是当前基类的抽象方法。基础双人插件的 mark 是棋子标记 X / O；座位、行动者与轮转由房间框架衔接。保存与读取状态并不是这里额外要求的两个抽象方法。</p>
+        <div class="codebox">
+          <p>井字棋中的一次合法操作 · 仅演示规则调用，不是 HTTP / MCP 请求</p>
+          <pre><code>from app.games.tictactoe import TicTacToe
+
+game = TicTacToe()
+state = game.initial_state()
+move = {"row": 0, "col": 0}
+game.validate_move(state, move, "X")
+state = game.apply_move(state, move, "X")
+outcome = game.check_winner(state)  # 此时为 None</code></pre>
+        </div>
+        <details>
+          <summary>可选扩展：按玩法选用，不用每个都实现</summary>
+          <dl class="interface">
+            <div><dt>多人、阶段与结果</dt><dd><code>initialize(participants)</code>、<code>validate_action</code>、<code>apply_action</code> 和 <code>result_for</code> 可处理参与者语义；<code>MoveResult</code> 可表达保留行动权、下一行动者或结果。简单游戏可沿用默认桥接。</dd></div>
+            <div><dt>隐藏信息</dt><dd><code>public_state</code>、<code>private_state</code> 与 <code>project_event</code> 分开公开状态、本人私有状态和事件。默认公开投影会复制完整状态，因此有秘密信息的游戏接入时会专门处理这一层。</dd></div>
+            <div><dt>NPC</dt><dd><code>supports_npcs</code> 用于声明支持；<code>npc_legal_actions</code> 等方法提供决策所需内容。本地策略还可使用 <code>choose_local_npc_action</code>。这属于选用 NPC 时的适配，不要求所有游戏具备。</dd></div>
+            <div><dt>筹码结算</dt><dd>选用平台筹码时，再考虑 <code>supports_stakes</code>、<code>supports_multiplayer_stakes</code> 与 <code>settlement_deltas</code> 等扩展。游戏胜负与平台筹码可以分开；大富翁的局内现金就不兑换平台筹码。</dd></div>
+            <div><dt>MCP 投影</dt><dd><code>mcp_bootstrap_state</code>、<code>mcp_snapshot_state</code>、<code>mcp_private_state</code> 用来精简小机收到的内容，减少重复上下文。已有默认实现，可在确有需要时按游戏调整。</dd></div>
+          </dl>
+        </details>
+      </section>
+
+      <section id="adaptation" aria-labelledby="adaptation-title">
+        <p class="eyebrow">03 / 保留玩法，连接入口</p>
+        <h2 id="adaptation-title">中间加一层薄适配就可以</h2>
+        <p>在官方接入关系里，<strong>CedarToy 负责账号、绑定、可信身份与 MCP 聚合；CedarDuet 负责游戏规则、房间和状态。</strong>作者可以先看自己的游戏核心与双弈插件之间怎么连接，不用通读 CedarToy 整个仓库。</p>
+        <p>原项目已有状态对象、命令行或 action 接口，都可以优先复用。薄适配负责把平台参与者、动作和状态对接过去，保留原有玩法核心；网页则复用公共房间框架，再按游戏补充棋盘和操作展示。</p>
+        <aside class="note">
+          <h3>两个入口，含义不同</h3>
+          <p><code>POST /mcp/play</code> 是 CedarDuet 面向 AI 的普通 HTTP JSON 游戏接口，<strong>不是标准 MCP transport</strong>，不能直接把这个 URL 填成 MCP Server 地址。官方标准 MCP 由 CedarToy 聚合提供；本地 clone 可通过 <code>app.local_mcp</code> 使用 stdio MCP。</p>
+        </aside>
+        <p class="meta">入口关系见 <a href="https://github.com/Zizuixixiang/cedarduet/blob/main/README.md">CedarDuet README</a>；动作格式与身份说明见 <a href="https://github.com/Zizuixixiang/cedarduet/blob/main/docs/MCP_GUIDE.md">MCP_GUIDE.md</a>。准备接接口时再读即可。</p>
+      </section>
+
+      <section id="examples" aria-labelledby="examples-title">
+        <p class="eyebrow">04 / 找一份接近自己游戏的参考</p>
+        <h2 id="examples-title">从小例子开始，不必照着大富翁写</h2>
+        <ul class="references">
+          <li><h3>最小例子：井字棋</h3><p>一个公开棋盘、双方轮流行动、直接判胜。适合先看清四个基础方法怎样连成一局，没有必要先读复杂阶段机。</p><a class="file-link" href="https://github.com/Zizuixixiang/cedarduet/blob/main/app/games/tictactoe.py">阅读 app/games/tictactoe.py</a></li>
+          <li><h3>隐藏信息：吹牛骰子</h3><p>公开投影提供叫点、剩余骰数和已公开的上轮结果；私有投影只给当前查看者自己的骰子。适合理解同一份存档如何生成不同玩家的视角。</p><a class="file-link" href="https://github.com/Zizuixixiang/cedarduet/blob/main/app/games/liars_dice.py">阅读 app/games/liars_dice.py</a></li>
+          <li><h3>复杂桌游：大富翁</h3><p>可参考多人、掷骰、经营、拍卖、债务与交易等阶段，以及随机结果和中间进度如何保存。只有遇到相似复杂度时，再深入这些部分就好。</p><a class="file-link" href="https://github.com/Zizuixixiang/cedarduet/blob/main/app/games/monopoly.py">阅读 app/games/monopoly.py</a><span aria-hidden="true"> · </span><a class="file-link" href="https://github.com/Zizuixixiang/cedarduet/blob/main/docs/MONOPOLY.md">配套 docs/MONOPOLY.md</a></li>
+        </ul>
+        <aside class="note"><p>如果愿意开始聊接入，带上<strong>玩法说明、支持人数，以及一局从创建到结束的可运行例子</strong>，就很有帮助。接口还没整理好也没关系，我们可以从现有代码出发，一起找到合适的连接方式。</p></aside>
+      </section>
+    </div>
+    <footer><span>依据 2026-10-05 本地 CedarDuet 代码整理 · 接口随项目演进</span><a href="#top">回到开头 ↑</a></footer>
+  </main>
+</body>
+</html>
