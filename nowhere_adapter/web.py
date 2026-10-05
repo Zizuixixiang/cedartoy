@@ -28,6 +28,7 @@ def render_page():
     # Retain the actual upstream UI; narrowly escape upstream HTML interpolations
     # which can contain imported/provider data. Gameplay source remains untouched.
     replacements = {
+        '${escapeHtml(streamUrl)}': '${escapeHtml(window.nowhereRadioUrl(streamUrl))}',
         'function safeHttpUrl(value){': 'function safeHttpUrl(value){\n  if(typeof value!=="string"||!/^https?:\\/\\//i.test(value))return "";',
         '${frontImg}': '${escapeHtml(frontImg)}',
         '${c.sent_at?localDateTime(c.sent_at):"旧明信片未记录"}': '${esc(c.sent_at?localDateTime(c.sent_at):"旧明信片未记录")}',

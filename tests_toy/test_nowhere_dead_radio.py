@@ -71,13 +71,14 @@ class DeadRadioTests(TemporaryStores):
         before = source.read_bytes()
         self.run_worker_check(str(source))
         saved = json.loads(before)
+        bad_url = saved['files']['journey.json']['radio_station']['stream_url']
         items = saved['files'].get('footprints.json', {}).get('items', [])
         response = history.enrich_history({'footprints': items}, saved)
-        self.assertTrue(all(item.get('stream_url') != DEAD['stream_url']
+        self.assertTrue(all(item.get('stream_url') != bad_url
                             for item in response['footprints']))
         self.put('guest:deadradio', saved)
         with self.assertRaises(radio.RadioError):
-            radio.authorize('guest:deadradio', DEAD['stream_url'])
+            radio.authorize('guest:deadradio', bad_url)
         self.assertEqual(source.read_bytes(), before)
 
     def run_worker_check(self, source=''):
@@ -97,7 +98,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from nowhere_adapter.worker import Engine
 from nowhere_adapter import storage
-from nowhere_adapter.radio_state import clear_dead_radio
+from nowhere_adapter.radio_state import clear_dead_radio, is_dead
 
 async def check():
     engine = Engine('guest:deadradio')
@@ -116,7 +117,7 @@ async def check():
 
     if sys.argv[1]:
         saved = json.loads(Path(sys.argv[1]).read_text())
-        assert saved['files']['journey.json']['radio_station']['dead'] is True
+        assert is_dead(saved['files']['journey.json']['radio_station'])
     else:
         state = engine.state.WorldState().to_dict()
         state.update(pos=[30,31], place_name='Cairo', journey_slug='cairo',

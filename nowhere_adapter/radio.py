@@ -12,7 +12,7 @@ import threading
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from . import storage
-from .radio_state import clear_dead_radio, is_dead
+from .radio_state import clear_dead_radio, is_dead, stream_health, remember_health
 
 SLOTS = threading.BoundedSemaphore(8)
 CHUNK = 32768
@@ -93,7 +93,7 @@ def _dead_fallback_urls():
     # Read immutable data only, never import/patch upstream in the HTTP process.
     path = Path(__file__).resolve().parents[1] / 'vendor/nowhere/nowhere/data/radio_fallback.json'
     return tuple(station.get('stream_url') for station in json.loads(path.read_text(encoding='utf-8'))
-                 if is_dead(station))
+                 if station.get('dead') is True)
 
 
 def _radio_states(saved):
@@ -125,7 +125,7 @@ def _valid_url(url):
 
 
 def stream_is_dead(url, dead_urls):
-    return _valid_url(url) and canonical_url(url) in dead_urls
+    return _valid_url(url) and (canonical_url(url) in dead_urls or stream_health(url) is False)
 
 
 def persisted_streams(saved):
@@ -206,6 +206,7 @@ class PinnedConnection(http_client.HTTPConnection):
 
 
 def open_stream(url):
+    original_url = url
     for redirect in range(MAX_REDIRECTS + 1):
         parsed = parse_url(url)
         conn = PinnedConnection(parsed)
@@ -213,7 +214,7 @@ def open_stream(url):
             target = parsed.path or '/'
             if parsed.query:
                 target += '?' + parsed.query
-            conn.request('GET', target, headers={'Accept': 'audio/*, application/octet-stream',
+            conn.request('GET', target, headers={'Accept': 'audio/*',
                                                 'Accept-Encoding': 'identity', 'Connection': 'close'})
             response = conn.getresponse()
             if response.status in {301, 302, 303, 307, 308}:
@@ -225,10 +226,12 @@ def open_stream(url):
                 conn.close()
                 continue  # Revalidate scheme, all DNS answers and pinned IP at EVERY hop.
             mime = response.getheader('Content-Type', '').split(';', 1)[0].strip().lower()
-            if (response.status != 200 or not (re.fullmatch(r'audio/[a-z0-9!#$&^_.+-]+', mime) or mime == 'application/octet-stream')
+            if (response.status != 200 or not re.fullmatch(r'audio/[a-z0-9!#$&^_.+-]+', mime)
                     or response.getheader('Content-Encoding', 'identity').lower() != 'identity'):
                 response.close()
+                remember_health(original_url, False)
                 raise RadioError('电台未返回音频流')
+            remember_health(original_url, True)
             return conn, response, mime
         except BaseException:
             conn.close()

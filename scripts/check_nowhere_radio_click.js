@@ -10,6 +10,10 @@ async function checkRadioClick(page, mobile) {
   assert.equal(await radio.getAttribute('target'),'_blank');
   assert.equal(await radio.getAttribute('rel'),'noopener noreferrer');
   const href = await radio.getAttribute('href'), before = page.url();
+  const destination = new URL(href, before);
+  assert.equal(destination.origin, new URL(before).origin);
+  assert.equal(destination.pathname, '/nowhere/radio');
+  const upstream = destination.searchParams.get('url');
   if(process.env.NOWHERE_SCREENSHOTS){
     const fs=require('node:fs'),path=require('node:path');fs.mkdirSync(process.env.NOWHERE_SCREENSHOTS,{recursive:true});
     await page.screenshot({path:path.join(process.env.NOWHERE_SCREENSHOTS,`${page.viewportSize().width}-map.png`)});
@@ -21,7 +25,7 @@ async function checkRadioClick(page, mobile) {
   page.on('popup',countPopup);
   if (!mobile) {
     const [popup] = await Promise.all([page.waitForEvent('popup'),radio.click()]);
-    await popup.waitForURL(href);
+    await popup.waitForURL(destination.href);
     assert.equal(popups,1);
     await popup.close();
     assert.equal(page.url(),before);
@@ -32,14 +36,14 @@ async function checkRadioClick(page, mobile) {
     const url=new URL(page.url()), original=new URL(before);
     assert.equal(url.origin,original.origin);
     assert.equal(url.searchParams.get('player'),original.searchParams.get('player'));
-    assert.equal(url.searchParams.get('url'),href);
+    assert.equal(url.searchParams.get('url'),upstream);
     const audio=page.locator('audio');
     assert.equal(await audio.count(),1);
     const source=new URL(await audio.getAttribute('src'),page.url());
     assert.equal(source.origin,original.origin);
     assert.equal(source.pathname,'/nowhere/radio/stream');
     assert.equal(source.searchParams.get('player'),original.searchParams.get('player'));
-    const streamUrl=new URL(href);streamUrl.hash='';
+    const streamUrl=new URL(upstream);streamUrl.hash='';
     assert.equal(source.searchParams.get('url'),streamUrl.href);
     assert.equal((await streamResponse).status(),200);
     await page.waitForFunction(()=>document.querySelector('audio').readyState>=2);
@@ -91,7 +95,10 @@ async function checkHistoryRadio(page,mobile,origin) {
   assert((await links.count())>=5);
   for(const link of await links.all()) {
     assert.equal(await link.innerText(),'打开 FIP电台流 ↗');
-    assert.equal(await link.getAttribute('href'),href);
+    const destination=new URL(await link.getAttribute('href'),origin);
+    assert.equal(destination.origin,origin);
+    assert.equal(destination.pathname,'/nowhere/radio');
+    assert.equal(destination.searchParams.get('url'),href);
     assert.equal(await link.getAttribute('target'),'_blank');
     assert.equal(await link.getAttribute('rel'),'noopener noreferrer');
     assert(await link.evaluate(a=>a.parentElement.classList.contains('trailtext')&&a.previousElementSibling.tagName==='BR'));
@@ -127,7 +134,7 @@ async function checkHistoryRadio(page,mobile,origin) {
     await links.first().waitFor({state:'attached'});assert.equal(popups,0);
   }else{
     const [popup]=await Promise.all([page.waitForEvent('popup'),link.click()]);
-    await popup.waitForURL(href);await popup.close();assert.equal(page.url(),entry);assert.equal(popups,1);
+    await popup.waitForURL(u=>u.origin===origin&&u.pathname==='/nowhere/radio'&&u.searchParams.get('url')===href);await popup.close();assert.equal(page.url(),entry);assert.equal(popups,1);
     await page.locator('#trailback').click();
   }
   assert.equal(await page.locator('#trail.open').count(),0);
@@ -193,8 +200,7 @@ if (require.main === module) (async()=>{
       results.push({name:test.name,pickerEndpoint:'/api/nowhere/saves',...await checkRadioClick(page,test.mobile)});
       results.push({name:test.name,...await checkHistoryRadio(page,test.mobile,cfg.origin)});
       assert.deepEqual(await context.cookies(),before,'radio must not rotate credentials');
-      if(test.mobile)assert.deepEqual(mediaRequests,[],'mobile must not fetch the external stream directly');
-      else assert(mediaRequests.includes('document'),'desktop opens original URL');
+      assert.deepEqual(mediaRequests,[],'all devices must use the platform proxy');
       const denied=await page.evaluate(()=>fetch('/nowhere/radio?player=202&url=https://radio.example.test/fip.mp3').then(r=>r.status));
       assert.equal(denied,403);
       assert.deepEqual(errors,[]);

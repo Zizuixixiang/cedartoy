@@ -1,6 +1,9 @@
 /* Small same-origin bridge around the upstream observer UI. */
 (() => {
   const player = new URL(location.href).searchParams.get('player') || '';
+  // Rewrite the actual href as well: desktop, keyboard, middle-click and copy
+  // link must all go through the authenticated, MIME-checking radio proxy.
+  window.nowhereRadioUrl = stream => `/nowhere/radio?player=${encodeURIComponent(player)}&url=${encodeURIComponent(stream)}`;
   const nativeFetch = window.fetch.bind(window);
   const endpoints = /^\/(state|history|marks|sightings|postcards|messages|message|open_door|walk|listen|look_around|ask|postcard(?:\/\d+(?:\/reply)?)?|where_am_i|continue|mark|walk_to|wait)$/;
   const status = message => {
@@ -8,16 +11,16 @@
     if (node) { node.textContent = message; node.hidden = !message; }
   };
   document.addEventListener('click', event => {
-    // Desktop retains the author's _blank stream link.
+    // Mobile WebViews keep the platform player in the current tab.
     if (!matchMedia('(pointer: coarse)').matches ||
         !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return;
     const link = event.target.closest?.('#trail a.traillink');
     if (!link) return;
     let url;
     try { url = new URL(link.href); } catch (_) { return; }
-    if (!/^https?:$/.test(url.protocol)) return;
+    if (url.origin !== location.origin || url.pathname !== '/nowhere/radio') return;
     event.preventDefault();
-    location.assign(`/nowhere/radio?player=${encodeURIComponent(player)}&url=${encodeURIComponent(url.href)}`);
+    location.assign(url.href);
   });
   function privateImages(value) {
     if (!value || typeof value !== 'object') return value;

@@ -438,6 +438,7 @@ class WebTests(TemporaryStores):
         restored = rendered.replace('<link rel="stylesheet" href="/nowhere/platform.css">\n<script src="/nowhere/platform.js"></script>', '')
         restored = restored.replace('<div id="platform-status" role="status" aria-live="polite" hidden></div>', '')
         restored = restored.replace('${escapeHtml(frontImg)}', '${frontImg}')
+        restored = restored.replace('${escapeHtml(window.nowhereRadioUrl(streamUrl))}', '${escapeHtml(streamUrl)}')
         restored = restored.replace('${esc(c.sent_at?localDateTime(c.sent_at):"旧明信片未记录")}', '${c.sent_at?localDateTime(c.sent_at):"旧明信片未记录"}')
         restored = restored.replace('${esc(st.elevation!=null?"海拔 "+st.elevation+"m":"")} ${esc(st.weather||"")}', '${st.elevation!=null?"海拔 "+st.elevation+"m":""} ${st.weather||""}')
         restored = restored.replace('function safeHttpUrl(value){\n  if(typeof value!=="string"||!/^https?:\\/\\//i.test(value))return "";', 'function safeHttpUrl(value){')
@@ -454,10 +455,10 @@ class WebTests(TemporaryStores):
         rendered = web.render_page().decode()
         radio = '<a class="traillink" href="${escapeHtml(streamUrl)}" target="_blank" rel="noopener noreferrer">'
         self.assertEqual(original.count(radio), 1)
-        self.assertIn(radio, rendered)
+        self.assertIn(radio.replace('escapeHtml(streamUrl)', 'escapeHtml(window.nowhereRadioUrl(streamUrl))'), rendered)
         import re
         anchors = lambda text: re.findall(r'<a\s[^>]*>', text)
-        self.assertEqual(anchors(original), anchors(rendered))
+        self.assertEqual(anchors(original), anchors(rendered.replace('escapeHtml(window.nowhereRadioUrl(streamUrl))', 'escapeHtml(streamUrl)')))
         self.assertEqual(source.read_bytes(), before)
 
     def setUp(self):

@@ -18,7 +18,8 @@ import tempfile
 
 from . import shared, storage
 from .diagnostics import PUBLIC_ERROR, internal_error
-from .radio_state import clear_dead_radio, is_dead
+from .radio_state import clear_dead_radio
+from .radio_health import install as install_radio_health
 
 RUNTIME_KEYS = ("_postcard_counter", "_hint_counter", "_mishap_last_step", "_mishap_echoed_id")
 
@@ -38,10 +39,9 @@ class Engine:
         from nowhere import server, state, web
         self.server, self.state, self.web = server, state, web
         # Worker-only compatibility patch: keep upstream country/distance and
-        # online selection rules, but never offer explicitly dead fallbacks.
+        # online selection rules, but validate fallback streams before use.
         # No vendor file writes or upstream imports in the HTTP process.
-        original_fallback = server.radio._load_fallback
-        server.radio._load_fallback = lambda: [s for s in original_fallback() if not is_dead(s)]
+        install_radio_health(server)
         self.player = player
         self.home = Path(os.environ["NOWHERE_HOME"])
         self.files = self.home / "private"
