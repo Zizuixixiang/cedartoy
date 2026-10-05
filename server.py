@@ -113,6 +113,7 @@ from cedar_backend import human_tests
 from cedar_backend import announcement_delivery
 from cedar_backend import anti_addiction
 from cedar_backend import public_stats, duel_history
+from cedar_backend import satellite_proxy
 from cedar_backend.errors import _McpError
 from cedar_backend.guides import (
     AI_LIFE_GUIDE,
@@ -164,15 +165,8 @@ WORKKK_BASE = f"http://{WORKKK_HOST}:{WORKKK_PORT}"
 GARDEN_CAT_HOST = "127.0.0.1"
 GARDEN_CAT_PORT = 8771
 GARDEN_CAT_BASE = f"http://{GARDEN_CAT_HOST}:{GARDEN_CAT_PORT}"
-GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/api/catalog", "/web/status", "/web/notes"})
-GARDEN_CAT_PROXY_POST_PATHS = frozenset({
-    "/web/notes",
-    "/web/register",
-    "/web/cmd",
-    "/web/new_game",
-    "/web/move_with_cat",
-    "/web/bouquets/read",
-})
+GARDEN_CAT_PROXY_GET_PATHS = satellite_proxy.GARDEN_CAT_PROXY_GET_PATHS
+GARDEN_CAT_PROXY_POST_PATHS = satellite_proxy.GARDEN_CAT_PROXY_POST_PATHS
 DUEL_HOST = "127.0.0.1"
 DUEL_PORT = 8772
 DUEL_BASE = f"http://{DUEL_HOST}:{DUEL_PORT}"
@@ -8430,33 +8424,19 @@ def _record_web_game_activity(game, method, path, status, raw, user, body=None):
 
 
 def _garden_cat_proxy_allowed(method, public_path):
-    if method == "GET":
-        return public_path in GARDEN_CAT_PROXY_GET_PATHS or public_path.startswith("/static/")
-    if method == "POST":
-        return public_path in GARDEN_CAT_PROXY_POST_PATHS
-    return False
+    return satellite_proxy.garden_cat_proxy_allowed(
+        method, public_path,
+        get_paths=GARDEN_CAT_PROXY_GET_PATHS,
+        post_paths=GARDEN_CAT_PROXY_POST_PATHS,
+    )
 
 
 def _garden_cat_upstream_path(public_path):
-    return "/web/" if public_path == "/" else public_path
+    return satellite_proxy.garden_cat_upstream_path(public_path)
 
 
 def _camping_plaza_proxy_allowed(method, public_path):
-    if method == "GET":
-        return (
-            public_path in {
-                "/", "/api/health", "/api/state", "/api/actions",
-                "/api/growth", "/api/achievements",
-            }
-            or public_path.startswith(("/styles/", "/scripts/", "/assets/"))
-        )
-    if method == "POST":
-        return public_path in {
-            "/api/session", "/api/player/name", "/api/turn/advance",
-            "/api/turn/plan", "/api/day/end", "/api/day/start", "/api/action",
-            "/api/nature-observation/intro/seen",
-        }
-    return False
+    return satellite_proxy.camping_plaza_proxy_allowed(method, public_path)
 
 
 def _duel_chip_proxy_post_allowed(public_path):
@@ -12474,12 +12454,7 @@ a{{color:#c9afff}}
 
     # ── Garden-Cat 人类玩家代理（/garden-cat/* → 127.0.0.1:8771）────────────
     def _garden_cat_cookie_token(self):
-        raw = self.headers.get("Cookie", "")
-        for part in raw.split(";"):
-            name, _, value = part.strip().partition("=")
-            if name == "garden_cat_token":
-                return urllib.parse.unquote(value)
-        return None
+        return satellite_proxy.cookie_value(self.headers.get("Cookie", ""), "garden_cat_token")
 
     def _garden_cat_bound_target(self, user, requested_player):
         """Return the canonical bound player id, machine name, and slot."""
@@ -12566,40 +12541,18 @@ a{{color:#c9afff}}
         self, method, upstream_path, query_string, set_cookie=None, target=None,
         human_name=None, activity_user=None,
     ):
-        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
-        params.pop("token", None)
-        params.pop("player", None)
-        fwd_query = urllib.parse.urlencode(
-            [(key, value) for key, values in params.items() for value in values]
-        )
-        request_target = upstream_path + (f"?{fwd_query}" if fwd_query else "")
+        request_target = satellite_proxy.request_target(upstream_path, query_string)
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
         body = self.rfile.read(length) if length > 0 else None
-        headers = {
-            key: value
-            for key, value in self.headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS
-            and key.lower() not in (
-                "host", "cookie", "authorization", "x-player-id",
-                "x-garden-owner-name", "x-garden-slot", "x-garden-player",
-                "x-garden-human-name", "x-forwarded-prefix",
-            )
-        }
-        headers["Host"] = "garden-cat.local"
-        headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
-        headers["X-Forwarded-Prefix"] = getattr(self, "_gc_prefix_override", "/garden-cat")
-        if target is not None:
-            # Browser identity headers never survive the filter above. Only this
-            # canonical player, derived from the authenticated binding, reaches Flask.
-            headers["X-Player-Id"] = target["player"]
-            headers["X-Garden-Player"] = target["player"]
-            headers["X-Garden-Owner-Name"] = urllib.parse.quote(str(target["owner_name"]))
-            headers["X-Garden-Slot"] = str(target["slot"])
-            if isinstance(human_name, str) and human_name.strip():
-                headers["X-Garden-Human-Name"] = urllib.parse.quote(human_name.strip())
+        headers = satellite_proxy.garden_cat_request_headers(
+            self.headers, hop_by_hop_headers=HOP_BY_HOP_HEADERS,
+            forwarded_for=self.client_address[0] if self.client_address else "unknown",
+            prefix=getattr(self, "_gc_prefix_override", "/garden-cat"),
+            target=target, human_name=human_name,
+        )
 
         conn = http.client.HTTPConnection(GARDEN_CAT_HOST, GARDEN_CAT_PORT, timeout=60)
         try:
@@ -12632,12 +12585,7 @@ a{{color:#c9afff}}
 
     # ── Camping Plaza 人类入口（/camping-plaza/* → 127.0.0.1:8773）─────────
     def _camping_plaza_cookie(self, name):
-        raw = self.headers.get("Cookie", "")
-        for part in raw.split(";"):
-            cookie_name, _, value = part.strip().partition("=")
-            if cookie_name == name:
-                return urllib.parse.unquote(value)
-        return None
+        return satellite_proxy.cookie_value(self.headers.get("Cookie", ""), name)
 
     def _handle_camping_plaza_proxy(self, method):
         full = self.path
@@ -12700,29 +12648,17 @@ a{{color:#c9afff}}
     def _proxy_to_camping_plaza(
         self, method, upstream_path, query_string, set_cookies=None, target=None, activity_user=None,
     ):
-        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
-        params.pop("token", None)
-        params.pop("player", None)
-        fwd_query = urllib.parse.urlencode(
-            [(key, value) for key, values in params.items() for value in values]
-        )
-        request_target = upstream_path + (f"?{fwd_query}" if fwd_query else "")
+        request_target = satellite_proxy.request_target(upstream_path, query_string)
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
         body = self.rfile.read(length) if length > 0 else None
-        headers = {
-            key: value
-            for key, value in self.headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS
-            and key.lower() not in {"host", "cookie", "authorization", "x-player-id"}
-        }
-        headers["Host"] = "camping-plaza.local"
-        headers["X-Forwarded-For"] = self.client_address[0] if self.client_address else "unknown"
-        headers["X-Forwarded-Prefix"] = "/camping-plaza"
-        if target is not None:
-            headers["X-Player-Id"] = target["player"]
+        headers = satellite_proxy.camping_plaza_request_headers(
+            self.headers, hop_by_hop_headers=HOP_BY_HOP_HEADERS,
+            forwarded_for=self.client_address[0] if self.client_address else "unknown",
+            target=target,
+        )
 
         conn = http.client.HTTPConnection(CAMPING_PLAZA_HOST, CAMPING_PLAZA_PORT, timeout=60)
         try:
@@ -12738,61 +12674,7 @@ a{{color:#c9afff}}
             conn.close()
         _record_web_game_activity("camping_plaza", method, upstream_path, status, raw, activity_user, body)
 
-        if upstream_path == "/" and status < 400:
-            raw = raw.replace(b'href="styles/', b'href="/camping-plaza/styles/')
-            raw = raw.replace(b'src="scripts/', b'src="/camping-plaza/scripts/')
-            raw = raw.replace(b'src="assets/', b'src="/camping-plaza/assets/')
-            mobile_css = b"""
-<style id=\"cedartoy-camping-mobile\">
-@media (max-width: 760px) {
-  html { min-width: 0 !important; width: 100%; overflow-x: hidden; }
-  body { min-width: 0; width: 100%; padding: 8px; overflow-x: hidden; }
-  .app-shell { min-width: 0 !important; width: 100%; max-width: none; }
-  .top-dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .metric-card { min-width: 0; min-height: 72px; padding: 10px; gap: 8px; }
-  .metric-icon { width: 30px; height: 30px; flex: 0 0 30px; }
-  .metric-card strong { font-size: 18px; overflow-wrap: anywhere; }
-  .achievement-card { grid-column: 1 / -1; }
-  .notice-strip { grid-template-columns: 22px minmax(0, 1fr); padding: 9px 10px; }
-  .notice-list { min-width: 0; }
-  .notice-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-  .main-layout { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .main-column, .side-column { min-width: 0; gap: 10px; }
-  .map-area, .panel-card { min-width: 0; padding: 10px; border-radius: 14px; }
-  .camp-map { width: 100%; min-height: 0 !important; aspect-ratio: 4 / 3; border-radius: 10px; }
-  .service-station-label, .anchor-label, .campsite-slot::after { font-size: 8px; }
-  .action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .morning-review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .morning-review-wide { grid-column: 1 / -1; }
-  .operations-heading { align-items: flex-start; }
-  .operations-hints { width: 100%; }
-  .hint-chip { white-space: normal; }
-  .overview-grid, .income-columns { min-width: 0; }
-  .achievement-modal, .temporary-event-modal, .onboarding-screen { padding: 10px; }
-  .achievement-dialog, .temporary-event-dialog, .onboarding-card { width: 100%; max-width: 100%; }
-  .achievement-dialog { max-height: calc(100dvh - 20px); padding: 14px; }
-  .onboarding-card { padding: 20px 16px; }
-  .temporary-event-choices { flex-direction: column; }
-  button, input { max-width: 100%; }
-  .btn-action, .onboarding-submit, .achievement-close { min-height: 42px; touch-action: manipulation; }
-}
-@media (max-width: 380px) {
-  .top-dashboard { grid-template-columns: 1fr; }
-  .achievement-card { grid-column: auto; }
-  .action-grid, .morning-review-grid, .overview-grid, .income-columns { grid-template-columns: 1fr; }
-  .morning-review-wide { grid-column: auto; }
-}
-</style>
-"""
-            raw = raw.replace(b"</head>", mobile_css + b"</head>", 1)
-        # Upstream JS uses root-absolute /api URLs and relative asset URLs. Under
-        # CedarToy it lives below /camping-plaza, so rewrite those literals at
-        # the edge without changing the vendor checkout.
-        if upstream_path == "/scripts/overview.js" and status < 400:
-            raw = raw.replace(b"'/api/", b"'/camping-plaza/api/")
-            raw = raw.replace(b'"/api/', b'"/camping-plaza/api/')
-            raw = raw.replace(b"'assets/", b"'/camping-plaza/assets/")
-            raw = raw.replace(b'"assets/', b'"/camping-plaza/assets/')
+        raw = satellite_proxy.rewrite_camping_plaza_response(raw, upstream_path, status)
         try:
             self.send_response(status, reason)
             for key, value in response_headers:
