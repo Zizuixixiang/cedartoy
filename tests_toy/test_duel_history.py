@@ -275,6 +275,33 @@ class DuelHistoryTests(unittest.TestCase):
         self.assertEqual(result["self"]["duel_history"]["total"], 1)
         self.assertEqual(result["machines"][0]["duel_history"]["total"], 2)
 
+    def test_server_format_helpers_remain_patchable_and_bad_json_is_tolerated(self):
+        self._room("FORMAT01", "gomoku", "finished")
+        self._human_and_machine("FORMAT01")
+        for payload in ("not-json", "[]", "null"):
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("UPDATE rooms SET result_json = ?", (payload,))
+            with (
+                patch.object(server, "_duel_history_outcome", return_value="patched") as outcome,
+                patch.object(server, "_duel_history_result_detail", return_value="detail") as detail,
+            ):
+                result = server._duel_history_for_user({"id": 10})
+            self.assertEqual(result["matches"][0]["outcome"], "patched")
+            self.assertEqual(result["matches"][0]["result_detail"], "detail")
+            self.assertEqual(outcome.call_args.args[1:], ({}, "10", "human"))
+            detail.assert_called_once_with({}, "10")
+
+    def test_missing_and_corrupt_database_keep_unavailable_payload(self):
+        missing = Path(self.tempdir.name) / "missing.db"
+        expected = {"available": False, "total": 0, "limit": 2, "matches": []}
+        with patch.object(server, "DUEL_DB_PATH", missing):
+            self.assertEqual(server._duel_history_for_user({"id": 10}, limit=2), expected)
+            self.assertFalse(missing.exists())
+            missing.write_bytes(b"not a sqlite database")
+            with self.assertLogs(server.logger, level="WARNING"):
+                self.assertEqual(server._duel_history_for_user({"id": 10}, limit=2), expected)
+            self.assertEqual(missing.read_bytes(), b"not a sqlite database")
+
 
 if __name__ == "__main__":
     unittest.main()

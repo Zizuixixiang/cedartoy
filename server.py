@@ -109,6 +109,7 @@ from vendor_cmd_adapter import white_room as white_room_adapter
 from vendor_cmd_adapter.base import VendorCmdError, parse_import_save_data
 from cedar_backend import guides as mcp_guides
 from cedar_backend import mcp_schema
+from cedar_backend import public_stats, duel_history
 from cedar_backend.errors import _McpError
 from cedar_backend.guides import (
     AI_LIFE_GUIDE,
@@ -3993,250 +3994,97 @@ def _bound_human_user_for_saves(raw_token, username):
     raise _McpError(-32004, "未绑定任何人类，请先绑定")
 
 
+# Resolve extraction dependencies per call to preserve server-level patches.
 def _turtle_soup_stats(conn, user):
-    if not _table_exists(conn, "players"):
-        return {
-            "game_count": 0,
-            "win_count": 0,
-            "ask_count": 0,
-            "ask_count_y": 0,
-            "ask_count_n": 0,
-            "ask_count_u": 0,
-            "ask_count_p": 0,
-        }
-    row = conn.execute(
-        """
-        SELECT game_count, win_count, ask_count, ask_count_y, ask_count_n, ask_count_u, ask_count_p
-        FROM players
-        WHERE user_id = ? OR (user_id IS NULL AND username = ?)
-        ORDER BY user_id = ? DESC
-        LIMIT 1
-        """,
-        (int(user["id"]), user["username"], int(user["id"])),
-    ).fetchone()
-    if not row:
-        return {
-            "game_count": 0,
-            "win_count": 0,
-            "ask_count": 0,
-            "ask_count_y": 0,
-            "ask_count_n": 0,
-            "ask_count_u": 0,
-            "ask_count_p": 0,
-        }
-    return {
-        "game_count": int(row["game_count"] or 0),
-        "win_count": int(row["win_count"] or 0),
-        "ask_count": int(row["ask_count"] or 0),
-        "ask_count_y": int(row["ask_count_y"] or 0),
-        "ask_count_n": int(row["ask_count_n"] or 0),
-        "ask_count_u": int(row["ask_count_u"] or 0),
-        "ask_count_p": int(row["ask_count_p"] or 0),
-    }
+    return public_stats._turtle_soup_stats(
+        conn, user,
+        table_exists=_table_exists,
+    )
 
 
 def _test_stats(user):
-    player_ids = _game_player_ids(user)
-    if not player_ids or not SESSIONS_DB_PATH.exists():
-        return {game: {"test_count": 0} for game in ("mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest")}
-    placeholders = ",".join("?" * len(player_ids))
-    counts = {game: 0 for game in ("mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest")}
-    with _sessions_db_connect() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT game, COUNT(*) AS test_count
-            FROM test_results
-            WHERE player_id IN ({placeholders}) AND game IN ('mbti', 'enneagram', 'dnd', 'love', 'ecr', 'humanity', 'sins_virtues', 'bdsmtest')
-            GROUP BY game
-            """,
-            player_ids,
-        ).fetchall()
-        for row in rows:
-            counts[row["game"]] = int(row["test_count"])
-    return {
-        "mbti": {"test_count": counts["mbti"]},
-        "enneagram": {"test_count": counts["enneagram"]},
-        "dnd": {"test_count": counts["dnd"]},
-        "love": {"test_count": counts["love"]},
-        "ecr": {"test_count": counts["ecr"]},
-        "humanity": {"test_count": counts["humanity"]},
-        "sins_virtues": {"test_count": counts["sins_virtues"]},
-        "bdsmtest": {"test_count": counts["bdsmtest"]},
-    }
+    return public_stats._test_stats(
+        user,
+        game_player_ids=_game_player_ids,
+        sessions_db_path=SESSIONS_DB_PATH,
+        sessions_db_connect=_sessions_db_connect,
+    )
 
 
 def _game_overview(conn, user):
-    tests = _test_stats(user)
-    soup = _turtle_soup_stats(conn, user)
-    return {
-        "turtle_soup": soup,
-        "mbti": tests["mbti"],
-        "enneagram": tests["enneagram"],
-        "dnd": tests["dnd"],
-        "love": tests["love"],
-        "ecr": tests["ecr"],
-        "humanity": tests["humanity"],
-        "sins_virtues": tests["sins_virtues"],
-        "bdsmtest": tests["bdsmtest"],
-    }
+    return public_stats._game_overview(
+        conn, user,
+        test_stats=_test_stats,
+        turtle_soup_stats=_turtle_soup_stats,
+    )
 
 
 def _count_table_rows(table_name):
-    if not SESSIONS_DB_PATH.exists():
-        return 0
-    with closing(_read_only_connect(SESSIONS_DB_PATH)) as conn:
-        if not _table_exists(conn, table_name):
-            return 0
-        return int(conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0] or 0)
+    return public_stats._count_table_rows(
+        table_name,
+        sessions_db_path=SESSIONS_DB_PATH,
+        read_only_connect=_read_only_connect,
+        table_exists=_table_exists,
+    )
 
 
 def _count_puzzle_box_saves(*, missing=0, busy_timeout_ms=2000):
-    if not SESSIONS_DB_PATH.exists():
-        return missing
-    with closing(_read_only_connect(SESSIONS_DB_PATH)) as conn:
-        conn.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
-        if not _table_exists(conn, "puzzle_box_progress"):
-            return missing
-        return int(conn.execute(
-            "SELECT COUNT(DISTINCT ai_user_id) FROM puzzle_box_progress"
-        ).fetchone()[0])
+    return public_stats._count_puzzle_box_saves(
+        missing=missing, busy_timeout_ms=busy_timeout_ms,
+        sessions_db_path=SESSIONS_DB_PATH,
+        read_only_connect=_read_only_connect,
+        table_exists=_table_exists,
+    )
 
 
 def _prefill_puzzle_box_homepage_metric(source):
     """Seed only this catalog entry; keep the client live-stats refresh intact."""
-    marker = '      {\n        id: "puzzle_box",\n'
-    placeholder = '        metric: "--",'
-    if source.count(marker) != 1:
-        return source
-    before, _, remaining = source.partition(marker)
-    card, end, after = remaining.partition("\n      },")
-    if not end or card.count(placeholder) != 1:
-        return source
-    try:
-        count = _count_puzzle_box_saves(missing=None, busy_timeout_ms=200)
-    except (OSError, sqlite3.Error):
-        logger.warning("puzzle_box homepage save count unavailable")
-        return source
-    if count is None:
-        return source
-    card = card.replace(placeholder, f'        metric: "{count}",', 1)
-    return before + marker + card + end + after
+    return public_stats._prefill_puzzle_box_homepage_metric(
+        source,
+        count_puzzle_box_saves=_count_puzzle_box_saves,
+        logger=logger,
+    )
 
 
 def _sum_ciyuwu_runs():
-    if not SESSIONS_DB_PATH.exists():
-        return 0
-    total = 0
-    with _sessions_db_connect() as conn:
-        if not _table_exists(conn, "ciyuwu_sessions"):
-            return 0
-        rows = conn.execute("SELECT meta_data FROM ciyuwu_sessions").fetchall()
-    for row in rows:
-        try:
-            meta = json.loads(row["meta_data"] or "{}")
-        except (TypeError, json.JSONDecodeError):
-            meta = {}
-        try:
-            total += max(1, int(meta.get("runs") or 1))
-        except (TypeError, ValueError):
-            total += 1
-    return total
+    return public_stats._sum_ciyuwu_runs(
+        sessions_db_path=SESSIONS_DB_PATH,
+        sessions_db_connect=_sessions_db_connect,
+        table_exists=_table_exists,
+    )
 
 
 def _vendor_save_stats(game):
-    root = VENDOR_SAVE_ROOT / game
-    if not root.exists():
-        return {"save_count": 0, "file_count": 0}
-    player_dirs = [path for path in root.iterdir() if path.is_dir()]
-    # ai_life 的锁文件与损坏存档备份都不代表一份可继续的有效存档；
-    # 只把经过严格重放校验入口使用的 save.json 计入平台存档数。
-    if game == "ai_life":
-        player_dirs = [
-            path
-            for path in player_dirs
-            if (path / ai_life_adapter.SAVE_NAME).is_file()
-        ]
-    elif game == "detroit":
-        player_dirs = [path for path in player_dirs if detroit_adapter.has_save(path.name)]
-    else:
-        adapter = globals().get(f"{game}_adapter")
-        filenames = tuple(getattr(adapter, "SAVE_FILES", {}).values())
-        if game == "bar":
-            filenames = (bar_adapter.FULL_SAVE_NAME, bar_adapter.LITE_SAVE_NAME)
-        elif game == "workkk":
-            filenames = ("game_state.json",)
-        elif game == "garden_cat":
-            filenames = ("state.json",)
-        if filenames:
-            player_dirs = [path for path in player_dirs if any((path / name).is_file() for name in filenames)]
-        else:
-            # A newly integrated game without a save contract is unknown, not 0.
-            return {"save_count": None, "file_count": 0}
-    file_count = 0
-    for path in player_dirs:
-        file_count += sum(1 for child in path.iterdir() if child.is_file() and child.name != ".lock")
-    return {"save_count": len(player_dirs), "file_count": file_count}
+    return public_stats._vendor_save_stats(
+        game,
+        vendor_save_root=VENDOR_SAVE_ROOT,
+        ai_life_adapter=ai_life_adapter,
+        detroit_adapter=detroit_adapter,
+        bar_adapter=bar_adapter,
+        get_adapter=lambda name: globals().get(f"{name}_adapter"),
+    )
 
 
 def _activity_catalog():
     """Reuse homepage names; include MCP-only games without a second UI catalog."""
-    source = TOY_INDEX_PATH.read_text(encoding="utf-8")
-    block = re.search(r"const games = \[(.*?)\n    \];", source, re.S)
-    if block is None:
-        raise ValueError("Homepage catalog unavailable")
-    names = {}
-    for item in re.split(r'\n      \{', block.group(1)):
-        game = re.search(r'\bid: "([a-z_]+)"', item)
-        name = re.search(r'\bname: "([^"\n]+)"', item)
-        if game and name and game.group(1) != "admin":
-            names[{"soup": "turtle_soup"}.get(game.group(1), game.group(1))] = name.group(1)
-    names.setdefault("tarot", RITUAL_DISPLAY_NAME)
-    names.setdefault("bdsmtest", "BDSM倾向测试")
-    for game in IDENTITY_GAMES | {"turtle_soup"}:
-        names.setdefault(game, game)
-    return [{"game": game, "name": name} for game, name in names.items()]
+    return public_stats._activity_catalog(
+        index_path=TOY_INDEX_PATH,
+        ritual_display_name=RITUAL_DISPLAY_NAME,
+        identity_games=IDENTITY_GAMES,
+    )
 
 
 def _public_game_stats(*, strict=False):
-    stats = {
-        "puzzle_box": {
-            "metric_label": "存档数",
-            "metric": _count_puzzle_box_saves(),
-        },
-        "eco": {
-            "metric_label": "存档数",
-            "metric": _count_table_rows("eco_sessions"),
-        },
-        "ciyuwu": {
-            "metric_label": "对局数",
-            "metric": None if strict else _sum_ciyuwu_runs(),
-            "save_count": _count_table_rows("ciyuwu_sessions"),
-        },
-        "tarot": {
-            "metric_label": "存档数",
-            "metric": count_saved_tarot_sessions(strict=strict),
-        },
-    }
-    for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "nowhere", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
-        vendor_stats = _vendor_save_stats(game)
-        stats[game] = {
-            "metric_label": "存档数",
-            "metric": vendor_stats["save_count"],
-            "file_count": vendor_stats["file_count"],
-        }
-    camping_count = 0
-    if CAMPING_PLAZA_DB_PATH.is_file():
-        try:
-            camping_stats = _camping_plaza_save_admin("stats", timeout=2 if strict else 20)
-            camping_count = int(camping_stats["save_count"])
-        except (KeyError, TypeError, ValueError, _McpError):
-            camping_count = None if strict else 0
-    stats["camping_plaza"] = {
-        "metric_label": "存档数",
-        "metric": camping_count,
-        "file_count": 1 if camping_count else 0,
-    }
-    return stats
+    return public_stats._public_game_stats(
+        strict=strict,
+        count_puzzle_box_saves=_count_puzzle_box_saves,
+        count_table_rows=_count_table_rows,
+        sum_ciyuwu_runs=_sum_ciyuwu_runs,
+        count_saved_tarot_sessions=count_saved_tarot_sessions,
+        vendor_save_stats=_vendor_save_stats,
+        camping_plaza_db_path=CAMPING_PLAZA_DB_PATH,
+        camping_plaza_save_admin=_camping_plaza_save_admin,
+    )
 
 
 def _memoria_human_guides(include_content=False):
@@ -6991,177 +6839,27 @@ def _account_web_saves(raw_token):
 
 def _duel_history_outcome(room, result, player_id, player_role):
     """Return one subject-relative outcome from Duel's real terminal payload."""
-    status = room.get("status")
-    if status in {"pending", "waiting", "playing"}:
-        return status
-    if room.get("terminal_reason") == "stale_archive":
-        return "archived"
-
-    outcomes = result.get("outcomes_by_player")
-    if isinstance(outcomes, dict):
-        own = outcomes.get(player_id)
-        if isinstance(own, dict):
-            outcome = own.get("outcome")
-            if outcome in {"win", "loss"}:
-                return outcome
-            if outcome == "push":
-                return "draw"
-
-    tied_ids = result.get("tied_player_ids")
-    if isinstance(tied_ids, list) and tied_ids:
-        return "draw" if player_id in map(str, tied_ids) else "loss"
-
-    winner_ids = set()
-    for key in ("winner_player_ids", "winning_player_ids"):
-        values = result.get(key)
-        if isinstance(values, list):
-            winner_ids.update(str(value) for value in values)
-    if winner_ids:
-        return "win" if player_id in winner_ids else "loss"
-
-    winner_player_id = room.get("winner_player_id") or result.get("winner_player_id")
-    if winner_player_id not in {None, ""}:
-        return "win" if player_id == str(winner_player_id) else "loss"
-
-    resigned_player_id = result.get("resigned_player_id")
-    if resigned_player_id not in {None, ""} and player_id == str(resigned_player_id):
-        return "loss"
-
-    legacy_winner = room.get("winner")
-    if legacy_winner in {"human", "ai"}:
-        return "win" if player_role == legacy_winner else "loss"
-    if legacy_winner == "draw" or result.get("draw") is True:
-        return "draw"
-    return "archived" if status == "archived" else "finished"
+    return duel_history._duel_history_outcome(
+        room, result, player_id, player_role,
+    )
 
 
 def _duel_history_result_detail(result, player_id):
-    outcomes = result.get("outcomes_by_player")
-    if isinstance(outcomes, dict):
-        own = outcomes.get(player_id)
-        if isinstance(own, dict) and isinstance(own.get("result_text"), str):
-            return " ".join(own["result_text"].split())[:160]
-    if isinstance(result.get("result_text"), str):
-        return " ".join(result["result_text"].split())[:160]
-    return ""
+    return duel_history._duel_history_result_detail(
+        result, player_id,
+    )
 
 
 def _duel_history_for_user(user, *, limit=DUEL_HISTORY_LIMIT):
     """Read compact Duel room history for exactly one account identity."""
-    empty = {"available": False, "total": 0, "limit": limit, "matches": []}
-    if not DUEL_DB_PATH.is_file():
-        return empty
-    player_id = str(int(user["id"]))
-    player_role = "ai" if user.get("is_ai") else "human"
-    participant_kind = "bound_machine" if user.get("is_ai") else "human"
-    try:
-        conn = sqlite3.connect(
-            f"{DUEL_DB_PATH.resolve().as_uri()}?mode=ro", uri=True
-        )
-        conn.row_factory = sqlite3.Row
-        try:
-            args = (player_id, player_role, participant_kind)
-            total = conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM rooms AS room
-                JOIN room_participants AS subject
-                  ON subject.room_id = room.room_id
-                 AND subject.player_id = ?
-                 AND subject.role = ?
-                 AND subject.participant_kind = ?
-                 AND subject.join_status IN ('joined', 'left')
-                """,
-                args,
-            ).fetchone()[0]
-            rows = conn.execute(
-                """
-                SELECT room.room_id, room.game_type, room.status, room.winner,
-                       room.winner_player_id, room.result_json,
-                       room.terminal_reason, room.created_at, room.updated_at,
-                       room.terminal_at, subject.role AS subject_role
-                FROM rooms AS room
-                JOIN room_participants AS subject
-                  ON subject.room_id = room.room_id
-                 AND subject.player_id = ?
-                 AND subject.role = ?
-                 AND subject.participant_kind = ?
-                 AND subject.join_status IN ('joined', 'left')
-                ORDER BY COALESCE(
-                    room.terminal_at, room.updated_at, room.created_at
-                ) DESC, room.room_id DESC
-                LIMIT ?
-                """,
-                (*args, limit),
-            ).fetchall()
-            room_ids = [row["room_id"] for row in rows]
-            participants_by_room = {room_id: [] for room_id in room_ids}
-            if room_ids:
-                placeholders = ",".join("?" for _ in room_ids)
-                participant_rows = conn.execute(
-                    f"""
-                    SELECT room_id, player_id, display_name, role,
-                           participant_kind, seat_index
-                    FROM room_participants
-                    WHERE room_id IN ({placeholders})
-                    ORDER BY room_id, seat_index
-                    """,
-                    room_ids,
-                ).fetchall()
-                for participant in participant_rows:
-                    participants_by_room[participant["room_id"]].append(
-                        {
-                            "display_name": (
-                                participant["display_name"]
-                                or participant["player_id"]
-                            ),
-                            "role": participant["role"],
-                            "kind": participant["participant_kind"],
-                            "seat": participant["seat_index"],
-                            "is_self": participant["player_id"] == player_id,
-                        }
-                    )
-        finally:
-            conn.close()
-    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
-        logger.warning("duel history unavailable for player %s: %s", player_id, exc)
-        return empty
-
-    matches = []
-    for raw_row in rows:
-        row = dict(raw_row)
-        try:
-            parsed_result = json.loads(row.get("result_json") or "{}")
-        except (TypeError, json.JSONDecodeError):
-            parsed_result = {}
-        result = parsed_result if isinstance(parsed_result, dict) else {}
-        participants = participants_by_room.get(row["room_id"], [])
-        matches.append({
-            "room_id": row["room_id"],
-            "game_type": row["game_type"],
-            "status": row["status"],
-            "outcome": _duel_history_outcome(
-                row, result, player_id, row["subject_role"]
-            ),
-            "result_detail": _duel_history_result_detail(result, player_id),
-            "time": (
-                row.get("terminal_at")
-                or row.get("updated_at")
-                or row.get("created_at")
-            ),
-            "participants": participants,
-            "opponents": [
-                participant["display_name"]
-                for participant in participants
-                if not participant["is_self"]
-            ],
-        })
-    return {
-        "available": True,
-        "total": int(total),
-        "limit": limit,
-        "matches": matches,
-    }
+    return duel_history._duel_history_for_user(
+        user,
+        limit=limit,
+        duel_db_path=DUEL_DB_PATH,
+        logger=logger,
+        history_outcome=_duel_history_outcome,
+        history_result_detail=_duel_history_result_detail,
+    )
 
 
 def _account_web_history(raw_token):
