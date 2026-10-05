@@ -234,7 +234,8 @@ class Engine:
         self.diagnostic_stage = "restore"
         self.restore(payload.get("archive"), payload["generation"])
         request = dict(payload["request"])
-        self.diagnostic_request = request
+        # Keep original field presence/types when prepare pops adapter options.
+        self.diagnostic_request = request.copy()
         self.diagnostic_stage = "prepare"
         action = request.pop("action")
         request.pop("confirm", None)
@@ -264,7 +265,11 @@ class Engine:
                     self.meta["traveler_name"] = clean.strip()
                 if "cotraveler" in request:
                     mode = request.pop("cotraveler")
-                    if mode not in {"0", "1", "quiet"}:
+                    if isinstance(mode, str):
+                        mode = mode.strip()
+                    elif type(mode) is int and mode in (0, 1):
+                        mode = str(mode)
+                    if not isinstance(mode, str) or mode not in {"0", "1", "quiet"}:
                         raise ValueError("cotraveler 可选 0、1、quiet")
                     self.meta["cotraveler"] = mode
                     if mode == "0":

@@ -755,10 +755,14 @@ def _build_kelivo_platform_tools():
     for name in ("is_locked", "include_finished"):
         properties[name].pop("default", None)
     for name, kind in {"to": "string", "direction": "string", "distance_km": "number",
-                       "traveler_name": "string", "cotraveler": "string", "blind": "boolean",
+                       "traveler_name": "string", "blind": "boolean",
                        "key": "string", "intent": "string", "topic": "string",
                        "volume": "string", "place": "string", "hours": "number"}.items():
         properties.setdefault(name, {"type": kind, "description": "nowhere 参数；完整契约见 play(game=nowhere, action=schema)"})
+    properties["cotraveler"] = {
+        "type": "string", "enum": ["0", "1", "quiet"],
+        "description": "nowhere 同游：0 关闭，1 脚印与相遇，quiet 仅脚印。",
+    }
     # Compatibility-only fields must not replace current shared field types.
     for name, schema in (
         {

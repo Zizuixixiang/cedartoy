@@ -389,6 +389,23 @@ class RootMcpProtocolTests(unittest.TestCase):
                 self.assertIn("默认 false", params[name]["description"])
         self.assertEqual(set(self._play_schema("ExampleMcpClient/1.0")["properties"]["params"]["properties"]), {"slot", "command"})
 
+    def test_cotraveler_string_enum_is_only_in_compatibility_schema(self):
+        for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
+            with self.subTest(user_agent=user_agent):
+                params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+                schema = params["cotraveler"]
+                self.assertEqual(schema["type"], "string")
+                self.assertEqual(schema["enum"], ["0", "1", "quiet"])
+                self.assertTrue(schema["description"])
+                validator = Draft202012Validator(schema)
+                for value in ("0", "1", "quiet"):
+                    self.assertTrue(validator.is_valid(value))
+                for value in (True, False, 0, 1, 2, "yes", {}, []):
+                    self.assertFalse(validator.is_valid(value))
+        for user_agent in ("", "ExampleMcpClient/1.0", "Aru/1.0"):
+            params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+            self.assertEqual(set(params), {"slot", "command"})
+
     def test_fishing_tool_play_uses_params_command_and_rejects_missing_command(self):
         guide = json.loads(server._tool_get_guide({"game": "fishing"}))["guide"]
         self.assertIn('play(game="fishing", action="cmd", params={"command": "cast 10"})', guide)

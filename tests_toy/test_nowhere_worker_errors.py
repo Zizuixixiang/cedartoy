@@ -201,7 +201,7 @@ class RealWorkerErrorTests(TemporaryStores):
         output = "\n".join(logs.output)
         self.assertNotIn("PRIVATE", output + str(caught.exception))
         for expected in (player, "action=say", "jsonschema.exceptions", "ValidationError",
-                         '"path": ["text"]', '"request_types": {"text": "string"}',
+                         '"path": ["text"]', '"request_types": {"action": "string", "text": "string"}',
                          '"stage": "snapshot"', "type constraint failed"):
             self.assertIn(expected, output)
         self.play("say", text="RECOVERED")
@@ -230,6 +230,90 @@ class RealWorkerErrorTests(TemporaryStores):
         self.assertIsNotNone(worker.proc.poll())
         self.play("walk", direction="forward", distance_km=1)
         self.assertIsNot(self.pool.workers[player], worker)
+
+
+@unittest.skipUnless(os.environ.get("NOWHERE_REAL_TEST") == "1", "set NOWHERE_REAL_TEST=1 for real worker IPC")
+class OpenDoorCompatibilityTests(TemporaryStores):
+    def setUp(self):
+        super().setUp()
+        self.pool = pool.Pool()
+        self.stack.enter_context(patch.object(handler, "POOL", self.pool))
+        popen = subprocess.Popen
+        def launch(args, **kwargs):
+            return popen([args[0], "-c", _OFFLINE_WORKER, args[-1]], **kwargs)
+        self.stack.enter_context(patch.object(pool.subprocess, "Popen", side_effect=launch))
+
+    def tearDown(self):
+        self.pool.close()
+        super().tearDown()
+
+    def payload(self, mode="1", action="open_door", **params):
+        return {"action": action, "game": "nowhere",
+                "params": {"cotraveler": mode, "slot": 1, "traveler_name": "岳知屿", **params},
+                "slot": 1}
+
+    def play(self, payload):
+        # Identity arrives out-of-band, leaving the screenshot payload exact.
+        # Account 101 and every store are disposable fixtures, not live accounts.
+        return json.loads(server._tool_play(
+            payload, authenticated_account={"id": 101, "is_ai": True}))
+
+    def test_exact_screenshot_payload_creates_archive_through_tool_play(self):
+        payload = self.payload()
+        original = copy.deepcopy(payload)
+        result = self.play(payload)
+        self.assertEqual(result["game"], "nowhere")
+        self.assertEqual(result["player_id"], "101")
+        self.assertEqual(payload, original)
+        metadata = storage.read("101")["runtime"]["metadata"]
+        self.assertEqual(metadata["cotraveler"], "1")
+        self.assertEqual(metadata["traveler_name"], "岳知屿")
+
+    def test_open_door_and_new_canonicalize_only_supported_modes(self):
+        for action in ("open_door", "new"):
+            for mode, canonical in ((1, "1"), (0, "0"), ("0", "0"), ("1", "1"),
+                                    ("quiet", "quiet"), (" \t1\n", "1"),
+                                    (" 0 ", "0"), (" quiet ", "quiet")):
+                with self.subTest(action=action, mode=mode):
+                    self.play(self.payload(mode, action, confirm=True))
+                    metadata = storage.read("101")["runtime"]["metadata"]
+                    self.assertEqual(metadata["cotraveler"], canonical)
+
+    def test_invalid_modes_do_not_create_or_overwrite_archive_and_log_only_types(self):
+        path = storage.ROOT / "101/save.json"
+        for existing in (False, True):
+            if existing:
+                self.play(self.payload())
+            before = path.read_bytes() if existing else None
+            for action in ("open_door", "new"):
+                for mode in (True, False, "yes", 2, 0.0, 1.0, "", "QUIET", None,
+                             {"PRIVATE-key": "PRIVATE-value"}, ["PRIVATE-value"]):
+                    with self.subTest(existing=existing, action=action, mode=mode):
+                        payload = self.payload(mode, action, confirm=True,
+                                               traveler_name="PRIVATE-traveler")
+                        with self.assertLogs("nowhere_adapter.handler", level="ERROR") as logs, \
+                             patch.object(storage, "write", wraps=storage.write) as write:
+                            with self.assertRaises(server._McpError) as caught:
+                                self.play(payload)
+                            write.assert_not_called()
+                        self.assertEqual(caught.exception.message, diagnostics.PUBLIC_ERROR)
+                        output = "\n".join(logs.output)
+                        self.assertNotIn("PRIVATE", output)
+                        metadata = json.loads(logs.records[0].getMessage().split("metadata=", 1)[1])
+                        self.assertEqual(metadata, {
+                            "module": "builtins", "type": "ValueError", "stage": "prepare",
+                            "request_type": "object", "unknown_key_count": 0,
+                            "request_keys": ["action", "confirm", "cotraveler", "traveler_name"],
+                            "request_types": {"action": "string", "confirm": "boolean",
+                                              "cotraveler": diagnostics.value_type(mode),
+                                              "traveler_name": "string"},
+                        })
+                        self.assertNotIn("101", self.pool.workers)
+                        if existing:
+                            self.assertEqual(path.read_bytes(), before)
+                        else:
+                            self.assertFalse(path.exists())
+                        self.assertFalse(list(path.parent.glob(".save-*")))
 
 
 if __name__ == "__main__":
