@@ -1,3 +1,4 @@
+import re
 import tempfile
 import sqlite3
 import time
@@ -389,12 +390,24 @@ class HumanTestWebTests(unittest.TestCase):
             index,
         )
 
-        humanity_css = index.split(
-            ".platform-dist-humanity .platform-dist-label {", 1
-        )[1].split("}", 1)[0]
-        self.assertIn("text-overflow: clip", humanity_css)
-        self.assertIn("white-space: normal", humanity_css)
-        self.assertIn("overflow-wrap: anywhere", humanity_css)
+        label_selectors = {
+            ".platform-dist-humanity .platform-dist-label",
+            ".platform-dist-ecr .platform-dist-label",
+        }
+        shared_label_css = next(
+            (
+                body
+                for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", index)
+                if label_selectors.issubset(
+                    {" ".join(selector.split()) for selector in selectors.split(",")}
+                )
+            ),
+            None,
+        )
+        self.assertIsNotNone(shared_label_css, "humanity/ecr must share a label rule")
+        self.assertIn("text-overflow: clip", shared_label_css)
+        self.assertIn("white-space: normal", shared_label_css)
+        self.assertIn("overflow-wrap: anywhere", shared_label_css)
 
         label_function = index.split("function platformResultLabel", 1)[1].split(
             "function renderDistribution", 1
