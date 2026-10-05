@@ -716,9 +716,15 @@ def _build_root_platform_tools():
     params["description"] = (
         "该 action 的业务参数对象，字段按 get_guide(game)；可选 slot=1..5 为平台存档槽。"
     )
-    # Business parameters are documented by get_guide(game), not flattened
-    # into the common tool contract. Keep only the platform save slot here.
-    params["properties"] = {"slot": params["properties"]["slot"]}
+    # Keep the save slot and shared cmd text explicit: some clients omit
+    # fields absent from the schema even after reading get_guide(game).
+    params["properties"] = {
+        "slot": params["properties"]["slot"],
+        "command": {
+            "type": "string",
+            "description": "fishing/bar/leek/delve/travel/white_room 等 cmd 命令文本；详见 Guide。",
+        },
+    }
     return tools
 
 

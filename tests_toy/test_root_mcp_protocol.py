@@ -1,12 +1,15 @@
 import json
 import re
+import tempfile
 import unittest
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from jsonschema import Draft202012Validator
 
 import server
+from vendor_cmd_adapter import base as vendor_base
 
 
 _KELIVO_126_SCHEMA_KEYS = {
@@ -195,7 +198,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                     self.assertNotIn("anyOf", options_schema)
                     self.assertIn("单选如 [1]", options_schema["description"])
                 else:
-                    self.assertEqual(set(sanitized_params["properties"]), {"slot"})
+                    self.assertEqual(set(sanitized_params["properties"]), {"slot", "command"})
 
                 source_schema = next(
                     tool["inputSchema"]
@@ -333,16 +336,18 @@ class RootMcpProtocolTests(unittest.TestCase):
         self.assertEqual(integer_branch["minimum"], 1)
         self.assertEqual(integer_branch["maximum"], 10)
 
-    def test_ordinary_play_params_only_declare_slot_and_allow_game_parameters(self):
+    def test_ordinary_play_params_only_declare_slot_and_command_and_allow_game_parameters(self):
         for user_agent in ("", "ExampleMcpClient/1.0", "Aru/1.0"):
             with self.subTest(user_agent=user_agent):
                 schema = self._play_schema(user_agent)
                 params = schema["properties"]["params"]
                 self.assertEqual(set(schema["properties"]), {"game", "action", "params"})
-                self.assertEqual(set(params["properties"]), {"slot"})
+                self.assertEqual(set(params["properties"]), {"slot", "command"})
                 self.assertIs(params["additionalProperties"], True)
                 self.assertEqual(params["properties"]["slot"]["type"], "integer")
+                self.assertEqual(params["properties"]["command"]["type"], "string")
                 validator = Draft202012Validator(schema)
+                validator.validate({"game": "fishing", "action": "cmd", "params": {"command": "cast"}})
                 for slot in range(1, 6):
                     validator.validate({"game": "puzzle_box", "action": "open", "params": {
                         "slot": slot, "puzzle_id": "N10",
@@ -371,6 +376,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                              "to", "direction", "distance_km", "traveler_name", "cotraveler",
                              "blind", "key", "intent", "topic", "volume", "place", "hours"):
                     self.assertIn(name, params)
+                self.assertEqual(params["command"], {"type": "string", "description": "命令文本"})
                 for seed in (42, "existing-string-seed"):
                     self.assertTrue(Draft202012Validator(params["seed"]).is_valid(seed))
 
@@ -381,7 +387,43 @@ class RootMcpProtocolTests(unittest.TestCase):
                 self.assertNotIn("default", params[name])
                 self.assertEqual(params[name]["type"], "boolean")
                 self.assertIn("默认 false", params[name]["description"])
-        self.assertEqual(set(self._play_schema("ExampleMcpClient/1.0")["properties"]["params"]["properties"]), {"slot"})
+        self.assertEqual(set(self._play_schema("ExampleMcpClient/1.0")["properties"]["params"]["properties"]), {"slot", "command"})
+
+    def test_fishing_tool_play_uses_params_command_and_rejects_missing_command(self):
+        guide = json.loads(server._tool_get_guide({"game": "fishing"}))["guide"]
+        self.assertIn('play(game="fishing", action="cmd", params={"command": "cast 10"})', guide)
+        player_id = "guest:fishingcmdschema"
+        with (
+            tempfile.TemporaryDirectory(prefix="fishing-schema-") as tmp,
+            patch.object(vendor_base, "SAVE_ROOT", Path(tmp)),
+            patch.object(server.fishing_adapter, "SAVE_ROOT", Path(tmp)),
+            patch.object(server, "SESSIONS_DB_PATH", Path(tmp) / "sessions.db"),
+            patch.object(server, "_reject_claimed_guest"),
+            patch.object(server, "_ensure_guest_claim_code", return_value=None),
+            patch.object(server, "_play_announcements", return_value=""),
+            patch.object(server, "_anti_addiction_context", return_value=None),
+        ):
+            def play(action, **params):
+                return json.loads(server._tool_play({
+                    "game": "fishing", "action": action,
+                    "params": {"player_id": player_id, **params},
+                }))
+
+            created = play("new", seed=42)
+            self.assertEqual(created["player_id"], player_id)
+            save = Path(tmp) / "fishing" / player_id / "fishing_save.json"
+            self.assertEqual(json.loads(save.read_text())["stats"]["total_casts"], 0)
+            result = play("cmd", command="cast")
+            self.assertEqual(result["game"], "fishing")
+            self.assertEqual(result["player_id"], player_id)
+            self.assertTrue(result["text"])
+            self.assertEqual(json.loads(save.read_text())["stats"]["total_casts"], 1)
+            before = save.read_bytes()
+            with self.assertRaises(server._McpError) as caught:
+                play("cmd")
+            self.assertEqual(caught.exception.code, -32602)
+            self.assertEqual(caught.exception.message, "command 参数必填")
+            self.assertEqual(save.read_bytes(), before)
 
     def test_kelivo_puzzle_id_and_answer_accept_all_supported_types(self):
         for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
