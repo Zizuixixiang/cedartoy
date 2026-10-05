@@ -114,6 +114,20 @@ from cedar_backend import announcement_delivery
 from cedar_backend import anti_addiction
 from cedar_backend import public_stats, duel_history
 from cedar_backend import satellite_proxy
+from cedar_backend import http_handler, http_server
+from cedar_backend.web import responses as web_responses
+from cedar_backend import duel_bridge
+from cedar_backend import mcp_dispatch
+from cedar_backend import game_dispatch
+from cedar_backend import save_management
+from cedar_backend import account_lifecycle
+from cedar_backend import operit
+from cedar_backend import account_email
+from cedar_backend import account_recovery
+from cedar_backend import admin_accounts
+from cedar_backend import auth
+from cedar_backend import accounts
+from cedar_backend import player_identity
 from cedar_backend.errors import _McpError
 from cedar_backend.guides import (
     AI_LIFE_GUIDE,
@@ -361,139 +375,31 @@ def _blocked_mcp_client_message(user_agent):
 
 
 def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, bearer_token=None):
-    request_id = payload.get("id")
-    method = payload.get("method")
-    params = payload.get("params") or {}
-
-    try:
-        blocked_message = _blocked_mcp_client_message(user_agent)
-        if blocked_message:
-            logger.info("Blocked evolia client, UA: %s", user_agent)
-            return _json_rpc_error(
-                request_id,
-                -32000,
-                blocked_message,
-            )
-        if method == "initialize":
-            requested_protocol_version = (
-                params.get("protocolVersion") if isinstance(params, dict) else None
-            )
-            protocol_version = (
-                requested_protocol_version
-                if requested_protocol_version in _ROOT_MCP_PROTOCOL_VERSIONS
-                else _ROOT_MCP_LEGACY_PROTOCOL_VERSION
-            )
-            return _json_rpc_result(
-                request_id,
-                {
-                    "protocolVersion": protocol_version,
-                    "serverInfo": {"name": "cedartoy", "version": "1.0.1"},
-                    "capabilities": {"tools": {}},
-                    "instructions": "CEDAR TOY 是个人开发维护的非商业公益项目，永久免费。平台内小游戏均来自各开源作者的项目，经授权接入，版权归原作者所有。本服务未授权任何商业软件、付费工具或付费教程将其用于推广、演示、教学或集成。如遇对本服务收费、或商业化软件接入本服务的情况，请联系作者核实：邮箱 1452010907@qq.com / 小红书 501518888。",
-                },
-            )
-        if method == "tools/list":
-            logger.info("MCP tools/list UA: %s", user_agent)
-            return _json_rpc_result(request_id, {"tools": _root_tools(user_agent=user_agent)})
-        if method == "tools/call":
-            name = params.get("name")
-            arguments = params.get("arguments") or {}
-            is_duel_call = (
-                name == "play"
-                and isinstance(arguments, dict)
-                and arguments.get("game") == "duel"
-            )
-            ai_player_id = _authenticated_ai_player_id(
-                path_token or bearer_token
-            )
-            forced_announcement_game = (
-                arguments.get("game")
-                if name == "play" and isinstance(arguments, dict)
-                else None
-            )
-            duel_reminder = ""
-            if not is_duel_call:
-                duel_reminder = _duel_unread_request_reminder(ai_player_id)
-            try:
-                if name == "list_games":
-                    text = _tool_list_games(path_token=path_token or bearer_token)
-                elif name == "get_guide":
-                    text = _tool_get_guide(arguments)
-                elif name == "play":
-                    text = _tool_play(arguments, path_token=path_token or bearer_token)
-                elif name == "account":
-                    text = _tool_account(
-                        arguments,
-                        user_agent=user_agent,
-                        path_token=path_token or bearer_token,
-                        client_ip=client_ip,
-                    )
-                else:
-                    raise _McpError(-32601, f"未知工具：{name}")
-                content = [{"type": "text", "text": text}]
-                forced_announcement = _mcp_forced_announcement(
-                    ai_player_id, forced_announcement_game
-                )
-                if forced_announcement:
-                    content.append({"type": "text", "text": forced_announcement})
-                if duel_reminder:
-                    content.append({"type": "text", "text": duel_reminder})
-                return _json_rpc_result(
-                    request_id, {"content": content, "isError": False}
-                )
-            except _McpError as exc:
-                error_text = (
-                    _duel_mcp_error_text(exc)
-                    if is_duel_call else f"【cedartoy】{exc.message}"
-                )
-                content = [
-                    {"type": "text", "text": error_text}
-                ]
-                forced_announcement = _mcp_forced_announcement(
-                    ai_player_id, forced_announcement_game
-                )
-                if forced_announcement:
-                    content.append({"type": "text", "text": forced_announcement})
-                if duel_reminder:
-                    content.append({"type": "text", "text": duel_reminder})
-                return _json_rpc_result(
-                    request_id, {"content": content, "isError": True}
-                )
-            except Exception as exc:
-                content = [
-                    {"type": "text", "text": f"【cedartoy服务错误】{exc}"}
-                ]
-                forced_announcement = _mcp_forced_announcement(
-                    ai_player_id, forced_announcement_game
-                )
-                if forced_announcement:
-                    content.append({"type": "text", "text": forced_announcement})
-                if duel_reminder:
-                    content.append({"type": "text", "text": duel_reminder})
-                return _json_rpc_result(
-                    request_id, {"content": content, "isError": True}
-                )
-        raise _McpError(-32601, f"Method not found: {method}")
-    except _McpError as exc:
-        return _json_rpc_error(request_id, exc.code, exc.message)
-    except Exception as exc:
-        return _json_rpc_error(request_id, -32603, f"Internal error: {exc}")
+    return mcp_dispatch._handle_root_mcp(
+        payload, user_agent, path_token, client_ip, bearer_token,
+        _McpError=_McpError,
+        _ROOT_MCP_LEGACY_PROTOCOL_VERSION=_ROOT_MCP_LEGACY_PROTOCOL_VERSION,
+        _ROOT_MCP_PROTOCOL_VERSIONS=_ROOT_MCP_PROTOCOL_VERSIONS,
+        _authenticated_ai_player_id=_authenticated_ai_player_id,
+        _blocked_mcp_client_message=_blocked_mcp_client_message,
+        _duel_mcp_error_text=_duel_mcp_error_text,
+        _duel_unread_request_reminder=_duel_unread_request_reminder,
+        _json_rpc_error=_json_rpc_error,
+        _json_rpc_result=_json_rpc_result,
+        _mcp_forced_announcement=_mcp_forced_announcement,
+        _root_tools=_root_tools,
+        _tool_account=_tool_account,
+        _tool_get_guide=_tool_get_guide,
+        _tool_list_games=_tool_list_games,
+        _tool_play=_tool_play,
+        logger=logger,
+    )
 
 
 def _duel_mcp_error_text(exc):
-    """Render only Duel retry metadata into the existing MCP text shape."""
-    text = f"【cedartoy】{exc.message}"
-    if not isinstance(exc.details, dict) or "error_type" not in exc.details:
-        return text
-    visible = {
-        key: exc.details[key]
-        for key in (
-            "error_type", "field_errors", "retry_hint", "retry_example",
-        )
-        if key in exc.details and exc.details[key] not in (None, [], {})
-    }
-    return text + "\n" + json.dumps(
-        visible, ensure_ascii=False, separators=(",", ":")
+    return duel_bridge._duel_mcp_error_text(
+        exc,
+        json=json,
     )
 
 
@@ -511,11 +417,11 @@ def _sessions_db_connect():
 
 
 def _game_player_ids(user):
-    ids = [str(user["id"])]
-    for username in _account_username_aliases(user):
-        if GAME_PLAYER_ID_RE.fullmatch(username):
-            ids.append(username)
-    return list(dict.fromkeys(ids))
+    return player_identity._game_player_ids(
+        user,
+        GAME_PLAYER_ID_RE=GAME_PLAYER_ID_RE,
+        _account_username_aliases=_account_username_aliases,
+    )
 
 
 MIN_SAVE_SLOT = 1
@@ -523,28 +429,26 @@ MAX_SAVE_SLOT = 5
 
 
 def _account_slot_player_id(user_id, slot):
-    user_id = str(int(user_id))
-    return user_id if slot == 1 else f"{user_id}:{slot}"
+    return player_identity._account_slot_player_id(user_id, slot)
 
 
 def _account_slot_player_ids(user):
-    ids = [(_account_slot_player_id(user["id"], slot), slot) for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1)]
-    for username in _account_username_aliases(user):
-        if GAME_PLAYER_ID_RE.fullmatch(username):
-            ids.append((username, 1))
-    return list(dict.fromkeys(ids))
+    return player_identity._account_slot_player_ids(
+        user,
+        GAME_PLAYER_ID_RE=GAME_PLAYER_ID_RE,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _account_slot_player_id=_account_slot_player_id,
+        _account_username_aliases=_account_username_aliases,
+    )
 
 
 def _normalize_save_slot(slot):
-    if isinstance(slot, bool) or not isinstance(slot, (int, str)):
-        return MIN_SAVE_SLOT
-    try:
-        normalized = int(slot)
-    except ValueError:
-        return MIN_SAVE_SLOT
-    if not MIN_SAVE_SLOT <= normalized <= MAX_SAVE_SLOT:
-        return MIN_SAVE_SLOT
-    return normalized
+    return player_identity._normalize_save_slot(
+        slot,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+    )
 
 
 def _garden_cat_watchable_gardens_for_user(user, save_root=None):
@@ -611,48 +515,34 @@ def _garden_cat_watchable_gardens(raw_token):
 
 
 def _bound_ai_slot_target_for_user(user, requested_player):
-    """Resolve a browser-supplied player to one canonical bound AI save slot."""
-    if not user or user.get("is_ai"):
-        return None
-    match = re.fullmatch(r"([1-9][0-9]*)(?::([1-5]))?", str(requested_player or ""))
-    if not match:
-        return None
-    ai_user_id = int(match.group(1))
-    slot = int(match.group(2) or MIN_SAVE_SLOT)
-    with _db_connect() as conn:
-        row = conn.execute(
-            """
-            SELECT ai.id, ai.username
-            FROM user_bindings b
-            JOIN toy_users ai ON ai.id = b.ai_user_id
-            WHERE b.human_user_id = ?
-              AND b.ai_user_id = ?
-              AND ai.is_ai = 1
-              AND ai.deleted_at IS NULL
-            LIMIT 1
-            """,
-            (int(user["id"]), ai_user_id),
-        ).fetchone()
-    if not row:
-        return None
-    return {
-        "player": _account_slot_player_id(row["id"], slot),
-        "ai_user_id": int(row["id"]),
-        "machine_name": str(row["username"]),
-        "slot": slot,
-    }
+    return player_identity._bound_ai_slot_target_for_user(
+        user, requested_player,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _account_slot_player_id=_account_slot_player_id,
+        _db_connect=_db_connect,
+        re=re,
+    )
 
 
 def _forest_bound_target_for_user(user, requested_player):
-    return _bound_ai_slot_target_for_user(user, requested_player)
+    return player_identity._forest_bound_target_for_user(
+        user, requested_player,
+        _bound_ai_slot_target_for_user=_bound_ai_slot_target_for_user,
+    )
 
 
 def _moonlit_bound_target_for_user(user, requested_player):
-    return _bound_ai_slot_target_for_user(user, requested_player)
+    return player_identity._moonlit_bound_target_for_user(
+        user, requested_player,
+        _bound_ai_slot_target_for_user=_bound_ai_slot_target_for_user,
+    )
 
 
 def _ai_life_bound_target_for_user(user, requested_player):
-    return _bound_ai_slot_target_for_user(user, requested_player)
+    return player_identity._ai_life_bound_target_for_user(
+        user, requested_player,
+        _bound_ai_slot_target_for_user=_bound_ai_slot_target_for_user,
+    )
 
 
 def _forest_watchable_slots_for_user(user):
@@ -823,53 +713,14 @@ def _init_registration_events_table(conn):
 
 
 def _init_password_reset_tokens_table(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            token TEXT NOT NULL UNIQUE,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            expires_at TEXT NOT NULL,
-            used INTEGER NOT NULL DEFAULT 0
-        )
-        """
+    return account_recovery._init_password_reset_tokens_table(
+        conn,
+        _init_account_recovery_table=_init_account_recovery_table,
     )
-
-    _init_account_recovery_table(conn)
 
 
 def _init_account_recovery_table(conn):
-    # Epoch timestamps here; password_reset_tokens retains its UTC text dates.
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS account_recovery_tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_kind TEXT NOT NULL,
-            account TEXT NOT NULL,
-            machine TEXT NOT NULL,
-            registered_about TEXT NOT NULL,
-            games TEXT NOT NULL,
-            explanation TEXT NOT NULL,
-            query_code_hash TEXT NOT NULL UNIQUE,
-            ip_hash TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            admin_note TEXT NOT NULL DEFAULT '',
-            user_id INTEGER REFERENCES toy_users(id) ON DELETE CASCADE,
-            reviewed_by INTEGER,
-            created_at_epoch INTEGER NOT NULL,
-            reviewed_at_epoch INTEGER,
-            claim_until_epoch INTEGER,
-            completed_at_epoch INTEGER,
-            reset_token_id INTEGER,
-            reset_nonce TEXT
-        )
-    """)
-    # Preserve unfinished-version rows if its schema was already initialized.
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(account_recovery_tickets)")}
-    if "access_hash" in columns and "query_code_hash" not in columns:
-        conn.execute("ALTER TABLE account_recovery_tickets RENAME COLUMN access_hash TO query_code_hash")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_recovery_status ON account_recovery_tickets(status, id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_recovery_ip ON account_recovery_tickets(ip_hash, created_at_epoch)")
+    return account_recovery._init_account_recovery_table(conn)
 
 
 def _init_username_changes_table(conn):
@@ -956,188 +807,19 @@ def _init_account_security_schema(conn):
 
 
 def _init_operit_schema(conn):
-    """Create credentials that are deliberately separate from MCP AI tokens."""
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS operit_ai_sessions (
-            token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
-            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
-            client_id_hash TEXT NOT NULL CHECK (length(client_id_hash) = 64),
-            format_version INTEGER NOT NULL DEFAULT 1 CHECK (format_version = 1),
-            created_at_epoch INTEGER NOT NULL,
-            expires_at_epoch INTEGER NOT NULL,
-            last_used_at_epoch INTEGER NOT NULL,
-            revoked_at_epoch INTEGER
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_operit_ai_sessions_user_active
-        ON operit_ai_sessions(user_id, revoked_at_epoch, expires_at_epoch)
-        """
-    )
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_operit_ai_sessions_client_active
-        ON operit_ai_sessions(client_id_hash)
-        WHERE revoked_at_epoch IS NULL
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS operit_web_tickets (
-            ticket_hash TEXT PRIMARY KEY CHECK (length(ticket_hash) = 64),
-            human_user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
-            created_at_epoch INTEGER NOT NULL,
-            expires_at_epoch INTEGER NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_operit_web_tickets_expiry
-        ON operit_web_tickets(expires_at_epoch)
-        """
-    )
+    return operit._init_operit_schema(conn)
 
 
 def _invalidate_operit_credentials_in_transaction(conn, user_id, *, now_epoch=None):
-    """Invalidate only the new credential family after a password/security reset."""
-    now_epoch = int(time.time() if now_epoch is None else now_epoch)
-    if _table_exists(conn, "operit_ai_sessions"):
-        conn.execute(
-            """
-            UPDATE operit_ai_sessions
-            SET revoked_at_epoch = COALESCE(revoked_at_epoch, ?)
-            WHERE user_id = ?
-            """,
-            (now_epoch, int(user_id)),
-        )
-    if _table_exists(conn, "operit_web_tickets"):
-        conn.execute(
-            "DELETE FROM operit_web_tickets WHERE human_user_id = ?",
-            (int(user_id),),
-        )
+    return operit._invalidate_operit_credentials_in_transaction(
+        conn, user_id, now_epoch=now_epoch,
+        _table_exists=_table_exists,
+        time=time,
+    )
 
 
 def _init_account_email_schema(conn):
-    """Create the optional, human-only email recovery schema idempotently."""
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS account_emails (
-            user_id INTEGER PRIMARY KEY REFERENCES toy_users(id) ON DELETE CASCADE,
-            email_normalized TEXT NOT NULL COLLATE NOCASE,
-            verified INTEGER NOT NULL DEFAULT 1 CHECK (verified = 1),
-            verified_at_epoch INTEGER NOT NULL,
-            created_at_epoch INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
-            updated_at_epoch INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_account_emails_unique_normalized
-        ON account_emails(email_normalized COLLATE NOCASE)
-        """
-    )
-    conn.execute(
-        """
-        CREATE TRIGGER IF NOT EXISTS account_emails_human_only_insert
-        BEFORE INSERT ON account_emails
-        WHEN COALESCE((SELECT is_ai FROM toy_users WHERE id = NEW.user_id), 1) != 0
-        BEGIN
-            SELECT RAISE(ABORT, 'email is only available to human accounts');
-        END
-        """
-    )
-    conn.execute(
-        """
-        CREATE TRIGGER IF NOT EXISTS account_emails_human_only_update
-        BEFORE UPDATE OF user_id ON account_emails
-        WHEN COALESCE((SELECT is_ai FROM toy_users WHERE id = NEW.user_id), 1) != 0
-        BEGIN
-            SELECT RAISE(ABORT, 'email is only available to human accounts');
-        END
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS email_verification_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
-            email_normalized TEXT NOT NULL COLLATE NOCASE,
-            purpose TEXT NOT NULL CHECK (purpose IN ('bind', 'change', 'reset')),
-            code_salt TEXT NOT NULL,
-            code_hash TEXT NOT NULL CHECK (length(code_hash) = 64),
-            request_ip_hash TEXT NOT NULL CHECK (length(request_ip_hash) = 64),
-            created_at_epoch INTEGER NOT NULL,
-            expires_at_epoch INTEGER NOT NULL,
-            delivered_at_epoch INTEGER,
-            used_at_epoch INTEGER,
-            failed_attempts INTEGER NOT NULL DEFAULT 0
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TRIGGER IF NOT EXISTS account_emails_remove_if_user_becomes_ai
-        AFTER UPDATE OF is_ai ON toy_users
-        WHEN NEW.is_ai != 0
-        BEGIN
-            DELETE FROM account_emails WHERE user_id = NEW.id;
-            UPDATE email_verification_codes
-            SET used_at_epoch = COALESCE(
-                used_at_epoch,
-                CAST(strftime('%s', 'now') AS INTEGER)
-            )
-            WHERE user_id = NEW.id;
-        END
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_email_codes_account_purpose_created
-        ON email_verification_codes(user_id, purpose, created_at_epoch DESC)
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_email_codes_email_created
-        ON email_verification_codes(email_normalized, created_at_epoch DESC)
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_email_codes_ip_created
-        ON email_verification_codes(request_ip_hash, created_at_epoch DESC)
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS email_verification_attempts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code_id INTEGER REFERENCES email_verification_codes(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES toy_users(id) ON DELETE CASCADE,
-            email_hash TEXT NOT NULL CHECK (length(email_hash) = 64),
-            request_ip_hash TEXT NOT NULL CHECK (length(request_ip_hash) = 64),
-            succeeded INTEGER NOT NULL DEFAULT 0,
-            attempted_at_epoch INTEGER NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_email_attempts_account_time
-        ON email_verification_attempts(user_id, attempted_at_epoch DESC)
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_email_attempts_ip_time
-        ON email_verification_attempts(request_ip_hash, attempted_at_epoch DESC)
-        """
-    )
+    return account_email._init_account_email_schema(conn)
 
 
 def _init_anti_addiction_tables(conn):
@@ -1305,535 +987,278 @@ def _migrate_platform_timestamps():
 
 
 def _hash_password(password):
-    if PWD_CONTEXT:
-        return PWD_CONTEXT.hash(password)
-    salt_bytes = secrets.token_bytes(16)
-    salt = _ab64_encode(salt_bytes)
-    rounds = 29000
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, rounds)
-    checksum = _ab64_encode(digest)
-    return f"$pbkdf2-sha256${rounds}${salt}${checksum}"
+    return auth._hash_password(
+        password,
+        PWD_CONTEXT=PWD_CONTEXT,
+        _ab64_encode=_ab64_encode,
+        hashlib=hashlib,
+        secrets=secrets,
+    )
 
 
 def _verify_password(password, password_hash):
-    if PWD_CONTEXT:
-        return PWD_CONTEXT.verify(password, password_hash)
-    try:
-        _, scheme, rounds, salt, checksum = password_hash.split("$", 4)
-        if scheme != "pbkdf2-sha256":
-            return False
-        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), _ab64_decode(salt), int(rounds))
-        expected = _ab64_encode(digest)
-        return hmac.compare_digest(expected, checksum)
-    except Exception:
-        return False
+    return auth._verify_password(
+        password, password_hash,
+        PWD_CONTEXT=PWD_CONTEXT,
+        _ab64_decode=_ab64_decode,
+        _ab64_encode=_ab64_encode,
+        hashlib=hashlib,
+        hmac=hmac,
+    )
 
 
 def _ab64_encode(raw):
-    return base64.b64encode(raw).decode("ascii").rstrip("=").replace("+", ".")
+    return auth._ab64_encode(
+        raw,
+        base64=base64,
+    )
 
 
 def _ab64_decode(value):
-    normalized = value.replace(".", "+")
-    padding = "=" * (-len(normalized) % 4)
-    return base64.b64decode((normalized + padding).encode("ascii"))
+    return auth._ab64_decode(
+        value,
+        base64=base64,
+    )
 
 
 def _normalize_email(value):
-    if not isinstance(value, str):
-        raise _McpError(-32602, "邮箱必填")
-    email = value.strip().casefold()
-    if len(email) > 254 or not re.fullmatch(
-        r"[a-z0-9.!#$%&'*+/=?^_{}|~-]{1,64}@[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?",
-        email,
-    ):
-        raise _McpError(-32602, "邮箱格式不正确")
-    local, domain = email.rsplit("@", 1)
-    if "." not in domain or any(
-        not label or label.startswith("-") or label.endswith("-") or len(label) > 63
-        for label in domain.split(".")
-    ):
-        raise _McpError(-32602, "邮箱格式不正确")
-    return email
+    return account_email._normalize_email(
+        value,
+        _McpError=_McpError,
+        re=re,
+    )
 
 
 def _mask_email(email):
-    local, domain = email.rsplit("@", 1)
-    domain_parts = domain.split(".")
-    domain_name = domain_parts[0]
-    suffix = "." + ".".join(domain_parts[1:]) if len(domain_parts) > 1 else ""
-    return f"{local[:1]}***@{domain_name[:1]}***{suffix}"
+    return account_email._mask_email(email)
 
 
 def _email_hmac(*parts):
-    payload = "\x1f".join(str(part) for part in parts).encode("utf-8")
-    return hmac.new(TOY_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    return account_email._email_hmac(
+        *parts,
+        TOY_SECRET=TOY_SECRET,
+        hashlib=hashlib,
+        hmac=hmac,
+    )
 
 
 def _email_code_hash(code, salt, purpose, user_id, email):
-    return _email_hmac("email-code-v1", salt, purpose, int(user_id), email, code)
+    return account_email._email_code_hash(
+        code, salt, purpose, user_id, email,
+        _email_hmac=_email_hmac,
+    )
 
 
 def _email_ip_hash(client_ip):
-    return _email_hmac("email-ip-v1", client_ip or "unknown")
+    return account_email._email_ip_hash(
+        client_ip,
+        _email_hmac=_email_hmac,
+    )
 
 
 def _email_value_hash(email):
-    return _email_hmac("email-value-v1", email)
+    return account_email._email_value_hash(
+        email,
+        _email_hmac=_email_hmac,
+    )
 
 
 def _smtp_config():
-    host = os.getenv("CEDARTOY_SMTP_HOST", "").strip()
-    sender = os.getenv("CEDARTOY_SMTP_FROM", "").strip()
-    if not host or not sender:
-        raise _McpError(
-            EMAIL_PROVIDER_ERROR_CODE,
-            "邮件服务尚未配置，请联系管理员（缺少 CEDARTOY_SMTP_HOST / CEDARTOY_SMTP_FROM）",
-            {"reason": "email_provider_not_configured"},
-        )
-    security = os.getenv("CEDARTOY_SMTP_SECURITY", "starttls").strip().lower()
-    if security not in {"starttls", "ssl", "none"}:
-        raise _McpError(
-            EMAIL_PROVIDER_ERROR_CODE,
-            "邮件服务配置错误，请联系管理员（CEDARTOY_SMTP_SECURITY 无效）",
-            {"reason": "email_provider_misconfigured"},
-        )
-    default_port = 465 if security == "ssl" else 587
-    try:
-        port = int(os.getenv("CEDARTOY_SMTP_PORT", str(default_port)))
-    except ValueError:
-        raise _McpError(
-            EMAIL_PROVIDER_ERROR_CODE,
-            "邮件服务配置错误，请联系管理员（CEDARTOY_SMTP_PORT 无效）",
-            {"reason": "email_provider_misconfigured"},
-        ) from None
-    username = os.getenv("CEDARTOY_SMTP_USERNAME", "")
-    password = os.getenv("CEDARTOY_SMTP_PASSWORD", "")
-    if bool(username) != bool(password):
-        raise _McpError(
-            EMAIL_PROVIDER_ERROR_CODE,
-            "邮件服务配置错误，请联系管理员（SMTP 用户名和密码必须同时配置）",
-            {"reason": "email_provider_misconfigured"},
-        )
-    return {
-        "host": host,
-        "port": port,
-        "sender": sender,
-        "username": username,
-        "password": password,
-        "security": security,
-    }
+    return account_email._smtp_config(
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE,
+        _McpError=_McpError,
+        os=os,
+    )
 
 
 def _send_verification_email(email, code, purpose, smtp_config):
-    purpose_labels = {
-        "bind": "绑定邮箱",
-        "change": "更换邮箱",
-        "reset": "重置密码",
-    }
-    label = purpose_labels[purpose]
-    message = EmailMessage()
-    message["Subject"] = f"CedarToy 验证码：{label}"
-    message["From"] = smtp_config["sender"]
-    message["To"] = email
-    message.set_content(
-        f"你的 CedarToy 验证码是：{code}\n\n"
-        f"验证码用于{label}，10 分钟内有效。\n"
-        "如果不是你本人操作，请忽略这封邮件。"
+    return account_email._send_verification_email(
+        email, code, purpose, smtp_config,
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE,
+        EmailMessage=EmailMessage,
+        _McpError=_McpError,
+        logger=logger,
+        smtplib=smtplib,
+        ssl=ssl,
     )
-    try:
-        if smtp_config["security"] == "ssl":
-            client = smtplib.SMTP_SSL(
-                smtp_config["host"],
-                smtp_config["port"],
-                timeout=10,
-                context=ssl.create_default_context(),
-            )
-        else:
-            client = smtplib.SMTP(
-                smtp_config["host"],
-                smtp_config["port"],
-                timeout=10,
-            )
-        with client:
-            if smtp_config["security"] == "starttls":
-                client.starttls(context=ssl.create_default_context())
-            if smtp_config["username"]:
-                client.login(smtp_config["username"], smtp_config["password"])
-            client.send_message(message)
-    except (OSError, smtplib.SMTPException) as exc:
-        logger.warning("email delivery failed: %s", type(exc).__name__)
-        raise _McpError(
-            EMAIL_PROVIDER_ERROR_CODE,
-            "邮件暂时无法发送，请稍后重试或联系管理员",
-            {"reason": "email_delivery_unavailable"},
-        ) from exc
 
 
 def _b64url_encode(raw):
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return auth._b64url_encode(
+        raw,
+        base64=base64,
+    )
 
 
 def _b64url_decode(value):
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+    return auth._b64url_decode(
+        value,
+        base64=base64,
+    )
 
 
 def _jwt_unverified_payload(token):
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise ValueError("not a three-part JWT")
-        payload_part = parts[1]
-        padding = "=" * (-len(payload_part) % 4)
-        payload_raw = base64.b64decode(
-            (payload_part + padding).encode("ascii"),
-            altchars=b"-_",
-            validate=True,
-        )
-        payload = json.loads(payload_raw.decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("JWT payload is not an object")
-        return payload
-    except Exception as exc:
-        raise ValueError("malformed JWT payload") from exc
+    return auth._jwt_unverified_payload(
+        token,
+        base64=base64,
+        json=json,
+    )
 
 
 def _jwt_encode(payload):
-    header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
-    header_part = _b64url_encode(json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-    payload_part = _b64url_encode(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-    signing_input = f"{header_part}.{payload_part}".encode("ascii")
-    signature = hmac.new(TOY_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    return f"{header_part}.{payload_part}.{_b64url_encode(signature)}"
+    return auth._jwt_encode(
+        payload,
+        JWT_ALGORITHM=JWT_ALGORITHM,
+        TOY_SECRET=TOY_SECRET,
+        _b64url_encode=_b64url_encode,
+        hashlib=hashlib,
+        hmac=hmac,
+        json=json,
+    )
 
 
 def _legacy_ai_token_hash(token):
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return auth._legacy_ai_token_hash(
+        token,
+        hashlib=hashlib,
+    )
 
 
 def _opaque_ai_token_hash(token):
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return auth._opaque_ai_token_hash(
+        token,
+        hashlib=hashlib,
+    )
 
 
 def _issue_ai_token_in_transaction(conn, user):
-    """Issue one opaque AI token; only its SHA-256 hash survives this call."""
-    user_id = int(user["id"])
-    if not user.get("is_ai") or user.get("deleted_at") is not None:
-        raise _McpError(-32602, "目标账号不是有效的小机账号")
-    generation = int(user.get("ai_token_version") or 0)
-    for _attempt in range(3):
-        token = AI_OPAQUE_TOKEN_PREFIX + secrets.token_urlsafe(AI_OPAQUE_TOKEN_BYTES)
-        try:
-            conn.execute(
-                """
-                INSERT INTO ai_access_tokens (
-                    token_hash, user_id, generation, format_version
-                ) VALUES (?, ?, ?, ?)
-                """,
-                (
-                    _opaque_ai_token_hash(token),
-                    user_id,
-                    generation,
-                    AI_OPAQUE_TOKEN_FORMAT_VERSION,
-                ),
-            )
-            return token
-        except sqlite3.IntegrityError as exc:
-            if "ai_access_tokens.token_hash" not in str(exc):
-                raise
-            continue
-    raise RuntimeError("failed to allocate a unique AI token")
+    return auth._issue_ai_token_in_transaction(
+        conn, user,
+        AI_OPAQUE_TOKEN_BYTES=AI_OPAQUE_TOKEN_BYTES,
+        AI_OPAQUE_TOKEN_FORMAT_VERSION=AI_OPAQUE_TOKEN_FORMAT_VERSION,
+        AI_OPAQUE_TOKEN_PREFIX=AI_OPAQUE_TOKEN_PREFIX,
+        _McpError=_McpError,
+        _opaque_ai_token_hash=_opaque_ai_token_hash,
+        secrets=secrets,
+        sqlite3=sqlite3,
+    )
 
 
 def _issue_initial_account_token_in_transaction(conn, user):
-    """Issue the first token for a newly-created account."""
-    if user.get("is_ai"):
-        active_count = int(conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM ai_access_tokens
-            WHERE user_id = ? AND revoked_at_epoch IS NULL
-            """,
-            (int(user["id"]),),
-        ).fetchone()[0])
-        if active_count:
-            raise RuntimeError("initial AI token already exists")
-        return _issue_ai_token_in_transaction(conn, user)
-    return _create_account_jwt(user)
+    return auth._issue_initial_account_token_in_transaction(
+        conn, user,
+        _create_account_jwt=_create_account_jwt,
+        _issue_ai_token_in_transaction=_issue_ai_token_in_transaction,
+    )
 
 
 def _legacy_allowlisted_ai_payload(token):
-    """Accept only an exact pre-verified legacy AI token hash, never a candidate."""
-    try:
-        if not LEGACY_AI_JWT_COMPAT_ENABLED:
-            raise ValueError("legacy AI JWT compatibility is disabled")
-        payload = _jwt_unverified_payload(token)
-        if set(payload) != {"user_id", "username", "is_ai", "is_admin"}:
-            raise ValueError("unexpected legacy payload")
-        if payload.get("is_ai") is not True:
-            raise ValueError("not a permanent AI token")
-        user_id = int(payload["user_id"])
-        token_hash = _legacy_ai_token_hash(token)
-        with _db_connect() as conn:
-            if not _table_exists(conn, "legacy_ai_token_hashes"):
-                raise ValueError("legacy allowlist unavailable")
-            row = conn.execute(
-                """
-                SELECT user_id, token_version
-                FROM legacy_ai_token_hashes
-                WHERE token_hash = ?
-                """,
-                (token_hash,),
-            ).fetchone()
-        if not row or int(row["user_id"]) != user_id:
-            raise ValueError("legacy token is not allowlisted")
-        payload["_legacy_token_version"] = int(row["token_version"])
-        return payload
-    except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
-        raise ValueError("legacy token is not allowlisted") from exc
+    return auth._legacy_allowlisted_ai_payload(
+        token,
+        LEGACY_AI_JWT_COMPAT_ENABLED=LEGACY_AI_JWT_COMPAT_ENABLED,
+        _db_connect=_db_connect,
+        _jwt_unverified_payload=_jwt_unverified_payload,
+        _legacy_ai_token_hash=_legacy_ai_token_hash,
+        _table_exists=_table_exists,
+        sqlite3=sqlite3,
+    )
 
 
 def _jwt_decode(token):
-    try:
-        header_part, payload_part, signature_part = token.split(".", 2)
-        signing_input = f"{header_part}.{payload_part}".encode("ascii")
-        expected = hmac.new(TOY_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
-        actual = _b64url_decode(signature_part)
-        if not hmac.compare_digest(expected, actual):
-            return _legacy_allowlisted_ai_payload(token)
-        header = json.loads(_b64url_decode(header_part).decode("utf-8"))
-        if header.get("alg") != JWT_ALGORITHM:
-            raise ValueError("bad algorithm")
-        payload = json.loads(_b64url_decode(payload_part).decode("utf-8"))
-        if payload.get("is_ai") is True and not LEGACY_AI_JWT_COMPAT_ENABLED:
-            raise ValueError("legacy AI JWT compatibility is disabled")
-        exp = payload.get("exp")
-        if exp is not None and int(exp) < int(time.time()):
-            raise ValueError("expired")
-        return payload
-    except Exception as exc:
-        raise ValueError("登录已失效。请检查：1) MCP 地址是否为 toy.cedarstar.org/你的token（不要带花括号）；2) 人类是否完整复制了 token（不要漏字符）；3) 如果 token 确实丢失，可用 account 工具的 login 重新获取。") from exc
+    return auth._jwt_decode(
+        token,
+        JWT_ALGORITHM=JWT_ALGORITHM,
+        LEGACY_AI_JWT_COMPAT_ENABLED=LEGACY_AI_JWT_COMPAT_ENABLED,
+        TOY_SECRET=TOY_SECRET,
+        _b64url_decode=_b64url_decode,
+        _legacy_allowlisted_ai_payload=_legacy_allowlisted_ai_payload,
+        hashlib=hashlib,
+        hmac=hmac,
+        json=json,
+        time=time,
+    )
 
 
 def _create_account_jwt(user):
-    payload = {
-        "user_id": int(user["id"]),
-        "username": user["username"],
-        "is_ai": bool(user.get("is_ai")),
-        "is_admin": bool(user.get("is_admin")),
-    }
-    if user.get("is_ai"):
-        payload["token_version"] = int(user.get("ai_token_version") or 0)
-    else:
-        payload["exp"] = int(time.time()) + HUMAN_TOKEN_SECONDS
-    return _jwt_encode(payload)
+    return auth._create_account_jwt(
+        user,
+        HUMAN_TOKEN_SECONDS=HUMAN_TOKEN_SECONDS,
+        _jwt_encode=_jwt_encode,
+        time=time,
+    )
 
 
 def _create_account_token(user):
-    """Create a human JWT or bootstrap/replace an internal AI credential."""
-    if not user.get("is_ai"):
-        return _create_account_jwt(user)
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        current_user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-            (int(user["id"]),),
-        ).fetchone())
-        if not current_user:
-            raise _McpError(-32004, "小机账号不存在或已删除")
-        active_count = int(conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM ai_access_tokens
-            WHERE user_id = ? AND revoked_at_epoch IS NULL
-            """,
-            (current_user["id"],),
-        ).fetchone()[0])
-        if active_count:
-            current_user, token = _replace_ai_token_in_transaction(
-                conn, current_user["id"]
-            )
-        else:
-            token = _issue_ai_token_in_transaction(conn, current_user)
-        conn.commit()
-    return token
+    return auth._create_account_token(
+        user,
+        _McpError=_McpError,
+        _create_account_jwt=_create_account_jwt,
+        _db_connect=_db_connect,
+        _issue_ai_token_in_transaction=_issue_ai_token_in_transaction,
+        _replace_ai_token_in_transaction=_replace_ai_token_in_transaction,
+        _row_dict=_row_dict,
+    )
 
 
 def _default_avatar_value(user):
-    return DEFAULT_AI_AVATAR if user.get("is_ai") else DEFAULT_HUMAN_AVATAR
+    return accounts._default_avatar_value(
+        user,
+        DEFAULT_AI_AVATAR=DEFAULT_AI_AVATAR,
+        DEFAULT_HUMAN_AVATAR=DEFAULT_HUMAN_AVATAR,
+    )
 
 
 def _public_avatar(user):
-    avatar_type = str(user.get("avatar_type") or "").strip()
-    avatar_value = str(user.get("avatar_value") or "").strip()
-    if not avatar_type or not avatar_value:
-        return {
-            "type": "emoji",
-            "value": _default_avatar_value(user),
-            "is_default": True,
-        }
-    return {"type": avatar_type, "value": avatar_value, "is_default": False}
+    return accounts._public_avatar(
+        user,
+        _default_avatar_value=_default_avatar_value,
+    )
 
 
 def _public_user(user):
-    result = {
-        "id": user["id"],
-        "username": user["username"],
-        "is_ai": bool(user.get("is_ai")),
-        "is_admin": bool(user.get("is_admin")),
-        "avatar": _public_avatar(user),
-        "created_at": user.get("created_at"),
-        "last_active_at": user.get("last_active_at"),
-    }
-    with _db_connect() as conn:
-        result["avatar_frame"] = avatar_appearances.selected(conn, user["id"])
-    if user.get("deletion_requested_at_epoch") is not None:
-        scheduled = int(user["scheduled_delete_at_epoch"])
-        result["deletion"] = {
-            "status": "due" if int(time.time()) >= scheduled else "pending",
-            "deletion_requested_at_epoch": int(user["deletion_requested_at_epoch"]),
-            "scheduled_delete_at_epoch": scheduled,
-            "scheduled_delete_at": time.strftime(
-                "%Y-%m-%d %H:%M:%S", time.localtime(scheduled)
-            ),
-            "can_cancel": int(time.time()) < scheduled,
-        }
-    return result
+    return accounts._public_user(
+        user,
+        _db_connect=_db_connect,
+        _public_avatar=_public_avatar,
+        avatar_appearances=avatar_appearances,
+        time=time,
+    )
 
 
 def _account_username_aliases(user):
-    """Current display name plus reserved former names used by legacy saves."""
-    names = [str(user.get("username") or "").strip()]
-    try:
-        with _db_connect() as conn:
-            if _table_exists(conn, "account_username_changes"):
-                names.extend(
-                    row["old_username"]
-                    for row in conn.execute(
-                        """
-                        SELECT old_username
-                        FROM account_username_changes
-                        WHERE user_id = ?
-                        ORDER BY id DESC
-                        """,
-                        (int(user["id"]),),
-                    ).fetchall()
-                )
-    except (KeyError, TypeError, ValueError, sqlite3.Error):
-        # Legacy-save discovery is best effort; canonical numeric user_id remains authoritative.
-        pass
-    return [name for name in dict.fromkeys(names) if name]
+    return accounts._account_username_aliases(
+        user,
+        _db_connect=_db_connect,
+        _table_exists=_table_exists,
+        sqlite3=sqlite3,
+    )
 
 
 def _current_account(raw_token, *, allow_pending_deletion=False):
-    if not raw_token:
-        raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
-    raw_token = str(raw_token)
-    is_opaque = raw_token.startswith(AI_OPAQUE_TOKEN_PREFIX)
-    payload = None
-    if not is_opaque:
-        try:
-            _jwt_unverified_payload(raw_token)
-        except ValueError:
-            raise _McpError(-32001, "token 格式不完整，可能在复制时断行或漏了字符。请重新完整复制一整行 token 后重连。") from None
-        try:
-            payload = _jwt_decode(raw_token)
-            user_id = int(payload["user_id"])
-        except (KeyError, TypeError, ValueError):
-            raise _McpError(-32001, "登录已失效。请检查：1) MCP 地址是否为 toy.cedarstar.org/你的token（不要带花括号）；2) 人类是否完整复制了 token（不要漏字符）；3) 如果 token 确实丢失，可用 account 工具的 login 重新获取。") from None
-    with _db_connect() as conn:
-        if is_opaque:
-            token_row = _row_dict(conn.execute(
-                """
-                SELECT user_id, generation, format_version
-                FROM ai_access_tokens
-                WHERE token_hash = ? AND revoked_at_epoch IS NULL
-                """,
-                (_opaque_ai_token_hash(raw_token),),
-            ).fetchone())
-            if not token_row or int(token_row["format_version"]) != AI_OPAQUE_TOKEN_FORMAT_VERSION:
-                raise _McpError(-32001, "登录已失效：Token 不存在或已撤销")
-            user_id = int(token_row["user_id"])
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-            (user_id,),
-        ).fetchone())
-        if not user:
-            raise _McpError(-32001, "账号不存在或已删除")
-        if is_opaque:
-            if not user.get("is_ai"):
-                raise _McpError(-32001, "登录已失效：该账号已不是小机账号")
-            if int(token_row["generation"]) != int(user.get("ai_token_version") or 0):
-                raise _McpError(-32001, "登录已失效：该小机 Token 已更新")
-            auth_token_format = "opaque_v1"
-        elif payload.get("is_ai") is True:
-            if not user.get("is_ai"):
-                raise _McpError(-32001, "登录已失效：该账号已不是小机账号")
-            presented_version = payload.get(
-                "token_version",
-                payload.get("_legacy_token_version", 0),
-            )
-            try:
-                presented_version = int(presented_version)
-            except (TypeError, ValueError):
-                raise _McpError(-32001, "登录已失效") from None
-            if presented_version != int(user.get("ai_token_version") or 0):
-                raise _McpError(-32001, "登录已失效：该小机 Token 已更新")
-            auth_token_format = "legacy_jwt"
-        else:
-            if user.get("is_ai"):
-                raise _McpError(-32001, "登录已失效：Token 账号类型不匹配")
-            auth_token_format = "jwt"
-        if user.get("deletion_requested_at_epoch") is not None:
-            scheduled = int(user["scheduled_delete_at_epoch"])
-            if not allow_pending_deletion:
-                when = time.strftime("%Y-%m-%d %H:%M", time.localtime(scheduled))
-                raise _McpError(
-                    -32010,
-                    f"账号处于待注销状态，将于 {when} 永久删除；当前只可查询或取消注销。",
-                    {"reason": "pending_deletion"},
-                )
-            user["_auth_token_format"] = auth_token_format
-            return user
-        conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user_id,))
-        conn.commit()
-        user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
-        user["_auth_token_format"] = auth_token_format
-    return user
+    return auth._current_account(
+        raw_token, allow_pending_deletion=allow_pending_deletion,
+        AI_OPAQUE_TOKEN_FORMAT_VERSION=AI_OPAQUE_TOKEN_FORMAT_VERSION,
+        AI_OPAQUE_TOKEN_PREFIX=AI_OPAQUE_TOKEN_PREFIX,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _jwt_decode=_jwt_decode,
+        _jwt_unverified_payload=_jwt_unverified_payload,
+        _opaque_ai_token_hash=_opaque_ai_token_hash,
+        _row_dict=_row_dict,
+        time=time,
+    )
 
 
 def _path_token_user_id(path_token):
-    if not path_token:
-        return None
-    if str(path_token).startswith(AI_OPAQUE_TOKEN_PREFIX):
-        try:
-            with _db_connect() as conn:
-                row = conn.execute(
-                    """
-                    SELECT t.user_id
-                    FROM ai_access_tokens AS t
-                    JOIN toy_users AS u ON u.id = t.user_id
-                    WHERE t.token_hash = ?
-                      AND t.revoked_at_epoch IS NULL
-                      AND t.format_version = ?
-                      AND t.generation = u.ai_token_version
-                      AND u.is_ai = 1
-                      AND u.deleted_at IS NULL
-                    """,
-                    (
-                        _opaque_ai_token_hash(str(path_token)),
-                        AI_OPAQUE_TOKEN_FORMAT_VERSION,
-                    ),
-                ).fetchone()
-            return int(row["user_id"]) if row else None
-        except (KeyError, TypeError, ValueError, sqlite3.Error):
-            return None
-    try:
-        payload = _jwt_decode(path_token)
-        return int(payload["user_id"])
-    except (KeyError, TypeError, ValueError):
-        return None
+    return auth._path_token_user_id(
+        path_token,
+        AI_OPAQUE_TOKEN_FORMAT_VERSION=AI_OPAQUE_TOKEN_FORMAT_VERSION,
+        AI_OPAQUE_TOKEN_PREFIX=AI_OPAQUE_TOKEN_PREFIX,
+        _db_connect=_db_connect,
+        _jwt_decode=_jwt_decode,
+        _opaque_ai_token_hash=_opaque_ai_token_hash,
+        sqlite3=sqlite3,
+    )
 
 
 def _prune_rate_limit_buckets(buckets, now, window_seconds):
@@ -1916,505 +1341,297 @@ def _request_rate_limit_identity(path_token, client_ip):
 
 
 def _check_register_rate_limit(ip):
-    return _check_sliding_window_limit(
-        _REGISTER_RATE_LIMIT,
-        f"ip:{ip or 'unknown'}",
-        now=time.time(),
-        window_seconds=REGISTER_RATE_LIMIT_WINDOW_SECONDS,
-        max_count=REGISTER_RATE_LIMIT_MAX,
+    return accounts._check_register_rate_limit(
+        ip,
+        REGISTER_RATE_LIMIT_MAX=REGISTER_RATE_LIMIT_MAX,
+        REGISTER_RATE_LIMIT_WINDOW_SECONDS=REGISTER_RATE_LIMIT_WINDOW_SECONDS,
+        _REGISTER_RATE_LIMIT=_REGISTER_RATE_LIMIT,
+        _check_sliding_window_limit=_check_sliding_window_limit,
+        time=time,
     )
 
 
 def _failed_login_identity(client_ip, username):
-    normalized_username = (username or "").strip().casefold()
-    return f"ip:{client_ip or 'unknown'}|username:{normalized_username}"
+    return accounts._failed_login_identity(client_ip, username)
 
 
 def _failed_login_is_limited(client_ip, username, *, now=None):
-    now = time.time() if now is None else now
-    identity = _failed_login_identity(client_ip, username)
-    with _RATE_LIMIT_LOCK:
-        _prune_rate_limit_buckets(
-            _FAILED_LOGIN_RATE_LIMIT,
-            now,
-            FAILED_LOGIN_WINDOW_SECONDS,
-        )
-        return len(_FAILED_LOGIN_RATE_LIMIT.get(identity, ())) >= FAILED_LOGIN_MAX
+    return accounts._failed_login_is_limited(
+        client_ip, username, now=now,
+        FAILED_LOGIN_MAX=FAILED_LOGIN_MAX,
+        FAILED_LOGIN_WINDOW_SECONDS=FAILED_LOGIN_WINDOW_SECONDS,
+        _FAILED_LOGIN_RATE_LIMIT=_FAILED_LOGIN_RATE_LIMIT,
+        _RATE_LIMIT_LOCK=_RATE_LIMIT_LOCK,
+        _failed_login_identity=_failed_login_identity,
+        _prune_rate_limit_buckets=_prune_rate_limit_buckets,
+        time=time,
+    )
 
 
 def _record_failed_login(client_ip, username, *, now=None):
-    now = time.time() if now is None else now
-    identity = _failed_login_identity(client_ip, username)
-    with _RATE_LIMIT_LOCK:
-        _prune_rate_limit_buckets(
-            _FAILED_LOGIN_RATE_LIMIT,
-            now,
-            FAILED_LOGIN_WINDOW_SECONDS,
-        )
-        timestamps = _FAILED_LOGIN_RATE_LIMIT.setdefault(identity, [])
-        timestamps.append(now)
-        return len(timestamps) >= FAILED_LOGIN_MAX
+    return accounts._record_failed_login(
+        client_ip, username, now=now,
+        FAILED_LOGIN_MAX=FAILED_LOGIN_MAX,
+        FAILED_LOGIN_WINDOW_SECONDS=FAILED_LOGIN_WINDOW_SECONDS,
+        _FAILED_LOGIN_RATE_LIMIT=_FAILED_LOGIN_RATE_LIMIT,
+        _RATE_LIMIT_LOCK=_RATE_LIMIT_LOCK,
+        _failed_login_identity=_failed_login_identity,
+        _prune_rate_limit_buckets=_prune_rate_limit_buckets,
+        time=time,
+    )
 
 
 def _clear_failed_login(client_ip, username):
-    identity = _failed_login_identity(client_ip, username)
-    with _RATE_LIMIT_LOCK:
-        _FAILED_LOGIN_RATE_LIMIT.pop(identity, None)
+    return accounts._clear_failed_login(
+        client_ip, username,
+        _FAILED_LOGIN_RATE_LIMIT=_FAILED_LOGIN_RATE_LIMIT,
+        _RATE_LIMIT_LOCK=_RATE_LIMIT_LOCK,
+        _failed_login_identity=_failed_login_identity,
+    )
 
 
 def _raise_failed_login(client_ip, username):
-    if _record_failed_login(client_ip, username):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
-    raise _McpError(-32001, "用户名或密码错误")
+    return accounts._raise_failed_login(
+        client_ip, username,
+        FAILED_LOGIN_RATE_LIMIT_MESSAGE=FAILED_LOGIN_RATE_LIMIT_MESSAGE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _record_failed_login=_record_failed_login,
+    )
 
 
 def _username_conflict(conn, username, *, exclude_user_id=None, include_history=True):
-    params = [username]
-    exclude_sql = ""
-    if exclude_user_id is not None:
-        exclude_sql = " AND id <> ?"
-        params.append(int(exclude_user_id))
-    current = conn.execute(
-        f"""
-        SELECT id, username
-        FROM toy_users
-        WHERE TRIM(username) = TRIM(?) COLLATE NOCASE{exclude_sql}
-        LIMIT 1
-        """,
-        params,
-    ).fetchone()
-    if current:
-        return {"source": "current", "user_id": int(current["id"]), "username": current["username"]}
-    if _table_exists(conn, "players"):
-        params = [username]
-        exclude_sql = ""
-        if exclude_user_id is not None:
-            exclude_sql = " AND (user_id IS NULL OR user_id <> ?)"
-            params.append(int(exclude_user_id))
-        player = conn.execute(
-            f"""
-            SELECT user_id, username
-            FROM players
-            WHERE TRIM(username) = TRIM(?) COLLATE NOCASE{exclude_sql}
-            LIMIT 1
-            """,
-            params,
-        ).fetchone()
-        if player:
-            return {
-                "source": "player",
-                "user_id": int(player["user_id"]) if player["user_id"] is not None else None,
-                "username": player["username"],
-            }
-    if not include_history:
-        return None
-    _init_username_changes_table(conn)
-    params = [username]
-    exclude_sql = ""
-    if exclude_user_id is not None:
-        exclude_sql = " AND user_id <> ?"
-        params.append(int(exclude_user_id))
-    historical = conn.execute(
-        f"""
-        SELECT user_id, old_username
-        FROM account_username_changes
-        WHERE TRIM(old_username) = TRIM(?) COLLATE NOCASE{exclude_sql}
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        params,
-    ).fetchone()
-    if historical:
-        return {
-            "source": "history",
-            "user_id": int(historical["user_id"]),
-            "username": historical["old_username"],
-        }
-    return None
+    return accounts._username_conflict(
+        conn, username, exclude_user_id=exclude_user_id, include_history=include_history,
+        _init_username_changes_table=_init_username_changes_table,
+        _table_exists=_table_exists,
+    )
 
 
 def _user_exists(username):
-    with _db_connect() as conn:
-        return _username_conflict(conn, username) is not None
+    return accounts._user_exists(
+        username,
+        _db_connect=_db_connect,
+        _username_conflict=_username_conflict,
+    )
 
 
 def _enforce_register_rate_limit(username, client_ip):
-    username = (username or "").strip()
-    if not username or _user_exists(username):
-        return
-    if not _check_register_rate_limit(client_ip):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, REGISTER_RATE_LIMIT_MESSAGE)
+    return accounts._enforce_register_rate_limit(
+        username, client_ip,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        REGISTER_RATE_LIMIT_MESSAGE=REGISTER_RATE_LIMIT_MESSAGE,
+        _McpError=_McpError,
+        _check_register_rate_limit=_check_register_rate_limit,
+        _user_exists=_user_exists,
+    )
 
 
 def _recent_registration_exists(conn, client_ip):
-    if not client_ip:
-        client_ip = "unknown"
-    _init_registration_events_table(conn)
-    return conn.execute(
-        """
-        SELECT 1
-        FROM account_registration_events
-        WHERE client_ip = ?
-          AND created_at >= datetime('now', 'localtime', ?)
-        LIMIT 1
-        """,
-        (client_ip, f"-{RECENT_REGISTER_NOTICE_SECONDS} seconds"),
-    ).fetchone() is not None
+    return accounts._recent_registration_exists(
+        conn, client_ip,
+        RECENT_REGISTER_NOTICE_SECONDS=RECENT_REGISTER_NOTICE_SECONDS,
+        _init_registration_events_table=_init_registration_events_table,
+    )
 
 
 def _record_successful_registration(conn, user, client_ip):
-    avatar_appearances.grant_one_w(conn, user_id=int(user["id"]))
-    if not client_ip:
-        client_ip = "unknown"
-    _init_registration_events_table(conn)
-    conn.execute(
-        """
-        INSERT INTO account_registration_events (user_id, username, is_ai, client_ip)
-        VALUES (?, ?, ?, ?)
-        """,
-        (int(user["id"]), user["username"], 1 if user.get("is_ai") else 0, client_ip),
+    return accounts._record_successful_registration(
+        conn, user, client_ip,
+        _init_registration_events_table=_init_registration_events_table,
+        avatar_appearances=avatar_appearances,
     )
 
 
 def _append_recent_registration_notice(result, had_recent_registration):
-    if not had_recent_registration:
-        return result
-    result = dict(result)
-    message = (result.get("message") or "").strip()
-    result["message"] = f"{message} {RECENT_REGISTER_NOTICE}".strip() if message else RECENT_REGISTER_NOTICE
-    return result
+    return accounts._append_recent_registration_notice(
+        result, had_recent_registration,
+        RECENT_REGISTER_NOTICE=RECENT_REGISTER_NOTICE,
+    )
 
 
 def _normalize_credential_field(value, field_name):
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
-    raise _McpError(-32602, f"{field_name} 需为字符串")
+    return accounts._normalize_credential_field(
+        value, field_name,
+        _McpError=_McpError,
+    )
 
 
 def _validate_username(username):
-    if not username:
-        raise _McpError(-32602, "用户名必填")
-    if len(username) < 2 or len(username) > 20:
-        raise _McpError(-32602, "用户名长度须为 2-20 个字符")
-    if not re.fullmatch(r"[a-zA-Z0-9_\u4e00-\u9fff]+", username):
-        raise _McpError(-32602, "用户名只能包含字母、数字、下划线和中文")
+    return accounts._validate_username(
+        username,
+        _McpError=_McpError,
+        re=re,
+    )
 
 
 def _validate_credentials(username, password):
-    if not username or not password:
-        raise _McpError(-32602, "username 和 password 必填")
-    _validate_username(username)
-    if len(password) < 6:
-        raise _McpError(-32602, "密码至少 6 位")
+    return accounts._validate_credentials(
+        username, password,
+        _McpError=_McpError,
+        _validate_username=_validate_username,
+    )
 
 
 def _is_emoji_base_codepoint(codepoint):
-    return (
-        0x1F300 <= codepoint <= 0x1FAFF
-        or 0x1F1E6 <= codepoint <= 0x1F1FF
-        or 0x1F170 <= codepoint <= 0x1F251
-        or 0x2600 <= codepoint <= 0x27BF
-        or 0x2194 <= codepoint <= 0x2199
-        or 0x21A9 <= codepoint <= 0x21AA
-        or 0x23E9 <= codepoint <= 0x23F3
-        or 0x23F8 <= codepoint <= 0x23FA
-        or 0x25AA <= codepoint <= 0x25AB
-        or 0x25FB <= codepoint <= 0x25FE
-        or codepoint in {
-            0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139,
-            0x231A, 0x231B, 0x25B6, 0x25C0,
-            0x2B05, 0x2B06, 0x2B07, 0x2B1B, 0x2B1C, 0x2B50, 0x2B55,
-            0x3030, 0x303D, 0x3297, 0x3299, 0x1F004, 0x1F0CF,
-        }
-    )
+    return accounts._is_emoji_base_codepoint(codepoint)
 
 
 def _normalize_emoji_avatar(value, *, default=None):
-    if value is None:
-        value = ""
-    if not isinstance(value, str):
-        raise _McpError(-32602, "avatar 需为字符串")
-    avatar = " ".join(value.strip().split())
-    if not avatar:
-        if default is not None:
-            return default
-        raise _McpError(-32602, "头像不能为空")
-    if len(avatar) > AVATAR_MAX_CODEPOINTS or len(avatar.encode("utf-8")) > AVATAR_MAX_UTF8_BYTES:
-        raise _McpError(-32602, "头像过长，最多 16 个 Unicode 字符")
-
-    has_emoji_base = False
-    for index, char in enumerate(avatar):
-        codepoint = ord(char)
-        if char == " ":
-            continue
-        if _is_emoji_base_codepoint(codepoint):
-            has_emoji_base = True
-            continue
-        if (
-            codepoint in {0x200D, 0x20E3, 0xFE0E, 0xFE0F}
-            or 0x1F3FB <= codepoint <= 0x1F3FF
-            or 0xE0020 <= codepoint <= 0xE007F
-        ):
-            continue
-        if char in "#*0123456789" and "\u20e3" in avatar[index:]:
-            has_emoji_base = True
-            continue
-        raise _McpError(-32602, "头像只接受 Emoji/简短 Emoji 字符串")
-    if not has_emoji_base:
-        raise _McpError(-32602, "头像只接受 Emoji/简短 Emoji 字符串")
-    return avatar
+    return accounts._normalize_emoji_avatar(
+        value, default=default,
+        AVATAR_MAX_CODEPOINTS=AVATAR_MAX_CODEPOINTS,
+        AVATAR_MAX_UTF8_BYTES=AVATAR_MAX_UTF8_BYTES,
+        _McpError=_McpError,
+        _is_emoji_base_codepoint=_is_emoji_base_codepoint,
+    )
 
 
 def _avatar_registration_values(value, *, is_ai):
-    default = DEFAULT_AI_AVATAR if is_ai else DEFAULT_HUMAN_AVATAR
-    return "emoji", _normalize_emoji_avatar(value, default=default)
+    return accounts._avatar_registration_values(
+        value, is_ai=is_ai,
+        DEFAULT_AI_AVATAR=DEFAULT_AI_AVATAR,
+        DEFAULT_HUMAN_AVATAR=DEFAULT_HUMAN_AVATAR,
+        _normalize_emoji_avatar=_normalize_emoji_avatar,
+    )
 
 
 def _login_or_register(username, password, *, is_ai, client_ip=None, avatar=None):
-    """Shared login/register; callers set is_ai (MCP=1, REST human=0)."""
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    is_ai = 1 if is_ai else 0
-    with _db_connect() as conn:
-        user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE username = ?", (username,)).fetchone())
-        if user:
-            if _failed_login_is_limited(client_ip, username):
-                raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
-            if not _verify_password(password, user["password_hash"]):
-                _raise_failed_login(client_ip, username)
-            _clear_failed_login(client_ip, username)
-            if user.get("deletion_requested_at_epoch") is None:
-                conn.execute(
-                    """
-                    UPDATE toy_users
-                    SET last_active_at = datetime('now', 'localtime'),
-                        deleted_at = NULL
-                    WHERE id = ?
-                    """,
-                    (user["id"],),
-                )
-                conn.commit()
-            user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
-        else:
-            _enforce_register_rate_limit(username, client_ip)
-            conn.execute("BEGIN IMMEDIATE")
-            conflict = _username_conflict(conn, username)
-            if conflict:
-                raise _McpError(
-                    -32602,
-                    "用户名已存在",
-                )
-            had_recent_registration = _recent_registration_exists(conn, client_ip)
-            avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=bool(is_ai))
-            cur = conn.execute(
-                """
-                INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (username, _hash_password(password), is_ai, avatar_type, avatar_value),
-            )
-            user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)).fetchone())
-            _record_successful_registration(conn, user, client_ip)
-            token = _issue_initial_account_token_in_transaction(conn, user)
-            conn.commit()
-            result = {"token": token, "user": _public_user(user)}
-            return _append_recent_registration_notice(result, had_recent_registration)
-        if user.get("is_ai"):
-            conn.execute("BEGIN IMMEDIATE")
-            user = _row_dict(conn.execute(
-                "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-                (user["id"],),
-            ).fetchone())
-            if not user or not _verify_password(password, user["password_hash"]):
-                _raise_failed_login(client_ip, username)
-            user, token = _replace_ai_token_in_transaction(
-                conn, user["id"], allow_pending_deletion=True
-            )
-        else:
-            token = _create_account_jwt(user)
-        conn.commit()
-    return {"token": token, "user": _public_user(user)}
+    return accounts._login_or_register(
+        username, password, is_ai=is_ai, client_ip=client_ip, avatar=avatar,
+        FAILED_LOGIN_RATE_LIMIT_MESSAGE=FAILED_LOGIN_RATE_LIMIT_MESSAGE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _append_recent_registration_notice=_append_recent_registration_notice,
+        _avatar_registration_values=_avatar_registration_values,
+        _clear_failed_login=_clear_failed_login,
+        _create_account_jwt=_create_account_jwt,
+        _db_connect=_db_connect,
+        _enforce_register_rate_limit=_enforce_register_rate_limit,
+        _failed_login_is_limited=_failed_login_is_limited,
+        _hash_password=_hash_password,
+        _issue_initial_account_token_in_transaction=_issue_initial_account_token_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _raise_failed_login=_raise_failed_login,
+        _recent_registration_exists=_recent_registration_exists,
+        _record_successful_registration=_record_successful_registration,
+        _replace_ai_token_in_transaction=_replace_ai_token_in_transaction,
+        _row_dict=_row_dict,
+        _username_conflict=_username_conflict,
+        _validate_credentials=_validate_credentials,
+        _verify_password=_verify_password,
+    )
 
 
 def _register_ai_user_in_transaction(conn, username, password, client_ip, avatar):
-    """Shared AI row creation; credential families are issued by the caller."""
-    if _username_conflict(conn, username):
-        raise _McpError(-32602, "用户名已存在")
-    had_recent_registration = _recent_registration_exists(conn, client_ip)
-    avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=True)
-    cur = conn.execute(
-        """
-        INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
-        VALUES (?, ?, 1, ?, ?)
-        """,
-        (username, _hash_password(password), avatar_type, avatar_value),
+    return accounts._register_ai_user_in_transaction(
+        conn, username, password, client_ip, avatar,
+        _McpError=_McpError,
+        _avatar_registration_values=_avatar_registration_values,
+        _hash_password=_hash_password,
+        _recent_registration_exists=_recent_registration_exists,
+        _record_successful_registration=_record_successful_registration,
+        _row_dict=_row_dict,
+        _username_conflict=_username_conflict,
     )
-    user = _row_dict(conn.execute(
-        "SELECT * FROM toy_users WHERE id = ?", (cur.lastrowid,)
-    ).fetchone())
-    _record_successful_registration(conn, user, client_ip)
-    return user, had_recent_registration
 
 
 def _verified_existing_account(conn, username, password, client_ip, *, require_ai=None):
-    """Shared password/rate-limit check without issuing or rotating any token."""
-    if _failed_login_is_limited(client_ip, username):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
-    user = _row_dict(conn.execute(
-        "SELECT * FROM toy_users WHERE username = ? AND deleted_at IS NULL",
-        (username,),
-    ).fetchone())
-    type_mismatch = (
-        require_ai is not None
-        and bool(user and user.get("is_ai")) is not bool(require_ai)
+    return accounts._verified_existing_account(
+        conn, username, password, client_ip, require_ai=require_ai,
+        FAILED_LOGIN_RATE_LIMIT_MESSAGE=FAILED_LOGIN_RATE_LIMIT_MESSAGE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _clear_failed_login=_clear_failed_login,
+        _failed_login_is_limited=_failed_login_is_limited,
+        _raise_failed_login=_raise_failed_login,
+        _row_dict=_row_dict,
+        _verify_password=_verify_password,
     )
-    if not user or type_mismatch or not _verify_password(password, user["password_hash"]):
-        _raise_failed_login(client_ip, username)
-    _clear_failed_login(client_ip, username)
-    return user
 
 
 def _login_or_register_ai(username, password, client_ip=None, avatar=None):
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    with _db_connect() as conn:
-        _enforce_register_rate_limit(username, client_ip)
-        conn.execute("BEGIN IMMEDIATE")
-        user, had_recent_registration = _register_ai_user_in_transaction(
-            conn, username, password, client_ip, avatar
-        )
-        token = _issue_initial_account_token_in_transaction(conn, user)
-        conn.commit()
-    return _append_recent_registration_notice({
-        "token": token,
-        "user": _public_user(user),
-        "message": "注册成功。让你的人类把 MCP 地址改为 https://toy.cedarstar.org/{token} 后即可获得持久身份，无需再次登录。",
-    }, had_recent_registration)
+    return accounts._login_or_register_ai(
+        username, password, client_ip, avatar,
+        _append_recent_registration_notice=_append_recent_registration_notice,
+        _db_connect=_db_connect,
+        _enforce_register_rate_limit=_enforce_register_rate_limit,
+        _issue_initial_account_token_in_transaction=_issue_initial_account_token_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _register_ai_user_in_transaction=_register_ai_user_in_transaction,
+        _validate_credentials=_validate_credentials,
+    )
 
 
 def _login_existing_account(username, password, client_ip=None):
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    with _db_connect() as conn:
-        user = _verified_existing_account(conn, username, password, client_ip)
-        if user.get("is_ai"):
-            conn.execute("BEGIN IMMEDIATE")
-            user = _row_dict(conn.execute(
-                "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-                (user["id"],),
-            ).fetchone())
-            if (
-                not user
-                or not user.get("is_ai")
-                or not _verify_password(password, user["password_hash"])
-            ):
-                raise _McpError(-32001, "用户名或密码错误")
-            user, token = _replace_ai_token_in_transaction(
-                conn, user["id"], allow_pending_deletion=True
-            )
-        else:
-            if user.get("deletion_requested_at_epoch") is None:
-                conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user["id"],))
-            user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
-            token = _create_account_jwt(user)
-        conn.commit()
-    result = {
-        "token": token,
-        "user": _public_user(user),
-    }
-    if user.get("deletion_requested_at_epoch") is not None:
-        result["message"] = "账号处于待注销状态；当前 token 只能查询或取消注销。"
-    else:
-        result["message"] = (
-            "登录成功。此前全部旧 Token 已失效，只保留这枚新 Token；"
-            "请让你的人类替换 MCP 地址。"
-            if user.get("is_ai")
-            else "登录成功。"
-        )
-    return result
+    return accounts._login_existing_account(
+        username, password, client_ip,
+        _McpError=_McpError,
+        _create_account_jwt=_create_account_jwt,
+        _db_connect=_db_connect,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _replace_ai_token_in_transaction=_replace_ai_token_in_transaction,
+        _row_dict=_row_dict,
+        _validate_credentials=_validate_credentials,
+        _verified_existing_account=_verified_existing_account,
+        _verify_password=_verify_password,
+    )
 
 
 def _operit_token_hash(raw_token):
-    return hashlib.sha256(str(raw_token).encode("utf-8")).hexdigest()
+    return operit._operit_token_hash(
+        raw_token,
+        hashlib=hashlib,
+    )
 
 
 def _operit_client_id(client_id):
-    if not isinstance(client_id, str):
-        raise _McpError(-32602, "client_id 必须是字符串")
-    if client_id != client_id.strip() or not 1 <= len(client_id) <= 200:
-        raise _McpError(-32602, "client_id 长度须为 1-200，且不能有首尾空白")
-    if any(ord(char) < 32 or ord(char) == 127 for char in client_id):
-        raise _McpError(-32602, "client_id 不能包含控制字符")
-    if len(client_id.encode("utf-8")) > 512:
-        raise _McpError(-32602, "client_id 过长")
-    return client_id
+    return operit._operit_client_id(
+        client_id,
+        _McpError=_McpError,
+    )
 
 
 def _operit_client_id_hash(client_id):
-    normalized = _operit_client_id(client_id)
-    return hashlib.sha256(
-        b"cedartoy-operit-client-v1\0" + normalized.encode("utf-8")
-    ).hexdigest()
+    return operit._operit_client_id_hash(
+        client_id,
+        _operit_client_id=_operit_client_id,
+        hashlib=hashlib,
+    )
 
 
 def _reject_pending_operit_user(user):
-    if user.get("deletion_requested_at_epoch") is not None:
-        raise _McpError(
-            -32010,
-            "账号处于待注销状态，不能创建或使用 Operit 会话",
-            {"reason": "pending_deletion"},
-        )
+    return operit._reject_pending_operit_user(
+        user,
+        _McpError=_McpError,
+    )
 
 
 def _issue_operit_session_in_transaction(conn, user, client_id, *, now_epoch=None):
-    """Issue only an Operit credential; never reads or mutates ai_access_tokens."""
-    _init_operit_schema(conn)
-    _reject_pending_operit_user(user)
-    raw_token = OPERIT_SESSION_TOKEN_PREFIX + secrets.token_urlsafe(
-        OPERIT_SESSION_TOKEN_BYTES
+    return operit._issue_operit_session_in_transaction(
+        conn, user, client_id, now_epoch=now_epoch,
+        OPERIT_SESSION_FORMAT_VERSION=OPERIT_SESSION_FORMAT_VERSION,
+        OPERIT_SESSION_SECONDS=OPERIT_SESSION_SECONDS,
+        OPERIT_SESSION_TOKEN_BYTES=OPERIT_SESSION_TOKEN_BYTES,
+        OPERIT_SESSION_TOKEN_PREFIX=OPERIT_SESSION_TOKEN_PREFIX,
+        _init_operit_schema=_init_operit_schema,
+        _operit_client_id_hash=_operit_client_id_hash,
+        _operit_token_hash=_operit_token_hash,
+        _reject_pending_operit_user=_reject_pending_operit_user,
+        secrets=secrets,
+        time=time,
     )
-    now_epoch = int(time.time() if now_epoch is None else now_epoch)
-    client_hash = _operit_client_id_hash(client_id)
-    # One caller card maps to one active machine. Re-login replaces only that
-    # caller's Operit session, even when the card switches machines. It cannot
-    # touch MCP tokens or sessions belonging to another caller.
-    conn.execute(
-        """
-        UPDATE operit_ai_sessions SET revoked_at_epoch = ?
-        WHERE client_id_hash = ? AND revoked_at_epoch IS NULL
-        """,
-        (now_epoch, client_hash),
-    )
-    conn.execute(
-        """
-        INSERT INTO operit_ai_sessions (
-            token_hash, user_id, client_id_hash, format_version,
-            created_at_epoch, expires_at_epoch, last_used_at_epoch
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            _operit_token_hash(raw_token), int(user["id"]),
-            client_hash, OPERIT_SESSION_FORMAT_VERSION,
-            now_epoch, now_epoch + OPERIT_SESSION_SECONDS, now_epoch,
-        ),
-    )
-    return raw_token, now_epoch + OPERIT_SESSION_SECONDS
 
 
 def _operit_confirmed_human(human_token, confirm):
-    if confirm is not True:
-        raise _McpError(-32602, "必须由已登录人类显式确认")
-    human = _current_account(human_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以确认绑定或网页登录")
-    return human
+    return operit._operit_confirmed_human(
+        human_token, confirm,
+        _McpError=_McpError,
+        _current_account=_current_account,
+    )
 
 
 def _create_operit_ai_session(
@@ -2429,507 +1646,245 @@ def _create_operit_ai_session(
     confirm_binding=False,
     human_token="",
 ):
-    """Register/login an AI without creating, rotating, or revoking MCP tokens."""
-    if action not in {"register", "login"}:
-        raise _McpError(-32602, "action 只支持 register 或 login")
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    client_id = _operit_client_id(client_id)
-    human = None
-    if bind_to_human is True:
-        human = _operit_confirmed_human(human_token, confirm_binding)
-    elif bind_to_human is not False and bind_to_human is not None:
-        raise _McpError(-32602, "bind_to_human 必须是布尔值")
-
-    with _db_connect() as conn:
-        _init_operit_schema(conn)
-        if action == "register":
-            _enforce_register_rate_limit(username, client_ip)
-            conn.execute("BEGIN IMMEDIATE")
-            user, had_recent_registration = _register_ai_user_in_transaction(
-                conn, username, password, client_ip, avatar
-            )
-        else:
-            user = _verified_existing_account(
-                conn, username, password, client_ip, require_ai=True
-            )
-            _reject_pending_operit_user(user)
-            conn.execute("BEGIN IMMEDIATE")
-            # Lock and recheck the same account before issuing the sidecar session.
-            user = _row_dict(conn.execute(
-                "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-                (int(user["id"]),),
-            ).fetchone())
-            if (
-                not user
-                or not user.get("is_ai")
-                or not _verify_password(password, user["password_hash"])
-            ):
-                raise _McpError(-32001, "用户名或密码错误")
-            _reject_pending_operit_user(user)
-            had_recent_registration = False
-
-        if human is not None:
-            _ensure_ai_binding(conn, human["id"], user["id"])
-        raw_token, expires_at = _issue_operit_session_in_transaction(
-            conn, user, client_id
-        )
-        conn.execute(
-            "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
-            (int(user["id"]),),
-        )
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ?", (int(user["id"]),)
-        ).fetchone())
-        conn.commit()
-
-    result = {
-        "session_token": raw_token,
-        "expires_at_epoch": expires_at,
-        "user": _public_user(user),
-        "bound": human is not None,
-        "credential_family": "operit_v1",
-        "message": "Operit 小机会话已创建；现有 MCP Token 未改变。",
-    }
-    return _append_recent_registration_notice(result, had_recent_registration)
+    return operit._create_operit_ai_session(
+        action, username, password, client_id, client_ip=client_ip, avatar=avatar, bind_to_human=bind_to_human, confirm_binding=confirm_binding, human_token=human_token,
+        _McpError=_McpError,
+        _append_recent_registration_notice=_append_recent_registration_notice,
+        _db_connect=_db_connect,
+        _enforce_register_rate_limit=_enforce_register_rate_limit,
+        _ensure_ai_binding=_ensure_ai_binding,
+        _init_operit_schema=_init_operit_schema,
+        _issue_operit_session_in_transaction=_issue_operit_session_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _operit_client_id=_operit_client_id,
+        _operit_confirmed_human=_operit_confirmed_human,
+        _public_user=_public_user,
+        _register_ai_user_in_transaction=_register_ai_user_in_transaction,
+        _reject_pending_operit_user=_reject_pending_operit_user,
+        _row_dict=_row_dict,
+        _validate_credentials=_validate_credentials,
+        _verified_existing_account=_verified_existing_account,
+        _verify_password=_verify_password,
+    )
 
 
 def _current_operit_ai(raw_token, client_id, *, touch=True, now_epoch=None):
-    raw_token = str(raw_token or "")
-    if not raw_token.startswith(OPERIT_SESSION_TOKEN_PREFIX):
-        raise _McpError(-32001, "Operit 会话不存在或已失效")
-    client_hash = _operit_client_id_hash(client_id)
-    now_epoch = int(time.time() if now_epoch is None else now_epoch)
-    with _db_connect() as conn:
-        _init_operit_schema(conn)
-        row = _row_dict(conn.execute(
-            """
-            SELECT s.user_id, s.format_version, s.expires_at_epoch, u.*
-            FROM operit_ai_sessions AS s
-            JOIN toy_users AS u ON u.id = s.user_id
-            WHERE s.token_hash = ?
-              AND s.client_id_hash = ?
-              AND s.revoked_at_epoch IS NULL
-              AND s.expires_at_epoch > ?
-              AND u.deleted_at IS NULL
-            """,
-            (_operit_token_hash(raw_token), client_hash, now_epoch),
-        ).fetchone())
-        if (
-            not row
-            or int(row["format_version"]) != OPERIT_SESSION_FORMAT_VERSION
-            or not row.get("is_ai")
-        ):
-            raise _McpError(-32001, "Operit 会话不存在、已失效或不属于当前 callerCardId")
-        _reject_pending_operit_user(row)
-        if touch:
-            conn.execute(
-                """
-                UPDATE operit_ai_sessions SET last_used_at_epoch = ?
-                WHERE token_hash = ?
-                """,
-                (now_epoch, _operit_token_hash(raw_token)),
-            )
-            conn.execute(
-                "UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?",
-                (int(row["user_id"]),),
-            )
-            conn.commit()
-    return row
+    return operit._current_operit_ai(
+        raw_token, client_id, touch=touch, now_epoch=now_epoch,
+        OPERIT_SESSION_FORMAT_VERSION=OPERIT_SESSION_FORMAT_VERSION,
+        OPERIT_SESSION_TOKEN_PREFIX=OPERIT_SESSION_TOKEN_PREFIX,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _init_operit_schema=_init_operit_schema,
+        _operit_client_id_hash=_operit_client_id_hash,
+        _operit_token_hash=_operit_token_hash,
+        _reject_pending_operit_user=_reject_pending_operit_user,
+        _row_dict=_row_dict,
+        time=time,
+    )
 
 
 def _operit_session_status(raw_token, client_id):
-    user = _current_operit_ai(raw_token, client_id)
-    with _db_connect() as conn:
-        expires_at = int(conn.execute(
-            "SELECT expires_at_epoch FROM operit_ai_sessions WHERE token_hash = ?",
-            (_operit_token_hash(raw_token),),
-        ).fetchone()[0])
-    return {
-        "authenticated": True,
-        "credential_family": "operit_v1",
-        "expires_at_epoch": expires_at,
-        "user": _public_user(user),
-    }
+    return operit._operit_session_status(
+        raw_token, client_id,
+        _current_operit_ai=_current_operit_ai,
+        _db_connect=_db_connect,
+        _operit_token_hash=_operit_token_hash,
+        _public_user=_public_user,
+    )
 
 
 def _revoke_operit_session(raw_token, client_id):
-    _current_operit_ai(raw_token, client_id, touch=False)
-    now_epoch = int(time.time())
-    with _db_connect() as conn:
-        conn.execute(
-            """
-            UPDATE operit_ai_sessions SET revoked_at_epoch = ?
-            WHERE token_hash = ? AND revoked_at_epoch IS NULL
-            """,
-            (now_epoch, _operit_token_hash(raw_token)),
-        )
-        conn.commit()
-    return {"ok": True, "authenticated": False}
+    return operit._revoke_operit_session(
+        raw_token, client_id,
+        _current_operit_ai=_current_operit_ai,
+        _db_connect=_db_connect,
+        _operit_token_hash=_operit_token_hash,
+        time=time,
+    )
 
 
 def _bind_operit_ai(human_token, operit_token, client_id, *, confirm=False):
-    human = _operit_confirmed_human(human_token, confirm)
-    ai = _current_operit_ai(operit_token, client_id)
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        _ensure_ai_binding(conn, human["id"], ai["id"])
-        conn.commit()
-    return {
-        "ok": True,
-        "bound": True,
-        "human": _public_user(human),
-        "machine": _public_user(ai),
-    }
+    return operit._bind_operit_ai(
+        human_token, operit_token, client_id, confirm=confirm,
+        _current_operit_ai=_current_operit_ai,
+        _db_connect=_db_connect,
+        _ensure_ai_binding=_ensure_ai_binding,
+        _operit_confirmed_human=_operit_confirmed_human,
+        _public_user=_public_user,
+    )
 
 
 def _issue_operit_web_ticket(human_token, *, confirm=False, now_epoch=None):
-    human = _operit_confirmed_human(human_token, confirm)
-    now_epoch = int(time.time() if now_epoch is None else now_epoch)
-    raw_ticket = OPERIT_WEB_TICKET_PREFIX + secrets.token_urlsafe(
-        OPERIT_WEB_TICKET_BYTES
+    return operit._issue_operit_web_ticket(
+        human_token, confirm=confirm, now_epoch=now_epoch,
+        OPERIT_WEB_TICKET_BYTES=OPERIT_WEB_TICKET_BYTES,
+        OPERIT_WEB_TICKET_PREFIX=OPERIT_WEB_TICKET_PREFIX,
+        OPERIT_WEB_TICKET_SECONDS=OPERIT_WEB_TICKET_SECONDS,
+        _db_connect=_db_connect,
+        _init_operit_schema=_init_operit_schema,
+        _operit_confirmed_human=_operit_confirmed_human,
+        _operit_token_hash=_operit_token_hash,
+        secrets=secrets,
+        time=time,
+        urllib=urllib,
     )
-    expires_at = now_epoch + OPERIT_WEB_TICKET_SECONDS
-    with _db_connect() as conn:
-        _init_operit_schema(conn)
-        conn.execute(
-            "DELETE FROM operit_web_tickets WHERE expires_at_epoch <= ?",
-            (now_epoch,),
-        )
-        conn.execute(
-            """
-            INSERT INTO operit_web_tickets (
-                ticket_hash, human_user_id, created_at_epoch, expires_at_epoch
-            ) VALUES (?, ?, ?, ?)
-            """,
-            (_operit_token_hash(raw_ticket), int(human["id"]), now_epoch, expires_at),
-        )
-        conn.commit()
-    return {
-        "ticket": raw_ticket,
-        "ticket_path": "/duel/?web_ticket=" + urllib.parse.quote(raw_ticket, safe=""),
-        "expires_in": OPERIT_WEB_TICKET_SECONDS,
-        "expires_at_epoch": expires_at,
-    }
 
 
 def _consume_operit_web_ticket(raw_ticket, *, now_epoch=None):
-    raw_ticket = str(raw_ticket or "")
-    if not raw_ticket.startswith(OPERIT_WEB_TICKET_PREFIX):
-        raise _McpError(-32001, "网页登录票据不存在或已失效")
-    now_epoch = int(time.time() if now_epoch is None else now_epoch)
-    ticket_hash = _operit_token_hash(raw_ticket)
-    with _db_connect() as conn:
-        _init_operit_schema(conn)
-        conn.execute("BEGIN IMMEDIATE")
-        row = _row_dict(conn.execute(
-            """
-            SELECT t.expires_at_epoch, u.*
-            FROM operit_web_tickets AS t
-            JOIN toy_users AS u ON u.id = t.human_user_id
-            WHERE t.ticket_hash = ?
-              AND t.expires_at_epoch > ?
-              AND u.deleted_at IS NULL
-              AND u.is_ai = 0
-            """,
-            (ticket_hash, now_epoch),
-        ).fetchone())
-        # Consumption is atomic and irreversible, including a race with a second GET.
-        deleted = conn.execute(
-            "DELETE FROM operit_web_tickets WHERE ticket_hash = ?",
-            (ticket_hash,),
-        ).rowcount
-        conn.commit()
-    if not row or deleted != 1:
-        raise _McpError(-32001, "网页登录票据不存在或已失效")
-    _reject_pending_operit_user(row)
-    return row
+    return operit._consume_operit_web_ticket(
+        raw_ticket, now_epoch=now_epoch,
+        OPERIT_WEB_TICKET_PREFIX=OPERIT_WEB_TICKET_PREFIX,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _init_operit_schema=_init_operit_schema,
+        _operit_token_hash=_operit_token_hash,
+        _reject_pending_operit_user=_reject_pending_operit_user,
+        _row_dict=_row_dict,
+        time=time,
+    )
 
 
 def _login_or_register_human(username, password, client_ip=None, avatar=None):
-    return _login_or_register(
-        username,
-        password,
-        is_ai=0,
-        client_ip=client_ip,
-        avatar=avatar,
+    return accounts._login_or_register_human(
+        username, password, client_ip, avatar,
+        _login_or_register=_login_or_register,
     )
 
 
 def _login_human(username, password, client_ip=None):
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    if _failed_login_is_limited(client_ip, username):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
-    with _db_connect() as conn:
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE username = ?",
-            (username,),
-        ).fetchone())
-        if (
-            not user
-            or user.get("is_ai")
-            or not _verify_password(password, user["password_hash"])
-        ):
-            _raise_failed_login(client_ip, username)
-        _clear_failed_login(client_ip, username)
-        if user.get("deletion_requested_at_epoch") is None:
-            conn.execute(
-                """
-                UPDATE toy_users
-                SET last_active_at = datetime('now', 'localtime'), deleted_at = NULL
-                WHERE id = ?
-                """,
-                (user["id"],),
-            )
-            conn.commit()
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ?",
-            (user["id"],),
-        ).fetchone())
-    result = {"token": _create_account_token(user), "user": _public_user(user)}
-    if user.get("deletion_requested_at_epoch") is not None:
-        result["pending_deletion"] = True
-        result["message"] = "账号处于待注销状态，只能查看或取消注销。"
-    return result
+    return accounts._login_human(
+        username, password, client_ip,
+        FAILED_LOGIN_RATE_LIMIT_MESSAGE=FAILED_LOGIN_RATE_LIMIT_MESSAGE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _clear_failed_login=_clear_failed_login,
+        _create_account_token=_create_account_token,
+        _db_connect=_db_connect,
+        _failed_login_is_limited=_failed_login_is_limited,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _raise_failed_login=_raise_failed_login,
+        _row_dict=_row_dict,
+        _validate_credentials=_validate_credentials,
+        _verify_password=_verify_password,
+    )
 
 
 def _register_human(username, password, client_ip=None, avatar=None):
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    _enforce_register_rate_limit(username, client_ip)
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        if _username_conflict(conn, username):
-            raise _McpError(-32602, "用户名已存在，请直接登录")
-        had_recent_registration = _recent_registration_exists(conn, client_ip)
-        avatar_type, avatar_value = _avatar_registration_values(avatar, is_ai=False)
-        cur = conn.execute(
-            """
-            INSERT INTO toy_users (username, password_hash, is_ai, avatar_type, avatar_value)
-            VALUES (?, ?, 0, ?, ?)
-            """,
-            (username, _hash_password(password), avatar_type, avatar_value),
-        )
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ?",
-            (cur.lastrowid,),
-        ).fetchone())
-        _record_successful_registration(conn, user, client_ip)
-        conn.commit()
-    return _append_recent_registration_notice(
-        {"token": _create_account_token(user), "user": _public_user(user)},
-        had_recent_registration,
+    return accounts._register_human(
+        username, password, client_ip, avatar,
+        _McpError=_McpError,
+        _append_recent_registration_notice=_append_recent_registration_notice,
+        _avatar_registration_values=_avatar_registration_values,
+        _create_account_token=_create_account_token,
+        _db_connect=_db_connect,
+        _enforce_register_rate_limit=_enforce_register_rate_limit,
+        _hash_password=_hash_password,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _recent_registration_exists=_recent_registration_exists,
+        _record_successful_registration=_record_successful_registration,
+        _row_dict=_row_dict,
+        _username_conflict=_username_conflict,
+        _validate_credentials=_validate_credentials,
     )
 
 
 def _set_avatar(raw_token, avatar):
-    user = _current_account(raw_token)
-    avatar_value = _normalize_emoji_avatar(avatar)
-    with _db_connect() as conn:
-        conn.execute(
-            """
-            UPDATE toy_users
-            SET avatar_type = 'emoji', avatar_value = ?
-            WHERE id = ? AND deleted_at IS NULL
-            """,
-            (avatar_value, int(user["id"])),
-        )
-        conn.commit()
-        updated = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ?",
-            (int(user["id"]),),
-        ).fetchone())
-    return {"ok": True, "user": _public_user(updated)}
+    return accounts._set_avatar(
+        raw_token, avatar,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _normalize_emoji_avatar=_normalize_emoji_avatar,
+        _public_user=_public_user,
+        _row_dict=_row_dict,
+    )
 
 
 def _avatar_frame_target(conn, user, target_user_id):
-    if target_user_id is None:
-        return user
-    if isinstance(target_user_id, bool) or not re.fullmatch(r"[1-9][0-9]*", str(target_user_id)):
-        raise ValueError("target_user_id 必须为账号 ID")
-    target_user_id = int(target_user_id)
-    if target_user_id == user["id"]:
-        return user
-    if user.get("is_ai"):
-        raise _McpError(-32003, "只能修改自己的头像框")
-    target = _row_dict(conn.execute(
-        """
-        SELECT u.* FROM toy_users u
-        JOIN user_bindings b ON b.ai_user_id = u.id
-        WHERE b.human_user_id = ? AND u.id = ? AND u.is_ai = 1
-          AND u.deleted_at IS NULL AND u.deletion_requested_at_epoch IS NULL
-        """, (user["id"], str(target_user_id)),
-    ).fetchone())
-    if not target:
-        raise _McpError(-32003, "只能修改自己或已绑定小机的头像框")
-    return target
+    return accounts._avatar_frame_target(
+        conn, user, target_user_id,
+        _McpError=_McpError,
+        _row_dict=_row_dict,
+        re=re,
+    )
 
 
 def _get_avatar_frames(raw_token, target_user_id=None):
-    user = _current_account(raw_token)
-    with _db_connect() as conn:
-        conn.execute("BEGIN")
-        target = _avatar_frame_target(conn, user, target_user_id)
-        result = avatar_appearances.owned(conn, target["id"])
-        machines = [] if user.get("is_ai") else conn.execute(
-            """
-            SELECT u.id, u.username FROM toy_users u
-            JOIN user_bindings b ON b.ai_user_id = u.id
-            WHERE b.human_user_id = ? AND u.is_ai = 1
-              AND u.deleted_at IS NULL AND u.deletion_requested_at_epoch IS NULL
-            ORDER BY u.id
-            """, (user["id"],),
-        ).fetchall()
-    return {**result, "user": _public_user(target), "machines": [dict(row) for row in machines]}
+    return accounts._get_avatar_frames(
+        raw_token, target_user_id,
+        _avatar_frame_target=_avatar_frame_target,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_user=_public_user,
+        avatar_appearances=avatar_appearances,
+    )
 
 
 def _set_avatar_frame(raw_token, selected, target_user_id=None):
-    user = _current_account(raw_token)
-    with _db_connect() as conn:
-        # Binding permission, inventory check and write share one transaction.
-        conn.execute("BEGIN IMMEDIATE")
-        target = _avatar_frame_target(conn, user, target_user_id)
-        avatar_appearances.select(conn, target["id"], selected)
-    return {"ok": True, "user": _public_user(target)}
+    return accounts._set_avatar_frame(
+        raw_token, selected, target_user_id,
+        _avatar_frame_target=_avatar_frame_target,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_user=_public_user,
+        avatar_appearances=avatar_appearances,
+    )
 
 
 def _rename_next_allowed_at(epoch):
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(epoch)))
+    return accounts._rename_next_allowed_at(
+        epoch,
+        time=time,
+    )
 
 
 def _rename_user_in_transaction(conn, target, new_username):
-    """Rename one account inside the caller's write transaction."""
-    new_username = _normalize_credential_field(new_username, "new_username").strip()
-    _validate_username(new_username)
-    old_username = target["username"]
-    if new_username == old_username:
-        return {
-            "renamed": False,
-            "previous_username": old_username,
-            "user": _public_user(target),
-        }
-
-    _init_username_changes_table(conn)
-    conflict = _username_conflict(conn, new_username, exclude_user_id=target["id"])
-    if conflict:
-        raise _McpError(
-            -32009,
-            "用户名已存在",
-            {"reason": "username_conflict"},
-        )
-
-    now_epoch = int(time.time())
-    last_change = conn.execute(
-        """
-        SELECT changed_at_epoch
-        FROM account_username_changes
-        WHERE user_id = ?
-        ORDER BY changed_at_epoch DESC, id DESC
-        LIMIT 1
-        """,
-        (int(target["id"]),),
-    ).fetchone()
-    if last_change:
-        next_epoch = int(last_change["changed_at_epoch"]) + RENAME_COOLDOWN_SECONDS
-        if now_epoch < next_epoch:
-            remaining = max(1, next_epoch - now_epoch)
-            next_allowed_at = _rename_next_allowed_at(next_epoch)
-            raise _McpError(
-                RATE_LIMIT_ERROR_CODE,
-                f"每个账号 72 小时只能改名一次，还需等待 {remaining} 秒（{next_allowed_at} 后可再次修改）",
-                {
-                    "reason": "rename_cooldown",
-                    "remaining_seconds": remaining,
-                    "next_allowed_at": next_allowed_at,
-                },
-            )
-
-    conn.execute(
-        "UPDATE toy_users SET username = ? WHERE id = ?",
-        (new_username, int(target["id"])),
+    return accounts._rename_user_in_transaction(
+        conn, target, new_username,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        RENAME_COOLDOWN_SECONDS=RENAME_COOLDOWN_SECONDS,
+        _McpError=_McpError,
+        _init_username_changes_table=_init_username_changes_table,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _rename_next_allowed_at=_rename_next_allowed_at,
+        _row_dict=_row_dict,
+        _username_conflict=_username_conflict,
+        _validate_username=_validate_username,
+        time=time,
     )
-    # 海龟汤玩家是 user_id 的镜像；同步显示名但不改变玩家主键和统计行。
-    conn.execute(
-        "UPDATE players SET username = ? WHERE user_id = ?",
-        (new_username, int(target["id"])),
-    )
-    conn.execute(
-        """
-        INSERT INTO account_username_changes
-            (user_id, old_username, new_username, changed_at_epoch)
-        VALUES (?, ?, ?, ?)
-        """,
-        (int(target["id"]), old_username, new_username, now_epoch),
-    )
-    updated = _row_dict(conn.execute(
-        "SELECT * FROM toy_users WHERE id = ?",
-        (int(target["id"]),),
-    ).fetchone())
-    next_epoch = now_epoch + RENAME_COOLDOWN_SECONDS
-    return {
-        "renamed": True,
-        "previous_username": old_username,
-        "user": _public_user(updated),
-        "cooldown_seconds": RENAME_COOLDOWN_SECONDS,
-        "next_allowed_at": _rename_next_allowed_at(next_epoch),
-    }
 
 
 def _rename_self(raw_token, new_username):
-    current = _current_account(raw_token)
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        target = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-            (int(current["id"]),),
-        ).fetchone())
-        if not target:
-            raise _McpError(-32004, "账号不存在或已删除")
-        result = _rename_user_in_transaction(conn, target, new_username)
-        conn.commit()
-    return result
+    return accounts._rename_self(
+        raw_token, new_username,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _rename_user_in_transaction=_rename_user_in_transaction,
+        _row_dict=_row_dict,
+    )
 
 
 def _rename_bound_machine(raw_token, ai_user_id, new_username):
-    human = _current_account(raw_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以修改绑定小机的用户名")
-    try:
-        ai_user_id = int(ai_user_id)
-    except (TypeError, ValueError):
-        raise _McpError(-32602, "ai_user_id 必填且必须是整数") from None
-
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        target = _row_dict(conn.execute(
-            """
-            SELECT ai.*
-            FROM user_bindings b
-            JOIN toy_users ai ON ai.id = b.ai_user_id
-            WHERE b.human_user_id = ?
-              AND b.ai_user_id = ?
-              AND ai.deleted_at IS NULL
-            """,
-            (int(human["id"]), ai_user_id),
-        ).fetchone())
-        if not target:
-            raise _McpError(-32004, "该小机未绑定到你的账号")
-        if not target.get("is_ai"):
-            raise _McpError(-32602, "目标账号不是小机账号")
-        result = _rename_user_in_transaction(conn, target, new_username)
-        conn.commit()
-    return result
+    return accounts._rename_bound_machine(
+        raw_token, ai_user_id, new_username,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _rename_user_in_transaction=_rename_user_in_transaction,
+        _row_dict=_row_dict,
+    )
 
 
 def _require_admin_account(raw_token):
-    user = _current_account(raw_token)
-    if not user.get("is_admin"):
-        raise _McpError(-32003, "需要管理员权限")
-    return user
+    return admin_accounts._require_admin_account(
+        raw_token,
+        _McpError=_McpError,
+        _current_account=_current_account,
+    )
 
 
 def _admin_activity(range_name="1h"):
@@ -2944,221 +1899,70 @@ def _admin_activity(range_name="1h"):
 
 
 def _admin_user_page(page=1, page_size=ADMIN_USERS_DEFAULT_PAGE_SIZE, search=""):
-    try:
-        page = int(page)
-        page_size = int(page_size)
-    except (TypeError, ValueError):
-        raise ValueError("page 和 page_size 必须是整数") from None
-    if page < 1:
-        raise ValueError("page 必须大于等于 1")
-    if page_size < 1 or page_size > ADMIN_USERS_MAX_PAGE_SIZE:
-        raise ValueError(f"page_size 必须在 1-{ADMIN_USERS_MAX_PAGE_SIZE} 之间")
-    search = str(search or "").strip()
-    if len(search) > ADMIN_USERS_MAX_SEARCH_LENGTH:
-        raise ValueError(f"搜索内容最多 {ADMIN_USERS_MAX_SEARCH_LENGTH} 个字符")
-
-    where_sql = ""
-    params = []
-    if search:
-        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        where_sql = "WHERE u.username LIKE ? ESCAPE '\\' COLLATE NOCASE"
-        params.append(f"%{escaped}%")
-        try:
-            search_id = int(search)
-        except ValueError:
-            search_id = None
-        if search_id is not None:
-            where_sql = "WHERE (u.id = ? OR u.username LIKE ? ESCAPE '\\' COLLATE NOCASE)"
-            params = [search_id, f"%{escaped}%"]
-
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        total = int(conn.execute(
-            f"SELECT COUNT(*) FROM toy_users u {where_sql}",
-            params,
-        ).fetchone()[0])
-        rows = conn.execute(
-            f"""
-            WITH page_users AS MATERIALIZED (
-                SELECT
-                    u.id, u.username, u.is_ai, u.is_admin, u.created_at,
-                    u.last_active_at, u.deleted_at,
-                    u.deletion_requested_at_epoch, u.scheduled_delete_at_epoch
-                FROM toy_users u
-                {where_sql}
-                ORDER BY u.deleted_at IS NOT NULL ASC, u.id DESC
-                LIMIT ? OFFSET ?
-            ),
-            player_counts AS (
-                SELECT p.user_id, COUNT(*) AS count
-                FROM players p
-                JOIN page_users pu ON pu.id = p.user_id
-                GROUP BY p.user_id
-            ),
-            bound_ai_counts AS (
-                SELECT b.human_user_id AS user_id, COUNT(*) AS count
-                FROM user_bindings b
-                JOIN page_users pu ON pu.id = b.human_user_id
-                GROUP BY b.human_user_id
-            ),
-            bound_human_counts AS (
-                SELECT b.ai_user_id AS user_id, COUNT(*) AS count
-                FROM user_bindings b
-                JOIN page_users pu ON pu.id = b.ai_user_id
-                GROUP BY b.ai_user_id
-            ),
-            active_token_counts AS (
-                SELECT t.ai_user_id AS user_id, COUNT(*) AS count
-                FROM binding_tokens t
-                JOIN page_users pu ON pu.id = t.ai_user_id
-                WHERE t.used = 0
-                  AND t.expires_at > datetime('now', 'localtime')
-                GROUP BY t.ai_user_id
-            )
-            SELECT
-                u.id,
-                u.username,
-                u.is_ai,
-                u.is_admin,
-                u.created_at,
-                u.last_active_at,
-                u.deleted_at,
-                u.deletion_requested_at_epoch,
-                u.scheduled_delete_at_epoch,
-                COALESCE(pc.count, 0) AS soup_player_count,
-                COALESCE(bac.count, 0) AS bound_ai_count,
-                COALESCE(bhc.count, 0) AS bound_human_count,
-                COALESCE(atc.count, 0) AS active_binding_tokens
-            FROM page_users u
-            LEFT JOIN player_counts pc ON pc.user_id = u.id
-            LEFT JOIN bound_ai_counts bac ON bac.user_id = u.id
-            LEFT JOIN bound_human_counts bhc ON bhc.user_id = u.id
-            LEFT JOIN active_token_counts atc ON atc.user_id = u.id
-            ORDER BY u.deleted_at IS NOT NULL ASC, u.id DESC
-            """,
-            (*params, page_size, (page - 1) * page_size),
-        ).fetchall()
-    return {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "users": [dict(row) for row in rows],
-    }
+    return admin_accounts._admin_user_page(
+        page, page_size, search,
+        ADMIN_USERS_MAX_PAGE_SIZE=ADMIN_USERS_MAX_PAGE_SIZE,
+        ADMIN_USERS_MAX_SEARCH_LENGTH=ADMIN_USERS_MAX_SEARCH_LENGTH,
+        _db_connect=_db_connect,
+        account_deletion=account_deletion,
+    )
 
 
 def _admin_update_user(user_id, body, admin_user):
-    username = (body.get("username") or "").strip()
-    _validate_username(username)
-    is_ai = 1 if body.get("is_ai") else 0
-    is_admin = 1 if body.get("is_admin") else 0
-    deleted = 1 if body.get("deleted") else 0
-    if int(user_id) == int(admin_user["id"]) and (not is_admin or deleted):
-        raise _McpError(-32602, "不能取消当前登录管理员的权限或软删当前账号")
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        conn.execute("BEGIN IMMEDIATE")
-        existing = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
-        if not existing:
-            raise _McpError(-32004, "账号不存在")
-        if existing.get("deletion_requested_at_epoch") is not None:
-            raise _McpError(-32010, "待注销账号不能通过普通编辑修改或取消状态")
-        if username != existing["username"]:
-            _rename_user_in_transaction(conn, existing, username)
-        conn.execute(
-            """
-            UPDATE toy_users
-            SET is_ai = ?,
-                is_admin = ?,
-                deleted_at = CASE WHEN ? THEN COALESCE(deleted_at, datetime('now', 'localtime')) ELSE NULL END
-            WHERE id = ?
-            """,
-            (is_ai, is_admin, deleted, user_id),
-        )
-        conn.execute(
-            "UPDATE players SET is_ai = ?, is_admin = ? WHERE user_id = ?",
-            (is_ai, is_admin, user_id),
-        )
-        # 停用账号时连带清绑定，避免留下指向已停用账号的僵尸绑定。
-        if deleted:
-            conn.execute(
-                "DELETE FROM user_bindings WHERE human_user_id = ? OR ai_user_id = ?",
-                (user_id, user_id),
-            )
-        conn.commit()
-    return {"ok": True}
+    return admin_accounts._admin_update_user(
+        user_id, body, admin_user,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _rename_user_in_transaction=_rename_user_in_transaction,
+        _row_dict=_row_dict,
+        _validate_username=_validate_username,
+        account_deletion=account_deletion,
+    )
 
 
 def _admin_reset_user_password(user_id, body):
-    password = _normalize_credential_field(body.get("password"), "password")
-    if len(password) < 6:
-        raise _McpError(-32602, "密码至少 6 位")
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        existing = conn.execute("SELECT id FROM toy_users WHERE id = ?", (user_id,)).fetchone()
-        if not existing:
-            raise _McpError(-32004, "账号不存在")
-        pending = conn.execute(
-            "SELECT deletion_requested_at_epoch FROM toy_users WHERE id = ?", (user_id,)
-        ).fetchone()
-        if pending[0] is not None:
-            raise _McpError(-32010, "待注销账号不能重置密码；请先由账号本人取消注销")
-        conn.execute(
-            "UPDATE toy_users SET password_hash = ?, deleted_at = NULL WHERE id = ?",
-            (_hash_password(password), user_id),
-        )
-        _invalidate_operit_credentials_in_transaction(conn, user_id)
-        _complete_recovery_tickets(conn, user_id)
-        conn.commit()
-    return {"ok": True}
+    return admin_accounts._admin_reset_user_password(
+        user_id, body,
+        _McpError=_McpError,
+        _complete_recovery_tickets=_complete_recovery_tickets,
+        _db_connect=_db_connect,
+        _hash_password=_hash_password,
+        _invalidate_operit_credentials_in_transaction=_invalidate_operit_credentials_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        account_deletion=account_deletion,
+    )
 
 
 def _generate_reset_link(user_id):
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        conn.execute("BEGIN IMMEDIATE")
-        existing = _row_dict(conn.execute(
-            "SELECT id, is_ai, deletion_requested_at_epoch FROM toy_users WHERE id = ?", (user_id,)
-        ).fetchone())
-        if not existing:
-            raise _McpError(-32004, "账号不存在")
-        if existing.get("deletion_requested_at_epoch") is not None:
-            raise _McpError(-32010, "待注销账号不能生成密码重置链接")
-        # 小机被多个人类绑定时不发链接：无法判定该由谁重置。
-        if existing.get("is_ai"):
-            owners = conn.execute(
-                "SELECT COUNT(*) FROM user_bindings WHERE ai_user_id = ?", (user_id,)
-            ).fetchone()[0]
-            if owners > 1:
-                raise _McpError(
-                    -32602,
-                    f"该小机绑定了 {owners} 个人类账号，请先解绑到只剩一个再重置密码",
-                )
-        token, _, _ = _create_reset_token(conn, user_id, lifetime_seconds=3600)
-        conn.commit()
-    return {"ok": True, "reset_url": _reset_url(token), "expires_in": "1小时"}
+    return account_recovery._generate_reset_link(
+        user_id,
+        _McpError=_McpError,
+        _create_reset_token=_create_reset_token,
+        _db_connect=_db_connect,
+        _reset_url=_reset_url,
+        _row_dict=_row_dict,
+        account_deletion=account_deletion,
+    )
 
 
 def _reset_token_hash(token):
-    return "sha256:" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return account_recovery._reset_token_hash(
+        token,
+        hashlib=hashlib,
+    )
 
 
 def _reset_url(token):
-    return f"https://toy.cedarstar.org/?reset_token={token}"
+    return account_recovery._reset_url(token)
 
 
 def _create_reset_token(conn, user_id, *, lifetime_seconds, token=None):
-    token = token or secrets.token_urlsafe(32)
-    expires_at = int(time.time()) + lifetime_seconds
-    cursor = conn.execute(
-        """INSERT INTO password_reset_tokens (user_id, token, expires_at)
-           VALUES (?, ?, datetime(?, 'unixepoch'))""",
-        (user_id, _reset_token_hash(token), expires_at),
+    return account_recovery._create_reset_token(
+        conn, user_id, lifetime_seconds=lifetime_seconds, token=token,
+        _reset_token_hash=_reset_token_hash,
+        secrets=secrets,
+        time=time,
     )
-    return token, cursor.lastrowid, expires_at
 
 
 _RECOVERY_MISSING = "查询码不正确，请核对后重试。"
@@ -3167,543 +1971,226 @@ _RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def _recovery_text(body, key, limit, *, optional=False):
-    value = body.get(key, "")
-    if not isinstance(value, str) or len(value) > limit or (not optional and not value.strip()):
-        raise _McpError(-32602, "请完整填写申请信息，并遵守字段长度限制")
-    return value.strip()
+    return account_recovery._recovery_text(
+        body, key, limit, optional=optional,
+        _McpError=_McpError,
+    )
 
 
 def _recovery_identity(body):
-    kind = body.get("account_kind", "username")
-    account = _recovery_text(body, "account", 20)
-    if kind not in ("username", "id") or (kind == "id" and not re.fullmatch(r"[0-9]{1,18}", account)):
-        raise _McpError(-32602, "请选择账号名或数字 ID，并填写对应信息")
-    return kind, str(int(account)) if kind == "id" else account
+    return account_recovery._recovery_identity(
+        body,
+        _McpError=_McpError,
+        _recovery_text=_recovery_text,
+        re=re,
+    )
 
 
 def _normalize_recovery_code(code):
-    if isinstance(code, str):
-        code = code.strip()
-        # Legacy credentials and their already-issued reset links are case-sensitive.
-        if re.fullmatch(r"[A-Za-z0-9]{6,8}", code):
-            return code
-        if re.fullmatch(r"[A-Za-z0-9]{12}|[A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){2}", code):
-            compact = code.replace("-", "").upper()
-            if all(char in _RECOVERY_CODE_ALPHABET for char in compact):
-                return compact
-    raise _McpError(-32602, _RECOVERY_MISSING)
+    return account_recovery._normalize_recovery_code(
+        code,
+        _McpError=_McpError,
+        _RECOVERY_CODE_ALPHABET=_RECOVERY_CODE_ALPHABET,
+        _RECOVERY_MISSING=_RECOVERY_MISSING,
+        re=re,
+    )
 
 
 def _recovery_query_hash(code):
-    # Versioning excludes migrated rows from the legacy scan. The application
-    # secret stays outside the DB; no plaintext query credential is persisted.
-    return "v2:" + _email_hmac("recovery-query-v2", _normalize_recovery_code(code))
+    return account_recovery._recovery_query_hash(
+        code,
+        _email_hmac=_email_hmac,
+        _normalize_recovery_code=_normalize_recovery_code,
+    )
 
 
 def _submit_recovery_ticket(body, client_ip):
-    kind, account = _recovery_identity(body)
-    fields = [_recovery_text(body, k, n, optional=(k == "explanation")) for k, n in (
-        ("machine", 100), ("registered_about", 100), ("games", 500), ("explanation", 2000))]
-    now = int(time.time())
-    ip_hash = _reset_token_hash(str(client_ip))
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        # Limits depend only on the submitter, never on account existence or others' tickets.
-        count = conn.execute(
-            "SELECT COUNT(*) FROM account_recovery_tickets WHERE ip_hash=? AND created_at_epoch>?",
-            (ip_hash, now - 86400),
-        ).fetchone()[0]
-        if count >= 5:
-            raise _McpError(RATE_LIMIT_ERROR_CODE, "此网络今日申请次数较多，请稍后再试")
-        if kind == "username" and not conn.execute(
-            """SELECT 1 FROM toy_users WHERE username = ? COLLATE BINARY
-               AND is_ai = 0 AND deleted_at IS NULL
-               AND deletion_requested_at_epoch IS NULL
-               AND scheduled_delete_at_epoch IS NULL""",
-            (account,),
-        ).fetchone():
-            raise _McpError(-32602, "账号名不存在")
-        while True:
-            code = "".join(secrets.choice(_RECOVERY_CODE_ALPHABET) for _ in range(12))
-            query_code = "-".join(code[i:i + 4] for i in range(0, 12, 4))
-            query_hash = _recovery_query_hash(code)
-            if not conn.execute("SELECT 1 FROM account_recovery_tickets WHERE query_code_hash=?", (query_hash,)).fetchone():
-                break
-        cursor = conn.execute(
-            """INSERT INTO account_recovery_tickets
-               (account_kind, account, machine, registered_about, games, explanation,
-                query_code_hash, ip_hash, created_at_epoch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (kind, account, *fields, query_hash, ip_hash, now),
-        )
-        conn.commit()
-    return {"ok": True, "message": _RECOVERY_SUBMITTED, "ticket_id": cursor.lastrowid, "query_code": query_code}
+    return account_recovery._submit_recovery_ticket(
+        body, client_ip,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _RECOVERY_CODE_ALPHABET=_RECOVERY_CODE_ALPHABET,
+        _RECOVERY_SUBMITTED=_RECOVERY_SUBMITTED,
+        _db_connect=_db_connect,
+        _recovery_identity=_recovery_identity,
+        _recovery_query_hash=_recovery_query_hash,
+        _recovery_text=_recovery_text,
+        _reset_token_hash=_reset_token_hash,
+        secrets=secrets,
+        time=time,
+    )
 
 
 def _complete_recovery_tickets(conn, user_id):
-    # Some legacy test/maintenance databases predate the ticket table.
-    if not _table_exists(conn, "account_recovery_tickets"):
-        return
-    conn.execute(
-        """UPDATE password_reset_tokens SET used=1 WHERE id IN
-           (SELECT reset_token_id FROM account_recovery_tickets WHERE user_id=?)""", (user_id,))
-    conn.execute(
-        """UPDATE account_recovery_tickets SET status='completed', completed_at_epoch=?, reset_nonce=NULL
-           WHERE user_id=? AND status='approved'""", (int(time.time()), user_id))
+    return account_recovery._complete_recovery_tickets(
+        conn, user_id,
+        _table_exists=_table_exists,
+        time=time,
+    )
 
 
 def _query_recovery_ticket(body):
-    code = _normalize_recovery_code(body.get("query_code"))
-    query_hash = _recovery_query_hash(code)
-    now = int(time.time())
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        ticket = _row_dict(conn.execute(
-            "SELECT * FROM account_recovery_tickets WHERE query_code_hash=?",
-            (query_hash,),
-        ).fetchone())
-        if not ticket and re.fullmatch(r"[A-Za-z0-9]{6,8}", code):
-            matches = []
-            for candidate in conn.execute(
-                "SELECT * FROM account_recovery_tickets WHERE query_code_hash NOT LIKE 'v2:%'"
-            ):
-                legacy_hash = _email_hmac(
-                    "recovery-query-v1", candidate["account_kind"], candidate["account"], code)
-                if hmac.compare_digest(candidate["query_code_hash"], legacy_hash):
-                    matches.append(dict(candidate))
-            # Never choose an arbitrary account if old credentials collide.
-            if len(matches) == 1:
-                ticket = matches[0]
-                conn.execute("UPDATE account_recovery_tickets SET query_code_hash=? WHERE id=?",
-                             (query_hash, ticket["id"]))
-        if not ticket:
-            raise _McpError(-32602, _RECOVERY_MISSING)
-        result = {"ok": True, "status": ticket["status"], "admin_note": ticket["admin_note"]}
-        if ticket["status"] != "approved":
-            return result
-        user = conn.execute(
-            "SELECT is_ai, deleted_at, deletion_requested_at_epoch FROM toy_users WHERE id=?",
-            (ticket["user_id"],),
-        ).fetchone()
-        if not user or user[0] or user[1] is not None or user[2] is not None:
-            return {"ok": True, "status": "unavailable", "message": "申请暂不可领取，请联系管理员。"}
-        reset = conn.execute(
-            "SELECT used, CAST(strftime('%s', expires_at) AS INTEGER) FROM password_reset_tokens WHERE id=?",
-            (ticket["reset_token_id"],),
-        ).fetchone()
-        if reset and reset[0]:
-            _complete_recovery_tickets(conn, ticket["user_id"])
-            conn.commit()
-            return {**result, "status": "completed"}
-        # The window limits issuance; a link already issued remains valid for its full 24h.
-        if reset and reset[1] > now:
-            expires_at = reset[1]
-        else:
-            if ticket["claim_until_epoch"] <= now:
-                return {**result, "status": "expired"}
-            if ticket["reset_token_id"]:
-                conn.execute("UPDATE password_reset_tokens SET used=1 WHERE id=?", (ticket["reset_token_id"],))
-            ticket["reset_nonce"] = secrets.token_urlsafe(32)
-            token = _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
-            _, token_id, expires_at = _create_reset_token(conn, ticket["user_id"], lifetime_seconds=86400, token=token)
-            conn.execute(
-                "UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
-                (token_id, ticket["reset_nonce"], ticket["id"]),
-            )
-        # Reconstruct only after query-code verification; neither credential is stored in plaintext.
-        token = _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
-        conn.commit()
-        return {**result, "reset_url": _reset_url(token), "expires_at_epoch": expires_at,
-                "claim_until_epoch": ticket["claim_until_epoch"]}
+    return account_recovery._query_recovery_ticket(
+        body,
+        _McpError=_McpError,
+        _RECOVERY_MISSING=_RECOVERY_MISSING,
+        _complete_recovery_tickets=_complete_recovery_tickets,
+        _create_reset_token=_create_reset_token,
+        _db_connect=_db_connect,
+        _email_hmac=_email_hmac,
+        _normalize_recovery_code=_normalize_recovery_code,
+        _recovery_query_hash=_recovery_query_hash,
+        _reset_url=_reset_url,
+        _row_dict=_row_dict,
+        hmac=hmac,
+        re=re,
+        secrets=secrets,
+        time=time,
+    )
 
 
 def _admin_recovery_tickets(view="pending", page=1):
-    page = max(1, min(int(page), 1000000))
-    clause = "status='pending'" if view == "pending" else "status!='pending'"
-    with _db_connect() as conn:
-        pending = conn.execute("SELECT COUNT(*) FROM account_recovery_tickets WHERE status='pending'").fetchone()[0]
-        total = conn.execute(f"SELECT COUNT(*) FROM account_recovery_tickets WHERE {clause}").fetchone()[0]
-        rows = conn.execute(
-            f"""SELECT id, account_kind, account, machine, registered_about, games, explanation,
-                       status, admin_note, user_id, created_at_epoch, reviewed_at_epoch, claim_until_epoch
-                FROM account_recovery_tickets WHERE {clause} ORDER BY id DESC LIMIT 20 OFFSET ?""",
-            ((page - 1) * 20,),
-        ).fetchall()
-    return {"tickets": [dict(row) for row in rows], "pending_count": pending, "total": total, "page": page}
+    return admin_accounts._admin_recovery_tickets(
+        view, page,
+        _db_connect=_db_connect,
+    )
 
 
 def _review_recovery_ticket(ticket_id, body, admin):
-    decision = body.get("decision")
-    if decision not in ("approved", "rejected"):
-        raise _McpError(-32602, "请选择通过或不通过")
-    note = _recovery_text(body, "admin_note", 2000, optional=decision == "approved")
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        ticket = conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (ticket_id,)).fetchone()
-        if not ticket or ticket["status"] != "pending":
-            raise _McpError(-32602, "工单不存在或已处理，请刷新")
-        user_id = None
-        if decision == "approved":
-            column = "id" if ticket["account_kind"] == "id" else "username"
-            user = conn.execute(
-                f"SELECT * FROM toy_users WHERE {column}=?", (ticket["account"],)
-            ).fetchone()
-            if not user or user["is_ai"] or user["deleted_at"] is not None or user["deletion_requested_at_epoch"] is not None:
-                raise _McpError(-32602, "目标不是可找回的人类账号，请核验后拒绝此申请")
-            user_id = user["id"]
-        now = int(time.time())
-        conn.execute(
-            """UPDATE account_recovery_tickets SET status=?, admin_note=?, user_id=?, reviewed_by=?,
-               reviewed_at_epoch=?, claim_until_epoch=? WHERE id=?""",
-            (decision, note, user_id, admin["id"], now, now + 7 * 86400 if user_id else None, ticket_id),
-        )
-        conn.commit()
-    return {"ok": True}
+    return admin_accounts._review_recovery_ticket(
+        ticket_id, body, admin,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _recovery_text=_recovery_text,
+        time=time,
+    )
 
 
 def _reset_machine_password(raw_token, ai_user_id, new_password):
-    human = _current_account(raw_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以为小机重置密码")
-    if ai_user_id is None:
-        raise _McpError(-32602, "ai_user_id 必填")
-    try:
-        ai_user_id = int(ai_user_id)
-    except (TypeError, ValueError):
-        raise _McpError(-32602, "ai_user_id 必须是整数") from None
-    new_password = _normalize_credential_field(new_password, "new_password")
-    if len(new_password) < 6:
-        raise _McpError(-32602, "新密码至少 6 位")
-
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        binding = conn.execute(
-            """
-            SELECT 1
-            FROM user_bindings
-            WHERE human_user_id = ? AND ai_user_id = ?
-            LIMIT 1
-            """,
-            (human["id"], ai_user_id),
-        ).fetchone()
-        if not binding:
-            raise _McpError(-32602, "该小机未绑定到你的账号")
-
-        machine = _row_dict(conn.execute(
-            """
-            SELECT id, is_ai
-            FROM toy_users
-            WHERE id = ? AND deleted_at IS NULL
-            """,
-            (ai_user_id,),
-        ).fetchone())
-        if not machine:
-            raise _McpError(-32004, "小机账号不存在或已删除")
-        if not machine.get("is_ai"):
-            raise _McpError(-32602, "目标账号不是小机账号")
-
-        owners = conn.execute(
-            "SELECT COUNT(*) FROM user_bindings WHERE ai_user_id = ?",
-            (ai_user_id,),
-        ).fetchone()[0]
-        if owners > 1:
-            raise _McpError(
-                -32602,
-                f"该小机绑定了 {owners} 个人类账号，请先解绑到只剩一个再重置密码",
-            )
-
-        conn.execute(
-            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
-            (_hash_password(new_password), ai_user_id),
-        )
-        _invalidate_operit_credentials_in_transaction(conn, ai_user_id)
-        conn.commit()
-
-    return {"ok": True, "message": "已为小机重置密码"}
+    return account_recovery._reset_machine_password(
+        raw_token, ai_user_id, new_password,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _hash_password=_hash_password,
+        _invalidate_operit_credentials_in_transaction=_invalidate_operit_credentials_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _row_dict=_row_dict,
+    )
 
 
 def _reset_password_token_info(reset_token):
-    """Read the account named by a usable reset link without consuming it."""
-    reset_token = reset_token if isinstance(reset_token, str) else ""
-    with _db_connect() as conn:
-        reset = conn.execute(
-            """
-            SELECT r.used, r.expires_at <= datetime('now') AS expired,
-                   u.username, u.deletion_requested_at_epoch
-            FROM password_reset_tokens AS r
-            LEFT JOIN toy_users AS u ON u.id = r.user_id
-            WHERE r.token = ? OR (r.token = ? AND r.token NOT LIKE 'sha256:%')
-            """,
-            (_reset_token_hash(reset_token), reset_token),
-        ).fetchone()
-    if not reset:
-        raise _McpError(-32602, "无效的重置链接")
-    if int(reset["used"]) == 1:
-        raise _McpError(-32602, "该链接已使用")
-    if bool(reset["expired"]):
-        raise _McpError(-32602, "链接已过期")
-    if reset["username"] is None or reset["deletion_requested_at_epoch"] is not None:
-        raise _McpError(-32602, "账号不存在或处于待注销状态，不能重置密码")
-    return {"username": reset["username"]}
+    return account_recovery._reset_password_token_info(
+        reset_token,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _reset_token_hash=_reset_token_hash,
+    )
 
 
 def _reset_password_by_token(reset_token, new_password):
-    reset_token = reset_token if isinstance(reset_token, str) else ""
-    new_password = _normalize_credential_field(new_password, "new_password")
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        reset = _row_dict(conn.execute(
-            """
-            SELECT *, expires_at <= datetime('now') AS expired
-            FROM password_reset_tokens
-            WHERE token = ? OR (token = ? AND token NOT LIKE 'sha256:%')
-            """,
-            (_reset_token_hash(reset_token), reset_token),
-        ).fetchone())
-        if not reset:
-            raise _McpError(-32602, "无效的重置链接")
-        if int(reset["used"]) == 1:
-            raise _McpError(-32602, "该链接已使用")
-        if bool(reset["expired"]):
-            raise _McpError(-32602, "链接已过期")
-        user = conn.execute(
-            "SELECT deletion_requested_at_epoch FROM toy_users WHERE id = ?",
-            (int(reset["user_id"]),),
-        ).fetchone()
-        if not user or user[0] is not None:
-            raise _McpError(-32602, "账号处于待注销状态，不能重置密码")
-        if len(new_password) < 6:
-            raise _McpError(-32602, "新密码至少 6 位")
-        conn.execute(
-            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
-            (_hash_password(new_password), int(reset["user_id"])),
-        )
-        _invalidate_operit_credentials_in_transaction(
-            conn, int(reset["user_id"])
-        )
-        conn.execute(
-            "UPDATE password_reset_tokens SET used = 1 WHERE id = ?",
-            (int(reset["id"]),),
-        )
-        _complete_recovery_tickets(conn, int(reset["user_id"]))
-        conn.commit()
-    return {"ok": True, "message": "密码已重置，请用新密码登录"}
+    return account_recovery._reset_password_by_token(
+        reset_token, new_password,
+        _McpError=_McpError,
+        _complete_recovery_tickets=_complete_recovery_tickets,
+        _db_connect=_db_connect,
+        _hash_password=_hash_password,
+        _invalidate_operit_credentials_in_transaction=_invalidate_operit_credentials_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _reset_token_hash=_reset_token_hash,
+        _row_dict=_row_dict,
+    )
 
 
 def _admin_release_user(user_id, admin_user):
-    if int(user_id) == int(admin_user["id"]):
-        raise _McpError(-32602, "不能释放当前登录的管理员账号")
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        existing = conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone()
-        if not existing:
-            raise _McpError(-32004, "账号不存在")
-        now_epoch = int(time.time())
-        if existing["deletion_requested_at_epoch"] is None:
-            account_deletion.request_deletion(
-                conn, int(user_id), now_epoch=now_epoch, delay_seconds=0
-            )
-        else:
-            conn.execute("BEGIN IMMEDIATE")
-            conn.execute(
-                "UPDATE toy_users SET scheduled_delete_at_epoch=? WHERE id=?",
-                (now_epoch, int(user_id)),
-            )
-            conn.execute(
-                """
-                UPDATE account_deletion_jobs SET scheduled_at_epoch=?
-                WHERE job_id=? AND status IN ('pending', 'running')
-                """,
-                (now_epoch, existing["deletion_job_id"]),
-            )
-            conn.commit()
-    result = _purge_account_deletion(int(user_id), now_epoch=now_epoch)
-    if result.get("status") != "complete":
-        raise _McpError(-32603, "立即释放未完成，后台清理将继续重试")
-    return {"ok": True, "message": "账号及私人数据已清理，共享历史已匿名化"}
+    return admin_accounts._admin_release_user(
+        user_id, admin_user,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _purge_account_deletion=_purge_account_deletion,
+        account_deletion=account_deletion,
+        time=time,
+    )
 
 
 def _generate_binding_token(raw_token):
-    user = _current_account(raw_token)
-    if not user.get("is_ai"):
-        raise _McpError(-32602, "只有 AI 账号可以生成绑定码")
-    token = secrets.token_urlsafe(24)
-    expires_at = int(time.time()) + BINDING_TOKEN_SECONDS
-    with _db_connect() as conn:
-        conn.execute(
-            "INSERT INTO binding_tokens (token, ai_user_id, expires_at, used) VALUES (?, ?, datetime(?, 'unixepoch', 'localtime'), 0)",
-            (token, user["id"], expires_at),
-        )
-        conn.commit()
-    return {"binding_token": token, "expires_in": BINDING_TOKEN_SECONDS}
+    return accounts._generate_binding_token(
+        raw_token,
+        BINDING_TOKEN_SECONDS=BINDING_TOKEN_SECONDS,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        secrets=secrets,
+        time=time,
+    )
 
 
 def _ensure_ai_binding(conn, human_user_id, ai_user_id):
-    """Create the human/AI binding under the existing ownership constraints."""
-    human_user_id = int(human_user_id)
-    ai_user_id = int(ai_user_id)
-    if ai_user_id == human_user_id:
-        raise _McpError(-32602, "不能绑定自己")
-    # 一个小机同时只能有一个人类主人；换绑需原主人先解绑。
-    other_owner = conn.execute(
-        "SELECT 1 FROM user_bindings WHERE ai_user_id = ? AND human_user_id <> ?",
-        (ai_user_id, human_user_id),
-    ).fetchone()
-    if other_owner:
-        raise _McpError(-32602, "该小机已被其他人类账号绑定，请先由原绑定者解绑")
-    conn.execute(
-        "INSERT OR IGNORE INTO user_bindings (human_user_id, ai_user_id) VALUES (?, ?)",
-        (human_user_id, ai_user_id),
+    return accounts._ensure_ai_binding(
+        conn, human_user_id, ai_user_id,
+        _McpError=_McpError,
+        avatar_appearances=avatar_appearances,
     )
-    avatar_appearances.grant_one_w(conn, user_id=ai_user_id)
 
 
 def _bind_account(human_token, binding_token):
-    human = _current_account(human_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以绑定 AI")
-    raw_binding_token = binding_token or ""
-    binding_token = raw_binding_token.strip()
-    if not binding_token:
-        raise _McpError(-32602, "绑定码必填")
-    if (
-        raw_binding_token != binding_token
-        or len(binding_token) != 32
-        or not re.fullmatch(r"[A-Za-z0-9_-]{32}", binding_token)
-    ):
-        raise _McpError(
-            -32602,
-            "绑定码格式不正确。请只复制32位绑定码本身，不要带引号、反引号、空格、换行或其他隐藏字符。",
-        )
-    with _db_connect() as conn:
-        row = _row_dict(conn.execute(
-            """
-            SELECT *, expires_at <= datetime('now', 'localtime') AS expired
-            FROM binding_tokens
-            WHERE token = ?
-            ORDER BY rowid DESC
-            LIMIT 1
-            """,
-            (binding_token,),
-        ).fetchone())
-        if not row:
-            raise _McpError(
-                -32001,
-                "绑定码不存在。请检查是否完整复制；不要带引号、反引号、空格、换行或隐藏字符。",
-            )
-        if row.get("used"):
-            raise _McpError(-32001, "绑定码已使用，请让小机重新生成一枚新的绑定码。")
-        if row.get("expired"):
-            raise _McpError(-32001, "绑定码已过期（有效期10分钟），请让小机重新生成后立即绑定。")
-        _ensure_ai_binding(conn, human["id"], row["ai_user_id"])
-        conn.execute("UPDATE binding_tokens SET used = 1 WHERE token = ?", (binding_token,))
-        conn.commit()
-    return {"ok": True}
+    return accounts._bind_account(
+        human_token, binding_token,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _ensure_ai_binding=_ensure_ai_binding,
+        _row_dict=_row_dict,
+        re=re,
+    )
 
 
 def _rotate_ai_user_in_transaction(conn, user_id, *, allow_pending_deletion=False):
-    user = _row_dict(conn.execute(
-        "SELECT * FROM toy_users WHERE id = ? AND deleted_at IS NULL",
-        (int(user_id),),
-    ).fetchone())
-    if not user:
-        raise _McpError(-32004, "小机账号不存在或已删除")
-    if not user.get("is_ai"):
-        raise _McpError(-32602, "目标账号不是小机账号")
-    if (
-        user.get("deletion_requested_at_epoch") is not None
-        and not allow_pending_deletion
-    ):
-        raise _McpError(-32010, "待注销小机不能更新 Token")
-    conn.execute(
-        """
-        UPDATE toy_users
-        SET ai_token_version = ai_token_version + 1,
-            last_active_at = datetime('now', 'localtime')
-        WHERE id = ?
-        """,
-        (int(user_id),),
+    return accounts._rotate_ai_user_in_transaction(
+        conn, user_id, allow_pending_deletion=allow_pending_deletion,
+        _McpError=_McpError,
+        _row_dict=_row_dict,
     )
-    conn.execute(
-        """
-        UPDATE ai_access_tokens
-        SET revoked_at_epoch = CAST(strftime('%s', 'now') AS INTEGER),
-            revoked_reason = 'rotation'
-        WHERE user_id = ? AND revoked_at_epoch IS NULL
-        """,
-        (int(user_id),),
-    )
-    return _row_dict(conn.execute(
-        "SELECT * FROM toy_users WHERE id = ?",
-        (int(user_id),),
-    ).fetchone())
 
 
 def _replace_ai_token_in_transaction(
     conn, user_id, *, allow_pending_deletion=False
 ):
-    """Atomically revoke every old credential and issue exactly one replacement."""
-    user = _rotate_ai_user_in_transaction(
-        conn,
-        user_id,
-        allow_pending_deletion=allow_pending_deletion,
+    return accounts._replace_ai_token_in_transaction(
+        conn, user_id, allow_pending_deletion=allow_pending_deletion,
+        _issue_ai_token_in_transaction=_issue_ai_token_in_transaction,
+        _rotate_ai_user_in_transaction=_rotate_ai_user_in_transaction,
     )
-    token = _issue_ai_token_in_transaction(conn, user)
-    return user, token
 
 
 def _rotate_ai_token(raw_token):
-    user = _current_account(raw_token)
-    if not user.get("is_ai"):
-        raise _McpError(-32602, "只有小机账号可以更新 Token")
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        user, token = _replace_ai_token_in_transaction(conn, user["id"])
-        conn.commit()
-    return {
-        "token": token,
-        "user": _public_user(user),
-        "message": "此前全部旧 Token 已失效，请让人类替换 MCP 地址。",
-    }
+    return accounts._rotate_ai_token(
+        raw_token,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_user=_public_user,
+        _replace_ai_token_in_transaction=_replace_ai_token_in_transaction,
+    )
 
 
 def _rotate_bound_machine_token(human_token, ai_user_id, password, client_ip=None):
-    human = _current_account(human_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以更新绑定小机 Token")
-    try:
-        ai_user_id = int(ai_user_id)
-    except (TypeError, ValueError):
-        raise _McpError(-32602, "ai_user_id 必填") from None
-    password = _normalize_credential_field(password, "password")
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        user = _row_dict(conn.execute(
-            """
-            SELECT u.*
-            FROM user_bindings AS b
-            JOIN toy_users AS u ON u.id = b.ai_user_id
-            WHERE b.human_user_id = ? AND b.ai_user_id = ?
-            """,
-            (int(human["id"]), ai_user_id),
-        ).fetchone())
-        if not user:
-            raise _McpError(-32602, "该小机未绑定到你的账号")
-        if not password:
-            raise _McpError(-32602, "小机密码必填")
-        if _failed_login_is_limited(client_ip, user["username"]):
-            raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
-        if not _verify_password(password, user["password_hash"]):
-            _raise_failed_login(client_ip, user["username"])
-        _clear_failed_login(client_ip, user["username"])
-        user, token = _replace_ai_token_in_transaction(conn, ai_user_id)
-        conn.commit()
-    return {
-        "token": token,
-        "user": _public_user(user),
-        "rotated": True,
-        "message": "此前全部旧 Token 已失效，请替换 MCP 地址。",
-    }
+    return accounts._rotate_bound_machine_token(
+        human_token, ai_user_id, password, client_ip,
+        FAILED_LOGIN_RATE_LIMIT_MESSAGE=FAILED_LOGIN_RATE_LIMIT_MESSAGE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _clear_failed_login=_clear_failed_login,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _failed_login_is_limited=_failed_login_is_limited,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _raise_failed_login=_raise_failed_login,
+        _replace_ai_token_in_transaction=_replace_ai_token_in_transaction,
+        _row_dict=_row_dict,
+        _verify_password=_verify_password,
+    )
 
 
 def _machine_account_token(
@@ -3716,142 +2203,55 @@ def _machine_account_token(
     human_token="",
     client_ip=None,
 ):
-    """Replace an AI token after bound-account or credential verification."""
-    if not isinstance(bind, bool):
-        raise _McpError(-32602, "bind 必须是布尔值")
-    if not isinstance(rotate, bool):
-        raise _McpError(-32602, "rotate 必须是布尔值")
-    if ai_user_id is not None:
-        if not human_token:
-            raise _McpError(-32001, "请先登录人类账号")
-        return _rotate_bound_machine_token(
-            human_token,
-            ai_user_id,
-            password,
-            client_ip=client_ip,
-        )
-    username = _normalize_credential_field(username, "username").strip()
-    password = _normalize_credential_field(password, "password")
-    _validate_credentials(username, password)
-    if _failed_login_is_limited(client_ip, username):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, FAILED_LOGIN_RATE_LIMIT_MESSAGE)
-
-    human = None
-    if bind:
-        if not human_token:
-            raise _McpError(-32001, "选择同时绑定时，请先登录人类账号")
-        human = _current_account(human_token)
-        if human.get("is_ai"):
-            raise _McpError(-32602, "只有人类账号可以绑定 AI")
-
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        user = _row_dict(conn.execute(
-            "SELECT * FROM toy_users WHERE username = ? AND deleted_at IS NULL",
-            (username,),
-        ).fetchone())
-        if not user or not _verify_password(password, user["password_hash"]):
-            _raise_failed_login(client_ip, username)
-        _clear_failed_login(client_ip, username)
-        if not user.get("is_ai"):
-            raise _McpError(-32602, "该账号不是小机账号")
-        if user.get("deletion_requested_at_epoch") is not None:
-            raise _McpError(-32010, "该小机处于待注销状态，只能登录后查询或取消注销")
-        if bind:
-            _ensure_ai_binding(conn, human["id"], user["id"])
-        user, token = _replace_ai_token_in_transaction(conn, user["id"])
-        conn.commit()
-        user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user["id"],)).fetchone())
-
-    result = {
-        "token": token,
-        "user": _public_user(user),
-        "rotated": True,
-        "message": "此前全部旧 Token 已失效，只保留这枚新 Token；请替换 MCP 地址。",
-    }
-    if bind:
-        result["bound"] = True
-    return result
+    return accounts._machine_account_token(
+        username, password, bind=bind, rotate=rotate, ai_user_id=ai_user_id, human_token=human_token, client_ip=client_ip,
+        FAILED_LOGIN_RATE_LIMIT_MESSAGE=FAILED_LOGIN_RATE_LIMIT_MESSAGE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _clear_failed_login=_clear_failed_login,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _ensure_ai_binding=_ensure_ai_binding,
+        _failed_login_is_limited=_failed_login_is_limited,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _raise_failed_login=_raise_failed_login,
+        _replace_ai_token_in_transaction=_replace_ai_token_in_transaction,
+        _rotate_bound_machine_token=_rotate_bound_machine_token,
+        _row_dict=_row_dict,
+        _validate_credentials=_validate_credentials,
+        _verify_password=_verify_password,
+    )
 
 
 def _unbind_account(raw_token, ai_user_id):
-    human = _current_account(raw_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, "只有人类账号可以解绑")
-    if not ai_user_id:
-        raise _McpError(-32602, "ai_user_id 必填")
-    with _db_connect() as conn:
-        deleted = conn.execute(
-            "DELETE FROM user_bindings WHERE human_user_id = ? AND ai_user_id = ?",
-            (human["id"], ai_user_id),
-        ).rowcount
-        conn.commit()
-    if deleted == 0:
-        raise _McpError(-32004, "绑定关系不存在")
-    return {"ok": True}
+    return accounts._unbind_account(
+        raw_token, ai_user_id,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+    )
 
 
 def _binding_rows(conn, user):
-    if user.get("is_ai"):
-        return conn.execute(
-            """
-            SELECT u.username, u.is_ai, u.avatar_type, u.avatar_value,
-                   b.created_at AS bound_at
-            FROM user_bindings b
-            JOIN toy_users u ON u.id = b.human_user_id
-            WHERE b.ai_user_id = ? AND u.deleted_at IS NULL
-            ORDER BY b.created_at DESC
-            """,
-            (user["id"],),
-        ).fetchall()
-    return conn.execute(
-        """
-        SELECT u.username, u.is_ai, u.avatar_type, u.avatar_value,
-               b.created_at AS bound_at
-        FROM user_bindings b
-        JOIN toy_users u ON u.id = b.ai_user_id
-        WHERE b.human_user_id = ? AND u.deleted_at IS NULL
-        ORDER BY b.created_at DESC
-        """,
-        (user["id"],),
-    ).fetchall()
+    return accounts._binding_rows(conn, user)
 
 
 def _public_binding(row):
-    return {
-        "username": row["username"],
-        "avatar": _public_avatar(row),
-        "bound_at": row["bound_at"],
-    }
+    return accounts._public_binding(
+        row,
+        _public_avatar=_public_avatar,
+    )
 
 
 def _bound_human_user_for_saves(raw_token, username):
-    user = _current_account(raw_token)
-    username = (username or "").strip()
-    with _db_connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT target.*
-            FROM user_bindings b
-            JOIN toy_users target ON target.id = b.human_user_id
-            WHERE b.ai_user_id = ?
-              AND target.deleted_at IS NULL
-            ORDER BY username
-            """,
-            (int(user["id"]),),
-        ).fetchall()
-    targets = [_row_dict(row) for row in rows]
-    if username:
-        for target in targets:
-            if target["username"] == username:
-                return target
-        raise _McpError(-32004, "未与该人类绑定")
-    if len(targets) == 1:
-        return targets[0]
-    if len(targets) > 1:
-        choices = "、".join(target["username"] for target in targets)
-        raise _McpError(-32602, f"绑定了多个人类，请传 username；可选 username：{choices}")
-    raise _McpError(-32004, "未绑定任何人类，请先绑定")
+    return player_identity._bound_human_user_for_saves(
+        raw_token, username,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _row_dict=_row_dict,
+    )
 
 
 # Resolve extraction dependencies per call to preserve server-level patches.
@@ -3967,399 +2367,144 @@ def _memoria_human_guides(include_content=False):
 
 
 def _get_bindings(raw_token):
-    user = _current_account(raw_token)
-    if not user.get("is_ai"):
-        raise _McpError(-32602, "只有 AI 账号可以查看绑定自己的人类列表")
-    with _db_connect() as conn:
-        rows = _binding_rows(conn, user)
-    return {"bindings": [_public_binding(dict(row)) for row in rows]}
+    return accounts._get_bindings(
+        raw_token,
+        _McpError=_McpError,
+        _binding_rows=_binding_rows,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_binding=_public_binding,
+    )
 
 
 def _get_profile(raw_token):
-    user = _current_account(raw_token)
-    with _db_connect() as conn:
-        rows = _binding_rows(conn, user)
-        games = _game_overview(conn, user)
-    return {
-        "username": user["username"],
-        "is_ai": bool(user.get("is_ai")),
-        "avatar": _public_avatar(user),
-        "token_format": user.get("_auth_token_format", "unknown"),
-        "token_migration_recommended": bool(
-            user.get("is_ai") and user.get("_auth_token_format") == "legacy_jwt"
-        ),
-        "created_at": user.get("created_at"),
-        "bindings": [_public_binding(dict(row)) for row in rows],
-        "games": games,
-    }
+    return accounts._get_profile(
+        raw_token,
+        _binding_rows=_binding_rows,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _game_overview=_game_overview,
+        _public_avatar=_public_avatar,
+        _public_binding=_public_binding,
+    )
 
 
 def _account_me(raw_token):
-    user = _current_account(raw_token, allow_pending_deletion=True)
-    if user.get("deletion_requested_at_epoch") is not None:
-        return {
-            "user": _public_user(user),
-            "bindings": [],
-            "pending_deletion": True,
-            "deletion": _account_deletion_status(raw_token),
-        }
-    with _db_connect() as conn:
-        if user.get("is_ai"):
-            rows = conn.execute(
-                """
-                SELECT u.id, u.username, u.is_ai, u.is_admin,
-                       u.avatar_type, u.avatar_value,
-                       u.created_at, u.last_active_at
-                FROM user_bindings b
-                JOIN toy_users u ON u.id = b.human_user_id
-                WHERE b.ai_user_id = ? AND u.deleted_at IS NULL
-                ORDER BY b.created_at DESC
-                """,
-                (user["id"],),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT u.id, u.username, u.is_ai, u.is_admin,
-                       u.avatar_type, u.avatar_value,
-                       u.created_at, u.last_active_at
-                FROM user_bindings b
-                JOIN toy_users u ON u.id = b.ai_user_id
-                WHERE b.human_user_id = ? AND u.deleted_at IS NULL
-                ORDER BY b.created_at DESC
-                """,
-                (user["id"],),
-            ).fetchall()
-    return {"user": _public_user(user), "bindings": [_public_user(dict(row)) for row in rows]}
+    return accounts._account_me(
+        raw_token,
+        _account_deletion_status=_account_deletion_status,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_user=_public_user,
+    )
 
 
 def _require_human_account(raw_token):
-    user = _current_account(raw_token)
-    if user.get("is_ai"):
-        raise _McpError(-32003, "只有人类账号可以使用邮箱安全功能")
-    return user
+    return accounts._require_human_account(
+        raw_token,
+        _McpError=_McpError,
+        _current_account=_current_account,
+    )
 
 
 def _email_send_rate_limit(conn, user_id, email, ip_hash, now):
-    dimensions = (
-        ("user_id = ?", int(user_id), EMAIL_SEND_MAX_PER_ACCOUNT),
-        ("email_normalized = ? COLLATE NOCASE", email, EMAIL_SEND_MAX_PER_EMAIL),
-        ("request_ip_hash = ?", ip_hash, EMAIL_SEND_MAX_PER_IP),
+    return account_email._email_send_rate_limit(
+        conn, user_id, email, ip_hash, now,
+        EMAIL_SEND_COOLDOWN_SECONDS=EMAIL_SEND_COOLDOWN_SECONDS,
+        EMAIL_SEND_MAX_PER_ACCOUNT=EMAIL_SEND_MAX_PER_ACCOUNT,
+        EMAIL_SEND_MAX_PER_EMAIL=EMAIL_SEND_MAX_PER_EMAIL,
+        EMAIL_SEND_MAX_PER_IP=EMAIL_SEND_MAX_PER_IP,
+        EMAIL_SEND_WINDOW_SECONDS=EMAIL_SEND_WINDOW_SECONDS,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
     )
-    latest = None
-    for where_sql, value, _limit in dimensions:
-        row = conn.execute(
-            f"SELECT MAX(created_at_epoch) FROM email_verification_codes WHERE {where_sql}",
-            (value,),
-        ).fetchone()
-        if row and row[0] is not None:
-            latest = max(latest or 0, int(row[0]))
-    if latest is not None and now - latest < EMAIL_SEND_COOLDOWN_SECONDS:
-        raise _McpError(
-            RATE_LIMIT_ERROR_CODE,
-            "验证码发送太频繁，请稍后再试",
-            {"retry_after": EMAIL_SEND_COOLDOWN_SECONDS - (now - latest)},
-        )
-    window_start = now - EMAIL_SEND_WINDOW_SECONDS
-    for where_sql, value, limit in dimensions:
-        count = int(conn.execute(
-            f"""
-            SELECT COUNT(*)
-            FROM email_verification_codes
-            WHERE {where_sql} AND created_at_epoch > ?
-            """,
-            (value, window_start),
-        ).fetchone()[0])
-        if count >= limit:
-            raise _McpError(
-                RATE_LIMIT_ERROR_CODE,
-                "验证码发送次数过多，请稍后再试",
-            )
 
 
 def _issue_email_code(user_id, email, purpose, client_ip):
-    smtp_config = _smtp_config()
-    now = int(time.time())
-    ip_hash = _email_ip_hash(client_ip)
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    salt = secrets.token_hex(16)
-    code_hash = _email_code_hash(code, salt, purpose, user_id, email)
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        _email_send_rate_limit(conn, user_id, email, ip_hash, now)
-        cursor = conn.execute(
-            """
-            INSERT INTO email_verification_codes (
-                user_id, email_normalized, purpose, code_salt, code_hash,
-                request_ip_hash, created_at_epoch, expires_at_epoch
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(user_id),
-                email,
-                purpose,
-                salt,
-                code_hash,
-                ip_hash,
-                now,
-                now + EMAIL_CODE_TTL_SECONDS,
-            ),
-        )
-        code_id = int(cursor.lastrowid)
-        conn.commit()
-    try:
-        _send_verification_email(email, code, purpose, smtp_config)
-    except Exception:
-        with _db_connect() as conn:
-            conn.execute(
-                "UPDATE email_verification_codes SET used_at_epoch = ? WHERE id = ?",
-                (int(time.time()), code_id),
-            )
-            conn.commit()
-        raise
-    delivered_at = int(time.time())
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            """
-            UPDATE email_verification_codes
-            SET used_at_epoch = ?
-            WHERE user_id = ? AND purpose = ? AND id != ?
-              AND delivered_at_epoch IS NOT NULL AND used_at_epoch IS NULL
-            """,
-            (delivered_at, int(user_id), purpose, code_id),
-        )
-        conn.execute(
-            "UPDATE email_verification_codes SET delivered_at_epoch = ? WHERE id = ?",
-            (delivered_at, code_id),
-        )
-        conn.commit()
-    return {
-        "ok": True,
-        "state": "code_sent",
-        "purpose": purpose,
-        "masked_email": _mask_email(email),
-        "expires_in": EMAIL_CODE_TTL_SECONDS,
-        "message": "验证码已发送，10 分钟内有效",
-    }
+    return account_email._issue_email_code(
+        user_id, email, purpose, client_ip,
+        EMAIL_CODE_TTL_SECONDS=EMAIL_CODE_TTL_SECONDS,
+        _db_connect=_db_connect,
+        _email_code_hash=_email_code_hash,
+        _email_ip_hash=_email_ip_hash,
+        _email_send_rate_limit=_email_send_rate_limit,
+        _mask_email=_mask_email,
+        _send_verification_email=_send_verification_email,
+        _smtp_config=_smtp_config,
+        secrets=secrets,
+        time=time,
+    )
 
 
 def _check_email_verify_rate_limit(conn, user_id, ip_hash, now):
-    window_start = now - EMAIL_VERIFY_WINDOW_SECONDS
-    account_failures = int(conn.execute(
-        """
-        SELECT COUNT(*) FROM email_verification_attempts
-        WHERE user_id = ? AND succeeded = 0 AND attempted_at_epoch > ?
-        """,
-        (int(user_id), window_start),
-    ).fetchone()[0])
-    ip_failures = int(conn.execute(
-        """
-        SELECT COUNT(*) FROM email_verification_attempts
-        WHERE request_ip_hash = ? AND succeeded = 0 AND attempted_at_epoch > ?
-        """,
-        (ip_hash, window_start),
-    ).fetchone()[0])
-    if account_failures >= EMAIL_VERIFY_MAX_PER_ACCOUNT or ip_failures >= EMAIL_VERIFY_MAX_PER_IP:
-        raise _McpError(
-            RATE_LIMIT_ERROR_CODE,
-            "验证码错误次数过多，请稍后再试",
-        )
+    return account_email._check_email_verify_rate_limit(
+        conn, user_id, ip_hash, now,
+        EMAIL_VERIFY_MAX_PER_ACCOUNT=EMAIL_VERIFY_MAX_PER_ACCOUNT,
+        EMAIL_VERIFY_MAX_PER_IP=EMAIL_VERIFY_MAX_PER_IP,
+        EMAIL_VERIFY_WINDOW_SECONDS=EMAIL_VERIFY_WINDOW_SECONDS,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+    )
 
 
 def _verify_email_code_in_transaction(conn, user_id, email, purpose, code, client_ip):
-    now = int(time.time())
-    ip_hash = _email_ip_hash(client_ip)
-    _check_email_verify_rate_limit(conn, user_id, ip_hash, now)
-    row = _row_dict(conn.execute(
-        """
-        SELECT *
-        FROM email_verification_codes
-        WHERE user_id = ? AND email_normalized = ? COLLATE NOCASE AND purpose = ?
-          AND delivered_at_epoch IS NOT NULL AND used_at_epoch IS NULL
-          AND expires_at_epoch >= ?
-        ORDER BY delivered_at_epoch DESC, id DESC
-        LIMIT 1
-        """,
-        (int(user_id), email, purpose, now),
-    ).fetchone())
-    if not row:
-        raise _McpError(-32602, "验证码无效、已过期或已使用")
-    supplied_code = code.strip() if isinstance(code, str) else ""
-    expected_hash = _email_code_hash(
-        supplied_code,
-        row["code_salt"],
-        purpose,
-        user_id,
-        email,
+    return account_email._verify_email_code_in_transaction(
+        conn, user_id, email, purpose, code, client_ip,
+        EMAIL_CODE_MAX_ATTEMPTS=EMAIL_CODE_MAX_ATTEMPTS,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        _McpError=_McpError,
+        _check_email_verify_rate_limit=_check_email_verify_rate_limit,
+        _email_code_hash=_email_code_hash,
+        _email_ip_hash=_email_ip_hash,
+        _email_value_hash=_email_value_hash,
+        _row_dict=_row_dict,
+        hmac=hmac,
+        time=time,
     )
-    succeeded = hmac.compare_digest(expected_hash, row["code_hash"])
-    conn.execute(
-        """
-        INSERT INTO email_verification_attempts (
-            code_id, user_id, email_hash, request_ip_hash, succeeded, attempted_at_epoch
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            int(row["id"]),
-            int(user_id),
-            _email_value_hash(email),
-            ip_hash,
-            1 if succeeded else 0,
-            now,
-        ),
-    )
-    if not succeeded:
-        failed_attempts = int(row["failed_attempts"]) + 1
-        conn.execute(
-            """
-            UPDATE email_verification_codes
-            SET failed_attempts = ?,
-                used_at_epoch = CASE WHEN ? >= ? THEN ? ELSE used_at_epoch END
-            WHERE id = ?
-            """,
-            (
-                failed_attempts,
-                failed_attempts,
-                EMAIL_CODE_MAX_ATTEMPTS,
-                now,
-                int(row["id"]),
-            ),
-        )
-        conn.commit()
-        if failed_attempts >= EMAIL_CODE_MAX_ATTEMPTS:
-            raise _McpError(
-                RATE_LIMIT_ERROR_CODE,
-                "验证码错误次数过多，请重新获取",
-            )
-        raise _McpError(-32602, "验证码错误")
-    updated = conn.execute(
-        """
-        UPDATE email_verification_codes
-        SET used_at_epoch = ?
-        WHERE id = ? AND used_at_epoch IS NULL
-        """,
-        (now, int(row["id"])),
-    ).rowcount
-    if updated != 1:
-        raise _McpError(-32602, "验证码已使用")
-    return row
 
 
 def _account_email_status(raw_token):
-    user = _require_human_account(raw_token)
-    with _db_connect() as conn:
-        row = conn.execute(
-            "SELECT email_normalized, verified FROM account_emails WHERE user_id = ?",
-            (int(user["id"]),),
-        ).fetchone()
-    return {
-        "bound": bool(row and row["verified"]),
-        "verified": bool(row and row["verified"]),
-        "masked_email": _mask_email(row["email_normalized"]) if row else None,
-    }
+    return account_email._account_email_status(
+        raw_token,
+        _db_connect=_db_connect,
+        _mask_email=_mask_email,
+        _require_human_account=_require_human_account,
+    )
 
 
 def _send_account_email_code(raw_token, email, client_ip=None):
-    user = _require_human_account(raw_token)
-    email = _normalize_email(email)
-    with _db_connect() as conn:
-        current = conn.execute(
-            "SELECT email_normalized FROM account_emails WHERE user_id = ?",
-            (int(user["id"]),),
-        ).fetchone()
-        conflict = conn.execute(
-            "SELECT user_id FROM account_emails WHERE email_normalized = ? COLLATE NOCASE AND user_id != ?",
-            (email, int(user["id"])),
-        ).fetchone()
-    if conflict:
-        raise _McpError(-32602, "该邮箱已绑定其他账号", {"reason": "email_in_use"})
-    if current and current["email_normalized"].casefold() == email:
-        raise _McpError(-32602, "该邮箱已经绑定当前账号")
-    purpose = "change" if current else "bind"
-    return _issue_email_code(user["id"], email, purpose, client_ip)
+    return account_email._send_account_email_code(
+        raw_token, email, client_ip,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _issue_email_code=_issue_email_code,
+        _normalize_email=_normalize_email,
+        _require_human_account=_require_human_account,
+    )
 
 
 def _confirm_account_email(raw_token, email, code, client_ip=None):
-    user = _require_human_account(raw_token)
-    email = _normalize_email(email)
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        current = conn.execute(
-            "SELECT email_normalized FROM account_emails WHERE user_id = ?",
-            (int(user["id"]),),
-        ).fetchone()
-        purpose = "change" if current else "bind"
-        _verify_email_code_in_transaction(
-            conn,
-            user["id"],
-            email,
-            purpose,
-            code,
-            client_ip,
-        )
-        try:
-            conn.execute(
-                """
-                INSERT INTO account_emails (
-                    user_id, email_normalized, verified, verified_at_epoch,
-                    created_at_epoch, updated_at_epoch
-                ) VALUES (
-                    ?, ?, 1,
-                    CAST(strftime('%s', 'now') AS INTEGER),
-                    CAST(strftime('%s', 'now') AS INTEGER),
-                    CAST(strftime('%s', 'now') AS INTEGER)
-                )
-                ON CONFLICT(user_id) DO UPDATE SET
-                    email_normalized = excluded.email_normalized,
-                    verified = 1,
-                    verified_at_epoch = excluded.verified_at_epoch,
-                    updated_at_epoch = excluded.updated_at_epoch
-                """,
-                (int(user["id"]), email),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise _McpError(
-                -32602,
-                "该邮箱已绑定其他账号",
-                {"reason": "email_in_use"},
-            ) from exc
-        conn.commit()
-    return {
-        "ok": True,
-        "bound": True,
-        "verified": True,
-        "masked_email": _mask_email(email),
-        "message": "邮箱已绑定" if purpose == "bind" else "邮箱已更换",
-    }
+    return account_email._confirm_account_email(
+        raw_token, email, code, client_ip,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _mask_email=_mask_email,
+        _normalize_email=_normalize_email,
+        _require_human_account=_require_human_account,
+        _verify_email_code_in_transaction=_verify_email_code_in_transaction,
+        sqlite3=sqlite3,
+    )
 
 
 def _unbind_account_email(raw_token, password):
-    user = _require_human_account(raw_token)
-    password = _normalize_credential_field(password, "password")
-    if not _verify_password(password, user["password_hash"]):
-        raise _McpError(-32602, "当前密码错误")
-    with _db_connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        deleted = conn.execute(
-            "DELETE FROM account_emails WHERE user_id = ?",
-            (int(user["id"]),),
-        ).rowcount
-        conn.execute(
-            """
-            UPDATE email_verification_codes
-            SET used_at_epoch = COALESCE(
-                used_at_epoch,
-                CAST(strftime('%s', 'now') AS INTEGER)
-            )
-            WHERE user_id = ? AND used_at_epoch IS NULL
-            """,
-            (int(user["id"]),),
-        )
-        conn.commit()
-    if not deleted:
-        raise _McpError(-32602, "当前账号未绑定邮箱")
-    return {"ok": True, "bound": False, "message": "邮箱已解绑"}
+    return account_email._unbind_account_email(
+        raw_token, password,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+        _normalize_credential_field=_normalize_credential_field,
+        _require_human_account=_require_human_account,
+        _verify_password=_verify_password,
+    )
 
 
 _MACHINE_PASSWORD_RECOVERY_MESSAGE = (
@@ -4370,131 +2515,50 @@ _NO_EMAIL_RECOVERY_MESSAGE = "该账号未绑定邮箱，无法自助找回，�
 
 
 def _account_security_http_status(exc):
-    if exc.code == -32001:
-        return 401
-    if exc.code == -32003:
-        return 403
-    if exc.code == RATE_LIMIT_ERROR_CODE:
-        return 429
-    if exc.code == EMAIL_PROVIDER_ERROR_CODE:
-        return 503
-    if exc.details.get("reason") == "email_in_use":
-        return 409
-    return 400
+    return account_recovery._account_security_http_status(
+        exc,
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+    )
 
 
 def _start_password_recovery(username, client_ip=None):
-    username = username.strip() if isinstance(username, str) else ""
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        user = _row_dict(conn.execute(
-            """
-            SELECT id, username, is_ai, deletion_requested_at_epoch
-            FROM toy_users
-            WHERE username = ? AND deleted_at IS NULL
-            """,
-            (username,),
-        ).fetchone())
-        email_row = None
-        if user and not user.get("is_ai") and user.get("deletion_requested_at_epoch") is None:
-            email_row = conn.execute(
-                """
-                SELECT email_normalized
-                FROM account_emails
-                WHERE user_id = ? AND verified = 1
-                """,
-                (int(user["id"]),),
-            ).fetchone()
-    if user and user.get("is_ai"):
-        return {"state": "machine", "message": _MACHINE_PASSWORD_RECOVERY_MESSAGE}
-    if user and user.get("deletion_requested_at_epoch") is not None:
-        return {"state": "unavailable", "message": "账号待注销；请用用户名和密码登录后取消注销"}
-    if not user or not email_row:
-        return {"state": "unavailable", "message": _NO_EMAIL_RECOVERY_MESSAGE}
-    return _issue_email_code(
-        user["id"],
-        email_row["email_normalized"],
-        "reset",
-        client_ip,
+    return account_recovery._start_password_recovery(
+        username, client_ip,
+        _MACHINE_PASSWORD_RECOVERY_MESSAGE=_MACHINE_PASSWORD_RECOVERY_MESSAGE,
+        _NO_EMAIL_RECOVERY_MESSAGE=_NO_EMAIL_RECOVERY_MESSAGE,
+        _db_connect=_db_connect,
+        _issue_email_code=_issue_email_code,
+        _row_dict=_row_dict,
+        account_deletion=account_deletion,
     )
 
 
 def _reset_human_password_by_email(username, code, new_password, client_ip=None):
-    username = username.strip() if isinstance(username, str) else ""
-    new_password = _normalize_credential_field(new_password, "new_password")
-    if len(new_password) < 6:
-        raise _McpError(-32602, "新密码至少 6 位")
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        conn.execute("BEGIN IMMEDIATE")
-        user = _row_dict(conn.execute(
-            """
-            SELECT id, is_ai, deletion_requested_at_epoch
-            FROM toy_users
-            WHERE username = ? AND deleted_at IS NULL
-            """,
-            (username,),
-        ).fetchone())
-        if user and user.get("is_ai"):
-            raise _McpError(-32602, _MACHINE_PASSWORD_RECOVERY_MESSAGE)
-        if not user:
-            raise _McpError(-32602, "验证码无效、已过期或已使用")
-        if user.get("deletion_requested_at_epoch") is not None:
-            raise _McpError(-32602, "账号待注销；请登录后取消注销")
-        email_row = conn.execute(
-            """
-            SELECT email_normalized
-            FROM account_emails
-            WHERE user_id = ? AND verified = 1
-            """,
-            (int(user["id"]),),
-        ).fetchone()
-        if not email_row:
-            raise _McpError(-32602, _NO_EMAIL_RECOVERY_MESSAGE)
-        _verify_email_code_in_transaction(
-            conn,
-            user["id"],
-            email_row["email_normalized"],
-            "reset",
-            code,
-            client_ip,
-        )
-        conn.execute(
-            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
-            (_hash_password(new_password), int(user["id"])),
-        )
-        _invalidate_operit_credentials_in_transaction(conn, int(user["id"]))
-        _complete_recovery_tickets(conn, int(user["id"]))
-        conn.commit()
-    return {"ok": True, "message": "密码已重置，请用新密码登录"}
+    return account_recovery._reset_human_password_by_email(
+        username, code, new_password, client_ip,
+        _MACHINE_PASSWORD_RECOVERY_MESSAGE=_MACHINE_PASSWORD_RECOVERY_MESSAGE,
+        _McpError=_McpError,
+        _NO_EMAIL_RECOVERY_MESSAGE=_NO_EMAIL_RECOVERY_MESSAGE,
+        _complete_recovery_tickets=_complete_recovery_tickets,
+        _db_connect=_db_connect,
+        _hash_password=_hash_password,
+        _invalidate_operit_credentials_in_transaction=_invalidate_operit_credentials_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _row_dict=_row_dict,
+        _verify_email_code_in_transaction=_verify_email_code_in_transaction,
+        account_deletion=account_deletion,
+    )
 
 
 def _require_bound_ai(raw_token, ai_user_id, operation="操作绑定小机"):
-    human = _current_account(raw_token)
-    if human.get("is_ai"):
-        raise _McpError(-32602, f"只有人类账号可以{operation}")
-    try:
-        ai_user_id = int(ai_user_id)
-    except (TypeError, ValueError):
-        raise _McpError(-32602, "ai_user_id 必填")
-    with _db_connect() as conn:
-        row = _row_dict(conn.execute(
-            """
-            SELECT u.id, u.username, u.is_ai, u.is_admin, u.created_at, u.last_active_at
-            FROM user_bindings b
-            JOIN toy_users u ON u.id = b.ai_user_id
-            WHERE b.human_user_id = ?
-              AND b.ai_user_id = ?
-              AND u.is_ai = 1
-              AND u.deleted_at IS NULL
-            """,
-            (human["id"], ai_user_id),
-        ).fetchone())
-    if not row:
-        raise _McpError(-32004, "未绑定该小机")
-    return row
+    return accounts._require_bound_ai(
+        raw_token, ai_user_id, operation,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _row_dict=_row_dict,
+    )
 
 
 def _anti_addiction_get_any_enabled():
@@ -4673,10 +2737,7 @@ def _eco_human_action(raw_token, ai_user_id, action, payload=None, slot=1):
 
 
 def _extract_bearer(headers):
-    value = headers.get("Authorization", "")
-    if value.lower().startswith("bearer "):
-        return value[7:].strip()
-    return ""
+    return auth._extract_bearer(headers)
 
 
 # Compatibility exports; implementation and metadata live in human_tests.
@@ -4802,1290 +2863,508 @@ ANTI_ADDICTION_MINI_GAMES = anti_addiction.ANTI_ADDICTION_BASE_MINI_GAMES | froz
 
 
 def _guest_player_id(raw):
-    """自报裸 id → guest: 前缀 id；已带前缀或不合法的原样返回（由各游戏自行报错）。"""
-    if isinstance(raw, str) and PLAIN_PLAYER_ID_RE.fullmatch(raw):
-        return GUEST_PREFIX + raw
-    return raw
+    return player_identity._guest_player_id(
+        raw,
+        GUEST_PREFIX=GUEST_PREFIX,
+        PLAIN_PLAYER_ID_RE=PLAIN_PLAYER_ID_RE,
+    )
 
 
 def _reported_player_id(arguments):
-    params = arguments.get("params")
-    if isinstance(params, dict) and params.get("player_id") is not None:
-        return params.get("player_id")
-    return arguments.get("player_id")
+    return player_identity._reported_player_id(arguments)
 
 
 def _override_player_id(arguments, player_id):
-    """顶层和 params 里的 player_id 一律覆盖（各 adapter 以 params 优先合并）。"""
-    new_arguments = dict(arguments)
-    new_arguments["player_id"] = player_id
-    params = new_arguments.get("params")
-    if isinstance(params, dict):
-        params = dict(params)
-        params["player_id"] = player_id
-        new_arguments["params"] = params
-    return new_arguments
+    return player_identity._override_player_id(arguments, player_id)
 
 
 def _save_slot_from_arguments(arguments):
-    params = arguments.get("params")
-    raw = params.get("slot", MIN_SAVE_SLOT) if isinstance(params, dict) else MIN_SAVE_SLOT
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
-    if raw < MIN_SAVE_SLOT or raw > MAX_SAVE_SLOT:
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
-    return raw
+    return player_identity._save_slot_from_arguments(
+        arguments,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _McpError=_McpError,
+    )
 
 
 def _save_slot_from_account_arguments(arguments):
-    raw = arguments.get("slot", MIN_SAVE_SLOT)
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
-    slot = raw
-    if slot < MIN_SAVE_SLOT or slot > MAX_SAVE_SLOT:
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
-    return slot
+    return player_identity._save_slot_from_account_arguments(
+        arguments,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _McpError=_McpError,
+    )
 
 
 def _without_slot_param(arguments):
-    params = arguments.get("params")
-    if not isinstance(params, dict) or "slot" not in params:
-        return arguments
-    new_arguments = dict(arguments)
-    params = dict(params)
-    params.pop("slot", None)
-    new_arguments["params"] = params
-    return new_arguments
+    return player_identity._without_slot_param(arguments)
 
 
 def _guestify_mcp_payload(payload):
-    """Direct test MCP endpoints have no token; isolate reported IDs as guests."""
-    if payload.get("method") != "tools/call":
-        return payload
-    params = payload.get("params")
-    arguments = params.get("arguments") if isinstance(params, dict) else None
-    if not isinstance(arguments, dict):
-        return payload
-    raw = arguments.get("player_id")
-    guest = _guest_player_id(raw)
-    if guest == raw:
-        return payload
-    payload = dict(payload)
-    params = dict(params)
-    arguments = dict(arguments)
-    arguments["player_id"] = guest
-    params["arguments"] = arguments
-    payload["params"] = params
-    return payload
+    return player_identity._guestify_mcp_payload(
+        payload,
+        _guest_player_id=_guest_player_id,
+    )
 
 
 def _init_guest_claim_table(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS guest_claim_codes (
-            code TEXT PRIMARY KEY,
-            guest_player_id TEXT NOT NULL UNIQUE,
-            created_at TEXT,
-            claimed_by INTEGER,
-            claimed_at TEXT,
-            claimed_slot INTEGER
-        )
-        """
-    )
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(guest_claim_codes)")}
-    if "claimed_slot" not in columns:
-        conn.execute("ALTER TABLE guest_claim_codes ADD COLUMN claimed_slot INTEGER")
+    return save_management._init_guest_claim_table(conn)
 
 
 def _ensure_guest_claim_code(guest_player_id):
-    """游客首次开档时生成一次性认领码；已有码（或已认领过）返回 None，不重复提示。"""
-    with _db_connect() as conn:
-        _init_guest_claim_table(conn)
-        row = conn.execute(
-            "SELECT code FROM guest_claim_codes WHERE guest_player_id = ?",
-            (guest_player_id,),
-        ).fetchone()
-        if row:
-            return None
-        code = secrets.token_urlsafe(9)
-        try:
-            conn.execute(
-                "INSERT INTO guest_claim_codes (code, guest_player_id, created_at) VALUES (?, ?, datetime('now', 'localtime'))",
-                (code, guest_player_id),
-            )
-            conn.commit()
-        except sqlite3.IntegrityError:
-            return None
-    return code
+    return save_management._ensure_guest_claim_code(
+        guest_player_id,
+        _db_connect=_db_connect,
+        _init_guest_claim_table=_init_guest_claim_table,
+        secrets=secrets,
+        sqlite3=sqlite3,
+    )
 
 
 def _normalize_guest_player_id(value):
-    if not isinstance(value, str) or not value.strip():
-        raise _McpError(-32602, "player_id 必填")
-    raw = value.strip()
-    if raw.startswith(GUEST_PREFIX):
-        suffix = raw[len(GUEST_PREFIX):]
-        if PLAIN_PLAYER_ID_RE.fullmatch(suffix):
-            return raw
-        raise _McpError(-32602, "guest player_id 格式不合法")
-    if PLAIN_PLAYER_ID_RE.fullmatch(raw):
-        return GUEST_PREFIX + raw
-    raise _McpError(-32602, "player_id 只能包含 1-64 位字母数字；也可传 guest: 前缀")
+    return save_management._normalize_guest_player_id(
+        value,
+        GUEST_PREFIX=GUEST_PREFIX,
+        PLAIN_PLAYER_ID_RE=PLAIN_PLAYER_ID_RE,
+        _McpError=_McpError,
+    )
 
 
 def _claimed_guest_record(guest_player_id):
-    with _db_connect() as conn:
-        _init_guest_claim_table(conn)
-        return _row_dict(conn.execute(
-            """
-            SELECT guest_player_id, claimed_by, claimed_at, claimed_slot
-            FROM guest_claim_codes
-            WHERE guest_player_id = ? AND claimed_by IS NOT NULL
-            """,
-            (guest_player_id,),
-        ).fetchone())
+    return save_management._claimed_guest_record(
+        guest_player_id,
+        _db_connect=_db_connect,
+        _init_guest_claim_table=_init_guest_claim_table,
+        _row_dict=_row_dict,
+    )
 
 
 def _reject_claimed_guest(guest_player_id):
-    row = _claimed_guest_record(guest_player_id)
-    if not row:
-        return
-    slot = row.get("claimed_slot") or MIN_SAVE_SLOT
-    raise _McpError(
-        -32003,
-        f"该游客身份已认领，请改用带 token 的 MCP 地址并选择对应 slot（槽 {slot}）。",
+    return save_management._reject_claimed_guest(
+        guest_player_id,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _McpError=_McpError,
+        _claimed_guest_record=_claimed_guest_record,
     )
 
 
 def _guest_claim_code_for_player_id(player_id):
-    guest_player_id = _normalize_guest_player_id(player_id)
-    found, _conflicts = _collect_player_saves(guest_player_id, "__claim_probe__")
-    if not found:
-        raise _McpError(-32004, f"没有找到 {guest_player_id} 名下的游客存档")
-
-    with _db_connect() as conn:
-        _init_guest_claim_table(conn)
-        row = _row_dict(conn.execute(
-            "SELECT * FROM guest_claim_codes WHERE guest_player_id = ?",
-            (guest_player_id,),
-        ).fetchone())
-        if row:
-            claimed_slot = row.get("claimed_slot") or MIN_SAVE_SLOT
-            return {
-                "guest_player_id": guest_player_id,
-                "claim_code": row["code"],
-                "claimed_by": row.get("claimed_by"),
-                "claimed_at": row.get("claimed_at"),
-                "claimed_slot": claimed_slot if row.get("claimed_by") is not None else None,
-                "saves": found,
-                "message": (
-                    f"该游客身份已认领到槽 {claimed_slot}，请改用带 token 的 MCP 地址并选择对应 slot。"
-                    if row.get("claimed_by") is not None
-                    else "该游客存档已有认领码；可先用 my_saves 选择空槽，再用 account(action=\"claim\", claim_code=\"...\", slot=2) 转入账号。"
-                ),
-            }
-        code = secrets.token_urlsafe(9)
-        conn.execute(
-            "INSERT INTO guest_claim_codes (code, guest_player_id, created_at) VALUES (?, ?, datetime('now', 'localtime'))",
-            (code, guest_player_id),
-        )
-        conn.commit()
-    return {
-        "guest_player_id": guest_player_id,
-        "claim_code": code,
-        "claimed_by": None,
-        "claimed_at": None,
-        "saves": found,
-        "message": "已为旧游客存档生成认领码；登录后可先用 my_saves 选择空槽，再调用 account(action=\"claim\", claim_code=\"...\", slot=2)；slot 默认 1。",
-    }
+    return save_management._guest_claim_code_for_player_id(
+        player_id,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _McpError=_McpError,
+        _collect_player_saves=_collect_player_saves,
+        _db_connect=_db_connect,
+        _init_guest_claim_table=_init_guest_claim_table,
+        _normalize_guest_player_id=_normalize_guest_player_id,
+        _row_dict=_row_dict,
+        secrets=secrets,
+    )
 
 
 def _sessions_table_columns(conn, table):
-    if not _table_exists(conn, table):
-        return set()
-    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    return save_management._sessions_table_columns(
+        conn, table,
+        _table_exists=_table_exists,
+    )
 
 
 def _stamp_save_owner(game, player_id, user_id):
-    """token 玩家写档后回填 user_id 列（表或列不存在时静默跳过）。"""
-    if not SESSIONS_DB_PATH.exists():
-        return
-    if game == "eco":
-        targets = [("eco_sessions", False)]
-    elif game == "ciyuwu":
-        targets = [("ciyuwu_sessions", False)]
-    elif game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"}:
-        targets = [("test_sessions", True), ("test_results", True)]
-    else:
-        return
-    try:
-        with _sessions_db_connect() as conn:
-            for table, has_game_column in targets:
-                if "user_id" not in _sessions_table_columns(conn, table):
-                    continue
-                if has_game_column:
-                    conn.execute(
-                        f"UPDATE {table} SET user_id = ? WHERE player_id = ? AND game = ? AND (user_id IS NULL OR user_id <> ?)",
-                        (user_id, player_id, game, user_id),
-                    )
-                else:
-                    conn.execute(
-                        f"UPDATE {table} SET user_id = ? WHERE player_id = ? AND (user_id IS NULL OR user_id <> ?)",
-                        (user_id, player_id, user_id),
-                    )
-            conn.commit()
-    except sqlite3.OperationalError:
-        pass
+    return save_management._stamp_save_owner(
+        game, player_id, user_id,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        _sessions_db_connect=_sessions_db_connect,
+        _sessions_table_columns=_sessions_table_columns,
+        sqlite3=sqlite3,
+    )
 
 
 def _directory_vendor_save_exists(game, save_dir):
-    if not save_dir.is_dir():
-        return False
-    if game == "nowhere":
-        return (save_dir / nowhere_storage.SAVE_NAME).is_file()
-    if game == "ai_life":
-        return (save_dir / ai_life_adapter.SAVE_NAME).is_file()
-    if game == "detroit":
-        return detroit_adapter.has_save(save_dir.name)
-    return True
+    return save_management._directory_vendor_save_exists(
+        game, save_dir,
+        ai_life_adapter=ai_life_adapter,
+        detroit_adapter=detroit_adapter,
+        nowhere_storage=nowhere_storage,
+    )
 
 
 def _collect_player_saves(old_player_id, target_player_id):
-    """列出 old_player_id 名下所有存档，以及迁到 target_player_id 会撞上的冲突。
-
-    返回 (found, conflicts)：found 形如 {"eco": {...}, "vendor:arcade": {...}}。
-    """
-    found = {}
-    conflicts = []
-    if SESSIONS_DB_PATH.exists():
-        with _sessions_db_connect() as conn:
-            for table, game_label in (("eco_sessions", "eco"), ("ciyuwu_sessions", "ciyuwu")):
-                if not _table_exists(conn, table):
-                    continue
-                row = conn.execute(
-                    f"SELECT last_active FROM {table} WHERE player_id = ?", (old_player_id,)
-                ).fetchone()
-                if not row:
-                    continue
-                found[game_label] = {"table": table, "last_active": row["last_active"]}
-                if conn.execute(
-                    f"SELECT 1 FROM {table} WHERE player_id = ?", (target_player_id,)
-                ).fetchone():
-                    conflicts.append(f"{game_label}（账号名下已有存档）")
-            for table in ("test_sessions", "test_results"):
-                if not _table_exists(conn, table):
-                    continue
-                for row in conn.execute(
-                    f"SELECT game FROM {table} WHERE player_id = ?", (old_player_id,)
-                ).fetchall():
-                    game = row["game"]
-                    found[f"{table}:{game}"] = {"table": table, "game": game}
-                    if conn.execute(
-                        f"SELECT 1 FROM {table} WHERE player_id = ? AND game = ?",
-                        (target_player_id, game),
-                    ).fetchone():
-                        conflicts.append(f"{game}/{table}（账号名下已有记录）")
-    for game in DIRECTORY_VENDOR_GAMES:
-        old_dir = VENDOR_SAVE_ROOT / game / old_player_id
-        if not _directory_vendor_save_exists(game, old_dir):
-            continue
-        found[f"vendor:{game}"] = {"dir": str(old_dir)}
-        if (VENDOR_SAVE_ROOT / game / target_player_id).exists():
-            conflicts.append(f"{game}（账号名下已有存档目录）")
-    garden_old_dir = VENDOR_SAVE_ROOT / "garden_cat" / old_player_id
-    if (garden_old_dir / "state.json").is_file():
-        found["garden_cat"] = {"dir": str(garden_old_dir)}
-        if (VENDOR_SAVE_ROOT / "garden_cat" / target_player_id).exists():
-            conflicts.append("garden_cat（账号目标槽已有存档目录）")
-    workkk_old_dir = VENDOR_SAVE_ROOT / "workkk" / old_player_id
-    if (workkk_old_dir / "game_state.json").is_file():
-        found["workkk"] = {"dir": str(workkk_old_dir)}
-        workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
-        if workkk_target_dir.exists():
-            conflicts.append("workkk（账号名下已有存档目录）")
-    camping_summary = _camping_plaza_save_summary(old_player_id)
-    if camping_summary is not None:
-        found["camping_plaza"] = {"summary": camping_summary}
-        if _camping_plaza_save_summary(target_player_id) is not None:
-            conflicts.append("camping_plaza（账号目标槽已有存档）")
-    return found, conflicts
+    return save_management._collect_player_saves(
+        old_player_id, target_player_id,
+        DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        _camping_plaza_save_summary=_camping_plaza_save_summary,
+        _directory_vendor_save_exists=_directory_vendor_save_exists,
+        _sessions_db_connect=_sessions_db_connect,
+        _table_exists=_table_exists,
+    )
 
 
 def _workkk_save_admin(action, **payload):
-    """Ask the resident workkk process to mutate a save while holding its cache lock."""
-    try:
-        response = httpx.post(
-            f"{WORKKK_BASE}/internal/saves/{action}",
-            json=payload,
-            timeout=15,
-        )
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"workkk 存档管理服务连接失败：{exc}") from exc
-    try:
-        body = response.json()
-    except ValueError:
-        body = {}
-    detail = body.get("detail") if isinstance(body, dict) else None
-    if response.status_code in {400, 409}:
-        raise _McpError(-32602, detail or "workkk 存档参数无效或目标存档已存在")
-    if response.status_code == 404:
-        raise _McpError(-32004, detail or "没有找到 workkk 存档")
-    if response.status_code >= 400:
-        raise _McpError(
-            -32603,
-            detail or f"workkk 存档管理失败 HTTP {response.status_code}：{response.text[:200]}",
-        )
-    if not isinstance(body, dict):
-        raise _McpError(-32603, "workkk 存档管理服务返回格式错误")
-    return body
+    return save_management._workkk_save_admin(WORKKK_BASE, _McpError, httpx, action, **payload)
 
 
 def _migrate_workkk_save(old_player_id, target_player_id):
-    result = _workkk_save_admin(
-        "migrate",
-        source_player_id=old_player_id,
-        target_player_id=target_player_id,
+    return save_management._migrate_workkk_save(
+        old_player_id, target_player_id,
+        _McpError=_McpError,
+        _workkk_save_admin=_workkk_save_admin,
     )
-    if result.get("migrated") is not True:
-        raise _McpError(-32603, "workkk 存档管理服务未确认迁移成功")
-    return True
 
 
 def _delete_workkk_save(player_id):
-    result = _workkk_save_admin("delete", player_id=player_id)
-    if not result.get("deleted"):
-        return None
-    return {"target": f"vendor_saves/workkk/{player_id}", "rows": 1}
+    return save_management._delete_workkk_save(
+        player_id,
+        _workkk_save_admin=_workkk_save_admin,
+    )
 
 
 def _garden_cat_save_admin(action, **payload):
-    """Ask Garden-Cat to mutate state/cache/notes under its own store lock."""
-    try:
-        response = httpx.post(
-            f"{GARDEN_CAT_BASE}/internal/saves/{action}",
-            json=payload,
-            timeout=15,
-        )
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"Garden-Cat 存档管理服务连接失败：{exc}") from exc
-    try:
-        body = response.json()
-    except ValueError:
-        body = {}
-    detail = None
-    if isinstance(body, dict):
-        detail = body.get("detail") or body.get("message")
-    if response.status_code in {400, 409}:
-        raise _McpError(-32602, detail or "Garden-Cat 存档参数无效或目标存档已存在")
-    if response.status_code == 404:
-        raise _McpError(-32004, detail or "没有找到 Garden-Cat 存档")
-    if response.status_code >= 400:
-        raise _McpError(
-            -32603,
-            detail or f"Garden-Cat 存档管理失败 HTTP {response.status_code}：{response.text[:200]}",
-        )
-    if not isinstance(body, dict):
-        raise _McpError(-32603, "Garden-Cat 存档管理服务返回格式错误")
-    return body
+    return save_management._garden_cat_save_admin(GARDEN_CAT_BASE, _McpError, httpx, action, **payload)
 
 
 def _migrate_garden_cat_save(old_player_id, target_player_id):
-    result = _garden_cat_save_admin(
-        "migrate",
-        source_player_id=old_player_id,
-        target_player_id=target_player_id,
+    return save_management._migrate_garden_cat_save(
+        old_player_id, target_player_id,
+        _McpError=_McpError,
+        _garden_cat_save_admin=_garden_cat_save_admin,
     )
-    if result.get("migrated") is not True:
-        raise _McpError(-32603, "Garden-Cat 存档管理服务未确认迁移成功")
-    return True
 
 
 def _delete_garden_cat_save(player_id):
-    result = _garden_cat_save_admin("delete", player_id=player_id)
-    if not result.get("deleted"):
-        return None
-    return {
-        "target": f"vendor_saves/garden_cat/{player_id}",
-        "rows": 1,
-        "notes_deleted": int(result.get("notes_deleted") or 0),
-    }
+    return save_management._delete_garden_cat_save(
+        player_id,
+        _garden_cat_save_admin=_garden_cat_save_admin,
+    )
 
 
 def _camping_plaza_save_admin(action, *, timeout=20, **payload):
-    """Ask the resident Camping Plaza adapter to manage its SQLite snapshot."""
-    try:
-        response = httpx.post(
-            f"{CAMPING_PLAZA_BASE}/internal/saves/{action}",
-            json=payload,
-            timeout=timeout,
-        )
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"Camping Plaza 存档管理服务连接失败：{exc}") from exc
-    try:
-        body = response.json()
-    except ValueError:
-        body = {}
-    detail = body.get("detail") if isinstance(body, dict) else None
-    if isinstance(detail, dict):
-        detail = detail.get("message") or detail.get("error_code")
-    if response.status_code in {400, 409, 422}:
-        raise _McpError(-32602, detail or "Camping Plaza 存档参数无效或目标存档已存在")
-    if response.status_code == 404:
-        raise _McpError(-32004, detail or "没有找到 Camping Plaza 存档")
-    if response.status_code >= 400:
-        raise _McpError(
-            -32603,
-            detail or f"Camping Plaza 存档管理失败 HTTP {response.status_code}：{response.text[:200]}",
-        )
-    if not isinstance(body, dict):
-        raise _McpError(-32603, "Camping Plaza 存档管理服务返回格式错误")
-    return body
+    return save_management._camping_plaza_save_admin(CAMPING_PLAZA_BASE, _McpError, httpx, action, timeout=timeout, **payload)
 
 
 def _migrate_camping_plaza_save(old_player_id, target_player_id):
-    result = _camping_plaza_save_admin(
-        "migrate",
-        source_player_id=old_player_id,
-        target_player_id=target_player_id,
+    return save_management._migrate_camping_plaza_save(
+        old_player_id, target_player_id,
+        _McpError=_McpError,
+        _camping_plaza_save_admin=_camping_plaza_save_admin,
     )
-    if result.get("migrated") is not True:
-        raise _McpError(-32603, "Camping Plaza 存档管理服务未确认迁移成功")
-    return True
 
 
 def _delete_camping_plaza_save(player_id):
-    if not CAMPING_PLAZA_DB_PATH.is_file():
-        return None
-    result = _camping_plaza_save_admin("delete", player_id=player_id)
-    if not result.get("deleted"):
-        return None
-    return {"target": f"camping_plaza/{player_id}", "rows": 1}
+    return save_management._delete_camping_plaza_save(
+        player_id,
+        CAMPING_PLAZA_DB_PATH=CAMPING_PLAZA_DB_PATH,
+        _camping_plaza_save_admin=_camping_plaza_save_admin,
+    )
 
 
 def _camping_plaza_save_summary(player_id, *, timeout=20):
-    if not CAMPING_PLAZA_DB_PATH.is_file():
-        return None
-    try:
-        result = _camping_plaza_save_admin("summary", player_id=player_id, timeout=timeout)
-    except _McpError as exc:
-        if exc.code == -32004:
-            return None
-        raise
-    summary = result.get("summary")
-    return summary if isinstance(summary, dict) else None
+    return save_management._camping_plaza_save_summary(
+        player_id, timeout=timeout,
+        CAMPING_PLAZA_DB_PATH=CAMPING_PLAZA_DB_PATH,
+        _McpError=_McpError,
+        _camping_plaza_save_admin=_camping_plaza_save_admin,
+    )
 
 
 def _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id):
-    for game, migrate in reversed(managed_migrations):
-        try:
-            migrate(target_player_id, old_player_id)
-        except Exception as rollback_exc:
-            message = getattr(rollback_exc, "message", str(rollback_exc))
-            logger.error(
-                "%s claim rollback failed %s -> %s: %s",
-                game,
-                target_player_id,
-                old_player_id,
-                message,
-            )
+    return save_management._rollback_managed_claim_saves(
+        managed_migrations, old_player_id, target_player_id,
+        logger=logger,
+    )
 
 
 @nowhere_storage.lock_platform_claim
 def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
-    """把游客全部存档改绑到账号选择的 canonical slot，并回填 user_id 列。
-
-    冲突时整体报错、不迁移、绝不覆盖或删除任何存档。返回迁移摘要。
-    """
-    if isinstance(slot, bool) or not isinstance(slot, int) or not MIN_SAVE_SLOT <= slot <= MAX_SAVE_SLOT:
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
-    target_player_id = _account_slot_player_id(user_id, slot)
-    if old_player_id == target_player_id:
-        raise _McpError(-32602, "旧 id 与账号 id 相同，无需迁移")
-    found, conflicts = _collect_player_saves(old_player_id, target_player_id)
-    if not found:
-        raise _McpError(-32004, f"没有找到 player_id={old_player_id} 的任何存档")
-    if conflicts:
-        raise _McpError(
-            -32602,
-            "以下游戏在账号名下已有存档，迁移会冲突，已全部取消（不覆盖不删档）：" + "、".join(conflicts),
-        )
-    migrated = []
-    managed_migrations = []
-    moved_directories = []
-    sessions_conn = None
-    try:
-        # Resident services own live caches. They must all succeed before touching
-        # ordinary saves; never fall back to direct rename for either service.
-        if "camping_plaza" in found:
-            _migrate_camping_plaza_save(old_player_id, target_player_id)
-            managed_migrations.append(("camping_plaza", _migrate_camping_plaza_save))
-            migrated.append("camping_plaza")
-        if "garden_cat" in found:
-            _migrate_garden_cat_save(old_player_id, target_player_id)
-            managed_migrations.append(("garden_cat", _migrate_garden_cat_save))
-            migrated.append("vendor_saves/garden_cat")
-        if "workkk" in found:
-            _migrate_workkk_save(old_player_id, target_player_id)
-            managed_migrations.append(("workkk", _migrate_workkk_save))
-            migrated.append("vendor_saves/workkk")
-
-        if SESSIONS_DB_PATH.exists():
-            sessions_conn = _sessions_db_connect()
-            for table in ("eco_sessions", "ciyuwu_sessions", "test_sessions", "test_results"):
-                if not _table_exists(sessions_conn, table):
-                    continue
-                if "user_id" in _sessions_table_columns(sessions_conn, table):
-                    cur = sessions_conn.execute(
-                        f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
-                        (target_player_id, int(user_id), old_player_id),
-                    )
-                else:
-                    cur = sessions_conn.execute(
-                        f"UPDATE {table} SET player_id = ? WHERE player_id = ?",
-                        (target_player_id, old_player_id),
-                    )
-                if cur.rowcount:
-                    migrated.append(f"{table}×{cur.rowcount}")
-        for game in DIRECTORY_VENDOR_GAMES:
-            old_dir = VENDOR_SAVE_ROOT / game / old_player_id
-            if _directory_vendor_save_exists(game, old_dir):
-                target_dir = VENDOR_SAVE_ROOT / game / target_player_id
-                old_dir.rename(target_dir)
-                moved_directories.append((old_dir, target_dir))
-                migrated.append(f"vendor_saves/{game}")
-        if sessions_conn is not None:
-            sessions_conn.commit()
-    except Exception:
-        if sessions_conn is not None:
-            sessions_conn.rollback()
-        for old_dir, target_dir in reversed(moved_directories):
-            try:
-                target_dir.rename(old_dir)
-            except OSError as rollback_exc:
-                logger.error(
-                    "directory claim rollback failed %s -> %s: %s",
-                    target_dir,
-                    old_dir,
-                    rollback_exc,
-                )
-        _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id)
-        raise
-    finally:
-        if sessions_conn is not None:
-            sessions_conn.close()
-    return {
-        "old_player_id": old_player_id,
-        "new_player_id": target_player_id,
-        "target_player_id": target_player_id,
-        "slot": slot,
-        "migrated": migrated,
-    }
+    return save_management._migrate_player_saves(
+        old_player_id, user_id, slot,
+        DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        _McpError=_McpError,
+        _account_slot_player_id=_account_slot_player_id,
+        _collect_player_saves=_collect_player_saves,
+        _directory_vendor_save_exists=_directory_vendor_save_exists,
+        _migrate_camping_plaza_save=_migrate_camping_plaza_save,
+        _migrate_garden_cat_save=_migrate_garden_cat_save,
+        _migrate_workkk_save=_migrate_workkk_save,
+        _rollback_managed_claim_saves=_rollback_managed_claim_saves,
+        _sessions_db_connect=_sessions_db_connect,
+        _sessions_table_columns=_sessions_table_columns,
+        _table_exists=_table_exists,
+        logger=logger,
+    )
 
 
 def _auto_migrate_legacy_username_saves(user, username):
-    """Best-effort bridge for pre-account saves keyed by one username.
-
-    Older games used the account username as ``player_id``. Token-based play now
-    uses the numeric account id, so move only non-conflicting username saves to
-    the numeric id before dispatching the game command.
-    """
-    username = (username or "").strip()
-    if not username or not GAME_PLAYER_ID_RE.fullmatch(username):
-        return []
-    target_player_id = str(int(user["id"]))
-    if username == target_player_id:
-        return []
-
-    migrated = []
-    if SESSIONS_DB_PATH.exists():
-        try:
-            with _sessions_db_connect() as conn:
-                for table in ("eco_sessions", "ciyuwu_sessions"):
-                    if not _table_exists(conn, table):
-                        continue
-                    old_row = conn.execute(
-                        f"SELECT 1 FROM {table} WHERE player_id = ?",
-                        (username,),
-                    ).fetchone()
-                    target_row = conn.execute(
-                        f"SELECT 1 FROM {table} WHERE player_id = ?",
-                        (target_player_id,),
-                    ).fetchone()
-                    if old_row and not target_row:
-                        conn.execute(
-                            f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
-                            (target_player_id, int(user["id"]), username),
-                        )
-                        migrated.append(table)
-                    elif target_row and "user_id" in _sessions_table_columns(conn, table):
-                        conn.execute(
-                            f"UPDATE {table} SET user_id = ? WHERE player_id = ? AND (user_id IS NULL OR user_id <> ?)",
-                            (int(user["id"]), target_player_id, int(user["id"])),
-                        )
-
-                for table in ("test_sessions", "test_results"):
-                    if not _table_exists(conn, table):
-                        continue
-                    rows = conn.execute(
-                        f"SELECT DISTINCT game FROM {table} WHERE player_id = ?",
-                        (username,),
-                    ).fetchall()
-                    for row in rows:
-                        game = row["game"]
-                        target_row = conn.execute(
-                            f"SELECT 1 FROM {table} WHERE player_id = ? AND game = ?",
-                            (target_player_id, game),
-                        ).fetchone()
-                        if target_row:
-                            continue
-                        if "user_id" in _sessions_table_columns(conn, table):
-                            conn.execute(
-                                f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ? AND game = ?",
-                                (target_player_id, int(user["id"]), username, game),
-                            )
-                        else:
-                            conn.execute(
-                                f"UPDATE {table} SET player_id = ? WHERE player_id = ? AND game = ?",
-                                (target_player_id, username, game),
-                            )
-                        migrated.append(f"{table}:{game}")
-                conn.commit()
-        except sqlite3.OperationalError:
-            pass
-
-    garden_old_dir = VENDOR_SAVE_ROOT / "garden_cat" / username
-    garden_target_dir = VENDOR_SAVE_ROOT / "garden_cat" / target_player_id
-    if (garden_old_dir / "state.json").is_file() and not garden_target_dir.exists():
-        try:
-            if _migrate_garden_cat_save(username, target_player_id):
-                migrated.append("vendor_saves/garden_cat")
-        except _McpError as exc:
-            logger.warning(
-                "garden_cat legacy save migration deferred %s -> %s: %s",
-                username,
-                target_player_id,
-                exc.message,
-            )
-
-    for game in DIRECTORY_VENDOR_GAMES:
-        old_dir = VENDOR_SAVE_ROOT / game / username
-        target_dir = VENDOR_SAVE_ROOT / game / target_player_id
-        if _directory_vendor_save_exists(game, old_dir) and not target_dir.exists():
-            target_dir.parent.mkdir(parents=True, exist_ok=True)
-            if game == "nowhere":
-                nowhere_storage.migrate(username, target_player_id)
-            else:
-                old_dir.rename(target_dir)
-            migrated.append(f"vendor_saves/{game}")
-    workkk_old_dir = VENDOR_SAVE_ROOT / "workkk" / username
-    workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
-    if (workkk_old_dir / "game_state.json").is_file() and not workkk_target_dir.exists():
-        try:
-            if _migrate_workkk_save(username, target_player_id):
-                migrated.append("vendor_saves/workkk")
-        except _McpError as exc:
-            # Legacy migration is best-effort. Never bypass the resident process,
-            # because an out-of-band rename can be undone by its stale cache.
-            logger.warning(
-                "workkk legacy save migration deferred %s -> %s: %s",
-                username,
-                target_player_id,
-                exc.message,
-            )
-    try:
-        camping_old = _camping_plaza_save_summary(username)
-        camping_target = _camping_plaza_save_summary(target_player_id)
-        if camping_old is not None and camping_target is None:
-            if _migrate_camping_plaza_save(username, target_player_id):
-                migrated.append("camping_plaza")
-    except _McpError as exc:
-        logger.warning(
-            "camping_plaza legacy save migration deferred %s -> %s: %s",
-            username,
-            target_player_id,
-            exc.message,
-        )
-    return migrated
+    return save_management._auto_migrate_legacy_username_saves(
+        user, username,
+        DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
+        GAME_PLAYER_ID_RE=GAME_PLAYER_ID_RE,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        _McpError=_McpError,
+        _camping_plaza_save_summary=_camping_plaza_save_summary,
+        _directory_vendor_save_exists=_directory_vendor_save_exists,
+        _migrate_camping_plaza_save=_migrate_camping_plaza_save,
+        _migrate_garden_cat_save=_migrate_garden_cat_save,
+        _migrate_workkk_save=_migrate_workkk_save,
+        _sessions_db_connect=_sessions_db_connect,
+        _sessions_table_columns=_sessions_table_columns,
+        _table_exists=_table_exists,
+        logger=logger,
+        nowhere_storage=nowhere_storage,
+        sqlite3=sqlite3,
+    )
 
 
 def _auto_migrate_legacy_account_saves(user):
-    """Migrate saves under both the current and all reserved former names."""
-    migrated = []
-    for username in _account_username_aliases(user):
-        migrated.extend(_auto_migrate_legacy_username_saves(user, username))
-    return list(dict.fromkeys(migrated))
+    return save_management._auto_migrate_legacy_account_saves(
+        user,
+        _account_username_aliases=_account_username_aliases,
+        _auto_migrate_legacy_username_saves=_auto_migrate_legacy_username_saves,
+    )
 
 
 def _claim_guest_saves(raw_token, claim_code, slot=MIN_SAVE_SLOT):
-    user = _current_account(raw_token)
-    slot = _save_slot_from_account_arguments({"slot": slot})
-    claim_code = (claim_code or "").strip()
-    if not claim_code:
-        raise _McpError(-32602, "claim_code 必填")
-    with _db_connect() as conn:
-        _init_guest_claim_table(conn)
-        row = _row_dict(conn.execute(
-            "SELECT * FROM guest_claim_codes WHERE code = ?", (claim_code,)
-        ).fetchone())
-    if not row or row.get("claimed_by") is not None:
-        raise _McpError(-32001, "认领码无效或已被使用")
-    result = _migrate_player_saves(
-        row["guest_player_id"],
-        int(user["id"]),
-        slot=slot,
+    return save_management._claim_guest_saves(
+        raw_token, claim_code, slot,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _init_guest_claim_table=_init_guest_claim_table,
+        _migrate_player_saves=_migrate_player_saves,
+        _public_user=_public_user,
+        _row_dict=_row_dict,
+        _save_slot_from_account_arguments=_save_slot_from_account_arguments,
     )
-    with _db_connect() as conn:
-        conn.execute(
-            """
-            UPDATE guest_claim_codes
-            SET claimed_by = ?, claimed_at = datetime('now', 'localtime'), claimed_slot = ?
-            WHERE code = ? AND claimed_by IS NULL
-            """,
-            (int(user["id"]), slot, claim_code),
-        )
-        conn.commit()
-    return {
-        "ok": True,
-        "user": _public_user(user),
-        **result,
-        "message": f"游客存档已认领并转入账号槽 {slot}；旧游客身份已停用，请带 token 并选择该 slot 续档。",
-    }
 
 
 def _change_password(raw_token, old_password, new_password):
-    user = _current_account(raw_token)
-    old_password = _normalize_credential_field(old_password, "old_password")
-    new_password = _normalize_credential_field(new_password, "new_password")
-    if not _verify_password(old_password, user["password_hash"]):
-        raise _McpError(-32602, "旧密码错误")
-    if len(new_password) < 6:
-        raise _McpError(-32602, "新密码至少 6 位")
-    with _db_connect() as conn:
-        conn.execute(
-            "UPDATE toy_users SET password_hash = ? WHERE id = ?",
-            (_hash_password(new_password), int(user["id"])),
-        )
-        _invalidate_operit_credentials_in_transaction(conn, int(user["id"]))
-        conn.commit()
-    return {"ok": True, "message": "密码已修改"}
+    return accounts._change_password(
+        raw_token, old_password, new_password,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _hash_password=_hash_password,
+        _invalidate_operit_credentials_in_transaction=_invalidate_operit_credentials_in_transaction,
+        _normalize_credential_field=_normalize_credential_field,
+        _verify_password=_verify_password,
+    )
 
 
 def _account_deletion_status(raw_token):
-    user = _current_account(raw_token, allow_pending_deletion=True)
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        result = account_deletion.deletion_status(conn, int(user["id"]))
-    if result.get("scheduled_delete_at_epoch") is not None:
-        result["scheduled_delete_at"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S",
-            time.localtime(int(result["scheduled_delete_at_epoch"])),
-        )
-    result["user"] = _public_user(user)
-    return result
+    return account_lifecycle._account_deletion_status(
+        raw_token,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_user=_public_user,
+        account_deletion=account_deletion,
+        time=time,
+    )
 
 
 def _delete_account(raw_token, confirm, current_password=None):
-    """Request deletion; this never performs or carries forward old waiting time."""
-    if confirm is not True:
-        raise _McpError(-32602, "delete_account 必须显式传 confirm=true")
-    user = _current_account(raw_token)
-    if not user.get("is_ai"):
-        current_password = _normalize_credential_field(
-            current_password, "current_password"
-        )
-        if not current_password or not _verify_password(
-            current_password, user["password_hash"]
-        ):
-            raise _McpError(
-                -32001,
-                "当前密码错误，未申请注销",
-                {"reason": "password_mismatch"},
-            )
-    with _db_connect() as conn:
-        account_deletion.init_schema(conn)
-        conn.commit()
-        result = account_deletion.request_deletion(
-            conn, int(user["id"])
-        )
-    result["ok"] = True
-    result["scheduled_delete_at"] = time.strftime(
-        "%Y-%m-%d %H:%M:%S",
-        time.localtime(int(result["scheduled_delete_at_epoch"])),
+    return account_lifecycle._delete_account(
+        raw_token, confirm, current_password,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _normalize_credential_field=_normalize_credential_field,
+        _public_user=_public_user,
+        _verify_password=_verify_password,
+        account_deletion=account_deletion,
+        time=time,
     )
-    result["user"] = _public_user({**user, **{
-        "deletion_requested_at_epoch": result["deletion_requested_at_epoch"],
-        "scheduled_delete_at_epoch": result["scheduled_delete_at_epoch"],
-    }})
-    result["message"] = (
-        "注销申请已提交。72 小时内可取消；到期后账号和个人存档永久删除，"
-        "多人公共历史将匿名化保留。"
-    )
-    return result
 
 
 def _purge_managed_save_safely(delete_func, player_id):
-    try:
-        return delete_func(player_id)
-    except _McpError as exc:
-        if exc.code == -32004:
-            return None
-        raise
+    return account_lifecycle._purge_managed_save_safely(
+        delete_func, player_id,
+        _McpError=_McpError,
+    )
 
 
 def _purge_account_deletion(user_id, *, now_epoch=None):
-    return account_deletion.purge_account(
-        account_db=TURTLE_DB_PATH,
-        sessions_db=SESSIONS_DB_PATH,
-        vendor_save_root=VENDOR_SAVE_ROOT,
-        duel_db=DUEL_DB_PATH,
-        garden_notes_db=GARDEN_NOTES_DB_PATH,
-        garden_legacy_db=GARDEN_LEGACY_DB_PATH,
-        user_id=int(user_id),
-        now_epoch=now_epoch,
-        workkk_delete=lambda player_id: _purge_managed_save_safely(
-            _delete_workkk_save, player_id
-        ),
-        garden_delete=lambda player_id: _purge_managed_save_safely(
-            _delete_garden_cat_save, player_id
-        ),
-        camping_delete=lambda player_id: _purge_managed_save_safely(
-            _delete_camping_plaza_save, player_id
-        ),
-        detroit_delete=lambda player_id: _purge_managed_save_safely(
-            detroit_adapter.delete_save, player_id
-        ),
-        tarot_delete=lambda tarot_user_id: get_tarot_store().delete_user_data(
-            tarot_user_id
-        ),
+    return account_lifecycle._purge_account_deletion(
+        user_id, now_epoch=now_epoch,
+        DUEL_DB_PATH=DUEL_DB_PATH,
+        GARDEN_LEGACY_DB_PATH=GARDEN_LEGACY_DB_PATH,
+        GARDEN_NOTES_DB_PATH=GARDEN_NOTES_DB_PATH,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        TURTLE_DB_PATH=TURTLE_DB_PATH,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        _delete_camping_plaza_save=_delete_camping_plaza_save,
+        _delete_garden_cat_save=_delete_garden_cat_save,
+        _delete_workkk_save=_delete_workkk_save,
+        _purge_managed_save_safely=_purge_managed_save_safely,
+        account_deletion=account_deletion,
+        detroit_adapter=detroit_adapter,
+        get_tarot_store=get_tarot_store,
     )
 
 
 def _cancel_account_deletion(raw_token):
-    user = _current_account(raw_token, allow_pending_deletion=True)
-    try:
-        with _db_connect() as conn:
-            account_deletion.init_schema(conn)
-            conn.commit()
-            result = account_deletion.cancel_deletion(conn, int(user["id"]))
-    except account_deletion.DeletionError as exc:
-        if exc.reason == "deletion_due":
-            try:
-                purge_result = _purge_account_deletion(int(user["id"]))
-            except Exception:
-                logger.exception("due account purge failed for user_id=%s", user["id"])
-                raise _McpError(
-                    -32010,
-                    "72 小时已结束，不能取消；最终清理正在等待后台重试。",
-                    {"reason": "deletion_due"},
-                ) from None
-            if purge_result.get("status") == "complete":
-                raise _McpError(
-                    -32010,
-                    "72 小时已结束，账号已完成永久删除。",
-                    {"reason": "already_deleted"},
-                ) from None
-        raise _McpError(-32010, str(exc), {"reason": exc.reason}) from None
-    result["ok"] = True
-    result["message"] = "注销已取消；本次等待时间已彻底作废。"
-    return result
+    return account_lifecycle._cancel_account_deletion(
+        raw_token,
+        _McpError=_McpError,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _purge_account_deletion=_purge_account_deletion,
+        account_deletion=account_deletion,
+        logger=logger,
+    )
 
 
 def _delete_owned_session_rows(game, player_id):
-    if not SESSIONS_DB_PATH.exists():
-        return []
-    deleted = []
-    with _sessions_db_connect() as conn:
-        if game == "eco":
-            targets = [("eco_sessions", "eco", False)]
-        elif game == "ciyuwu":
-            targets = [("ciyuwu_sessions", "ciyuwu", False)]
-        elif game in {"dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"}:
-            targets = [("test_sessions", game, True), ("test_results", game, True)]
-        else:
-            return deleted
-        for table, label, has_game_column in targets:
-            if not _table_exists(conn, table):
-                continue
-            if has_game_column:
-                cur = conn.execute(
-                    f"DELETE FROM {table} WHERE player_id = ? AND game = ?",
-                    (player_id, label),
-                )
-            else:
-                cur = conn.execute(
-                    f"DELETE FROM {table} WHERE player_id = ?",
-                    (player_id,),
-                )
-            if cur.rowcount:
-                deleted.append({"target": table, "rows": cur.rowcount})
-        conn.commit()
-    return deleted
+    return save_management._delete_owned_session_rows(
+        game, player_id,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        _sessions_db_connect=_sessions_db_connect,
+        _table_exists=_table_exists,
+    )
 
 
 def _delete_vendor_save_dir(game, player_id):
-    if game == "nowhere":
-        if nowhere_storage.delete(player_id):
-            return {"target": f"vendor_saves/nowhere/{player_id}", "rows": 1}
-        return None
-    if game not in DIRECTORY_VENDOR_GAMES:
-        return None
-    save_dir = VENDOR_SAVE_ROOT / game / player_id
-    if not save_dir.is_dir():
-        return None
-    shutil.rmtree(save_dir)
-    return {"target": f"vendor_saves/{game}/{player_id}", "rows": 1}
+    return save_management._delete_vendor_save_dir(
+        game, player_id,
+        DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        nowhere_storage=nowhere_storage,
+        shutil=shutil,
+    )
 
 
 def _workkk_save_summary(player_id):
-    try:
-        save_path = VENDOR_SAVE_ROOT / "workkk" / player_id / "game_state.json"
-        with save_path.open("r", encoding="utf-8") as save_file:
-            state = json.load(save_file)
-    except FileNotFoundError:
-        return None
-    except Exception as exc:
-        logger.warning("workkk save summary skipped unreadable save %s: %s", player_id, exc)
-        return None
-    if not isinstance(state, dict):
-        logger.warning("workkk save summary skipped non-object save %s", player_id)
-        return None
-    return {
-        "day": state.get("day_count", 0),
-        "balance": state.get("salary_balance", 0),
-    }
+    return save_management._workkk_save_summary(
+        player_id,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        json=json,
+        logger=logger,
+    )
 
 
 def _garden_cat_save_summary(player_id):
-    """Read an existing Garden-Cat state without importing or calling its engine."""
-    save_path = VENDOR_SAVE_ROOT / "garden_cat" / player_id / "state.json"
-    try:
-        with save_path.open("r", encoding="utf-8") as save_file:
-            state = json.load(save_file)
-    except FileNotFoundError:
-        return None
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logger.warning("garden_cat save summary skipped unreadable save %s: %s", save_path, exc)
-        return None
-    if not isinstance(state, dict):
-        logger.warning("garden_cat save summary skipped non-object save %s", save_path)
-        return None
-    encyclopedia = state.get("encyclopedia")
-    return {
-        "money": state.get("money", 0),
-        "encyclopedia_count": len(encyclopedia) if isinstance(encyclopedia, list) else 0,
-        "has_cat": state.get("cat") is not None,
-        "last_active": _epoch_to_local_str(state.get("last_active_at")),
-    }
+    return save_management._garden_cat_save_summary(
+        player_id,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        _epoch_to_local_str=_epoch_to_local_str,
+        json=json,
+        logger=logger,
+    )
 
 
 def _delete_save(arguments, raw_token):
-    if arguments.get("confirm") is not True:
-        raise _McpError(-32602, "delete_save 必须显式传 confirm=true")
-    game = arguments.get("game")
-    if not isinstance(game, str) or not game:
-        raise _McpError(-32602, "game 参数必填")
-    if game == "turtle_soup":
-        raise _McpError(-32602, "海龟汤对局数据不支持 delete_save")
-    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "workkk", "camping_plaza", *VENDOR_GAMES}:
-        raise _McpError(-32602, "未知或不支持删除存档的游戏")
-
-    if not raw_token:
-        raise _McpError(
-            -32001,
-            "游客存档无鉴权凭证，不支持删除；想重开可直接换一个新的游客 player_id，或注册账号后用认领码把档转入账号管理",
-        )
-
-    slot = _save_slot_from_account_arguments(arguments)
-    user = _current_account(raw_token)
-    _auto_migrate_legacy_account_saves(user)
-    player_id = _account_slot_player_id(user["id"], slot)
-
-    deleted = []
-    if game == "garden_cat":
-        garden_deleted = _delete_garden_cat_save(player_id)
-        if garden_deleted:
-            deleted.append(garden_deleted)
-    elif game == "camping_plaza":
-        camping_deleted = _delete_camping_plaza_save(player_id)
-        if camping_deleted:
-            deleted.append(camping_deleted)
-    elif game == "workkk":
-        workkk_deleted = _delete_workkk_save(player_id)
-        if workkk_deleted:
-            deleted.append(workkk_deleted)
-    elif game == "detroit":
-        try:
-            if detroit_adapter.delete_save(player_id):
-                deleted.append({"target": f"remote:detroit/{player_id}", "rows": 1})
-        except detroit_adapter.DetroitError as exc:
-            raise _McpError(-32010 if exc.uncertain else -32602, exc.message) from None
-    elif game == "moonlit":
-        if moonlit_adapter.delete_save(player_id):
-            deleted.append(
-                {"target": f"vendor_saves/moonlit/{player_id}", "rows": 1}
-            )
-    elif game in DIRECTORY_VENDOR_GAMES:
-        vendor_deleted = _delete_vendor_save_dir(game, player_id)
-        if vendor_deleted:
-            deleted.append(vendor_deleted)
-    else:
-        deleted.extend(_delete_owned_session_rows(game, player_id))
-
-    return {
-        "ok": True,
-        "game": game,
-        "slot": slot,
-        "player_id": player_id,
-        "user": _public_user(user),
-        "deleted": deleted,
-        "message": "已删除存档。" if deleted else "没有找到该身份和槽位下的存档。",
-    }
+    return save_management._delete_save(
+        arguments, raw_token,
+        DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
+        VENDOR_GAMES=VENDOR_GAMES,
+        _McpError=_McpError,
+        _account_slot_player_id=_account_slot_player_id,
+        _auto_migrate_legacy_account_saves=_auto_migrate_legacy_account_saves,
+        _current_account=_current_account,
+        _delete_camping_plaza_save=_delete_camping_plaza_save,
+        _delete_garden_cat_save=_delete_garden_cat_save,
+        _delete_owned_session_rows=_delete_owned_session_rows,
+        _delete_vendor_save_dir=_delete_vendor_save_dir,
+        _delete_workkk_save=_delete_workkk_save,
+        _public_user=_public_user,
+        _save_slot_from_account_arguments=_save_slot_from_account_arguments,
+        detroit_adapter=detroit_adapter,
+        moonlit_adapter=moonlit_adapter,
+    )
 
 
 def _account_saves_for_user(user, *, migrate_legacy=True):
-    """按账号聚合返回该用户在所有游戏的存档概况；没有存档的游戏不列。"""
-    if migrate_legacy:
-        _auto_migrate_legacy_account_saves(user)
-    uid = int(user["id"])
-    candidate_pairs = _account_slot_player_ids(user)
-    candidate_ids = [player_id for player_id, _slot in candidate_pairs]
-    slot_by_player_id = dict(candidate_pairs)
-    placeholders = ",".join("?" * len(candidate_ids))
-    games = {}
-
-    with _db_connect() as conn:
-        soup_stats = _turtle_soup_stats(conn, user)
-    if any(int(value or 0) > 0 for value in soup_stats.values()):
-        games["turtle_soup"] = soup_stats
-
-    def _slot_entry(game, slot):
-        game_entry = games.setdefault(game, {"slots": [], "_slot_entries": {}})
-        entry = game_entry["_slot_entries"].get(slot)
-        if entry is None:
-            entry = {"slot": slot}
-            game_entry["_slot_entries"][slot] = entry
-            game_entry["slots"].append(entry)
-        return entry
-
-    if SESSIONS_DB_PATH.exists():
-        with _sessions_db_connect() as conn:
-            def _owned_rows(table, select_columns):
-                has_uid = "user_id" in _sessions_table_columns(conn, table)
-                where = f"player_id IN ({placeholders})" + (" OR user_id = ?" if has_uid else "")
-                args = list(candidate_ids) + ([uid] if has_uid else [])
-                return conn.execute(f"SELECT player_id, {select_columns} FROM {table} WHERE {where}", args).fetchall()
-
-            if _table_exists(conn, "test_results"):
-                for row in _owned_rows("test_results", "game, result_value, completed_at"):
-                    slot = slot_by_player_id.get(row["player_id"])
-                    if slot is None:
-                        continue
-                    entry = _slot_entry(row["game"], slot)
-                    if (row["completed_at"] or 0) > (entry.get("_completed_at") or 0):
-                        entry["_completed_at"] = row["completed_at"]
-                        entry["latest_result"] = row["result_value"]
-                        entry["completed_at"] = _epoch_to_local_str(row["completed_at"])
-            if _table_exists(conn, "test_sessions"):
-                for row in _owned_rows("test_sessions", "game, mode, current_question"):
-                    slot = slot_by_player_id.get(row["player_id"])
-                    if slot is None:
-                        continue
-                    entry = _slot_entry(row["game"], slot)
-                    entry["in_progress"] = {"mode": row["mode"], "current_question": row["current_question"]}
-            if _table_exists(conn, "eco_sessions"):
-                for row in _owned_rows("eco_sessions", "save_data, last_active"):
-                    slot = slot_by_player_id.get(row["player_id"])
-                    if slot is None:
-                        continue
-                    entry = _slot_entry("eco", slot)
-                    if entry.get("last_active") and (row["last_active"] or "") <= (entry.get("last_active") or ""):
-                        continue
-                    from eco_adapter import handler as eco_handler
-                    summary = eco_handler.summarize_save(row["save_data"]) or {}
-                    summary["last_active"] = row["last_active"]
-                    entry.clear()
-                    entry.update({"slot": slot, **summary})
-            if _table_exists(conn, "ciyuwu_sessions"):
-                for row in _owned_rows("ciyuwu_sessions", "save_data, meta_data, last_active"):
-                    slot = slot_by_player_id.get(row["player_id"])
-                    if slot is None:
-                        continue
-                    entry = _slot_entry("ciyuwu", slot)
-                    if entry.get("last_active") and (row["last_active"] or "") <= (entry.get("last_active") or ""):
-                        continue
-                    from ciyuwu_adapter import handler as ciyuwu_handler
-                    summary = ciyuwu_handler.summarize_save(row["save_data"], row["meta_data"]) or {}
-                    summary["last_active"] = row["last_active"]
-                    entry.clear()
-                    entry.update({"slot": slot, **summary})
-    vendor_summaries = {
-        "ai_life": ai_life_adapter.save_summary,
-        "bar": bar_adapter.save_summary,
-        "leek": leek_adapter.save_summary,
-        "delve": delve_adapter.save_summary,
-        "travel": travel_adapter.save_summary,
-        "nowhere": nowhere_adapter.save_summary,
-        "arcade": arcade_adapter.save_summary,
-        "burger": burger_adapter.save_summary,
-        "crucible_echoes": crucible_echoes_adapter.save_summary,
-        "fishing": fishing_adapter.save_summary,
-        "forest": forest_adapter.save_summary,
-        "moonlit": moonlit_adapter.save_summary,
-        "imitator_td": imitator_td_adapter.save_summary,
-        "memoria": memoria_adapter.save_summary,
-        "white_room": white_room_adapter.save_summary,
-        "market": market_adapter.save_summary,
-        "workkk": _workkk_save_summary,
-        "garden_cat": _garden_cat_save_summary,
-        "camping_plaza": _camping_plaza_save_summary,
-        "detroit": detroit_adapter.save_summary,
-    }
-    for game, summarize in vendor_summaries.items():
-        for candidate, slot in candidate_pairs:
-            try:
-                summary = summarize(candidate)
-            except VendorCmdError:
-                summary = None
-            if summary is not None:
-                entry = _slot_entry(game, slot)
-                if len(entry) == 1:
-                    entry.update(summary)
-    for game_entry in games.values():
-        if isinstance(game_entry, dict):
-            game_entry.pop("_slot_entries", None)
-            for entry in game_entry.get("slots", []):
-                if isinstance(entry, dict):
-                    entry.pop("_completed_at", None)
-            if "slots" in game_entry:
-                game_entry["slots"].sort(key=lambda item: item.get("slot", 0))
-    return {"user": _public_user(user), "saves": games}
+    return save_management._account_saves_for_user(
+        user, migrate_legacy=migrate_legacy,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        VendorCmdError=VendorCmdError,
+        _account_slot_player_ids=_account_slot_player_ids,
+        _auto_migrate_legacy_account_saves=_auto_migrate_legacy_account_saves,
+        _camping_plaza_save_summary=_camping_plaza_save_summary,
+        _db_connect=_db_connect,
+        _epoch_to_local_str=_epoch_to_local_str,
+        _garden_cat_save_summary=_garden_cat_save_summary,
+        _public_user=_public_user,
+        _sessions_db_connect=_sessions_db_connect,
+        _sessions_table_columns=_sessions_table_columns,
+        _table_exists=_table_exists,
+        _turtle_soup_stats=_turtle_soup_stats,
+        _workkk_save_summary=_workkk_save_summary,
+        ai_life_adapter=ai_life_adapter,
+        arcade_adapter=arcade_adapter,
+        bar_adapter=bar_adapter,
+        burger_adapter=burger_adapter,
+        crucible_echoes_adapter=crucible_echoes_adapter,
+        delve_adapter=delve_adapter,
+        detroit_adapter=detroit_adapter,
+        fishing_adapter=fishing_adapter,
+        forest_adapter=forest_adapter,
+        imitator_td_adapter=imitator_td_adapter,
+        leek_adapter=leek_adapter,
+        market_adapter=market_adapter,
+        memoria_adapter=memoria_adapter,
+        moonlit_adapter=moonlit_adapter,
+        nowhere_adapter=nowhere_adapter,
+        travel_adapter=travel_adapter,
+        white_room_adapter=white_room_adapter,
+    )
 
 
 def _account_my_saves(raw_token, *, human=False, username=None):
-    if human is True:
-        target = _bound_human_user_for_saves(raw_token, username)
-        result = _account_saves_for_user(target, migrate_legacy=False)
-        return {
-            "username": target["username"],
-            "user": result["user"],
-            "saves": result["saves"],
-        }
-    user = _current_account(raw_token)
-    return _account_saves_for_user(user)
+    return save_management._account_my_saves(
+        raw_token, human=human, username=username,
+        _account_saves_for_user=_account_saves_for_user,
+        _bound_human_user_for_saves=_bound_human_user_for_saves,
+        _current_account=_current_account,
+    )
 
 
 def _nowhere_web_saves(raw_token):
-    """Read only Nowhere save envelopes for this human's bound machines."""
-    user = _current_human_account(raw_token)
-    with _db_connect() as conn:
-        rows = conn.execute(
-            """SELECT ai.id, ai.username FROM user_bindings b
-               JOIN toy_users ai ON ai.id = b.ai_user_id
-               WHERE b.human_user_id = ? AND ai.is_ai = 1 AND ai.deleted_at IS NULL
-               ORDER BY ai.username, ai.id""", (int(user["id"]),)).fetchall()
-    machines = []
-    for row in rows:
-        slots = []
-        for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1):
-            summary = nowhere_adapter.save_summary(_account_slot_player_id(row["id"], slot))
-            if summary is not None:
-                slots.append({**summary, "slot": slot})
-        machines.append({"user": {"id": int(row["id"]), "username": row["username"]}, "slots": slots})
-    return {"machines": machines}
+    return save_management._nowhere_web_saves(
+        raw_token,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        _account_slot_player_id=_account_slot_player_id,
+        _current_human_account=_current_human_account,
+        _db_connect=_db_connect,
+        nowhere_adapter=nowhere_adapter,
+    )
 
 
 def _filtered_account_web_saves(raw_token, game):
-    """Read one allowlisted game's existing slots; never migrate or start a game."""
-    summaries = {
-        "workkk": _workkk_save_summary,
-        "moonlit": moonlit_adapter.save_summary,
-        "ai_life": ai_life_adapter.save_summary,
-        "detroit": detroit_adapter.save_summary,
-        "camping_plaza": lambda player: _camping_plaza_save_summary(player, timeout=2),
-    }
-    if game not in summaries:
-        raise _McpError(-32602, "不支持的存档筛选游戏")
-    user = _current_human_account(raw_token)
-    with _db_connect() as conn:
-        rows = conn.execute(
-            """SELECT ai.id, ai.username FROM user_bindings b
-               JOIN toy_users ai ON ai.id = b.ai_user_id
-               WHERE b.human_user_id = ? AND ai.is_ai = 1 AND ai.deleted_at IS NULL
-               ORDER BY b.created_at DESC""", (int(user["id"]),)).fetchall()
-    machines = [
-        {"username": row["username"],
-         "user": {"id": int(row["id"]), "username": row["username"]}, "saves": {}}
-        for row in rows
-    ]
-    targets = [(index, slot) for index in range(len(rows))
-               for slot in range(MIN_SAVE_SLOT, MAX_SAVE_SLOT + 1)]
-
-    def read_slot(target):
-        index, slot = target
-        player = _account_slot_player_id(rows[index]["id"], slot)
-        try:
-            return index, slot, summaries[game](player), None
-        except (VendorCmdError, _McpError, OSError) as exc:
-            logger.warning("%s picker summary failed for %s: %s", game, player, exc)
-            return index, slot, None, "存档摘要暂不可用"
-
-    # Only Camping uses HTTP. Bound fan-out and a short per-call timeout prevent
-    # one failed slot from serially blocking every other bound machine's slots.
-    if game == "camping_plaza" and targets:
-        with ThreadPoolExecutor(max_workers=min(8, len(targets))) as pool:
-            results = list(pool.map(read_slot, targets))
-    else:
-        results = map(read_slot, targets)
-    errors = []
-    for index, slot, summary, error in results:
-        if error:
-            errors.append({"ai_user_id": machines[index]["user"]["id"], "slot": slot, "error": error})
-        elif summary is not None:
-            entry = machines[index]["saves"].setdefault(game, {"slots": []})
-            entry["slots"].append({**summary, "slot": slot})
-    if errors and not any(machine["saves"] for machine in machines):
-        # An unavailable service must not masquerade as an empty/new save.
-        raise _McpError(-32603, "存档摘要读取失败，请稍后再试")
-    result = {"machines": machines}
-    if errors:
-        result["errors"] = errors
-    return result
+    return save_management._filtered_account_web_saves(
+        raw_token, game,
+        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        ThreadPoolExecutor=ThreadPoolExecutor,
+        VendorCmdError=VendorCmdError,
+        _McpError=_McpError,
+        _account_slot_player_id=_account_slot_player_id,
+        _camping_plaza_save_summary=_camping_plaza_save_summary,
+        _current_human_account=_current_human_account,
+        _db_connect=_db_connect,
+        _workkk_save_summary=_workkk_save_summary,
+        ai_life_adapter=ai_life_adapter,
+        detroit_adapter=detroit_adapter,
+        logger=logger,
+        moonlit_adapter=moonlit_adapter,
+    )
 
 
 def _account_web_saves(raw_token):
-    user = _current_account(raw_token)
-    own = _account_saves_for_user(user, migrate_legacy=False)
-    with _db_connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT ai.*
-            FROM user_bindings b
-            JOIN toy_users ai ON ai.id = b.ai_user_id
-            WHERE b.human_user_id = ?
-              AND ai.deleted_at IS NULL
-            ORDER BY b.created_at DESC
-            """,
-            (int(user["id"]),),
-        ).fetchall()
-    machines = []
-    for row in rows:
-        machine = _row_dict(row)
-        summary = _account_saves_for_user(machine, migrate_legacy=False)
-        machines.append({
-            "username": machine["username"],
-            "user": summary["user"],
-            "saves": summary["saves"],
-        })
-    return {
-        "user": _public_user(user),
-        "self": {
-            "username": user["username"],
-            "user": own["user"],
-            "saves": own["saves"],
-        },
-        "machines": machines,
-    }
+    return save_management._account_web_saves(
+        raw_token,
+        _account_saves_for_user=_account_saves_for_user,
+        _current_account=_current_account,
+        _db_connect=_db_connect,
+        _public_user=_public_user,
+        _row_dict=_row_dict,
+    )
 
 
 def _duel_history_outcome(room, result, player_id, player_role):
@@ -6463,41 +3742,25 @@ class _DeferredDuelCall:
 
 
 def _apply_play_slot_hint(text, slot_hint):
-    if slot_hint is None:
-        return text
-    try:
-        obj = json.loads(text)
-        if isinstance(obj, dict) and "slot" not in obj:
-            obj["slot"] = slot_hint
-            return json.dumps(obj, ensure_ascii=False)
-    except Exception:
-        pass
-    return text
+    return mcp_dispatch._apply_play_slot_hint(
+        text, slot_hint,
+        json=json,
+    )
 
 
 def _tool_play(
     arguments, path_token=None, *, defer_duel=False, authenticated_account=None
 ):
-    slot_hint = None
-    try:
-        game = arguments.get("game") if isinstance(arguments, dict) else None
-        if (path_token or authenticated_account is not None) and (
-            (game in IDENTITY_GAMES and game != "puzzle_box") or game == "turtle_soup"
-        ):
-            slot_hint = _save_slot_from_arguments(arguments)
-    except _McpError:
-        slot_hint = None  # 非法 slot 交给内部逻辑报错
-    with game_activity.capture_changes():
-        result = _tool_play_inner(
-            arguments,
-            path_token=path_token,
-            defer_duel=defer_duel,
-            authenticated_account=authenticated_account,
-        )
-    if isinstance(result, _DeferredDuelCall):
-        result.slot_hint = slot_hint
-        return result
-    return _apply_play_slot_hint(result, slot_hint)
+    return mcp_dispatch._tool_play(
+        arguments, path_token, defer_duel=defer_duel, authenticated_account=authenticated_account,
+        IDENTITY_GAMES=IDENTITY_GAMES,
+        _DeferredDuelCall=_DeferredDuelCall,
+        _McpError=_McpError,
+        _apply_play_slot_hint=_apply_play_slot_hint,
+        _save_slot_from_arguments=_save_slot_from_arguments,
+        _tool_play_inner=_tool_play_inner,
+        game_activity=game_activity,
+    )
 
 
 _OPERIT_DUEL_ACTIONS = frozenset({
@@ -6507,285 +3770,84 @@ _OPERIT_DUEL_ACTIONS = frozenset({
 
 
 def _operit_duel_call(raw_token, client_id, action, params):
-    """Run one Duel action under the AI resolved from an Operit session."""
-    user = _current_operit_ai(raw_token, client_id)
-    if not isinstance(action, str) or action not in _OPERIT_DUEL_ACTIONS:
-        raise _McpError(-32602, "不支持的 duel action")
-    if params is None:
-        params = {}
-    if not isinstance(params, dict):
-        raise _McpError(-32602, "params 必须是对象")
-    rate_identity = f"operit:{int(user['id'])}:duel"
-    if not _check_request_rate_limit(
-        rate_identity, max_count=DUEL_REQUEST_RATE_LIMIT_MAX
-    ):
-        raise _McpError(RATE_LIMIT_ERROR_CODE, REQUEST_RATE_LIMIT_MESSAGE)
-    # Only game/action/params cross this boundary. _tool_play then overwrites every
-    # reported player_id with the canonical account id before Duel normalization.
-    raw_result = _tool_play(
-        {"game": "duel", "action": action, "params": dict(params)},
-        authenticated_account=user,
+    return operit._operit_duel_call(
+        raw_token, client_id, action, params,
+        DUEL_REQUEST_RATE_LIMIT_MAX=DUEL_REQUEST_RATE_LIMIT_MAX,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        REQUEST_RATE_LIMIT_MESSAGE=REQUEST_RATE_LIMIT_MESSAGE,
+        _McpError=_McpError,
+        _OPERIT_DUEL_ACTIONS=_OPERIT_DUEL_ACTIONS,
+        _check_request_rate_limit=_check_request_rate_limit,
+        _current_operit_ai=_current_operit_ai,
+        _tool_play=_tool_play,
+        json=json,
     )
-    try:
-        result = json.loads(raw_result)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise _McpError(-32603, "duel 返回格式异常") from exc
-    if not isinstance(result, dict):
-        raise _McpError(-32603, "duel 返回格式异常")
-    return result
 
 
 def _deserialize_object_param(value, param_name):
-    if not isinstance(value, str):
-        return value
-    parsed = value
-    for _ in range(3):
-        if not isinstance(parsed, str):
-            break
-        try:
-            parsed = json.loads(parsed)
-        except (TypeError, json.JSONDecodeError):
-            return value
-    if not isinstance(parsed, dict):
-        return value
-    logger.info("MCP 工具调用自动反序列化了字符串 %s 参数", param_name)
-    return parsed
+    return mcp_dispatch._deserialize_object_param(
+        value, param_name,
+        json=json,
+        logger=logger,
+    )
 
 
 def _tool_play_inner(
     arguments, path_token=None, *, defer_duel=False, authenticated_account=None
 ):
-    game = arguments.get("game")
-    action = arguments.get("action")
-    if not game or not isinstance(game, str):
-        raise _McpError(-32602, "game 参数必填")
-    if not action or not isinstance(action, str):
-        raise _McpError(-32602, "action 参数必填")
-    maintenance = _game_maintenance(game)
-    if maintenance:
-        raise _McpError(-32003, maintenance["message"])
-    raw_params = arguments.get("params")
-    params = _deserialize_object_param(raw_params, "params")
-    if params is not None and not isinstance(params, dict):
-        raise _McpError(-32602, "params 必须是对象")
-    if params is not raw_params:
-        arguments = dict(arguments)
-        arguments["params"] = params
-
-    # 统一身份：带 token 强制 player_id=账号 id；游客自报 id 落到 guest: 命名空间。
-    account_user = None
-    account_player_id = None
-    guest_player_id = None
-    slot = MIN_SAVE_SLOT
-    has_account_identity = bool(path_token or authenticated_account is not None)
-    if game in IDENTITY_GAMES:
-        if has_account_identity:
-            account_user = (
-                authenticated_account
-                if authenticated_account is not None
-                else _current_account(path_token)
-            )
-            if game != "puzzle_box":
-                _auto_migrate_legacy_account_saves(account_user)
-                slot = _save_slot_from_arguments(arguments)
-            account_player_id = _account_slot_player_id(account_user["id"], slot)
-            arguments = _override_player_id(_without_slot_param(arguments), account_player_id)
-        else:
-            arguments = _without_slot_param(arguments)
-            raw = _reported_player_id(arguments)
-            guest = _guest_player_id(raw)
-            if guest != raw:
-                arguments = _override_player_id(arguments, guest)
-            if isinstance(guest, str) and guest.startswith(GUEST_PREFIX):
-                guest_player_id = guest
-        params = arguments.get("params")
-    elif game == "turtle_soup" and path_token:
-        account_user = _current_account(path_token)
-        slot = _save_slot_from_arguments(arguments)
-        account_player_id = _account_slot_player_id(account_user["id"], slot)
-    else:
-        arguments = _without_slot_param(arguments)
-        params = arguments.get("params")
-
-    if game == "puzzle_box" and (not account_user or not account_user.get("is_ai")):
-        raise _McpError(-32001, "解谜盲盒需要已认证的小机账号；请使用该小机的统一 MCP 地址")
-
-    # A claimed guest id is a permanent tombstone. Check the canonical guest id
-    # before anti-addiction, announcements, or any concrete game/satellite call.
-    if not has_account_identity:
-        canonical_guest_id = guest_player_id
-        if canonical_guest_id is None:
-            candidate = _guest_player_id(_reported_player_id(arguments))
-            if isinstance(candidate, str) and candidate.startswith(GUEST_PREFIX):
-                canonical_guest_id = candidate
-        if canonical_guest_id is not None:
-            _reject_claimed_guest(canonical_guest_id)
-
-    merged_arguments = {
-        key: value
-        for key, value in arguments.items()
-        if key not in {"params"} or value is not None
-    }
-    if isinstance(params, dict):
-        merged_arguments.update(params)
-        # 防止清单引导的模型用 params.action 顶掉顶层游戏路由 action。
-        if "action" in arguments:
-            merged_arguments["action"] = arguments["action"]
-    anti_context = _anti_addiction_context(game, account_user, account_player_id)
-    # 通知按「人」而不是按存档槽记已读，用的就是各游戏看到的那个 player_id
-    # （announcements 内部会把 "12:3" 这类槽后缀削掉）。
-    announce_player_id = (
-        _account_announcement_identity(account_user, account_player_id)
-        or guest_player_id
-        or _reported_player_id(arguments)
+    return mcp_dispatch._tool_play_inner(
+        arguments, path_token, defer_duel=defer_duel, authenticated_account=authenticated_account,
+        GUEST_PREFIX=GUEST_PREFIX,
+        IDENTITY_GAMES=IDENTITY_GAMES,
+        MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        SOUP_BASE=SOUP_BASE,
+        _DeferredDuelCall=_DeferredDuelCall,
+        _McpError=_McpError,
+        _account_announcement_identity=_account_announcement_identity,
+        _account_slot_player_id=_account_slot_player_id,
+        _anti_addiction_context=_anti_addiction_context,
+        _anti_addiction_preflight=_anti_addiction_preflight,
+        _anti_addiction_rest=_anti_addiction_rest,
+        _auto_migrate_legacy_account_saves=_auto_migrate_legacy_account_saves,
+        _current_account=_current_account,
+        _deserialize_object_param=_deserialize_object_param,
+        _duel_bound_human_player_id=_duel_bound_human_player_id,
+        _finalize_play_response=_finalize_play_response,
+        _fishing_import=_fishing_import,
+        _game_maintenance=_game_maintenance,
+        _guest_player_id=_guest_player_id,
+        _override_player_id=_override_player_id,
+        _play_bdsmtest=_play_bdsmtest,
+        _play_camping_plaza=_play_camping_plaza,
+        _play_ciyuwu=_play_ciyuwu,
+        _play_dnd=_play_dnd,
+        _play_duel=_play_duel,
+        _play_eco=_play_eco,
+        _play_garden_cat=_play_garden_cat,
+        _play_mbti=_play_mbti,
+        _play_scale=_play_scale,
+        _play_tarot=_play_tarot,
+        _play_vendor_cmd=_play_vendor_cmd,
+        _play_workkk=_play_workkk,
+        _prepare_duel_payload=_prepare_duel_payload,
+        _reject_claimed_guest=_reject_claimed_guest,
+        _reported_player_id=_reported_player_id,
+        _save_slot_from_arguments=_save_slot_from_arguments,
+        _soup_error_message=_soup_error_message,
+        _tool_play_announcement_history=_tool_play_announcement_history,
+        _tool_play_vote=_tool_play_vote,
+        _without_slot_param=_without_slot_param,
+        detroit_adapter=detroit_adapter,
+        ecr_handler=ecr_handler,
+        enneagram_handler=enneagram_handler,
+        httpx=httpx,
+        humanity_handler=humanity_handler,
+        json=json,
+        love_handler=love_handler,
+        puzzle_box=puzzle_box,
+        sins_virtues_handler=sins_virtues_handler,
     )
-    if account_user is None:
-        announce_player_id = _guest_player_id(announce_player_id)
-    if action == "rest":
-        return json.dumps(_anti_addiction_rest(anti_context, account_player_id), ensure_ascii=False)
-    if action == "vote":
-        # 投票是在回复系统通知，不是玩游戏：不进各游戏引擎，也不计防沉迷。
-        if account_user is None:
-            return json.dumps(
-                {"ok": False, "text": "游客身份不参与投票，注册认领存档后可参与"},
-                ensure_ascii=False,
-            )
-        return json.dumps(_tool_play_vote(game, announce_player_id, merged_arguments), ensure_ascii=False)
-    if action == "announcements":
-        # 主动查看公告同样不进入游戏引擎、不累计防沉迷；查看本页会建立投票所需的 seen 记录。
-        return json.dumps(
-            _tool_play_announcement_history(game, announce_player_id, merged_arguments),
-            ensure_ascii=False,
-        )
-    blocked_response = (
-        None if game == "duel" and action == "cancel_wait"
-        else _anti_addiction_preflight(game, anti_context)
-    )
-    if blocked_response:
-        return json.dumps(blocked_response, ensure_ascii=False)
-    if game == "turtle_soup":
-        payload = dict(merged_arguments)
-        if path_token:
-            payload["path_token"] = path_token
-        resp = httpx.post(f"{SOUP_BASE}/mcp/play", json=payload, timeout=60)
-        if resp.status_code >= 400:
-            code = -32001 if resp.status_code == 401 else -32602
-            raise _McpError(code, _soup_error_message(resp))
-        response = resp.json()
-    elif game == "mbti":
-        response = _play_mbti(merged_arguments)
-    elif game == "enneagram":
-        response = _play_scale(enneagram_handler, "enneagram", merged_arguments)
-    elif game == "dnd":
-        response = _play_dnd(merged_arguments)
-    elif game == "love":
-        response = _play_scale(love_handler, "love", merged_arguments)
-    elif game == "ecr":
-        response = _play_scale(ecr_handler, "ecr", merged_arguments)
-    elif game == "humanity":
-        response = _play_scale(humanity_handler, "humanity", merged_arguments)
-    elif game == "sins_virtues":
-        response = _play_scale(sins_virtues_handler, "sins_virtues", merged_arguments)
-    elif game == "bdsmtest":
-        response = _play_bdsmtest(merged_arguments)
-    elif game == "eco":
-        # eco 工具自身用 action 作为子参数（summon/observe/...），与 play 的 action
-        # （工具名）同名。这里传原始 arguments，由 _play_eco 从 params 取子参数，避免覆盖。
-        response = _play_eco(arguments)
-    elif game == "ciyuwu":
-        # 同 eco：ciyuwu_info/ciyuwu_save 自身也有 action 子参数，传原始 arguments。
-        response = _play_ciyuwu(arguments)
-    elif game == "workkk":
-        # workkk 是独立进程（8770）上的 JSON-RPC MCP，参考海龟汤 SOUP_BASE 转发。
-        response = _play_workkk(arguments)
-    elif game == "garden_cat":
-        # Garden-Cat 是独立 loopback 进程（8771）；只把统一身份放进受信请求头。
-        response = _play_garden_cat(
-            arguments,
-            owner_name=(account_user.get("username") if account_user else None),
-        )
-    elif game == "camping_plaza":
-        # Camping Plaza is a resident FastAPI process (8773). The adapter ignores
-        # native session IDs and keys the camp only by this canonical player/slot.
-        response = _play_camping_plaza(arguments)
-    elif game == "detroit":
-        if account_user is None or account_player_id is None:
-            raise _McpError(-32001, "detroit 仅支持已认证账号；请使用 CedarToy 统一 MCP 地址")
-        try:
-            response = detroit_adapter.play(account_player_id, action, merged_arguments)
-        except detroit_adapter.DetroitError as exc:
-            code = -32010 if exc.uncertain else (-32003 if exc.status == 403 else -32602)
-            raise _McpError(code, exc.message) from None
-    elif game == "puzzle_box":
-        try:
-            response = puzzle_box.play(SESSIONS_DB_PATH, int(account_user["id"]), action, merged_arguments)
-        except ValueError as exc:
-            raise _McpError(-32602, str(exc)) from None
-    elif game == "tarot":
-        # Tarot is not a machine-playable card game.  The authenticated machine
-        # may only create and observe an invitation bound to its one current
-        # human; the machine may propose the question, while browser consent
-        # gates spread/draw/reveal/read actions.
-        response = _play_tarot(merged_arguments, account_user)
-    elif game == "duel":
-        # Duel 是独立 loopback 进程（8772）。账号 player_id 已在上方被强制
-        # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。
-        trusted_opponent_id = None
-        force_opponent = bool(account_user and account_user.get("is_ai"))
-        if (action in {"rooms", "chips", "invite", "start", "chat", "reclaim"} or merged_arguments.get("invite_code")) and not force_opponent:
-            raise _McpError(
-                -32001,
-                f"duel {action} 仅供已认证的 AI 账号操作自己的数据。",
-            )
-        if force_opponent and action in {"new", "join", "chips"} and not merged_arguments.get("invite_code"):
-            trusted_opponent_id = _duel_bound_human_player_id(account_user)
-        duel_kwargs = {
-            "trusted_display_name": account_user.get("username") if force_opponent else None,
-            "trusted_opponent_id": trusted_opponent_id,
-            "force_opponent": force_opponent,
-            "trusted_player_id": (
-                account_player_id if force_opponent else None
-            ),
-        }
-        if defer_duel:
-            return _DeferredDuelCall(
-                activity_params={key: merged_arguments.get(key) for key in ("op", "loan_action", "exchange_action")},
-                backend_payload=_prepare_duel_payload(
-                    merged_arguments, **duel_kwargs
-                ),
-                game=game,
-                action=action,
-                account_user=(
-                    {"id": account_user["id"], "is_ai": account_user.get("is_ai", False)} if account_user else None
-                ),
-                account_player_id=account_player_id,
-                guest_player_id=guest_player_id,
-                slot=slot,
-                anti_context=anti_context,
-                announce_player_id=announce_player_id,
-            )
-        response = _play_duel(merged_arguments, **duel_kwargs)
-    elif game in {"ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
-        if game == "fishing" and action == "import":
-            response = _fishing_import(arguments)
-        else:
-            response = _play_vendor_cmd(game, arguments)
-    else:
-        raise _McpError(-32602, "未知游戏")
-
-    response = _finalize_play_response(
-        response,
-        game=game,
-        action=action,
-        account_user=account_user,
-        account_player_id=account_player_id,
-        guest_player_id=guest_player_id,
-        slot=slot,
-        anti_context=anti_context,
-        announce_player_id=announce_player_id,
-        activity_params={**merged_arguments, **(params or {})},
-    )
-    return json.dumps(response, ensure_ascii=False)
 
 
 def _finalize_play_response(
@@ -6801,151 +3863,57 @@ def _finalize_play_response(
     announce_player_id,
     activity_params=None,
 ):
-    if game == "duel" and isinstance(response, dict) and response.get("status") == "wait_cancelled":
-        # Stopping a tool chain is not gameplay; do not append unrelated prompts
-        # or consume announcements while telling the caller to stop.
-        return response
-    game_activity.record(
-        SESSIONS_DB_PATH, game, action, account_user, response,
-        params=activity_params, changed=game_activity.observed_change(),
+    return mcp_dispatch._finalize_play_response(
+        response, game=game, action=action, account_user=account_user, account_player_id=account_player_id, guest_player_id=guest_player_id, slot=slot, anti_context=anti_context, announce_player_id=announce_player_id, activity_params=activity_params,
+        ANTI_ADDICTION_TEST_GAMES=ANTI_ADDICTION_TEST_GAMES,
+        PERSISTENT_SAVE_GAMES=PERSISTENT_SAVE_GAMES,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        _anti_addiction_record_success=_anti_addiction_record_success,
+        _append_play_text=_append_play_text,
+        _ensure_guest_claim_code=_ensure_guest_claim_code,
+        _play_announcements=_play_announcements,
+        _prepend_play_text=_prepend_play_text,
+        _replace_play_storage_identity=_replace_play_storage_identity,
+        _stamp_save_owner=_stamp_save_owner,
+        _storage_identity_line=_storage_identity_line,
+        game_activity=game_activity,
     )
-    succeeded = True
-    if isinstance(response, dict):
-        result = response.get("result")
-        if "error" in response or (isinstance(result, dict) and result.get("isError")):
-            succeeded = False
-    idempotent_retry = (
-        game == "ai_life"
-        and isinstance(response, dict)
-        and response.get("duplicate") is True
-    )
-    if succeeded and account_user is not None:
-        if game in ANTI_ADDICTION_TEST_GAMES:
-            response = _replace_play_storage_identity(
-                response,
-                _storage_identity_line(account_player_id, account_user, slot),
-            )
-        _stamp_save_owner(game, account_player_id, int(account_user["id"]))
-    if (
-        succeeded
-        and not idempotent_retry
-        and guest_player_id
-        and game in PERSISTENT_SAVE_GAMES
-        and isinstance(response, dict)
-    ):
-        code = _ensure_guest_claim_code(guest_player_id)
-        if code:
-            response = dict(response)
-            response["guest_save_notice"] = (
-                f"当前是游客身份，存档记在 {guest_player_id} 名下。"
-                f"一次性认领码：{code}（请保存好）。"
-                '注册后先用 account(action="my_saves") 选择空槽，再调用 '
-                'account(action="claim", claim_code="...", slot=2)；slot 可为 1-5，默认 1。'
-                "之后把 MCP 地址改为 https://toy.cedarstar.org/{token} 即获得持久身份。"
-            )
-    if succeeded and not idempotent_retry:
-        response = _append_play_text(response, _anti_addiction_record_success(anti_context))
-        # 只在成功时取通知：check_announcements 一取就标已读，而通知只弹一次。
-        # 拼在报错响应上，玩家多半看不到，这条通知就永远丢了。
-        response = _prepend_play_text(response, _play_announcements(announce_player_id, game, action))
-    return response
 
 
 def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
-    action = arguments.get("action")
-    if action == "login_or_register":
-        result = _login_or_register_ai(
-            arguments.get("username"),
-            arguments.get("password"),
-            client_ip=client_ip,
-            avatar=arguments.get("avatar"),
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "login":
-        result = _login_existing_account(
-            arguments.get("username"),
-            arguments.get("password"),
-            client_ip=client_ip,
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "guest_claim_code":
-        result = _guest_claim_code_for_player_id(arguments.get("player_id"))
-        return json.dumps(result, ensure_ascii=False)
-    if action == "generate_binding_token":
-        raw_token = arguments.get("token") or path_token
-        result = _generate_binding_token(raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    raw_token = arguments.get("token") or path_token
-    if isinstance(action, str) and action in admin_recovery_mcp.ACTIONS:
-        result = admin_recovery_mcp.handle(
-            arguments, raw_token, require_admin=_require_admin_account,
-            list_tickets=_admin_recovery_tickets, review_ticket=_review_recovery_ticket,
-            db_path=TURTLE_DB_PATH, sessions_path=SESSIONS_DB_PATH,
-            summaries={"garden_cat": _garden_cat_save_summary, "workkk": _workkk_save_summary},
-            slot_player_id=_account_slot_player_id, error=_McpError,
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "rotate_token":
-        result = _rotate_ai_token(raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    if action == "rename_self":
-        result = _rename_self(raw_token, arguments.get("new_username"))
-        return json.dumps(result, ensure_ascii=False)
-    if action == "set_avatar":
-        result = _set_avatar(raw_token, arguments.get("avatar"))
-        return json.dumps(result, ensure_ascii=False)
-    if action == "rename_bound_machine":
-        result = _rename_bound_machine(
-            raw_token,
-            arguments.get("ai_user_id"),
-            arguments.get("new_username"),
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "reset_machine_password":
-        result = _reset_machine_password(
-            raw_token,
-            arguments.get("ai_user_id"),
-            arguments.get("new_password"),
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "get_bindings":
-        result = _get_bindings(raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    if action == "get_profile":
-        result = _get_profile(raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    if action == "claim":
-        slot = _save_slot_from_account_arguments(arguments)
-        result = _claim_guest_saves(raw_token, arguments.get("claim_code"), slot=slot)
-        return json.dumps(result, ensure_ascii=False)
-    if action == "my_saves":
-        result = _account_my_saves(
-            raw_token,
-            human=arguments.get("human") is True,
-            username=arguments.get("username"),
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "delete_save":
-        result = _delete_save(arguments, raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    if action == "change_password":
-        raw_token = arguments.get("token") or path_token
-        result = _change_password(raw_token, arguments.get("old_password"), arguments.get("new_password"))
-        return json.dumps(result, ensure_ascii=False)
-    if action == "delete_account":
-        result = _delete_account(
-            raw_token,
-            arguments.get("confirm"),
-            arguments.get("current_password"),
-        )
-        return json.dumps(result, ensure_ascii=False)
-    if action == "deletion_status":
-        result = _account_deletion_status(raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    if action == "cancel_delete_account":
-        result = _cancel_account_deletion(raw_token)
-        return json.dumps(result, ensure_ascii=False)
-    raise _McpError(-32602, "未知 account action")
+    return mcp_dispatch._tool_account(
+        arguments, user_agent, path_token, client_ip,
+        SESSIONS_DB_PATH=SESSIONS_DB_PATH,
+        TURTLE_DB_PATH=TURTLE_DB_PATH,
+        _McpError=_McpError,
+        _account_deletion_status=_account_deletion_status,
+        _account_my_saves=_account_my_saves,
+        _account_slot_player_id=_account_slot_player_id,
+        _admin_recovery_tickets=_admin_recovery_tickets,
+        _cancel_account_deletion=_cancel_account_deletion,
+        _change_password=_change_password,
+        _claim_guest_saves=_claim_guest_saves,
+        _delete_account=_delete_account,
+        _delete_save=_delete_save,
+        _garden_cat_save_summary=_garden_cat_save_summary,
+        _generate_binding_token=_generate_binding_token,
+        _get_bindings=_get_bindings,
+        _get_profile=_get_profile,
+        _guest_claim_code_for_player_id=_guest_claim_code_for_player_id,
+        _login_existing_account=_login_existing_account,
+        _login_or_register_ai=_login_or_register_ai,
+        _rename_bound_machine=_rename_bound_machine,
+        _rename_self=_rename_self,
+        _require_admin_account=_require_admin_account,
+        _reset_machine_password=_reset_machine_password,
+        _review_recovery_ticket=_review_recovery_ticket,
+        _rotate_ai_token=_rotate_ai_token,
+        _save_slot_from_account_arguments=_save_slot_from_account_arguments,
+        _set_avatar=_set_avatar,
+        _workkk_save_summary=_workkk_save_summary,
+        admin_recovery_mcp=admin_recovery_mcp,
+        json=json,
+    )
 
 
 def _turtle_soup_guide():
@@ -6953,348 +3921,107 @@ def _turtle_soup_guide():
 
 
 def _play_mbti(arguments):
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action"}}
-    request_id = extra.pop("id", None) or f"mbti-{action or 'call'}"
-    if action in {"initialize", "tools/list"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {"mbti_start", "mbti_answer", "mbti_answer_batch", "mbti_get_result"}:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, "未知 MBTI action")
-    return handle_mbti_mcp(payload)
+    return game_dispatch._play_mbti(
+        arguments,
+        _McpError=_McpError,
+        handle_mbti_mcp=handle_mbti_mcp,
+    )
 
 
 def _play_dnd(arguments):
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action"}}
-    request_id = extra.pop("id", None) or f"dnd-{action or 'call'}"
-    if action in {"initialize", "tools/list"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {"dnd_start", "dnd_answer", "dnd_answer_batch", "dnd_get_result"}:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, "未知 DND action")
-    return handle_dnd_mcp(payload)
+    return game_dispatch._play_dnd(
+        arguments,
+        _McpError=_McpError,
+        handle_dnd_mcp=handle_dnd_mcp,
+    )
 
 
 def _play_scale(handler, game, arguments):
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action"}}
-    request_id = extra.pop("id", None) or f"{game}-{action or 'call'}"
-    if action in {"initialize", "tools/list"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {
-        f"{game}_start",
-        f"{game}_answer",
-        f"{game}_answer_batch",
-        f"{game}_get_result",
-        f"{game}_compare",
-    }:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {
-                "name": action,
-                "arguments": {key: value for key, value in extra.items() if value is not None},
-            },
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, f"未知 {game} action")
-    return handler.handle_mcp(payload)
+    return game_dispatch._play_scale(
+        handler, game, arguments,
+        _McpError=_McpError,
+    )
 
 
 def _play_bdsmtest(arguments):
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action"}}
-    request_id = extra.pop("id", None) or f"bdsmtest-{action or 'call'}"
-    if action in {"initialize", "tools/list"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {"bdsmtest_start", "bdsmtest_answer", "bdsmtest_answer_batch", "bdsmtest_get_result"}:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, "未知 BDSMTest action")
-    return handle_bdsmtest_mcp(payload)
+    return game_dispatch._play_bdsmtest(
+        arguments,
+        _McpError=_McpError,
+        handle_bdsmtest_mcp=handle_bdsmtest_mcp,
+    )
 
 
 def _play_eco(arguments):
-    # action（顶层）= 路由到哪个 eco 工具；子参数（含同名的 action，如 summon）放在 params 里。
-    # 先取顶层路由 action，再把 params 内容并入 extra，避免被 merge 覆盖。
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action", "params"}}
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update(params)
-    request_id = extra.pop("id", None) or f"eco-{action or 'call'}"
-    if action in {"initialize", "tools/list"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {"eco_new", "eco_observe", "eco_act", "eco_info", "eco_save", "eco_play"}:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, "未知 eco action")
-    return handle_eco_mcp(payload)
+    return game_dispatch._play_eco(
+        arguments,
+        _McpError=_McpError,
+        handle_eco_mcp=handle_eco_mcp,
+    )
 
 
 def _play_ciyuwu(arguments):
-    # 顶层 action = 路由到哪个 ciyuwu 工具；子参数（含同名 action，如 status）放 params 里。
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action", "params"}}
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update(params)
-    request_id = extra.pop("id", None) or f"ciyuwu-{action or 'call'}"
-    if action in {"initialize", "tools/list"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {"ciyuwu_new", "ciyuwu_cmd", "ciyuwu_info", "ciyuwu_save"}:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None}},
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, "未知 ciyuwu action。本游戏使用专用接口：ciyuwu_new / ciyuwu_cmd / ciyuwu_info / ciyuwu_save，请先 get_guide(game=\"ciyuwu\") 查看用法。")
-    return handle_ciyuwu_mcp(payload)
+    return game_dispatch._play_ciyuwu(
+        arguments,
+        _McpError=_McpError,
+        handle_ciyuwu_mcp=handle_ciyuwu_mcp,
+    )
 
 
 def _parse_json_import_save_data(raw):
-    try:
-        return parse_import_save_data(raw)
-    except VendorCmdError as exc:
-        raise _McpError(-32602, str(exc)) from exc
+    return game_dispatch._parse_json_import_save_data(
+        raw,
+        VendorCmdError=VendorCmdError,
+        _McpError=_McpError,
+        parse_import_save_data=parse_import_save_data,
+    )
 
 
 def _play_workkk(arguments):
-    # 顶层 action = 路由到哪个 workkk 工具或 MCP 方法；子参数（含同名子 action）放 params 里。
-    # 参考海龟汤 SOUP_BASE 那套转发：JSON-RPC 打到独立进程 8770 的 /mcp，身份走 X-Player-Id。
-    action = arguments.get("action")
-    player_id = _reported_player_id(arguments)
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "action", "params", "player_id"}}
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update({key: value for key, value in params.items() if key != "player_id"})
-
-    if action == "export":
-        result = _workkk_save_admin("export", player_id=player_id)
-        save_data = result.get("save_data")
-        if not isinstance(save_data, dict):
-            raise _McpError(-32603, "workkk 存档管理服务未返回 JSON 对象存档")
-        return {
-            "game": "workkk",
-            "player_id": player_id,
-            "text": json.dumps(save_data, ensure_ascii=False, indent=2),
-        }
-    if action == "import":
-        save_data = _parse_json_import_save_data(extra.get("save_data"))
-        confirm = extra.get("confirm") is True
-        if _workkk_save_summary(player_id) is not None and not confirm:
-            raise _McpError(-32602, "workkk 当前槽已有存档；确认覆盖请在 params 传 confirm=true")
-        result = _workkk_save_admin(
-            "import",
-            player_id=player_id,
-            save_data=save_data,
-            confirm=confirm,
-        )
-        if result.get("imported") is not True:
-            raise _McpError(-32603, "workkk 存档管理服务未确认导入成功")
-        return {"game": "workkk", "player_id": player_id, "text": "存档已导入。"}
-
-    request_id = extra.pop("id", None) or f"workkk-{action or 'call'}"
-    if action in {"initialize", "tools/list", "ping"}:
-        payload = {"jsonrpc": "2.0", "id": request_id, "method": action}
-        if extra:
-            payload["params"] = extra
-    elif action in {"work_action", "shop_buy"}:
-        # 按 workkk 后端函数签名白名单过滤：后端 fn(**args) 严格解包，
-        # 多余字段（如 kelivo 增强 schema 诱导模型生成的 command 等）会直接炸。
-        _workkk_allowed = {
-            "work_action": {"action", "thought"},
-            "shop_buy": {"item_id", "message", "choice"},
-        }[action]
-        payload = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "tools/call",
-            "params": {"name": action, "arguments": {key: value for key, value in extra.items() if value is not None and key in _workkk_allowed}},
-        }
-    elif "method" in extra:
-        payload = {"jsonrpc": "2.0", "id": request_id, **extra}
-    else:
-        raise _McpError(-32602, "未知 workkk action。本游戏使用专用接口：work_action / shop_buy，请先 get_guide(game=\"workkk\") 查看用法。")
-    headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
-    try:
-        resp = httpx.post(f"{WORKKK_BASE}/mcp", json=payload, headers=headers, timeout=60)
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"workkk 后端连接失败：{exc}")
-    if resp.status_code >= 400:
-        raise _McpError(-32602, f"workkk 后端错误 HTTP {resp.status_code}：{resp.text[:200]}")
-    try:
-        return resp.json()
-    except ValueError:
-        raise _McpError(-32603, "workkk 后端返回非 JSON 响应")
+    return game_dispatch._play_workkk(
+        arguments,
+        WORKKK_BASE=WORKKK_BASE,
+        _McpError=_McpError,
+        _parse_json_import_save_data=_parse_json_import_save_data,
+        _reported_player_id=_reported_player_id,
+        _workkk_save_admin=_workkk_save_admin,
+        _workkk_save_summary=_workkk_save_summary,
+        httpx=httpx,
+        json=json,
+    )
 
 
 def _duel_bound_human_player_id(ai_user):
-    """Resolve the sole active human bound to an AI for paired Duel actions."""
-    with _db_connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT human.id
-            FROM user_bindings b
-            JOIN toy_users human ON human.id = b.human_user_id
-            WHERE b.ai_user_id = ?
-              AND human.is_ai = 0
-              AND human.deleted_at IS NULL
-            ORDER BY human.id
-            """,
-            (int(ai_user["id"]),),
-        ).fetchall()
-    if len(rows) > 1:
-        raise _McpError(
-            -32602,
-            "这只 AI 仍绑定了多个人类，无法确定 duel 对手；请先整理为唯一绑定。",
-        )
-    return str(rows[0]["id"]) if rows else None
+    return duel_bridge._duel_bound_human_player_id(
+        ai_user,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+    )
 
 
 def _tarot_bound_human_user_id(ai_user):
-    """Resolve the exact active human in the current machine binding."""
-    if not ai_user or not ai_user.get("is_ai"):
-        raise _McpError(-32001, "tarot MCP 动作仅供已认证的小机账号使用。")
-    with _db_connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT human.id
-            FROM user_bindings b
-            JOIN toy_users human ON human.id = b.human_user_id
-            WHERE b.ai_user_id = ?
-              AND human.is_ai = 0
-              AND human.deleted_at IS NULL
-              AND human.deletion_requested_at_epoch IS NULL
-            ORDER BY human.id
-            """,
-            (int(ai_user["id"]),),
-        ).fetchall()
-    if not rows:
-        raise _McpError(-32003, "这只小机尚未绑定可用的人类，不能使用塔罗绑定动作。")
-    if len(rows) != 1:
-        raise _McpError(
-            -32003,
-            "这只小机绑定了多个人类，无法建立唯一塔罗会话；请先整理为唯一绑定。",
-        )
-    return int(rows[0]["id"])
+    return game_dispatch._tarot_bound_human_user_id(
+        ai_user,
+        _McpError=_McpError,
+        _db_connect=_db_connect,
+    )
 
 
 def _tarot_mcp_error(exc):
-    if exc.status in {401, 403, 404}:
-        # Ownership failures deliberately collapse to the same response.  A
-        # caller cannot use status differences as a session-id oracle.
-        return _McpError(-32004, "塔罗会话不存在或不属于当前绑定。")
-    if exc.status == 429:
-        return _McpError(-32029, exc.message)
-    if exc.status == 503:
-        return _McpError(-32603, exc.message)
-    return _McpError(-32602, exc.message)
+    return game_dispatch._tarot_mcp_error(
+        exc,
+        _McpError=_McpError,
+    )
 
 
 def _play_tarot(arguments, ai_user):
-    action = arguments.get("action")
-    if action not in {"invite", "status", "result", "history", "history_detail"}:
-        raise _McpError(
-            -32602,
-            "tarot 只开放 invite/status/result/history/history_detail；小机不能同意、选阵、抽牌或删除历史。",
-        )
-    human_user_id = _tarot_bound_human_user_id(ai_user)
-    store = get_tarot_store()
-    try:
-        if action == "invite":
-            request_id = arguments.get("request_id")
-            if not isinstance(request_id, str):
-                raise TarotError(400, "invite 必须传至少 8 位的稳定 request_id")
-            question = arguments.get("question")
-            if not isinstance(question, str):
-                raise TarotError(400, "invite 必须填写想问的问题")
-            return store.create_invite(
-                int(ai_user["id"]),
-                human_user_id,
-                request_id,
-                question,
-            )
-
-        if action == "history":
-            return store.history_for_human(
-                human_user_id,
-                offset=arguments.get("offset", 0),
-                limit=arguments.get("limit", 10),
-            )
-
-        session_id = arguments.get("session_id")
-        if not isinstance(session_id, str):
-            raise TarotError(
-                400,
-                "status/result 必须传 invite 返回的 session_id；"
-                "history_detail 必须传 history 返回的 session_id",
-            )
-        if action == "history_detail":
-            return store.history_detail_for_human(session_id, human_user_id)
-        if action == "status":
-            return store.wait_ai_status(
-                session_id,
-                int(ai_user["id"]),
-                human_user_id,
-                after_revision=arguments.get("after_revision"),
-                wait_seconds=arguments.get("wait_seconds", 0),
-            )
-        return store.ai_result(
-            session_id, int(ai_user["id"]), human_user_id
-        )
-    except TarotError as exc:
-        raise _tarot_mcp_error(exc) from None
+    return game_dispatch._play_tarot(
+        arguments, ai_user,
+        TarotError=TarotError,
+        _McpError=_McpError,
+        _tarot_bound_human_user_id=_tarot_bound_human_user_id,
+        _tarot_mcp_error=_tarot_mcp_error,
+        get_tarot_store=get_tarot_store,
+    )
 
 
 _DUEL_MOVE_SIBLING_FIELDS = (
@@ -7311,22 +4038,11 @@ _DUEL_KNOWN_MOVE_FIELDS = (
 
 
 def _duel_state_retry_example(*, wait=False, full_state=False):
-    params = {"room_id": "..."}
-    if wait:
-        params["wait"] = True
-    if full_state:
-        params["full_state"] = True
-    return {"action": "state", "params": params}
+    return duel_bridge._duel_state_retry_example(wait=wait, full_state=full_state)
 
 
 def _duel_move_retry_example(inner_action="roll", **siblings):
-    params = {
-        "room_id": "...",
-        "move": {"action": str(inner_action or "roll")},
-        "revision": 12,
-    }
-    params.update(siblings)
-    return {"action": "move", "params": params}
+    return duel_bridge._duel_move_retry_example(inner_action, **siblings)
 
 
 def _duel_mcp_error(
@@ -7338,256 +4054,42 @@ def _duel_mcp_error(
     field_errors=None,
     code=-32602,
 ):
-    details = {"error_type": error_type, "retry_hint": retry_hint}
-    if field_errors:
-        details["field_errors"] = list(field_errors)
-    if retry_example:
-        details["retry_example"] = retry_example
-    return _McpError(code, message, details)
+    return duel_bridge._duel_mcp_error(
+        message, error_type=error_type, retry_hint=retry_hint, retry_example=retry_example, field_errors=field_errors, code=code,
+        _McpError=_McpError,
+    )
 
 
 def _duel_compact_field_errors(data):
-    if not isinstance(data, dict):
-        return []
-    raw = data.get("details")
-    if raw is None:
-        raw = data.get("detail")
-    if raw is None:
-        return []
-    items = raw if isinstance(raw, list) else [raw]
-    compact = []
-    for item in items:
-        if isinstance(item, dict):
-            field = item.get("field")
-            if not field and isinstance(item.get("loc"), (list, tuple)):
-                field = ".".join(
-                    str(part) for part in item["loc"] if part != "body"
-                )
-            message = item.get("message") or item.get("msg") or item.get("type")
-            if field and message:
-                value = f"{field}: {message}"
-            elif field:
-                value = str(field)
-            elif message:
-                value = str(message)
-            else:
-                value = json.dumps(
-                    item, ensure_ascii=False, separators=(",", ":")
-                )
-        else:
-            value = str(item)
-        if value and value not in compact:
-            compact.append(value)
-    return compact
+    return duel_bridge._duel_compact_field_errors(
+        data,
+        json=json,
+    )
 
 
 def _duel_backend_message(status_code, data, field_errors):
-    if isinstance(data, dict):
-        message = data.get("message")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
-        detail = data.get("detail")
-        if isinstance(detail, str) and detail.strip():
-            return detail.strip()
-    if field_errors:
-        return "duel 请求字段无效"
-    return f"duel 后端错误 HTTP {status_code}"
+    return duel_bridge._duel_backend_message(status_code, data, field_errors)
 
 
 def _duel_move_field_diagnostics(message, payload, field_errors):
-    move = payload.get("move") if isinstance(payload, dict) else None
-    if not isinstance(move, dict):
-        return field_errors, [], []
-    mentioned = {
-        field for field in _DUEL_KNOWN_MOVE_FIELDS
-        if re.search(
-            rf"(?<![A-Za-z0-9_]){re.escape(field)}(?![A-Za-z0-9_])",
-            message,
-        )
-    }
-    if "牌型提示" in message:
-        mentioned.update({"pattern_type", "pattern_label"})
-    required_alternative = "必须提供" in message and bool(mentioned)
-    if not mentioned or not (
-        required_alternative
-        or any(
-            marker in message for marker in (
-                "只接受", "只能提交", "包含未知字段", "未发布的字段",
-            )
-        )
-    ):
-        return field_errors, [], []
-    actual = set(move)
-    if required_alternative:
-        alternatives = sorted(mentioned - actual)
-        enriched = list(field_errors)
-        if alternatives:
-            value = f"move.{'/'.join(alternatives)}: 至少一个必填"
-            if value not in enriched:
-                enriched.append(value)
-        return enriched, alternatives, []
-    optional = {
-        field for field in mentioned
-        if re.search(rf"可选[^\u3002；]*{re.escape(field)}", message)
-    }
-    missing = sorted(mentioned - actual - optional)
-    extra = sorted(actual - mentioned)
-    enriched = list(field_errors)
-    for field in missing:
-        value = f"move.{field}: 缺失"
-        if value not in enriched:
-            enriched.append(value)
-    for field in extra:
-        value = f"move.{field}: 不接受"
-        if value not in enriched:
-            enriched.append(value)
-    return enriched, missing, extra
+    return duel_bridge._duel_move_field_diagnostics(
+        message, payload, field_errors,
+        _DUEL_KNOWN_MOVE_FIELDS=_DUEL_KNOWN_MOVE_FIELDS,
+        re=re,
+    )
 
 
 def _duel_backend_mcp_error(status_code, data, payload):
-    field_errors = _duel_compact_field_errors(data)
-    message = _duel_backend_message(status_code, data, field_errors)
-    field_errors, missing_move_fields, extra_move_fields = (
-        _duel_move_field_diagnostics(message, payload, field_errors)
+    return duel_bridge._duel_backend_mcp_error(
+        status_code, data, payload,
+        _McpError=_McpError,
+        _duel_backend_message=_duel_backend_message,
+        _duel_compact_field_errors=_duel_compact_field_errors,
+        _duel_mcp_error=_duel_mcp_error,
+        _duel_move_field_diagnostics=_duel_move_field_diagnostics,
+        _duel_move_retry_example=_duel_move_retry_example,
+        _duel_state_retry_example=_duel_state_retry_example,
     )
-    combined = " ".join([message, *field_errors]).lower()
-    action = payload.get("action") if isinstance(payload, dict) else None
-    is_move = action == "move"
-    room_id = payload.get("room_id") if isinstance(payload, dict) else None
-    state_example = _duel_state_retry_example(full_state=True)
-    if room_id:
-        state_example["params"]["room_id"] = room_id
-
-    if is_move and status_code == 409 and (
-        "revision" in combined
-        or "版本" in combined
-        or "已变化" in combined
-        or "过期" in combined
-    ):
-        return _duel_mcp_error(
-            message,
-            error_type="stale_revision",
-            field_errors=field_errors,
-            retry_hint="先 state 取最新局面和 revision，重新决策；别重放旧 move。",
-            retry_example=state_example,
-        )
-
-    if is_move and any(marker in combined for marker in (
-        "还没轮到你", "当前不是", "行动权属于", "当前行动者",
-        "not your turn",
-    )):
-        wait_example = _duel_state_retry_example(wait=True)
-        if room_id:
-            wait_example["params"]["room_id"] = room_id
-        return _duel_mcp_error(
-            message,
-            error_type="not_your_turn",
-            field_errors=field_errors,
-            retry_hint="用 state(wait=true) 等待；别重试同一 move。",
-            retry_example=wait_example,
-        )
-
-    if "full_state" in combined:
-        return _duel_mcp_error(
-            message,
-            error_type="full_state_action",
-            field_errors=field_errors,
-            retry_hint="full_state 只用于 state，放 params.full_state。",
-            retry_example=state_example,
-        )
-
-    if "wait" in combined:
-        wait_example = _duel_state_retry_example(wait=True)
-        if room_id:
-            wait_example["params"]["room_id"] = room_id
-        return _duel_mcp_error(
-            message,
-            error_type="wait_usage",
-            field_errors=field_errors,
-            retry_hint="wait 放 params，与 move 同级；仅 state/move 使用 true/false。",
-            retry_example=wait_example,
-        )
-
-    revision_missing = any(
-        "revision" in item.lower()
-        and any(marker in item.lower() for marker in ("required", "必填", "缺失"))
-        for item in field_errors
-    ) or any(marker in combined for marker in (
-        "必须携带 revision", "revision 必填", "缺少 revision",
-    ))
-    if is_move and revision_missing:
-        inner_action = (
-            payload.get("move", {}).get("action", "roll")
-            if isinstance(payload.get("move"), dict) else "roll"
-        )
-        return _duel_mcp_error(
-            message,
-            error_type="missing_revision",
-            field_errors=field_errors,
-            retry_hint="优先用最近成功响应的 revision；没有时才 state，别每步先 state。",
-            retry_example=_duel_move_retry_example(inner_action),
-        )
-
-    if is_move and (
-        extra_move_fields
-        or any(marker in combined for marker in (
-            "未知字段", "未发布的字段", "不得提交", "不接受此字段",
-            "extra inputs are not permitted",
-        ))
-    ):
-        return _duel_mcp_error(
-            message,
-            error_type="extra_move_fields",
-            field_errors=field_errors,
-            retry_hint="move 不要附加服务端未发布字段；按最新 legal_actions/legal_moves 原样选。",
-            retry_example=state_example,
-        )
-
-    required_move_error = any(
-        item.lower().startswith("move")
-        and any(
-            marker in item.lower() for marker in ("required", "必填", "缺失")
-        )
-        for item in field_errors
-    )
-    if is_move and (
-        missing_move_fields
-        or required_move_error
-        or any(
-            marker in combined for marker in ("缺少字段", "需要 move 对象")
-        )
-    ):
-        return _duel_mcp_error(
-            message,
-            error_type="missing_move_fields",
-            field_errors=field_errors,
-            retry_hint="从最新 legal_actions/legal_moves 选完整动作，不要自行删字段。",
-            retry_example=state_example,
-        )
-
-    if is_move and any(marker in combined for marker in (
-        "legal_actions", "legal_moves", "authoritative", "权威动作",
-        "权威合法行动", "该动作不在", "该行动不在", "该走法不合法",
-        "服务端当前未发布", "服务端本次发布", "当前必须先",
-        "当前没有待执行", "无效落子",
-    )):
-        return _duel_mcp_error(
-            message,
-            error_type="not_authoritative",
-            field_errors=field_errors,
-            retry_hint="按最新 legal_actions/legal_moves 重新选；不要推理未发布动作。",
-            retry_example=state_example,
-        )
-
-    if is_move and status_code in {400, 409, 422}:
-        return _duel_mcp_error(
-            message,
-            error_type="invalid_request",
-            field_errors=field_errors,
-            retry_hint="按错误信息修正后重试。",
-        )
-    code = -32602 if status_code < 500 else -32603
-    return _McpError(code, message)
 
 
 def _prepare_duel_payload(
@@ -7597,249 +4099,29 @@ def _prepare_duel_payload(
     trusted_player_id=None,
     trusted_display_name=None,
 ):
-    # Models sometimes attach the optional table message to the game action.
-    # Keep game validators authoritative: lift only this known MCP field and
-    # leave every other move key untouched so malformed actions still fail.
-    if arguments.get("action") == "move":
-        move = arguments.get("move")
-        if isinstance(move, dict) and "message" in move:
-            normalized_arguments = dict(arguments)
-            normalized_move = dict(move)
-            nested_message = normalized_move.pop("message")
-            normalized_arguments["move"] = normalized_move
-            # An explicit sibling value wins on conflict; never send both.
-            if "message" not in normalized_arguments:
-                normalized_arguments["message"] = nested_message
-            arguments = normalized_arguments
-    action = arguments.get("action")
-    action_fields = {
-        "catalog": set(),
-        "rooms": {"include_terminal", "limit", "offset"},
-        "new": {
-            "game_type", "mode", "stake",
-            "target_player_count", "fill_with_npcs",
-        },
-        "rematch": {"room_id"},
-        "invite": {"game_type", "target_player_count", "stake", "timeout_takeover", "timeout_takeover_seconds"},
-        "start": {"room_id", "fill_with_npcs"},
-        "chat": {"room_id", "message"},
-        "reclaim": {"room_id"},
-        "join": {"room_id", "message", "invite_code"},
-        "accept": {"room_id"},
-        "reject": {"room_id"},
-        "move": {"room_id", "move", "revision", "wait", "message"},
-        "state": {"room_id", "wait", "full_state", "message", "move"},
-        "cancel_wait": {"room_id"},
-        "resign": {"room_id", "message"},
-        "leave": {"room_id", "message"},
-    }
-    if action not in {*action_fields, "chips"}:
-        inner_action = action if isinstance(action, str) and action else "roll"
-        raise _duel_mcp_error(
-            f'duel 外层 action="{inner_action}" 无效',
-            error_type="outer_action",
-            retry_hint='外层 action 改为 "move"；游戏动作放 params.move.action。',
-            retry_example=_duel_move_retry_example(inner_action),
-        )
-    if action == "cancel_wait" and not re.fullmatch(r"[A-Za-z0-9]{8}", str(arguments.get("room_id") or "").strip()):
-        raise _McpError(-32602, "cancel_wait 需要有效的 8 位 room_id")
-    if "full_state" in arguments and action != "state":
-        raise _duel_mcp_error(
-            "full_state 不适用于当前 duel action",
-            error_type="full_state_action",
-            field_errors=["full_state: 仅 state 支持"],
-            retry_hint="full_state 只用于 state，放 params.full_state。",
-            retry_example=_duel_state_retry_example(full_state=True),
-        )
-    if "wait" in arguments and action not in {"move", "state"}:
-        raise _duel_mcp_error(
-            "wait 不适用于当前 duel action",
-            error_type="wait_usage",
-            field_errors=["wait: 仅 state/move 支持"],
-            retry_hint="wait 放 params，与 move 同级；仅 state/move 使用。",
-            retry_example=_duel_state_retry_example(wait=True),
-        )
-    if action == "move":
-        move = arguments.get("move")
-        if move is None:
-            raise _duel_mcp_error(
-                "move 动作缺少 move 对象",
-                error_type="missing_move_fields",
-                field_errors=["move: 必填对象"],
-                retry_hint="从最新 legal_actions/legal_moves 选完整动作，不要自行删字段。",
-                retry_example=_duel_state_retry_example(full_state=True),
-            )
-        if isinstance(move, dict):
-            misplaced = [
-                field for field in _DUEL_MOVE_SIBLING_FIELDS
-                if field != "message" and field in move
-            ]
-            if misplaced:
-                field_errors = [
-                    f"move.{field}: 应与 move 同级"
-                    for field in misplaced
-                ]
-                if "full_state" in misplaced:
-                    hint = "full_state 只用于 state 的 params.full_state；其他通用字段与 move 同级。"
-                    example = _duel_state_retry_example(full_state=True)
-                else:
-                    hint = "room_id/revision/wait/message 放 params，与 move 同级；move 只留游戏动作。"
-                    example = _duel_move_retry_example(
-                        move.get("action", "roll"),
-                        **({"wait": True} if "wait" in misplaced else {}),
-                    )
-                raise _duel_mcp_error(
-                    "move 含有层级错误的通用字段",
-                    error_type="misplaced_common_fields",
-                    field_errors=field_errors,
-                    retry_hint=hint,
-                    retry_example=example,
-                )
-        if arguments.get("revision") is None:
-            inner_action = (
-                move.get("action", "roll") if isinstance(move, dict) else "roll"
-            )
-            raise _duel_mcp_error(
-                "move 缺少 revision",
-                error_type="missing_revision",
-                field_errors=["revision: 必填"],
-                retry_hint="优先用最近成功响应的 revision；没有时才 state，别每步先 state。",
-                retry_example=_duel_move_retry_example(inner_action),
-            )
-    if action == "chips":
-        # Split McpPlayBody by chips operation so fields valid for one operation
-        # cannot hitchhike on another one. Identities are injected below.
-        op = arguments.get("op") or "status"
-        chips_fields = {
-            "status": set(),
-            "check_in": set(),
-            "bankruptcy": set(),
-            "ledger": {"limit"},
-            "achievements": set(),
-            "loans": {"loan_action"},
-            "exchange": {"exchange_action"},
-        }
-        allowed_fields = {"action", "player_id", "op"} | chips_fields.get(
-            op, set()
-        )
-        if op == "loans":
-            loan_action = arguments.get("loan_action") or "list"
-            loan_fields = {
-                "list": {"limit"},
-                "create": {
-                    "principal", "daily_rate_micro_percent", "due_date",
-                    "interest_cap_enabled", "idempotency_key",
-                },
-                "accept": {"loan_id", "loan_revision", "idempotency_key"},
-                "reject": {"loan_id", "loan_revision", "idempotency_key"},
-                "counter": {
-                    "loan_id", "loan_revision", "principal",
-                    "daily_rate_micro_percent", "due_date",
-                    "interest_cap_enabled", "idempotency_key",
-                },
-                "withdraw": {"loan_id", "loan_revision", "idempotency_key"},
-                "repay": {"loan_id", "amount", "idempotency_key"},
-            }
-            allowed_fields |= loan_fields.get(loan_action, set())
-        elif op == "exchange":
-            exchange_action = arguments.get("exchange_action") or "list"
-            exchange_fields = {
-                "catalog": set(),
-                "list": {"limit"},
-                "create": {
-                    "item_key", "request_note", "custom_title", "chip_amount",
-                    "idempotency_key",
-                },
-                "confirm": {"request_id", "idempotency_key"},
-                "reject": {"request_id", "idempotency_key"},
-                "withdraw": {"request_id", "idempotency_key"},
-            }
-            allowed_fields |= exchange_fields.get(exchange_action, set())
-    else:
-        allowed_fields = {"action", "player_id"} | action_fields[action]
-    payload = {
-        key: value
-        for key, value in arguments.items()
-        if key in allowed_fields and value is not None
-    }
-    if trusted_display_name is not None and (action == "invite" or (action == "join" and arguments.get("invite_code"))):
-        payload["display_name"] = trusted_display_name
-    if trusted_player_id is not None:
-        # 聚合层认证得到的 canonical AI 身份始终覆盖顶层或 params 自报值。
-        payload["player_id"] = trusted_player_id
-    if force_opponent:
-        # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
-        payload.pop("opponent_id", None)
-        if action in {"new", "join", "chips"} and trusted_opponent_id is not None and not payload.get("invite_code"):
-            payload["opponent_id"] = trusted_opponent_id
-    return payload
+    return duel_bridge._prepare_duel_payload(
+        arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name,
+        _DUEL_MOVE_SIBLING_FIELDS=_DUEL_MOVE_SIBLING_FIELDS,
+        _McpError=_McpError,
+        _duel_mcp_error=_duel_mcp_error,
+        _duel_move_retry_example=_duel_move_retry_example,
+        _duel_state_retry_example=_duel_state_retry_example,
+        re=re,
+    )
 
 
 def _annotate_duel_wait_followup(response, *, action):
-    """Make request-bound wait continuation explicit without pretending to push."""
-    if not isinstance(response, dict):
-        return response
-    room_id = response.get("room_id")
-    if room_id is None and isinstance(response.get("room"), dict):
-        room_id = response["room"].get("room_id")
-    if room_id in {None, ""}:
-        return response
-
-    status = response.get("status")
-    pending = (
-        action in {"new", "rematch", "join", "accept"}
-        and status in {"pending", "waiting"}
-    )
-    wait_ended = status == "still_waiting"
-    wait_downgraded = response.get("wait_downgraded") is True
-    opponent_turn = (
-        action in {"move", "state"}
-        and status == "playing"
-        and response.get("your_turn") is False
-    )
-    if not (pending or wait_ended or wait_downgraded or opponent_turn):
-        return response
-
-    annotated = dict(response)
-    annotated["wait_scope"] = "current_request_only"
-    annotated["next_call"] = {
-        "game": "duel",
-        "action": "state",
-        "params": {"room_id": str(room_id), "wait": True},
-    }
-    if pending:
-        annotated["wait_hint"] = (
-            "房间尚未轮到你；请不要结束当前回复，立即执行 next_call 开始请求内挂等。"
-            "本次请求结束后服务端不能主动唤醒宿主。"
-        )
-    elif wait_ended:
-        annotated["wait_hint"] = (
-            "本次请求内挂等已到上限。当前回复若仍可继续，请立即再次执行 next_call；"
-            "否则只能等宿主下一次请求时检查未读状态。"
-        )
-    elif wait_downgraded:
-        annotated["wait_hint"] = (
-            "等待容量暂满，动作结果已保留；请执行 next_call 重试挂等。"
-        )
-    else:
-        annotated["wait_hint"] = (
-            "当前轮到对方；请执行 next_call，在同一工具请求内等待对方行动。"
-        )
-    return annotated
+    return duel_bridge._annotate_duel_wait_followup(response, action=action)
 
 
 def _request_duel_backend(payload):
-    try:
-        resp = httpx.post(f"{DUEL_BASE}/mcp/play", json=payload, timeout=55)
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"duel 后端连接失败：{exc}") from exc
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        raise _McpError(-32603, "duel 后端返回非 JSON 响应") from exc
-    if resp.status_code >= 400:
-        raise _duel_backend_mcp_error(resp.status_code, data, payload)
-    return data
+    return duel_bridge._request_duel_backend(
+        payload,
+        DUEL_BASE=DUEL_BASE,
+        _McpError=_McpError,
+        _duel_backend_mcp_error=_duel_backend_mcp_error,
+        httpx=httpx,
+    )
 
 
 def _play_duel(
@@ -7849,31 +4131,14 @@ def _play_duel(
     trusted_player_id=None,
     trusted_display_name=None,
 ):
-    payload = _prepare_duel_payload(
-        arguments,
-        trusted_opponent_id=trusted_opponent_id,
-        force_opponent=force_opponent,
-        trusted_player_id=trusted_player_id,
-        trusted_display_name=trusted_display_name,
+    return duel_bridge._play_duel(
+        arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name,
+        _annotate_duel_wait_followup=_annotate_duel_wait_followup,
+        _prepare_duel_payload=_prepare_duel_payload,
+        _request_duel_backend=_request_duel_backend,
+        duel_wait_control=duel_wait_control,
+        re=re,
     )
-    duel_wait_control.begin(payload)
-    try:
-        response = _request_duel_backend(payload)
-    except Exception:
-        cancelled = duel_wait_control.finish(payload)
-        if cancelled is not None:
-            return cancelled
-        raise
-    except BaseException:
-        duel_wait_control.finish(payload)
-        raise
-    # MCP has no browser origin to resolve a relative human invitation link.
-    for item in (response, response.get("room")):
-        if isinstance(item, dict) and re.fullmatch(r"/duel/\?invite=[A-F0-9]{12}", str(item.get("invite_link", ""))):
-            item["invite_link"] = "https://toy.cedarstar.org" + item["invite_link"]
-    return duel_wait_control.finish(payload, _annotate_duel_wait_followup(
-        response, action=payload.get("action")
-    ))
 
 
 _DUEL_GATEWAY_TICKETS = {}
@@ -7881,152 +4146,90 @@ _DUEL_GATEWAY_TICKETS_LOCK = Lock()
 
 
 def _mcp_tool_text_result(request_id, text, *, is_error=False):
-    return _json_rpc_result(
-        request_id,
-        {
-            "content": [{"type": "text", "text": text}],
-            "isError": is_error,
-        },
+    return duel_bridge._mcp_tool_text_result(
+        request_id, text, is_error=is_error,
+        _json_rpc_result=_json_rpc_result,
     )
 
 
 def _prune_duel_gateway_tickets(now):
-    expired = [
-        ticket
-        for ticket, item in _DUEL_GATEWAY_TICKETS.items()
-        if now - item[0] >= DUEL_GATEWAY_TICKET_TTL_SECONDS
-    ]
-    for ticket in expired:
-        item = _DUEL_GATEWAY_TICKETS.pop(ticket, None)
-        duel_wait_control.finish(item[2].backend_payload)
+    return duel_bridge._prune_duel_gateway_tickets(
+        now,
+        DUEL_GATEWAY_TICKET_TTL_SECONDS=DUEL_GATEWAY_TICKET_TTL_SECONDS,
+        _DUEL_GATEWAY_TICKETS=_DUEL_GATEWAY_TICKETS,
+        duel_wait_control=duel_wait_control,
+    )
 
 
 def _store_duel_gateway_ticket(request_id, prepared):
-    now = time.monotonic()
-    with _DUEL_GATEWAY_TICKETS_LOCK:
-        _prune_duel_gateway_tickets(now)
-        if len(_DUEL_GATEWAY_TICKETS) >= DUEL_GATEWAY_MAX_TICKETS:
-            raise _McpError(-32603, "duel async gateway 暂时繁忙，请稍后重试")
-        ticket = secrets.token_urlsafe(32)
-        duel_wait_control.begin(prepared.backend_payload)
-        _DUEL_GATEWAY_TICKETS[ticket] = (now, request_id, prepared)
-    return ticket
+    return duel_bridge._store_duel_gateway_ticket(
+        request_id, prepared,
+        DUEL_GATEWAY_MAX_TICKETS=DUEL_GATEWAY_MAX_TICKETS,
+        _DUEL_GATEWAY_TICKETS=_DUEL_GATEWAY_TICKETS,
+        _DUEL_GATEWAY_TICKETS_LOCK=_DUEL_GATEWAY_TICKETS_LOCK,
+        _McpError=_McpError,
+        _prune_duel_gateway_tickets=_prune_duel_gateway_tickets,
+        duel_wait_control=duel_wait_control,
+        secrets=secrets,
+        time=time,
+    )
 
 
 def _consume_duel_gateway_ticket(ticket):
-    now = time.monotonic()
-    with _DUEL_GATEWAY_TICKETS_LOCK:
-        item = _DUEL_GATEWAY_TICKETS.pop(str(ticket or ""), None)
-        _prune_duel_gateway_tickets(now)
-    if item is None or now - item[0] >= DUEL_GATEWAY_TICKET_TTL_SECONDS:
-        if item is not None:
-            duel_wait_control.finish(item[2].backend_payload)
-        raise _McpError(-32603, "duel async gateway 请求凭据已失效")
-    return item[1], item[2]
+    return duel_bridge._consume_duel_gateway_ticket(
+        ticket,
+        DUEL_GATEWAY_TICKET_TTL_SECONDS=DUEL_GATEWAY_TICKET_TTL_SECONDS,
+        _DUEL_GATEWAY_TICKETS=_DUEL_GATEWAY_TICKETS,
+        _DUEL_GATEWAY_TICKETS_LOCK=_DUEL_GATEWAY_TICKETS_LOCK,
+        _McpError=_McpError,
+        _prune_duel_gateway_tickets=_prune_duel_gateway_tickets,
+        duel_wait_control=duel_wait_control,
+        time=time,
+    )
 
 
 def _discard_duel_gateway_ticket(ticket):
-    now = time.monotonic()
-    with _DUEL_GATEWAY_TICKETS_LOCK:
-        removed = _DUEL_GATEWAY_TICKETS.pop(str(ticket or ""), None)
-        _prune_duel_gateway_tickets(now)
-    if removed is not None:
-        duel_wait_control.finish(removed[2].backend_payload)
-    return removed is not None
+    return duel_bridge._discard_duel_gateway_ticket(
+        ticket,
+        _DUEL_GATEWAY_TICKETS=_DUEL_GATEWAY_TICKETS,
+        _DUEL_GATEWAY_TICKETS_LOCK=_DUEL_GATEWAY_TICKETS_LOCK,
+        _prune_duel_gateway_tickets=_prune_duel_gateway_tickets,
+        duel_wait_control=duel_wait_control,
+        time=time,
+    )
 
 
 def _duel_response_from_gateway_completion(completion, backend_payload=None):
-    if not isinstance(completion, dict):
-        raise _McpError(-32603, "duel async gateway 返回格式无效")
-    kind = completion.get("kind")
-    if kind == "transport_error":
-        detail = str(completion.get("message") or "unknown transport error")
-        raise _McpError(-32603, f"duel 后端连接失败：{detail}")
-    if kind == "invalid_json":
-        raise _McpError(-32603, "duel 后端返回非 JSON 响应")
-    if kind != "response":
-        raise _McpError(-32603, "duel async gateway 返回格式无效")
-    try:
-        status_code = int(completion.get("status_code"))
-    except (TypeError, ValueError):
-        raise _McpError(-32603, "duel async gateway 返回状态无效") from None
-    data = completion.get("data")
-    if status_code >= 400:
-        raise _duel_backend_mcp_error(
-            status_code, data, backend_payload or {}
-        )
-    return data
+    return duel_bridge._duel_response_from_gateway_completion(
+        completion, backend_payload,
+        _McpError=_McpError,
+        _duel_backend_mcp_error=_duel_backend_mcp_error,
+    )
 
 
 def _finalize_deferred_duel_call(prepared, response):
-    response = _annotate_duel_wait_followup(
-        response, action=prepared.action
+    return duel_bridge._finalize_deferred_duel_call(
+        prepared, response,
+        _annotate_duel_wait_followup=_annotate_duel_wait_followup,
+        _apply_play_slot_hint=_apply_play_slot_hint,
+        _finalize_play_response=_finalize_play_response,
+        json=json,
     )
-    response = _finalize_play_response(
-        response,
-        game=prepared.game,
-        action=prepared.action,
-        account_user=prepared.account_user,
-        account_player_id=prepared.account_player_id,
-        guest_player_id=prepared.guest_player_id,
-        slot=prepared.slot,
-        anti_context=prepared.anti_context,
-        announce_player_id=prepared.announce_player_id,
-        activity_params=prepared.activity_params,
-    )
-    text = json.dumps(response, ensure_ascii=False)
-    return _apply_play_slot_hint(text, prepared.slot_hint)
 
 
 def _prepare_duel_gateway_rpc(payload, *, user_agent="", auth_token=None):
-    request_id = payload.get("id")
-    blocked_message = _blocked_mcp_client_message(user_agent)
-    if blocked_message:
-        logger.info("Blocked evolia client, UA: %s", user_agent)
-        return {
-            "kind": "response",
-            "status_code": 200,
-            "body": _json_rpc_error(request_id, -32000, blocked_message),
-        }
-    try:
-        params = payload.get("params") or {}
-        prepared = _tool_play(
-            params.get("arguments") or {},
-            path_token=auth_token,
-            defer_duel=True,
-        )
-        if not isinstance(prepared, _DeferredDuelCall):
-            return {
-                "kind": "response",
-                "status_code": 200,
-                "body": _mcp_tool_text_result(request_id, prepared),
-            }
-        ticket = _store_duel_gateway_ticket(request_id, prepared)
-        return {
-            "kind": "ready",
-            "ticket": ticket,
-            "backend_payload": prepared.backend_payload,
-        }
-    except _McpError as exc:
-        return {
-            "kind": "response",
-            "status_code": 200,
-            "body": _mcp_tool_text_result(
-                request_id,
-                _duel_mcp_error_text(exc),
-                is_error=True,
-            ),
-        }
-    except Exception as exc:
-        return {
-            "kind": "response",
-            "status_code": 200,
-            "body": _mcp_tool_text_result(
-                request_id,
-                f"【cedartoy服务错误】{exc}",
-                is_error=True,
-            ),
-        }
+    return duel_bridge._prepare_duel_gateway_rpc(
+        payload, user_agent=user_agent, auth_token=auth_token,
+        _DeferredDuelCall=_DeferredDuelCall,
+        _McpError=_McpError,
+        _blocked_mcp_client_message=_blocked_mcp_client_message,
+        _duel_mcp_error_text=_duel_mcp_error_text,
+        _json_rpc_error=_json_rpc_error,
+        _mcp_tool_text_result=_mcp_tool_text_result,
+        _store_duel_gateway_ticket=_store_duel_gateway_ticket,
+        _tool_play=_tool_play,
+        logger=logger,
+    )
 
 
 def _prepare_duel_gateway_request(
@@ -8037,367 +4240,98 @@ def _prepare_duel_gateway_request(
     bearer_token=None,
     client_ip=None,
 ):
-    path, path_token = _mcp_path_and_token(original_path)
-    if path not in _ROOT_MCP_PATHS and not path_token:
-        return {
-            "kind": "response",
-            "status_code": 404,
-            "body": {"error": "not found"},
-        }
-    if "id" not in payload:
-        return {"kind": "response", "status_code": 202, "body": None}
-    rate_identity = f"{_request_rate_limit_identity(path_token, client_ip)}:duel"
-    if not _check_request_rate_limit(
-        rate_identity, max_count=DUEL_REQUEST_RATE_LIMIT_MAX
-    ):
-        return {
-            "kind": "response",
-            "status_code": 429,
-            "body": _json_rpc_error(
-                payload.get("id"),
-                RATE_LIMIT_ERROR_CODE,
-                REQUEST_RATE_LIMIT_MESSAGE,
-            ),
-        }
-    return _prepare_duel_gateway_rpc(
-        payload,
-        user_agent=user_agent,
-        auth_token=path_token or bearer_token,
+    return duel_bridge._prepare_duel_gateway_request(
+        payload, original_path=original_path, user_agent=user_agent, bearer_token=bearer_token, client_ip=client_ip,
+        DUEL_REQUEST_RATE_LIMIT_MAX=DUEL_REQUEST_RATE_LIMIT_MAX,
+        RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+        REQUEST_RATE_LIMIT_MESSAGE=REQUEST_RATE_LIMIT_MESSAGE,
+        _ROOT_MCP_PATHS=_ROOT_MCP_PATHS,
+        _check_request_rate_limit=_check_request_rate_limit,
+        _json_rpc_error=_json_rpc_error,
+        _mcp_path_and_token=_mcp_path_and_token,
+        _prepare_duel_gateway_rpc=_prepare_duel_gateway_rpc,
+        _request_rate_limit_identity=_request_rate_limit_identity,
     )
 
 
 def _finalize_duel_gateway_rpc(ticket, completion):
-    try:
-        request_id, prepared = _consume_duel_gateway_ticket(ticket)
-    except _McpError as exc:
-        return {
-            "ok": False,
-            "status_code": 410,
-            "message": exc.message,
-        }
-    try:
-        response = duel_wait_control.finish(prepared.backend_payload, {}, release=False)
-        if response.get("status") != "wait_cancelled":
-            response = _duel_response_from_gateway_completion(
-                completion, prepared.backend_payload
-            )
-        # Fence already-cancelled responses before gameplay finalization can
-        # consume announcements or record activity; check again after formatting.
-        response = duel_wait_control.finish(prepared.backend_payload, response, release=False)
-        text = _finalize_deferred_duel_call(prepared, response)
-        guarded = duel_wait_control.finish(prepared.backend_payload, response)
-        if guarded is not response:
-            text = json.dumps(guarded, ensure_ascii=False)
-        body = _mcp_tool_text_result(request_id, text)
-    except _McpError as exc:
-        cancelled = duel_wait_control.finish(prepared.backend_payload, release=False)
-        body = _mcp_tool_text_result(
-            request_id,
-            json.dumps(cancelled, ensure_ascii=False) if cancelled else _duel_mcp_error_text(exc),
-            is_error=cancelled is None,
-        )
-    except Exception as exc:
-        cancelled = duel_wait_control.finish(prepared.backend_payload, release=False)
-        body = _mcp_tool_text_result(
-            request_id,
-            json.dumps(cancelled, ensure_ascii=False) if cancelled else f"【cedartoy服务错误】{exc}",
-            is_error=cancelled is None,
-        )
-    finally:
-        duel_wait_control.finish(prepared.backend_payload)
-    return {"ok": True, "status_code": 200, "body": body}
+    return duel_bridge._finalize_duel_gateway_rpc(
+        ticket, completion,
+        _McpError=_McpError,
+        _consume_duel_gateway_ticket=_consume_duel_gateway_ticket,
+        _duel_mcp_error_text=_duel_mcp_error_text,
+        _duel_response_from_gateway_completion=_duel_response_from_gateway_completion,
+        _finalize_deferred_duel_call=_finalize_deferred_duel_call,
+        _mcp_tool_text_result=_mcp_tool_text_result,
+        duel_wait_control=duel_wait_control,
+        json=json,
+    )
 
 
 def _play_garden_cat(arguments, owner_name=None):
-    """Forward the six public actions while stripping all client session identity."""
-    action = arguments.get("action")
-    # _tool_play_inner puts its resolved identity at the top level. Never let a
-    # nested client parameter override that trusted value at the forwarding edge.
-    player_id = arguments.get("player_id")
-    extra = {
-        key: value
-        for key, value in arguments.items()
-        if key not in {"game", "action", "params", "player_id", "session_id"}
-    }
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update(
-            {
-                key: value
-                for key, value in params.items()
-                if key not in {"player_id", "session_id", "slot"}
-            }
-        )
-
-    if action == "export":
-        result = _garden_cat_save_admin("export", player_id=player_id)
-        save_data = result.get("save_data")
-        if not isinstance(save_data, dict):
-            raise _McpError(-32603, "Garden-Cat 存档管理服务未返回 JSON 对象存档")
-        return {
-            "game": "garden_cat",
-            "player_id": player_id,
-            "text": json.dumps(save_data, ensure_ascii=False, indent=2),
-        }
-    if action == "import":
-        save_data = _parse_json_import_save_data(extra.get("save_data"))
-        confirm = extra.get("confirm") is True
-        if _garden_cat_save_summary(player_id) is not None and not confirm:
-            raise _McpError(-32602, "garden_cat 当前槽已有存档；确认覆盖请在 params 传 confirm=true")
-        result = _garden_cat_save_admin(
-            "import",
-            player_id=player_id,
-            save_data=save_data,
-            confirm=confirm,
-        )
-        if result.get("imported") is not True:
-            raise _McpError(-32603, "Garden-Cat 存档管理服务未确认导入成功")
-        return {"game": "garden_cat", "player_id": player_id, "text": "存档已导入。便签板未改动。"}
-
-    headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
-    if isinstance(owner_name, str) and owner_name.strip():
-        headers["X-Garden-Owner-Name"] = urllib.parse.quote(owner_name.strip())
-    if action == "cmd":
-        command = extra.get("command")
-        if not isinstance(command, str) or not command.strip():
-            raise _McpError(-32602, "garden_cat cmd 需要 params.command")
-        method, path, body = "POST", "/api/cmd", {"command": command}
-    elif action == "status":
-        method, path, body = "GET", "/api/status", None
-    elif action == "help":
-        method, path, body = "GET", "/api/help", None
-    elif action == "catalog":
-        method, path, body = "GET", "/api/catalog", None
-    elif action == "new":
-        if extra.get("confirm") is not True:
-            raise _McpError(-32602, "garden_cat new 必须显式传 confirm=true")
-        body = {"confirm": True}
-        if isinstance(extra.get("name"), str):
-            body["name"] = extra["name"]
-        method, path = "POST", "/api/new_game"
-    elif action == "notes":
-        content = extra.get("content")
-        if "content" in extra and not isinstance(content, str):
-            raise _McpError(-32602, "garden_cat notes 写入需要 params.content 字符串")
-        if isinstance(content, str) and content.strip():
-            method, path, body = "POST", "/api/notes", {"content": content}
-        else:
-            page = extra.get("page", 1)
-            if isinstance(page, bool) or not isinstance(page, int) or page < 1:
-                raise _McpError(-32602, "garden_cat notes 的 params.page 必须是正整数")
-            method, path, body = "GET", f"/api/notes?page={page}", None
-    else:
-        raise _McpError(
-            -32602,
-            "未知 garden_cat action；只开放 cmd / status / help / new / catalog / notes / export / import，请先 get_guide(game=\"garden_cat\") 查看用法。",
-        )
-
-    try:
-        resp = httpx.request(method, f"{GARDEN_CAT_BASE}{path}", json=body, headers=headers, timeout=60)
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"garden_cat 后端连接失败：{exc}")
-    try:
-        payload = resp.json()
-    except ValueError:
-        raise _McpError(-32603, "garden_cat 后端返回非 JSON 响应")
-    if resp.status_code >= 400:
-        detail = payload.get("message") if isinstance(payload, dict) else None
-        code = -32602 if resp.status_code < 500 else -32603
-        raise _McpError(code, detail or f"garden_cat 后端错误 HTTP {resp.status_code}")
-    return payload
+    return game_dispatch._play_garden_cat(
+        arguments, owner_name,
+        GARDEN_CAT_BASE=GARDEN_CAT_BASE,
+        _McpError=_McpError,
+        _garden_cat_save_admin=_garden_cat_save_admin,
+        _garden_cat_save_summary=_garden_cat_save_summary,
+        _parse_json_import_save_data=_parse_json_import_save_data,
+        httpx=httpx,
+        json=json,
+        urllib=urllib,
+    )
 
 
 def _play_camping_plaza(arguments):
-    """Forward Camping Plaza's published MCP/game APIs with trusted identity."""
-    action = arguments.get("action")
-    player_id = arguments.get("player_id")
-    extra = {
-        key: value
-        for key, value in arguments.items()
-        if key not in {"game", "action", "params", "player_id", "session_id", "slot"}
-    }
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update(
-            {
-                key: value
-                for key, value in params.items()
-                if key not in {"player_id", "session_id", "slot"}
-            }
-        )
-
-    if action == "export":
-        result = _camping_plaza_save_admin("export", player_id=player_id)
-        save_data = result.get("save_data")
-        if not isinstance(save_data, dict):
-            raise _McpError(-32603, "Camping Plaza 存档管理服务未返回 JSON 对象存档")
-        return {
-            "game": "camping_plaza",
-            "player_id": player_id,
-            "text": json.dumps(save_data, ensure_ascii=False, indent=2),
-        }
-    if action == "import":
-        save_data = _parse_json_import_save_data(extra.get("save_data"))
-        confirm = extra.get("confirm") is True
-        result = _camping_plaza_save_admin(
-            "import",
-            player_id=player_id,
-            save_data=save_data,
-            confirm=confirm,
-        )
-        if result.get("imported") is not True:
-            raise _McpError(-32603, "Camping Plaza 存档管理服务未确认导入成功")
-        return {"game": "camping_plaza", "player_id": player_id, "text": "存档已导入。"}
-
-    query_paths = {
-        "state": "/mcp/state",
-        "actions": "/mcp/actions",
-        "query_growth_projects": "/mcp/query_growth_projects",
-        "query_debt": "/mcp/query_debt",
-        "achievements": "/mcp/achievements",
-    }
-    if action in query_paths:
-        method, path, body = "GET", query_paths[action], None
-    elif action == "set_player_name":
-        name = extra.get("name")
-        if not isinstance(name, str) or not name.strip():
-            raise _McpError(-32602, "set_player_name 需要 params.name")
-        method, path, body = "POST", "/api/player/name", {"name": name.strip()}
-    elif action == "advance_turn":
-        method, path, body = "POST", "/api/turn/advance", {}
-    elif action == "execute_turn_plan":
-        free_actions = extra.get("free_actions", [])
-        decision_actions = extra.get("actions", [])
-        if not isinstance(free_actions, list) or not isinstance(decision_actions, list):
-            raise _McpError(-32602, "execute_turn_plan 的 free_actions/actions 必须是数组")
-        body = {"free_actions": free_actions, "actions": decision_actions}
-        if extra.get("conflict_choice") is not None:
-            body["conflict_choice"] = extra["conflict_choice"]
-        method, path = "POST", "/api/turn/plan"
-    elif action == "submit_day_end_actions":
-        day_end_actions = extra.get("day_end_actions", [])
-        if not isinstance(day_end_actions, list):
-            raise _McpError(-32602, "submit_day_end_actions 的 day_end_actions 必须是数组")
-        method, path, body = "POST", "/api/day/end", {"day_end_actions": day_end_actions}
-    elif action == "start_next_day":
-        method, path, body = "POST", "/api/day/start", {}
-    elif action in {
-        "resolve_temporary_conflict",
-        "repair_tent",
-        "manage_greenery",
-        "improve_service",
-        "clean_tents",
-        "buy_food_package",
-        "purchase_growth_project",
-        "restart_game",
-    }:
-        method, path, body = "POST", "/api/action", {"action": action, "params": extra}
-    else:
-        raise _McpError(
-            -32602,
-            "未知 camping_plaza action；请先 get_guide(game=\"camping_plaza\")，再用 actions 查看当前可执行动作。",
-        )
-
-    headers = {"X-Player-Id": player_id} if isinstance(player_id, str) and player_id else {}
-    try:
-        response = httpx.request(
-            method,
-            f"{CAMPING_PLAZA_BASE}{path}",
-            json=body,
-            headers=headers,
-            timeout=60,
-        )
-    except httpx.HTTPError as exc:
-        raise _McpError(-32603, f"camping_plaza 后端连接失败：{exc}") from exc
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise _McpError(-32603, "camping_plaza 后端返回非 JSON 响应") from exc
-    if response.status_code >= 400:
-        detail = payload.get("detail") if isinstance(payload, dict) else None
-        if isinstance(detail, dict):
-            detail = detail.get("message") or detail.get("error_code")
-        code = -32602 if response.status_code < 500 else -32603
-        raise _McpError(code, detail or f"camping_plaza 后端错误 HTTP {response.status_code}")
-    return payload
+    return game_dispatch._play_camping_plaza(
+        arguments,
+        CAMPING_PLAZA_BASE=CAMPING_PLAZA_BASE,
+        _McpError=_McpError,
+        _camping_plaza_save_admin=_camping_plaza_save_admin,
+        _parse_json_import_save_data=_parse_json_import_save_data,
+        httpx=httpx,
+        json=json,
+    )
 
 
 def _fishing_import(arguments):
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update(params)
-    save_data = extra.get("save_data")
-    if save_data is None:
-        raise _McpError(-32602, "save_data 必填")
-    if isinstance(save_data, str):
-        try:
-            parsed = json.loads(save_data)
-        except (json.JSONDecodeError, ValueError):
-            raise _McpError(-32602, "save_data 不是合法 JSON 字符串")
-        if not isinstance(parsed, dict):
-            raise _McpError(-32602, "save_data 必须是 JSON 对象")
-    elif isinstance(save_data, dict):
-        pass
-    else:
-        raise _McpError(-32602, "save_data 必须是 JSON 对象或 JSON 字符串")
-    serialized = json.dumps(save_data, ensure_ascii=False)
-    if len(serialized.encode("utf-8")) > 128 * 1024:
-        raise _McpError(-32602, "save_data 序列化后超过 128KB")
-    try:
-        return fishing_adapter.play(extra)
-    except VendorCmdError as exc:
-        raise _McpError(-32602, str(exc))
+    return game_dispatch._fishing_import(
+        arguments,
+        VendorCmdError=VendorCmdError,
+        _McpError=_McpError,
+        fishing_adapter=fishing_adapter,
+        json=json,
+    )
 
 
 def _play_vendor_cmd(game, arguments):
-    action = arguments.get("action")
-    extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
-    params = arguments.get("params")
-    if isinstance(params, dict):
-        extra.update(params)
-    extra["action"] = action
-
-    try:
-        if game == "ai_life":
-            return ai_life_adapter.play(extra)
-        if game == "bar":
-            return bar_adapter.play(extra)
-        if game == "leek":
-            return leek_adapter.play(extra)
-        if game == "delve":
-            return delve_adapter.play(extra)
-        if game == "travel":
-            return travel_adapter.play(extra)
-        if game == "nowhere":
-            return nowhere_adapter.play(extra)
-        if game == "arcade":
-            return arcade_adapter.play(extra)
-        if game == "burger":
-            return burger_adapter.play(extra)
-        if game == "crucible_echoes":
-            return crucible_echoes_adapter.play(extra)
-        if game == "fishing":
-            return fishing_adapter.play(extra)
-        if game == "forest":
-            return forest_adapter.play(extra)
-        if game == "moonlit":
-            return moonlit_adapter.play(extra)
-        if game == "imitator_td":
-            return imitator_td_adapter.play(extra)
-        if game == "memoria":
-            return memoria_adapter.play(extra)
-        if game == "white_room":
-            return white_room_adapter.play(extra)
-        if game == "market":
-            return market_adapter.play(extra)
-    except VendorCmdError as exc:
-        raise _McpError(-32602, str(exc))
-    raise _McpError(-32602, "未知游戏")
+    return game_dispatch._play_vendor_cmd(
+        game, arguments,
+        VendorCmdError=VendorCmdError,
+        _McpError=_McpError,
+        ai_life_adapter=ai_life_adapter,
+        arcade_adapter=arcade_adapter,
+        bar_adapter=bar_adapter,
+        burger_adapter=burger_adapter,
+        crucible_echoes_adapter=crucible_echoes_adapter,
+        delve_adapter=delve_adapter,
+        fishing_adapter=fishing_adapter,
+        forest_adapter=forest_adapter,
+        imitator_td_adapter=imitator_td_adapter,
+        leek_adapter=leek_adapter,
+        market_adapter=market_adapter,
+        memoria_adapter=memoria_adapter,
+        moonlit_adapter=moonlit_adapter,
+        nowhere_adapter=nowhere_adapter,
+        travel_adapter=travel_adapter,
+        white_room_adapter=white_room_adapter,
+    )
 
 
 def _json_rpc_result(request_id, result):
-    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+    return web_responses._json_rpc_result(
+        request_id, result,
+    )
 
 
 def _record_web_game_activity(game, method, path, status, raw, user, body=None):
@@ -8514,565 +4448,75 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_POST(self):
-        internal_path = self.path.split("?", 1)[0]
-        if internal_path == "/nowhere" or internal_path.startswith("/nowhere/"):
-            nowhere_web.serve(self, sys.modules[__name__])
-            return
-        if internal_path == "/api/puzzle-box/reveal":
-            self._handle_puzzle_box(reveal=True)
-            return
-        if internal_path == "/_internal/duel-gateway/prepare":
-            self._handle_duel_gateway_prepare()
-            return
-        if internal_path == "/_internal/duel-gateway/finalize":
-            self._handle_duel_gateway_finalize()
-            return
-        if internal_path == "/_internal/duel-gateway/abandon":
-            self._handle_duel_gateway_abandon()
-            return
-
-        if self._is_tarot_post_path(internal_path):
-            self._handle_tarot_post(internal_path)
-            return
-
-        if self._is_soup_path():
-            self._proxy_to_soup()
-            return
-
-        if internal_path.startswith("/detroit/api/"):
-            self._handle_detroit_api("POST", internal_path)
-            return
-
-        _workkk_path = self.path.split("?", 1)[0]
-        if _workkk_path == "/workkk" or _workkk_path.startswith("/workkk/"):
-            self._handle_workkk_proxy("POST")
-            return
-
-        # /gc-view 围观入口已下线（2026-07-27），仅剩外部老链接会命中。
-        if _workkk_path == "/gc-view" or _workkk_path.startswith("/gc-view/"):
-            self._send_json(
-                {"error": "围观入口已下线，请从首页进入花园", "code": 410},
-                status=410,
-            )
-            return
-
-        if _workkk_path == "/garden-cat" or _workkk_path.startswith("/garden-cat/"):
-            self._handle_garden_cat_proxy("POST")
-            return
-
-        if _workkk_path == "/camping-plaza" or _workkk_path.startswith("/camping-plaza/"):
-            self._handle_camping_plaza_proxy("POST")
-            return
-
-        if _workkk_path == "/duel" or _workkk_path.startswith("/duel/"):
-            self._handle_duel_proxy("POST")
-            return
-
-        if _workkk_path == "/eco/api/human_action":
-            self._handle_eco_human_action()
-            return
-
-        if _workkk_path == "/forest/api/action":
-            self._handle_forest_api_action()
-            return
-
-        path, path_token = self._request_path_and_token()
-        client_ip = self._client_ip()
-
-        if path == "/api/operit/session":
-            self._handle_api_operit_session()
-            return
-
-        if path == "/api/operit/bind":
-            self._handle_api_operit_bind()
-            return
-
-        if path == "/api/operit/duel":
-            self._handle_api_operit_duel()
-            return
-
-        if path == "/api/operit/web-ticket":
-            self._handle_api_operit_web_ticket()
-            return
-
-        if path == "/api/auth/login":
-            self._handle_api_login()
-            return
-
-        if path == "/api/auth/register":
-            self._handle_api_register()
-            return
-
-        if path == "/api/auth/avatar":
-            self._handle_api_avatar()
-            return
-
-        if path == "/api/auth/avatar-frames":
-            self._handle_api_avatar_frames(save=True)
-            return
-
-        if path == "/api/auth/login_or_register":
-            self._handle_api_login_or_register()
-            return
-
-        if path == "/api/auth/machine-token":
-            self._handle_api_machine_token()
-            return
-
-        if path == "/api/auth/bind":
-            self._handle_api_bind()
-            return
-
-        if path == "/api/auth/change-password":
-            self._handle_api_change_password()
-            return
-
-        if path == "/api/auth/delete-account":
-            self._handle_api_delete_account()
-            return
-
-        if path == "/api/auth/cancel-delete-account":
-            self._handle_api_cancel_delete_account()
-            return
-
-        if path == "/api/account/email/send-code":
-            self._handle_api_account_email_send()
-            return
-
-        if path == "/api/account/email/confirm":
-            self._handle_api_account_email_confirm()
-            return
-
-        if path in ("/api/auth/recovery/submit", "/api/auth/recovery/query"):
-            self._handle_api_recovery(path)
-            return
-
-        if path == "/api/admin/recovery/review":
-            self._handle_admin_recovery(review=True)
-            return
-
-        if path == "/api/auth/forgot-password":
-            self._handle_api_forgot_password()
-            return
-
-        if path == "/api/auth/forgot-password/reset":
-            self._handle_api_forgot_password_reset()
-            return
-
-        if path == "/api/auth/rename":
-            self._handle_api_rename()
-            return
-
-        if path == "/api/announcements/read":
-            self._handle_api_announcements_read()
-            return
-
-        if path == "/api/announcements/vote":
-            self._handle_api_announcement_vote()
-            return
-
-        if path == "/api/auth/reset-password":
-            self._handle_api_reset_password()
-            return
-
-        if path == "/api/admin/generate-reset-link":
-            self._handle_admin_generate_reset_link()
-            return
-
-        if path == "/api/anti-addiction/settings":
-            self._handle_api_anti_addiction_save()
-            return
-
-        if path == "/api/anti-addiction/reset":
-            self._handle_api_anti_addiction_reset()
-            return
-
-        if path == "/api/arcade/chips":
-            self._handle_api_arcade_grant()
-            return
-
-        human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity|sins_virtues)/(start|answer_batch|result|compare)", path)
-        if human_test_match:
-            if human_test_match.group(2) == "compare" and human_test_match.group(1) not in {"love", "ecr"}:
-                self._drain_body()
-                self._send_json({"error": "not found"}, status=404)
-                return
-            self._handle_human_test_api(*human_test_match.groups())
-            return
-
-        if path.startswith("/api/admin/users/") and path.endswith("/reset-password"):
-            self._handle_admin_reset_password(path)
-            return
-
-        if path not in (*_ROOT_MCP_PATHS, "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues") and not path_token:
-            self._drain_body()
-            self._send_json({"error": "not found"}, status=404)
-            return
-
-        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
-            try:
-                raw_body = self._read_chunked_body()
-            except ValueError:
-                self._send_json(_json_rpc_error(None, -32700, "Parse error"), status=400)
-                return
-        else:
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                self._send_json(_json_rpc_error(None, -32700, "Invalid Content-Length"), status=400)
-                return
-
-            raw_body = self.rfile.read(length)
-        try:
-            payload = json.loads(raw_body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            self._send_json(_json_rpc_error(None, -32700, "Parse error"), status=400)
-            return
-
-        if not isinstance(payload, dict):
-            self._send_json(_json_rpc_error(None, -32600, "Invalid Request"), status=400)
-            return
-
-        if path not in {"/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues"} and (path in _ROOT_MCP_PATHS or path_token) and "id" not in payload:
-            self._send_empty(status=202)
-            return
-
-        rate_identity = self._request_rate_limit_identity(path_token, client_ip)
-        rate_limit_max = REQUEST_RATE_LIMIT_MAX
-        if _is_duel_play_payload(payload):
-            # Duel 官方网关的整段挂等只在 prepare 计一次独立配额，
-            # 内部 30 秒心跳不再回到此处；身份仍沿用同一 token/IP。
-            rate_identity = f"{rate_identity}:duel"
-            rate_limit_max = DUEL_REQUEST_RATE_LIMIT_MAX
-        if not _check_request_rate_limit(rate_identity, max_count=rate_limit_max):
-            self._send_json(_json_rpc_error(payload.get("id"), RATE_LIMIT_ERROR_CODE, REQUEST_RATE_LIMIT_MESSAGE), status=429)
-            return
-
-        if path == "/mbti":
-            response = handle_mbti_mcp(_guestify_mcp_payload(payload))
-        elif path == "/enneagram":
-            response = handle_enneagram_mcp(_guestify_mcp_payload(payload))
-        elif path == "/dnd":
-            response = handle_dnd_mcp(_guestify_mcp_payload(payload))
-        elif path == "/love":
-            response = handle_love_mcp(_guestify_mcp_payload(payload))
-        elif path == "/ecr":
-            response = handle_ecr_mcp(_guestify_mcp_payload(payload))
-        elif path == "/humanity":
-            response = handle_humanity_mcp(_guestify_mcp_payload(payload))
-        elif path == "/sins_virtues":
-            response = handle_sins_virtues_mcp(_guestify_mcp_payload(payload))
-        else:
-            response = _handle_root_mcp(
-                payload,
-                user_agent=self.headers.get("User-Agent", ""),
-                path_token=path_token,
-                client_ip=client_ip,
-                bearer_token=_extract_bearer(self.headers),
-            )
-        self._send_json(response)
+        return http_handler.do_POST(
+            self,
+            __name__=__name__,
+            DUEL_REQUEST_RATE_LIMIT_MAX=DUEL_REQUEST_RATE_LIMIT_MAX,
+            RATE_LIMIT_ERROR_CODE=RATE_LIMIT_ERROR_CODE,
+            REQUEST_RATE_LIMIT_MAX=REQUEST_RATE_LIMIT_MAX,
+            REQUEST_RATE_LIMIT_MESSAGE=REQUEST_RATE_LIMIT_MESSAGE,
+            _ROOT_MCP_PATHS=_ROOT_MCP_PATHS,
+            _check_request_rate_limit=_check_request_rate_limit,
+            _extract_bearer=_extract_bearer,
+            _guestify_mcp_payload=_guestify_mcp_payload,
+            _handle_root_mcp=_handle_root_mcp,
+            _is_duel_play_payload=_is_duel_play_payload,
+            _json_rpc_error=_json_rpc_error,
+            handle_dnd_mcp=handle_dnd_mcp,
+            handle_ecr_mcp=handle_ecr_mcp,
+            handle_enneagram_mcp=handle_enneagram_mcp,
+            handle_humanity_mcp=handle_humanity_mcp,
+            handle_love_mcp=handle_love_mcp,
+            handle_mbti_mcp=handle_mbti_mcp,
+            handle_sins_virtues_mcp=handle_sins_virtues_mcp,
+            json=json,
+            nowhere_web=nowhere_web,
+            re=re,
+            sys=sys,
+        )
 
     def do_GET(self):
-        if self.path.split("?", 1)[0] == "/nowhere" or self.path.startswith("/nowhere/"):
-            nowhere_web.serve(self, sys.modules[__name__])
-            return
-        if self._is_soup_path():
-            self._proxy_to_soup()
-            return
-
-        path, _, query_string = self.path.partition("?")
-        params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
-
-        if path.startswith("/tutorials/"):
-            tutorial_root = Path("/var/www/tutorials").resolve()
-            relative = urllib.parse.unquote(path.removeprefix("/tutorials/"))
-            try:
-                tutorial_path = (tutorial_root / relative).resolve()
-                tutorial_path.relative_to(tutorial_root)
-            except (OSError, RuntimeError, ValueError):
-                self._send_json({"error": "not found"}, status=404)
-                return
-            if tutorial_path.suffix.lower() != ".html" or not tutorial_path.is_file():
-                self._send_json({"error": "not found"}, status=404)
-                return
-            self._send_html_file(
-                tutorial_path,
-                extra_headers={"Cache-Control": "public, max-age=300"},
-            )
-            return
-
-        if path == "/detroit" or path.startswith("/detroit/"):
-            self._handle_detroit_get(path, params)
-            return
-
-        if self._is_tarot_get_path(path):
-            self._handle_tarot_get(path, params)
-            return
-
-        if path == "/workkk" or path.startswith("/workkk/"):
-            self._handle_workkk_proxy("GET")
-            return
-
-
-        # /gc-view 围观入口已下线（2026-07-27），仅剩外部老链接会命中。
-        if path == "/gc-view" or path.startswith("/gc-view/"):
-            self._send_json(
-                {"error": "围观入口已下线，请从首页进入花园", "code": 410},
-                status=410,
-            )
-            return
-
-        if path == "/garden-cat" or path.startswith("/garden-cat/"):
-            self._handle_garden_cat_proxy("GET")
-            return
-
-        if path == "/camping-plaza" or path.startswith("/camping-plaza/"):
-            self._handle_camping_plaza_proxy("GET")
-            return
-
-        if path == "/ai-life" or path.startswith("/ai-life/"):
-            self._handle_ai_life_get(path, params)
-            return
-
-        if path.startswith("/static/games/") and _duel_proxy_allowed("GET", path):
-            self._proxy_to_duel("GET", path, query_string)
-            return
-
-        if path == "/duel" or path.startswith("/duel/"):
-            self._handle_duel_proxy("GET")
-            return
-
-        if self._is_mcp_event_stream_get(path):
-            self._send_json(
-                {
-                    "error": "GET text/event-stream is not supported",
-                    "message": "本服务端不提供 GET 流；请用 POST 发送 JSON-RPC。",
-                },
-                status=405,
-                extra_headers={"Allow": "POST"},
-            )
-            return
-
-        if path == "/":
-            self._send_tarot_homepage()
-            return
-
-        if path == "/admin":
-            self._send_html_file(ADMIN_INDEX_PATH)
-            return
-
-        if path == "/eco":
-            self._send_html_file(ECO_INDEX_PATH)
-            return
-
-        if path == "/moonlit/freshness":
-            self._handle_moonlit_freshness(params)
-            return
-
-        if path in {"/moonlit", "/moonlit/"}:
-            self._handle_moonlit_page(params)
-            return
-
-        if path in {"/forest", "/forest/"}:
-            self._handle_forest_page(params)
-            return
-
-        if path in ("/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues") and not params.get("action"):
-            self._send_human_test_page(path.removeprefix("/"))
-            return
-
-        if path.startswith("/eco/assets/"):
-            self._send_eco_asset(path)
-            return
-
-        if path.startswith("/assets/icons/"):
-            self._send_icon_asset(path)
-            return
-
-        if path == "/health":
-            self._send_json({"ok": True, "service": "cedartoy", "endpoints": ["https://toy.cedarstar.org/mbti", "https://toy.cedarstar.org/enneagram", "https://toy.cedarstar.org/dnd", "https://toy.cedarstar.org/love", "https://toy.cedarstar.org/ecr", "https://toy.cedarstar.org/humanity", "https://toy.cedarstar.org/sins_virtues", "https://toy.cedarstar.org/"]})
-            return
-
-        if path == "/api/games/stats":
-            self._send_json(_public_game_stats(), extra_headers={"Cache-Control": "no-cache, no-store"})
-            return
-
-        if path == "/api/memoria/guides":
-            include_content = (params.get("confirm") or [""])[0] == "human"
-            self._send_json(_memoria_human_guides(include_content=include_content), extra_headers={"Cache-Control": "no-cache, no-store"})
-            return
-
-        if path == "/api/puzzle-box/progress":
-            self._handle_puzzle_box(params=params)
-            return
-
-        if path == "/api/auth/me":
-            self._handle_api_me()
-            return
-
-        if path == "/api/auth/reset-password":
-            self._handle_api_reset_password_info(params)
-            return
-
-        if path == "/api/auth/avatar-frames":
-            self._handle_api_avatar_frames()
-            return
-
-        if path == "/api/auth/avatar":
-            self._send_json({
-                "supported": True,
-                "type": "emoji",
-                "max_codepoints": AVATAR_MAX_CODEPOINTS,
-                "max_utf8_bytes": AVATAR_MAX_UTF8_BYTES,
-                "defaults": {"human": DEFAULT_HUMAN_AVATAR, "ai": DEFAULT_AI_AVATAR},
-            })
-            return
-
-        if path == "/api/auth/deletion":
-            self._handle_api_deletion_status()
-            return
-
-        if path == "/api/account/email":
-            self._handle_api_account_email_status()
-            return
-
-        if path == "/api/announcements":
-            self._handle_api_announcements()
-            return
-
-        if path == "/api/nowhere/saves":
-            self._handle_api_nowhere_saves()
-            return
-
-        if path == "/api/auth/saves":
-            self._handle_api_auth_saves()
-            return
-
-        if path == "/api/auth/history":
-            self._handle_api_auth_history()
-            return
-
-        if path == "/api/garden-cat/gardens":
-            self._handle_api_garden_cat_gardens()
-            return
-
-        if path == "/api/forest/saves":
-            self._handle_api_forest_saves()
-            return
-
-        if path == "/forest/api/state":
-            self._handle_forest_api_state(params)
-            return
-
-        if path == "/api/eco/ponds":
-            self._handle_api_eco_ponds()
-            return
-
-        if path == "/api/anti-addiction/machines":
-            self._handle_api_anti_addiction_machines()
-            return
-
-        if path == "/api/arcade/chips":
-            self._handle_api_arcade_status(params)
-            return
-
-        human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity|sins_virtues)/result", path)
-        if human_test_match:
-            self._handle_human_test_api(human_test_match.group(1), "result", params=params)
-            return
-
-        if path == "/eco/api/state":
-            self._handle_eco_api("state", params)
-            return
-
-        if path == "/eco/api/codex":
-            self._handle_eco_api("codex", params)
-            return
-
-        if path == "/eco/api/folio":
-            self._handle_eco_api("folio", params)
-            return
-
-        if path == "/eco/api/annals":
-            self._handle_eco_api("annals", params)
-            return
-
-        if path.startswith("/eco/api/species/"):
-            raw_name = path.removeprefix("/eco/api/species/")
-            self._handle_eco_api("species", params, species_name=urllib.parse.unquote(raw_name))
-            return
-
-        if path == "/api/admin/activity":
-            self._handle_admin_activity(params)
-            return
-
-        if path == "/api/admin/recovery":
-            self._handle_admin_recovery()
-            return
-
-        if path == "/api/admin/users":
-            self._handle_admin_users()
-            return
-
-        if path == "/mbti":
-            self._handle_get_mbti(params)
-            return
-
-        if path == "/enneagram":
-            self._handle_get_enneagram(params)
-            return
-
-        if path == "/dnd":
-            self._handle_get_dnd(params)
-            return
-
-        self._send_json({"error": "not found"}, status=404)
+        return http_handler.do_GET(
+            self,
+            __name__=__name__,
+            ADMIN_INDEX_PATH=ADMIN_INDEX_PATH,
+            AVATAR_MAX_CODEPOINTS=AVATAR_MAX_CODEPOINTS,
+            AVATAR_MAX_UTF8_BYTES=AVATAR_MAX_UTF8_BYTES,
+            DEFAULT_AI_AVATAR=DEFAULT_AI_AVATAR,
+            DEFAULT_HUMAN_AVATAR=DEFAULT_HUMAN_AVATAR,
+            ECO_INDEX_PATH=ECO_INDEX_PATH,
+            Path=Path,
+            _duel_proxy_allowed=_duel_proxy_allowed,
+            _memoria_human_guides=_memoria_human_guides,
+            _public_game_stats=_public_game_stats,
+            nowhere_web=nowhere_web,
+            re=re,
+            sys=sys,
+            urllib=urllib,
+        )
 
     def do_PUT(self):
-        if self._is_soup_path():
-            self._proxy_to_soup()
-            return
-        path = self.path.split("?", 1)[0]
-        if path.startswith("/api/admin/users/"):
-            self._handle_admin_update_user(path)
-            return
-        self._send_json({"error": "not found"}, status=404)
+        return http_handler.do_PUT(
+            self,
+        )
 
     def do_PATCH(self):
-        if self._is_soup_path():
-            self._proxy_to_soup()
-            return
-        self._send_json({"error": "not found"}, status=404)
+        return http_handler.do_PATCH(
+            self,
+        )
 
     def do_DELETE(self):
-        if self.path.split("?", 1)[0] == "/nowhere" or self.path.startswith("/nowhere/"):
-            nowhere_web.serve(self, sys.modules[__name__])
-            return
-        if self._is_soup_path():
-            self._proxy_to_soup()
-            return
-        path = self.path.split("?", 1)[0]
-        if path == "/api/auth/bind":
-            self._handle_api_unbind()
-            return
-        if path == "/api/account/email":
-            self._handle_api_account_email_unbind()
-            return
-        if path.startswith("/api/admin/users/"):
-            self._handle_admin_release_user(path)
-            return
-        self._send_json({"error": "not found"}, status=404)
+        return http_handler.do_DELETE(
+            self,
+            __name__=__name__,
+            nowhere_web=nowhere_web,
+            sys=sys,
+        )
 
     def do_OPTIONS(self):
-        if self._is_soup_path():
-            self._proxy_to_soup()
-            return
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID, X-Requested-With")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Expose-Headers", "Mcp-Session-Id")
-        self.end_headers()
+        return http_handler.do_OPTIONS(
+            self,
+        )
 
     def _request_path_and_token(self):
         return _mcp_path_and_token(self.path)
@@ -11875,26 +7319,15 @@ a{{color:#c9afff}}
         ))
 
     def _send_json(self, payload, status=200, extra_headers=None):
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Expose-Headers", "Mcp-Session-Id")
-        if extra_headers:
-            for key, value in extra_headers.items():
-                self.send_header(key, value)
-        self.end_headers()
-        self.wfile.write(body)
+        return web_responses._send_json(
+            self, payload, status, extra_headers,
+            json=json,
+        )
 
     def _send_empty(self, status=204, extra_headers=None):
-        self.send_response(status)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", "0")
-        if extra_headers:
-            for key, value in extra_headers.items():
-                self.send_header(key, value)
-        self.end_headers()
+        return web_responses._send_empty(
+            self, status, extra_headers,
+        )
 
     def _send_html_file(self, path, extra_headers=None):
         try:
@@ -12000,17 +7433,9 @@ a{{color:#c9afff}}
         self.wfile.write(body)
 
     def _send_html_bytes(self, body, etag=None, extra_headers=None):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
-        if etag is not None:
-            self.send_header("ETag", etag)
-        if extra_headers:
-            for key, value in extra_headers.items():
-                self.send_header(key, value)
-        self.end_headers()
-        self.wfile.write(body)
+        return web_responses._send_html_bytes(
+            self, body, etag, extra_headers,
+        )
 
     def _is_soup_path(self):
         return (
@@ -12693,7 +8118,9 @@ a{{color:#c9afff}}
 
 
 def _json_rpc_error(request_id, code, message):
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+    return web_responses._json_rpc_error(
+        request_id, code, message,
+    )
 
 
 _JWT_LOG_VALUE_RE = re.compile(
@@ -12719,60 +8146,51 @@ def _redact_http_log_text(value):
 
 class ThreadPoolHTTPServer(HTTPServer):
     def __init__(self, server_address, RequestHandlerClass, max_workers=MAX_WORKERS):
-        self.executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.worker_slots = BoundedSemaphore(max_workers)
-        super().__init__(server_address, RequestHandlerClass)
+        return http_server.init_thread_pool(
+            self, server_address, RequestHandlerClass, max_workers,
+            BoundedSemaphore=BoundedSemaphore,
+            ThreadPoolExecutor=ThreadPoolExecutor,
+            base_init=super().__init__,
+        )
 
     def process_request(self, request, client_address):
-        if not self.worker_slots.acquire(timeout=QUEUE_TIMEOUT_SECONDS):
-            self._send_busy(request)
-            self.close_request(request)
-            return
-        self.executor.submit(self._process_request_thread, request, client_address)
+        return http_server.process_request(
+            self, request, client_address,
+            QUEUE_TIMEOUT_SECONDS=QUEUE_TIMEOUT_SECONDS,
+        )
 
     def _process_request_thread(self, request, client_address):
-        try:
-            self.finish_request(request, client_address)
-        except Exception:
-            self.handle_error(request, client_address)
-        finally:
-            self.shutdown_request(request)
-            self.worker_slots.release()
+        return http_server.process_request_thread(
+            self, request, client_address,
+        )
 
     def server_close(self):
-        super().server_close()
-        if hasattr(self, "executor"):
-            self.executor.shutdown(wait=True)
+        return http_server.close_thread_pool(
+            self,
+            base_close=super().server_close,
+        )
 
     @staticmethod
     def _send_busy(request):
-        body = b'{"error":"server busy"}'
-        response = (
-            b"HTTP/1.1 503 Service Unavailable\r\n"
-            b"Content-Type: application/json; charset=utf-8\r\n"
-            b"Connection: close\r\n"
-            b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n"
-            b"\r\n" + body
+        return http_server.send_busy(
+            request,
         )
-        try:
-            request.sendall(response)
-        except OSError:
-            pass
 
 
 def main():
-    _migrate_platform_timestamps()
-    # Reconcile after the Beijing-time migration; ownership survives every restart.
-    avatar_appearances.reconcile_one_w(TURTLE_DB_PATH)
-    if time.time() < avatar_appearances.ONE_W_END_EPOCH:
-        Thread(
-            target=avatar_appearances.watch_one_w,
-            args=(TURTLE_DB_PATH,), name="avatar-1w-catchup", daemon=True,
-        ).start()
-    _init_announcement_tables()
-    server = ThreadPoolHTTPServer((HOST, PORT), CedarToyHandler)
-    print(f"CedarToy listening on {HOST}:{PORT} with max_workers={MAX_WORKERS}")
-    server.serve_forever()
+    return http_server.main(
+        CedarToyHandler=CedarToyHandler,
+        HOST=HOST,
+        MAX_WORKERS=MAX_WORKERS,
+        PORT=PORT,
+        TURTLE_DB_PATH=TURTLE_DB_PATH,
+        Thread=Thread,
+        ThreadPoolHTTPServer=ThreadPoolHTTPServer,
+        _init_announcement_tables=_init_announcement_tables,
+        _migrate_platform_timestamps=_migrate_platform_timestamps,
+        avatar_appearances=avatar_appearances,
+        time=time,
+    )
 
 
 if __name__ == "__main__":

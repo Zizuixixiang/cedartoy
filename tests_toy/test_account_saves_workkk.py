@@ -105,7 +105,8 @@ class GardenCatSaveSummaryTests(unittest.TestCase):
             },
         )
         account_db = self.root / "accounts.db"
-        sqlite3.connect(account_db).close()
+        with sqlite3.connect(account_db) as conn:
+            server.avatar_appearances.init_schema(conn)
         missing_sessions = self.root / "missing-sessions.db"
 
         def connect():
@@ -266,6 +267,7 @@ class WorkkkPlatformAccountTests(unittest.TestCase):
         self.save_root.mkdir()
         with sqlite3.connect(self.account_db) as conn:
             server._init_guest_claim_table(conn)
+            server.avatar_appearances.init_schema(conn)
         self.patches = [
             patch.object(server, "VENDOR_SAVE_ROOT", self.save_root),
             patch.object(server, "SESSIONS_DB_PATH", self.sessions_db),
