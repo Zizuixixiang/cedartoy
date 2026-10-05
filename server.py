@@ -3099,6 +3099,11 @@ def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
     )
 
 
+_CAMPING_LEGACY_MISS_TTL = 300
+_CAMPING_LEGACY_MISSES = {}
+_CAMPING_LEGACY_MISSES_LOCK = Lock()
+
+
 def _auto_migrate_legacy_username_saves(user, username):
     return save_management._auto_migrate_legacy_username_saves(
         user, username,
@@ -3106,6 +3111,9 @@ def _auto_migrate_legacy_username_saves(user, username):
         GAME_PLAYER_ID_RE=GAME_PLAYER_ID_RE,
         SESSIONS_DB_PATH=SESSIONS_DB_PATH,
         VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
+        _CAMPING_LEGACY_MISS_TTL=_CAMPING_LEGACY_MISS_TTL,
+        _CAMPING_LEGACY_MISSES=_CAMPING_LEGACY_MISSES,
+        _CAMPING_LEGACY_MISSES_LOCK=_CAMPING_LEGACY_MISSES_LOCK,
         _McpError=_McpError,
         _camping_plaza_save_summary=_camping_plaza_save_summary,
         _directory_vendor_save_exists=_directory_vendor_save_exists,
@@ -3118,6 +3126,7 @@ def _auto_migrate_legacy_username_saves(user, username):
         logger=logger,
         nowhere_storage=nowhere_storage,
         sqlite3=sqlite3,
+        time=time,
     )
 
 

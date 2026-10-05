@@ -600,6 +600,9 @@ def _auto_migrate_legacy_username_saves(user, username, *,
     GAME_PLAYER_ID_RE,
     SESSIONS_DB_PATH,
     VENDOR_SAVE_ROOT,
+    _CAMPING_LEGACY_MISS_TTL,
+    _CAMPING_LEGACY_MISSES,
+    _CAMPING_LEGACY_MISSES_LOCK,
     _McpError,
     _camping_plaza_save_summary,
     _directory_vendor_save_exists,
@@ -612,6 +615,7 @@ def _auto_migrate_legacy_username_saves(user, username, *,
     logger,
     nowhere_storage,
     sqlite3,
+    time,
 ):
     """Best-effort bridge for pre-account saves keyed by one username.
 
@@ -722,10 +726,23 @@ def _auto_migrate_legacy_username_saves(user, username, *,
                 target_player_id,
                 exc.message,
             )
+    # Only skip Camping negative lookups; other games above still run each time.
+    # Pair the normalized account identity with the alias to isolate renames/accounts.
+    camping_key = (target_player_id, username)
+    with _CAMPING_LEGACY_MISSES_LOCK:
+        expires_at = _CAMPING_LEGACY_MISSES.get(camping_key)
+        if expires_at is not None and time.monotonic() < expires_at:
+            return migrated
+        _CAMPING_LEGACY_MISSES.pop(camping_key, None)
     try:
         camping_old = _camping_plaza_save_summary(username)
-        camping_target = _camping_plaza_save_summary(target_player_id)
-        if camping_old is not None and camping_target is None:
+        if camping_old is None:
+            # Keep the process-local cache bounded; never hold its lock during I/O.
+            with _CAMPING_LEGACY_MISSES_LOCK:
+                if len(_CAMPING_LEGACY_MISSES) >= 4096:
+                    _CAMPING_LEGACY_MISSES.pop(next(iter(_CAMPING_LEGACY_MISSES)))
+                _CAMPING_LEGACY_MISSES[camping_key] = time.monotonic() + _CAMPING_LEGACY_MISS_TTL
+        elif _camping_plaza_save_summary(target_player_id) is None:
             if _migrate_camping_plaza_save(username, target_player_id):
                 migrated.append("camping_plaza")
     except _McpError as exc:
