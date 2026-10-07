@@ -134,6 +134,8 @@ try:
                     engine.remove(int(extra["index"]))
                 elif action == "use":
                     engine.use_item(str(extra["item_id"]))
+                elif action == "toggle":
+                    engine.toggle_item(str(extra["item_id"]))
                 else:
                     raise GameError(f"未知动作：{action}")
                 atomic_save(engine.s)
@@ -342,7 +344,7 @@ def play(arguments: dict[str, Any]) -> dict[str, Any]:
         raw = GAME.run(player_id, action, extra={"index": index})
         return _compact_payload(raw, player_id, action)
 
-    if action == "use":
+    if action in {"use", "toggle"}:
         item_id = arguments.get("item_id")
         if not isinstance(item_id, str) or not item_id.strip():
             raise VendorCmdError("item_id 必填")
@@ -379,5 +381,5 @@ def play(arguments: dict[str, Any]) -> dict[str, Any]:
 
     raise VendorCmdError(
         "未知 crucible_echoes action；支持 new/state/spin/choose/skip/reroll/remove/"
-        "inventory/use/help/export/import"
+        "inventory/use/toggle/help/export/import"
     )

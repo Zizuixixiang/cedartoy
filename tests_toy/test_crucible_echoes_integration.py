@@ -167,6 +167,84 @@ class CrucibleEchoesAdapterTests(unittest.TestCase):
         self.assertEqual(endless["state"]["endless_target"], 1000)
         self.assertEqual(endless["state"]["spins_left"], 10)
 
+    def test_toggle_persists_across_processes_without_advancing_rng(self):
+        player = "guest:crucibletoggle"
+        other = "guest:crucibletoggleother"
+        for identity in (player, other):
+            self._play(identity, "new", seed=42)
+            self._edit_state(identity, lambda state: state["items"].append("ban"))
+        other_before = self._state_path(other).read_bytes()
+        before = json.loads(self._state_path(player).read_text())
+
+        for enabled in (True, False):
+            toggled = self._play(player, "toggle", item_id=" ban ")
+            self.assertEqual(toggled["action"], "toggle")
+            resumed = self._play(player, "state")
+            for result in (toggled, resumed):
+                spec = next(row for row in result["actions"] if row["action"] == "toggle")
+                self.assertEqual(spec["item_id"], "ban")
+                self.assertEqual(spec["enabled"], enabled)
+            saved = json.loads(self._state_path(player).read_text())
+            self.assertEqual(saved["flags"]["ingredient_generation_disabled"], enabled)
+            for key in ("rng_state", "spin", "gold", "tokens", "items", "ingredients"):
+                self.assertEqual(saved[key], before[key], key)
+        self.assertEqual(self._state_path(other).read_bytes(), other_before)
+
+    def test_toggle_rejects_invalid_items_and_action_windows_without_saving(self):
+        player = "guest:crucibletoggleinvalid"
+        self._play(player, "new", seed=42)
+        self._edit_state(player, lambda state: state["items"].extend(["ban", "sandpaper_box"]))
+        for item_id in (None, "", " ", 1, True, "missing", "sandpaper_box"):
+            with self.subTest(item_id=item_id):
+                before = self._state_path(player).read_bytes()
+                with self.assertRaises(base.VendorCmdError):
+                    self._play(player, "toggle", item_id=item_id)
+                self.assertEqual(self._state_path(player).read_bytes(), before)
+
+        self._play(player, "spin")
+        for status in ("playing", "won", "lost"):
+            with self.subTest(status=status):
+                def mutate(state):
+                    state["status"] = status
+                    if status != "playing":
+                        state["pending"] = []
+                self._edit_state(player, mutate)
+                before = self._state_path(player).read_bytes()
+                self.assertFalse(any(row["action"] == "toggle" for row in self._play(player, "state")["actions"]))
+                with self.assertRaises(base.VendorCmdError):
+                    self._play(player, "toggle", item_id="ban")
+                self.assertEqual(self._state_path(player).read_bytes(), before)
+
+    def test_d6e3598_save_loads_unchanged_and_continues_deterministically(self):
+        # Captured through the old CedarToy adapter at upstream d6e3598:
+        # new(seed=42, difficulty=1), spin; no real player data.
+        fixture = (ROOT / "tests_toy/fixtures/crucible_echoes_d6e3598.json").read_bytes()
+        legacy = json.loads(fixture)
+        self.assertNotIn("round_event_values", legacy["stats"])
+        self.assertNotIn("round_removed_values", legacy["stats"])
+        players = ("guest:cruciblelegacy", "guest:cruciblelegacycopy")
+        for player in players:
+            path = self._state_path(player)
+            path.parent.mkdir(parents=True)
+            path.write_bytes(fixture)
+            loaded = self._play(player, "state")
+            self.assertNotIn("warning", loaded)
+            self.assertEqual(loaded["state"]["spin"], legacy["spin"])
+            self.assertEqual(loaded["state"]["gold"], legacy["gold"])
+            self.assertEqual(loaded["last_board"], legacy["last_board"])
+            self.assertEqual([row["id"] for row in loaded["decision"]["offers"]], legacy["pending"][0]["offers"])
+            self.assertEqual(path.read_bytes(), fixture)
+
+        for action, params in (("choose", {"index": 1}), ("spin", {}), ("skip", {})):
+            for player in players:
+                self.assertNotIn("warning", self._play(player, action, **params))
+            self.assertEqual(self._state_path(players[0]).read_bytes(), self._state_path(players[1]).read_bytes())
+        continued = json.loads(self._state_path(players[0]).read_text())
+        self.assertEqual(continued["spin"], 2)
+        self.assertIn("round_event_values", continued["stats"])
+        self.assertIn("round_removed_values", continued["stats"])
+        self.assertFalse(list(self.save_root.rglob("*.corrupt-*")))
+
     def test_players_are_isolated_and_export_import_is_per_player(self):
         player_a = "guest:cruciblea"
         player_b = "guest:crucibleb"
@@ -226,6 +304,7 @@ class CrucibleEchoesPlatformTests(unittest.TestCase):
         self.assertIn("athok", guide["guide"])
         self.assertIn("MIT License", guide["guide"])
         self.assertIn("remove", guide["guide"])
+        self.assertIn("toggle", guide["guide"])
         self.assertIn("run_end", guide["guide"])
         self.assertIn("无限模式", guide["guide"])
 
@@ -250,14 +329,29 @@ class CrucibleEchoesPlatformTests(unittest.TestCase):
         self.assertEqual(spun["state"]["spin"], 1)
         self.assertTrue(spun["decision"]["offers"])
 
+        state_path = self.save_root / "crucible_echoes" / "guest:cruciblemcp" / "state.json"
+        saved = json.loads(state_path.read_text())
+        saved["pending"] = []
+        saved["items"].append("ban")
+        state_path.write_text(json.dumps(saved), encoding="utf-8")
+        toggled = json.loads(server._tool_play_inner({
+            "game": "crucible_echoes",
+            "action": "toggle",
+            "player_id": "guest:cruciblemcp",
+            "params": {"item_id": "ban"},
+        }))
+        self.assertEqual(toggled["action"], "toggle")
+        self.assertTrue(next(row for row in toggled["actions"] if row["action"] == "toggle")["enabled"])
+
     def test_homepage_card_links_upstream_without_custom_game_page(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('id: "crucible_echoes"', homepage)
-        self.assertIn('iconFile: "crucible-echoes.png"', homepage)
-        self.assertIn('url: "https://github.com/megabaka404/crucible-echoes"', homepage)
-        self.assertIn('ctaLabel: "完整玩法 →"', homepage)
-        self.assertIn("5583289470", homepage)
-        self.assertNotIn('watchLabel: "进入实验室 →"', homepage)
+        card = homepage.split('id: "crucible_echoes"', 1)[1].split('\n      },', 1)[0]
+        self.assertIn('iconFile: "crucible-echoes.png"', card)
+        self.assertIn('url: "https://github.com/megabaka404/crucible-echoes"', card)
+        self.assertIn('ctaLabel: "GitHub →"', card)
+        self.assertIn("5583289470", card)
+        self.assertNotIn('watchLabel: "进入实验室 →"', card)
         self.assertNotIn('window.location.href = "/crucible-echoes/"', homepage)
         self.assertFalse((ROOT / "crucible_echoes.html").exists())
 

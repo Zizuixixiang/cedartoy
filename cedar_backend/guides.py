@@ -180,6 +180,7 @@ CRUCIBLE_ECHOES_GUIDE = """# crucible_echoes·坩埚余响
 - remove：params.index 移除 ingredients 中对应编号；只有 actions 实际列出的编号可执行。
 - inventory：查看当前成分、道具、精粹和 Token；主动道具会在 actions 中显示 use。
 - use：params.item_id 使用 actions 指定的主动道具（如 sandpaper_box）；不会自动替你使用。
+- toggle：params.item_id 切换 actions 指定的道具（如 ban）；当前开关状态见该动作的 enabled。
 - help：返回当前状态及动作；详细规则以本 guide 为准。
 - export/import：按当前 slot 导出/导入完整 JSON 状态；导入传 params.save_data；覆盖导入必须 params.confirm=true。
 

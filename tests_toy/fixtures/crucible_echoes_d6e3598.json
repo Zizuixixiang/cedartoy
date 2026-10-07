@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rng_state": 3326683750974675196,
+  "difficulty": 1,
+  "gold": 6,
+  "status": "playing",
+  "spin": 1,
+  "order_index": 0,
+  "spins_left": 4,
+  "next_uid": 6,
+  "ingredients": [
+    {
+      "uid": 1,
+      "def_id": "water",
+      "permanent_bonus": 0,
+      "age": 1,
+      "counter": 1,
+      "stored_gold": 0,
+      "flags": {}
+    },
+    {
+      "uid": 2,
+      "def_id": "charcoal",
+      "permanent_bonus": 0,
+      "age": 1,
+      "counter": 1,
+      "stored_gold": 0,
+      "flags": {}
+    },
+    {
+      "uid": 3,
+      "def_id": "cauldron",
+      "permanent_bonus": 0,
+      "age": 1,
+      "counter": 1,
+      "stored_gold": 0,
+      "flags": {}
+    },
+    {
+      "uid": 4,
+      "def_id": "kitten",
+      "permanent_bonus": 0,
+      "age": 1,
+      "counter": 1,
+      "stored_gold": 0,
+      "flags": {}
+    },
+    {
+      "uid": 5,
+      "def_id": "test_tube",
+      "permanent_bonus": 0,
+      "age": 1,
+      "counter": 1,
+      "stored_gold": 0,
+      "flags": {}
+    }
+  ],
+  "items": [],
+  "essences": [],
+  "consumed_essences": [],
+  "tokens": {
+    "roll": 0,
+    "remove": 0,
+    "essence": 0
+  },
+  "pending": [
+    {
+      "kind": "ingredient",
+      "offers": [
+        "paper",
+        "dog",
+        "glass_bead"
+      ],
+      "can_skip": true,
+      "source": "spin",
+      "minimum_rarity": null,
+      "tag_filter": null,
+      "details": {}
+    }
+  ],
+  "removed_history": [],
+  "acquired_once": [],
+  "expanded": false,
+  "rarity_multiplier": 1.0,
+  "last_board": [
+    {
+      "slot": 1,
+      "coord": [
+        0,
+        0
+      ],
+      "uid": 2,
+      "id": "charcoal",
+      "name": "木炭",
+      "value": 1,
+      "present": true
+    },
+    {
+      "slot": 2,
+      "coord": [
+        0,
+        1
+      ],
+      "uid": 3,
+      "id": "cauldron",
+      "name": "大锅",
+      "value": 1,
+      "present": true
+    },
+    {
+      "slot": 3,
+      "coord": [
+        0,
+        2
+      ],
+      "uid": 1,
+      "id": "water",
+      "name": "水",
+      "value": 1,
+      "present": true
+    },
+    {
+      "slot": 4,
+      "coord": [
+        0,
+        3
+      ],
+      "uid": 5,
+      "id": "test_tube",
+      "name": "试管",
+      "value": 1,
+      "present": true
+    },
+    {
+      "slot": 5,
+      "coord": [
+        0,
+        4
+      ],
+      "uid": 4,
+      "id": "kitten",
+      "name": "小猫",
+      "value": 1,
+      "present": true
+    }
+  ],
+  "last_log": [
+    "第1回合：成分与道具合计 +5g。"
+  ],
+  "stats": {
+    "event_counts": {
+      "all_common_choice": 1
+    },
+    "event_values": {
+      "all_common_choice": 0
+    },
+    "round_events": {
+      "all_common_choice": 1
+    },
+    "essence_baseline": {},
+    "essence_hits": {},
+    "seen_types": [],
+    "spawn_counters": {},
+    "item_event_counts": {},
+    "item_trigger_counts": {},
+    "item_storage": {},
+    "endless_orders_completed": 0,
+    "highest_endless_order": 0,
+    "highest_endless_single_turn_gold": 0,
+    "highest_single_turn_gold": 5,
+    "minimal_successful_orders": 0,
+    "last_income": 5,
+    "last_round_gold": 5,
+    "last_choice_rarities": [
+      1,
+      1,
+      1
+    ]
+  },
+  "flags": {
+    "choice_minimum_count": 0,
+    "choice_minimum_rarity": 0,
+    "choice_minimum_reserved": 0,
+    "ingredient_generation_disabled": false,
+    "ingredient_generation_permanently_disabled": false,
+    "ingredient_generation_bonus": 0,
+    "global_permanent_bonuses": {}
+  },
+  "endless_mode": false,
+  "endless_order": 0,
+  "endless_target": 0,
+  "peace_mode": false,
+  "peace_order": 0,
+  "fun_mode": "none"
+}
