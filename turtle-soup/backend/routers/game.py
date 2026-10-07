@@ -302,8 +302,20 @@ async def _ask_impl(body: ContentBody, player: dict) -> tuple[dict, asyncio.Task
                 if int(too_fast["c"]) >= n:
                     raise HTTPException(status_code=429, detail="AI 提问太快了，请先思考已有线索，稍等几秒后再问。")
         await reserve_daily_ask(player)
+        # Read before inserting this ask, while still holding the room's ask lock.
+        recent_questions = await fetch_all(
+            """
+            SELECT content FROM game_logs
+            WHERE room_id = ? AND type = 'ask' AND content != ?
+            ORDER BY id DESC LIMIT 3
+            """,
+            (body.room_id, judge.SYSTEM_BUSY_NOTICE),
+        )
         try:
-            result = await judge.judge_ask(room["surface"], room["answer"], question)
+            result = await judge.judge_ask(
+                room["surface"], room["answer"], question,
+                history=[row["content"] for row in reversed(recent_questions)],
+            )
         except HTTPException as exc:
             if exc.status_code == 503:
                 resp = await _system_notice(body.room_id, player["id"])

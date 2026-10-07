@@ -62,6 +62,37 @@ class AskQuotaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 429, response.text)
         self.assertEqual(response.json()['detail'], '今日个人次数已达上限（300 次），0 点重置')
 
+    async def test_ask_history_contains_only_three_prior_questions_from_this_room(self):
+        other = await self.create(uid=201)
+        for mcp in [False, True]:
+            with self.subTest(mcp=mcp):
+                await database.execute('DELETE FROM game_logs')
+                for rid, uid, kind, content, judgment in [
+                    (self.rid, 101, 'ask', '过早的问题', 'yes'),
+                    (self.rid, 101, 'ask', '那个人在实验室吗？', 'no'),
+                    (self.rid, 102, 'ask', '他拿着探测器吗？', 'partial'),
+                    (self.rid, 101, 'ask', '它打开了吗？', 'unrelated'),
+                    (other, 101, 'ask', '别的房间的问题', 'yes'),
+                    (self.rid, 101, 'guess', '完整猜测', 'no'),
+                    (self.rid, 101, 'chat', '闲聊内容', None),
+                    (self.rid, 101, 'auto_hint', '提示内容', 'auto_hint'),
+                    (self.rid, 101, 'ask', game.judge.SYSTEM_BUSY_NOTICE, 'unrelated'),
+                ]:
+                    await database.execute(
+                        'INSERT INTO game_logs (room_id,player_id,type,content,judgment) VALUES (?,?,?,?,?)',
+                        (rid, self.players[uid]['id'], kind, content, judgment),
+                    )
+                response = await self.action(content='这个实验呢？', uid=102 if mcp else 101, mcp=mcp)
+                self.assertEqual(response.status_code, 200, response.text)
+                call = self.models['ask'].call_args
+                self.assertEqual(call.args[2], '这个实验呢？')
+                self.assertEqual(call.kwargs, {'history': ['那个人在实验室吗？', '他拿着探测器吗？', '它打开了吗？']})
+
+    async def test_first_ask_passes_empty_history(self):
+        response = await self.action(content='他是谁？')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.models['ask'].call_args.kwargs, {'history': []})
+
     async def test_300_allowed_301_blocks_ask_on_web_and_mcp(self):
         for mcp, uid in [(False, 101), (True, 102)]:
             with self.subTest(mcp=mcp):

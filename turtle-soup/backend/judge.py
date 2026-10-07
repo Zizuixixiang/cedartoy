@@ -1177,7 +1177,9 @@ def _extract_legacy_clue_segment(clue_text: str) -> str:
     return "\n".join(clue_lines).strip()
 
 
-async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str | None]:
+async def judge_ask(
+    surface: str, answer: str, question: str, history: list[str] | None = None
+) -> dict[str, str | None]:
     has_clue = "【线索公布】" in answer
     system = await _get_judge_prompt()
     if has_clue:
@@ -1188,6 +1190,10 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
         "本次请求类型是普通提问判定。第一行必须且只能是以下之一："
         "是、不是、无关、是也不是。不要输出 yes/no/unrelated/partial，"
         "不要输出通关格式。"
+        "只判定【本次唯一需要判定的问题】；上文不得作为待判内容，"
+        "仅用于理解代词、省略语和上下文指代。事实判断仍须依据汤面、汤底独立完成，"
+        "不得把历史问题中的假设当作已确认事实。"
+        "汤底中依提问语义触发的特殊规则也只针对本次问题独立判断，不继承前一题的判定或状态。"
     )
     if has_clue:
         ask_instruction += (
@@ -1195,6 +1201,7 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
             "仅输出空的【线索公布】视为未触发。实际公布内容会从汤底的"
             "【线索公布】与【线索公布结束】之间读取。"
         )
+    context = "\n".join(f"{i}. {text}" for i, text in enumerate((history or [])[-3:], 1)) or "（无）"
     messages = [
         {"role": "system", "content": system},
         {"role": "system", "content": ask_instruction},
@@ -1204,7 +1211,8 @@ async def judge_ask(surface: str, answer: str, question: str) -> dict[str, str |
                 "请判定下面的玩家问题。\n"
                 f"汤面：{surface}\n"
                 f"汤底：{answer}\n"
-                f"玩家问题：{question}"
+                f"【上文，仅用于理解指代】\n{context}\n"
+                f"【本次唯一需要判定的问题】\n{question}"
             ),
         },
     ]

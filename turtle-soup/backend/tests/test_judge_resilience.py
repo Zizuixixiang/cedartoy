@@ -92,6 +92,43 @@ class FakeClient:
         return outcome
 
 
+class AskContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_last_three_questions_are_reference_context(self):
+        history = ["过早的问题", "那个人在实验室吗？", "他拿着探测器吗？", "它打开了吗？"]
+        question = "这个实验没有被观测时会怎样？"
+        with (
+            patch.object(judge, "_get_judge_prompt", AsyncMock(return_value="judge")),
+            patch.object(judge, "_chat_validated", AsyncMock(return_value="不是")) as chat,
+        ):
+            result = await judge.judge_ask("汤面", "汤底", question, history=history)
+
+        self.assertEqual(result["judgment"], "no")
+        messages = chat.call_args.args[0]
+        self.assertEqual([message["role"] for message in messages], ["system", "system", "user"])
+        self.assertEqual(messages[-1]["content"], (
+            "请判定下面的玩家问题。\n汤面：汤面\n汤底：汤底\n"
+            "【上文，仅用于理解指代】\n1. 那个人在实验室吗？\n2. 他拿着探测器吗？\n3. 它打开了吗？\n"
+            f"【本次唯一需要判定的问题】\n{question}"
+        ))
+        instruction = messages[1]["content"]
+        for rule in ["只判定【本次唯一需要判定的问题】", "上文不得作为待判内容",
+                     "仅用于理解代词、省略语和上下文指代", "事实判断仍须依据汤面、汤底独立完成",
+                     "不继承前一题的判定或状态"]:
+            self.assertIn(rule, instruction)
+
+    async def test_first_ask_has_no_history_and_never_reuses_previous_call(self):
+        with (
+            patch.object(judge, "_get_judge_prompt", AsyncMock(return_value="judge")),
+            patch.object(judge, "_chat_validated", AsyncMock(return_value="是")) as chat,
+        ):
+            await judge.judge_ask("汤面", "汤底", "此前的问题", history=["历史问题"])
+            await judge.judge_ask("汤面", "汤底", "当前问题")
+        prompt = chat.call_args.args[0][-1]["content"]
+        self.assertIn("【上文，仅用于理解指代】\n（无）\n【本次唯一需要判定的问题】\n当前问题", prompt)
+        self.assertNotIn("历史问题", prompt)
+        self.assertNotIn("此前的问题", prompt)
+
+
 class ClueParsingTests(unittest.IsolatedAsyncioTestCase):
     ANSWER = (
         "汤底正文\n"
