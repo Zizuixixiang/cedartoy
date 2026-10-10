@@ -73,7 +73,7 @@ python3 -c "import announcements; announcements.set_force_mcp_push('<投票ID>',
 python3 -c "import json,announcements; print(json.dumps(announcements.get_poll_results('<投票ID>'),ensure_ascii=False,indent=2))"
 ```
 
-- 发布/置标无需重启；`set_force_mcp_push` 仅更新标记，不改正文、发布时间、回执或票数，可重复执行。普通公告自动展示最新 3 条，更早条目自动归档。
+- 发布/置标无需重启；`set_force_mcp_push` 仅更新标记，不改正文、发布时间、回执或票数，可重复执行。普通公告自动展示 3 条，`pinned_until` 尚未到期的公告优先占位；已读身份不会重复弹。可用 `announcements.set_pinned_until('<公告ID>', 'YYYY-MM-DD HH:MM:SS')` 置顶既有公告，传 `None` 取消。
 - 显式置标的投票独立于三条额度，已鉴权 AI 下次根 MCP `tools/call` 单独曝光一次；仅有 `archived:` 回执也可提升为真正展示，正常已读/已投票者不重推，并发至多认领一次。人类网页不走强制曝光，铃铛行为不变。
 - 回执主键 `(player_id, announcement_id)`；`votes` 为 JSON 数组，`NULL` 为未提交，`[]` 为跳过，`feedback` 单独存文字。首次有效选项提交后选票、意见和提交时间锁定；跳过后仍可正式投票。
 - 人类为 `human:<toy_user_id>`，MCP AI 为数字账号 ID（归一掉槽后缀），不按绑定合并。`get_poll_results` 使用只读连接、不迁移，返回选项票数、`valid_participants`（total/human/machine）、跳过数、文字意见；跳过及仅已读不算有效参与。普通网页/MCP 只能读自己的提交，不暴露运营汇总。

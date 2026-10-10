@@ -19,6 +19,7 @@
   不算有效票，之后仍可正式投票。
 * `target_game` 为具体游戏名（eco/fishing/...）或 `all`（所有游戏都弹）。
 * `target_identity` 为 NULL 时面向所有身份，否则仅对归一化后的指定身份可见。
+* `pinned_until` 为北京时间；未到期时在普通自动三条和网页公告列表中优先置顶，但已读身份不会重复弹。
 
 时间统一用 Asia/Shanghai 的 `%Y-%m-%d %H:%M:%S`，和 eco_adapter 里的
 `_now_iso` 一致——定宽零填充，所以字符串比较等价于时间比较，可以直接在
@@ -141,7 +142,8 @@ def init_db(conn):
             target_game TEXT NOT NULL DEFAULT 'all',
             target_identity TEXT,
             created_at TEXT NOT NULL,
-            expires_at TEXT
+            expires_at TEXT,
+            pinned_until TEXT
         )
         """
     )
@@ -178,6 +180,8 @@ def init_db(conn):
         )
     if "target_identity" not in announcement_columns:
         conn.execute("ALTER TABLE announcements ADD COLUMN target_identity TEXT")
+    if "pinned_until" not in announcement_columns:
+        conn.execute("ALTER TABLE announcements ADD COLUMN pinned_until TEXT")
     read_columns = {
         row[1] for row in conn.execute("PRAGMA table_info(announcement_reads)")
     }
@@ -342,10 +346,10 @@ def check_announcements(
     feedback_hint=None,
     include_forced_mcp=False,
 ):
-    """自动展示最近三条未读，并归档同批更早公告。
+    """自动展示优先置顶后的三条未读，并归档同批更早公告。
 
     没有未读时返回空字符串，调用方可以直接 `if text:` 判断要不要拼进输出。
-    超过三条时只展示按 created_at 最新的三条，并追加较早条数提醒；较早条目
+    超过三条时先保留仍在 pinned_until 内的公告，再按 created_at 取最新项，并追加较早条数提醒；较早条目
     不会在下次普通动作继续弹，但 list_announcements 仍可查到。
 
     `vote_hint` 用来覆盖投票指引文案（各游戏的指令语法不一样，比如 eco 走的是
@@ -404,10 +408,12 @@ def check_announcements(
                     SELECT 1 FROM announcement_reads AS r
                     WHERE r.player_id = ? AND r.announcement_id = a.id
               )
-            ORDER BY a.created_at DESC, a.id DESC
+            ORDER BY
+              CASE WHEN a.pinned_until IS NOT NULL AND a.pinned_until > ? THEN 1 ELSE 0 END DESC,
+              a.created_at DESC, a.id DESC
             LIMIT ?
             """,
-            (game_name, player_id, now, player_id, AUTO_PUSH_LIMIT),
+            (game_name, player_id, now, player_id, now, AUTO_PUSH_LIMIT),
         ).fetchall()
 
         conn.executemany(
@@ -834,6 +840,7 @@ def create_announcement(
     options=None,
     multiple=False,
     expires_at=None,
+    pinned_until=None,
     allow_feedback=False,
     force_mcp_push=False,
     target_identity=None,
@@ -865,8 +872,8 @@ def create_announcement(
         conn.execute(
             "INSERT OR REPLACE INTO announcements"
             " (id, type, title, content, options, multiple, allow_feedback,"
-            "  force_mcp_push, target_game, created_at, expires_at, target_identity)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  force_mcp_push, target_game, created_at, expires_at, target_identity, pinned_until)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(ann_id),
                 ann_type,
@@ -880,9 +887,34 @@ def create_announcement(
                 _now_iso(),
                 expires_at,
                 target_identity,
+                pinned_until,
             ),
         )
     return str(ann_id)
+
+
+def set_pinned_until(announcement_id, pinned_until=None):
+    """置顶既有公告到指定北京时间；None 取消置顶，不改正文、发布时间或回执。"""
+    announcement_id = str(announcement_id or "").strip()
+    if not announcement_id:
+        raise AnnouncementError("缺少公告编号。")
+    if pinned_until is not None:
+        if not isinstance(pinned_until, str) or not pinned_until.strip():
+            raise AnnouncementError("pinned_until 须为北京时间字符串或 None。")
+        pinned_until = pinned_until.strip()
+        try:
+            datetime.strptime(pinned_until, "%Y-%m-%d %H:%M:%S")
+        except ValueError as exc:
+            raise AnnouncementError("pinned_until 格式应为 YYYY-MM-DD HH:MM:SS。") from exc
+
+    with _connect() as conn:
+        init_db(conn)
+        row = conn.execute("SELECT 1 FROM announcements WHERE id = ?", (announcement_id,)).fetchone()
+        if row is None:
+            raise AnnouncementError(f"没有编号为 {announcement_id} 的通知。")
+        conn.execute("UPDATE announcements SET pinned_until = ? WHERE id = ?",
+                     (pinned_until, announcement_id))
+    return announcement_id
 
 
 def set_force_mcp_push(announcement_id, enabled=True):

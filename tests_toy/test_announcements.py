@@ -351,6 +351,34 @@ class AnnouncementTests(unittest.TestCase):
             '另外有 2 条未读公告。\n查看历史公告：action="announcements"。\n\n池塘状态'
         ))
 
+    def test_active_pin_stays_in_auto_three_and_does_not_repeat(self):
+        for number in range(4):
+            announcements.create_announcement(
+                f"pin-notice-{number}", "notice", f"标题{number}", "内容", "all",
+            )
+        announcements.set_pinned_until("pin-notice-0", "2099-01-01 00:00:00")
+
+        text = announcements.check_announcements("42", "eco")
+        self.assertEqual(text.count("【系统通知】"), 3)
+        self.assertIn("标题0", text)
+        self.assertIn("另外有 1 条未读公告。", text)
+        self.assertEqual(announcements.check_announcements("42", "eco"), "")
+
+        with sqlite3.connect(self.db_path) as conn:
+            read_at = conn.execute(
+                "SELECT read_at FROM announcement_reads WHERE player_id=? AND announcement_id=?",
+                ("42", "pin-notice-0"),
+            ).fetchone()[0]
+        self.assertFalse(read_at.startswith("archived:"))
+
+    def test_active_pin_is_first_on_web_announcement_list(self):
+        announcements.create_announcement("pin-old", "notice", "置顶", "内容", "all")
+        announcements.create_announcement("newer", "notice", "较新", "内容", "all")
+        announcements.set_pinned_until("pin-old", "2099-01-01 00:00:00")
+        with patch.object(server, "_current_account", return_value={"id": 10000, "is_ai": 0}):
+            items = server._web_announcements("token")["announcements"]
+        self.assertEqual(items[0]["id"], "pin-old")
+
     def test_play_announcements_dispatches_without_backend_or_auto_prepend(self):
         expected = {"ok": True, "text": "公告"}
         with (

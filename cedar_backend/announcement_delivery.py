@@ -131,9 +131,11 @@ def _web_announcements(
               ON r.player_id = ? AND r.announcement_id = a.id
             WHERE (a.expires_at IS NULL OR a.expires_at > ?)
               AND (a.target_identity IS NULL OR a.target_identity = ?)
-            ORDER BY a.created_at DESC, a.id DESC
+            ORDER BY
+              CASE WHEN a.pinned_until IS NOT NULL AND a.pinned_until > ? THEN 1 ELSE 0 END DESC,
+              a.created_at DESC, a.id DESC
             """,
-            (identity or "", now, identity),
+            (identity or "", now, identity, now),
         ).fetchall()
 
     items = []
