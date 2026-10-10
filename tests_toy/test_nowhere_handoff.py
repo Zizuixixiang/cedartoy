@@ -32,7 +32,9 @@ class AttributionTests(unittest.TestCase):
         self.assertNotIn(name,render_page().decode())
         self.assertNotIn('platform-credit',render_page().decode())
         import server
-        self.assertEqual(server._tool_list_games().count(name),3)
+        catalog = server._tool_list_games()
+        self.assertNotIn(name, catalog)
+        self.assertEqual(catalog.count('·青少年小鼠狂饮乙醇'), 3)
         for game in ('ciyuwu','market','nowhere'):
             self.assertIn(name,server._tool_get_guide({'game':game}))
 
