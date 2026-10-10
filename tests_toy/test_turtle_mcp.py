@@ -212,16 +212,10 @@ class TurtleMcpTests(unittest.TestCase):
         self.assertEqual(json.dumps(guide, ensure_ascii=False).count('【线索公布】'), 1)
         self.assertEqual(json.dumps(guide, ensure_ascii=False).count('【线索公布结束】'), 1)
 
-    def test_guide_platform_announcements_unchanged(self):
+    def test_guide_omits_platform_announcements(self):
         guide = self.call('get_guide', {'game': 'turtle_soup'})
-        self.assertEqual(guide['platform_announcements'], {
-            'history': 'play(game="turtle_soup", action="announcements")',
-            'single': 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1]})',
-            'multiple': 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1,2]})',
-            'skip': 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[0]})',
-            'feedback': '仅开放文字反馈的投票可在 params 加 feedback="我的意见"。',
-            'submission_rule': '有效选项和补充意见提交后不可修改；跳过后仍可正式投票。',
-        })
+        self.assertNotIn('platform_announcements', guide)
+        self.assertEqual(guide, server._turtle_soup_guide())
 
     def test_independent_view_actions_forward_params_and_authenticated_identity(self):
         response = Mock(status_code=200)

@@ -27,7 +27,7 @@ class McpModuleCompatibilityTests(unittest.TestCase):
                 tools[0]["inputSchema"]["properties"]["test"] = {"type": "string"}
                 self.assertEqual(definitions, original)
 
-    def test_tool_selection_uses_current_server_tables_and_classifier(self):
+    def test_tool_selection_uses_current_server_tables_classifier_and_explicit_mode(self):
         root = [{"name": "root"}, {"name": "hidden"}]
         kelivo = [{"name": "kelivo"}]
         with (
@@ -36,27 +36,33 @@ class McpModuleCompatibilityTests(unittest.TestCase):
             patch.object(server, "_ROOT_TOOL_NAMES", {"root", "kelivo"}),
             patch.object(server, "_is_kelivo_user_agent") as classify,
         ):
-            for compatible, expected in ((False, root[0]), (True, kelivo[0])):
+            for compatible, default in ((False, root[0]), (True, kelivo[0])):
                 classify.return_value = compatible
-                selected = server._root_tools("test-client")
-                self.assertEqual(selected, [expected])
-                self.assertIs(selected[0], expected)
-                classify.assert_called_with("test-client")
+                for mode, expected in (("", default), ("legacy", kelivo[0]),
+                                       ("standard", root[0]), ("unknown", default)):
+                    with self.subTest(compatible=compatible, mode=mode):
+                        classify.reset_mock()
+                        selected = server._root_tools("test-client", schema_mode=mode)
+                        self.assertEqual(selected, [expected])
+                        self.assertIs(selected[0], expected)
+                        if mode in ("legacy", "standard"):
+                            classify.assert_not_called()
+                        else:
+                            classify.assert_called_once_with("test-client")
 
     def test_guide_constants_and_note_patches_remain_effective(self):
         with (
             patch.object(server, "SAVE_SLOT_GUIDE_NOTE", "<slot>"),
-            patch.object(server, "PLATFORM_ANNOUNCEMENT_GUIDE_NOTE", "<notice>"),
             patch.object(server, "_game_maintenance", return_value=None),
         ):
-            self.assertEqual(server._guide_with_slot_note("body"), "body<slot><notice>")
+            self.assertEqual(server._guide_with_slot_note("body"), "body<slot>")
             for game, constant, suffix in (
-                ("ai_life", "AI_LIFE_GUIDE", "<slot><notice>"),
-                ("workkk", "WORKKK_GUIDE", "<slot><notice>"),
-                ("garden_cat", "GARDEN_CAT_GUIDE", "<slot><notice>"),
-                ("camping_plaza", "CAMPING_PLAZA_GUIDE", "<slot><notice>"),
-                ("crucible_echoes", "CRUCIBLE_ECHOES_GUIDE", "<slot><notice>"),
-                ("detroit", "DETROIT_GUIDE", "<notice>"),
+                ("ai_life", "AI_LIFE_GUIDE", "<slot>"),
+                ("workkk", "WORKKK_GUIDE", "<slot>"),
+                ("garden_cat", "GARDEN_CAT_GUIDE", "<slot>"),
+                ("camping_plaza", "CAMPING_PLAZA_GUIDE", "<slot>"),
+                ("crucible_echoes", "CRUCIBLE_ECHOES_GUIDE", "<slot>"),
+                ("detroit", "DETROIT_GUIDE", "<slot>"),
                 ("duel", "DUEL_GUIDE", ""),
                 ("tarot", "TAROT_GUIDE", ""),
             ):
@@ -98,11 +104,11 @@ class McpModuleCompatibilityTests(unittest.TestCase):
                 delivered = json.loads(server._tool_get_guide({"game": game}))
                 self.assertEqual(delivered["guide"], expected)
                 if game == "nowhere":
-                    self.assertEqual(delivered["attribution"], {"name": "author"})
+                    self.assertNotIn("attribution", delivered)
             nowhere_guide.assert_called_once_with()
             soup = json.loads(server._tool_get_guide({"game": "turtle_soup"}))
             self.assertTrue(soup["patched"])
-            self.assertIn("platform_announcements", soup)
+            self.assertNotIn("platform_announcements", soup)
 
     def test_shared_error_type_and_existing_validation(self):
         self.assertIs(server._McpError, _McpError)

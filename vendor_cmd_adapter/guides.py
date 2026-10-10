@@ -1,9 +1,8 @@
 from links import AUTHORS
 
 SAVE_SLOT_GUIDE_NOTE = (
-    "\n\n[存档槽] 每游戏5槽，params 传 slot=1-5（缺省1；即 player_id 加 :2~:5 后缀；游客单槽）。"
-    "export/import 按槽生效：空槽导入免 confirm，覆盖需 confirm=true。"
-    "跨槽复制=export 后 import 到另一槽。查各槽：account(action=\"my_saves\")。"
+    "\n\n[存档槽] 登录后在 play 的 params 里传 slot=1-5（默认1）；export/import 作用于该 slot；"
+    '查看各槽：account(action="my_saves")。'
 )
 
 

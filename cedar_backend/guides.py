@@ -2,7 +2,6 @@
 
 import json
 
-import announcements
 from tarot_adapter import (
     COVE_REPOSITORY, MAX_INVITE_QUESTION, RITUAL_DISPLAY_NAME, RITUAL_REPOSITORY,
 )
@@ -215,24 +214,13 @@ exchange：exchange_action=catalog|list|create|confirm|reject|withdraw。create(
 作者：南山君&Clio。"""
 
 
-PLATFORM_ANNOUNCEMENT_GUIDE_NOTE = (
-    "\n\n[平台公告] action=\"announcements\" 查看历史。投票用 action=\"vote\"："
-    "params 传 announcement_id；单选 options=[1]，多选 options=[1,2]，跳过 options=[0]。"
-    '仅当通知明确开放补充意见时可再传 feedback="我的意见"（最多 '
-    f"{announcements.FEEDBACK_MAX_LENGTH} 字）。有效选项和意见提交后不可修改；"
-    "跳过不算有效票，之后仍可投。"
-)
-DUEL_GUIDE += PLATFORM_ANNOUNCEMENT_GUIDE_NOTE
-
-
-def _guide_with_slot_note(text, *, save_slot_note, announcement_note):
-    return text + save_slot_note + announcement_note
+def _guide_with_slot_note(text, *, save_slot_note):
+    return text + save_slot_note
 
 
 def _tool_get_guide(
     arguments, *, guide_dir, game_maintenance, guide_with_slot_note,
     turtle_soup_guide, guide_texts, vendor_guides, puzzle_box, nowhere_adapter,
-    authors,
 ):
     game = arguments.get("game")
     if not game or not isinstance(game, str):
@@ -240,24 +228,15 @@ def _tool_get_guide(
     if game == "puzzle_box":
         return json.dumps({"game": game, "guide": puzzle_box.GUIDE}, ensure_ascii=False)
     if game == "turtle_soup":
-        guide = turtle_soup_guide()
-        guide["platform_announcements"] = {
-            "history": 'play(game="turtle_soup", action="announcements")',
-            "single": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1]})',
-            "multiple": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[1,2]})',
-            "skip": 'play(game="turtle_soup", action="vote", params={"announcement_id":"编号","options":[0]})',
-            "feedback": '仅开放文字反馈的投票可在 params 加 feedback="我的意见"。',
-            "submission_rule": "有效选项和补充意见提交后不可修改；跳过后仍可正式投票。",
-        }
-        return json.dumps(guide, ensure_ascii=False)
+        return json.dumps(turtle_soup_guide(), ensure_ascii=False)
     if game == "workkk":
         return json.dumps({"game": "workkk", "guide": guide_with_slot_note(guide_texts["WORKKK_GUIDE"])}, ensure_ascii=False)
     if game == "nowhere":
-        return json.dumps({"game": "nowhere", "guide": guide_with_slot_note(nowhere_adapter.guide()), "attribution": authors["nowhere"]}, ensure_ascii=False)
+        return json.dumps({"game": "nowhere", "guide": guide_with_slot_note(nowhere_adapter.guide())}, ensure_ascii=False)
     if game == "ai_life":
         return json.dumps({"game": "ai_life", "guide": guide_with_slot_note(guide_texts["AI_LIFE_GUIDE"])}, ensure_ascii=False)
     if game == "detroit":
-        return json.dumps({"game": "detroit", "guide": guide_texts["DETROIT_GUIDE"] + guide_texts["PLATFORM_ANNOUNCEMENT_GUIDE_NOTE"]}, ensure_ascii=False)
+        return json.dumps({"game": "detroit", "guide": guide_with_slot_note(guide_texts["DETROIT_GUIDE"])}, ensure_ascii=False)
     if game == "tarot":
         return json.dumps({"game": "tarot", "guide": guide_texts["TAROT_GUIDE"]}, ensure_ascii=False)
     if game == "garden_cat":
@@ -279,7 +258,12 @@ def _tool_get_guide(
         path = guide_dir / f"{game}.md"
         if not path.exists():
             raise _McpError(-32603, f"{game} 说明文件不存在")
-        return json.dumps({"game": game, "guide": guide_with_slot_note(path.read_text(encoding="utf-8"))}, ensure_ascii=False)
+        guide = path.read_text(encoding="utf-8")
+        # These assessments and eco/ciyuwu persist per-slot identities;
+        # account documents account operations, not a game save.
+        if game != "account":
+            guide = guide_with_slot_note(guide)
+        return json.dumps({"game": game, "guide": guide}, ensure_ascii=False)
     raise _McpError(-32602, "未知游戏")
 
 

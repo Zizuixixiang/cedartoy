@@ -4,6 +4,8 @@ The compatibility methods retain their signatures and all per-game handler and
 proxy boundaries. Route order and response bytes are preserved.
 """
 
+from urllib.parse import parse_qs
+
 
 def do_POST(
     self,
@@ -281,12 +283,15 @@ def do_POST(
     elif path == "/sins_virtues":
         response = handle_sins_virtues_mcp(_guestify_mcp_payload(payload))
     else:
+        query = parse_qs(self.path.partition("?")[2], keep_blank_values=True)
         response = _handle_root_mcp(
             payload,
             user_agent=self.headers.get("User-Agent", ""),
             path_token=path_token,
             client_ip=client_ip,
             bearer_token=_extract_bearer(self.headers),
+            # Only a single explicit value overrides the UA default.
+            schema_mode=query["schema"][0] if query.get("schema") in (["legacy"], ["standard"]) else "",
         )
     self._send_json(response)
 

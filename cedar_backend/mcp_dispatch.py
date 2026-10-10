@@ -7,6 +7,7 @@ Database paths, mutable state and configuration remain owned by the caller.
 
 
 def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *,
+    schema_mode="",
     _McpError,
     _ROOT_MCP_LEGACY_PROTOCOL_VERSION,
     _ROOT_MCP_PROTOCOL_VERSIONS,
@@ -57,7 +58,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
             )
         if method == "tools/list":
             logger.info("MCP tools/list UA: %s", user_agent)
-            return _json_rpc_result(request_id, {"tools": _root_tools(user_agent=user_agent)})
+            return _json_rpc_result(request_id, {"tools": _root_tools(user_agent=user_agent, schema_mode=schema_mode)})
         if method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}

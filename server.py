@@ -136,7 +136,6 @@ from cedar_backend.guides import (
     DETROIT_GUIDE,
     DUEL_GUIDE,
     GARDEN_CAT_GUIDE,
-    PLATFORM_ANNOUNCEMENT_GUIDE_NOTE,
     SAVE_SLOT_GUIDE_NOTE,
     TAROT_GUIDE,
     VENDOR_CMD_GUIDES,
@@ -374,9 +373,10 @@ def _blocked_mcp_client_message(user_agent):
     return None
 
 
-def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, bearer_token=None):
+def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, bearer_token=None, *, schema_mode=""):
     return mcp_dispatch._handle_root_mcp(
         payload, user_agent, path_token, client_ip, bearer_token,
+        schema_mode=schema_mode,
         _McpError=_McpError,
         _ROOT_MCP_LEGACY_PROTOCOL_VERSION=_ROOT_MCP_LEGACY_PROTOCOL_VERSION,
         _ROOT_MCP_PROTOCOL_VERSIONS=_ROOT_MCP_PROTOCOL_VERSIONS,
@@ -3433,9 +3433,10 @@ def _tool_list_games(path_token=None):
     return base
 
 
-def _root_tools(user_agent=""):
+def _root_tools(user_agent="", *, schema_mode=""):
     return mcp_schema._root_tools(
         user_agent,
+        schema_mode=schema_mode,
         root_platform_tools=_ROOT_PLATFORM_TOOLS,
         kelivo_platform_tools=_KELIVO_PLATFORM_TOOLS,
         tool_names=_ROOT_TOOL_NAMES,
@@ -3446,7 +3447,6 @@ def _root_tools(user_agent=""):
 def _guide_with_slot_note(text):
     return mcp_guides._guide_with_slot_note(
         text, save_slot_note=SAVE_SLOT_GUIDE_NOTE,
-        announcement_note=PLATFORM_ANNOUNCEMENT_GUIDE_NOTE,
     )
 
 
@@ -3472,12 +3472,10 @@ def _tool_get_guide(arguments):
             "CAMPING_PLAZA_GUIDE": CAMPING_PLAZA_GUIDE,
             "CRUCIBLE_ECHOES_GUIDE": CRUCIBLE_ECHOES_GUIDE,
             "DUEL_GUIDE": DUEL_GUIDE,
-            "PLATFORM_ANNOUNCEMENT_GUIDE_NOTE": PLATFORM_ANNOUNCEMENT_GUIDE_NOTE,
         },
         vendor_guides=VENDOR_CMD_GUIDES,
         puzzle_box=puzzle_box,
         nowhere_adapter=nowhere_adapter,
-        authors=AUTHORS,
     )
 
 

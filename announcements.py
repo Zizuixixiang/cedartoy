@@ -41,6 +41,7 @@ HISTORY_PAGE_LIMIT = 10
 FEEDBACK_MAX_LENGTH = 500
 _ARCHIVED_READ_PREFIX = "archived:"
 IMPORTANT_MCP_HEADING = "【重要公告｜仅自动展示一次】"
+HISTORY_HINT = '查看历史公告：action="announcements"。'
 
 # 通知只弹一次，所以文案里必须把「怎么投票」讲清楚，玩家没有第二次机会看到。
 DEFAULT_VOTE_HINT = (
@@ -229,7 +230,7 @@ def _resolve_more_hint(more_hint, game_name, count):
     if callable(more_hint):
         return more_hint(count)
     if more_hint is None:
-        return f'另有 {count} 条旧公告；action="announcements" 可查看。'
+        return f"另外有 {count} 条未读公告。"
     return more_hint.format(game=game_name, count=count)
 
 
@@ -261,6 +262,8 @@ def check_forced_mcp_announcements(
     game_name=None,
     vote_hint=None,
     feedback_hint=None,
+    *,
+    include_history_hint=True,
 ):
     """认领并格式化该小机尚未真正展示过的重要投票。
 
@@ -270,6 +273,7 @@ def check_forced_mcp_announcements(
 
     查询、认领和 archived 状态提升都在同一个 ``BEGIN IMMEDIATE`` 事务中完成，
     所以同一小机的并发请求至多有一个拿到展示文本。网页端不调用本函数。
+    合并到普通公告时由调用方统一追加历史入口。
     """
     if not player_id:
         return ""
@@ -326,7 +330,8 @@ def check_forced_mcp_announcements(
         )
 
     blocks = [_format(row, vote_hint, feedback_hint) for row in rows]
-    return IMPORTANT_MCP_HEADING + "\n\n" + "\n\n".join(blocks)
+    text = IMPORTANT_MCP_HEADING + "\n\n" + "\n\n".join(blocks)
+    return text + "\n" + HISTORY_HINT if include_history_hint else text
 
 
 def check_announcements(
@@ -345,7 +350,8 @@ def check_announcements(
 
     `vote_hint` 用来覆盖投票指引文案（各游戏的指令语法不一样，比如 eco 走的是
     MCP 结构化参数而不是裸文本），模板里用 `{id}` 占位通知编号。
-    `more_hint` 是较早公告提醒模板（可用 `{game}` / `{count}`）或接收 count 的函数。
+    `more_hint` 是较早公告条数提醒（可用 `{game}` / `{count}`）或接收 count 的函数；
+    历史入口在整次公告末尾统一追加。
     `include_forced_mcp=True` 时先独立认领重要投票；该文本不计入普通三条上限。
     """
     if not player_id:
@@ -359,6 +365,7 @@ def check_announcements(
             game_name,
             vote_hint=vote_hint,
             feedback_hint=feedback_hint,
+            include_history_hint=False,
         )
 
     now = _now_iso()
@@ -383,7 +390,7 @@ def check_announcements(
             (game_name, player_id, now, player_id),
         ).fetchone()[0]
         if not unread_count:
-            return forced_text
+            return forced_text + "\n" + HISTORY_HINT if forced_text else ""
 
         rows = conn.execute(
             """
@@ -441,7 +448,7 @@ def check_announcements(
         blocks.append(_resolve_more_hint(more_hint, game_name, older_count))
 
     ordinary_text = "\n\n".join(blocks)
-    return "\n\n".join(text for text in (forced_text, ordinary_text) if text)
+    return "\n\n".join(text for text in (forced_text, ordinary_text) if text) + "\n" + HISTORY_HINT
 
 
 def list_announcements(

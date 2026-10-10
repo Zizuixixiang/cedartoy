@@ -3,6 +3,7 @@ import re
 import tempfile
 import unittest
 from contextlib import nullcontext
+from itertools import product
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -149,10 +150,10 @@ class RootMcpProtocolTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _play_schema(user_agent):
+    def _play_schema(user_agent, schema_mode=""):
         listed = server._handle_root_mcp(
             {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
-            user_agent=user_agent,
+            user_agent=user_agent, schema_mode=schema_mode,
         )
         return next(
             tool["inputSchema"]
@@ -161,15 +162,15 @@ class RootMcpProtocolTests(unittest.TestCase):
         )
 
     def test_all_root_clients_get_play_schema_without_root_all_of(self):
-        for user_agent in (
+        for user_agent, schema_mode in product((
             "ExampleMcpClient/1.0",
             "Aru/1.0",
             "Kelivo/1.2.6",
             "Dart/3.9 (dart:io)",
             "ktor-client/3.0",
-        ):
-            with self.subTest(user_agent=user_agent):
-                schema = self._play_schema(user_agent)
+        ), ("", "legacy", "standard")):
+            with self.subTest(user_agent=user_agent, schema_mode=schema_mode):
+                schema = self._play_schema(user_agent, schema_mode=schema_mode)
                 self.assertNotIn("allOf", schema)
                 sanitized = _kelivo_126_sanitize_node(schema)
                 self.assertEqual(sanitized["type"], "object")
@@ -185,7 +186,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                     set(sanitized_params["properties"]),
                     set(schema["properties"]["params"]["properties"]),
                 )
-                if server._is_kelivo_user_agent(user_agent):
+                if schema_mode == "legacy" or (schema_mode != "standard" and server._is_kelivo_user_agent(user_agent)):
                     for field in (
                         "room_id", "move", "question", "revision", "game_action",
                         "command", "puzzle_id", "checkpoint_id", "answer",
@@ -205,7 +206,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                     for tool in server._PLATFORM_TOOLS
                     if tool["name"] == "play"
                 )
-                if server._is_kelivo_user_agent(user_agent):
+                if schema_mode == "legacy" or (schema_mode != "standard" and server._is_kelivo_user_agent(user_agent)):
                     for name in ("game", "action", "params"):
                         self.assertEqual(
                             schema["properties"][name]["description"],
@@ -225,9 +226,11 @@ class RootMcpProtocolTests(unittest.TestCase):
                 self.assertIn("调用 play 前先读 get_guide(game)", description)
                 self.assertIn("action 与参数以 guide 为准", description)
                 self.assertIn("业务参数放 params", description)
+                self.assertNotRegex(description, r"announcements|vote|feedback")
                 properties = tool["inputSchema"]["properties"]
                 self.assertIn("游戏名", properties["game"]["description"])
-                self.assertIn("按 get_guide(game)", properties["action"]["description"])
+                self.assertEqual(properties["action"]["description"],
+                                 "操作名；按 get_guide(game) 返回的说明填写。")
                 params_copy = properties["params"]["description"]
                 for guidance in ("业务参数对象", "get_guide(game)", "可选 slot=1..5", "平台存档槽"):
                     self.assertIn(guidance, params_copy)
@@ -236,6 +239,34 @@ class RootMcpProtocolTests(unittest.TestCase):
                                 "room_id", "move", "revision", "distance_km", "export", "import",
                                 "open_door", "cancel_wait", "start_game", "record_choice"):
                     self.assertNotIn(example, serialized)
+
+    def test_ordinary_account_is_a_thin_shell_and_compatibility_keeps_source(self):
+        source = next(t for t in server._PLATFORM_TOOLS if t["name"] == "account")
+        for user_agent, mode in product(("ExampleMcpClient/1.0", "Kelivo/1.3.1"), ("", "legacy", "standard")):
+            with self.subTest(user_agent=user_agent, mode=mode):
+                tool = next(t for t in server._root_tools(user_agent, schema_mode=mode)
+                            if t["name"] == "account")
+                if mode == "legacy" or (mode != "standard" and server._is_kelivo_user_agent(user_agent)):
+                    self.assertEqual(tool, source)
+                    self.assertIn("current_password", tool["inputSchema"]["properties"])
+                    continue
+                self.assertEqual(tool["description"], '账号操作先读 get_guide(game="account")。')
+                schema = tool["inputSchema"]
+                self.assertEqual(set(schema["properties"]), {"action"})
+                self.assertEqual(schema["required"], ["action"])
+                self.assertIs(schema["additionalProperties"], True)
+                validator = Draft202012Validator(schema)
+                validator.validate({"action": "login", "username": "fixture", "password": "fixture"})
+                validator.validate({"action": "delete_account", "confirm": True, "current_password": "fixture"})
+                self.assertFalse(validator.is_valid({"username": "fixture"}))
+                self.assertLess(len(json.dumps(tool, ensure_ascii=False, separators=(",", ":"))), 400)
+
+    def test_announcement_history_is_absent_from_permanent_mcp_surfaces(self):
+        with patch.object(server.sqlite3, "connect", side_effect=AssertionError("unexpected database access")):
+            surfaces = [server._PLATFORM_TOOLS, server._ROOT_PLATFORM_TOOLS,
+                        server._KELIVO_PLATFORM_TOOLS, self._initialize(), server._tool_list_games()]
+            for surface in surfaces:
+                self.assertNotRegex(json.dumps(surface, ensure_ascii=False), r"announcements|查看历史公告|查看公告")
 
     def test_play_schemas_keep_gemini_numeric_enum_compatibility(self):
         def check_enums(node):
@@ -248,11 +279,11 @@ class RootMcpProtocolTests(unittest.TestCase):
                 for value in node:
                     check_enums(value)
 
-        for user_agent in ("", "Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
-            with self.subTest(user_agent=user_agent):
-                schema = self._play_schema(user_agent)
+        for user_agent, schema_mode in product(("", "Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"), ("", "legacy", "standard")):
+            with self.subTest(user_agent=user_agent, schema_mode=schema_mode):
+                schema = self._play_schema(user_agent, schema_mode=schema_mode)
                 check_enums(schema)
-                if user_agent:
+                if schema_mode == "legacy" or (schema_mode != "standard" and server._is_kelivo_user_agent(user_agent)):
                     takeover = schema["properties"]["params"]["properties"]["timeout_takeover_seconds"]
                     self.assertEqual(takeover["type"], "integer")
                     self.assertNotIn("enum", takeover)
@@ -296,24 +327,18 @@ class RootMcpProtocolTests(unittest.TestCase):
                     self.assertRegex(guide, r"\b" + term + r"\b")
                 self.assertIn("覆盖", guide)
 
-    def test_platform_actions_and_slot_remain_discoverable_outside_play(self):
-        # Rest is platform-wide: one catalog sentence avoids repeating it in
-        # every guide, and still makes it discoverable before any lock notice.
-        catalog = server._tool_list_games()
-        self.assertIn('play(game="当前游戏", action="rest")', catalog)
-        self.assertIn("休息", catalog)
-        self.assertIn("能否重置按人类设置", catalog)
+    def test_account_guide_keeps_slot_operations_without_platform_announcements(self):
         account_guide = server._tool_get_guide({"game": "account"})
         self.assertIn("slot=1-5", account_guide)
-        self.assertIn("缺省1", account_guide)
+        self.assertIn("默认1", account_guide)
+        self.assertIn("my_saves", account_guide)
         for game in ("account", "duel", "nowhere", "turtle_soup", "mbti", "eco"):
             with self.subTest(game=game):
                 guide = server._tool_get_guide({"game": game})
-                for term in ("announcements", "vote", "announcement_id", "options", "feedback"):
-                    self.assertRegex(guide, r"\b" + term + r"\b")
+                self.assertNotRegex(guide, r"platform_announcements|\bannouncements?\b|announcement_id|\bvote\b|平台公告|投票")
 
     def test_shared_difficulty_schema_preserves_each_games_values(self):
-        schema = self._play_schema("Kelivo/1.2.6")
+        schema = self._play_schema("Kelivo/1.2.6", schema_mode="legacy")
         difficulty = schema["properties"]["params"]["properties"]["difficulty"]
         string_branch = next(
             branch for branch in difficulty["anyOf"] if branch.get("type") == "string"
@@ -361,9 +386,9 @@ class RootMcpProtocolTests(unittest.TestCase):
         shared_params = shared["inputSchema"]["properties"]["params"]["properties"]
         for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
             with self.subTest(user_agent=user_agent):
-                params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+                params = self._play_schema(user_agent, schema_mode="legacy")["properties"]["params"]["properties"]
                 self.assertGreaterEqual(len(params), 104)
-                tool = next(t for t in server._root_tools(user_agent) if t["name"] == "play")
+                tool = next(t for t in server._root_tools(user_agent, schema_mode="legacy") if t["name"] == "play")
                 self.assertEqual(tool["description"], shared["description"])
                 for name, definition in shared_params.items():
                     expected = dict(definition)
@@ -382,7 +407,7 @@ class RootMcpProtocolTests(unittest.TestCase):
 
     def test_compatibility_schema_does_not_inject_turtle_soup_defaults(self):
         for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
-            params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+            params = self._play_schema(user_agent, schema_mode="legacy")["properties"]["params"]["properties"]
             for name in ("is_locked", "include_finished"):
                 self.assertNotIn("default", params[name])
                 self.assertEqual(params[name]["type"], "boolean")
@@ -392,7 +417,7 @@ class RootMcpProtocolTests(unittest.TestCase):
     def test_cotraveler_string_enum_is_only_in_compatibility_schema(self):
         for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
             with self.subTest(user_agent=user_agent):
-                params = self._play_schema(user_agent)["properties"]["params"]["properties"]
+                params = self._play_schema(user_agent, schema_mode="legacy")["properties"]["params"]["properties"]
                 schema = params["cotraveler"]
                 self.assertEqual(schema["type"], "string")
                 self.assertEqual(schema["enum"], ["0", "1", "quiet"])
@@ -445,7 +470,7 @@ class RootMcpProtocolTests(unittest.TestCase):
     def test_kelivo_puzzle_id_and_answer_accept_all_supported_types(self):
         for user_agent in ("Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
             with self.subTest(user_agent=user_agent):
-                schema = self._play_schema(user_agent)
+                schema = self._play_schema(user_agent, schema_mode="legacy")
                 Draft202012Validator.check_schema(schema)
                 params = schema["properties"]["params"]["properties"]
                 for name, accepted, rejected in (

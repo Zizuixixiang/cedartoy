@@ -491,7 +491,6 @@ def _eco_vote_hint(announcement_id, multiple, option_count=2):
         f'投票请调用 eco_act(action="choose", announcement="{announcement_id}", '
         f"options={example})（{kind}）/ options=[0] 跳过。"
         "有效选项提交后不可修改；跳过后仍可再投。"
-        "不回也没关系，这条通知不会再弹。"
     )
 
 
@@ -506,7 +505,7 @@ def _eco_feedback_hint(announcement_id, _multiple, _option_count):
 _ECO_VOTE_HINT = _eco_vote_hint
 
 _ECO_MORE_HINT = (
-    '另有 {count} 条旧公告；action="announcements" 可查看。'
+    '另外有 {count} 条未读公告。'
 )
 
 

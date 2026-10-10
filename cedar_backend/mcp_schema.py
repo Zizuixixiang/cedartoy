@@ -44,7 +44,7 @@ def _build_platform_tools(*, avatar_max_codepoints, max_invite_question, feedbac
                     },
                     "action": {
                         "type": "string",
-                        "description": "操作名称，如 nowhere 的 open_door/walk/continue_journey/schema（schema 返回完整动作），duel 的 invite/join/start/chat/reclaim（熟人联机）或 new/move/state/rooms（原流程）、cancel_wait（停止指定房间挂等），turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，detroit 的 list_saves/create_save/read_current_scene/record_choice/play_step/continue_scene/read_progress/read_record_card/save_chapter_reflection/start_next_chapter，tarot 的 invite/status/result/history/history_detail，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、announcements（查看公告）、vote（投票）。",
+                        "description": "操作名称，如 nowhere 的 open_door/walk/continue_journey/schema（schema 返回完整动作），duel 的 invite/join/start/chat/reclaim（熟人联机）或 new/move/state/rooms（原流程）、cancel_wait（停止指定房间挂等），turtle_soup 的 join/ask/guess/status，ai_life 的 start_game/current_decision/submit_action，detroit 的 list_saves/create_save/read_current_scene/record_choice/play_step/continue_scene/read_progress/read_record_card/save_chapter_reflection/start_next_chapter，tarot 的 invite/status/result/history/history_detail，forest 的 lines/start/observe/choose/status，crucible_echoes 的 new/state/spin/choose/skip/reroll/remove/inventory/use，或 mbti_start/dnd_start 等；vendor 存档动作中，ai_life、arcade、bar、burger、camping_plaza、crucible_echoes、delve、fishing、forest、imitator_td、leek、market、memoria、moonlit、travel、white_room 支持 export/import；跨游戏通用：rest（休息）、vote（投票）。",
                     },
                     "params": {
                         "type": "object",
@@ -430,6 +430,11 @@ def _build_root_platform_tools(platform_tools):
             "description": "fishing/bar/leek/delve/travel/white_room 等 cmd 命令文本；详见 Guide。",
         },
     }
+    account_tool = next(tool for tool in tools if tool.get("name") == "account")
+    account_tool["description"] = '账号操作先读 get_guide(game="account")。'
+    account_tool["inputSchema"]["properties"] = {
+        "action": {"type": "string", "description": "操作名；按账号 guide 填写。"},
+    }
     return tools
 
 
@@ -652,11 +657,14 @@ def _is_kelivo_user_agent(user_agent):
 
 def _root_tools(
     user_agent, *, root_platform_tools, kelivo_platform_tools, tool_names,
-    is_kelivo_user_agent,
+    is_kelivo_user_agent, schema_mode="",
 ):
-    platform_tools = (
-        kelivo_platform_tools
-        if is_kelivo_user_agent(user_agent)
-        else root_platform_tools
-    )
+    if schema_mode == "legacy":
+        platform_tools = kelivo_platform_tools
+    elif schema_mode == "standard":
+        platform_tools = root_platform_tools
+    else:
+        # 48-hour transition: keep UA compatibility until the announced switch.
+        # Afterward, only replace this default assignment with root_platform_tools.
+        platform_tools = kelivo_platform_tools if is_kelivo_user_agent(user_agent) else root_platform_tools
     return [tool for tool in platform_tools if tool.get("name") in tool_names]

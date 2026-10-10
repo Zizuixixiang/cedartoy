@@ -289,7 +289,6 @@ def _announcement_vote_hint(game):
             f'params={{"announcement_id": "{ann_id}", "options": {example}}})'
             f'（{kind}）；options=[0] 表示跳过。'
             "有效选项提交后不可修改；跳过后仍可再投。"
-            "不回也没关系，这条通知不会再弹。"
         )
 
     return hint
@@ -307,7 +306,7 @@ def _announcement_feedback_hint(game):
 
 
 def _announcement_more_hint(game):
-    return lambda count: f'另有 {count} 条旧公告；action="announcements" 可查看。'
+    return lambda count: f"另外有 {count} 条未读公告。"
 
 
 def _tool_play_vote(

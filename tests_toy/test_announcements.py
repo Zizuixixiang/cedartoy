@@ -105,7 +105,7 @@ class AnnouncementTests(unittest.TestCase):
         self.assertLess(first.index("标题5"), first.index("标题4"))
         self.assertLess(first.index("标题4"), first.index("标题3"))
         self.assertTrue(
-            first.endswith('另有 2 条旧公告；action="announcements" 可查看。')
+            first.endswith('另外有 2 条未读公告。\n查看历史公告：action="announcements"。')
         )
         with sqlite3.connect(self.db_path) as conn:
             self.assertEqual(
@@ -124,14 +124,16 @@ class AnnouncementTests(unittest.TestCase):
 
         self.assertEqual(announcements.check_announcements("42", "eco"), "")
 
-    def test_auto_push_with_three_or_fewer_is_unchanged(self):
+    def test_auto_push_with_three_or_fewer_has_one_history_hint(self):
         self._insert([self._notice(number) for number in range(1, 4)])
 
         text = announcements.check_announcements("7", "eco")
 
         self.assertLess(text.index("标题3"), text.index("标题2"))
         self.assertLess(text.index("标题2"), text.index("标题1"))
-        self.assertNotIn("旧公告", text)
+        self.assertNotIn("未读公告", text)
+        self.assertEqual(text.count('action="announcements"'), 1)
+        self.assertTrue(text.endswith('查看历史公告：action="announcements"。'))
         with sqlite3.connect(self.db_path) as conn:
             self.assertEqual(
                 conn.execute(
@@ -178,7 +180,7 @@ class AnnouncementTests(unittest.TestCase):
         )
         self.assertIn("重要旧投票", fresh)
         self.assertEqual(fresh.count("【系统通知】"), 4)
-        self.assertNotIn("旧公告", fresh)
+        self.assertNotIn("未读公告", fresh)
 
         human = announcements.check_announcements("human:7", "eco")
         self.assertNotIn("重要旧投票", human)
@@ -318,6 +320,7 @@ class AnnouncementTests(unittest.TestCase):
         first = server._tool_play_announcement_history("eco", "history", {})
 
         self.assertTrue(first["ok"])
+        self.assertNotIn("查看历史公告", first["text"])
         self.assertEqual(first["text"].count("【系统通知】"), 10)
         self.assertLess(first["text"].index("标题12"), first["text"].index("标题11"))
         self.assertIn("【系统通知】标题3", first["text"])
@@ -335,6 +338,18 @@ class AnnouncementTests(unittest.TestCase):
         self.assertEqual(second["text"].count("【系统通知】"), 2)
         self.assertLess(second["text"].index("标题2"), second["text"].index("标题1"))
         self.assertNotIn("还有更早公告", second["text"])
+        self.assertNotIn("查看历史公告", second["text"])
+
+    def test_eco_runtime_older_count_has_one_history_hint(self):
+        for number in range(5):
+            announcements.create_announcement(
+                f"eco-notice-{number}", "notice", "普通公告", "内容", "eco",
+            )
+        text = eco_handler._with_announcements("42", "池塘状态")
+        self.assertEqual(text.count('action="announcements"'), 1)
+        self.assertTrue(text.endswith(
+            '另外有 2 条未读公告。\n查看历史公告：action="announcements"。\n\n池塘状态'
+        ))
 
     def test_play_announcements_dispatches_without_backend_or_auto_prepend(self):
         expected = {"ok": True, "text": "公告"}
@@ -541,10 +556,10 @@ class AnnouncementTests(unittest.TestCase):
         self._create_targeted()
         other = announcements.check_announcements("human:10001", "eco")
         self.assertNotIn("private", other)
-        self.assertIn("另有 2 条旧公告", other)
+        self.assertIn("另外有 2 条未读公告。", other)
         target = announcements.check_announcements("human:10000", "eco")
         self.assertIn("private", target)
-        self.assertIn("另有 3 条旧公告", target)
+        self.assertIn("另外有 3 条未读公告。", target)
         # The numeric machine account must not share the human account's notice.
         self.assertNotIn("private", announcements.check_announcements("10000:2", "eco"))
         for identity, expected in (("human:10001", 5), ("10000:3", 5), ("human:10000", 6)):
@@ -1032,18 +1047,11 @@ class AnnouncementTests(unittest.TestCase):
             eco_act["inputSchema"]["properties"]["feedback"]["maxLength"], 500
         )
         guide = json.loads(server._tool_get_guide({"game": "eco"}))["guide"]
-        self.assertIn("feedback", guide)
-        self.assertIn("不可修改", guide)
-        self.assertIn("单选 options=[1]", guide)
-        self.assertIn("多选 options=[1,2]", guide)
-        self.assertNotIn('options="1"', guide)
+        for term in ("feedback", "单选 options=[1]", "多选 options=[1,2]", "平台公告"):
+            self.assertNotIn(term, guide)
 
-        soup_guide = json.loads(
-            server._tool_get_guide({"game": "turtle_soup"})
-        )["platform_announcements"]
-        self.assertIn('"options":[1]', soup_guide["single"])
-        self.assertIn('"options":[1,2]', soup_guide["multiple"])
-        self.assertIn('"options":[0]', soup_guide["skip"])
+        soup_guide = json.loads(server._tool_get_guide({"game": "turtle_soup"}))
+        self.assertNotIn("platform_announcements", soup_guide)
 
         captured = {}
         with (
@@ -1113,14 +1121,11 @@ class AnnouncementTests(unittest.TestCase):
         )
         handler._send_json.assert_called_once()
 
-    def test_persistent_play_schema_keeps_announcement_wording_short(self):
-        play = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")
-        properties = play["inputSchema"]["properties"]
-        action_description = properties["action"]["description"]
-
-        self.assertIn("announcements（查看公告）", action_description)
-        self.assertNotIn("分页", action_description)
-        self.assertNotIn("announcements", properties["params"]["description"])
+    def test_root_play_schema_has_no_persistent_announcement_wording(self):
+        play = next(tool for tool in server._ROOT_PLATFORM_TOOLS if tool["name"] == "play")
+        serialized = json.dumps(play, ensure_ascii=False)
+        for term in ("announcements", "vote", "feedback", "announcement_id"):
+            self.assertNotIn(term, serialized)
 
         kelivo_play = next(
             tool for tool in server._build_kelivo_platform_tools() if tool["name"] == "play"
