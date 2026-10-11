@@ -359,6 +359,23 @@
       scrollbar-color: var(--purple) var(--purple-light);
     }
 
+    .game-group-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-top: 4px;
+      color: var(--purple-dark);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+    .game-group-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--purple-light);
+    }
+
     .games::-webkit-scrollbar {
       width: 6px;
     }
@@ -4604,6 +4621,14 @@
     }
 
     function compareHomepageGames(left, right) {
+      // Compare category first so the two test groups stay contiguous.
+      const categoryOrder = Number(left.category !== "test") - Number(right.category !== "test");
+      if (categoryOrder) return categoryOrder;
+      if (left.category === "test") {
+        const groupOrder = Number(!left.tags.includes("开放量表"))
+          - Number(!right.tags.includes("开放量表"));
+        if (groupOrder) return groupOrder;
+      }
       const fixedOrder = fixedGameRank(left.id) - fixedGameRank(right.id);
       if (fixedOrder) return fixedOrder;
 
@@ -6256,13 +6281,19 @@
       if (!visibleGames.some((game) => game.id === selected)) {
         selected = visibleGames[0]?.id || "soup";
       }
+      let lastTestGroup = "";
       $("gameList").innerHTML = homepageGames.map((game) => {
         const searchable = `${game.name} ${game.short} ${game.tags.join(" ")}`.toLowerCase();
         const hidden = !canShowGame(game) || game.category !== filter || (query && !searchable.includes(query));
+        const testGroup = filter === "test" && !hidden
+          ? (game.tags.includes("开放量表") ? "开放量表" : "普通测试") : "";
+        const heading = testGroup && testGroup !== lastTestGroup
+          ? `<div class="game-group-title" role="heading" aria-level="2">${testGroup}</div>` : "";
+        if (testGroup) lastTestGroup = testGroup;
         const enterLabel = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
         const tags = game.tags.map((tag, index) => `<span class="tag ${index === 0 ? "pink" : ""}">${tag}</span>`).join("");
         return `
-          <button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
+          ${heading}<button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
             ${ICON_IDS.includes(game.id)
               ? `<span class="glyph has-img"><img src="${gameIconUrl(game)}" alt="" loading="lazy"></span>`
               : `<span class="glyph">${game.glyph}</span>`}
