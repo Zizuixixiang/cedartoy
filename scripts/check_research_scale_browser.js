@@ -177,7 +177,7 @@ async function main(){
       await page.waitForFunction(n=>document.getElementById('questionNumber').textContent===`QUESTION ${n}` || !document.getElementById('resultPanel').hidden,i+2);
     }
     await page.locator('#resultPanel').waitFor();
-    assert.equal(await page.locator('.research-score dd').innerText(),'0.00');
+    assert.equal(await page.locator('.research-score dd').innerText(),'0.00 / 4');
     await capture('bsfl-result');
     await page.reload();await page.locator('#resultPanel').waitFor();
     page.once('dialog',dialog=>dialog.dismiss());
@@ -199,7 +199,15 @@ async function main(){
       },spec.items.map((_,i)=>spec.options[i%spec.options.length].value));
       await page.reload();await page.locator('#resultPanel').waitFor();
       assert.equal(await page.locator('#resultText').isVisible(),false);
-      assert.deepEqual(await page.locator('.research-score dd').allTextContents(),expected);
+      assert.deepEqual(await page.locator('.research-score-value').allTextContents(),expected);
+      const ranges=await page.evaluate(()=>activeState.result_data.score_ranges);
+      for(const [key,bounds] of Object.entries(ranges)) {
+        const idx=Object.keys(await page.evaluate(()=>activeState.result_data.scores)).indexOf(key);
+        const actual=await page.locator('.research-score dd').nth(idx).innerText();
+        assert.ok(actual.includes(bounds.kind==='difference'?`范围 ${bounds.min}～${bounds.max}`:`/ ${bounds.max}`),spec.game+'/'+key);
+      }
+      assert.equal(await page.locator('.research-report-footnote').count(),0);
+
       assert.equal(await page.locator('.research-result a').getAttribute('href'),spec.source);
       const report = await page.evaluate(() => activeState.result_data.interpretation || null);
       assert.ok(report && typeof report.summary==='string' && report.summary.length>25,

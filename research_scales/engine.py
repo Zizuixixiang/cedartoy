@@ -73,18 +73,50 @@ class ResearchScaleEngine(ScaleTestEngine):
             scores[difference['key']] = scores[difference['minuend']] - scores[difference['subtrahend']]
         return scores
 
+    def score_ranges(self):
+        """Public display bounds from the original response scale, never a new score.
+
+        The mean-difference metric is bipolar, not a fraction of a maximum.
+        """
+        lo, hi = self.answer_min, self.answer_max
+        totals = {key: sum(q['dimension'] == key for q in self.items)
+                  for key in self.spec['dimensions']}
+        ranges = {}
+        for key, count in totals.items():
+            if self.spec['aggregation'] == 'sum':
+                ranges[key] = {'min': lo * count, 'max': hi * count, 'kind': 'sum'}
+            else:
+                ranges[key] = {'min': lo, 'max': hi, 'kind': 'mean'}
+        if self.spec.get('overall_mean'):
+            ranges['overall'] = {'min': lo, 'max': hi, 'kind': 'mean'}
+        if difference := self.spec.get('mean_difference'):
+            span = hi - lo
+            ranges[difference['key']] = {'min': -span, 'max': span, 'kind': 'difference'}
+        return ranges
+
+    @staticmethod
+    def display_score(value, bounds):
+        highest, lowest = bounds['max'], bounds['min']
+        if bounds['kind'] == 'difference':
+            return f'{value:.2f}（范围 {lowest:g}～{highest:g}）'
+        if bounds['kind'] == 'sum' and lowest != 0:
+            return f'{value:.2f} / {highest:g}（范围 {lowest:g}～{highest:g}）'
+        return f'{value:.2f} / {highest:g}'
+
     def _state(self, player, mode, session_id, answers, *, complete=False, scores=None, include_interpretation=True):
         state = {'ok': True, 'game': self.game, 'player_id': player, 'research': True,
             'mode': mode, 'edition': mode, 'session_id': session_id,
             'progress': len(answers), 'total': len(self.items), 'complete': complete,
             'instructions': self.spec['instruction'], 'notice': self.notice}
         if complete:
-            lines = [f'【{self.title}】', self.notice]
+            ranges = self.score_ranges()
+            lines = [f'【{self.title}】']
             for key, value in scores.items():
-                lines.append(f"{self.result_dimensions[key]}：{value:.2f}")
-            lines.extend([self.scoring_note, self.attribution, f'存档身份：{player}'])
+                lines.append(f'{self.result_dimensions[key]}：{self.display_score(value, ranges[key])}')
+            if self.game == 'aidep':
+                lines.append('研究情境：中国大学生在学习任务中使用 AI。')
             state.update(result='\n'.join(lines), result_data={'kind': 'research_scale',
-                'scores': scores, 'dimensions': self.result_dimensions,
+                'scores': scores, 'score_ranges': ranges, 'dimensions': self.result_dimensions,
                 'scoring_note': self.scoring_note, 'source': self.attribution, 'notice': self.notice})
             if include_interpretation:
                 report = build_interpretation(self.spec, scores)

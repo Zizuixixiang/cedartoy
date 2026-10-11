@@ -86,11 +86,14 @@ def access(engine, account_connect, user, error, *, change=None, human_id=None):
                 raise error(-32003, '无权查看此共享结果')
             # No receipt, answer, question, username, or other account data here.
             report = build_interpretation(engine.spec, result[2])
+            ranges = engine.score_ranges()
+            readable = '\n'.join(f'{engine.result_dimensions[key]}：{engine.display_score(value, ranges[key])}'
+                                 for key, value in result[2].items())
             return {'ok': True, 'game': 'aidep', 'human_id': human_id,
-                    'scores': result[2], 'dimensions': dict(engine.result_dimensions),
+                    'scores': result[2], 'score_ranges': ranges, 'dimensions': dict(engine.result_dimensions),
                     'explanation': '总体与四维均分范围为1–5；越高表示相应依赖表现越多，不代表诊断或临床分级。',
                     'notice': engine.notice,
-                    'interpretation': report, 'result': format_interpretation(report)}
+                    'interpretation': report, 'result': readable + '\n\n' + format_interpretation(report)}
 
         if change is not None:
             if type(change.get('enabled')) is not bool:

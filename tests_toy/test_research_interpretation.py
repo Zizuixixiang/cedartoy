@@ -19,6 +19,7 @@ import server
 import research_scales
 from research_scales.engine import ResearchScaleEngine
 from research_scales.interpretation import build_interpretation, format_interpretation, SUPPORTED_GAMES
+from research_scales.interpretation_content import SINGLES
 from tests_toy.test_aidep_sharing import seed_accounts
 
 
@@ -95,9 +96,20 @@ class InterpretationTests(unittest.TestCase):
                     result = e.execute('answer_batch', {'player_id': player, 'session_id': state['session_id'], 'answers': answers})
                     data = result['result_data']
                     self.assertEqual(data['scores'], independent_score(e, answers, state['session_id']))
+                    self.assertEqual(set(data['score_ranges']), set(data['scores']))
+                    for metric, score in data['scores'].items():
+                        bounds = data['score_ranges'][metric]
+                        self.assertLessEqual(bounds['min'], score)
+                        self.assertLessEqual(score, bounds['max'])
+                        self.assertIn(bounds['kind'], ('mean', 'sum', 'difference'))
+                        if bounds['kind'] == 'difference':
+                            self.assertIn('范围', result['result'])
+                        else:
+                            self.assertIn(f'/ {bounds["max"]:g}', result['result'])
                     report = data['interpretation']
                     self.assertEqual(report['game'], game)
-                    self.assertEqual([n['key'] for n in report['dimension_notes']], list(e.spec['dimensions']))
+                    self.assertEqual([n['key'] for n in report['dimension_notes']],
+                                     [] if game in SINGLES else list(e.spec['dimensions']))
                     self.assertIn(format_interpretation(report), result['result'])
                     self.assertTrue(report['recommendations'])
                     summaries.add(report['summary'])
@@ -178,14 +190,14 @@ class InterpretationTests(unittest.TestCase):
             keys = list(e.spec['dimensions'])
             scores[keys[0]] += .01
             report = build_interpretation(e.spec, scores)
-            self.assertIn('位置接近', report['summary'])
+            self.assertNotIn('排在较前', report['summary'])
             self.assertNotIn('排在较前', report['summary'])
         e = research_scales.SCALES['ppts']
         self.assertIn('可以同时成立', build_interpretation(e.spec, {'procrastination': 5, 'precrastination': 5})['summary'])
         e = research_scales.SCALES['irrc']
         report = build_interpretation(e.spec, dict.fromkeys(e.spec['dimensions'], 5))
         self.assertIn('同时靠近', report['summary'])
-        self.assertIn('方向相反', report['summary'])
+        self.assertIn('困难体验', report['summary'])
         self.assertNotIn('overall', [n['key'] for n in report['dimension_notes']])
         e = research_scales.SCALES['rss']
         report = build_interpretation(e.spec, e.score([7]*12))
@@ -227,9 +239,9 @@ class InterpretationTests(unittest.TestCase):
                 'recommendations', 'source_note', 'source_url', 'boundary'})
             self.assertEqual([n['key'] for n in report['dimension_notes']], list(keys))
             self.assertTrue(all(n['range'] == [1, 5] for n in report['dimension_notes']))
-            self.assertIn('过去一周', report['summary'])
+            self.assertIn('三方面', report['summary'])
             self.assertIn('非作者官方分数', report['boundary'])
-            self.assertIn('位置接近', report['summary'])
+            self.assertNotIn('排在较前', report['summary'])
         permutations = [build_interpretation(e.spec, dict(zip(keys, values)))
                         for values in itertools.permutations((1, 3, 5))]
         self.assertEqual(len({r['summary'] for r in permutations}), 6)

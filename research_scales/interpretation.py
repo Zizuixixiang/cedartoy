@@ -27,11 +27,11 @@ def _ordering(keys, positions, labels):
     ordered = sorted(keys, key=lambda key: -positions[key])
     first, last = ordered[0], ordered[-1]
     if positions[first] - positions[last] < COMPARISON_GAP:
-        return '这些维度的回答位置接近，本次不强调先后；相近数字不表示它们对生活的影响相同。'
+        return ''
     # Retain ties / small gaps in the top and bottom groups.
     top = [labels[k] for k in ordered if positions[first] - positions[k] < COMPARISON_GAP / 2]
     bottom = [labels[k] for k in ordered if positions[k] - positions[last] < COMPARISON_GAP / 2]
-    return f'按本次回答位置，{"、".join(top)}排在较前，{"、".join(bottom)}排在较后；这只是题组在本次量尺上的相对位置，不是能力排名或统计显著差异。'
+    return f'相对更突出：{"、".join(top)}；较少：{"、".join(bottom)}。'
 
 
 def _pair(p, a, b, both_high, both_low, a_first, b_first, close):
@@ -48,32 +48,35 @@ def _pair(p, a, b, both_high, both_low, a_first, b_first, close):
 
 def _combination(game, p):
     if game == 'rbi':
-        if max(p.values()) - min(p.values()) < COMPARISON_GAP:
+        spread = max(p.values()) - min(p.values())
+        if spread < COMPARISON_GAP:
             if max(p.values()) < .25:
-                return '三类行为都较少符合这一周的自述，不宜从中选出短板，也不能直接理解为感情淡了。可以先核对本周是否有相处机会，再商量一个容易做到的接触或回应。'
+                return '三方面的互动在这一周都较少出现。先核对是否有足够相处机会，再商量一个双方愿意尝试的小改变。'
             if min(p.values()) > .75:
-                return '三类行为都较符合这一周的自述，没有必要为了找问题硬排高下。可请双方各举一个真正有帮助的互动，看看哪些做法值得保留，而不把一致的分数当作关系满意的证明。'
-            return '三类行为的位置接近，本次没有需要强调的落差；相近的均分也不表示每一天或每件事都一样。可各选一个相处片段，核对当时的需要、表达与实际回应是否接得上。'
-        # Pairwise comparisons keep near ties quiet and distinguish all six
-        # well-separated orders, without assigning a relationship type/grade.
+                return '三方面的互动这一周都比较丰富。可以互相说说哪些做法真正有帮助，继续保留双方都喜欢的部分。'
+            return '三方面相对接近，不必硬找短板。可以回想一件相处中的小事，看看表达的需要和实际回应是否一致。'
+        # Choose one strongest meaningful contrast; do not re-explain all three
+        # pair comparisons as if every small gap were a separate finding.
         comparisons = (
             ('openness', 'sai',
-             '开放表达比陪伴与情感互动更符合这次自述，可以留意：能沟通的需求是否转化为双方实际感受到的关心与回应；分数本身不能证明这一环节已经脱节。',
-             '陪伴与情感互动比开放表达更符合这次自述，可以保留相处中的温暖，同时选一个具体需要谈清楚，不假设彼此亲近就自然知道对方在想什么。'),
+             '开放表达比日常情感互动更突出：能沟通的需求是否转化为双方实际感受到的关心与回应？',
+             '情感互动比开放表达更突出：相处中虽然有温暖，有没有一些需要还没真正谈清楚？'),
             ('fod', 'sai',
-             '履行伴侣责任的位置高于陪伴与情感互动，可以核实完成事务之外，双方是否也有被专注陪伴的时刻；做了很多事与感受到关心需要分别确认。',
-             '陪伴与情感互动的位置高于履行伴侣责任，可以把一份关心落实到一件共同认可的安排，不用亲密表达替代尚待协商的责任。'),
+             '日常责任落实比情感互动更突出：除了把事情做好，双方是否也有被专注陪伴的时刻？',
+             '情感互动比责任落实更突出：有没有一件共同需要完成的事，适合把关心转化为实际分担？'),
             ('openness', 'fod',
-             '开放表达的位置高于履行伴侣责任，可以从一次已经谈过的需要中选一个双方愿意的回应，约好尝试时间，再核实是否落实。',
-             '履行伴侣责任的位置高于开放表达，可以在商量分工时多问一句这是否仍是对方需要的帮助，给双方调整期待的机会。'),
+             '开放表达比责任落实更突出：可以从已谈过的需要中，选一件双方认可的小事真正落实。',
+             '责任落实比开放表达更突出：实际帮忙有没有符合对方真正想要的支持？不妨一起确认。'),
         )
-        observations = []
-        for a, b, a_first, b_first in comparisons:
-            if p[a] - p[b] >= COMPARISON_GAP:
-                observations.append(a_first)
-            elif p[b] - p[a] >= COMPARISON_GAP:
-                observations.append(b_first)
-        return ' '.join(observations)
+        compared = sorted(
+            ((abs(p[a]-p[b]), a_first if p[a] >= p[b] else b_first)
+             for a,b,a_first,b_first in comparisons), reverse=True)
+        max_keys = [k for k,v in p.items() if max(p.values())-v < COMPARISON_GAP / 2]
+        min_keys = [k for k,v in p.items() if v-min(p.values()) < COMPARISON_GAP / 2]
+        if len(max_keys)>1 or len(min_keys)>1:
+            names = {key: {'sai':'陪伴与情感互动','fod':'履行伴侣责任','openness':'关系中的开放表达'}[key] for key in p}
+            return f'{"、".join(names[k] for k in max_keys)}相对更突出，{"、".join(names[k] for k in min_keys)}较少。' + compared[0][1]
+        return compared[0][1]
     if game == 'ppts':
         return _pair(p, 'procrastination', 'precrastination',
             '两项都靠近频率较多的一端，可以同时成立，不必强行选一个标签。可对照难开始的任务与急着清掉的任务，检查是否需要分别调整开始和复核环节。',
@@ -179,20 +182,23 @@ def build_interpretation(spec, scores):
         reflection = variants[min(4, int(positions[key] * 5))]
         summary = reflection
         # No second copy of the reflection in the same report.
-        notes.append({'key': key, 'label': labels[key], 'score': scores[key],
-                      'range': ranges[key], 'text': '这是单维汇总；相同分数可能来自不同作答，不能从总分还原具体经历或拆出性格侧面。'})
+        # For one-dimensional scales the summary is the explanation. Do not
+        # add a generic second paragraph that merely says the score is single.
         recommendations = [action]
     else:
         boundary = BOUNDARY[game]
         for key in spec['dimensions']:
             notes.append({'key': key, 'label': labels[key], 'score': scores[key],
                           'range': ranges[key], 'text': DIMENSIONS[game][key][_band(positions[key])]})
+        observation = _combination(game, positions)
         if game == 'irrc':
-            ordering = ('能力体验：' + _ordering(CAPABILITIES, positions, labels)
-                        + ' 困难体验：' + _ordering(DIFFICULTIES, positions, labels))
-        else:
-            ordering = _ordering(list(positions), positions, labels)
-        summary = INTRO[game] + ' ' + ordering + ' ' + _combination(game, positions)
+            ability = _ordering(CAPABILITIES, positions, labels)
+            difficulty = _ordering(DIFFICULTIES, positions, labels)
+            differences = ' '.join(f'{name}：{detail}' for name, detail in
+                                   (('关系能力', ability), ('困扰体验', difficulty)) if detail)
+            if differences:
+                observation = differences + ' ' + observation
+        summary = observation
         recommendations = list(RECOMMENDATIONS[game])
     return {
         'version': 1, 'game': game, 'summary': summary,
@@ -204,11 +210,14 @@ def build_interpretation(spec, scores):
 
 def format_interpretation(report):
     """Plain text for MCP and fallback consumers; contains no private item data."""
-    parts = ['【综合观察】', report['summary'], '【维度解读】']
+    parts = ['【综合观察】', report['summary']]
+    if report['dimension_notes']:
+        parts.append('【维度解读】')
     for note in report['dimension_notes']:
-        low, high = note['range']
-        parts.append(f"{note['label']}（{note['score']:.2f}，范围{low}–{high}）：{note['text']}")
-    parts.append('【行动思路 · 平台建议】')
-    parts.extend(f'{i}. {item}' for i, item in enumerate(report['recommendations'], 1))
-    parts.extend([report['source_note'], report['boundary']])
+        parts.append(f"{note['label']}：{note['text']}")
+    if report['recommendations']:
+        parts.append('【可以试试】')
+        parts.extend(f'{i}. {item}' for i, item in enumerate(report['recommendations'], 1))
+    # Source/version limitations remain in structured metadata and the existing
+    # notice; do not repeat them at the foot of every human/AI report.
     return '\n\n'.join(parts)

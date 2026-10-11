@@ -1,5 +1,7 @@
 # 人类测试与小机报告审计 / 18款研究量表解读
 
+**2026-10-12结果页简化**：18款均显示各自的「得分 / 满分」；原始总分显示可得区间，BSR双极差值独立标注−4～4，均不改算分。报告正文删除重复量表介绍、排名解释和免责声明，保留动态观察、各维度内容和行动建议。原局限仍在来源/许可及结构化数据，MCP可读文本同步简化；以下旧阶段的“待整合”和响应大小属于历史记录，最新大小见重新生成的样例。
+
 2026-10-11；仅修改 `cedartoy-report-audit-20261011` 隔离树。无生产数据库、服务操作、commit、push、部署或重启。`test_game.html`、`index.html`、全部量表题库均未修改；RBI本次仅补服务端解读。
 
 交付：18款按历史 `scores` 即时生成中文解读，包含综合观察、维度说明与行动建议；人类完成结果和恢复结果都有结构化字段，17款普通MCP完成/get_result有可读全文，AIDep仅经既有显式授权分享。**本文件的旧量表审计描述针对改版前状态**；发布整合已将18款统一字段接入网页结果页，360px、430px和1280px真实浏览器检查通过，旧8款回归保持不变。
@@ -74,7 +76,7 @@
 
 新增 `research_scales/interpretation.py`（纯生成/格式化）及 `interpretation_content.py`（各量表原创短文）。输入只有spec与保存的scores，不读答卷、不重算分数、不写DB。未知量表、缺失/越界/非有限/布尔分数不生成猜测报告；原有结果仍可读取。
 
-完成报告保持原 `result` 全文，末尾追加解读；保持 `result_data` 原有 `kind/scores/dimensions/scoring_note/source/notice`，只增加可选 `interpretation`。现有 `overall`、BSR `difference` 原样保留，不另造评分维度。
+完成报告的 `result` 改为得分与解读的精简版本，`result_data` 保留 `kind/scores/dimensions/scoring_note/source/notice`，新增 `score_ranges` 和 `interpretation`。现有 `overall`、BSR `difference` 原样保留，不另造评分维度。
 
 | 路径 | 新字段位置 | 行为 |
 | --- | --- | --- |
@@ -106,7 +108,7 @@ AIDep仍仅人类作答，只有当前结果已显式授权给当前绑定小机
 | `source_url` | string，原spec论文/官方键URL |
 | `boundary` | string，该量表的一句特有边界 |
 
-完整的真实JSON见[91套样例](research-scales-report-samples.json)，例如 `samples.ppts[2].interpretation`；每个game有相同结构。建议在已有分数之后复用 `appendResultTextSection`：先综合观察，再按维度顺序渲染label/text，最后 `appendResultListSection` 显示「行动思路 · 平台建议」，来源与边界作为较小的说明文字。全程textContent/现有安全文本helper，不用innerHTML。不要把整份 `result` 再同时贴在结构化报告下方，也不要用前端再生成解读或给分数加红绿等级。保持原结果图表、分数、统计和来源入口。
+完整的真实JSON见[91套样例](research-scales-report-samples.json)，例如 `samples.ppts[2].interpretation`；每个game有相同结构。建议在已有分数之后复用 `appendResultTextSection`：先综合观察，再按维度顺序渲染label/text，最后 `appendResultListSection` 显示「行动思路 · 平台建议」，来源与研究边界放在既有折叠区域和结构化元数据，不再占据阅读正文。全程textContent/现有安全文本helper，不用innerHTML。不要把整份 `result` 再同时贴在结构化报告下方，也不要用前端再生成解读或给分数加红绿等级。保持原结果图表、分数、统计和来源入口。
 
 整合后真实Chromium检查360px、430px与1280px，长段落、七维长报告、RBI混合组合、旧MBTI/ECR参考和水平溢出均通过；安全文本节点渲染，不以innerHTML拼接报告。分数原样展示，报告在其下方呈现。
 

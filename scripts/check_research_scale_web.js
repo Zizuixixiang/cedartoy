@@ -137,7 +137,13 @@ function assertResearchResult(dom, spec) {
   const data=JSON.parse(dom.window.eval('JSON.stringify(activeState.result_data)'));
   assert.equal($(dom,'resultText').hidden,true);
   assert.equal($(dom,'resultStructured').hidden,false);
-  assert.deepEqual([...dom.window.document.querySelectorAll('.research-score dd')].map(n=>n.textContent),Object.values(data.scores).map(n=>n.toFixed(2)));
+  assert.deepEqual([...dom.window.document.querySelectorAll('.research-score dd .research-score-value')].map(n=>n.textContent),Object.values(data.scores).map(n=>n.toFixed(2)));
+  for (const [key, bounds] of Object.entries(data.score_ranges)) {
+    const order = Object.keys(data.scores).indexOf(key);
+    const shown = dom.window.document.querySelectorAll('.research-score dd')[order].textContent;
+    assert.ok(shown.includes(bounds.kind==='difference' ? `范围 ${bounds.min}～${bounds.max}` : ` / ${bounds.max}`), `${spec.game}/${key} range`);
+  }
+  assert.equal(dom.window.document.querySelectorAll('.research-report-footnote').length,0,'no dense report disclaimer');
   assert.equal($(dom,'pageDisclaimer').textContent,expectedNotice(spec.game));
   assert.equal(dom.window.document.querySelectorAll('.research-result .research-notice').length,0);
   assert.equal(dom.window.document.querySelector('.research-result a').href,spec.source);
@@ -146,7 +152,7 @@ function assertResearchResult(dom, spec) {
   assert.equal(dom.window.document.querySelectorAll('.rbi-interpretation').length,spec.game==='rbi'&&!hasReport?1:0);
   assert.doesNotMatch($(dom,'resultStructured').textContent,/存档身份|小机作答|原研究对象/);
   assert.ok(dom.window.eval('activeState.result').startsWith(`【${spec.title}】`),'backend formal title retained');
-  assert.ok(dom.window.eval('activeState.result').includes(spec.notice),'backend notice retained');
+  assert.ok(dom.window.eval('activeState.notice').includes(spec.notice),'backend notice retained in metadata');
   if(spec.scoring_note) assert.equal(data.scoring_note,spec.scoring_note);
 }
 async function checkRbiInterpretation(){
@@ -158,7 +164,7 @@ async function checkRbiInterpretation(){
       renderState(await api('answer_batch',{answers:[3,3,3,3,3,3,2,4,4,4,4,3,3,3,4,4,5,5]}));
     })()`);
     const d=dom.window.document;
-    assert.deepEqual([...d.querySelectorAll('.research-score dd')].map(n=>n.textContent),['2.86','3.57','4.50']);
+    assert.deepEqual([...d.querySelectorAll('.research-score dd')].map(n=>n.textContent),['2.86 / 5','3.57 / 5','4.50 / 5']);
     const serverReport=JSON.parse(dom.window.eval('JSON.stringify(activeState.result_data.interpretation)'));
     if (serverReport) {
       assert.equal(d.querySelector('.research-interpretation .research-summary').textContent,serverReport.summary);

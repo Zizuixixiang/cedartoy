@@ -75,13 +75,14 @@
     .research-score { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 12px; padding: 12px 0; border-bottom: 2px solid var(--purple-light); }
     .research-score:first-child { padding-top: 0; }
     .research-score dt { font-size: 14px; line-height: 1.65; }
-    .research-score dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .research-score dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .research-score-maximum { color: var(--muted); font-size: 15px; font-weight: 600; }
+    .research-score-range { display: block; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; }
     .research-result .research-help { margin-top: 16px; }
     .rbi-interpretation { margin-top: 22px; font-size: 14px; line-height: 1.8; }
     .rbi-interpretation h3, .rbi-interpretation h4 { margin: 0 0 6px; font-size: 14px; }
     .rbi-interpretation h4 { margin-top: 16px; }
     .rbi-interpretation p { margin: 0; }
-    .rbi-interpretation .research-help { margin: 0 0 16px; }
     .rbi-interpretation .research-help { margin: 0 0 16px; }
     .research-interpretation { margin-top: 26px; padding-top: 21px; border-top: 2px solid var(--purple-light); font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
     .research-interpretation h3 { margin: 0 0 10px; color: var(--purple-darker); font-size: 15px; }
@@ -94,7 +95,6 @@
     .research-interpretation .research-actions { margin-top: 22px; }
     .research-interpretation .research-actions ol { margin: 0; padding-left: 22px; }
     .research-interpretation .research-actions li { margin: 0 0 10px; padding-left: 2px; }
-    .research-interpretation .research-report-footnote { margin: 18px 0 0; font-size: 12px; line-height: 1.65; color: var(--muted); }
     .research-help { margin: 12px 0 0; }
     .research-help a { color: inherit; }
     .research-page #questionIntro { color: var(--text); font-size: 13px; }
@@ -1898,10 +1898,27 @@
         actions.appendChild(list);
         section.appendChild(actions);
       }
-      const note = [report.source_note, report.boundary].filter(value => typeof value === "string" && value.trim()).join(" ");
-      if (note) section.appendChild(makeResultElement("p", "research-report-footnote", note));
       root.appendChild(section);
       return true;
+    }
+
+    function researchScoreLabel(value, bounds) {
+      const node = makeResultElement("dd", "", "");
+      if (!bounds || !Number.isFinite(bounds.min) || !Number.isFinite(bounds.max)
+          || bounds.max <= bounds.min || !["mean", "sum", "difference"].includes(bounds.kind)) {
+        node.textContent = value.toFixed(2);
+        return node;
+      }
+      node.appendChild(makeResultElement("span", "research-score-value", value.toFixed(2)));
+      if (bounds.kind === "difference") {
+        node.appendChild(makeResultElement("span", "research-score-range", `范围 ${bounds.min}～${bounds.max}`));
+      } else {
+        node.appendChild(makeResultElement("span", "research-score-maximum", ` / ${bounds.max}`));
+        if (bounds.kind === "sum" && bounds.min !== 0) {
+          node.appendChild(makeResultElement("span", "research-score-range", `范围 ${bounds.min}～${bounds.max}`));
+        }
+      }
+      return node;
     }
 
     function renderResearchResult(root, data) {
@@ -1914,13 +1931,10 @@
         // Trim only the repeated presentation suffix; keep saved values and keys intact.
         const label = data.dimensions[key].replace(/（(?:4399)?描述性?均分）$/, "");
         const row = makeResultElement("div", "research-score");
-        row.append(makeResultElement("dt", "", label), makeResultElement("dd", "", value.toFixed(2)));
+        row.append(makeResultElement("dt", "", label), researchScoreLabel(value, data.score_ranges?.[key]));
         list.appendChild(row);
       }
       result.appendChild(list);
-      const sum = CONFIG.game.startsWith("ipip_") || ["mesx", "romlon"].includes(CONFIG.game);
-      result.appendChild(makeResultElement("p", "research-help", sum ? "各维度为原始总分。"
-        : CONFIG.game === "bsr" ? "两类分别取均分；差值＝格言均分 − 伪深刻语句均分。" : "各维度为均分。"));
       const report = data.interpretation;
       const matchingReport = report && Array.isArray(report.dimension_notes)
         && report.dimension_notes.every(item => item && typeof item.key === "string"
