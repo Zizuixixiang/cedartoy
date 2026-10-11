@@ -240,9 +240,12 @@ class ResearchScalesTests(unittest.TestCase):
         start = html.index('const researchScales = ') + len('const researchScales = ')
         rows = json.JSONDecoder().raw_decode(html[start:])[0]
         self.assertEqual({row[0] for row in rows}, set(research_scales.SCALES))
+        short_titles = {'bsr': '伪深刻话语测试', 'rbi': '伴侣关系互动 RBI',
+                        'irrc': '恋爱关系能力 IRRC', 'jrrs': '恋爱嫉妒 JRRS',
+                        'ross': '恋爱求支持 RoSS', 'rss': '恋爱自我破坏 RSS'}
         for game, title, count, author, human_only, descriptive in rows:
             e = research_scales.SCALES[game]
-            self.assertEqual((title, count, author), (e.title, len(e.items), e.spec['author_short']))
+            self.assertEqual((title, count, author), (short_titles.get(game, e.title), len(e.items), e.spec['author_short']))
             self.assertEqual(human_only, game == 'aidep')
             self.assertEqual(descriptive, game in {'jrrs','ross','rss','irrc','rbi','ppts','bsfl'})
 

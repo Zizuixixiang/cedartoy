@@ -108,7 +108,7 @@ class RealPackageTests(unittest.TestCase):
                     for field in fields:
                         self.assertIn(field, instructions, action)
                 for required in ('/deeptalk', 'history', 'source', '从1起', '8–100位[A-Za-z0-9_-]',
-                                 '重试复用', '双方提交才解锁', '仅参与双方可见', '不计分，可跳题', '无标准答案', 'result只对照双方回答', '无评分或测评报告'):
+                                 '重试复用', '双方提交才解锁', '当前绑定小机共用草稿/revision', '解绑失权', '旧轮次限原双方', '冲突先重读合并', '不计分，可跳题', '无标准答案', 'result只对照双方回答', '无评分或测评报告'):
                     self.assertIn(required, guide)
                 operations = guide[guide.index('play(game='):].replace(game, '<game>')
                 if shared_operations is None:
@@ -119,7 +119,7 @@ class RealPackageTests(unittest.TestCase):
         for n, (tid, total) in enumerate(EXPECTED.items()):
             with self.subTest(topic=tid):
                 self.alias = next(game for game, topic in catalog.ALIASES.items() if topic == tid)
-                created = self.request(HUMAN, 'create', topic_id=tid, ai_id=AI['id'], request_id=f'real_create_{tid}')
+                created = self.request(HUMAN, 'create', topic_id=tid, request_id=f'real_create_{tid}')
                 rid = created['round_id']
                 self.assertEqual(created['total'], total)
                 questions = catalog.load_topic(tid)['questions']
@@ -169,7 +169,7 @@ class RealPackageTests(unittest.TestCase):
                         self.assertTrue(self.mcp(user, 'answer', game=self.alias, **write)['result']['isError'])
                         self.assertTrue(self.mcp(user, 'submit', game=self.alias, round_id=rid, revision=total, confirm=True)['result']['isError'])
                 self.assertEqual(self.http(HUMAN, 'answer', post=True, round_id=rid, question_id=questions[0]['id'], text='late', revision=total, request_id='late_answer')[0], 409)
-                repeat = self.request(HUMAN, 'create', topic_id=tid, ai_id=AI['id'], request_id=f'repeat_create_{tid}')
+                repeat = self.request(HUMAN, 'create', topic_id=tid, request_id=f'repeat_create_{tid}')
                 self.assertNotEqual(repeat['round_id'], rid)
                 self.assertEqual(self.request(HUMAN, 'view', round_id=rid), view)
                 history = self.request(HUMAN, 'history', limit=100)

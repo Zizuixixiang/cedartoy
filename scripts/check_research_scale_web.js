@@ -65,13 +65,13 @@ async function page(game, saved={}, options={}) {
       window.fetch=async (url,opts)=>{
         const body=JSON.parse(opts.body);
         requests.push({url,body});
-        if(url.endsWith('/answer') && options.waitAnswer) await options.waitAnswer;
-        if(url.endsWith('/answer') && options.failAnswer) {
+        if(url.endsWith('/save_answer') && options.waitAnswer) await options.waitAnswer;
+        if(url.endsWith('/save_answer') && options.failAnswer) {
           options.failAnswer=false;
           return {ok:false,status:503,json:async()=>({error:'保存失败'})};
         }
         const result=await request(url,body,opts.headers);
-        if(options.loseAnswer && url.endsWith('/answer')) { options.loseAnswer=false; throw new Error('response lost'); }
+        if(options.loseAnswer && url.endsWith('/save_answer')) { options.loseAnswer=false; throw new Error('response lost'); }
         return {ok:result.status===200,status:result.status,json:async()=>JSON.parse(result.body)};
       };
     }});
@@ -85,12 +85,12 @@ async function choose(dom,option=0){
   if(!$(dom,'saveAnswerButton').hidden) $(dom,'saveAnswerButton').click();
   await until(()=>!dom.window.eval('busy'),'answer saved');
 }
-async function homeTitles(width) {
+async function homeTitles(width, query="") {
   const errors=[];
   const virtualConsole=new VirtualConsole();
   virtualConsole.on('jsdomError',error=>errors.push(error.message));
   const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{
-    url:'https://fixture.invalid/',runScripts:'dangerously',pretendToBeVisual:true,virtualConsole,
+    url:'https://fixture.invalid/'+query,runScripts:'dangerously',pretendToBeVisual:true,virtualConsole,
     beforeParse(window) {
       window.innerWidth=width;
       window.matchMedia=query=>({matches:query.includes('max-width: 599px') && width<600});
@@ -100,6 +100,10 @@ async function homeTitles(width) {
   try {
     await tick();
     const d=dom.window.document;
+    const expected=query==='?tab=test'?'test':'mini';
+    assert.equal(dom.window.eval('filter'),expected);
+    assert.equal(d.querySelector('.tab-button.active').dataset.filter,expected);
+    assert.equal(dom.window.eval('games.filter(g=>g.testGroup==="deeptalk").length'),10);
     d.querySelector('[data-filter="test"]').click();
     const names=JSON.parse(dom.window.eval('JSON.stringify(Object.fromEntries(researchScales.map(([id,name])=>[id,name])))'));
     assert.equal(Object.keys(names).length,18);
@@ -123,25 +127,57 @@ async function homeTitles(width) {
     return names;
   } finally { dom.window.close(); }
 }
+function expectedNotice(game) {
+  if (['rbi','irrc','jrrs','ross','rss','ppts','bsfl'].includes(game)) return '非官方评分，仅供娱乐参考。';
+  if (game==='bsr') return '题目经改编，仅供娱乐参考。';
+  if (game==='aidep') return '仅供人类，按原量表计分，仅供娱乐参考。';
+  return '按原量表计分，仅供娱乐参考。';
+}
+function assertResearchResult(dom, spec) {
+  const data=JSON.parse(dom.window.eval('JSON.stringify(activeState.result_data)'));
+  assert.equal($(dom,'resultText').hidden,true);
+  assert.equal($(dom,'resultStructured').hidden,false);
+  assert.deepEqual([...dom.window.document.querySelectorAll('.research-score dd')].map(n=>n.textContent),Object.values(data.scores).map(n=>n.toFixed(2)));
+  assert.equal(dom.window.document.querySelector('.research-result .research-notice').textContent,expectedNotice(spec.game));
+  assert.equal(dom.window.document.querySelector('.research-result a').href,spec.source);
+  assert.doesNotMatch($(dom,'resultStructured').textContent,/存档身份|4399|小机作答|常模|效度|原研究对象/);
+  assert.ok(dom.window.eval('activeState.result').startsWith(`【${spec.title}】`),'backend formal title retained');
+  assert.ok(dom.window.eval('activeState.result').includes(spec.notice),'backend notice retained');
+  if(spec.scoring_note) assert.equal(data.scoring_note,spec.scoring_note);
+}
 async function main(){
   const games=fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n.endsWith('.json'))
     .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked);
   assert.equal(games.length,18);
   let names;
-  for(const width of [360,430,1280]) names=await homeTitles(width);
+  for(const width of [360,430,1280]) {
+    for(const query of ["", "?tab=test", "?tab=mini", "?tab=invalid"]) names=await homeTitles(width,query);
+  }
   for(const spec of games){
     let dom=await page(spec.game), d=dom.window.document;
     assert.equal($(dom,'title').textContent,names[spec.game]);
     assert.equal(d.title,`${names[spec.game]} · CEDAR TOY`);
+    assert.ok([...d.querySelectorAll('.brand, .back-link, #resultPanel .actions a')].every(a=>a.getAttribute('href')==='/?tab=test'));
+    assert.doesNotMatch($(dom,'questionIntro').textContent,/自动保存|不可修改|续答旧版/);
     assert.equal(dom.window.eval('CONFIG.title'),spec.title,'formal title stays intact');
     assert.equal(d.querySelectorAll('.mode-button').length,0,spec.game);
     assert.equal($(dom,'modePanel').hidden,true);
     assert.equal($(dom,'questionPanel').hidden,false);
-    assert.equal($(dom,'pageDisclaimer').textContent,'中文题目未经验证；仅供自我了解，不作诊断。');
+    assert.equal($(dom,'pageDisclaimer').textContent,expectedNotice(spec.game));
     assert.equal($(dom,'researchDetails').open,false);
-    assert.ok($(dom,'researchDetails').textContent.includes(spec.notice));
+    assert.doesNotMatch($(dom,'researchDetails').textContent,/小机作答|4399|不作诊断|原研究对象|常模|效度/);
+    assert.equal($(dom,'researchDetails').querySelector('summary').textContent,'来源与许可');
     assert.ok($(dom,'researchDetails').contains($(dom,'source')));
-    assert.equal($(dom,'source').textContent,`${spec.author} · ${spec.source} · ${spec.license}`);
+    const rows=[...$(dom,'source').querySelectorAll('dd')];
+    assert.equal(rows.length,4);
+    assert.equal(rows[0].textContent,spec.author,'full author credit retained');
+    assert.equal(rows[1].textContent,spec.source);
+    assert.equal(rows[2].textContent,spec.license.replace(/\s*(?:—\s*)?https?:\/\/[^\s；]+/g,''),'license name/restrictions retained');
+    const licenseURL=spec.license.match(/https?:\/\/[^\s；]+/);
+    if(licenseURL) assert.equal(rows[2].querySelector('a').href,licenseURL[0]);
+    assert.ok(rows[2].querySelector('a'),'clickable license');
+    if(spec.license_source) assert.equal(rows[2].querySelector('a').href,spec.license_source);
+    assert.ok(rows[3].textContent.length<40,'one short translation/adaptation line');
     assert.ok([...$(dom,'source').querySelectorAll('a')].some(a=>a.href===spec.source));
     for(const a of $(dom,'source').querySelectorAll('a')) {
       assert.match(a.href,/^https?:\/\//);
@@ -187,23 +223,34 @@ async function main(){
     assert.match($(dom,'progressLabel').textContent,new RegExp('2 / '+spec.items.length));
     $(dom,'previousButton').click();
     assert.ok(d.querySelector('#answers button.selected'));
-    assert.ok([...d.querySelectorAll('#answers button')].every(b=>b.disabled));
+    assert.ok([...d.querySelectorAll('#answers button')].every(b=>!b.disabled));
     assert.equal($(dom,'researchSaveHint'),null);
-    assert.equal($(dom,'modeLabel').textContent,'已保存');
-    $(dom,'nextSavedButton').click();
+    assert.equal($(dom,'modeLabel').textContent,'全题作答');
+    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'revisit next');
     assert.equal($(dom,'questionIntro').hidden,true);
-    for(let i=1;i<spec.items.length;i++) {
+    await choose(dom,1); // second question
+    d.querySelectorAll('#answers button')[2].click(); // third, not yet advanced
+    $(dom,'previousButton').click();await until(()=>!dom.window.eval('busy'),'save third before going back');
+    $(dom,'previousButton').click();
+    d.querySelectorAll('#answers button')[1].click();
+    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'edit first');
+    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'return to third');
+    assert.equal(dom.window.eval('answers[2]'),spec.options[2].value,'third selection survives first edit');
+    saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
+    assert.equal(dom.window.eval('cursor'),2);
+    assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(answers.slice(0,3))')),[spec.options[1].value,spec.options[1].value,spec.options[2].value]);
+    assert.equal(d.querySelector('#answers button.selected').getAttribute('aria-pressed'),'true');
+    for(let i=2;i<spec.items.length;i++) {
       assert.equal($(dom,'saveAnswerButton').textContent,i===spec.items.length-1?'查看结果':'下一题');
       await choose(dom);
     }
     assert.equal($(dom,'resultPanel').hidden,false);
-    const result=$(dom,'resultText').textContent;
-    assert.ok(result.startsWith(`【${spec.title}】`),'backend result keeps its formal title');
-    assert.ok(result.includes(spec.notice));
-    if(spec.scoring_note) assert.ok(result.includes(spec.scoring_note));
+    assertResearchResult(dom,spec);
+    const result=$(dom,'resultStructured').textContent;
     assert.equal($(dom,'compareBox').hidden,true);
     saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);
-    assert.equal($(dom,'resultText').textContent,result);
+    assertResearchResult(dom,spec);
+    assert.equal($(dom,'resultStructured').textContent,result);
     const before=requests.length;
     $(dom,'restartButton').click();
     assert.equal(requests.length,before,'cancel retest is read-only');
@@ -221,7 +268,7 @@ async function main(){
   const key='cedartoy_romlon_web_draft_'+player;
   const raw=JSON.stringify({game:'romlon',edition:'full_fast',session_id:state.session_id,total:4,answers:[1,2,null,null],cursor:2});
   let dom=await page('romlon',{cedartoy_guest_web_player_id:player,[key]:raw});
-  assert.match($(dom,'questionIntro').textContent,/旧版.*只存本机/);
+  assert.doesNotMatch($(dom,'questionIntro').textContent,/旧版|只存本机|自动保存|不可修改/);
   assert.match($(dom,'progressLabel').textContent,/3 \/ 4/);
   $(dom,'previousButton').click();await choose(dom,2);
   let saved=storage(dom);dom.window.close();dom=await page('romlon',saved);
@@ -259,12 +306,12 @@ async function main(){
     dom=await page('romlon',{},opts);
     dom.window.document.querySelector('#answers button').click();
     assert.equal(dom.window.document.activeElement,dom.window.document.querySelector('#answers button.selected'));
-    const before=requests.filter(r=>r.url.endsWith('/answer')).length;
+    const before=requests.filter(r=>r.url.endsWith('/save_answer')).length;
     $(dom,'saveAnswerButton').click();$(dom,'saveAnswerButton').click();
     assert.equal(dom.window.eval('busy'),true);
     assert.equal(dom.window.eval('cursor'),0,'no optimistic navigation');
     assert.ok([...dom.window.document.querySelectorAll('#questionPanel button')].every(b=>b.disabled));
-    assert.equal(requests.filter(r=>r.url.endsWith('/answer')).length,before+1,'double click sends once');
+    assert.equal(requests.filter(r=>r.url.endsWith('/save_answer')).length,before+1,'double click sends once');
     release();await until(()=>!dom.window.eval('busy'),'failed save');
     assert.equal(dom.window.eval('cursor'),0);
     assert.equal($(dom,'saveAnswerButton').disabled,false);
@@ -291,6 +338,23 @@ async function main(){
   const archived=Object.entries(storage(dom)).find(([key])=>key.startsWith(conflictKey+'_conflict_'));
   assert.equal(archived[1],conflictRaw,'conflicting selection preserved before next write');
   dom.window.close();
+  // Two live tabs: a stale first-answer edit cannot overwrite the latest value.
+  dom=await page('rbi');await choose(dom);
+  const shared=storage(dom);
+  const other=await page('rbi',shared);
+  $(dom,'previousButton').click();$(other,'previousButton').click();
+  await choose(dom,1);
+  await choose(other,2);
+  assert.match($(other,'error').textContent,/其他页面更新/);
+  assert.equal(other.window.eval('cursor'),0);
+  assert.equal(other.window.eval('answers[0]'),3,'failed edit stays selected for review');
+  const fresh=await page('rbi',storage(dom));
+  assert.equal(fresh.window.eval('answers[0]'),2,'latest server answer remains intact');
+  const conflictStorage=storage(other);other.window.close();
+  const recovered=await page('rbi',conflictStorage);
+  assert.equal(recovered.window.eval('answers[0]'),2);
+  assert.equal($(recovered,'draftNotice').hidden,false,'conflicting local edit remains downloadable');
+  recovered.window.close();fresh.window.close();dom.window.close();
   // No authenticated-to-guest replay on an expired login.
   const before=requests.length;
   dom=await page('romlon',{cedartoy_token:'expired'});
@@ -305,6 +369,7 @@ async function main(){
   for(const game of ['mbti','enneagram','dnd','love','ecr','humanity','sins_virtues']){
     dom=await page(game);
     assert.equal($(dom,'title').textContent,dom.window.eval('CONFIG.title'));
+    assert.ok([...dom.window.document.querySelectorAll('.brand, .back-link, #resultPanel .actions a')].every(a=>a.getAttribute('href')==='/?tab=test'));
     assert.equal(dom.window.document.title,dom.window.eval('CONFIG.title')+' · CEDAR TOY');
     assert.equal($(dom,'error').hidden,true,'legacy test database is isolated and readable');
     if(['mbti','enneagram'].includes(game)) {
@@ -330,6 +395,8 @@ async function main(){
     assert.equal(requests.length,before+1,'only the reload reads from backend');
     $(dom,'submitButton').click();await until(()=>!dom.window.eval('busy'),'old batch result');
     assert.equal($(dom,'resultPanel').hidden,false,game);
+    assert.equal($(dom,'resultStructured').hidden,false,game+' original structured result');
+    assert.equal(dom.window.document.querySelector('.research-result'),null);
     assert.ok(requests.at(-1).url.endsWith('/answer_batch'));
     dom.window.close();
   }
@@ -340,8 +407,13 @@ async function main(){
   dom.window.eval(`setResearchLinkedText($('source'), '<img src=x onerror="window.xss=1"> https://example.org/paper?a=1&b=2；许可');`);
   assert.equal($(dom,'source').querySelector('img'),null);
   assert.equal($(dom,'source').querySelector('a').href,'https://example.org/paper?a=1&b=2');
+  dom.window.eval(`renderResult({kind:'research_scale',scores:{zero:0,negative:-2.5},dimensions:{zero:'零值',negative:'<img src=x onerror="window.xss=1">'}}, '原始冗余说明');`);
+  assert.deepEqual([...dom.window.document.querySelectorAll('.research-score dd')].map(n=>n.textContent),['0.00','-2.50']);
+  assert.equal($(dom,'resultStructured').querySelector('img'),null);
+  dom.window.eval(`renderResult({kind:'research_scale',scores:{bad:null},dimensions:{bad:'缺失分数'}}, '原始冗余说明');`);
+  assert.equal($(dom,'resultText').textContent,'暂时无法展示分数，请刷新重试。');
   assert.equal(dom.window.xss,undefined);dom.window.close();
-  console.log('PASS: 18 home/page/browser titles and statistics empty/insufficient/ready states at 360/430/1280 DOM widths; formal titles/notices/scoring preserved; real temporary-DB save/reload/revisit/report/retry, numeric labels/CSS, legacy drafts, auth/XSS, seven original template flows. DOM only, no rendered geometry.');
+  console.log('PASS: 18 home/page/browser titles and statistics empty/insufficient/ready states at 360/430/1280 DOM widths; formal titles/notices/scoring preserved; real temporary-DB edit-first/retain-third/reload/report, concurrent tabs/retry, home tab return, numeric labels/CSS, legacy drafts, auth/XSS, seven original template flows. DOM only, no rendered geometry.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   child.stdin.end();await exited;fs.rmSync(temp,{recursive:true,force:true});

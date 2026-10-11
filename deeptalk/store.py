@@ -1,4 +1,4 @@
-"""All answer serialization passes through the same two-submission gate."""
+"""All answer serialization enforces the persisted round visibility mode."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -27,8 +27,10 @@ def now():
 
 
 class Store:
-    def __init__(self, db_path):
+    def __init__(self, db_path, *, bound_human_ids=()):
         self.db_path = str(db_path)
+        # Server-resolved bindings only; never populate this from request parameters.
+        self.bound_human_ids = tuple(bound_human_ids)
 
     @contextmanager
     def connection(self, write=False):
@@ -54,6 +56,17 @@ class Store:
                     digest TEXT NOT NULL, PRIMARY KEY(round_id, role, request_key)
                 );
             """)
+            # The default deliberately preserves the original single-AI access rule.
+            # Serialize migration with writes, including concurrent first requests.
+            columns = {r[1] for r in conn.execute("PRAGMA table_info(deeptalk_rounds)")}
+            if not {"sharing_mode", "mode"} <= columns:
+                conn.execute("BEGIN IMMEDIATE")
+                columns = {r[1] for r in conn.execute("PRAGMA table_info(deeptalk_rounds)")}
+                if "sharing_mode" not in columns:
+                    conn.execute("ALTER TABLE deeptalk_rounds ADD COLUMN sharing_mode TEXT NOT NULL DEFAULT 'single_ai'")
+                if "mode" not in columns:
+                    conn.execute("ALTER TABLE deeptalk_rounds ADD COLUMN mode TEXT NOT NULL DEFAULT 'blind'")
+                conn.commit()
             conn.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             yield conn
             conn.commit()
@@ -63,10 +76,13 @@ class Store:
         finally:
             conn.close()
 
-    @staticmethod
-    def role(row, user):
+    def role(self, row, user):
         role = "ai" if user.get("is_ai") else "human"
-        if int(user["id"]) != row[f"{role}_id"]:
+        if role == "ai" and row["sharing_mode"] == "bound_shared":
+            allowed = row["human_id"] in self.bound_human_ids
+        else:
+            allowed = int(user["id"]) == row[f"{role}_id"]
+        if not allowed:
             raise DeeptalkError("轮次不存在或无权访问", 404)
         return role
 
@@ -82,7 +98,7 @@ class Store:
     def summary(row):
         unlocked = bool(row["human_submitted"] and row["ai_submitted"])
         return dict(round_id=row["id"], title=row["title"], human_name=row["human_name"],
-                    ai_name=row["ai_name"], status="complete" if unlocked else "in_progress",
+                    ai_name=row["ai_name"], sharing_mode=row["sharing_mode"], mode=row["mode"], status="complete" if unlocked else "in_progress",
                     created_at=row["created_at"], updated_at=row["updated_at"],
                     url=f"/deeptalk?round_id={row['id']}")
 
@@ -90,32 +106,44 @@ class Store:
         integer(offset, "offset", 0, 1000000)
         integer(limit, "limit", 1, 100)
         role = "ai" if user.get("is_ai") else "human"
+        if role == "ai":
+            placeholders = ",".join("?" for _ in self.bound_human_ids) or "NULL"
+            where = f"((sharing_mode='single_ai' AND ai_id=?) OR (sharing_mode='bound_shared' AND human_id IN ({placeholders})))"
+            args = (int(user["id"]), *self.bound_human_ids)
+        else:
+            where, args = "human_id=?", (int(user["id"]),)
         with self.connection() as conn:
-            total = conn.execute(f"SELECT COUNT(*) FROM deeptalk_rounds WHERE {role}_id=?", (int(user["id"]),)).fetchone()[0]
-            rows = conn.execute(f"SELECT id,title,human_name,ai_name,human_submitted,ai_submitted,created_at,updated_at FROM deeptalk_rounds WHERE {role}_id=? ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
-                                (int(user["id"]), limit, offset)).fetchall()
+            total = conn.execute(f"SELECT COUNT(*) FROM deeptalk_rounds WHERE {where}", args).fetchone()[0]
+            rows = conn.execute(f"SELECT id,title,human_name,ai_name,sharing_mode,mode,human_submitted,ai_submitted,created_at,updated_at FROM deeptalk_rounds WHERE {where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
+                                (*args, limit, offset)).fetchall()
             return dict(rounds=[self.summary(r) for r in rows], total=total, offset=offset, limit=limit)
 
-    def create(self, human, ai, topic_id, key):
+    def create(self, human, ai, topic_id, key, *, sharing_mode="single_ai", mode="blind"):
         key = request_key(key)
+        if sharing_mode not in {"single_ai", "bound_shared"}:
+            raise DeeptalkError("未知共享模式")
+        if not isinstance(mode, str) or mode not in {"blind", "chat"}:
+            raise DeeptalkError("请选择答完再看或边聊边答")
+        ai_id = 0 if sharing_mode == "bound_shared" else int(ai["id"])
+        ai_name = "小机侧（共享）" if sharing_mode == "bound_shared" else ai["username"]
         with self.connection(write=True) as conn:
             old = conn.execute("SELECT * FROM deeptalk_rounds WHERE human_id=? AND create_key=?", (int(human["id"]), key)).fetchone()
             if old:
-                if old["topic_id"] != topic_id or old["ai_id"] != int(ai["id"]):
+                if old["topic_id"] != topic_id or old["ai_id"] != ai_id or old["sharing_mode"] != sharing_mode or old["mode"] != mode:
                     raise DeeptalkError("同一 request_id 不可用于不同开局", 409)
                 return self.serialize(old, "human")
             topic = load_topic(topic_id)
             rid, stamp = secrets.token_urlsafe(24), now()
             conn.execute("""INSERT INTO deeptalk_rounds
-                (id,topic_id,title,human_id,ai_id,human_name,ai_name,snapshot,created_at,updated_at,create_key)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (rid, topic_id, topic["title"], int(human["id"]), int(ai["id"]),
-                human["username"], ai["username"], json.dumps(topic, ensure_ascii=False), stamp, stamp, key))
+                (id,topic_id,title,human_id,ai_id,human_name,ai_name,snapshot,created_at,updated_at,create_key,sharing_mode,mode)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (rid, topic_id, topic["title"], int(human["id"]), ai_id,
+                human["username"], ai_name, json.dumps(topic, ensure_ascii=False), stamp, stamp, key, sharing_mode, mode))
             row, role = self.row(conn, rid, human)
             return self.serialize(row, role)
 
     @staticmethod
     def serialize(row, role, *, number=None, limit=1, full=False):
-        """The only detailed read path. Never include peer drafts or raw rows."""
+        """The only detailed read path. Blind peer answers require both submissions."""
         topic = json.loads(row["snapshot"])
         own = json.loads(row[f"{role}_answers"])
         unlocked = bool(row["human_submitted"] and row["ai_submitted"])
@@ -124,15 +152,17 @@ class Store:
                    submitted=bool(row[f"{role}_submitted"]), revision=row[f"{role}_revision"],
                    next_number=next((i for i, q in enumerate(topic["questions"], 1) if q["id"] not in own), 1),
                    progress={r: {"done": len(json.loads(row[f"{r}_answers"])), "submitted": bool(row[f"{r}_submitted"])} for r in ("human", "ai")})
+        if full:
+            out["description"] = topic.get("description", "")
         if full or number is not None:
             start = 0 if full else integer(number, "number", 1, len(topic["questions"])) - 1
             count = len(topic["questions"]) if full else integer(limit, "limit", 1, 20)
             peer_role = "human" if role == "ai" else "ai"
-            peer = json.loads(row[f"{peer_role}_answers"]) if unlocked else None
+            peer = json.loads(row[f"{peer_role}_answers"]) if unlocked or row["mode"] == "chat" else {}
             items = []
             for i, q in enumerate(topic["questions"][start:start + count], start + 1):
                 item = dict(number=i, id=q["id"], text=q["text"], own=own.get(q["id"]))
-                if unlocked:
+                if q["id"] in peer:
                     item["partner"] = peer.get(q["id"])
                 items.append(item)
             out["questions"] = items
@@ -141,7 +171,7 @@ class Store:
     def read(self, user, round_id, *, action="status", number=1, limit=1):
         with self.connection() as conn:
             row, role = self.row(conn, round_id, user)
-            if action == "result" and not (row["human_submitted"] and row["ai_submitted"]):
+            if action == "result" and row["mode"] != "chat" and not (row["human_submitted"] and row["ai_submitted"]):
                 raise DeeptalkError("双方正式提交后才可查看双人回答", 409)
             return self.serialize(row, role, number=number if action in {"question", "result"} else None,
                                   limit=limit, full=action == "view")

@@ -86,6 +86,51 @@ def topics():
     return result
 
 
+# Presentation only: keep the complete licensing/provenance records in packages
+# and round snapshots. Do not render internal editorial notes in the human UI.
+PUBLIC_NOTES = {
+    "relations_communication": "采用官方简体中文讲义；其中教材题由 CedarToy 翻译，非官方译文。合并排版换行及部分连续追问。",
+    "relationship_scenarios": "采用官方简体中文讲义，仅整理排版。原题来自 SFU InterroBang，保留非商业许可限制。",
+    "learning_goals_problem_solving": "CedarToy 中文翻译与编排，非官方译文。工作表部分栏目改为开放问句，未采用评分栏。",
+    "life_reflection_35": "CedarToy 中文自译，非官方译文；仅采用传统问句，不涵盖参考网页的现代释义与正文。",
+    "favorites_100": "CedarToy 中文自译，非官方译文；个别品牌名称补充释义。",
+    "getting_to_know_100": "CedarToy 中文自译，非官方译文；保留原题重复条目并附必要译注。",
+    "romance_values_100": "CedarToy 中文自译，非官方译文；个别日语俗称补充释义。",
+}
+SOURCE_NAMES = {
+    "Tool D-1. Personal Goal-Setting Worksheet": "个人目标（D-1）",
+    "Tool D-2. Weekly Reflection Sheet": "每周复盘（D-2）",
+    "Tool D-3. Soft-Skills Self-Assessment": "能力举例（D-3）",
+    "Tool D-4. Visual Decision Organizer (Optional)": "问题分析（D-4）",
+    "ZH_H1.pdf": "沟通、健康关系与同意 · 第1单元",
+    "ZH_H3.pdf": "沟通、健康关系与同意 · 第3单元",
+    "interpersonalcommunicationcontextandconnectionascccoeri.pdf": "Interpersonal Communication: Context and Connection · 第6.8节（PDF）",
+}
+
+
+def public_source(topic):
+    def entry(source, name):
+        return dict(name=SOURCE_NAMES.get(source.get("name"), source.get("name")) or name,
+                    **{k: source.get(k, topic.get(k, "")) for k in ("author", "source_url", "license", "license_url")})
+
+    sources = topic.get("sources") or [topic]
+    entries = [entry(source, SOURCE_NAMES.get(source.get("source_url", "").rsplit("/", 1)[-1], topic["title"]))
+               for source in sources]
+    if topic["topic_id"] == "relationship_scenarios":
+        entries.append(dict(name="InterroBang · 原题与许可", author="Sexual Violence Support & Prevention Office, Simon Fraser University",
+                            source_url="https://www.sfu.ca/sexual-violence/education-prevention/interrobang/print---play-.html",
+                            license=topic["license"], license_url=topic["license_url"]))
+    grouped = {}
+    for item in entries:
+        key = tuple(item[k] for k in ("author", "source_url", "license", "license_url"))
+        if key in grouped:
+            grouped[key]["name"] += "、" + item["name"]
+        else:
+            grouped[key] = item
+    return dict(title=topic["title"], entries=list(grouped.values()),
+                note=PUBLIC_NOTES.get(topic["topic_id"], "CedarToy 中文翻译与编排，非官方译文。"))
+
+
 def guide(game):
     topic = load_topic(ALIASES[game])
     title, total, description = TOPICS[topic["topic_id"]]
@@ -98,14 +143,14 @@ def guide(game):
 许可：{topic['license']}{license_ref}
 原网址：{'；'.join(urls)}
 play(game="{game}",action=...,params={{...}})；以下为action:参数。
-边聊 questions:number从1起，可选limit；原聊天软件讨论。source查来源。
-答完再看：人类/deeptalk开局；history取round_id；status:round_id取revision；question:round_id,number查题。
+questions:number从1起，可选limit；source查来源。
+人类首页/deeptalk开局；history取round_id；status:round_id取revision；question:round_id,number查题。
 answer:round_id,question_id,revision,request_id，加text或skip=true。request_id须8–100位[A-Za-z0-9_-]，重试复用。
-全题答/跳后submit:round_id,revision,confirm=true；双方提交才解锁result:round_id，可选number/limit。仅参与双方可见；result只对照双方回答，无评分或测评报告。
+全题答/跳后submit:round_id,revision,confirm=true。mode=blind双方提交才解锁；chat已作答即互见。result:round_id，可选number/limit。新轮次：当前绑定小机共用草稿/revision，任一可提交，解绑失权；旧轮次限原双方。冲突先重读合并；result只对照双方回答，无评分或测评报告。
 '''
 
 
 GUIDE = """# deeptalk · 兼容入口
 旧 play(game="deeptalk",action=...,params={...}) 仍可用：topics查topic_id；questions/source须传topic_id，读题number从1起、limit默认1最多100。
-新调用优先使用下列独立game ID，get_guide(game)按需获取该套来源和完整操作。开放问答无标准答案、不计分；result仅对照双方回答，无测评报告；人类在 /deeptalk 创建轮次；双方正式提交才解锁。边聊边答在现有聊天软件中进行。
+新调用优先使用下列独立game ID，get_guide(game)按需获取该套来源和完整操作。开放问答无标准答案、不计分；result仅对照双方回答，无测评报告；人类从首页对应题库创建轮次；当前绑定小机共用小机侧答卷，任一小机可代表提交，解绑即失去共享轮次权限；旧轮次仍仅原双方可见。mode=blind（答完再看）双方整卷提交才互见；chat（边聊边答）逐题answer成功即互见，question/result可读已作答内容。
 """ + "\n".join(f"{game} → {tid}" for game, tid in ALIASES.items())

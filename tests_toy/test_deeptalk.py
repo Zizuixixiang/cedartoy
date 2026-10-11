@@ -74,7 +74,7 @@ class DeeptalkTests(unittest.TestCase):
         return service.execute(user, action, params, db_path=self.db, db_connect=self.connect, web=not user['is_ai'])
 
     def answer(self, user, q=1, **extra):
-        revision = self.store.read(user, self.rid)['revision']
+        revision = self.call(user, 'status', round_id=self.rid)['revision']
         return self.call(user, 'answer', round_id=self.rid, question_id=f'q{q}', revision=revision,
                          request_id=f'{user["id"]}_{revision:08}', **({'text': f'SECRET_{user["id"]}_{q}'} | extra))
 
@@ -83,7 +83,7 @@ class DeeptalkTests(unittest.TestCase):
             self.answer(user,q)
 
     def submit(self, user):
-        return self.call(user,'submit',round_id=self.rid,revision=self.store.read(user,self.rid)['revision'],confirm=True)
+        return self.call(user,'submit',round_id=self.rid,revision=self.call(user,'status',round_id=self.rid)['revision'],confirm=True)
 
     def mcp(self, user, action, *, path=False, game='deeptalk', **params):
         token = self.tokens[user['id']] if user else None
@@ -195,7 +195,7 @@ class DeeptalkTests(unittest.TestCase):
         self.assertEqual(self.call(HUMAN,'view',round_id=new)['questions'][0]['text'],'changed')
         history=self.call(HUMAN,'history',limit=1)
         self.assertEqual(history['total'],2); self.assertEqual(len(history['rounds']),1)
-        self.assertEqual(set(history['rounds'][0]), {'round_id','title','human_name','ai_name','status','created_at','updated_at','url'})
+        self.assertEqual(set(history['rounds'][0]), {'round_id','title','human_name','ai_name','status','created_at','updated_at','url','sharing_mode','mode'})
         self.assertTrue(history['rounds'][0]['url'].startswith('/deeptalk?round_id='))
         self.assertEqual(self.call(HUMAN,'history',offset=1,limit=1)['rounds'][0]['round_id'],self.rid)
         topic.unlink()
@@ -238,7 +238,7 @@ class DeeptalkTests(unittest.TestCase):
             self.assertEqual(self.http(user,round_id=self.rid)[0],status)
         self.assertEqual(self.http(HUMAN,'submit',round_id=self.rid,confirm=True)[0],404)
         status,data,_=self.http(HUMAN,'create',post=True,topic_id='couple_50',ai_id=202,request_id='create_999')
-        self.assertEqual(status,403)
+        self.assertEqual(status,409)
         status,data,_=self.http(HUMAN,'answer',post=True,round_id=self.rid,question_id='q1',text='human',revision=0,request_id='http_0001',player_id=201)
         self.assertEqual(status,200); self.assertEqual(data['progress']['human']['done'],1); self.assertEqual(data['progress']['ai']['done'],0)
 
@@ -274,6 +274,210 @@ class DeeptalkTests(unittest.TestCase):
         self.assertEqual(self.store.read(HUMAN,self.rid)['revision'],0)
         for params in ({'number':0},{'limit':101},{'number':True}):
             with self.assertRaises(DeeptalkError): self.call(AI,'questions',topic_id='couple_50',**params)
+
+    def shared_round(self, mode='blind'):
+        with self.connect() as conn:
+            conn.execute('INSERT INTO user_bindings VALUES (101,202)')
+        result = self.call(HUMAN, 'create', topic_id='relations_communication', request_id='shared_create', mode=mode)
+        self.assertEqual(result['sharing_mode'], 'bound_shared')
+        return result['round_id']
+
+    def test_shared_binding_history_and_legacy_isolation(self):
+        legacy = self.rid
+        self.answer(AI, text='LEGACY_PRIVATE')
+        self.rid = self.shared_round()
+        for ai in (AI, OTHER_AI):
+            for path in (False, True):
+                result = self.mcp(ai, 'history', path=path)
+                self.assertFalse(result['result']['isError'])
+                self.assertIn(self.rid, json.dumps(result))
+            self.assertEqual(self.call(ai, 'status', round_id=self.rid)['sharing_mode'], 'bound_shared')
+        self.assertNotIn(legacy, json.dumps(self.call(OTHER_AI, 'history')))
+        for action in ('status', 'question', 'result', 'source', 'answer', 'submit'):
+            params = dict(round_id=legacy, question_id='q1', text='intrusion', revision=1,
+                          request_id='intruder_001', confirm=True)
+            with self.assertRaises(DeeptalkError): self.call(OTHER_AI, action, **params)
+        with self.connect() as conn:
+            conn.execute('DELETE FROM user_bindings WHERE human_user_id=101 AND ai_user_id=202')
+        for action in ('status', 'question', 'result', 'source', 'answer', 'submit'):
+            params = dict(round_id=self.rid, question_id='q1', text='intrusion', revision=0,
+                          request_id='intruder_002', confirm=True, human_id=101, bound_human_ids=[101])
+            with self.assertRaises(DeeptalkError): self.call(OTHER_AI, action, **params)
+            self.assertTrue(self.mcp(OTHER_AI, action, **params)['result']['isError'])
+        self.assertNotIn(self.rid, json.dumps(self.call(OTHER_AI, 'history')))
+        self.assertEqual(self.http(OTHER_HUMAN, round_id=self.rid)[0], 404)
+        self.assertNotIn(self.rid, json.dumps(self.call(OTHER_HUMAN, 'history')))
+        # Binding later grants shared rounds, but never the original single-AI round.
+        with self.connect() as conn: conn.execute('INSERT INTO user_bindings VALUES (101,202)')
+        self.assertIn(self.rid, json.dumps(self.call(OTHER_AI, 'history')))
+        with self.assertRaises(DeeptalkError): self.call(OTHER_AI, 'question', round_id=legacy)
+        self.assertEqual(self.call(AI, 'question', round_id=legacy)['questions'][0]['own']['text'], 'LEGACY_PRIVATE')
+
+    def test_shared_drafts_revision_and_one_ai_submission(self):
+        self.rid = self.shared_round()
+        self.fill(HUMAN)
+        def edit(ai):
+            try:
+                return self.call(ai, 'answer', round_id=self.rid, question_id='q1', text=f'SHARED_{ai["id"]}',
+                                 revision=0, request_id=f'shared_{ai["id"]}')
+            except DeeptalkError as err:
+                return err.status
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(edit, (AI, OTHER_AI)))
+        self.assertEqual(sum(r == 409 for r in results), 1)
+        first = self.call(AI, 'question', round_id=self.rid)
+        second = self.call(OTHER_AI, 'question', round_id=self.rid)
+        self.assertEqual(first, second)
+        self.assertEqual(first['revision'], 1)
+        with self.assertRaises(DeeptalkError):
+            self.call(OTHER_AI, 'submit', round_id=self.rid, revision=0, confirm=True)
+        for q in range(2,14): self.answer(AI if q % 2 else OTHER_AI, q)
+        # AI-first submission must keep both sides sealed, including the other AI.
+        self.submit(OTHER_AI)
+        for user in (HUMAN, AI, OTHER_AI):
+            for action in ('status', 'question', 'history', 'source'):
+                payload = self.call(user, action, round_id=self.rid)
+                self.assertNotIn('partner', json.dumps(payload))
+                if user['is_ai']: self.assertNotIn('SECRET_101', json.dumps(payload))
+                else: self.assertNotIn('SHARED_', json.dumps(payload))
+            with self.assertRaises(DeeptalkError): self.call(user, 'result', round_id=self.rid)
+        self.assertNotIn('SHARED_', json.dumps(self.http(HUMAN, round_id=self.rid)[1]))
+        self.submit(HUMAN)
+        for ai in (AI, OTHER_AI):
+            result = self.mcp(ai, 'result', round_id=self.rid)
+            self.assertFalse(result['result']['isError'])
+            self.assertIn('SECRET_101', json.dumps(result))
+            with self.assertRaises(DeeptalkError): self.answer(ai, text='late edit')
+        self.assertTrue(self.call(HUMAN, 'view', round_id=self.rid)['unlocked'])
+
+    def test_shared_creation_compatibility_and_server_identity(self):
+        self.assertEqual(self.http(HUMAN, 'create', post=True, ai_id=201,
+                         topic_id='relations_communication', request_id='old_client_1')[0], 409)
+        self.rid = self.shared_round()
+        retry = self.call(HUMAN, 'create', topic_id='relations_communication', request_id='shared_create', human_id=102)
+        self.assertEqual(retry['round_id'], self.rid)
+        self.assertNotIn(self.rid, json.dumps(self.call(OTHER_HUMAN, 'history')))
+        with self.connect() as conn: conn.execute('DELETE FROM user_bindings WHERE human_user_id=101')
+        self.assertEqual(self.http(HUMAN, 'create', post=True, topic_id='relations_communication', request_id='no_bound_1')[0], 403)
+        self.assertEqual(self.http(HUMAN, 'questions', topic_id='relations_communication')[0], 200)
+        self.assertEqual(self.http(HUMAN, round_id=self.rid)[0], 200)
+        self.assertEqual(self.call(AI, 'history')['total'], 1)  # Only its original legacy round.
+        with self.assertRaises(DeeptalkError): self.call(AI, 'status', round_id=self.rid)
+
+    def test_legacy_migration_is_idempotent_and_preserves_snapshot(self):
+        self.answer(HUMAN, text='old draft')
+        with sqlite3.connect(self.db) as conn:
+            before = conn.execute('SELECT snapshot,human_answers,ai_answers FROM deeptalk_rounds').fetchone()
+            conn.execute('ALTER TABLE deeptalk_rounds DROP COLUMN sharing_mode')
+            conn.execute('ALTER TABLE deeptalk_rounds DROP COLUMN mode')
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            reads = list(pool.map(lambda _: Store(self.db).read(HUMAN,self.rid,action='view'), range(4)))
+        self.assertTrue(all(r['sharing_mode'] == 'single_ai' and r['mode'] == 'blind' for r in reads))
+        self.assertEqual(reads[0]['questions'][0]['own']['text'], 'old draft')
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(before, conn.execute('SELECT snapshot,human_answers,ai_answers FROM deeptalk_rounds').fetchone())
+        self.assertEqual(self.call(AI, 'history')['total'], 1)
+
+    def test_chat_live_answers_shared_permissions_and_completion(self):
+        self.rid = self.shared_round(mode='chat')
+        self.assertEqual(self.call(AI, 'status', round_id=self.rid)['mode'], 'chat')
+        for user in (HUMAN, AI, OTHER_AI):
+            empty = self.call(user, 'result', round_id=self.rid)
+            self.assertNotIn('partner', empty['questions'][0])
+        # Human HTTP -> both AIs via their own MCP tokens, before any whole-form submit.
+        status, data, _ = self.http(HUMAN, 'answer', post=True, round_id=self.rid, question_id='q1',
+                                    text='LIVE_HUMAN', revision=0, request_id='live_human_1')
+        self.assertEqual(status, 200)
+        for ai in (AI, OTHER_AI):
+            for path in (False, True):
+                for action in ('question', 'result'):
+                    response = self.mcp(ai, action, path=path, round_id=self.rid)
+                    self.assertFalse(response['result']['isError'])
+                    self.assertIn('LIVE_HUMAN', json.dumps(response))
+        self.assertNotIn('partner', self.call(AI, 'question', round_id=self.rid, number=2)['questions'][0])
+        params = dict(round_id=self.rid, question_id='q1', text='LIVE_AI', revision=0, request_id='live_ai_001')
+        self.assertFalse(self.mcp(OTHER_AI, 'answer', **params)['result']['isError'])
+        self.assertEqual(self.call(AI, 'answer', **params)['revision'], 1)  # shared retry
+        self.assertTrue(self.mcp(AI, 'answer', **(params | {'request_id':'live_ai_002'}))['result']['isError'])
+        status, view, _ = self.http(HUMAN, round_id=self.rid)
+        self.assertEqual(status, 200)
+        self.assertEqual(view['questions'][0]['partner']['text'], 'LIVE_AI')
+        self.assertFalse(view['unlocked'])
+        self.assertNotIn('partner', view['questions'][1])
+        for user in (HUMAN, AI):
+            self.assertNotIn('LIVE_', json.dumps(self.call(user, 'status', round_id=self.rid)))
+            self.assertNotIn('LIVE_', json.dumps(self.call(user, 'history')))
+        # Invalid edits never become visible; rejected mode changes cannot open blind rounds.
+        self.assertEqual(self.http(HUMAN, 'answer', post=True, round_id=self.rid, question_id='q1',
+                         revision=1, text='', request_id='failed_live_1')[0], 400)
+        self.assertEqual(self.call(AI, 'question', round_id=self.rid)['questions'][0]['partner']['text'], 'LIVE_HUMAN')
+        for user in (HUMAN, AI):
+            for q in range(2, 14): self.answer(user, q, skip=True)
+        self.submit(AI)
+        self.assertFalse(self.call(HUMAN, 'result', round_id=self.rid)['unlocked'])
+        self.submit(HUMAN)
+        self.assertTrue(self.call(OTHER_AI, 'result', round_id=self.rid)['unlocked'])
+        with self.connect() as conn:
+            conn.execute('DELETE FROM user_bindings WHERE human_user_id=101 AND ai_user_id=202')
+        for action in ('status', 'question', 'result', 'source', 'answer', 'submit'):
+            self.assertTrue(self.mcp(OTHER_AI, action, **(params | {'confirm':True}))['result']['isError'])
+        self.assertNotIn(self.rid, json.dumps(self.call(OTHER_AI, 'history')))
+        for action in ('view', 'question', 'result', 'source'):
+            self.assertEqual(self.http(OTHER_HUMAN, action, round_id=self.rid)[0], 404)
+
+    def test_modes_are_immutable_validated_and_old_shared_rounds_stay_blind(self):
+        self.rid = self.shared_round()
+        self.answer(HUMAN, text='BLIND_SECRET')
+        self.answer(AI, text='BLIND_AI')
+        for action in ('question', 'result'):
+            result = self.mcp(AI, action, round_id=self.rid, mode='chat')
+            self.assertNotIn('BLIND_SECRET', json.dumps(result))
+        self.assertNotIn('BLIND_AI', json.dumps(self.http(HUMAN, round_id=self.rid, mode='chat')[1]))
+        with self.assertRaises(DeeptalkError):
+            self.call(HUMAN, 'create', topic_id='relations_communication', request_id='shared_create', mode='chat')
+        for mode in ('face_to_face', '', None, [], True):
+            with self.assertRaises(DeeptalkError):
+                self.call(HUMAN, 'create', topic_id='relations_communication', request_id='invalid_mode', mode=mode)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute('ALTER TABLE deeptalk_rounds DROP COLUMN mode')
+        fresh = self.call(HUMAN, 'view', round_id=self.rid)
+        self.assertEqual((fresh['sharing_mode'], fresh['mode']), ('bound_shared', 'blind'))
+        self.assertNotIn('partner', fresh['questions'][0])
+        self.assertEqual(self.call(OTHER_AI, 'status', round_id=self.rid)['mode'], 'blind')
+        with self.connect() as conn: conn.execute('DELETE FROM user_bindings WHERE human_user_id=101')
+        for mode in ('blind', 'chat'):
+            self.assertEqual(self.http(HUMAN, 'create', post=True, topic_id='relations_communication',
+                             request_id='no_machines', mode=mode)[0], 403)
+
+    def test_chat_concurrent_edits_share_revision(self):
+        self.rid = self.shared_round(mode='chat')
+        def edit(user):
+            try:
+                return self.call(user, 'answer', round_id=self.rid, question_id='q1', revision=0,
+                                 text=user['username'], request_id=f'chat_race_{user["id"]}')
+            except DeeptalkError as err:
+                return err.status
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(edit, (AI, OTHER_AI)))
+        self.assertEqual(sum(r == 409 for r in results), 1)
+        self.assertEqual(self.call(AI, 'status', round_id=self.rid)['revision'], 1)
+        self.assertEqual(self.call(HUMAN, 'question', round_id=self.rid)['questions'][0]['partner'],
+                         self.call(AI, 'question', round_id=self.rid)['questions'][0]['own'])
+
+    def test_public_sources_keep_attribution_without_editorial_metadata(self):
+        with patch.object(catalog, 'DATA_DIR', ROOT / 'deeptalk/data'):
+            for tid in catalog.TOPICS:
+                raw = self.call(AI, 'source', topic_id=tid)
+                public = self.http(HUMAN, 'source', topic_id=tid)[1]
+                self.assertIn('adaptation_note', raw)
+                self.assertNotIn('adaptation_note', public)
+                self.assertNotIn('OC', json.dumps(public, ensure_ascii=False))
+                self.assertNotIn('docs/', json.dumps(public))
+                for entry in public['entries']:
+                    self.assertTrue(entry['author'])
+                    self.assertTrue(entry['source_url'].startswith('https://'))
+                    self.assertTrue(entry['license'])
+                self.assertTrue(public['note'])
 
 
 if __name__ == '__main__':

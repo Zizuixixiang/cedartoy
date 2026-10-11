@@ -90,9 +90,14 @@ class ResearchScaleEngine(ScaleTestEngine):
                 for index, q in enumerate(self.ordered_items(session_id))]
         return state
 
+    @staticmethod
+    def _web_revision(session_id, answers):
+        # A content version needs no migration and also detects MCP appends.
+        return hashlib.sha256(json.dumps([session_id, answers], separators=(',', ':')).encode()).hexdigest()
+
     def execute(self, action, arguments, *, web=False):
         player = self._require_player_id(arguments, 'player_id')
-        if action not in ('start', 'status', 'result', 'get_result', 'answer', 'answer_batch'):
+        if action not in ('start', 'status', 'result', 'get_result', 'answer', 'answer_batch') and not (web and action == 'save_answer'):
             raise JsonRpcError(-32602, '此量表仅支持 start/status/get_result/answer/answer_batch，不提供比较。')
         now = time.time()
         with self._connect() as conn:
@@ -132,10 +137,43 @@ class ResearchScaleEngine(ScaleTestEngine):
             else:
                 raise JsonRpcError(-32003, '没有记录，请先选择模式开始。')
             duplicate = False
-            if action in ('answer', 'answer_batch'):
+            if action in ('answer', 'answer_batch', 'save_answer'):
                 if arguments.get('session_id') != sid:
                     raise JsonRpcError(-32602, '会话已变化，请先 status 恢复，勿重复提交旧会话。')
-                if action == 'answer':
+                if action == 'save_answer':
+                    if mode != 'full':
+                        raise JsonRpcError(-32602, '当前答题模式不支持逐题修改。')
+                    index = arguments.get('index')
+                    value = self._coerce_answer(arguments.get('answer'))
+                    revision = arguments.get('expected_revision')
+                    finish = arguments.get('finish', False)
+                    if (type(index) is not int or not 0 <= index < len(self.items)
+                            or not isinstance(revision, str) or len(revision) != 64 or type(finish) is not bool):
+                        raise JsonRpcError(-32602, '答案保存参数不合法。')
+                    receipt = [revision, index, value]
+                    if complete:
+                        # Only an exact retry of the final web request is accepted.
+                        if finish and detail.get('web_finish_request') == receipt:
+                            duplicate = True
+                        else:
+                            raise JsonRpcError(-32602, '报告已生成，不能修改本次答案。')
+                    elif revision != self._web_revision(sid, answers):
+                        # A repeated non-final write is harmless only if its value
+                        # is already present; never apply stale edits or finalize.
+                        if not finish and index < len(answers) and answers[index] == value:
+                            duplicate = True
+                        else:
+                            raise JsonRpcError(-32602, '答案已在其他页面更新，请刷新后重试。')
+                    elif index > len(answers):
+                        raise JsonRpcError(-32602, '请先完成前面的题目。')
+                    else:
+                        if index == len(answers):
+                            answers.append(value)
+                        else:
+                            answers[index] = value
+                        if finish and (index != len(self.items) - 1 or len(answers) != len(self.items)):
+                            raise JsonRpcError(-32602, '请答完全部题目后查看结果。')
+                elif action == 'answer':
                     if mode != 'full':
                         raise JsonRpcError(-32602, 'full_fast 请用 answer_batch。')
                     index = arguments.get('expected_index')
@@ -162,10 +200,12 @@ class ResearchScaleEngine(ScaleTestEngine):
                     else:
                         answers = batch
                 if not duplicate:
-                    complete = len(answers) == len(self.items)
+                    complete = len(answers) == len(self.items) and (action != 'save_answer' or finish)
                     if complete:
                         scores = self.score(answers, sid)
                         detail = {'mode': mode, 'scores': scores, 'answers': answers, 'session_id': sid}
+                        if action == 'save_answer':
+                            detail['web_finish_request'] = receipt
                         conn.execute('INSERT OR REPLACE INTO test_results (player_id, game, result_value, result_detail, completed_at) VALUES (?, ?, ?, ?, ?)',
                             (player, self.game, 'research', json.dumps(detail, ensure_ascii=False), now))
                         conn.execute('DELETE FROM test_sessions WHERE player_id=? AND game=?', (player, self.game))
@@ -180,6 +220,7 @@ class ResearchScaleEngine(ScaleTestEngine):
         if web and not complete:
             # Owner-only web state lets the page revisit saved questions after reload.
             state['saved_answers'] = answers
+            state['answer_revision'] = self._web_revision(sid, answers)
         if not complete and not web:
             if mode == 'full':
                 state['questions'] = state['questions'][len(answers):len(answers)+1]

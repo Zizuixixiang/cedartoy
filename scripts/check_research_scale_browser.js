@@ -10,6 +10,7 @@ const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'cedar-scale-browser-'));
 const screenshots = process.env.SCALE_SCREENSHOTS || path.join(os.tmpdir(), 'cedar-scale-screenshots');
+const widths = process.env.SCALE_WIDTHS ? process.env.SCALE_WIDTHS.split(',').map(Number) : [360,430,1280];
 const specs = fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n.endsWith('.json'))
   .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked);
 const service = spawn('python3', ['-u','-c', `
@@ -34,9 +35,9 @@ async function main(){
     service.stdout.once('data',data=>{clearTimeout(timer);resolve(Number(String(data).trim()));});
   });
   const origin='http://127.0.0.1:'+port;
-  browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
   fs.mkdirSync(screenshots,{recursive:true});
-  for(const width of [360,430,1280]){
+  for(const width of widths){
+    browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
     const context=await browser.newContext({viewport:{width,height:900}});
     const page=await context.newPage();
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -53,8 +54,11 @@ async function main(){
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' horizontal overflow');
       await page.screenshot({path:path.join(screenshots,`${width}-${name}.png`),fullPage:true});
     }
-    await page.goto(origin+'/');
-    await page.locator('[data-filter="test"]').click();
+    for(const query of ['', '?tab=mini', '?tab=invalid', '?tab=test']) {
+      await page.goto(origin+'/'+query);
+      assert.equal(await page.locator('.tab-button.active').getAttribute('data-filter'),query==='?tab=test'?'test':'mini');
+    }
+    assert.equal(await page.evaluate(()=>games.filter(g=>g.testGroup==='deeptalk').length),10);
     const names=await page.evaluate(()=>Object.fromEntries(researchScales.map(([id,name])=>[id,name])));
     assert.equal(Object.keys(names).length,18);
     for(const spec of specs) {
@@ -71,11 +75,15 @@ async function main(){
     for(const spec of specs){
       await page.goto(origin+'/'+spec.game);
       await page.locator('#answers button').first().waitFor();
+      assert.doesNotMatch(await page.locator('#questionIntro').textContent(),/自动保存|不可修改|续答旧版/);
       assert.equal(await page.locator('#title').innerText(),names[spec.game]);
       assert.equal(await page.title(),`${names[spec.game]} · CEDAR TOY`);
       assert.equal(await page.locator('.mode-button').count(),0);
       assert.equal(await page.locator('#researchDetails').getAttribute('open'),null);
-      assert.equal(await page.locator('#pageDisclaimer').innerText(),'中文题目未经验证；仅供自我了解，不作诊断。');
+      assert.equal(await page.locator('#pageDisclaimer').innerText(),
+        ['rbi','irrc','jrrs','ross','rss','ppts','bsfl'].includes(spec.game) ? '非官方评分，仅供娱乐参考。'
+        : spec.game==='bsr' ? '题目经改编，仅供娱乐参考。'
+        : spec.game==='aidep' ? '仅供人类，按原量表计分，仅供娱乐参考。' : '按原量表计分，仅供娱乐参考。');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,spec.game+' overflow');
       assert.equal(await page.locator('#researchSaveHint').count(),0);
       assert.equal(await page.locator('#saveAnswerButton').innerText(),'下一题');
@@ -87,6 +95,11 @@ async function main(){
       await page.locator('#researchDetails summary').click();
       assert.equal(await page.locator('#source a').first().getAttribute('href'),spec.source);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,spec.game+' expanded source overflow');
+      assert.doesNotMatch(await page.locator('#researchDetails').innerText(),/小机作答|4399|不作诊断|原研究对象|常模|效度/);
+      assert.equal(await page.locator('#source dd').count(),4);
+      const metadata=await page.locator('#source dd').evaluateAll(nodes=>nodes.map(n=>({size:getComputedStyle(n).fontSize,line:getComputedStyle(n).lineHeight})));
+      assert.ok(metadata.every(n=>n.size==='12px' && n.line===metadata[0].line));
+      await capture(spec.game+'-source');
       await page.locator('#researchDetails summary').click();
       const bounds=await page.locator('#answers button').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})));
       assert.ok(bounds.every(b=>b.height>=44 && b.width>=24),spec.game+' touch targets');
@@ -117,24 +130,39 @@ async function main(){
         await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
         await page.reload();await page.locator('#answers button').first().waitFor();
         await page.locator('#previousButton').click();
-        assert.equal(await page.locator('#answers button.selected').isDisabled(),true);
+        assert.equal(await page.locator('#answers button.selected').isDisabled(),false);
         await capture('rbi-revisit');
-        await page.locator('#nextSavedButton').click();
+        await page.locator('#answers button').nth(3).click();
+        await page.locator('#saveAnswerButton').click();
+        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
         // A failed write stays on the same question, preserving the selection.
         await page.locator('#answers button').first().click();
         let release;
         const gate=new Promise(resolve=>{release=resolve;});
         const fail=async route=>{await gate;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'保存失败'})});};
-        await page.route('**/api/rbi/answer',fail);
+        await page.route('**/api/rbi/save_answer',fail);
         await page.locator('#saveAnswerButton').click();
         assert.equal(await page.locator('#questionNumber').innerText(),'QUESTION 2');
         assert.equal(await page.locator('#saveAnswerButton').isDisabled(),true);
         release();await page.locator('#error').waitFor();
         assert.equal(await page.locator('#questionNumber').innerText(),'QUESTION 2');
         await capture('rbi-save-error');
-        await page.unroute('**/api/rbi/answer',fail);
+        await page.unroute('**/api/rbi/save_answer',fail);
         await page.locator('#saveAnswerButton').click();
         await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 3');
+        await page.locator('#answers button').nth(4).click();
+        await page.locator('#previousButton').click();
+        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
+        await page.locator('#previousButton').click();
+        await page.locator('#answers button').nth(1).click();
+        await page.locator('#saveAnswerButton').click();
+        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
+        await page.locator('#saveAnswerButton').click();
+        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 3');
+        assert.equal(await page.locator('#answers button.selected').innerText(),'5');
+        await page.reload();await page.locator('#answers button.selected').waitFor();
+        assert.equal(await page.locator('#answers button.selected').innerText(),'5');
+        await capture('rbi-edited-third-retained');
         // Reflow with enlarged text and reduced motion.
         await page.emulateMedia({reducedMotion:'reduce'});
         await page.addStyleTag({content:'.research-page .question-text {font-size: 200%}'});
@@ -149,7 +177,7 @@ async function main(){
       await page.waitForFunction(n=>document.getElementById('questionNumber').textContent===`QUESTION ${n}` || !document.getElementById('resultPanel').hidden,i+2);
     }
     await page.locator('#resultPanel').waitFor();
-    assert.match(await page.locator('#resultText').innerText(),/0\.00/);
+    assert.equal(await page.locator('.research-score dd').innerText(),'0.00');
     await capture('bsfl-result');
     await page.reload();await page.locator('#resultPanel').waitFor();
     page.once('dialog',dialog=>dialog.dismiss());
@@ -158,6 +186,35 @@ async function main(){
     page.once('dialog',dialog=>dialog.accept());
     await page.locator('#restartButton').click();await page.locator('#answers button').first().waitFor();
     await capture('bsfl-retest');
+    // Real completed reports restored from isolated saved records for all 18 scales.
+    for (const spec of specs) {
+      await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webresearchresult${width}${spec.game}`);
+      await page.goto(origin+'/'+spec.game);
+      await page.locator('#answers button').first().waitFor();
+      const expected=await page.evaluate(async values=>{
+        renderState(await api('start',{mode:'full_fast',restart:true,confirm:true,session_id:activeState.session_id}));
+        const state=await api('answer_batch',{answers:values});
+        renderState(state);
+        return Object.values(state.result_data.scores).map(n=>n.toFixed(2));
+      },spec.items.map((_,i)=>spec.options[i%spec.options.length].value));
+      await page.reload();await page.locator('#resultPanel').waitFor();
+      assert.equal(await page.locator('#resultText').isVisible(),false);
+      assert.deepEqual(await page.locator('.research-score dd').allTextContents(),expected);
+      assert.equal(await page.locator('.research-result a').getAttribute('href'),spec.source);
+      assert.doesNotMatch(await page.locator('#resultStructured').innerText(),/存档身份|4399|小机作答|常模|效度/);
+      await capture(spec.game+'-result');
+      if (spec.game==='rbi') {
+        await page.addStyleTag({content:'.research-meta, .research-result .research-notice, .research-result .research-help {font-size:24px} .research-score dt {font-size:28px} .research-score dd {font-size:40px}'});
+        await page.locator('#researchDetails summary').click();
+        await capture('rbi-result-large-text');
+      }
+    }
+    await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webresearchresult${width}rbi`);
+    for(const selector of ['.brand', '.back-link', '#resultPanel .actions a']) {
+      await page.goto(origin+'/rbi');await page.locator('#resultPanel').waitFor();
+      await page.locator(selector).click();
+      assert.equal(await page.locator('.tab-button.active').getAttribute('data-filter'),'test');
+    }
     // The established layouts remain the visual comparison, with auto-advance.
     for(const game of ['mbti','ecr']) {
       await page.goto(origin+'/'+game);
@@ -170,8 +227,9 @@ async function main(){
     }
     assert.deepEqual(errors,[]);
     await context.close();
+    await browser.close();browser=null;
   }
-  console.log('PASS: Chromium 360 / 430 / 1280px; 18 direct research pages, numeric labels, linked/folded notices, touch targets, keyboard/selection/reload/revisit, failed save/retry, enlarged text, BSFL zero/report/retest, MBTI/ECR reference; screenshots: '+screenshots);
+  console.log('PASS: Chromium '+widths.join(' / ')+'px; 18 direct research pages, numeric labels, concise structured attribution and 18 restored score reports, touch targets, keyboard/selection/reload/revisit, failed save/retry, enlarged text, BSFL zero/report/retest, MBTI/ECR reference; screenshots: '+screenshots);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
   if(browser) await browser.close();

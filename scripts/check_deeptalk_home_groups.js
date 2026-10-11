@@ -104,12 +104,14 @@ async function deeptalkTopic(topicId, count) {
     await delay();
     const d = dom.window.document;
     assert.equal(d.getElementById('setup').hidden, false);
-    assert.equal(d.getElementById('topic').options.length, 10);
-    assert.equal(d.getElementById('topic').value, topicId);
+    assert.equal(d.getElementById('topic'), null);
+    assert.equal(d.getElementById('machine'), null);
+    assert.equal(d.getElementById('topicTitle').textContent, topics.find(t => t[1] === topicId)[3]);
     assert.ok(d.getElementById('topicDescription').textContent.includes(`${count}题`));
     d.getElementById('mode').value = 'chat';
     d.getElementById('mode').dispatchEvent(new dom.window.Event('change'));
-    assert.ok(d.getElementById('chatPrompt').textContent.includes(topicId), 'copy prompt must preserve topic');
+    assert.equal(d.getElementById('modeIntro').textContent, '边聊边答：双方已作答的内容实时可见。');
+    assert.equal(d.getElementById('create').disabled, false);
     assert.deepEqual(errors, []);
   } finally {
     dom.window.close();
@@ -119,5 +121,5 @@ async function deeptalkTopic(topicId, count) {
 (async () => {
   await home(360); await home(430); await home(1280);
   for (const [, topicId, count] of topics) await deeptalkTopic(topicId, count);
-  console.log('PASS Deeptalk page: all 10 deep links preselect correct topic after login');
+  console.log('PASS Deeptalk page: all 10 deep links lock correct topic after login');
 })().catch(err => { console.error(err.stack); process.exitCode = 1; });

@@ -4662,7 +4662,8 @@
     const homepageGames = [...games].sort(compareHomepageGames);
 
     let selected = "soup";
-    let filter = "mini";
+    const initialTab = new URLSearchParams(location.search).get("tab");
+    let filter = ["test", "mini"].includes(initialTab) ? initialTab : "mini";
     let me = null;
     let avatarFeatureEnabled = false;
     let avatarFrameState = null;
@@ -9123,6 +9124,7 @@
     }
 
     document.querySelectorAll(".tab-button").forEach((button) => {
+      button.classList.toggle("active", button.dataset.filter === filter);
       button.addEventListener("click", () => {
         filter = button.dataset.filter;
         document.querySelectorAll(".tab-button").forEach((item) => item.classList.toggle("active", item === button));

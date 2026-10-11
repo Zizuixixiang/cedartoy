@@ -220,7 +220,7 @@ def do_POST(
     if path == "/api/aidep/sharing":
         self._handle_human_test_api("aidep", "sharing")
         return
-    research_match = re.fullmatch(r"/api/([a-z0-9_]+)/(start|answer|answer_batch|result|status|get_result)", path)
+    research_match = re.fullmatch(r"/api/([a-z0-9_]+)/(start|answer|save_answer|answer_batch|result|status|get_result)", path)
     if research_match and research_match.group(1) in SCALES:
         self._handle_human_test_api(*research_match.groups())
         return

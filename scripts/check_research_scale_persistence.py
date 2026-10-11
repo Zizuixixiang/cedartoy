@@ -22,18 +22,27 @@ def worker(mode, step, previous):
             old = previous[game]
             args = {**base, 'session_id': old['session_id']}
             if mode == 'full':
-                states[game] = engine.execute('answer', {**args, 'expected_index': 0, 'answer': engine.answer_min}, web=True)
+                state = old
+                for index in range(3):
+                    state = engine.execute('save_answer', {**args, 'expected_revision': state['answer_revision'],
+                        'index': index, 'answer': engine.answer_min}, web=True)
+                states[game] = state
                 assert states[game]['questions'] == old['questions'], game
             else:
                 states[game] = engine.execute('answer_batch', {**args, 'answers': [engine.answer_min] * len(engine.items)})
+        elif step == 'edit' and mode == 'full':
+            old = previous[game]
+            states[game] = engine.execute('save_answer', {**base, 'session_id': old['session_id'],
+                'expected_revision': old['answer_revision'], 'index': 0, 'answer': engine.answer_max}, web=True)
         else:
             state = engine.execute('status', base, web=True)
             if mode == 'full':
                 assert state['questions'] == previous[game]['questions'], game
+                assert state['saved_answers'] == [engine.answer_max, engine.answer_min, engine.answer_min], game
             else:
                 assert state['result_data'] == previous[game]['result_data'], game
             assert state['session_id'] == previous[game]['session_id']
-            assert state['progress'] == (1 if mode == 'full' else len(engine.items)), game
+            assert state['progress'] == (3 if mode == 'full' else len(engine.items)), game
             assert state['complete'] == (mode == 'full_fast'), game
             states[game] = state
     print(json.dumps(states, ensure_ascii=False))
@@ -44,13 +53,13 @@ def main():
         with tempfile.TemporaryDirectory(prefix='cedar-research-persistence-') as temp:
             env = {**os.environ, 'SESSIONS_DB': str(Path(temp) / 'sessions.db')}
             states = {}
-            for step in ('start', 'mutate', 'read'):
+            for step in ('start', 'mutate', 'edit', 'read'):
                 run = subprocess.run([sys.executable, __file__, '--worker', mode, step],
                     input=json.dumps(states), text=True, capture_output=True, env=env, cwd=ROOT, timeout=30)
                 if run.returncode:
                     raise RuntimeError(run.stderr)
                 states = json.loads(run.stdout)
-            print(f'{mode}: {len(states)} scales passed independent start/mutate/read processes')
+            print(f'{mode}: {len(states)} scales passed independent start/mutate/edit/read processes')
     print('Temporary guest:regcheck databases removed.')
     return 0
 

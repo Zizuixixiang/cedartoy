@@ -65,12 +65,21 @@
     .hero .research-notice { margin-top: 10px; color: var(--text); font-size: 12px; line-height: 1.65; }
     .research-details, .research-help { color: var(--text); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
     .research-details summary { width: fit-content; min-height: 44px; padding: 12px 0; cursor: pointer; }
-    .research-details p { margin: 6px 0; color: var(--text); font-size: 12px; white-space: pre-wrap; }
-    .research-details .source { text-align: left; }
+    .research-meta { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 8px 12px; margin: 0; padding: 12px 0; border-top: 2px solid var(--purple-light); text-align: left; }
+    .research-meta dt { font-weight: 700; }
+    .research-meta dd { min-width: 0; margin: 0; }
+    .research-meta a, .research-result a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+    .research-result { overflow-wrap: anywhere; }
+    .research-result .research-notice { margin: 0 0 16px; font-size: 12px; line-height: 1.65; }
+    .research-scores { margin: 0; }
+    .research-score { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 12px; padding: 12px 0; border-bottom: 2px solid var(--purple-light); }
+    .research-score:first-child { padding-top: 0; }
+    .research-score dt { font-size: 14px; line-height: 1.65; }
+    .research-score dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .research-result .research-help { margin-top: 16px; }
     .research-help { margin: 12px 0 0; }
     .research-help a { color: inherit; }
     .research-page #questionIntro { color: var(--text); font-size: 13px; }
-    .research-start-help { display: block; margin-top: 6px; font-size: 12px; }
     .research-page .question-actions { flex-wrap: wrap; }
     .research-page .question-actions button { color: var(--text); font-size: 12px; min-height: 44px; }
     .research-page .answer-button { min-height: 44px; padding: 8px 12px; font-size: 14px; }
@@ -80,7 +89,6 @@
     .mbti-scale-track.research-scale-track { grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); row-gap: 2px; }
     .research-scale-track .scale-step { color: var(--text); font-size: 13px; }
     .research-scale-track .scale-step:focus-visible { outline-offset: -3px; }
-    .research-saved button:disabled { cursor: default; opacity: 1; }
     .research-page button:focus-visible, .research-page summary:focus-visible, .research-page a:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
     .shell {
       position: relative;
@@ -345,8 +353,8 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand pixel" href="/"><span class="pixel-logo" aria-hidden="true"></span>CEDAR TOY</a>
-    <a class="back-link pixel" href="/">← ARCADE</a>
+    <a class="brand pixel" href="/?tab=test"><span class="pixel-logo" aria-hidden="true"></span>CEDAR TOY</a>
+    <a class="back-link pixel" href="/?tab=test">← ARCADE</a>
   </header>
   <main>
     <section class="hero">
@@ -355,8 +363,7 @@
       <p>人类网页端 · 进度保留 24 小时</p>
       <p class="question-intro page-disclaimer" id="pageDisclaimer" hidden></p>
       <details class="research-details" id="researchDetails" hidden>
-        <summary>来源、许可与评分说明</summary>
-        <p id="researchNotice"></p>
+        <summary>来源与许可</summary>
       </details>
     </section>
     <section class="shell" aria-live="polite">
@@ -388,7 +395,6 @@
         <div class="question-actions">
           <button class="pixel-button secondary pixel" id="previousButton" type="button">← 上一题</button>
           <button class="pixel-button pixel" id="saveAnswerButton" type="button" hidden>下一题</button>
-          <button class="pixel-button secondary pixel" id="nextSavedButton" type="button" hidden>下一题 →</button>
           <button class="pixel-button secondary pixel" id="reviewButton" type="button" hidden>查看答题卡 →</button>
         </div>
       </div>
@@ -410,7 +416,7 @@
         </div>
         <div class="actions">
           <button class="pixel-button pixel" id="restartButton" type="button">RETEST →</button>
-          <a class="pixel-button secondary pixel" href="/">BACK TO ARCADE</a>
+          <a class="pixel-button secondary pixel" href="/?tab=test">BACK TO ARCADE</a>
         </div>
         <div class="compare-box" id="compareBox" hidden>
           <h3>双人对测</h3>
@@ -447,16 +453,16 @@
     document.title = `${displayTitle} · CEDAR TOY`;
     $("title").textContent = displayTitle;
     $("subtitle").textContent = CONFIG.subtitle;
-    $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
-    $("pageDisclaimer").hidden = !CONFIG.disclaimer;
     if (CONFIG.research) {
       document.body.classList.add("research-page");
       $("pageDisclaimer").className = "research-notice";
-      $("pageDisclaimer").textContent = "中文题目未经验证；仅供自我了解，不作诊断。";
+      $("pageDisclaimer").textContent = researchNotice();
       $("pageDisclaimer").hidden = false;
-      setResearchLinkedText($("researchNotice"), CONFIG.disclaimer || "");
       $("researchDetails").hidden = false;
-      $("researchDetails").appendChild($("source"));
+      renderResearchSource();
+    } else {
+      $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
+      $("pageDisclaimer").hidden = !CONFIG.disclaimer;
     }
     if (CONFIG.game === "enneagram") {
       $("source").textContent = "题库来自 kcdjmaxx/enneagram-llm-evaluator · ";
@@ -466,10 +472,63 @@
       sourceLink.rel = "noopener noreferrer";
       sourceLink.textContent = "GitHub";
       $("source").append(sourceLink, "（MIT），感谢原作者。");
-    } else if (CONFIG.research) {
-      setResearchLinkedText($("source"), CONFIG.source);
-    } else {
+    } else if (!CONFIG.research) {
       $("source").textContent = CONFIG.source;
+    }
+
+    function researchNotice() {
+      if (["rbi", "irrc", "jrrs", "ross", "rss", "ppts", "bsfl"].includes(CONFIG.game)) {
+        return "非官方评分，仅供娱乐参考。";
+      }
+      if (CONFIG.game === "bsr") return "题目经改编，仅供娱乐参考。";
+      if (CONFIG.game === "aidep") return "仅供人类，按原量表计分，仅供娱乐参考。";
+      return "按原量表计分，仅供娱乐参考。";
+    }
+
+    function researchAttribution() {
+      // human_configs supplies author · paper URL · license for all 18 scales.
+      // Preserve the full author and license wording, including reuse restrictions.
+      const [author, url, ...license] = (CONFIG.source || "").split(" · ");
+      return {author, url, license: license.join(" · ")};
+    }
+
+    function renderResearchSource() {
+      const source = researchAttribution();
+      const list = makeResultElement("dl", "research-meta");
+      list.id = "source";
+      function row(label, text) {
+        const value = document.createElement("dd");
+        setResearchLinkedText(value, text);
+        list.append(makeResultElement("dt", "", label), value);
+        return value;
+      }
+      row("作者", source.author);
+      row("原文", source.url);
+      const license = row("许可", source.license);
+      // Link the license name, keeping qualifiers (e.g. noncommercial) visible.
+      for (const link of license.querySelectorAll("a")) {
+        const prefix = link.previousSibling;
+        const label = prefix?.textContent.match(/CC BY(?:-NC)? \d\.\d\s*(?:—\s*)?$/);
+        if (label) {
+          prefix.textContent = prefix.textContent.slice(0, label.index);
+          link.textContent = label[0].replace(/\s*—?\s*$/, "");
+        }
+      }
+      // These registry entries name the license without embedding its URL.
+      if (!license.querySelector("a")) {
+        const url = CONFIG.game.startsWith("ipip_") ? "https://ipip.ori.org/"
+          : CONFIG.game === "mesx" ? "https://creativecommons.org/licenses/by/4.0/" : null;
+        if (url) {
+          setResearchLinkedText(license, url);
+          license.querySelector("a").textContent = source.license;
+        }
+      }
+      row(CONFIG.game === "bsr" ? "改编" : "翻译", CONFIG.game === "aidep"
+        ? "由论文英文题目回译，未经验证。"
+        : CONFIG.game === "bsr" ? "生成句为未验证中译；格言替换为古典短句。"
+        : "中文题目为未验证翻译。");
+      $("source").replaceWith(list);
+      $("researchDetails").appendChild(list);
     }
 
     function setResearchLinkedText(node, text = "") {
@@ -591,28 +650,35 @@
       showPanel("modePanel");
     }
 
-    function restoreDraft(state) {
+    function restoreDraft(state, pendingDraft) {
       answers = Array(state.total).fill(null);
       cursor = 0;
+      let saved;
       try {
-        const saved = JSON.parse(localStorage.getItem(currentDraftKey()) || (CONFIG.research ? localStorage.getItem(draftKey()) : null) || "null");
+        saved = pendingDraft || JSON.parse(localStorage.getItem(currentDraftKey()) || (CONFIG.research ? localStorage.getItem(draftKey()) : null) || "null");
         if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && (!CONFIG.research || saved.session_id === state.session_id) && saved.total === state.total && Array.isArray(saved.answers)) {
           answers = Array.from({length: state.total}, (_, index) => Number.isInteger(saved.answers[index]) ? saved.answers[index] : null);
           cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
         }
       } catch (_) {}
       if (CONFIG.research && state.mode === "full") {
-        const conflict = answers.some((value, index) => index < state.progress && Number.isInteger(value) && value !== state.saved_answers[index]);
+        let conflict = false;
+        const base = saved?.base_answers;
+        answers = answers.map((local, index) => {
+          const remote = state.saved_answers[index] ?? null;
+          const previous = Array.isArray(base) ? (base[index] ?? null) : null;
+          if (local === remote || local === null || (Array.isArray(base) && local === previous)) return remote;
+          if (remote === previous) return local;
+          conflict = true;
+          return remote;
+        });
         if (conflict) {
-          // A different tab may have submitted another choice. Keep the local
-          // draft verbatim before showing authoritative server receipts.
           const raw = localStorage.getItem(currentDraftKey()) || localStorage.getItem(draftKey());
           localStorage.setItem(`${currentDraftKey()}_conflict_${Date.now()}`, raw);
           showOtherDrafts();
+          showError("答案已在其他页面更新，已载入最新选择；本机冲突草稿已保留。");
         }
-        cursor = state.progress;
-        // Server receipts take precedence; only the next unsubmitted selection is local.
-        answers = answers.map((value, index) => index < state.progress ? state.saved_answers[index] : index === state.progress ? value : null);
+        cursor = Math.min(saved?.session_id === state.session_id ? cursor : state.progress, state.total - 1, state.progress);
       }
     }
     function currentDraftKey() {
@@ -643,16 +709,20 @@
       link.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(drafts, null, 2))}`;
       notice.append(link);
     }
-    function saveDraft() {
-      if (!activeState) return;
-      localStorage.setItem(currentDraftKey(), JSON.stringify({
+    function draftSnapshot() {
+      return {
         game: CONFIG.game,
         session_id: activeState.session_id,
         edition: activeState.edition,
         total: activeState.total,
-        answers,
+        answers: [...answers],
+        ...(CONFIG.research && activeState.mode === "full" ? {base_answers: activeState.saved_answers} : {}),
         cursor
-      }));
+      };
+    }
+    function saveDraft() {
+      if (!activeState) return;
+      localStorage.setItem(currentDraftKey(), JSON.stringify(draftSnapshot()));
     }
     function clearDraft() {
       // Research drafts may contain choices never acknowledged by the server.
@@ -672,7 +742,7 @@
       });
     }
 
-    function renderState(state) {
+    function renderState(state, pendingDraft) {
       $("aidepSharing")?.remove();
       activeState = state;
       restartSessionId = null;
@@ -688,7 +758,7 @@
         scrollToResultPanel();
         return;
       }
-      restoreDraft(state);
+      restoreDraft(state, pendingDraft);
       $("statusText").textContent = CONFIG.research && state.mode === "full" ? "SYSTEM / SAVED PROGRESS" : "SYSTEM / LOCAL SAVE";
       renderQuestion();
       showPanel("questionPanel");
@@ -805,10 +875,9 @@
       const question = activeState.questions[cursor];
       if (!question) return;
       const sequential = CONFIG.research && activeState.mode === "full";
-      const saved = sequential && cursor < activeState.progress;
       const answeredCount = CONFIG.research && activeState.mode === "full" ? activeState.progress : answers.filter(Number.isInteger).length;
       $("modeLabel").textContent = CONFIG.research
-        ? (saved ? "已保存" : "全题作答")
+        ? "全题作答"
         : CONFIG.game === "mbti"
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
         : CONFIG.game === "enneagram"
@@ -820,15 +889,6 @@
       $("questionText").textContent = question.text;
       $("questionIntro").textContent = activeState.instructions || "";
       $("questionIntro").hidden = cursor !== 0 || !activeState.instructions;
-      if (CONFIG.research) {
-        $("questionIntro").hidden = cursor !== 0;
-        const help = document.createElement("span");
-        help.className = "research-start-help";
-        help.textContent = sequential
-          ? "点击下一题自动保存；已保存题可回看，不可修改。"
-          : "续答旧版记录：答案只存本机，答齐后提交。";
-        if (!sequential || activeState.progress === 0) $("questionIntro").append(help);
-      }
       $("answers").innerHTML = "";
 
       if (CONFIG.game === "mbti") {
@@ -865,12 +925,9 @@
         $("answers").className = "answers";
         question.options.forEach((option) => addAnswer(option.value, `${option.value}. ${option.text}`));
       }
-      $("answers").classList.toggle("research-saved", saved);
-      $("saveAnswerButton").hidden = !sequential || saved;
+      $("saveAnswerButton").hidden = !sequential;
       $("saveAnswerButton").textContent = cursor === activeState.total - 1 ? "查看结果" : "下一题";
       $("saveAnswerButton").disabled = busy || !Number.isInteger(answers[cursor]);
-      $("nextSavedButton").hidden = !saved;
-      if (saved) $("answers").querySelectorAll("button").forEach(button => { button.disabled = true; });
       $("previousButton").hidden = false;
       $("previousButton").disabled = busy || cursor === 0;
       $("reviewButton").hidden = sequential || !answers.every(Number.isInteger);
@@ -1050,7 +1107,6 @@
     async function answer(value) {
       if (busy || !activeState) return;
       if (CONFIG.research && activeState.mode === "full") {
-        if (cursor < activeState.progress) return;
         answers[cursor] = value;
         try { saveDraft(); }
         catch (_) { showError("本机草稿保存失败，请保存本题后再离开页面。"); }
@@ -1069,13 +1125,20 @@
       else renderQuestion();
     }
 
-    async function saveResearchAnswer() {
-      if (busy || !activeState || activeState.mode !== "full" || cursor !== activeState.progress || !Number.isInteger(answers[cursor])) return;
+    async function saveResearchAnswer(nextIndex = cursor + 1, finish = cursor === activeState.total - 1) {
+      if (busy || !activeState || activeState.complete || activeState.mode !== "full" || !Number.isInteger(answers[cursor])) return;
       busy = true;
       setButtonsDisabled(true);
       showError();
       try {
-        renderState(await api("answer", {session_id: activeState.session_id, expected_index: cursor, answer: answers[cursor]}));
+        const pendingDraft = draftSnapshot();
+        const state = await api("save_answer", {session_id: activeState.session_id,
+          expected_revision: activeState.answer_revision, index: cursor, answer: answers[cursor], finish});
+        renderState(state, pendingDraft);
+        if (!state.complete) {
+          cursor = Math.max(0, Math.min(nextIndex, state.total - 1, state.progress));
+          saveDraft();
+        }
       } catch (error) {
         showError(`${error.message} 未确认保存，可重试；若提示冲突，请刷新核对进度。本机草稿会保留。`);
       } finally {
@@ -1094,6 +1157,11 @@
 
     function goToQuestion(index) {
       if (!activeState || (CONFIG.research && busy)) return;
+      if (CONFIG.research && activeState.mode === "full" && Number.isInteger(answers[cursor])
+          && answers[cursor] !== activeState.saved_answers[cursor]) {
+        saveResearchAnswer(index, false);
+        return;
+      }
       cursor = Math.max(0, Math.min(index, CONFIG.research && activeState.mode === "full" ? activeState.progress : activeState.total - 1));
       try { saveDraft(); }
       catch (error) {
@@ -1694,6 +1762,33 @@
       return true;
     }
 
+    function renderResearchResult(root, data) {
+      if (data?.kind !== "research_scale" || !data.scores || !data.dimensions) return false;
+      const scores = Object.entries(data.scores);
+      if (!scores.length || scores.some(([key, value]) => !Number.isFinite(value) || !data.dimensions[key])) return false;
+      const result = makeResultElement("div", "research-result");
+      result.appendChild(makeResultElement("p", "research-notice", researchNotice()));
+      const list = makeResultElement("dl", "research-scores");
+      for (const [key, value] of scores) {
+        // Trim only the repeated presentation suffix; keep saved values and keys intact.
+        const label = data.dimensions[key].replace(/（(?:4399)?描述性?均分）$/, "");
+        const row = makeResultElement("div", "research-score");
+        row.append(makeResultElement("dt", "", label), makeResultElement("dd", "", value.toFixed(2)));
+        list.appendChild(row);
+      }
+      result.appendChild(list);
+      const sum = CONFIG.game.startsWith("ipip_") || ["mesx", "romlon"].includes(CONFIG.game);
+      result.appendChild(makeResultElement("p", "research-help", sum ? "各维度为原始总分。"
+        : CONFIG.game === "bsr" ? "两类分别取均分；差值＝格言均分 − 伪深刻语句均分。" : "各维度为均分。"));
+      const source = makeResultElement("p", "research-help");
+      setResearchLinkedText(source, researchAttribution().url);
+      const link = source.querySelector("a");
+      if (link) link.textContent = "查看研究原文 ↗";
+      result.appendChild(source);
+      root.appendChild(result);
+      return true;
+    }
+
     function renderResult(data, fallbackText) {
       const root = $("resultStructured");
       const fallback = $("resultText");
@@ -1704,7 +1799,8 @@
       root.innerHTML = "";
       let rendered = false;
       try {
-        if (data?.kind === "mbti") rendered = renderMbtiResult(root, data);
+        if (CONFIG.research) rendered = renderResearchResult(root, data);
+        else if (data?.kind === "mbti") rendered = renderMbtiResult(root, data);
         else if (data?.kind === "enneagram") rendered = renderEnneagramResult(root, data);
         else if (data?.kind === "dnd") rendered = renderDndResult(root, data);
         else if (data?.kind === "love") rendered = renderLoveResult(root, data);
@@ -1720,7 +1816,7 @@
       fallback.hidden = rendered;
       if (!rendered) {
         root.innerHTML = "";
-        fallback.textContent = fallbackText;
+        fallback.textContent = CONFIG.research ? "暂时无法展示分数，请刷新重试。" : fallbackText;
       }
     }
 
@@ -1783,8 +1879,7 @@
       }
     }
     $("previousButton").addEventListener("click", () => goToQuestion(cursor - 1));
-    $("nextSavedButton").addEventListener("click", () => goToQuestion(cursor + 1));
-    $("saveAnswerButton").addEventListener("click", saveResearchAnswer);
+    $("saveAnswerButton").addEventListener("click", () => saveResearchAnswer());
     $("reviewButton").addEventListener("click", renderReview);
     $("modifyButton").addEventListener("click", () => goToQuestion(cursor));
     $("submitButton").addEventListener("click", submitAnswers);
