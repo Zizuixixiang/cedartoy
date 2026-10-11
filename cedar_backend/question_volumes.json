@@ -102,6 +102,17 @@
         }
       ]
     },
+    "dt_learning_goals": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 28,
+          "chars": 438,
+          "tokens": 503,
+          "text_sha256": "9a36aa4cbf3be428a682b2adf8aecd3dbb2680940268bdb43b94177dbc159f62"
+        }
+      ]
+    },
     "bsfl": {
       "variants": [
         {

@@ -1,5 +1,13 @@
 # Guide 题文体积口径与复核
 
+## 第十套集成后的当前计量
+
+2026-10-11，`cedartoy-deeptalk-tenth-20261011` 新增 `dt_learning_goals`：28题、438字符、503 Token（逐题 cl100k_base）；按需Guide正文910字符、425 Token。共10套490题、35份Guide元数据，原34份元数据完全不变。生成器实际口径为每题干一次、每组唯一选项一次，不按每题重复选项；以下前序口径与Guide文本保留为历史记录，当前以生成器和JSON为准。
+
+list现为1578字符/1245 Token，比本次基线1534/1213增加44字符/32 Token，仅用于第十套发现索引；原schema无diff。新增行：`dt_learning_goals·学习、目标与解决问题·个人目标、学习复盘与问题分析`。深聊10项、MCP有结果测试25项、游戏26项，共61项；人类首页有结果测试额外含AIDep，共26款。`--write`、`--check`及体积回归通过；完整本次验收见 [发布记录](DEEPTALK_RELEASE_VALIDATION.md)。
+
+## 前序计量记录（以下数字不作为当前全量统计）
+
 2026-10-11，在 `cedartoy-deeptalk-release-20261011` 的已有集成成果上局部修改。未部署、push、重启服务或修改生产目录，未新增commit。这里的当前样例替代早期发布验收记录中的四分类/旧Guide体积示例。
 
 ## 口径与更新
@@ -83,7 +91,7 @@ Guide仅按需加载，不会一次注入全部。list_games由1539字符/1219 T
 - 另3项直接相关检查通过：`test_play_schemas_keep_gemini_numeric_enum_compatibility`、`test_root_identity_and_human_only_denial`、`test_new_scale_root_http_path_token_and_bearer`。没有跑全量测试或访问生产数据库。
 - `--check`、修改文件语法、`git diff --check`通过。按修改前文件哈希核对，原题包、引擎存档、网页、统计折叠与其它既有集成文件未变。
 
-## 当前list_games完整示例
+## 前序list_games完整示例
 
 ```text
 玩法见 get_guide(game)
@@ -101,7 +109,7 @@ dt_dilemmas30·现实难题30问·如何回应虚构烦恼与现实两难
 游戏: turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·青少年小鼠狂饮乙醇 | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·青少年小鼠狂饮乙醇 | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | market·买菜做饭·青少年小鼠狂饮乙醇 | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | camping_plaza·露营地经营·乐诶雷女士
 ```
 
-## 单套Guide完整示例
+## 前序单套Guide完整示例
 
 `get_guide(game="dt_work20")` 的Guide正文：
 

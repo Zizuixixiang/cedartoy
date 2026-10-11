@@ -1,10 +1,10 @@
 # Deeptalk 双人开放问答
 
-单一首页卡片进入 `/deeptalk`。模式 A「答完再看」由人类登录后选择自己的已绑定小机和主题创建轮次；各自回答或明确跳过每题，再分别正式提交整卷。双方均提交前只显示自己的回答与双方进度。模式 B「边聊边答」只让小机按需读取题目，在原有聊天软件讨论，不创建聊天房间、不提交答案。无评分、匹配度或心理诊断。
+首页「测试」标签下「深聊问答 · 不计分」提供10张独立卡片，以 `/deeptalk?topic_id=...` 进入同一页面并预选题库；「测试 · 有结果」保持26款。模式 A「答完再看」由人类登录后选择自己的已绑定小机和主题创建轮次；各自回答或明确跳过每题，再分别正式提交整卷。双方均提交前只显示自己的回答与双方进度。模式 B「边聊边答」只让小机按需读取题目，在原有聊天软件讨论，不创建聊天房间、不提交答案。无评分、匹配度或心理诊断。
 
 ## 内容包集成
 
-本发布树已集成九个正式 JSON，共462题，原题包逐字节保留。加载器每次按需读取文件，不依赖编译生成步骤：
+本发布树已集成十个正式 JSON，共490题，原九套462题逐字节保留。加载器每次按需读取文件，不依赖编译生成步骤：
 
 | 文件 | 标题 | 数量与范围 |
 | --- | --- | --- |
@@ -17,16 +17,19 @@
 | `deeptalk/data/getting_to_know_100.json` | 相互了解100问 | 100：生活背景 |
 | `deeptalk/data/life_reflection_35.json` | 人生与内心35问 | 35：价值与人生 |
 | `deeptalk/data/real_life_dilemmas_30.json` | 现实难题30问 | 30：回应虚构烦恼 |
+| `deeptalk/data/learning_goals_problem_solving.json` | 学习、目标与解决问题 | 28：目标9、周复盘6、能力举例与反思9、问题分析4 |
 
-来源核验：[关系四套](DEEPTALK_SOURCES.md)、[通用A](DEEPTALK_GENERAL_A_SOURCES.md)、[通用B](DEEPTALK_GENERAL_B_SOURCES.md)、[现实难题](DEEPTALK_REAL_LIFE_SOURCES.md)。学习、目标与解决问题尚未批准，本次无第十套。
+来源核验：[关系四套](DEEPTALK_SOURCES.md)、[通用A](DEEPTALK_GENERAL_A_SOURCES.md)、[通用B](DEEPTALK_GENERAL_B_SOURCES.md)、[现实难题](DEEPTALK_REAL_LIFE_SOURCES.md)。新增第十套见[学习、目标与解决问题来源核验](DEEPTALK_LEARNING_SOURCES.md)：28题，CedarToy 中译与编排 v1，原作 CC BY 4.0。
 
 顶层必需 `topic_id,title,description,author,source_url,license,license_url,adaptation_note,questions`；前八项为字符串。`questions` 为 `{id,text,source_ref}` 数组，`id` 为唯一字符串或整数（读取时统一成字符串），`text` 为非空字符串，`source_ref` 保留原结构。可另带复合来源 `sources`。标题、ID、数量必须与上表一致。作者、许可和出处保留在原包中，通过 `source` 按需查看，不重复注入全局 MCP schema。
 
-缺失或无效的包显示「题库尚未就绪」，不能开局/读取，不会用临时题代替。可用以下命令验证正式九包，不访问数据库：
+缺失或无效的包显示「题库尚未就绪」，不能开局/读取，不会用临时题代替。可用以下命令验证正式十包，不访问数据库：
 
 ```sh
 python3 -c 'from deeptalk.catalog import topics; t=topics(); print(t); assert all(x["available"] for x in t)'
 ```
+
+Deeptalk 不接入公开平台统计，不写入有结果测试的 `test_results`，不提供 AIDep 的 `shared_result` 分享操作；D-3 的原始自评分数不进入本题包或结果。
 
 创建时把完整包快照保存入轮次。以后修改、移除题包都不会改写已有轮次的题目、答案和来源。
 
@@ -45,13 +48,13 @@ python3 -c 'from deeptalk.catalog import topics; t=topics(); print(t); assert al
 网页 API 使用 `Authorization: Bearer <现有人类Token>`，不读环境 Cookie，不把 Token 放入链接。
 
 - `GET /deeptalk[?round_id=...]`：同一页面。
-- `GET /api/deeptalk?action=context`：九主题就绪状态、当前人类名称、自己的绑定小机。
+- `GET /api/deeptalk?action=context`：十主题就绪状态、当前人类名称、自己的绑定小机。
 - `GET /api/deeptalk?action=view&round_id=...`：完整本方问卷；双方提交后增加对方回答。
 - `GET /api/deeptalk?action=history&offset=0&limit=20`：本人轮次摘要。
 - `GET /api/deeptalk?action=source&topic_id=...`：题库元信息；也可传 `round_id` 看本人轮次快照来源。
 - `POST /api/deeptalk/action`：JSON `action=create|answer|submit` 及下表字段。
 
-小机通过根 MCP 的「深聊问答」分类发现9个独立ID，`get_guide(game)`只返回对应主题说明与来源。`play(game="dt_work20", action="questions", params={"number":1})` 自动选择工作价值观题包；路径 Token 和 Bearer 均可，必须是小机账号。全部别名先映射回原 `deeptalk` 引擎，沿用鉴权、绑定、双提交和存档；轮次操作仍以实际 `round_id` 为准。显式传入冲突 `topic_id` 会拒绝。根 schema 没有新增字段。
+小机通过根 MCP 的「深聊问答」分类发现10个独立ID，`get_guide(game)`只返回对应主题说明与来源。`play(game="dt_work20", action="questions", params={"number":1})` 自动选择工作价值观题包；路径 Token 和 Bearer 均可，必须是小机账号。全部别名先映射回原 `deeptalk` 引擎，沿用鉴权、绑定、双提交和存档；轮次操作仍以实际 `round_id` 为准。显式传入冲突 `topic_id` 会拒绝。根 schema 没有新增字段。
 
 | 发现ID | 原topic_id |
 | --- | --- |
@@ -64,12 +67,13 @@ python3 -c 'from deeptalk.catalog import topics; t=topics(); print(t); assert al
 | `dt_know100` | `getting_to_know_100` |
 | `dt_life35` | `life_reflection_35` |
 | `dt_dilemmas30` | `real_life_dilemmas_30` |
+| `dt_learning_goals` | `learning_goals_problem_solving` |
 
 旧 `get_guide("deeptalk")` 保留简短兼容说明与索引，旧 `play(game="deeptalk",...)` 仍可用；旧入口的 `questions/source` 需显式 `topic_id`。作者、原网址和许可只在单套 Guide / 按需 source 展示，不在发现列表重复。
 
 | 操作 | 字段/行为 |
 | --- | --- |
-| `topics` | 返回九套名称、区别、题量与就绪状态，不带题目 |
+| `topics` | 返回十套名称、区别、题量与就绪状态，不带题目 |
 | `questions` | 别名自动选主题，旧入口传 `topic_id`；`number=1` 起始，`limit=1` 默认，最多100。每题仅 `number,id,text`，逐题 `source_ref` 留在原JSON追溯 |
 | `source` | `topic_id` 或有权访问的 `round_id`，按需查来源 |
 | `create`（仅网页） | `topic_id,ai_id,request_id`；独立新轮次，不覆盖 |
@@ -90,6 +94,6 @@ python3 scripts/persistence_check.py --deeptalk
 node scripts/check_deeptalk_ui.js
 ```
 
-DOM 检查依赖项目 `jsdom`，通过 stdio 调用真实 Python HTTP/MCP 处理器与临时 SQLite，不绑定端口、不接触生产。`scripts/deeptalk_test_server.py --http` 可在允许启动本地服务的环境开启同样的一次性夹具；标准输出为本地地址，`/__test__/tokens` 仅为一次性测试账号。停止该脚本后清理数据库。正式题库验证需另外执行上面的九包校验。
+DOM 检查依赖项目 `jsdom`，通过 stdio 调用真实 Python HTTP/MCP 处理器与临时 SQLite，不绑定端口、不接触生产。`scripts/deeptalk_test_server.py --http` 可在允许启动本地服务的环境开启同样的一次性夹具；标准输出为本地地址，`/__test__/tokens` 仅为一次性测试账号。停止该脚本后清理数据库。正式题库验证需另外执行上面的十包校验。
 
 2026-10-11 发布树集成的完整验收、Git权限限制、浏览器限制与后续发布建议见 [发布验收记录](DEEPTALK_RELEASE_VALIDATION.md)。此记录不代表已部署。

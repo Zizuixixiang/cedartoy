@@ -177,6 +177,9 @@ class ResearchScaleEngine(ScaleTestEngine):
                 state['duplicate'] = True
             conn.commit()
         # The website uses the same ordered questions. MCP full only needs the current one.
+        if web and not complete:
+            # Owner-only web state lets the page revisit saved questions after reload.
+            state['saved_answers'] = answers
         if not complete and not web:
             if mode == 'full':
                 state['questions'] = state['questions'][len(answers):len(answers)+1]

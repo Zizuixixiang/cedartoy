@@ -22,10 +22,10 @@ class QuestionVolumeTests(unittest.TestCase):
     def test_precomputed_values_match_every_actual_question_and_static_guide(self):
         data = build_metadata()
         self.assertEqual(metadata(), data)
-        self.assertEqual(len(data['games']), 34)
+        self.assertEqual(len(data['games']), 35)
         self.assertNotIn('aidep', data['games'])
         examples = {'dt_relations': (13,516,593), 'dt_romance100': (100,1294,1667),
-                    'dt_dilemmas30': (30,1902,2353), 'ipip_adhd': (12,191,217)}
+                    'dt_dilemmas30': (30,1902,2353), 'dt_learning_goals': (28,438,503), 'ipip_adhd': (12,191,217)}
         for game, expected in examples.items():
             v = data['games'][game]['variants'][0]
             self.assertEqual((v['count'],v['chars'],v['tokens']), expected)

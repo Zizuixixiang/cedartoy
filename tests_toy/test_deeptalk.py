@@ -131,13 +131,13 @@ class DeeptalkTests(unittest.TestCase):
         self.assertNotIn("测试占位题", guide)
         self.assertNotIn("questions", self.call(AI, "topics"))
 
-    def test_loader_all_nine_and_missing_malformed(self):
-        self.assertEqual([t['total'] for t in catalog.topics()], [13,50,14,100,20,100,100,35,30])
+    def test_loader_all_ten_and_missing_malformed(self):
+        self.assertEqual([t['total'] for t in catalog.topics()], [13,50,14,100,20,100,100,35,30,28])
         self.assertTrue(all(t['available'] for t in catalog.topics()))
         with self.assertRaises(DeeptalkError): catalog.load_topic('../secrets')
         (self.data/'couple_50.json').write_text('{}')
         (self.data/'romance_values_100.json').unlink()
-        self.assertEqual([t['available'] for t in catalog.topics()],[True,False,True,False,True,True,True,True,True])
+        self.assertEqual([t['available'] for t in catalog.topics()],[True,False,True,False,True,True,True,True,True,True])
         path=self.data/'relations_communication.json'; obj=json.loads(path.read_text()); obj['questions'][1]['id']='q1'; path.write_text(json.dumps(obj))
         with self.assertRaises(DeeptalkError): catalog.load_topic('relations_communication')
 

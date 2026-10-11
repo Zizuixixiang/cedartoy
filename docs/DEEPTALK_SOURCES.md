@@ -1,5 +1,7 @@
 # Deeptalk 深聊问答：题库来源与使用条件
 
+本页仅记录最初四套的来源；当前完整10套490题清单见 [Deeptalk](DEEPTALK.md)，第十套28题见[学习主题来源核验](DEEPTALK_LEARNING_SOURCES.md)。
+
 核验日期：2026-10-11。本次按南杉批准的范围整理四套真实现成题单，仅交付 `deeptalk/data/*.json` 与本说明。
 
 ## 实际交付

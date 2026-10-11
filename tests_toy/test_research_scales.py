@@ -271,6 +271,23 @@ class ResearchScalesTests(unittest.TestCase):
         with self.assertRaises(server._McpError):
             server._human_test_action('aidep','start','',{'mode':'full','player_id':'42'})
 
+    def test_web_saved_answers_are_owner_only_and_mcp_unchanged(self):
+        e = research_scales.SCALES['rbi']
+        with patch.object(server, '_current_account', return_value={'id':42,'is_ai':False}):
+            state = server._human_test_action('rbi', 'start', 'human-token', {'mode':'full'})
+            state = server._human_test_action('rbi', 'answer', 'human-token', {
+                'session_id':state['session_id'], 'expected_index':0, 'answer':2})
+            self.assertEqual(state['saved_answers'], [2])
+            restored = server._human_test_action('rbi', 'result', 'human-token', {'player_id':'43'})
+            self.assertEqual(restored['saved_answers'], [2])
+            self.assertEqual(len(restored['questions']), 18)
+        mcp = e.execute('status', {'player_id':'42'})
+        self.assertNotIn('saved_answers', mcp)
+        self.assertEqual(len(mcp['questions']), 1)
+        with patch.object(server, '_current_account', return_value={'id':43,'is_ai':False}):
+            with self.assertRaises(JsonRpcError):
+                server._human_test_action('rbi', 'result', 'other-token', {'player_id':'42'})
+
     def test_root_identity_and_human_only_denial(self):
         # Only peripheral platform services mocked; real root identity/dispatch/scale persistence.
         for name in ('_auto_migrate_legacy_account_saves','_reject_claimed_guest'):

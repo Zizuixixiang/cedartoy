@@ -1,6 +1,45 @@
-# 2026-10-11 隔离发布树集成验收
+# 2026-10-11 第十套 Deeptalk 隔离验收
 
-本记录仅适用于 `/opt/cedar-workspaces/cedartoy-deeptalk-release-20261011`。未部署、未 push、未操作生产服务或配置，未修改 `/opt/cedartoy` 工作文件。
+当前交付工作树：`/opt/cedar-workspaces/cedartoy-deeptalk-tenth-20261011`，开始时干净。仅开发与隔离验证；未 commit/push/deploy/restart，未操作生产、用户数据或其他工作树。下方前序验收数字仅为历史证据，当前为 **10套490题**。
+
+## 修改文件（14个）
+
+- 运行时：`deeptalk/data/learning_goals_problem_solving.json`（新增）、`deeptalk/catalog.py`、`index.html`、`cedar_backend/question_volumes.json`。
+- 回归：`tests_toy/test_deeptalk.py`、`tests_toy/test_deeptalk_packages.py`、`tests_toy/test_question_volumes.py`、`scripts/check_deeptalk_home_groups.js`、`scripts/check_deeptalk_ui.js`。
+- 文档：`docs/DEEPTALK.md`、`docs/DEEPTALK_LEARNING_SOURCES.md`（新增）、`docs/DEEPTALK_SOURCES.md`、`docs/QUESTION_TEXT_VOLUMES.md`、`docs/DEEPTALK_RELEASE_VALIDATION.md`。
+
+## 当前内容与集成
+
+新增 `learning_goals_problem_solving` / `dt_learning_goals`「学习、目标与解决问题」28题，四组9+6+9+4。原始页面成功访问，署名 Alli M. Tucker-Stanojković (North Orange Continuing Education)、CC BY 4.0、题表与反思问题均已核实；[逐条来源与翻译边界](DEEPTALK_LEARNING_SOURCES.md)。CedarToy 非官方中译与编排 v1，不采用 D-3 评分，不生成报告或匹配度。没有题文缺口或许可归属争议；不声称作者审核中文译文。
+
+新增包 SHA-256：`840af1da25876d4a922e3ed512e78bc3adf88323b8ab3321b917cc231572041b`。旧9套均与下方原始SHA-256逐字节一致，已有轮次快照与存储实现未改。
+
+首页仍为两个标签；「测试」下10张「深聊问答 · 不计分」卡片，26款「测试 · 有结果」不变。新卡片进入 `/deeptalk?topic_id=learning_goals_problem_solving`，原页面动态下拉显示10套。无新CSS或新答题页；`deeptalk.html`、`test_game.html`、人类量表、统计服务和 AIDep 分享实现均未改。
+
+## 本次有限验收
+
+- Python 主回归27项：`test_deeptalk`、`test_deeptalk_packages`、`test_question_volumes`、`test_mcp_schema_selection`、`test_mcp_dispatch_order`。正式10套均走 create/questions/status/answer/submit/result/history，路径Token与Bearer，双方提交前草稿保密、无关身份读写/历史隔离、两种提交顺序、重答与旧轮次保护。新增包分组/署名/无评分字段和旧9包哈希有专门断言。
+- Python 边界26项：`test_aidep_sharing`、`test_platform_stats`、`test_homepage_stats`，以及 `test_root_mcp_protocol.RootMcpProtocolTests.test_play_schemas_keep_gemini_numeric_enum_compatibility`。以 `PYTHONPATH=turtle-soup/backend:. python3 -m unittest ...` 运行。覆盖 AIDep 分享授权/撤销/身份边界、统计18量表与排除所有 `dt_*`、公开统计不带私密题答、Gemini schema；Deeptalk 全链路另断言没有写出 `test_results` 表，并拒绝 `shared_result`。
+- `python3 scripts/persistence_check.py --deeptalk`：10套、四个独立进程的 create/drafts/sealed/complete 通过，临时数据库自动删除。
+- `NODE_PATH=/opt/cedartoy/node_modules node scripts/check_deeptalk_home_groups.js`：360/430/1280px配置下10张卡片、原26款有结果测试、双标签/分组/搜索/小游戏、新卡片选中URL、10套预选通过。
+- 同样 NODE_PATH 执行 `scripts/check_deeptalk_ui.js`：默认新增28题；另 `DEEPTALK_TOPIC=relations_communication` 重跑旧13题。真实HTTP/MCP处理器+临时SQLite+jsdom，创建/草稿/跳题/编辑/重试/刷新/确认/单方封存/双提交解锁/历史/XSS/跨账号拒绝全部通过。修复旧脚本仍断言单一Deeptalk卡片的过期预期。
+- `scripts/check_platform_stats_fold.js`：统计DOM折叠、顺序、数字、条宽及隐私提示不变。
+- `python3 scripts/update_question_volumes.py --write` 后 `--check`：35份Guide元数据通过。新题文438字符/503 Token（cl100k_base，逐题计量）；按需Guide正文910字符/425 Token。原34项元数据不变，静态旧Guide无diff。
+- 根schema实现无diff；list从1534字符/1213 Token变为1578字符/1245 Token，仅新增一条发现索引（+44字符/+32 Token）。原9份按需Guide正文不变；题目与教师正文不进入常驻schema。最终 `git diff --check` 通过。
+
+## 视觉验收限制
+
+已核对现有相邻深聊卡片与有结果测试共用样式：桌面标题19px/1.2、辅助12px/1.5、4px边框/阴影、14×16px内边距；手机标题16px、辅助10px、14px内边距、最小卡片高度112px，沿用原抽屉。答题页沿用16px/1.65系统字体、13px辅助文字、44px按钮，无CSS修改。
+
+尝试现有 Playwright/Chromium headless shell，启动报 `sandbox_host_linux.cc:41 ... shutdown: Operation not permitted`。因此上述宽度为DOM/交互配置检查，**真实360/430/1280px渲染、长标题换行/裁切和视觉层级尚待发布环境补验**，不能视为视觉通过。UI技能的设计搜索脚本未随本地技能安装，采用现有页面样式与组件作依据。
+
+交付给主助手审核发布；本次没有运行全站测试、启动业务服务或访问生产数据库。仅可合并本工作树diff（包括新增JSON/来源文档）；不覆盖正在另树修改的人类量表网页。
+
+---
+
+# 前序集成验收（历史记录）
+
+以下前序记录仅适用于 `/opt/cedar-workspaces/cedartoy-deeptalk-release-20261011`。未部署、未 push、未操作生产服务或配置，未修改 `/opt/cedartoy` 工作文件。
 
 ## 后续更新：三分类与题文体积
 
@@ -51,7 +90,7 @@
 | `life_reflection_35` | 35 | 人生与内心35问：价值观、人生经历与内心反思 | `41ba568b04b8cb36bde874842797234dbf509dacf0c2839aef614c5ff10232bd` |
 | `real_life_dilemmas_30` | 30 | 现实难题30问：如何回应虚构烦恼与现实两难 | `018cb8ffe3c15d78466a20807e1cfbb25276df87fa8d3c82397c435a7dcdd061` |
 
-未添加「学习、目标与解决问题」候选包或占位第十套。Guide 无 OC 名称；默认一次读1题、status无题目/答案、history仅摘要；完整来源按需读取。网页完整轮次仍为 `/deeptalk?round_id=...`。边聊边答没有房间、评分或聊天存档。
+前序阶段当时未添加「学习、目标与解决问题」；当前已补齐，见本文顶部验收。Guide 无 OC 名称；默认一次读1题、status无题目/答案、history仅摘要；完整来源按需读取。网页完整轮次仍为 `/deeptalk?round_id=...`。边聊边答没有房间、评分或聊天存档。
 
 ## 研究量表
 

@@ -15,7 +15,8 @@ const topics = [
   ['dt_favorites100', 'favorites_100', 100, '喜欢的事物100问'],
   ['dt_know100', 'getting_to_know_100', 100, '相互了解100问'],
   ['dt_life35', 'life_reflection_35', 35, '人生与内心35问'],
-  ['dt_dilemmas30', 'real_life_dilemmas_30', 30, '现实难题30问']
+  ['dt_dilemmas30', 'real_life_dilemmas_30', 30, '现实难题30问'],
+  ['dt_learning_goals', 'learning_goals_problem_solving', 28, '学习、目标与解决问题']
 ];
 const delay = () => new Promise(resolve => setTimeout(resolve, 5));
 
@@ -42,19 +43,25 @@ async function home(width) {
     const headings = () => items().filter(el => el.classList.contains('game-group-title')).map(el => el.textContent.trim());
     assert.deepEqual(headings(), ['深聊问答 · 不计分', '测试 · 有结果']);
     const visible = items().filter(el => el.dataset.game);
-    assert.equal(visible.length, 35, '9 unscored + 26 scored (18 research & 8 legacy)');
-    assert.deepEqual(visible.slice(0, 9).map(el => el.dataset.game), topics.map(row => row[0]));
-    assert.equal(visible.slice(9).filter(el => [...el.querySelectorAll('.tag')].some(tag => tag.textContent.trim() === '心理量表')).length, 18);
+    assert.equal(visible.length, 36, '10 unscored + 26 scored (18 research & 8 legacy)');
+    assert.deepEqual(visible.slice(0, 10).map(el => el.dataset.game), topics.map(row => row[0]));
+    assert.equal(visible.slice(10).filter(el => [...el.querySelectorAll('.tag')].some(tag => tag.textContent.trim() === '心理量表')).length, 18);
     for (const [game, topic, count, title] of topics) {
       assert.ok(homeHtml.includes(`url: \`/deeptalk?topic_id=\${encodeURIComponent(topicId)}\``), 'the topic-specific URL must be generated once');
       const card = d.querySelector(`[data-game="${game}"]`);
       assert.equal(card.querySelector('.game-title').textContent.trim(), title);
       assert.equal(card.querySelector('.level').textContent.trim(), `${count}题`);
     }
-    if (width === 360) {
-      d.querySelector('[data-game="dt_work20"]').click();
+    // jsdom cannot navigate documents; capture the existing navigation boundary.
+    let destination;
+    dom.window.openGame = game => { destination = game.url; };
+    d.querySelector('[data-game="dt_learning_goals"]').click();
+    assert.equal(dom.window.eval('games.find(g => g.id === selected).url'), '/deeptalk?topic_id=learning_goals_problem_solving');
+    if (width < 600) {
       assert.ok(d.querySelector('.drawer.show') || d.querySelector('.drawer-panel.show') || d.querySelector('#gameDrawer.show'), 'mobile card opens existing drawer');
+      d.getElementById('drawerEnter').click();
     }
+    assert.equal(destination, '/deeptalk?topic_id=learning_goals_problem_solving');
     for (const [query, header] of [['恋爱观', '深聊问答 · 不计分'], ['MBTI', '测试 · 有结果']]) {
       d.getElementById('searchInput').value = query;
       d.getElementById('searchInput').dispatchEvent(new dom.window.Event('input'));
@@ -71,7 +78,7 @@ async function home(width) {
   } finally {
     dom.window.close();
   }
-  process.stdout.write(`PASS home ${width}px: 9 independent topics, 26 scored tests, two headings, 2 tabs, search & games retained\n`);
+  process.stdout.write(`PASS home ${width}px: 10 independent topics, 26 scored tests, two headings, 2 tabs, search & games retained\n`);
 }
 
 async function deeptalkTopic(topicId, count) {
@@ -97,6 +104,7 @@ async function deeptalkTopic(topicId, count) {
     await delay();
     const d = dom.window.document;
     assert.equal(d.getElementById('setup').hidden, false);
+    assert.equal(d.getElementById('topic').options.length, 10);
     assert.equal(d.getElementById('topic').value, topicId);
     assert.ok(d.getElementById('topicDescription').textContent.includes(`${count}题`));
     d.getElementById('mode').value = 'chat';
@@ -109,7 +117,7 @@ async function deeptalkTopic(topicId, count) {
 }
 
 (async () => {
-  await home(360); await home(1280);
+  await home(360); await home(430); await home(1280);
   for (const [, topicId, count] of topics) await deeptalkTopic(topicId, count);
-  console.log('PASS Deeptalk page: all 9 deep links preselect correct topic after login');
+  console.log('PASS Deeptalk page: all 10 deep links preselect correct topic after login');
 })().catch(err => { console.error(err.stack); process.exitCode = 1; });

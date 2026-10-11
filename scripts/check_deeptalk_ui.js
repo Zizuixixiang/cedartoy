@@ -6,6 +6,9 @@ const {spawn} = require('node:child_process');
 const readline = require('node:readline');
 const {JSDOM, VirtualConsole} = require('jsdom');
 const root = path.resolve(__dirname, '..');
+const topicId = process.env.DEEPTALK_TOPIC || 'learning_goals_problem_solving';
+const topic = JSON.parse(fs.readFileSync(path.join(root, 'deeptalk/data', topicId + '.json'), 'utf8'));
+const total = topic.questions.length;
 const child = spawn('python3', ['-u', 'scripts/deeptalk_test_server.py'], {cwd:root, stdio:['pipe','pipe','inherit']});
 const queue = [];
 const lines = readline.createInterface({input:child.stdout});
@@ -42,8 +45,9 @@ let windows = [];
   const $ = (w,id)=>w.document.getElementById(id);
   async function click(w,id) { assert.equal($(w,id).disabled,false,id+' enabled'); $(w,id).click(); await until(()=>!w.eval('busy'),id); }
   function input(w,text) { $(w,'answer').value=text; $(w,'answer').dispatchEvent(new w.Event('input')); }
-  let w=page(); await until(()=>!$(w,'setup').hidden,'setup');
-  assert.equal($(w,'topic').options.length,9);
+  let w=page('?topic_id=' + topicId); await until(()=>!$(w,'setup').hidden,'setup');
+  assert.equal($(w,'topic').options.length,10);
+  assert.equal($(w,'topic').value,topicId);
   $(w,'mode').value='chat'; $(w,'mode').dispatchEvent(new w.Event('change'));
   assert.equal($(w,'blindIntro').hidden,true); assert.match($(w,'chatIntro').textContent,/不创建轮次/);
   $(w,'mode').value='blind'; $(w,'mode').dispatchEvent(new w.Event('change'));
@@ -60,7 +64,7 @@ let windows = [];
   $(w,'questionJump').value='1'; $(w,'questionJump').dispatchEvent(new w.Event('change'));
   await until(()=>!w.eval('busy'),'jump'); assert.equal($(w,'answer').value,'回到上一题补写');
   // Explicit skips, then final whole-form confirmation.
-  for(let i=2;i<13;i++) { $(w,'questionJump').value=String(i); $(w,'questionJump').dispatchEvent(new w.Event('change')); await until(()=>!w.eval('busy'),'jump'); await click(w,'skip'); }
+  for(let i=2;i<total;i++) { $(w,'questionJump').value=String(i); $(w,'questionJump').dispatchEvent(new w.Event('change')); await until(()=>!w.eval('busy'),'jump'); await click(w,'skip'); }
   await click(w,'submit'); assert.equal($(w,'confirmDialog').open,true);
   await click(w,'cancelSubmit'); assert.equal(w.eval('state.submitted'),false);
   await click(w,'submit'); await click(w,'confirmSubmit'); assert.equal(w.eval('state.submitted'),true);
@@ -71,11 +75,11 @@ let windows = [];
     return JSON.parse(result.result.content[0].text);
   }
   const question=await mcp('question',{round_id:rid}); assert.equal(question.questions[0].partner,undefined);
-  const realQuestions=await mcp('questions',{topic_id:'relations_communication',limit:100});
-  for(let i=1;i<=13;i++) await mcp('answer',{round_id:rid,question_id:realQuestions.questions[i-1].id,text:'小机私密回答 '+i,revision:i-1,request_id:'ui_answer_'+i});
+  const realQuestions=await mcp('questions',{topic_id:topicId,limit:100});
+  for(let i=1;i<=total;i++) await mcp('answer',{round_id:rid,question_id:realQuestions.questions[i-1].id,text:'小机私密回答 '+i,revision:i-1,request_id:'ui_answer_'+i});
   await click(w,'refresh'); assert.equal($(w,'records').hidden,true); assert.doesNotMatch(w.document.body.textContent,/小机私密回答/);
-  await mcp('submit',{round_id:rid,revision:13,confirm:true}); await click(w,'refresh');
-  assert.equal($(w,'records').hidden,false); assert.equal($(w,'records').querySelectorAll('.record').length,13);
+  await mcp('submit',{round_id:rid,revision:total,confirm:true}); await click(w,'refresh');
+  assert.equal($(w,'records').hidden,false); assert.equal($(w,'records').querySelectorAll('.record').length,total);
   assert.match($(w,'records').textContent,/小机私密回答 1/);
   assert.equal($(w,'records').querySelector('img'),null); assert.equal(w.xss,undefined);
   const history=await transport({url:'/api/auth/history',headers:{Authorization:'Bearer '+tokens[101]}});
@@ -111,7 +115,8 @@ let windows = [];
   const historyLink=home.document.querySelector(`#historyContent a[href="/deeptalk?round_id=${rid}"]`);
   assert.ok(historyLink); assert.equal(historyLink.textContent,'查看');
   assert.doesNotMatch($(home,'historyContent').textContent,/小机私密回答|我的回答/);
-  assert.equal(home.eval('games.filter(g => g.id === "deeptalk").length'),1);
+  assert.equal(home.eval('games.filter(g => g.testGroup === "deeptalk").length'),10);
+  assert.equal(home.eval('games.filter(g => g.id === "deeptalk").length'),0);
   // A hostile participant name is text, even in the existing HTML history renderer.
   const hostile=home.document.createElement('div');
   hostile.innerHTML=home.renderDeeptalkHistory({rounds:[{...summary,human_name:'<img src=x onerror="window.xss=1">'}]});

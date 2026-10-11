@@ -1,0 +1,218 @@
+{
+  "topic_id": "learning_goals_problem_solving",
+  "title": "学习、目标与解决问题",
+  "description": "从个人目标、每周学习复盘、能力举例到问题分析，交流各自的经历与想法。",
+  "author": "Alli M. Tucker-Stanojković (North Orange Continuing Education)",
+  "source_url": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "adaptation_note": "CedarToy 中文翻译与编排 v1（2026-10-11），非官方译文。依据原页 Tool D-1 至 D-4 的题表与反思条目整理28题（9+6+9+4）；目标日期和进展栏转为开放问句。D-3仅保留六项能力的 Example or Evidence 举例栏及三道反思题，不采用1–3评分或同伴/教师反馈栏。D-4最后两问保留在同一条目。不收入教师指导、示例回答或额外自编问题。双人自由文本交流，可跳题，不计分、不生成测评报告或匹配度。",
+  "questions": [
+    {
+      "id": "d1_01",
+      "text": "我想实现什么目标？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，第1列。"
+    },
+    {
+      "id": "d1_02",
+      "text": "这个目标为什么对我重要？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，第2列。"
+    },
+    {
+      "id": "d1_03",
+      "text": "我会采取哪些步骤？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，第3列。"
+    },
+    {
+      "id": "d1_04",
+      "text": "谁能帮助我？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，第4列。"
+    },
+    {
+      "id": "d1_05",
+      "text": "我如何知道自己已经实现了目标？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，第5列。"
+    },
+    {
+      "id": "d1_06",
+      "text": "我的目标完成日期是什么时候？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，Target Date 列（转为开放问句）。"
+    },
+    {
+      "id": "d1_07",
+      "text": "我的目标进展如何？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Table D1，Progress Check 列（采用文字记录）。"
+    },
+    {
+      "id": "d1_08",
+      "text": "在为这个目标努力的过程中，我对自己有了哪些了解？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Reflection Prompt，第1问。"
+    },
+    {
+      "id": "d1_09",
+      "text": "这个目标可能与我未来的工作或学习计划有什么联系？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-1. Personal Goal-Setting Worksheet；Reflection Prompt，第2问。"
+    },
+    {
+      "id": "d2_01",
+      "text": "这周哪些事情进展顺利？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-2. Weekly Reflection Sheet；Table D2，第1问。"
+    },
+    {
+      "id": "d2_02",
+      "text": "我遇到了哪些挑战？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-2. Weekly Reflection Sheet；Table D2，第2问。"
+    },
+    {
+      "id": "d2_03",
+      "text": "我是如何解决或应对一个问题的？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-2. Weekly Reflection Sheet；Table D2，第3问。"
+    },
+    {
+      "id": "d2_04",
+      "text": "我练习了哪些技能（沟通、团队合作、时间管理等）？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-2. Weekly Reflection Sheet；Table D2，第4问。"
+    },
+    {
+      "id": "d2_05",
+      "text": "我对这周的学习有什么感受？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-2. Weekly Reflection Sheet；Table D2，第5问。"
+    },
+    {
+      "id": "d2_06",
+      "text": "下次我会尝试在哪一件事情上换一种做法？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-2. Weekly Reflection Sheet；Table D2，第6问。"
+    },
+    {
+      "id": "d3_01",
+      "text": "在沟通方面，我能举出什么自己的例子或证据？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Table D3，Communication 行，Example or Evidence 列（不采用评分）。"
+    },
+    {
+      "id": "d3_02",
+      "text": "在团队合作方面，我能举出什么自己的例子或证据？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Table D3，Teamwork 行，Example or Evidence 列（不采用评分）。"
+    },
+    {
+      "id": "d3_03",
+      "text": "在时间管理方面，我能举出什么自己的例子或证据？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Table D3，Time Management 行，Example or Evidence 列（不采用评分）。"
+    },
+    {
+      "id": "d3_04",
+      "text": "在适应变化方面，我能举出什么自己的例子或证据？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Table D3，Adaptability 行，Example or Evidence 列（不采用评分）。"
+    },
+    {
+      "id": "d3_05",
+      "text": "在表达并争取自身需求方面，我能举出什么自己的例子或证据？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Table D3，Self-Advocacy 行，Example or Evidence 列（不采用评分）。"
+    },
+    {
+      "id": "d3_06",
+      "text": "在职业素养方面，我能举出什么自己的例子或证据？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Table D3，Professionalism 行，Example or Evidence 列（不采用评分）。"
+    },
+    {
+      "id": "d3_07",
+      "text": "这学期我的哪项技能进步最大？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Reflection Questions，第1问。"
+    },
+    {
+      "id": "d3_08",
+      "text": "接下来我想加强哪项技能？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Reflection Questions，第2问。"
+    },
+    {
+      "id": "d3_09",
+      "text": "什么支持或策略能帮助我继续成长？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-3. Soft-Skills Self-Assessment；Reflection Questions，第3问。"
+    },
+    {
+      "id": "d4_01",
+      "text": "正在发生什么问题？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-4. Visual Decision Organizer (Optional)；Table D4，第1步 Identify the problem。"
+    },
+    {
+      "id": "d4_02",
+      "text": "我可以尝试哪些办法？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-4. Visual Decision Organizer (Optional)；Table D4，第2步 Explore options。"
+    },
+    {
+      "id": "d4_03",
+      "text": "哪种办法看起来最好？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-4. Visual Decision Organizer (Optional)；Table D4，第3步 Choose a solution。"
+    },
+    {
+      "id": "d4_04",
+      "text": "哪些办法奏效了？哪些没有？",
+      "source_ref": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment — Tool D-4. Visual Decision Organizer (Optional)；Table D4，第4步 Test and reflect（保留为同一条目）。"
+    }
+  ],
+  "sources": [
+    {
+      "name": "Tool D-1. Personal Goal-Setting Worksheet",
+      "question_ids": [
+        "d1_01",
+        "d1_02",
+        "d1_03",
+        "d1_04",
+        "d1_05",
+        "d1_06",
+        "d1_07",
+        "d1_08",
+        "d1_09"
+      ],
+      "author": "Alli M. Tucker-Stanojković (North Orange Continuing Education)",
+      "source_url": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    {
+      "name": "Tool D-2. Weekly Reflection Sheet",
+      "question_ids": [
+        "d2_01",
+        "d2_02",
+        "d2_03",
+        "d2_04",
+        "d2_05",
+        "d2_06"
+      ],
+      "author": "Alli M. Tucker-Stanojković (North Orange Continuing Education)",
+      "source_url": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    {
+      "name": "Tool D-3. Soft-Skills Self-Assessment",
+      "question_ids": [
+        "d3_01",
+        "d3_02",
+        "d3_03",
+        "d3_04",
+        "d3_05",
+        "d3_06",
+        "d3_07",
+        "d3_08",
+        "d3_09"
+      ],
+      "author": "Alli M. Tucker-Stanojković (North Orange Continuing Education)",
+      "source_url": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    {
+      "name": "Tool D-4. Visual Decision Organizer (Optional)",
+      "question_ids": [
+        "d4_01",
+        "d4_02",
+        "d4_03",
+        "d4_04"
+      ],
+      "author": "Alli M. Tucker-Stanojković (North Orange Continuing Education)",
+      "source_url": "https://workforce.libretexts.org/Bookshelves/Workforce_Fundamentals/Transforming_Adult_Education_%28Tucker-Stanojkovic%29/01%3A_Modules/1.12%3A_Appendix_D_-_Templates_for_Goal_Setting_Reflection_and_Self-_Assessment",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    }
+  ]
+}

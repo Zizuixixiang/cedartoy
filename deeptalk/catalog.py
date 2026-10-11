@@ -14,6 +14,7 @@ TOPICS = {
     "getting_to_know_100": ("相互了解100问", 100, "生活背景与相互了解"),
     "life_reflection_35": ("人生与内心35问", 35, "价值观、人生经历与内心反思"),
     "real_life_dilemmas_30": ("现实难题30问", 30, "如何回应虚构烦恼与现实两难"),
+    "learning_goals_problem_solving": ("学习、目标与解决问题", 28, "个人目标、学习复盘与问题分析"),
 }
 
 # Stable discovery IDs; storage and web topic IDs remain unchanged.
@@ -27,6 +28,7 @@ ALIASES = {
     "dt_know100": "getting_to_know_100",
     "dt_life35": "life_reflection_35",
     "dt_dilemmas30": "real_life_dilemmas_30",
+    "dt_learning_goals": "learning_goals_problem_solving",
 }
 
 

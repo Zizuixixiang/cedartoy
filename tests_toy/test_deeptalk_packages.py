@@ -1,6 +1,8 @@
 """Release acceptance: real packages through authenticated HTTP and root MCP."""
+import hashlib
 import json
 import re
+import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +15,7 @@ EXPECTED = {
     'relations_communication': 13, 'couple_50': 50, 'relationship_scenarios': 14,
     'romance_values_100': 100, 'work_values_20': 20, 'favorites_100': 100,
     'getting_to_know_100': 100, 'life_reflection_35': 35, 'real_life_dilemmas_30': 30,
+    'learning_goals_problem_solving': 28,
 }
 
 
@@ -38,11 +41,40 @@ class RealPackageTests(unittest.TestCase):
         self.assertFalse(response['isError'], response)
         return json.loads(response['content'][0]['text'])
 
-    def test_catalog_exactly_nine_and_compact_discovery(self):
+    def test_original_nine_packages_keep_release_bytes(self):
+        expected_hashes = {
+            'relations_communication': 'f5c2335732144528fe1346a3d1601eb269b90a31b13086179dc6eae6782a357e',
+            'couple_50': '21836375dd10f08dc565d11594a9f758669ac2ffa1a88895108ad9f340396c62',
+            'relationship_scenarios': '44fcfe03ee0be1ce3fe13a622f426b3d7beafb667724ab4aff58fc9a32aa8739',
+            'romance_values_100': '94ed8b2fbdcfe55dc7a19d84077c310d9b8865d719aba562b3deb67cb3bf4def',
+            'work_values_20': '6bf3d0bf8f560aff5f49b509296aaa39157ddf3f95452a030ef4b96b775e192b',
+            'favorites_100': '1e47c94a40f06a6d039e1416729e8a3a3b4940c5c223f004495a9c32d3b98443',
+            'getting_to_know_100': 'dfea6cd24ea154dab2ebf5c1e1554f94aba4c139a176cbd71ccda67a92db6320',
+            'life_reflection_35': '41ba568b04b8cb36bde874842797234dbf509dacf0c2839aef614c5ff10232bd',
+            'real_life_dilemmas_30': '018cb8ffe3c15d78466a20807e1cfbb25276df87fa8d3c82397c435a7dcdd061',
+        }
+        self.assertEqual(len(expected_hashes), 9)
+        for tid, digest in expected_hashes.items():
+            with self.subTest(topic=tid):
+                self.assertEqual(hashlib.sha256((catalog.DATA_DIR / f'{tid}.json').read_bytes()).hexdigest(), digest)
+
+    def test_learning_source_groups_and_unscored_boundary(self):
+        topic = catalog.load_topic('learning_goals_problem_solving')
+        self.assertEqual(topic['license'], 'CC BY 4.0')
+        self.assertEqual(topic['author'], 'Alli M. Tucker-Stanojković (North Orange Continuing Education)')
+        self.assertEqual([len(s['question_ids']) for s in topic['sources']], [9, 6, 9, 4])
+        self.assertEqual([q['id'] for q in topic['questions']],
+                         [qid for s in topic['sources'] for qid in s['question_ids']])
+        for q in topic['questions']:
+            self.assertEqual(set(q), {'id', 'text', 'source_ref'})
+            self.assertIn(topic['source_url'], q['source_ref'])
+        self.assertTrue(self.mcp(AI, 'shared_result', game='dt_learning_goals', human_id=HUMAN['id'])['result']['isError'])
+
+    def test_catalog_exactly_ten_and_compact_discovery(self):
         self.assertEqual(set(p.stem for p in catalog.DATA_DIR.glob('*.json')), set(EXPECTED))
         topics = self.request(AI, 'topics')['topics']
         self.assertEqual({t['topic_id']: t['total'] for t in topics}, EXPECTED)
-        self.assertEqual(sum(t['total'] for t in topics), 462)
+        self.assertEqual(sum(t['total'] for t in topics), 490)
         self.assertTrue(all(t['available'] for t in topics))
         self.assertNotIn('OC', catalog.GUIDE)
         for tid in EXPECTED:
@@ -83,7 +115,7 @@ class RealPackageTests(unittest.TestCase):
                     shared_operations = operations
                 self.assertEqual(operations, shared_operations)
 
-    def test_nine_full_rounds_resume_seal_authorize_and_repeat(self):
+    def test_ten_full_rounds_resume_seal_authorize_and_repeat(self):
         for n, (tid, total) in enumerate(EXPECTED.items()):
             with self.subTest(topic=tid):
                 self.alias = next(game for game, topic in catalog.ALIASES.items() if topic == tid)
@@ -146,10 +178,16 @@ class RealPackageTests(unittest.TestCase):
                 self.assertEqual(summary['status'], 'complete')
                 self.assertNotIn('PRIVATE_', json.dumps(history))
                 self.assertNotIn('questions', json.dumps(history))
+                for outsider in (OTHER_HUMAN, OTHER_AI):
+                    self.assertNotIn(rid, json.dumps(self.request(outsider, 'history')))
+                # Deeptalk never writes scored results or public answer statistics.
+                with sqlite3.connect(self.db) as conn:
+                    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                    self.assertNotIn('test_results', tables)
 
-    def test_nine_aliases_discover_guide_read_compact_and_keep_auth(self):
+    def test_ten_aliases_discover_guide_read_compact_and_keep_auth(self):
         listing = server._tool_list_games().split('深聊问答:\n', 1)[1].split('\n测试:', 1)[0]
-        self.assertEqual(len(listing.splitlines()), 9)
+        self.assertEqual(len(listing.splitlines()), 10)
         self.assertNotRegex(listing, r'https?://|license|作者|OC|source_ref|deeptalk·')
         self.assertEqual(set(catalog.ALIASES.values()), set(EXPECTED))
         for game, tid in catalog.ALIASES.items():

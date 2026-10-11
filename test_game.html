@@ -62,6 +62,18 @@
     .question-intro.page-disclaimer { margin: 14px 0 0; font-size: 12px; }
     #source { overflow-wrap: anywhere; }
     .page-disclaimer[hidden] { display: none; }
+    .hero .research-notice { margin-top: 10px; color: var(--text); font-size: 12px; line-height: 1.65; }
+    .research-details, .research-help { color: var(--text); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+    .research-details summary { width: fit-content; min-height: 28px; padding: 4px 0; cursor: pointer; }
+    .research-details p { margin: 6px 0; color: var(--text); font-size: 12px; white-space: pre-wrap; }
+    .research-details .source { text-align: left; }
+    .research-help { margin: 12px 0 0; }
+    .research-help a { color: inherit; }
+    .research-page .question-actions { flex-wrap: wrap; }
+    .research-page .question-actions button { color: var(--text); font-size: 12px; min-height: 44px; }
+    .research-page #saveAnswerButton { background: var(--purple-light); border-color: var(--purple-dark); }
+    .research-page .answer-button.selected { color: var(--text); }
+    .research-page :focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
     .shell {
       position: relative;
       min-height: 430px;
@@ -334,6 +346,10 @@
       <h1 id="title"></h1>
       <p>人类网页端 · 进度保留 24 小时</p>
       <p class="question-intro page-disclaimer" id="pageDisclaimer" hidden></p>
+      <details class="research-details" id="researchDetails" hidden>
+        <summary>查看详细说明</summary>
+        <p id="researchNotice"></p>
+      </details>
     </section>
     <section class="shell" aria-live="polite">
       <div class="status-row">
@@ -341,6 +357,7 @@
         <span class="identity" id="identity"></span>
       </div>
       <p class="error" id="error" hidden></p>
+      <p class="research-help" id="draftNotice" hidden></p>
 
       <div class="panel loading" id="loadingPanel"><span class="pixel">LOADING SAVE...</span></div>
 
@@ -360,8 +377,11 @@
         <h2 class="question-text" id="questionText"></h2>
         <div class="mbti-poles" id="mbtiPoles" hidden></div>
         <div class="answers" id="answers"></div>
+        <p class="research-help" id="researchSaveHint" hidden></p>
         <div class="question-actions">
           <button class="pixel-button secondary pixel" id="previousButton" type="button">← 上一题</button>
+          <button class="pixel-button pixel" id="saveAnswerButton" type="button" hidden>保存并下一题 →</button>
+          <button class="pixel-button secondary pixel" id="nextSavedButton" type="button" hidden>下一题 →</button>
           <button class="pixel-button secondary pixel" id="reviewButton" type="button" hidden>查看答题卡 →</button>
         </div>
       </div>
@@ -400,7 +420,7 @@
   </main>
   <script>
     const CONFIG = __TEST_GAME_CONFIG__;
-    const hasModes = CONFIG.research || ["mbti", "enneagram"].includes(CONFIG.game);
+    const hasModes = ["mbti", "enneagram"].includes(CONFIG.game);
     const TOKEN_KEY = "cedartoy_token";
     const GUEST_KEY = "cedartoy_guest_web_player_id";
     const panels = ["loadingPanel", "modePanel", "questionPanel", "reviewPanel", "resultPanel"];
@@ -418,7 +438,13 @@
     $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
     $("pageDisclaimer").hidden = !CONFIG.disclaimer;
     if (CONFIG.research) {
-      $("modePanel").querySelector(".lead").textContent = "逐题模式每答一题即保存；批量模式先在此设备作答，答齐后一次提交。两种模式使用相同题目与计分。";
+      document.body.classList.add("research-page");
+      $("pageDisclaimer").className = "research-notice";
+      $("pageDisclaimer").textContent = "仅供娱乐/自我了解，不作诊断";
+      $("pageDisclaimer").hidden = false;
+      $("researchNotice").textContent = CONFIG.disclaimer || "";
+      $("researchDetails").hidden = false;
+      $("researchDetails").appendChild($("source"));
       $("questionIntro").style.fontSize = "13px";
     }
     if (CONFIG.game === "enneagram") {
@@ -489,6 +515,8 @@
       });
       const data = await response.json().catch(() => ({}));
       if (response.status === 401 && token() && retryGuest) {
+        // A research write must not be replayed under a different identity.
+        if (CONFIG.research) throw new Error("登录已失效，请重新登录后刷新；当前答案仍保留在本机。");
         localStorage.removeItem(TOKEN_KEY);
         return api(action, payload, false);
       }
@@ -502,7 +530,6 @@
 
     function renderModes() {
       $("aidepSharing")?.remove();
-      if (CONFIG.research && activeState) restartSessionId = activeState.session_id;
       activeState = null;
       answers = [];
       cursor = 0;
@@ -512,11 +539,6 @@
         ? [
             {edition: "quick", label: "快速型 · 36题 A/B", desc: "快速查看主型与脑、心、腹三中心相对分"},
             {edition: "complete", label: "完整型 · 180题", desc: "完整计算主型、侧翼、三中心与 tritype 推测"}
-          ]
-        : CONFIG.research
-        ? [
-            {edition: "full", label: `逐题作答 · ${CONFIG.total}题`, desc: "每题提交即保存，可恢复到下一道未答题"},
-            {edition: CONFIG.modes[1], label: `一次性提交 · ${CONFIG.total}题`, desc: "本机保存草稿，答齐后统一提交，可在提交前修改"}
           ]
         : [
             {edition: "quick", label: "快速版 · 16题", desc: "用较短时间完成一次人格偏好扫描"},
@@ -543,20 +565,57 @@
       answers = Array(state.total).fill(null);
       cursor = 0;
       try {
-        const saved = JSON.parse(localStorage.getItem(draftKey()) || "null");
+        const saved = JSON.parse(localStorage.getItem(currentDraftKey()) || (CONFIG.research ? localStorage.getItem(draftKey()) : null) || "null");
         if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && (!CONFIG.research || saved.session_id === state.session_id) && saved.total === state.total && Array.isArray(saved.answers)) {
           answers = Array.from({length: state.total}, (_, index) => Number.isInteger(saved.answers[index]) ? saved.answers[index] : null);
           cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
         }
       } catch (_) {}
       if (CONFIG.research && state.mode === "full") {
+        const conflict = answers.some((value, index) => index < state.progress && Number.isInteger(value) && value !== state.saved_answers[index]);
+        if (conflict) {
+          // A different tab may have submitted another choice. Keep the local
+          // draft verbatim before showing authoritative server receipts.
+          const raw = localStorage.getItem(currentDraftKey()) || localStorage.getItem(draftKey());
+          localStorage.setItem(`${currentDraftKey()}_conflict_${Date.now()}`, raw);
+          showOtherDrafts();
+        }
         cursor = state.progress;
-        answers = Array(state.total).fill(null);
+        // Server receipts take precedence; only the next unsubmitted selection is local.
+        answers = answers.map((value, index) => index < state.progress ? state.saved_answers[index] : index === state.progress ? value : null);
       }
+    }
+    function currentDraftKey() {
+      return CONFIG.research ? `${draftKey()}_session_${activeState.session_id}` : draftKey();
+    }
+    function showOtherDrafts() {
+      if (!CONFIG.research) return;
+      const drafts = {};
+      const base = draftKey();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key !== base && !key.startsWith(`${base}_session_`)) continue;
+        const raw = localStorage.getItem(key);
+        try {
+          const saved = JSON.parse(raw);
+          if (!key.includes("_conflict_") && saved?.session_id === activeState.session_id && saved.edition === activeState.edition && saved.total === activeState.total && Array.isArray(saved.answers)) continue;
+        } catch (_) {}
+        drafts[key] = raw;
+      }
+      const notice = $("draftNotice");
+      notice.replaceChildren();
+      notice.hidden = !Object.keys(drafts).length;
+      if (notice.hidden) return;
+      notice.append("另有旧草稿保留在本机，与当前记录不同，未覆盖或合并。");
+      const link = document.createElement("a");
+      link.textContent = "下载核对";
+      link.download = `${CONFIG.game}-drafts.json`;
+      link.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(drafts, null, 2))}`;
+      notice.append(link);
     }
     function saveDraft() {
       if (!activeState) return;
-      localStorage.setItem(draftKey(), JSON.stringify({
+      localStorage.setItem(currentDraftKey(), JSON.stringify({
         game: CONFIG.game,
         session_id: activeState.session_id,
         edition: activeState.edition,
@@ -566,7 +625,9 @@
       }));
     }
     function clearDraft() {
-      if (activeState) localStorage.removeItem(draftKey());
+      // Research drafts may contain choices never acknowledged by the server.
+      // Keep them by run instead of deleting them when a result/retest arrives.
+      if (activeState && !CONFIG.research) localStorage.removeItem(draftKey());
       answers = [];
       cursor = 0;
     }
@@ -586,6 +647,7 @@
       activeState = state;
       restartSessionId = null;
       setIdentity(state);
+      showOtherDrafts();
       if (state.complete) {
         clearDraft();
         $("statusText").textContent = "SYSTEM / SCAN COMPLETE";
@@ -761,9 +823,21 @@
         $("answers").className = "answers";
         question.options.forEach((option) => addAnswer(option.value, `${option.value}. ${option.text}`));
       }
-      $("previousButton").hidden = CONFIG.research && activeState.mode === "full";
+      const sequential = CONFIG.research && activeState.mode === "full";
+      const saved = sequential && cursor < activeState.progress;
+      $("researchSaveHint").hidden = !CONFIG.research;
+      $("researchSaveHint").textContent = sequential
+        ? "选好后保存本题，可先改选；保存后可回看、不能修改，末题保存后出报告。"
+        : "正在续答旧版记录：答案仍只存本机，可回看修改；答齐后确认提交。";
+      if (saved) $("researchSaveHint").textContent = "本题已保存，可回看，不能修改。";
+      $("saveAnswerButton").hidden = !sequential || saved;
+      $("saveAnswerButton").textContent = cursor === activeState.total - 1 ? "保存并查看报告 →" : "保存并下一题 →";
+      $("saveAnswerButton").disabled = busy || !Number.isInteger(answers[cursor]);
+      $("nextSavedButton").hidden = !saved;
+      if (saved) $("answers").querySelectorAll("button").forEach(button => { button.disabled = true; });
+      $("previousButton").hidden = false;
       $("previousButton").disabled = busy || cursor === 0;
-      $("reviewButton").hidden = !answers.every(Number.isInteger);
+      $("reviewButton").hidden = sequential || !answers.every(Number.isInteger);
     }
     function renderMbtiScale() {
       const ends = document.createElement("div");
@@ -878,6 +952,7 @@
       button.className = "answer-button";
       button.textContent = label;
       button.classList.toggle("selected", answers[cursor] === value);
+      if (CONFIG.research) button.setAttribute("aria-pressed", String(answers[cursor] === value));
       button.addEventListener("click", () => answer(value));
       $("answers").appendChild(button);
     }
@@ -889,11 +964,13 @@
       setButtonsDisabled(true);
       $("statusText").textContent = "SYSTEM / INITIALIZING";
       try {
-        if (discardDraft && activeState) localStorage.removeItem(draftKey());
+        if (discardDraft && activeState && !CONFIG.research) localStorage.removeItem(draftKey());
         renderState(await api("start", CONFIG.research ? {mode: edition, restart: !!restartSessionId, confirm: discardDraft, session_id: restartSessionId} : hasModes ? {edition} : {}));
       } catch (error) {
         showError(error.message);
-        if (hasModes) {
+        if (CONFIG.research && activeState) {
+          $("statusText").textContent = "SYSTEM / RETRY";
+        } else if (hasModes) {
           renderModes();
         } else {
           $("loadingPanel").querySelector("span").textContent = "连接失败，请刷新重试";
@@ -902,35 +979,54 @@
       } finally {
         busy = false;
         setButtonsDisabled(false);
+        if (CONFIG.research && activeState && !activeState.complete) renderQuestion();
       }
     }
     async function answer(value) {
       if (busy || !activeState) return;
       if (CONFIG.research && activeState.mode === "full") {
-        busy = true;
-        setButtonsDisabled(true);
-        showError();
-        try {
-          renderState(await api("answer", {session_id: activeState.session_id, expected_index: activeState.progress, answer: value}));
-        } catch (error) {
-          showError(error.message);
-        } finally {
-          busy = false;
-          setButtonsDisabled(false);
-        }
+        if (cursor < activeState.progress) return;
+        answers[cursor] = value;
+        try { saveDraft(); }
+        catch (_) { showError("本机草稿保存失败，请保存本题后再离开页面。"); }
+        renderQuestion();
         return;
       }
       answers[cursor] = value;
       if (cursor < activeState.total - 1) cursor += 1;
-      saveDraft();
+      try { saveDraft(); }
+      catch (error) {
+        if (!CONFIG.research) throw error;
+        showError("本机草稿保存失败，请勿刷新或关闭页面。");
+      }
       if (answers.every(Number.isInteger)) renderReview();
       else renderQuestion();
     }
 
+    async function saveResearchAnswer() {
+      if (busy || !activeState || activeState.mode !== "full" || cursor !== activeState.progress || !Number.isInteger(answers[cursor])) return;
+      busy = true;
+      setButtonsDisabled(true);
+      showError();
+      try {
+        renderState(await api("answer", {session_id: activeState.session_id, expected_index: cursor, answer: answers[cursor]}));
+      } catch (error) {
+        showError(`${error.message} 未确认保存，可重试；若提示冲突，请刷新核对进度。本机草稿会保留。`);
+      } finally {
+        busy = false;
+        setButtonsDisabled(false);
+        if (!activeState.complete) renderQuestion();
+      }
+    }
+
     function goToQuestion(index) {
       if (!activeState) return;
-      cursor = Math.max(0, Math.min(index, activeState.total - 1));
-      saveDraft();
+      cursor = Math.max(0, Math.min(index, CONFIG.research && activeState.mode === "full" ? activeState.progress : activeState.total - 1));
+      try { saveDraft(); }
+      catch (error) {
+        if (!CONFIG.research) throw error;
+        showError("本机草稿保存失败，请勿刷新或关闭页面。");
+      }
       renderQuestion();
       showPanel("questionPanel");
     }
@@ -1602,19 +1698,31 @@
         if (error.status === 404) {
           $("identity").textContent = token() ? "ACCOUNT" : "GUEST / LOCAL SAVE";
           if (hasModes) renderModes();
-          else await start("standard");
+          else await start(CONFIG.research ? "full" : "standard");
         } else {
           showError(error.message);
-          renderModes();
+          if (CONFIG.research) {
+            $("statusText").textContent = "SYSTEM / RETRY";
+            $("loadingPanel").querySelector("span").textContent = "连接失败，请刷新重试";
+            showPanel("loadingPanel");
+          } else renderModes();
         }
       }
     }
     $("previousButton").addEventListener("click", () => goToQuestion(cursor - 1));
+    $("nextSavedButton").addEventListener("click", () => goToQuestion(cursor + 1));
+    $("saveAnswerButton").addEventListener("click", saveResearchAnswer);
     $("reviewButton").addEventListener("click", renderReview);
     $("modifyButton").addEventListener("click", () => goToQuestion(cursor));
     $("submitButton").addEventListener("click", submitAnswers);
     $("compareButton").addEventListener("click", compareResults);
     $("restartButton").addEventListener("click", () => {
+      if (CONFIG.research) {
+        if (busy || !activeState || !confirm("重测会覆盖当前结果，确定重新开始？本机旧草稿会保留。")) return;
+        restartSessionId = activeState.session_id;
+        start("full", true);
+        return;
+      }
       showError();
       if (activeState) localStorage.removeItem(draftKey());
       if (hasModes) renderModes();

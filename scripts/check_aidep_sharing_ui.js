@@ -73,6 +73,7 @@ async function main(){
     const dom=new JSDOM(html.body,{url:'https://aidep.test/'+game,runScripts:'dangerously',pretendToBeVisual:true,virtualConsole,
       beforeParse(w){
         w.HTMLElement.prototype.scrollIntoView=function(){};
+        w.confirm=()=>true;
         if(user) w.localStorage.setItem('cedartoy_token',tokens[user]);
         for(const [key,value] of Object.entries(saved))w.localStorage.setItem(key,value);
         Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>{copied=text;}}});
@@ -102,17 +103,15 @@ async function main(){
     return JSON.parse(result.body).result;
   }
   let w=await page();
-  await until(()=>!$(w,'modePanel').hidden,'modes');
+  await until(()=>!$(w,'questionPanel').hidden && !w.eval('busy'),'direct questions');
   assert.equal($(w,'aidepSharing'),null,'incomplete hidden');
-  w.document.querySelectorAll('.mode-button')[1].click();
-  await until(()=>!$(w,'questionPanel').hidden,'questions');
   for(let i=0;i<22;i++){
     assert.equal($(w,'aidepSharing'),null);
     w.document.querySelectorAll('.answer-button')[2].click();
-    await until(()=>w.eval('cursor')===i+1 || !$(w,'reviewPanel').hidden,'next answer');
+    $(w,'saveAnswerButton').click();
+    await until(()=>!w.eval('busy') && (w.eval('cursor')===i+1 || !$(w,'resultPanel').hidden),'next answer');
   }
-  assert.equal($(w,'aidepSharing'),null,'review hidden');
-  $(w,'submitButton').click();await ready(w);
+  await ready(w);
   assert.equal($(w,'aidepShareTarget').value,'','private default');
   assert.equal($(w,'aidepShareTarget').options.length,3,'two explicit targets plus off');
   assert.equal((await mcp()).isError,true);
@@ -136,9 +135,9 @@ async function main(){
   button(w,'刷新分享设置').click();await ready(w);assert.equal($(w,'aidepShareTarget').value,'');
   await select(w,'11');
   const stale=await page();await ready(stale);
-  $(w,'restartButton').click();assert.equal($(w,'aidepSharing'),null);
-  w.document.querySelectorAll('.mode-button')[1].click();
-  await until(()=>!$(w,'questionPanel').hidden,'retest');
+  $(w,'restartButton').click();
+  await until(()=>!$(w,'questionPanel').hidden && !w.eval('busy'),'retest');
+  assert.equal($(w,'aidepSharing'),null);
   assert.equal((await mcp()).isError,true);
   await select(stale,'12');assert.match(status(stale).textContent,/结果已变化/);
   stale.close();w.close();
@@ -152,9 +151,9 @@ async function main(){
   assert.match(status(w).textContent,/暂无已绑定/);w.close();
   w=await page('aidep',11);await until(()=>!$(w,'error').hidden,'AI denied');
   assert.equal($(w,'aidepSharing'),null);w.close();
-  w=await page('aidep',null);await until(()=>!$(w,'modePanel').hidden,'guest');
+  w=await page('aidep',null);await until(()=>!$(w,'questionPanel').hidden && !w.eval('busy'),'guest');
   const guest=w.localStorage.getItem('cedartoy_guest_web_player_id');
-  const start=JSON.parse((await transport({url:'/api/aidep/start',method:'POST',body:JSON.stringify({player_id:guest,mode:'full_fast'})})).body);
+  const start=JSON.parse((await transport({url:'/api/aidep/start',method:'POST',body:JSON.stringify({player_id:guest,mode:'full_fast',restart:true,confirm:true,session_id:w.eval('activeState.session_id')})})).body);
   await transport({url:'/api/aidep/answer_batch',method:'POST',body:JSON.stringify({player_id:guest,session_id:start.session_id,answers:Array(22).fill(3)})});
   const saved={...w.localStorage};w.close();w=await page('aidep',null,saved);
   await until(()=>!$(w,'resultPanel').hidden,'guest result');assert.equal($(w,'aidepSharing'),null);w.close();

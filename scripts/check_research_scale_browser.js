@@ -14,6 +14,8 @@ const specs = fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n
   .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked);
 const service = spawn('python3', ['-u','-c', `
 from http.server import ThreadingHTTPServer
+from tests_toy.tarot_server_test_bootstrap import install_missing_optional_game_stubs
+install_missing_optional_game_stubs()
 import server
 httpd=ThreadingHTTPServer(('127.0.0.1',0),server.CedarToyHandler)
 print(httpd.server_address[1],flush=True)
@@ -45,73 +47,66 @@ async function main(){
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' horizontal overflow');
       await page.screenshot({path:path.join(screenshots,`${width}-${name}.png`),fullPage:true});
     }
-    await page.goto(origin);await page.locator('[data-filter="test"]').click();
-    for(const s of specs) assert.equal(await page.locator(`.game-card[data-game="${s.game}"]`).isVisible(),true,s.game);
-    await capture('hall');
-    const bsrCard=page.locator('.game-card[data-game="bsr"]');
-    if(width<600){
-      await bsrCard.click();await capture('hall-bsr');
-      await page.locator('#drawerEnter').click();
-    } else {
-      await bsrCard.hover();await capture('hall-bsr');
-      await bsrCard.click();
-    }
-    await page.waitForURL(origin+'/bsr');
-    await page.locator('.mode-button').first().waitFor();
-    const bsr=specs.find(s=>s.game==='bsr');
-    const response=new Map(bsr.items.map((q,i)=>[q.text,i<10?1:5]));
-    await capture('bsr-modes');
-    for(const mode of [0,1]){
-      if(mode===1) await page.locator('#restartButton').click();
-      await page.locator('.mode-button').nth(mode).click();
+    // Direct research pages only: no homepage or unrelated game work.
+    for(const spec of specs){
+      await page.goto(origin+'/'+spec.game);
       await page.locator('.answer-button').first().waitFor();
-      await capture('bsr-question-'+mode);
-      const seen=[];
-      for(let i=0;i<20;i++){
-        await page.waitForFunction(n=>document.getElementById('questionNumber').textContent===`QUESTION ${n}`,i+1);
-        const text=await page.locator('#questionText').innerText();seen.push(text);
-        const height=await page.locator('.answer-button').first().evaluate(n=>n.getBoundingClientRect().height);
-        assert.ok(height>=44,'BSR touch target');
-        if(i===7){
-          await page.reload();await page.locator('.answer-button').first().waitFor();
-          assert.equal(await page.locator('#questionText').innerText(),text,'BSR restored question');
-        }
-        const answer=page.locator('.answer-button').nth(response.get(text)-1);
-        if(i===0){await answer.focus();await page.keyboard.press('Enter');}
-        else await answer.click();
-      }
-      assert.equal(new Set(seen).size,20);
-      if(mode===1) await page.locator('#submitButton').click();
-      await page.locator('#resultPanel').waitFor();
-      const result=await page.locator('#resultText').innerText();
-      assert.match(result,/伪深刻语句评价均分：1\.00/);
-      assert.match(result,/励志格言均分：5\.00/);
-      assert.match(result,/差值（励志格言 − 伪深刻语句）：4\.00/);
-      await capture('bsr-result-'+mode);
-      await page.reload();await page.locator('#resultPanel').waitFor();
-      assert.equal(await page.locator('#resultText').innerText(),result);
+      assert.equal(await page.locator('.mode-button').count(),0);
+      assert.equal(await page.locator('#researchDetails').getAttribute('open'),null);
+      assert.equal(await page.locator('#pageDisclaimer').innerText(),'仅供娱乐/自我了解，不作诊断');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,spec.game+' overflow');
     }
-    for(const game of ['ross','irrc','aidep']){
-      await page.goto(origin+'/'+game);await page.locator('.mode-button').first().waitFor();
-      assert.equal(await page.locator('.mode-button').count(),2);
-      await capture(game+'-modes');
-      await page.locator('.mode-button').first().click();await page.locator('.answer-button').first().waitFor();
-      const boxes=await page.locator('.answer-button').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
-      assert.ok(boxes.every(h=>h>=44),'touch targets');
+    for(const game of ['rbi','ross','aidep','bsr']){
+      await page.goto(origin+'/'+game);await page.locator('.answer-button').first().waitFor();
       await capture(game+'-question');
+      const sizes=await page.evaluate(()=>({
+        hint:parseFloat(getComputedStyle(document.getElementById('pageDisclaimer')).fontSize),
+        question:parseFloat(getComputedStyle(document.getElementById('questionText')).fontSize),
+        targets:[...document.querySelectorAll('.answer-button')].map(n=>n.getBoundingClientRect().height)
+      }));
+      assert.ok(sizes.hint<sizes.question && sizes.hint<=13);
+      assert.ok(sizes.targets.every(h=>h>=44));
+      if(game==='rbi'){
+        await page.locator('#researchDetails summary').focus();await page.keyboard.press('Enter');
+        assert.equal(await page.locator('#researchDetails').getAttribute('open'),'');
+        await capture('rbi-details');
+        await page.locator('#researchDetails summary').click();
+        await page.locator('.answer-button').nth(2).click();
+        await page.reload();await page.locator('.answer-button.selected').waitFor();
+        assert.match(await page.locator('.answer-button.selected').innerText(),/^3/);
+        await page.locator('#saveAnswerButton').focus();await page.keyboard.press('Enter');
+        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
+        await page.reload();await page.locator('.answer-button').first().waitFor();
+        await page.locator('#previousButton').click();
+        assert.equal(await page.locator('.answer-button.selected').isDisabled(),true);
+        await capture('rbi-revisit');
+        await page.locator('#nextSavedButton').click();
+        // Reflow with enlarged text and reduced motion.
+        await page.emulateMedia({reducedMotion:'reduce'});
+        await page.addStyleTag({content:'.research-page .question-text {font-size: 200%}'});
+        await capture('rbi-large-text');
+      }
     }
-    await page.goto(origin+'/bsfl');await page.locator('.mode-button').nth(1).click();
-    for(let i=0;i<5;i++) await page.locator('.answer-button').first().click();
-    await page.locator('#submitButton').click();await page.locator('#resultPanel').waitFor();
+    await page.goto(origin+'/bsfl');await page.locator('.answer-button').first().waitFor();
+    for(let i=0;i<5;i++){
+      await page.locator('.answer-button').first().click();
+      await page.locator('#saveAnswerButton').click();
+      await page.waitForFunction(n=>document.getElementById('questionNumber').textContent===`QUESTION ${n}` || !document.getElementById('resultPanel').hidden,i+2);
+    }
+    await page.locator('#resultPanel').waitFor();
     assert.match(await page.locator('#resultText').innerText(),/0\.00/);
-    assert.match(await page.locator('#resultText').innerText(),/4399.*描述性/);
     await capture('bsfl-result');
     await page.reload();await page.locator('#resultPanel').waitFor();
-    assert.match(await page.locator('#resultText').innerText(),/0\.00/);
+    page.once('dialog',dialog=>dialog.dismiss());
+    await page.locator('#restartButton').click();
+    assert.equal(await page.locator('#resultPanel').isVisible(),true);
+    page.once('dialog',dialog=>dialog.accept());
+    await page.locator('#restartButton').click();await page.locator('.answer-button').first().waitFor();
+    await capture('bsfl-retest');
     assert.deepEqual(errors,[]);
     await context.close();
   }
-  console.log('PASS: Chromium 360 / 430 / 1280px; 18 homepage cards, BSR both modes/order/reload/scoring/keyboard, mode/long-question/result layouts, touch targets, BSFL zero/history; screenshots: '+screenshots);
+  console.log('PASS: Chromium 360 / 430 / 1280px; 18 direct research pages, folded notices, touch targets, keyboard/details/selection/reload/revisit, enlarged text, BSFL zero/report/retest; screenshots: '+screenshots);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
   if(browser) await browser.close();

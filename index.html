@@ -4573,7 +4573,7 @@
     ];
 
     // Each Deeptalk topic is an independently selectable, unscored questionnaire.
-    // All nine reuse the same human page; topic_id is preselected via the URL.
+    // All ten reuse the same human page; topic_id is preselected via the URL.
     const deeptalkTopics = [
       ["dt_relations", "relations_communication", "关系与沟通", 13, "边界、倾听与沟通"],
       ["dt_couple50", "couple_50", "恋人之间的50问", 50, "相处习惯与情感表达"],
@@ -4583,7 +4583,8 @@
       ["dt_favorites100", "favorites_100", "喜欢的事物100问", 100, "日常兴趣与喜好"],
       ["dt_know100", "getting_to_know_100", "相互了解100问", 100, "生活经历与相互了解"],
       ["dt_life35", "life_reflection_35", "人生与内心35问", 35, "人生经历与内心想法"],
-      ["dt_dilemmas30", "real_life_dilemmas_30", "现实难题30问", 30, "虚构烦恼与现实两难"]
+      ["dt_dilemmas30", "real_life_dilemmas_30", "现实难题30问", 30, "虚构烦恼与现实两难"],
+      ["dt_learning_goals", "learning_goals_problem_solving", "学习、目标与解决问题", 28, "个人目标、学习复盘与问题分析"]
     ];
     games.push(...deeptalkTopics.map(([id, topicId, name, count, summary], topicOrder) => ({
       id, name, category: "test", testGroup: "deeptalk", topicOrder,
