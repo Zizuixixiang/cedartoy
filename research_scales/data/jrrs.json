@@ -1,0 +1,153 @@
+{
+  "game": "jrrs",
+  "title": "恋爱嫉妒 JRRS · 描述版",
+  "author": "Aslı Nur İpek, Nihan Turhan",
+  "author_short": "İpek",
+  "source": "https://ijcer.net/index.php/pub/article/view/428",
+  "license": "CC BY-NC 4.0 — https://creativecommons.org/licenses/by-nc/4.0/ — 仅非商业使用",
+  "notice": "【4399 描述性评分】不是作者官方分数，不适用于常模比较、诊断或效度推断。中文为4399依原题所作的未验证翻译；评分汇总方式由4399另行设定。原研究面向土耳其18岁以上人群。原版三维题号存在冲突，此处只报告全16题描述均分，不称原版总分或分量表。",
+  "instruction": "请按自己的情况选择对以下说法的同意程度。五档文字来自原附录；4399按原顺序编码为1（完全不同意）至5（完全同意）。",
+  "options": [
+    {
+      "value": 1,
+      "text": "完全不同意"
+    },
+    {
+      "value": 2,
+      "text": "不同意"
+    },
+    {
+      "value": 3,
+      "text": "不确定"
+    },
+    {
+      "value": 4,
+      "text": "同意"
+    },
+    {
+      "value": 5,
+      "text": "完全同意"
+    }
+  ],
+  "dimensions": {
+    "descriptive_mean": "全16题认同程度（4399描述均分）"
+  },
+  "scoring_note": "4399描述性全题均分（非作者官方分数）：依作者学位论文§2.3.2的无反向题说明，16题均保留原方向；原附录五档文字由4399顺序编码1–5，完整作答后将16个值等权取均值。越高仅表示更认同这组嫉妒体验、行为及看法，不表示所有题都在衡量关系损害。因原版维度映射冲突，不报告官方三分量表；不设截点、百分位或常模。",
+  "items": [
+    {
+      "id": 1,
+      "original": "Partnerimin bir başkasıyla fiziksel olarak yakınlaşmasını kıskanırım.",
+      "text": "伴侣与别人发生身体上的亲近时，我会吃醋。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "Partnerimin yanımdayken gizli gizli mesajlaşmasından rahatsız olurum.",
+      "text": "伴侣在我身边时偷偷发消息，会让我感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "Partnerimle beraber eski sevgilisinin olduğu bir ortamda bulunmaktan rahatsız olurum.",
+      "text": "和伴侣一起处在其前任也在场的环境中，会让我感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "Partnerimin bir başkasına duyduğu beğeniyi ifade etmesinden rahatsız olurum",
+      "text": "伴侣表达对别人的欣赏时，我会感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "Partnerim arkadaşları ile dışarı çıktıysa ne yaptığını öğrenmek için görüntülü ararım.",
+      "text": "如果伴侣和朋友外出，我会打视频电话，想知道伴侣在做什么。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "Partnerim eski ilişkisinden bahsederse rahatsız olurum.",
+      "text": "如果伴侣谈起过去的恋情，我会感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "Partnerimin bir ortamda hem cinsime iltifat etmesinden hoşlanmam.",
+      "text": "我不喜欢伴侣在某个场合称赞与我同性别的人。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "Partnerimin beğeni duyduğu kişilere benzemek için çaba sarf ederim.",
+      "text": "我会努力让自己变得像伴侣欣赏的人。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "original": "İlişkimizde kendime güvenmediğim konularda, partnerimin başkasıyla iletişim kurmasından rahatsız olurum.",
+      "text": "在这段关系中，对于我缺乏自信的方面，伴侣与别人交流会让我感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "original": "Partnerimin bana seslenirken farkında olmadan başka bir isim kullanmasından rahatsız olurum.",
+      "text": "伴侣叫我时无意中叫成别人的名字，会让我感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "original": "Partnerime duyduğum kıskançlık, bağlılığımızı güçlendirir.",
+      "text": "我对伴侣的嫉妒会加强我们之间的依恋。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "original": "Partnerime duyduğum kıskançlık, ilişkimizin monotonlaşmasını önler.",
+      "text": "我对伴侣的嫉妒能防止我们的关系变得单调。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 13,
+      "original": "Partnerimin kalabalık bir ortamda başkasıyla ilgilenmesi beni rahatsız eder.",
+      "text": "伴侣在人多的场合关注别人，会让我感到不舒服。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 14,
+      "original": "Partnerimi kıskanmam ona değer verdiğimin göstergesidir.",
+      "text": "我对伴侣吃醋，表明我重视伴侣。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 15,
+      "original": "Partnerimi kıskandığım zaman sosyal medya hesaplarını kontrol ederim.",
+      "text": "当我对伴侣吃醋时，我会查看伴侣的社交媒体账号。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    },
+    {
+      "id": 16,
+      "original": "Partnerimi kıskanmam günlük hayatımı olumsuz etkiler.",
+      "text": "我对伴侣的嫉妒会给我的日常生活带来负面影响。",
+      "dimension": "descriptive_mean",
+      "reverse": false
+    }
+  ],
+  "aggregation": "mean",
+  "overall_mean": false,
+  "blocked": false
+}

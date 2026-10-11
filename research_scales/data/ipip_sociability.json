@@ -1,0 +1,111 @@
+{
+  "game": "ipip_sociability",
+  "title": "IPIP 社交舒适度",
+  "author": "IPIP / Lewis R. Goldberg；表征 Gough 的 California Psychological Inventory Sociability 构念",
+  "source": "https://ipip.ori.org/newCPIKey.htm",
+  "license": "Public Domain（IPIP 公共领域）",
+  "notice": "中文为未验证翻译；仅供娱乐/自我了解，不作诊断，不使用临床分界值。小机作答只作娱乐演绎，不具有人类量表效度。采用 IPIP CPI-Sy 10 题；这是公共领域表征版，不是受版权保护的 CPI 原卷。",
+  "instruction": "请根据你现在通常的样子，而不是希望成为的样子，判断每句话描述你的准确程度。可参照你认识的同性别、年龄相近的人，如实作答。",
+  "options": [
+    {
+      "value": 1,
+      "text": "非常不符合"
+    },
+    {
+      "value": 2,
+      "text": "比较不符合"
+    },
+    {
+      "value": 3,
+      "text": "介于符合与不符合之间"
+    },
+    {
+      "value": 4,
+      "text": "比较符合"
+    },
+    {
+      "value": 5,
+      "text": "非常符合"
+    }
+  ],
+  "dimensions": {
+    "ipip_sociability": "社交性（CPI-Sy 表征）"
+  },
+  "aggregation": "sum",
+  "items": [
+    {
+      "id": 1,
+      "original": "Feel comfortable around people.",
+      "text": "和人相处时，我感到自在。",
+      "dimension": "ipip_sociability",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "Act comfortably with others.",
+      "text": "我和别人互动时举止自然。",
+      "dimension": "ipip_sociability",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "Am skilled in handling social situations.",
+      "text": "我善于应对社交场合。",
+      "dimension": "ipip_sociability",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "Talk to a lot of different people at parties.",
+      "text": "在聚会上，我会和许多不同的人交谈。",
+      "dimension": "ipip_sociability",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "Start conversations.",
+      "text": "我会主动开启交谈。",
+      "dimension": "ipip_sociability",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "Often feel uncomfortable around others.",
+      "text": "和别人相处时，我经常感到不自在。",
+      "dimension": "ipip_sociability",
+      "reverse": true
+    },
+    {
+      "id": 7,
+      "original": "Have little to say.",
+      "text": "我没什么话可说。",
+      "dimension": "ipip_sociability",
+      "reverse": true
+    },
+    {
+      "id": 8,
+      "original": "Find it difficult to approach others.",
+      "text": "我觉得主动接近别人很困难。",
+      "dimension": "ipip_sociability",
+      "reverse": true
+    },
+    {
+      "id": 9,
+      "original": "Have difficulty expressing my feelings.",
+      "text": "我难以表达自己的感受。",
+      "dimension": "ipip_sociability",
+      "reverse": true
+    },
+    {
+      "id": 10,
+      "original": "Only feel comfortable with friends.",
+      "text": "我只有和朋友在一起才感到自在。",
+      "dimension": "ipip_sociability",
+      "reverse": true
+    }
+  ],
+  "license_source": "https://ipip.ori.org/",
+  "scoring_source": "https://ipip.ori.org/newScoringInstructions.htm",
+  "administration_source": "https://ipip.ori.org/new_ipip-50-item-scale.htm",
+  "author_short": "IPIP"
+}

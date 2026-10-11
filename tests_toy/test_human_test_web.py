@@ -373,8 +373,8 @@ class HumanTestWebTests(unittest.TestCase):
         )
         mbti_guide = (Path("turtle-soup/backend/guides/mbti.md")).read_text(encoding="utf-8")
         dnd_guide = (Path("turtle-soup/backend/guides/dnd.md")).read_text(encoding="utf-8")
-        self.assertIn("## 来源\n\n题库整理自网络公开题目。", mbti_guide)
-        self.assertIn("## 来源\n\n题库与阵营描述译自 easydamus.com（阵营测试）。", dnd_guide)
+        self.assertIn("题库整理自网络公开题目", mbti_guide)
+        self.assertIn("题库与阵营描述来源 easydamus.com", dnd_guide)
 
     def test_platform_test_distributions_have_spacing_full_labels_and_sorting(self):
         index = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
@@ -436,6 +436,25 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertIn("sortedRows.map", render_distribution)
         self.assertIn("platform-dist-${game}", render_distribution)
         self.assertIn("<b>${count}</b>", render_distribution)
+
+    def test_platform_distributions_are_independent_native_disclosures(self):
+        index = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
+        renderer = index.split("function renderDistribution", 1)[1].split(
+            "function renderPlatformStats", 1
+        )[0]
+        details = re.search(r"<details\b([^>]*)>(.*?)</details>", renderer, re.S)
+        self.assertIsNotNone(details)
+        self.assertNotRegex(details[1], r"\b(?:open|name)\s*(?:=|$)")
+        self.assertRegex(
+            details[2],
+            r'^\s*<summary class="platform-dist-title">'
+            r'\$\{escapeHtml\(platformTestLabels\[game\] \|\| game\)\}</summary>'
+            r'\s*<div class="platform-dist-body">\$\{body\}</div>\s*$',
+        )
+        self.assertIn('<p class="history-empty">暂无数据</p>', renderer)
+        block_css = index.split(".platform-dist-block {", 1)[1].split("}", 1)[0]
+        self.assertIn("display: block", block_css)
+        self.assertIn(".platform-dist-title:focus-visible", index)
 
     def test_enneagram_human_copy_uses_type_names_and_glossary(self):
         page = server.TEST_GAME_INDEX_PATH.read_text(encoding="utf-8")

@@ -1,0 +1,512 @@
+{
+  "topic_id": "romance_values_100",
+  "title": "恋爱观100问",
+  "description": "聊聊恋爱边界、依赖、同居、未来规划与价值观。",
+  "author": "デジタル教科書（fucchan-blog.com；原页未列个人署名）；中文翻译与编排：CedarToy",
+  "source_url": "https://fucchan-blog.com/100questions-romance/4109/",
+  "license": "原站声明「コピペOK」：允许复制使用（非CC许可）",
+  "license_url": "https://fucchan-blog.com/100questions-romance/4109/",
+  "adaptation_note": "逐题译自《恋愛限定！100の質問【コピペOK】》第1—100项，保留原顺序及第100项结束语，不删改题目来凑数。中文翻译：CedarToy，非官方译文；第77题为日语俗称附简短释义，不作心理诊断。日文逐题对照见docs/DEEPTALK_SOURCES.md。按原站复制使用声明及南杉批准整理；未宣称CC许可、公共领域或无限制再授权。",
+  "questions": [
+    {
+      "id": "romance_values_100_001",
+      "text": "你喜欢什么类型的人？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第1项。"
+    },
+    {
+      "id": "romance_values_100_002",
+      "text": "你希望恋人怎么称呼你？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第2项。"
+    },
+    {
+      "id": "romance_values_100_003",
+      "text": "如果谈恋爱，你想和比你年长、同龄还是比你年轻的人交往？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第3项。"
+    },
+    {
+      "id": "romance_values_100_004",
+      "text": "实际上，你过去交往过的人是比你年长、同龄还是比你年轻？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第4项。"
+    },
+    {
+      "id": "romance_values_100_005",
+      "text": "你喜欢什么样的外貌？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第5项。"
+    },
+    {
+      "id": "romance_values_100_006",
+      "text": "你喜欢什么样的性格？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第6项。"
+    },
+    {
+      "id": "romance_values_100_007",
+      "text": "外貌、性格、金钱，你更重视什么？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第7项。"
+    },
+    {
+      "id": "romance_values_100_008",
+      "text": "你理想中的身高差是多少厘米？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第8项。"
+    },
+    {
+      "id": "romance_values_100_009",
+      "text": "你几岁时有了初恋？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第9项。"
+    },
+    {
+      "id": "romance_values_100_010",
+      "text": "你的初恋对象是谁？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第10项。"
+    },
+    {
+      "id": "romance_values_100_011",
+      "text": "说说你和初恋对象的回忆或小故事。",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第11项。"
+    },
+    {
+      "id": "romance_values_100_012",
+      "text": "到现在为止，你交往过几个人？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第12项。"
+    },
+    {
+      "id": "romance_values_100_013",
+      "text": "你最长的一段恋爱持续了几年？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第13项。"
+    },
+    {
+      "id": "romance_values_100_014",
+      "text": "你喜欢异性的什么动作或神态？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第14项。"
+    },
+    {
+      "id": "romance_values_100_015",
+      "text": "你喜欢异性的什么发型？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第15项。"
+    },
+    {
+      "id": "romance_values_100_016",
+      "text": "你喜欢异性的什么穿着？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第16项。"
+    },
+    {
+      "id": "romance_values_100_017",
+      "text": "你有过一见钟情吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第17项。"
+    },
+    {
+      "id": "romance_values_100_018",
+      "text": "什么瞬间会让你心动？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第18项。"
+    },
+    {
+      "id": "romance_values_100_019",
+      "text": "你喜欢户外活动还是待在室内？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第19项。"
+    },
+    {
+      "id": "romance_values_100_020",
+      "text": "你理想中的第一次约会是什么样的？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第20项。"
+    },
+    {
+      "id": "romance_values_100_021",
+      "text": "你有结婚的意愿吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第21项。"
+    },
+    {
+      "id": "romance_values_100_022",
+      "text": "你想要几个孩子？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第22项。"
+    },
+    {
+      "id": "romance_values_100_023",
+      "text": "你想养宠物吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第23项。"
+    },
+    {
+      "id": "romance_values_100_024",
+      "text": "将来你想住在哪里？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第24项。"
+    },
+    {
+      "id": "romance_values_100_025",
+      "text": "你平时做家务吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第25项。"
+    },
+    {
+      "id": "romance_values_100_026",
+      "text": "你喜欢做什么家务？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第26项。"
+    },
+    {
+      "id": "romance_values_100_027",
+      "text": "你不擅长做什么家务？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第27项。"
+    },
+    {
+      "id": "romance_values_100_028",
+      "text": "你希望恋人给你做什么菜？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第28项。"
+    },
+    {
+      "id": "romance_values_100_029",
+      "text": "你想给恋人做什么菜？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第29项。"
+    },
+    {
+      "id": "romance_values_100_030",
+      "text": "你想和恋人一起做什么？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第30项。"
+    },
+    {
+      "id": "romance_values_100_031",
+      "text": "什么瞬间让你感到幸福？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第31项。"
+    },
+    {
+      "id": "romance_values_100_032",
+      "text": "到现在为止，恋人送你的礼物中，哪一份让你最开心？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第32项。"
+    },
+    {
+      "id": "romance_values_100_033",
+      "text": "你怎么看说方言的异性？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第33项。"
+    },
+    {
+      "id": "romance_values_100_034",
+      "text": "你想开车兜风吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第34项。"
+    },
+    {
+      "id": "romance_values_100_035",
+      "text": "你对什么有特别的迷恋？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第35项。"
+    },
+    {
+      "id": "romance_values_100_036",
+      "text": "你能接受恋人用香水吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第36项。"
+    },
+    {
+      "id": "romance_values_100_037",
+      "text": "你觉得自己最有魅力的地方是什么？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第37项。"
+    },
+    {
+      "id": "romance_values_100_038",
+      "text": "交往多久后，你觉得可以结婚？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第38项。"
+    },
+    {
+      "id": "romance_values_100_039",
+      "text": "你现在有喜欢的人吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第39项。"
+    },
+    {
+      "id": "romance_values_100_040",
+      "text": "说说你绝不妥协的结婚条件。",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第40项。"
+    },
+    {
+      "id": "romance_values_100_041",
+      "text": "你能接受通过 LINE 告白吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第41项。"
+    },
+    {
+      "id": "romance_values_100_042",
+      "text": "你想向对方撒娇，还是希望对方向你撒娇？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第42项。"
+    },
+    {
+      "id": "romance_values_100_043",
+      "text": "你想庆祝纪念日吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第43项。"
+    },
+    {
+      "id": "romance_values_100_044",
+      "text": "你认为从什么程度开始算出轨？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第44项。"
+    },
+    {
+      "id": "romance_values_100_045",
+      "text": "你想给孩子取什么样的名字？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第45项。"
+    },
+    {
+      "id": "romance_values_100_046",
+      "text": "恋人做过什么让你开心的事？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第46项。"
+    },
+    {
+      "id": "romance_values_100_047",
+      "text": "恋人做过什么让你难过的事？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第47项。"
+    },
+    {
+      "id": "romance_values_100_048",
+      "text": "早餐你喜欢吃米饭还是面包？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第48项。"
+    },
+    {
+      "id": "romance_values_100_049",
+      "text": "你能接受异地恋吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第49项。"
+    },
+    {
+      "id": "romance_values_100_050",
+      "text": "说说你理想中和恋人度过假日的方式。",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第50项。"
+    },
+    {
+      "id": "romance_values_100_051",
+      "text": "你想和恋人去哪里旅行？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第51项。"
+    },
+    {
+      "id": "romance_values_100_052",
+      "text": "你能接受通过交友配对应用认识恋爱对象吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第52项。"
+    },
+    {
+      "id": "romance_values_100_053",
+      "text": "你想和恋人一起培养什么爱好？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第53项。"
+    },
+    {
+      "id": "romance_values_100_054",
+      "text": "和恋人相处时，你会留意些什么？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第54项。"
+    },
+    {
+      "id": "romance_values_100_055",
+      "text": "你和恋人吵过架吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第55项。"
+    },
+    {
+      "id": "romance_values_100_056",
+      "text": "吵架之后，你会怎样和好？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第56项。"
+    },
+    {
+      "id": "romance_values_100_057",
+      "text": "你多久会对恋人说一次“我喜欢你”？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第57项。"
+    },
+    {
+      "id": "romance_values_100_058",
+      "text": "你想在结婚前同居吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第58项。"
+    },
+    {
+      "id": "romance_values_100_059",
+      "text": "你会怎样向喜欢的人表达好感？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第59项。"
+    },
+    {
+      "id": "romance_values_100_060",
+      "text": "你对恋人说过谎吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第60项。"
+    },
+    {
+      "id": "romance_values_100_061",
+      "text": "即使对方的外貌不是你喜欢的类型，你也能和对方交往吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第61项。"
+    },
+    {
+      "id": "romance_values_100_062",
+      "text": "你能原谅出轨吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第62项。"
+    },
+    {
+      "id": "romance_values_100_063",
+      "text": "你会想起以前的恋人吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第63项。"
+    },
+    {
+      "id": "romance_values_100_064",
+      "text": "你最有桃花运的时期是什么时候？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第64项。"
+    },
+    {
+      "id": "romance_values_100_065",
+      "text": "你有连恋人也不能告诉的秘密吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第65项。"
+    },
+    {
+      "id": "romance_values_100_066",
+      "text": "你会主动告白吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第66项。"
+    },
+    {
+      "id": "romance_values_100_067",
+      "text": "如果告白，你会用什么话表达？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第67项。"
+    },
+    {
+      "id": "romance_values_100_068",
+      "text": "在什么情况下，你会想和恋人分手？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第68项。"
+    },
+    {
+      "id": "romance_values_100_069",
+      "text": "说说你理想中的家庭是什么样的。",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第69项。"
+    },
+    {
+      "id": "romance_values_100_070",
+      "text": "你会在恋爱中试探、欲擒故纵吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第70项。"
+    },
+    {
+      "id": "romance_values_100_071",
+      "text": "你联系过以前的恋人吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第71项。"
+    },
+    {
+      "id": "romance_values_100_072",
+      "text": "你的择偶要求高吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第72项。"
+    },
+    {
+      "id": "romance_values_100_073",
+      "text": "你希望怎样管理钱财？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第73项。"
+    },
+    {
+      "id": "romance_values_100_074",
+      "text": "你小时候有很多人喜欢吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第74项。"
+    },
+    {
+      "id": "romance_values_100_075",
+      "text": "如果你喜欢的人已经有了喜欢的对象，你会怎么办？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第75项。"
+    },
+    {
+      "id": "romance_values_100_076",
+      "text": "长久交往的秘诀是什么？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第76项。"
+    },
+    {
+      "id": "romance_values_100_077",
+      "text": "你经历过“蛙化现象”（喜欢的人回应好感后，自己反而产生排斥感）吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第77项。"
+    },
+    {
+      "id": "romance_values_100_078",
+      "text": "你想被求婚，还是想主动求婚？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第78项。"
+    },
+    {
+      "id": "romance_values_100_079",
+      "text": "你理想中的求婚场景是什么样的？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第79项。"
+    },
+    {
+      "id": "romance_values_100_080",
+      "text": "学生时代，你有哪些恋爱小故事？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第80项。"
+    },
+    {
+      "id": "romance_values_100_081",
+      "text": "你喜欢御宅族吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第81项。"
+    },
+    {
+      "id": "romance_values_100_082",
+      "text": "你想在几岁之前结婚？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第82项。"
+    },
+    {
+      "id": "romance_values_100_083",
+      "text": "你需要独处的时间吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第83项。"
+    },
+    {
+      "id": "romance_values_100_084",
+      "text": "你能接受一起洗澡吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第84项。"
+    },
+    {
+      "id": "romance_values_100_085",
+      "text": "你有过复合的经历吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第85项。"
+    },
+    {
+      "id": "romance_values_100_086",
+      "text": "什么瞬间会让你开始考虑结婚？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第86项。"
+    },
+    {
+      "id": "romance_values_100_087",
+      "text": "你希望共用一间卧室，还是分开更好？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第87项。"
+    },
+    {
+      "id": "romance_values_100_088",
+      "text": "你会束缚恋人吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第88项。"
+    },
+    {
+      "id": "romance_values_100_089",
+      "text": "你怎么看被恋人束缚？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第89项。"
+    },
+    {
+      "id": "romance_values_100_090",
+      "text": "约会时，对方做什么会让你兴致全无？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第90项。"
+    },
+    {
+      "id": "romance_values_100_091",
+      "text": "恋人态度冷淡时，你会怎么办？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第91项。"
+    },
+    {
+      "id": "romance_values_100_092",
+      "text": "你会依赖恋人吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第92项。"
+    },
+    {
+      "id": "romance_values_100_093",
+      "text": "你有过喜欢某人的心意被察觉的经历吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第93项。"
+    },
+    {
+      "id": "romance_values_100_094",
+      "text": "你想穿情侣装吗？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第94项。"
+    },
+    {
+      "id": "romance_values_100_095",
+      "text": "你不希望恋人对你做什么？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第95项。"
+    },
+    {
+      "id": "romance_values_100_096",
+      "text": "你会怎样决定约会地点？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第96项。"
+    },
+    {
+      "id": "romance_values_100_097",
+      "text": "你被恋人惹恼时，会怎样应对？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第97项。"
+    },
+    {
+      "id": "romance_values_100_098",
+      "text": "你怎么看 AA 制？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第98项。"
+    },
+    {
+      "id": "romance_values_100_099",
+      "text": "十年后，你会住在城市还是乡村？",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第99项。"
+    },
+    {
+      "id": "romance_values_100_100",
+      "text": "对看了你回答的人说句话吧！",
+      "source_ref": "https://fucchan-blog.com/100questions-romance/4109/ — 《恋愛限定！100の質問【コピペOK】》—「恋愛限定！100の質問」，原编号第100项。"
+    }
+  ]
+}

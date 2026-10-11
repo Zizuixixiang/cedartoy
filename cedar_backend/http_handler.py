@@ -6,6 +6,8 @@ proxy boundaries. Route order and response bytes are preserved.
 
 from urllib.parse import parse_qs
 
+from research_scales import SCALES
+
 
 def do_POST(
     self,
@@ -49,6 +51,10 @@ def do_POST(
         return
     if internal_path == "/_internal/duel-gateway/abandon":
         self._handle_duel_gateway_abandon()
+        return
+
+    if internal_path.startswith("/api/deeptalk"):
+        self._handle_deeptalk("POST", internal_path)
         return
 
     if self._is_tarot_post_path(internal_path):
@@ -211,6 +217,13 @@ def do_POST(
         self._handle_api_arcade_grant()
         return
 
+    if path == "/api/aidep/sharing":
+        self._handle_human_test_api("aidep", "sharing")
+        return
+    research_match = re.fullmatch(r"/api/([a-z0-9_]+)/(start|answer|answer_batch|result|status|get_result)", path)
+    if research_match and research_match.group(1) in SCALES:
+        self._handle_human_test_api(*research_match.groups())
+        return
     human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity|sins_virtues)/(start|answer_batch|result|compare)", path)
     if human_test_match:
         if human_test_match.group(2) == "compare" and human_test_match.group(1) not in {"love", "ecr"}:
@@ -293,7 +306,10 @@ def do_POST(
             # Only a single explicit value overrides the UA default.
             schema_mode=query["schema"][0] if query.get("schema") in (["legacy"], ["standard"]) else "",
         )
-    self._send_json(response)
+    call_params = payload.get("params")
+    call_args = call_params.get("arguments") if isinstance(call_params, dict) else None
+    private_result = isinstance(call_args, dict) and call_args.get("game") == "aidep"
+    self._send_json(response, extra_headers={"Cache-Control": "no-store"} if private_result else None)
 
 
 def do_GET(
@@ -324,6 +340,10 @@ def do_GET(
 
     path, _, query_string = self.path.partition("?")
     params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+
+    if path in {"/deeptalk", "/deeptalk/"} or path.startswith("/api/deeptalk"):
+        self._handle_deeptalk("GET", path, params)
+        return
 
     if path.startswith("/tutorials/"):
         tutorial_root = Path("/var/www/tutorials").resolve()
@@ -419,6 +439,9 @@ def do_GET(
         self._handle_forest_page(params)
         return
 
+    if path.removeprefix("/") in SCALES:
+        self._send_human_test_page(path.removeprefix("/"))
+        return
     if path in ("/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues") and not params.get("action"):
         self._send_human_test_page(path.removeprefix("/"))
         return
@@ -518,6 +541,13 @@ def do_GET(
         self._handle_api_arcade_status(params)
         return
 
+    if path == "/api/aidep/sharing":
+        self._handle_human_test_api("aidep", "sharing", params=params)
+        return
+    research_match = re.fullmatch(r"/api/([a-z0-9_]+)/(result|status)", path)
+    if research_match and research_match.group(1) in SCALES:
+        self._handle_human_test_api(*research_match.groups(), params=params)
+        return
     human_test_match = re.fullmatch(r"/api/(mbti|enneagram|dnd|love|ecr|humanity|sins_virtues)/result", path)
     if human_test_match:
         self._handle_human_test_api(human_test_match.group(1), "result", params=params)

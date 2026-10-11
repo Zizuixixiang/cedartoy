@@ -1,0 +1,183 @@
+{
+  "game": "rnss",
+  "title": "关系需求满足度 RNSS",
+  "author": "Gregor Žvelc, Karolina Jovanoska & Maša Žvelc",
+  "source": "https://doi.org/10.3389/fpsyg.2020.00901",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "本中文题目为依照正式论文英文题目所作的未验证翻译，未经过中文版心理测量验证。仅供娱乐和自我了解，不作诊断；不设临床分界值。本量表衡量一般人际关系中的需求满足，并非专门针对恋爱。按论文表2原题号；第18题按6减原分反向后，全量和各维度求均分，越高表示满足度越高。小机作答仅为娱乐演绎，不具有人类量表效度。",
+  "instruction": "请根据自身通常的实际情况，选择你对每句话的认同程度。原文仅命名量尺两端，中间档位保留数字。",
+  "options": [
+    {
+      "value": 1,
+      "text": "完全不同意"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "完全同意"
+    }
+  ],
+  "dimensions": {
+    "authenticity": "真实自我",
+    "protection": "支持与保护",
+    "impact": "产生影响",
+    "initiative": "他人主动",
+    "shared": "共同经历"
+  },
+  "items": [
+    {
+      "id": 1,
+      "text": "我的社交圈里有与我生活经历相似的人（例如有共同的爱好、职业，或属于同一个团体或网络论坛）。",
+      "original": "My social circle consists of people who share a similar life experience to me (e.g., a hobby, a profession, belonging to the same group or online forum).",
+      "dimension": "shared",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "text": "和亲近的人相处时，我几乎不需要隐瞒什么。",
+      "original": "I hardly have to hide anything in the company of people close to me.",
+      "dimension": "authenticity",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "text": "我的生活中有一个坚强、稳定且能保护我的人，让我可以依靠。",
+      "original": "I have a strong, stable, and protective person in my life whom I can rely on.",
+      "dimension": "protection",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "text": "我认识一个有能力的人，在我遇到麻烦时会帮助我。",
+      "original": "I know a capable individual who would help me if I found myself in trouble.",
+      "dimension": "protection",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "text": "我认识一些人，他们对某些事情的体验和我相似。",
+      "original": "I know people who experience some things similarly to me.",
+      "dimension": "shared",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "text": "别人经常认真对待我的建议。",
+      "original": "Others often take my advice to heart.",
+      "dimension": "impact",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "text": "即使我没有特别请求，别人也经常帮助我。",
+      "original": "Other people often help me even if I do not specifically ask them to.",
+      "dimension": "initiative",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "text": "我认识世界观和我相似的人。",
+      "original": "I know people with a world-view similar to mine.",
+      "dimension": "shared",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "text": "别人有时会给我带来美好的惊喜。",
+      "original": "Other people sometimes surprise me in a nice way.",
+      "dimension": "initiative",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "text": "和我亲近的人有时不等我开口，就会为我做些事。",
+      "original": "People close to me would sometimes do things for me without me having to ask.",
+      "dimension": "initiative",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "text": "我可以自在地向别人表达感受、说出心里话，因为我知道他们接受真实的我。",
+      "original": "I feel free to show my feelings to others and speak my mind because I know they accept me for who I am.",
+      "dimension": "authenticity",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "text": "在对我重要的人面前，我不必伪装自己。",
+      "original": "I do not have to pretend with people who are important to me.",
+      "dimension": "authenticity",
+      "reverse": false
+    },
+    {
+      "id": 13,
+      "text": "我的生活中至少有一个人会鼓励我、保护我，或提供我需要的信息。",
+      "original": "I have at least one person in my life who encourages me, protects me or provides me with the information I need.",
+      "dimension": "protection",
+      "reverse": false
+    },
+    {
+      "id": 14,
+      "text": "我的生活中有与我有相似经历的人。",
+      "original": "There are people in my life with whom I share similar experiences.",
+      "dimension": "shared",
+      "reverse": false
+    },
+    {
+      "id": 15,
+      "text": "我觉得自己能对别人产生影响。",
+      "original": "I feel that I have an influence on others.",
+      "dimension": "impact",
+      "reverse": false
+    },
+    {
+      "id": 16,
+      "text": "我可以在对我重要的人面前展现真实的自己，而不担心被拒绝。",
+      "original": "I can show my true self to people who are important to me without fear of rejection.",
+      "dimension": "authenticity",
+      "reverse": false
+    },
+    {
+      "id": 17,
+      "text": "遇到麻烦时，有人会支持我，而且足够坚强，能够应对我的问题。",
+      "original": "In times of trouble, I have someone who stands by me and who is strong enough to handle my problems.",
+      "dimension": "protection",
+      "reverse": false
+    },
+    {
+      "id": 18,
+      "text": "从来没有人为我准备美好的惊喜。",
+      "original": "No-one ever prepares a nice surprise for me.",
+      "dimension": "initiative",
+      "reverse": true
+    },
+    {
+      "id": 19,
+      "text": "我注意到别人有时会采纳我的建议。",
+      "original": "I have noticed that other people sometimes follow my suggestions.",
+      "dimension": "impact",
+      "reverse": false
+    },
+    {
+      "id": 20,
+      "text": "别人经常询问我对某个话题的看法。",
+      "original": "Other people often ask about my opinion on a certain topic.",
+      "dimension": "impact",
+      "reverse": false
+    }
+  ],
+  "aggregation": "mean",
+  "author_short": "Žvelc",
+  "overall_mean": true
+}

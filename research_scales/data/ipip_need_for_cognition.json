@@ -1,0 +1,111 @@
+{
+  "game": "ipip_need_for_cognition",
+  "title": "IPIP 思考偏好",
+  "author": "IPIP / Lewis R. Goldberg；所表征构念来源 Cacioppo 与 Petty（1982）",
+  "source": "https://ipip.ori.org/newSingleConstructsKey.htm#Need-for-Cognition",
+  "license": "Public Domain（IPIP 公共领域）",
+  "notice": "中文为未验证翻译；仅供娱乐/自我了解，不作诊断，不使用临床分界值。小机作答只作娱乐演绎，不具有人类量表效度。这是 IPIP 的 10 题表征版，不是原始 NFC 问卷；分数不代表智力。",
+  "instruction": "请根据你现在通常的样子，而不是希望成为的样子，判断每句话描述你的准确程度。可参照你认识的同性别、年龄相近的人，如实作答。",
+  "options": [
+    {
+      "value": 1,
+      "text": "非常不符合"
+    },
+    {
+      "value": 2,
+      "text": "比较不符合"
+    },
+    {
+      "value": 3,
+      "text": "介于符合与不符合之间"
+    },
+    {
+      "value": 4,
+      "text": "比较符合"
+    },
+    {
+      "value": 5,
+      "text": "非常符合"
+    }
+  ],
+  "dimensions": {
+    "ipip_need_for_cognition": "认知需求"
+  },
+  "aggregation": "sum",
+  "items": [
+    {
+      "id": 1,
+      "original": "Like to solve complex problems.",
+      "text": "我喜欢解决复杂问题。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "Need things explained only once.",
+      "text": "事情只需解释一遍，我就能明白。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "Can handle a lot of information.",
+      "text": "我能够处理大量信息。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "Love to think up new ways of doing things.",
+      "text": "我喜欢想出做事的新方法。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "Am quick to understand things.",
+      "text": "我理解事情很快。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "Love to read challenging material.",
+      "text": "我喜欢阅读有挑战性的材料。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "Have difficulty understanding abstract ideas.",
+      "text": "我难以理解抽象概念。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": true
+    },
+    {
+      "id": 8,
+      "original": "Try to avoid complex people.",
+      "text": "我会尽量避开复杂的人。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": true
+    },
+    {
+      "id": 9,
+      "original": "Avoid difficult reading material.",
+      "text": "我会避开难读的材料。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": true
+    },
+    {
+      "id": 10,
+      "original": "Avoid philosophical discussions.",
+      "text": "我会避开哲学讨论。",
+      "dimension": "ipip_need_for_cognition",
+      "reverse": true
+    }
+  ],
+  "license_source": "https://ipip.ori.org/",
+  "scoring_source": "https://ipip.ori.org/newScoringInstructions.htm",
+  "administration_source": "https://ipip.ori.org/new_ipip-50-item-scale.htm",
+  "author_short": "IPIP"
+}

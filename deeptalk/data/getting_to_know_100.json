@@ -1,0 +1,512 @@
+{
+  "topic_id": "getting_to_know_100",
+  "title": "相互了解100问",
+  "description": "从姓名、成长经历聊到日常习惯、喜好和未来目标的100问。开放文本，不评分；涉及隐私、敏感或不适用的题均可跳过。",
+  "author": "デジタル教科書（fucchan-blog.com；原页未单列个人作者）",
+  "source_url": "https://fucchan-blog.com/100questions/2517/",
+  "license": "原站明确允许复制使用（「コピペOK」）；未标示标准开放许可证，不标为公共领域或 CC0。",
+  "license_url": "https://fucchan-blog.com/100questions/2517/",
+  "adaptation_note": "CedarToy 按日文原题顺序自译，非官方或认证译本；保留100个条目，包括第28、37题的重复，第48题重复“年长”并附译注。每题自由文本，无标准答案或评分；隐私、敏感、不适用的题可跳过或答“不适用”。AI 不必编造生日、年龄、身高、血型、家庭或私人经历，也不必创建虚构角色。",
+  "questions": [
+    {
+      "id": "getting_to_know_100_001",
+      "text": "你叫什么名字？",
+      "source_ref": "100の質問 #1"
+    },
+    {
+      "id": "getting_to_know_100_002",
+      "text": "你的性别是什么？",
+      "source_ref": "100の質問 #2"
+    },
+    {
+      "id": "getting_to_know_100_003",
+      "text": "你的生日是哪一天？",
+      "source_ref": "100の質問 #3"
+    },
+    {
+      "id": "getting_to_know_100_004",
+      "text": "你多大了？",
+      "source_ref": "100の質問 #4"
+    },
+    {
+      "id": "getting_to_know_100_005",
+      "text": "你的身高是多少？",
+      "source_ref": "100の質問 #5"
+    },
+    {
+      "id": "getting_to_know_100_006",
+      "text": "你的视力怎么样？",
+      "source_ref": "100の質問 #6"
+    },
+    {
+      "id": "getting_to_know_100_007",
+      "text": "你惯用哪只手？",
+      "source_ref": "100の質問 #7"
+    },
+    {
+      "id": "getting_to_know_100_008",
+      "text": "你穿多大码的鞋？",
+      "source_ref": "100の質問 #8"
+    },
+    {
+      "id": "getting_to_know_100_009",
+      "text": "你的血型是什么？",
+      "source_ref": "100の質問 #9"
+    },
+    {
+      "id": "getting_to_know_100_010",
+      "text": "你来自哪里？",
+      "source_ref": "100の質問 #10"
+    },
+    {
+      "id": "getting_to_know_100_011",
+      "text": "你初中时参加过什么社团？",
+      "source_ref": "100の質問 #11"
+    },
+    {
+      "id": "getting_to_know_100_012",
+      "text": "你高中时参加过什么社团？",
+      "source_ref": "100の質問 #12"
+    },
+    {
+      "id": "getting_to_know_100_013",
+      "text": "你以前上过哪些兴趣班或学过哪些才艺？",
+      "source_ref": "100の質問 #13"
+    },
+    {
+      "id": "getting_to_know_100_014",
+      "text": "你做过哪些兼职？",
+      "source_ref": "100の質問 #14"
+    },
+    {
+      "id": "getting_to_know_100_015",
+      "text": "你现在的兴趣爱好是什么？",
+      "source_ref": "100の質問 #15"
+    },
+    {
+      "id": "getting_to_know_100_016",
+      "text": "你有什么特长？",
+      "source_ref": "100の質問 #16"
+    },
+    {
+      "id": "getting_to_know_100_017",
+      "text": "你的座右铭是什么？",
+      "source_ref": "100の質問 #17"
+    },
+    {
+      "id": "getting_to_know_100_018",
+      "text": "你有兄弟姐妹吗？",
+      "source_ref": "100の質問 #18"
+    },
+    {
+      "id": "getting_to_know_100_019",
+      "text": "你养宠物吗？",
+      "source_ref": "100の質問 #19"
+    },
+    {
+      "id": "getting_to_know_100_020",
+      "text": "你想养什么宠物？",
+      "source_ref": "100の質問 #20"
+    },
+    {
+      "id": "getting_to_know_100_021",
+      "text": "你喜欢什么食物？",
+      "source_ref": "100の質問 #21"
+    },
+    {
+      "id": "getting_to_know_100_022",
+      "text": "你不喜欢什么食物？",
+      "source_ref": "100の質問 #22"
+    },
+    {
+      "id": "getting_to_know_100_023",
+      "text": "你喜欢什么饮料？",
+      "source_ref": "100の質問 #23"
+    },
+    {
+      "id": "getting_to_know_100_024",
+      "text": "你不喜欢什么饮料？",
+      "source_ref": "100の質問 #24"
+    },
+    {
+      "id": "getting_to_know_100_025",
+      "text": "你喜欢什么动物？",
+      "source_ref": "100の質問 #25"
+    },
+    {
+      "id": "getting_to_know_100_026",
+      "text": "你不太能应付什么动物？",
+      "source_ref": "100の質問 #26"
+    },
+    {
+      "id": "getting_to_know_100_027",
+      "text": "你喜欢什么颜色？",
+      "source_ref": "100の質問 #27"
+    },
+    {
+      "id": "getting_to_know_100_028",
+      "text": "你喜欢哪个季节？",
+      "source_ref": "100の質問 #28"
+    },
+    {
+      "id": "getting_to_know_100_029",
+      "text": "你想去什么地方？",
+      "source_ref": "100の質問 #29"
+    },
+    {
+      "id": "getting_to_know_100_030",
+      "text": "你去过哪些让你觉得不虚此行的地方？",
+      "source_ref": "100の質問 #30"
+    },
+    {
+      "id": "getting_to_know_100_031",
+      "text": "你最近买过什么觉得很值的东西？",
+      "source_ref": "100の質問 #31"
+    },
+    {
+      "id": "getting_to_know_100_032",
+      "text": "你最近想要什么东西？",
+      "source_ref": "100の質問 #32"
+    },
+    {
+      "id": "getting_to_know_100_033",
+      "text": "你拿手的菜是什么？",
+      "source_ref": "100の質問 #33"
+    },
+    {
+      "id": "getting_to_know_100_034",
+      "text": "你喜欢做什么家务？",
+      "source_ref": "100の質問 #34"
+    },
+    {
+      "id": "getting_to_know_100_035",
+      "text": "你喜欢读书吗？",
+      "source_ref": "100の質問 #35"
+    },
+    {
+      "id": "getting_to_know_100_036",
+      "text": "你开车吗？",
+      "source_ref": "100の質問 #36"
+    },
+    {
+      "id": "getting_to_know_100_037",
+      "text": "你喜欢哪个季节？",
+      "source_ref": "100の質問 #37"
+    },
+    {
+      "id": "getting_to_know_100_038",
+      "text": "你能适应坐过山车吗？",
+      "source_ref": "100の質問 #38"
+    },
+    {
+      "id": "getting_to_know_100_039",
+      "text": "你能适应逛鬼屋吗？",
+      "source_ref": "100の質問 #39"
+    },
+    {
+      "id": "getting_to_know_100_040",
+      "text": "你唱卡拉 OK 时经常唱什么歌？",
+      "source_ref": "100の質問 #40"
+    },
+    {
+      "id": "getting_to_know_100_041",
+      "text": "你喜欢什么电视节目？",
+      "source_ref": "100の質問 #41"
+    },
+    {
+      "id": "getting_to_know_100_042",
+      "text": "你喜欢什么电视剧？",
+      "source_ref": "100の質問 #42"
+    },
+    {
+      "id": "getting_to_know_100_043",
+      "text": "你喜欢什么电影？",
+      "source_ref": "100の質問 #43"
+    },
+    {
+      "id": "getting_to_know_100_044",
+      "text": "你喜欢什么动画？",
+      "source_ref": "100の質問 #44"
+    },
+    {
+      "id": "getting_to_know_100_045",
+      "text": "你喜欢哪个角色？",
+      "source_ref": "100の質問 #45"
+    },
+    {
+      "id": "getting_to_know_100_046",
+      "text": "你喜欢哪种方言？",
+      "source_ref": "100の質問 #46"
+    },
+    {
+      "id": "getting_to_know_100_047",
+      "text": "你初恋时多大？",
+      "source_ref": "100の質問 #47"
+    },
+    {
+      "id": "getting_to_know_100_048",
+      "text": "如果谈恋爱，你会选比自己年长的、同龄的，还是比自己年长的对象？（原文重复了“年长”。）",
+      "source_ref": "100の質問 #48"
+    },
+    {
+      "id": "getting_to_know_100_049",
+      "text": "你喜欢哪种类型的人？",
+      "source_ref": "100の質問 #49"
+    },
+    {
+      "id": "getting_to_know_100_050",
+      "text": "你现在有恋人吗？",
+      "source_ref": "100の質問 #50"
+    },
+    {
+      "id": "getting_to_know_100_051",
+      "text": "你以前交往过的人有什么共同点？",
+      "source_ref": "100の質問 #51"
+    },
+    {
+      "id": "getting_to_know_100_052",
+      "text": "你喜欢怎样的约会？",
+      "source_ref": "100の質問 #52"
+    },
+    {
+      "id": "getting_to_know_100_053",
+      "text": "你更想去爱，还是被爱？",
+      "source_ref": "100の質問 #53"
+    },
+    {
+      "id": "getting_to_know_100_054",
+      "text": "你有结婚的愿望吗？",
+      "source_ref": "100の質問 #54"
+    },
+    {
+      "id": "getting_to_know_100_055",
+      "text": "你想要几个孩子？",
+      "source_ref": "100の質問 #55"
+    },
+    {
+      "id": "getting_to_know_100_056",
+      "text": "你有在存钱吗？",
+      "source_ref": "100の質問 #56"
+    },
+    {
+      "id": "getting_to_know_100_057",
+      "text": "你偏好现金支付，还是无现金支付？",
+      "source_ref": "100の質問 #57"
+    },
+    {
+      "id": "getting_to_know_100_058",
+      "text": "你有几张信用卡？",
+      "source_ref": "100の質問 #58"
+    },
+    {
+      "id": "getting_to_know_100_059",
+      "text": "你会把钱花在哪些方面？",
+      "source_ref": "100の質問 #59"
+    },
+    {
+      "id": "getting_to_know_100_060",
+      "text": "你在使用哪些订阅服务？",
+      "source_ref": "100の質問 #60"
+    },
+    {
+      "id": "getting_to_know_100_061",
+      "text": "你喜欢哪些艺术家或音乐人？",
+      "source_ref": "100の質問 #61"
+    },
+    {
+      "id": "getting_to_know_100_062",
+      "text": "你喜欢哪些搞笑艺人？",
+      "source_ref": "100の質問 #62"
+    },
+    {
+      "id": "getting_to_know_100_063",
+      "text": "你喜欢哪些演艺明星？",
+      "source_ref": "100の質問 #63"
+    },
+    {
+      "id": "getting_to_know_100_064",
+      "text": "你尊敬谁？",
+      "source_ref": "100の質問 #64"
+    },
+    {
+      "id": "getting_to_know_100_065",
+      "text": "你最好的朋友是怎样的人？",
+      "source_ref": "100の質問 #65"
+    },
+    {
+      "id": "getting_to_know_100_066",
+      "text": "你出门时一定会带什么？",
+      "source_ref": "100の質問 #66"
+    },
+    {
+      "id": "getting_to_know_100_067",
+      "text": "你平时用什么样的包？",
+      "source_ref": "100の質問 #67"
+    },
+    {
+      "id": "getting_to_know_100_068",
+      "text": "你用的智能手机是什么型号？",
+      "source_ref": "100の質問 #68"
+    },
+    {
+      "id": "getting_to_know_100_069",
+      "text": "你每天使用智能手机多长时间？",
+      "source_ref": "100の質問 #69"
+    },
+    {
+      "id": "getting_to_know_100_070",
+      "text": "你经常用智能手机做什么？",
+      "source_ref": "100の質問 #70"
+    },
+    {
+      "id": "getting_to_know_100_071",
+      "text": "你常用哪些表情符号？",
+      "source_ref": "100の質問 #71"
+    },
+    {
+      "id": "getting_to_know_100_072",
+      "text": "你喜欢什么游戏？",
+      "source_ref": "100の質問 #72"
+    },
+    {
+      "id": "getting_to_know_100_073",
+      "text": "你有哪些游戏机？",
+      "source_ref": "100の質問 #73"
+    },
+    {
+      "id": "getting_to_know_100_074",
+      "text": "你是早起型，还是夜猫子型？",
+      "source_ref": "100の質問 #74"
+    },
+    {
+      "id": "getting_to_know_100_075",
+      "text": "你在房间里通常穿什么？",
+      "source_ref": "100の質問 #75"
+    },
+    {
+      "id": "getting_to_know_100_076",
+      "text": "你平均睡多长时间？",
+      "source_ref": "100の質問 #76"
+    },
+    {
+      "id": "getting_to_know_100_077",
+      "text": "你平时运动吗？",
+      "source_ref": "100の質問 #77"
+    },
+    {
+      "id": "getting_to_know_100_078",
+      "text": "你用的牙刷是什么硬度的？",
+      "source_ref": "100の質問 #78"
+    },
+    {
+      "id": "getting_to_know_100_079",
+      "text": "你更喜欢米饭，还是面包？",
+      "source_ref": "100の質問 #79"
+    },
+    {
+      "id": "getting_to_know_100_080",
+      "text": "你喜欢便当里的什么配菜？",
+      "source_ref": "100の質問 #80"
+    },
+    {
+      "id": "getting_to_know_100_081",
+      "text": "你在便利店经常买什么？",
+      "source_ref": "100の質問 #81"
+    },
+    {
+      "id": "getting_to_know_100_082",
+      "text": "你多久去一次美发店？",
+      "source_ref": "100の質問 #82"
+    },
+    {
+      "id": "getting_to_know_100_083",
+      "text": "别人说过哪些让你开心的话？",
+      "source_ref": "100の質問 #83"
+    },
+    {
+      "id": "getting_to_know_100_084",
+      "text": "你喜欢自己哪些地方？",
+      "source_ref": "100の質問 #84"
+    },
+    {
+      "id": "getting_to_know_100_085",
+      "text": "你想改善自己哪些地方？",
+      "source_ref": "100の質問 #85"
+    },
+    {
+      "id": "getting_to_know_100_086",
+      "text": "你有什么习惯性的小动作或癖好？",
+      "source_ref": "100の質問 #86"
+    },
+    {
+      "id": "getting_to_know_100_087",
+      "text": "朋友们怎么称呼你？",
+      "source_ref": "100の質問 #87"
+    },
+    {
+      "id": "getting_to_know_100_088",
+      "text": "父母怎么称呼你？",
+      "source_ref": "100の質問 #88"
+    },
+    {
+      "id": "getting_to_know_100_089",
+      "text": "有人说过你像哪位艺人吗？",
+      "source_ref": "100の質問 #89"
+    },
+    {
+      "id": "getting_to_know_100_090",
+      "text": "你喜欢哪些 YouTube 创作者？",
+      "source_ref": "100の質問 #90"
+    },
+    {
+      "id": "getting_to_know_100_091",
+      "text": "如果成为 YouTube 创作者，你想做什么节目企划？",
+      "source_ref": "100の質問 #91"
+    },
+    {
+      "id": "getting_to_know_100_092",
+      "text": "如果能对十年前的自己说句话，你会说什么？",
+      "source_ref": "100の質問 #92"
+    },
+    {
+      "id": "getting_to_know_100_093",
+      "text": "你想问十年后的自己什么？",
+      "source_ref": "100の質問 #93"
+    },
+    {
+      "id": "getting_to_know_100_094",
+      "text": "你想尝试一次什么工作？",
+      "source_ref": "100の質問 #94"
+    },
+    {
+      "id": "getting_to_know_100_095",
+      "text": "你想挑战什么？",
+      "source_ref": "100の質問 #95"
+    },
+    {
+      "id": "getting_to_know_100_096",
+      "text": "你未来的梦想是什么？",
+      "source_ref": "100の質問 #96"
+    },
+    {
+      "id": "getting_to_know_100_097",
+      "text": "你将来想住在哪里？",
+      "source_ref": "100の質問 #97"
+    },
+    {
+      "id": "getting_to_know_100_098",
+      "text": "如果今天是地球的最后一天，你会做什么？",
+      "source_ref": "100の質問 #98"
+    },
+    {
+      "id": "getting_to_know_100_099",
+      "text": "你想成为怎样的人？",
+      "source_ref": "100の質問 #99"
+    },
+    {
+      "id": "getting_to_know_100_100",
+      "text": "最后，你想说一句什么？",
+      "source_ref": "100の質問 #100"
+    }
+  ]
+}

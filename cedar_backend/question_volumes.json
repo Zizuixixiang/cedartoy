@@ -1,0 +1,387 @@
+{
+  "encoding": "cl100k_base",
+  "tiktoken_version": "0.12.0",
+  "method": "Unicode len and per-text cl100k_base; each question stem once, each unique option set once",
+  "games": {
+    "dt_relations": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 13,
+          "chars": 516,
+          "tokens": 593,
+          "text_sha256": "c90e345596eaebecf7e8107b2cf704e11a6540dd68dbcdcc50c5ecf0ac6b0f36"
+        }
+      ]
+    },
+    "dt_couple50": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 50,
+          "chars": 560,
+          "tokens": 737,
+          "text_sha256": "37e9ca32f11324c1b936c344a742d8d8f5ff79c8f523ee87668fe691cedea20c"
+        }
+      ]
+    },
+    "dt_scenarios": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 14,
+          "chars": 479,
+          "tokens": 556,
+          "text_sha256": "d8f1a4885c393985def92ccc92c820eb99385ab0c08578a70f64c534ce3ca111"
+        }
+      ]
+    },
+    "dt_romance100": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 100,
+          "chars": 1294,
+          "tokens": 1667,
+          "text_sha256": "6903b3820c22424348b64fa458c9ba7d4c04d536b363bea90e3b025753556eb2"
+        }
+      ]
+    },
+    "dt_work20": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 20,
+          "chars": 614,
+          "tokens": 738,
+          "text_sha256": "832c57c500c278ed5387e7a5a29c5f89bfc95c3b6f4d0336ca2b964df5fa43c8"
+        }
+      ]
+    },
+    "dt_favorites100": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 100,
+          "chars": 990,
+          "tokens": 1383,
+          "text_sha256": "3b2d1111af747ea8e1d0937a2ee6be6dfcbcd02c2b91783795bb78961df47757"
+        }
+      ]
+    },
+    "dt_know100": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 100,
+          "chars": 1054,
+          "tokens": 1322,
+          "text_sha256": "39e4fd4c63831d7ebdf1237e221f8884ce518299174eefc6bc745204065e355e"
+        }
+      ]
+    },
+    "dt_life35": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 35,
+          "chars": 453,
+          "tokens": 570,
+          "text_sha256": "4b5d7e6854137b997fb0cdcdab5bc719fd729687660cd2f7fae4e9e1eff74d84"
+        }
+      ]
+    },
+    "dt_dilemmas30": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 30,
+          "chars": 1902,
+          "tokens": 2353,
+          "text_sha256": "d5aa058345df2f41fd8df110cc6ab400c2df854ae4af8cd8229943a440804355"
+        }
+      ]
+    },
+    "bsfl": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 5,
+          "chars": 74,
+          "tokens": 96,
+          "text_sha256": "d1633c6c8f5e57e9fad59d1e8dfc80f5dbe07c18f3d288d797f73a9070eec9dc"
+        }
+      ]
+    },
+    "bsr": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 20,
+          "chars": 334,
+          "tokens": 403,
+          "text_sha256": "c9b605bcc05120a57672c7bb064bc1a5f3f0ce6e034cb9a5b76c176b3ef48df2"
+        }
+      ]
+    },
+    "evs": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 16,
+          "chars": 348,
+          "tokens": 414,
+          "text_sha256": "1febaae60877f2437e7c3c453497fd1d238fec16bbd546bf008d6ab088ed9c8c"
+        }
+      ]
+    },
+    "ipip_adhd": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 12,
+          "chars": 191,
+          "tokens": 217,
+          "text_sha256": "79c21fa8a76183a1e7e8b686768cde10c6dc9c56283f09d37af10b623d328ea8"
+        }
+      ]
+    },
+    "ipip_empathy": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 10,
+          "chars": 132,
+          "tokens": 155,
+          "text_sha256": "16f0373305cf87e7dbc1cd03a5a81680d1d8607244655e42526a619e6a7edd28"
+        }
+      ]
+    },
+    "ipip_need_for_cognition": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 10,
+          "chars": 136,
+          "tokens": 166,
+          "text_sha256": "3958ed7bfa7cd34c3bb9c4040f56a1a002d93c57166e2f8e27ebb1ef00937e2a"
+        }
+      ]
+    },
+    "ipip_self_monitoring": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 10,
+          "chars": 158,
+          "tokens": 188,
+          "text_sha256": "7a0b5cbc7f53d53063b3e5c546926d5d142cc42b3b297e4664e3d0e65fb5f513"
+        }
+      ]
+    },
+    "ipip_sociability": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 10,
+          "chars": 151,
+          "tokens": 170,
+          "text_sha256": "eb157f8a9dd528e0aa75a7cb4ec21e669eeb2ba59ef03cb59ac4aab2dbb0e96f"
+        }
+      ]
+    },
+    "irrc": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 35,
+          "chars": 593,
+          "tokens": 727,
+          "text_sha256": "8d501ee03e196cb64235c14b3a02804c64a3ad5481f1dc639a8d691a01142165"
+        }
+      ]
+    },
+    "jrrs": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 16,
+          "chars": 371,
+          "tokens": 468,
+          "text_sha256": "d3f971c56b7650cb6dbaa0067bf4556f6a739e0b5c933be67d84e7ccb05f34e8"
+        }
+      ]
+    },
+    "mesx": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 10,
+          "chars": 90,
+          "tokens": 125,
+          "text_sha256": "06ad72302e4c4fc36bdc93f3a41bd61ad539d5f4b711c60bd35b124f08b99d53"
+        }
+      ]
+    },
+    "ppts": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 18,
+          "chars": 371,
+          "tokens": 418,
+          "text_sha256": "a41e87d65839de399120bd75a2857ce594388cb635c14f8415c8830ba15f7afa"
+        }
+      ]
+    },
+    "rbi": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 18,
+          "chars": 321,
+          "tokens": 382,
+          "text_sha256": "f562eb0482a117e0fb0ee3e0d427de202215e88e791f405875b64610bbdbe166"
+        }
+      ]
+    },
+    "rnss": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 20,
+          "chars": 448,
+          "tokens": 499,
+          "text_sha256": "3d28b9bff872f23c42212ca82ff42c388447762245524ae71fa45809d5069272"
+        }
+      ]
+    },
+    "romlon": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 4,
+          "chars": 89,
+          "tokens": 108,
+          "text_sha256": "b6f5eb4d07852bd5f6ac944298ec0b96b69d9ed814b78abd50d31876b9ee8d50"
+        }
+      ]
+    },
+    "ross": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 17,
+          "chars": 304,
+          "tokens": 374,
+          "text_sha256": "628e3a603d2999fb13c6a222a5f7e322149415d4dba666bc3c9af7f3898ae6f2"
+        }
+      ]
+    },
+    "rss": {
+      "variants": [
+        {
+          "mode": "",
+          "count": 12,
+          "chars": 238,
+          "tokens": 286,
+          "text_sha256": "fc3395e796e092660c9af6a42ccb62b3c2ac44b776e60ca765cd4f6934b513cf"
+        }
+      ]
+    },
+    "mbti": {
+      "variants": [
+        {
+          "mode": "short/short_fast",
+          "count": 16,
+          "chars": 492,
+          "tokens": 585,
+          "text_sha256": "a10178a46ebe8708aee965e4cf421f723addc9a3c57c4e8550201971f79130bd"
+        },
+        {
+          "mode": "full/full_fast",
+          "count": 93,
+          "chars": 1950,
+          "tokens": 2339,
+          "text_sha256": "50ee232252043e06017db5d99a78d3a35b49c72791c90607ab4fb2a4988f3fb3"
+        }
+      ]
+    },
+    "enneagram": {
+      "variants": [
+        {
+          "mode": "quick/quick_fast",
+          "count": 36,
+          "chars": 5860,
+          "tokens": 1229,
+          "text_sha256": "360b66dcb6fdafd5b528c2218a7ed3dde37083448723995d51e4244250789704"
+        },
+        {
+          "mode": "full/full_fast",
+          "count": 180,
+          "chars": 10916,
+          "tokens": 2320,
+          "text_sha256": "70c8ac0c1d5d6f35839ae5bc37dd33eb9c6aceac518549d8482a8131494d6457"
+        }
+      ]
+    },
+    "dnd": {
+      "variants": [
+        {
+          "mode": "full/full_fast",
+          "count": 36,
+          "chars": 8808,
+          "tokens": 2077,
+          "text_sha256": "cf5ccde6a6bc53b1f7b2b9ae2ace1505f4f97b06912ae00dab4ec93b6a50ca50"
+        }
+      ]
+    },
+    "love": {
+      "variants": [
+        {
+          "mode": "full/full_fast",
+          "count": 30,
+          "chars": 1315,
+          "tokens": 1605,
+          "text_sha256": "08e6858816c525b3a43a6089dd2d1b4a86e5327bee728af647eb329d73af960e"
+        }
+      ]
+    },
+    "ecr": {
+      "variants": [
+        {
+          "mode": "full/full_fast",
+          "count": 36,
+          "chars": 715,
+          "tokens": 885,
+          "text_sha256": "f0ff19a18a2d912488be0b37008f8b85c501e6c77675be8bb23b7c727c49e6a0"
+        }
+      ]
+    },
+    "humanity": {
+      "variants": [
+        {
+          "mode": "full/full_fast",
+          "count": 20,
+          "chars": 1097,
+          "tokens": 1380,
+          "text_sha256": "490f50c33f0b4a4f1990ecb35f3ff5e9fff130bb08284b81f80abc7bf3b36d2a"
+        }
+      ]
+    },
+    "sins_virtues": {
+      "variants": [
+        {
+          "mode": "full/full_fast",
+          "count": 35,
+          "chars": 929,
+          "tokens": 1113,
+          "text_sha256": "d0344621ea60935381b1596d5172f385627eded2ec3c0b78ce3bb04eac7db0a0"
+        }
+      ]
+    },
+    "bdsmtest": {
+      "unavailable": "原站实时出题，无稳定本地题包；不据93题提示推算"
+    }
+  }
+}

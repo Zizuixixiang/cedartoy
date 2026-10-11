@@ -1,0 +1,125 @@
+{
+  "game": "ipip_adhd",
+  "title": "IPIP 注意与活动倾向",
+  "author": "IPIP / Lewis R. Goldberg；所表征构念来源 Span、Earleywine 与 Strybel（2002）",
+  "source": "https://ipip.ori.org/newSingleConstructsKey.htm#ADHD",
+  "license": "Public Domain（IPIP 公共领域）",
+  "notice": "中文为未验证翻译；仅供娱乐/自我了解，不作诊断，不使用临床分界值。小机作答只作娱乐演绎，不具有人类量表效度。这是 IPIP 表征版的 12 题，不是 ASRS，不能据此筛查或确定 ADHD。",
+  "instruction": "请根据你现在通常的样子，而不是希望成为的样子，判断每句话描述你的准确程度。可参照你认识的同性别、年龄相近的人，如实作答。",
+  "options": [
+    {
+      "value": 1,
+      "text": "非常不符合"
+    },
+    {
+      "value": 2,
+      "text": "比较不符合"
+    },
+    {
+      "value": 3,
+      "text": "介于符合与不符合之间"
+    },
+    {
+      "value": 4,
+      "text": "比较符合"
+    },
+    {
+      "value": 5,
+      "text": "非常符合"
+    }
+  ],
+  "dimensions": {
+    "ipip_adhd": "ADHD 相关特征"
+  },
+  "aggregation": "sum",
+  "items": [
+    {
+      "id": 1,
+      "original": "Forget things.",
+      "text": "我会忘记事情。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "Begin to answer before the other person finishes the question.",
+      "text": "对方还没问完问题，我就开始回答。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "Don't finish the things that I start.",
+      "text": "我开始做的事情常未完成。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "Am often fidgety.",
+      "text": "我经常坐立不安、手脚动个不停。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "Have difficulty keeping my attention on a task.",
+      "text": "我难以持续把注意力放在一项任务上。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "Have been told I'm not listening when others are speaking to me.",
+      "text": "别人和我说话时，曾说我没有在听。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "Don't enjoy doing quiet leisure activities.",
+      "text": "我不喜欢安静的休闲活动。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "Feel restless a lot of the time.",
+      "text": "我很多时候都感到躁动不安。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "original": "Find it difficult to organize tasks and activities.",
+      "text": "我觉得安排任务和活动很困难。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "original": "Don't pay enough attention when others are speaking to me.",
+      "text": "别人和我说话时，我没有给予足够注意。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "original": "Find it difficult to sit still for long periods of time.",
+      "text": "我觉得长时间安静坐着很困难。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "original": "Make careless mistakes.",
+      "text": "我会犯粗心的错误。",
+      "dimension": "ipip_adhd",
+      "reverse": false
+    }
+  ],
+  "license_source": "https://ipip.ori.org/",
+  "scoring_source": "https://ipip.ori.org/newScoringInstructions.htm",
+  "administration_source": "https://ipip.ori.org/new_ipip-50-item-scale.htm",
+  "author_short": "IPIP"
+}

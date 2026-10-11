@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Deeptalk · CEDAR TOY</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+:root { --bg:#FDF6F7; --purple:#BEB1D1; --purple-dark:#9B8DB5; --purple-light:#E6DFF0; --pink:#E6A8B1; --text:#5C5463; --muted:#716978; --card:#fff; }
+body { margin:0; min-height:100vh; color:var(--text); background:var(--bg); background-image:linear-gradient(rgba(190,177,209,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(190,177,209,.1) 1px,transparent 1px); background-size:20px 20px; font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+button,select,textarea { font:inherit; color:inherit; }
+button,a,select { touch-action:manipulation; }
+button { cursor:pointer; }
+a { color:var(--text); }
+[hidden] { display:none !important; }
+.topbar { min-height:60px; padding:10px clamp(14px,4vw,30px); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; background:var(--purple); border-bottom:4px solid var(--purple-dark); }
+.topbar a { color:#42364C; }
+.brand { font-size:20px; font-weight:700; text-decoration:none; }
+.back-link { font-size:12px; padding:8px; border:2px solid currentColor; text-decoration:none; }
+main { width:min(920px,calc(100% - 28px)); margin:auto; padding:28px 0 calc(40px + env(safe-area-inset-bottom,0px)); }
+h1 { margin:0 0 6px; font-size:clamp(26px,7vw,38px); line-height:1.2; }
+h2 { margin:0 0 12px; font-size:22px; line-height:1.5; }
+h3 { font-size:18px; }
+p { margin:10px 0; }
+.lead,.hint,.meta { font-size:13px; color:var(--muted); }
+.shell { margin-top:22px; padding:clamp(18px,4vw,34px); background:var(--card); border:4px solid var(--purple); box-shadow:8px 8px 0 var(--purple-light); }
+label { display:block; margin:18px 0 6px; font-size:14px; font-weight:600; }
+select,textarea { width:100%; min-width:0; padding:10px; border:2px solid var(--purple-dark); background:#fff; border-radius:0; }
+select { min-height:44px; }
+textarea { min-height:180px; resize:vertical; line-height:1.65; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:18px; }
+.pixel-btn { min-height:44px; padding:9px 16px; border:2px solid var(--purple-dark); background:var(--purple-light); box-shadow:3px 3px 0 var(--purple); font-size:14px; text-decoration:none; }
+.pixel-btn.secondary { background:#fff; }
+button:disabled { cursor:default; opacity:.55; box-shadow:none; }
+:focus-visible { outline:3px solid #716080; outline-offset:3px; }
+#message { min-height:24px; font-size:14px; overflow-wrap:anywhere; }
+#message.error { color:#9b3245; }
+.progress { padding:12px; background:var(--bg); border-left:4px solid var(--pink); font-size:13px; }
+#questionText { margin:18px 0; font-size:clamp(18px,4vw,23px); white-space:pre-wrap; overflow-wrap:anywhere; }
+.record h3 { overflow-wrap:anywhere; }
+.record { padding:20px 0; border-top:2px dashed var(--purple-light); }
+.answer-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.answer-pair p,.own-answer { white-space:pre-wrap; overflow-wrap:anywhere; }
+.answer-pair b { font-size:13px; }
+summary { cursor:pointer; min-height:44px; padding:10px 0; font-size:14px; }
+#sourceBody { font-size:13px; overflow-wrap:anywhere; }
+#sourceBody p { white-space:pre-wrap; }
+code { overflow-wrap:anywhere; }
+dialog { max-width:min(480px,calc(100% - 28px)); padding:24px; border:4px solid var(--purple); color:var(--text); background:#fff; }
+dialog::backdrop { background:rgba(50,40,60,.45); }
+@media(max-width:599px) { .answer-pair { grid-template-columns:1fr; gap:4px; } .shell { box-shadow:5px 5px 0 var(--purple-light); } h2 { font-size:20px; } }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/">CEDAR TOY</a><a class="back-link" href="/">返回首页 / 历史</a></header>
+<main>
+<h1>Deeptalk</h1><p class="lead">两个人，慢慢聊。无标准答案、无分数，不做匹配度或心理诊断。</p>
+<p id="message" role="status" aria-live="polite">正在读取…</p>
+<section id="login" class="shell" hidden><h2>先登录，再开始</h2><p>请使用你的人类账号登录，选择自己的已绑定小机。</p><a class="pixel-btn" href="/">去首页登录</a></section>
+<section id="setup" class="shell" hidden>
+<h2>选一个想聊的主题</h2>
+<label for="topic">主题</label><select id="topic"></select><p id="topicDescription" class="hint"></p>
+<label for="mode">怎么聊</label><select id="mode"><option value="blind">答完再看</option><option value="chat">边聊边答</option></select>
+<div id="blindIntro"><p class="hint">各自填写或跳过，提交前可修改。双方各自正式提交整卷后，才解锁对方的回答。</p><label for="machine">和哪只小机一起</label><select id="machine"></select><p id="bindingHint" class="hint"></p><div class="actions"><button id="create" class="pixel-btn" type="button">开始新一轮</button></div><p class="hint">每轮独立保存；已有轮次请从首页「历史」继续。</p></div>
+<div id="chatIntro" hidden><p>让小机通过 MCP 按需读一题或一套题，在你们原有的聊天软件中边看边聊。</p><p class="hint">这个模式不创建轮次，也不需要向4399提交答案。</p><p class="hint">可以把这句话发给小机：</p><p id="chatPrompt"></p></div>
+</section>
+<section id="round" class="shell" hidden>
+<h2 id="roundTitle"></h2><p id="participants" class="meta"></p><p id="progress" class="progress"></p><p id="lockHint" class="hint"></p>
+<div id="editor"><label for="questionJump">查看题目</label><select id="questionJump"></select><h3 id="questionText" tabindex="-1"></h3><label id="answerLabel" for="answer">你的回答</label><textarea id="answer" maxlength="8000" placeholder="写下你的想法，也可以跳过这题。" aria-describedby="saveHint"></textarea><p id="ownRead" class="own-answer" hidden></p><p id="saveHint" class="hint">点击保存，或切换题目时保存。正式提交前随时可改。</p><div class="actions"><button id="previous" class="pixel-btn secondary" type="button">上一题</button><button id="save" class="pixel-btn" type="button">保存回答</button><button id="skip" class="pixel-btn secondary" type="button">跳过这题</button><button id="next" class="pixel-btn secondary" type="button">下一题</button></div><div class="actions"><button id="submit" class="pixel-btn" type="button">确认提交整卷</button></div></div>
+<div id="records" hidden></div><div class="actions"><button id="refresh" class="pixel-btn secondary" type="button">刷新进度</button><a class="pixel-btn secondary" href="/deeptalk">另开一轮</a></div>
+</section>
+<details id="sources" class="shell" hidden><summary>题库详情与来源</summary><div id="sourceBody"></div></details>
+<dialog id="confirmDialog" aria-labelledby="confirmTitle"><h2 id="confirmTitle">正式提交整卷？</h2><p>提交后，你的回答就不能再修改。双方都正式提交后，才会解锁双人回答。</p><div class="actions"><button id="cancelSubmit" class="pixel-btn secondary" type="button" autofocus>再检查一下</button><button id="confirmSubmit" class="pixel-btn" type="button">正式提交</button></div></dialog>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+let context, state, index = 0, busy = false, dirty = false, pendingAnswer = null, pendingCreate = null;
+const initialToken = localStorage.getItem('cedartoy_token') || '';
+let roundId = new URLSearchParams(location.search).get('round_id');
+const key = () => crypto.randomUUID();
+function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
+async function api(action, params = {}, write = false) {
+  if (localStorage.getItem('cedartoy_token') !== initialToken) { location.reload(); throw new Error('账号已切换，请重新读取'); }
+  const query = new URLSearchParams({action, ...params});
+  const res = await fetch(write ? '/api/deeptalk/action' : '/api/deeptalk?' + query, {
+    method:write ? 'POST' : 'GET', cache:'no-store', credentials:'omit',
+    headers:{Authorization:'Bearer ' + initialToken, ...(write ? {'Content-Type':'application/json'} : {})},
+    ...(write ? {body:JSON.stringify({action, ...params})} : {})
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    if (res.status === 401) { $('login').hidden = false; $('round').hidden = $('setup').hidden = true; }
+    throw new Error(data.error || '请求失败，请重试');
+  }
+  return data;
+}
+async function work(fn) {
+  if (busy) return;
+  busy = true;
+  const controls = [...document.querySelectorAll('button,select,textarea')];
+  const wasDisabled = controls.map(el => el.disabled);
+  controls.forEach(el => el.disabled = true);
+  try { await fn(); } catch (err) { message(err.message || '网络中断，请重试；未保存的输入仍保留在这里。', true); }
+  finally { busy = false; controls.forEach((el, i) => el.disabled = wasDisabled[i]); updateControls(); }
+}
+function option(value, label) { const el = document.createElement('option'); el.value = value; el.textContent = label; return el; }
+function updateControls() {
+  if (busy) return;
+  if (context) $('create').disabled = !context.machines.length || !context.topics.find(t => t.topic_id === $('topic').value)?.available;
+  if (!state) return;
+  $('previous').disabled = index === 0;
+  $('next').disabled = index >= state.total - 1;
+  $('save').disabled = $('skip').disabled = $('answer').disabled = state.submitted;
+  $('submit').disabled = state.submitted || state.progress.human.done !== state.total || dirty;
+}
+function setupTopic() {
+  const t = context.topics.find(t => t.topic_id === $('topic').value);
+  $('topicDescription').textContent = t.description + ' · ' + t.total + '题' + (t.available ? '' : ' · 题库尚未就绪');
+  $('chatPrompt').textContent = `请用 Deeptalk 的 ${t.topic_id}「${t.title}」，通过 questions 每次读取一题，我们在这里边聊边答，不提交答案。`;
+  $('sources').open = false; $('sourceBody').replaceChildren(); updateControls();
+}
+function progressText(role, name) { const p = state.progress[role]; return `${name}：${p.done}/${state.total}题 · ${p.submitted ? '已正式提交' : '未提交'}`; }
+function answerText(answer) { return answer ? answer.skipped ? '已跳过' : answer.text : '尚未回答'; }
+function renderQuestion() {
+  const q = state.questions[index];
+  $('questionJump').value = String(index);
+  $('questionText').textContent = `${index + 1}. ${q.text}`;
+  $('answer').value = q.own?.text || '';
+  $('answer').hidden = $('answerLabel').hidden = state.submitted;
+  $('ownRead').hidden = !state.submitted; $('ownRead').textContent = answerText(q.own);
+  $('saveHint').textContent = state.submitted ? '整卷已提交，你的回答已锁定。' : q.own?.skipped ? '这题已跳过。正式提交前，你仍可补写回答。' : q.own ? '这题已保存。正式提交前仍可修改。' : '点击保存，或切换题目时保存。正式提交前随时可改。';
+  $('save').hidden = $('skip').hidden = $('submit').hidden = state.submitted;
+  dirty = false; pendingAnswer = null; updateControls();
+}
+function renderRound() {
+  $('setup').hidden = true; $('round').hidden = false; $('sources').hidden = false;
+  $('roundTitle').textContent = state.title; $('participants').textContent = `${state.human_name} × ${state.ai_name}`;
+  $('progress').textContent = progressText('human',state.human_name) + ' ｜ ' + progressText('ai',state.ai_name);
+  $('lockHint').textContent = state.unlocked ? '双方均已正式提交，完整双人回答已解锁并保存。' : state.submitted ? '你已正式提交，等待小机提交。此时双方仍看不到对方的答案。' : '双方正式提交前，你只能看到自己的回答与双方进度。';
+  $('editor').hidden = state.unlocked; $('records').hidden = !state.unlocked;
+  if (state.unlocked) {
+    $('records').replaceChildren();
+    for (const q of state.questions) {
+      const article = document.createElement('article'); article.className = 'record';
+      const title = document.createElement('h3'); title.textContent = `${q.number}. ${q.text}`; article.append(title);
+      const pair = document.createElement('div'); pair.className = 'answer-pair';
+      for (const [name, answer] of [[state.human_name,q.own],[state.ai_name,q.partner]]) {
+        const section = document.createElement('div'), label = document.createElement('b'), text = document.createElement('p');
+        label.textContent = name; text.textContent = answerText(answer); section.append(label,text); pair.append(section);
+      }
+      article.append(pair); $('records').append(article);
+    }
+  } else {
+    $('questionJump').replaceChildren(...state.questions.map((q,i) => option(i, `第${i+1}题 · ${q.own ? q.own.skipped ? '已跳过' : '已回答' : '待回答'}`)));
+    renderQuestion();
+  }
+  updateControls();
+}
+async function loadRound(initial = false) {
+  state = await api('view',{round_id:roundId});
+  if (initial) index = state.next_number - 1;
+  renderRound();
+}
+async function saveAnswer(skip = false) {
+  if (state.submitted) return;
+  const q = state.questions[index], text = $('answer').value;
+  if (!skip && !text.trim()) throw new Error('请填写回答，或点击「跳过这题」。');
+  const body = {round_id:roundId, question_id:q.id, revision:state.revision, ...(skip ? {skip:true} : {text})};
+  const fingerprint = JSON.stringify(body);
+  if (!pendingAnswer || pendingAnswer.fingerprint !== fingerprint) pendingAnswer = {fingerprint, body:{...body,request_id:key()}};
+  const result = await api('answer',pendingAnswer.body,true);
+  state = {...state,...result}; q.own = skip ? {skipped:true} : {text,skipped:false};
+  dirty = false; pendingAnswer = null; renderRound(); message(skip ? '已保存跳过。' : '回答已保存。');
+}
+async function move(next) { if (dirty) await saveAnswer(); index = next; renderQuestion(); $('questionText').focus(); }
+$('topic').onchange = setupTopic;
+$('mode').onchange = () => { const chat = $('mode').value === 'chat'; $('blindIntro').hidden = chat; $('chatIntro').hidden = !chat; };
+$('create').onclick = () => work(async () => {
+  const choice = {topic_id:$('topic').value,ai_id:Number($('machine').value)};
+  const fingerprint = JSON.stringify(choice);
+  if (!pendingCreate || pendingCreate.fingerprint !== fingerprint) pendingCreate = {fingerprint,body:{...choice,request_id:key()}};
+  // Retain the exact request across a refresh after an uncertain network response.
+  sessionStorage.setItem('deeptalk_pending_create',JSON.stringify(pendingCreate));
+  const result = await api('create',pendingCreate.body,true);
+  roundId = result.round_id; pendingCreate = null; sessionStorage.removeItem('deeptalk_pending_create');
+  history.replaceState(null,'','/deeptalk?round_id=' + encodeURIComponent(roundId));
+  await loadRound(true); message('新一轮已保存。请让小机通过 Deeptalk history 找到这一轮。');
+});
+$('answer').oninput = () => { dirty = true; updateControls(); $('saveHint').textContent = '有尚未保存的修改。'; };
+$('save').onclick = () => work(() => saveAnswer());
+$('skip').onclick = () => work(async () => { await saveAnswer(true); if (index < state.total-1) { index++; renderQuestion(); } });
+$('previous').onclick = () => work(() => move(index-1));
+$('next').onclick = () => work(() => move(index+1));
+$('questionJump').onchange = () => { const next = Number($('questionJump').value); $('questionJump').value = String(index); work(() => move(next)); };
+$('refresh').onclick = () => work(async () => {
+  if (dirty && !confirm('刷新会舍弃这题尚未保存的修改，读取服务器上的回答。确定刷新？')) return;
+  await loadRound(); message('已刷新。');
+});
+$('submit').onclick = () => $('confirmDialog').showModal();
+$('cancelSubmit').onclick = () => $('confirmDialog').close();
+$('confirmSubmit').onclick = () => work(async () => {
+  await api('submit',{round_id:roundId,revision:state.revision,confirm:true},true);
+  $('confirmDialog').close(); await loadRound(); message('整卷已正式提交。');
+});
+$('sources').ontoggle = () => { if ($('sources').open && !$('sourceBody').hasChildNodes()) work(async () => {
+  const data = await api('source',state ? {round_id:roundId} : {topic_id:$('topic').value});
+  const labels = {title:'题库',description:'简介',author:'作者',source_url:'来源',license:'许可',license_url:'许可链接',adaptation_note:'改编说明',sources:'复合来源'};
+  for (const [field,label] of Object.entries(labels)) {
+    if (!data[field]) continue;
+    const p = document.createElement('p'); p.textContent = label + '：' + (typeof data[field] === 'string' ? data[field] : JSON.stringify(data[field],null,2)); $('sourceBody').append(p);
+  }
+}); };
+window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('storage', event => {
+  if (event.key === 'cedartoy_token') {
+    dirty = false; state = null; $('round').hidden = true; $('records').replaceChildren(); $('answer').value = '';
+    location.reload();
+  }
+});
+work(async () => {
+  if (!initialToken) { $('login').hidden = false; message('登录后可以创建和继续轮次。'); return; }
+  if (roundId) { await loadRound(true); message('轮次已恢复。'); return; }
+  context = await api('context');
+  $('topic').replaceChildren(...context.topics.map(t => option(t.topic_id,t.title + ' · ' + t.total + '题')));
+  $('machine').replaceChildren(...context.machines.map(m => option(m.id,m.username)));
+  $('bindingHint').textContent = context.machines.length ? '只会和你选择的小机共享这一轮。' : '你还没有绑定小机。请先回首页绑定；也可以选择「边聊边答」查看指引。';
+  try { pendingCreate = JSON.parse(sessionStorage.getItem('deeptalk_pending_create')); } catch (_) { /* Ignore a damaged retry hint. */ }
+  $('setup').hidden = false; $('sources').hidden = false; setupTopic(); message('已登录：' + context.username);
+});
+</script>
+</body>
+</html>

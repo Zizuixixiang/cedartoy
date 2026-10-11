@@ -1,0 +1,206 @@
+{
+  "game": "ppts",
+  "title": "拖延与提前完成 PPTS",
+  "author": "Waqar Husain, Khaled Trabelsi, Achraf Ammar, Zahra Saif & Haitham Jahrami",
+  "author_short": "Husain",
+  "source": "https://doi.org/10.1186/s40359-025-03072-6",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "中文为依照正式论文英文题目所作的未验证翻译。4399 描述性均分，非原量表标准分；不作诊断，不设临床阈值或常模。原研究对象为18–38岁成年人；小机作答仅作娱乐演绎，不具有人类量表效度。",
+  "instruction": "请选择每种行为在你身上出现的频率。原文仅命名量尺两端，中间档位保留数字。",
+  "options": [
+    {
+      "value": 1,
+      "text": "从不"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "总是"
+    }
+  ],
+  "dimensions": {
+    "procrastination": "拖延（描述性均分）",
+    "precrastination": "提前完成（描述性均分）"
+  },
+  "items": [
+    {
+      "id": 1,
+      "text": "即使知道不该这样，我还是会拖延开始重要任务。",
+      "original": "I delay getting started on important tasks, even when I know I shouldn't.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc1"
+    },
+    {
+      "id": 2,
+      "text": "我总是推迟处理令人不快的杂事或义务。",
+      "original": "I keep putting off unpleasant chores or obligations.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc2"
+    },
+    {
+      "id": 3,
+      "text": "我发现自己会漫无目的地浏览，而不是做正事。",
+      "original": "I find myself aimlessly browsing instead of working.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc3"
+    },
+    {
+      "id": 4,
+      "text": "我会等到最后一刻才为考试或截止日期做准备。",
+      "original": "I wait until the last minute to prepare for tests or deadlines.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc4"
+    },
+    {
+      "id": 5,
+      "text": "我告诉自己“明天”能完成更多，而不是今天就付诸行动。",
+      "original": "I tell myself I'll get more done \"tomorrow\" rather than following through today.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc5"
+    },
+    {
+      "id": 6,
+      "text": "我把时间浪费在不重要的干扰上，而不是优先事项上。",
+      "original": "I waste time on unimportant distractions instead of priorities.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc6"
+    },
+    {
+      "id": 7,
+      "text": "我会拖延运动、饮食或预约等与健康有关的事情。",
+      "original": "I procrastinate on health habits like exercise, diet, or appointments.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc7"
+    },
+    {
+      "id": 8,
+      "text": "即使是小决定，我也会不必要地拖着不做。",
+      "original": "I unnecessarily delay making even small decisions.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc8"
+    },
+    {
+      "id": 9,
+      "text": "我会太久不回复电子邮件、消息或电话。",
+      "original": "I leave emails, messages or calls unanswered for too long.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc9"
+    },
+    {
+      "id": 10,
+      "text": "由于拖延清洁或整理，我的空间变得杂乱无章。",
+      "original": "My spaces become cluttered and disorganized from postponing cleaning/organizing.",
+      "dimension": "procrastination",
+      "reverse": false,
+      "source_id": "Proc10"
+    },
+    {
+      "id": 11,
+      "text": "我会尽快完成任务，好把它们处理掉。",
+      "original": "I complete tasks as soon as possible to get them out of the way.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec1"
+    },
+    {
+      "id": 12,
+      "text": "我会立刻处理杂事或义务，而不是拖延。",
+      "original": "I take care of chores or obligations immediately rather than delaying.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec2"
+    },
+    {
+      "id": 13,
+      "text": "我会马上处理令人不快的任务，不把它们往后拖。",
+      "original": "I tackle unpleasant tasks right away without postponing.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec3"
+    },
+    {
+      "id": 14,
+      "text": "在可能的情况下，我会努力提前完成事情。",
+      "original": "I try to get things done ahead of schedule when possible.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec5"
+    },
+    {
+      "id": 15,
+      "text": "即使是小事，我也不会拖着不做决定。",
+      "original": "I don't postpone making decisions, even on small matters.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec6"
+    },
+    {
+      "id": 16,
+      "text": "我会及时回复消息、电子邮件或电话，不加拖延。",
+      "original": "I reply to messages, emails, or calls promptly without delay.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec7"
+    },
+    {
+      "id": 17,
+      "text": "我始终保持工作和生活空间整洁有序。",
+      "original": "I keep my work and living spaces consistently neat and organized.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec8"
+    },
+    {
+      "id": 18,
+      "text": "我不会等到截止日期才开始重要任务或目标。",
+      "original": "I don't wait for deadlines to start on important tasks or goals.",
+      "dimension": "precrastination",
+      "reverse": false,
+      "source_id": "Prec9"
+    }
+  ],
+  "aggregation": "mean",
+  "suppress_total": true,
+  "blocked": false,
+  "overall_mean": false,
+  "scoring_note": "4399 描述性均分，非原量表标准分：拖延10题、提前完成8题分别取算术均分，范围均为1–5；无反向题，不合并总分，不把提前完成倒分为拖延。分数仅描述对应行为的报告频率，不能据此判定健康与否。",
+  "scoring_basis": "platform_descriptive_mean",
+  "source_version": "Husain et al. (2025), original 18-item PPTS; Proc1–10 and Prec1/2/3/5/6/7/8/9",
+  "sources": [
+    {
+      "url": "https://link.springer.com/article/10.1186/s40359-025-03072-6",
+      "evidence": "Measures: 18 items, 1 Never to 5 Always; Rights and permissions: CC BY 4.0."
+    },
+    {
+      "url": "https://link.springer.com/article/10.1186/s40359-025-03072-6/tables/1",
+      "evidence": "Initial 20 item wordings; remove Prec4 and Prec10, retain the original source IDs."
+    }
+  ],
+  "translation": {
+    "language": "zh-CN",
+    "status": "未验证翻译",
+    "from_language": "en"
+  },
+  "scoring_caveat": "未核得原作者个人合成评分公式。均分是4399为自我了解设置的描述性汇总，不声称复现论文所报告的子量表总分。",
+  "verified_at": "2026-10-11"
+}

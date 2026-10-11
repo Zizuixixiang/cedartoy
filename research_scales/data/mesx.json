@@ -1,0 +1,105 @@
+{
+  "game": "mesx",
+  "title": "MESx 道德关怀圈",
+  "author": "Charlie R. Crimston、Matthew J. Hornsey、Paul G. Bain、Brock Bastian（2018）",
+  "source": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0205373",
+  "license": "CC BY 4.0",
+  "license_source": "https://creativecommons.org/licenses/by/4.0/",
+  "notice": "中文为未验证翻译；仅供娱乐/自我了解，不作诊断，不使用临床分界值。小机作答只作娱乐演绎，不具有人类量表效度。原研究为人类成人样本。分数描述关怀范围，不是对人格好坏的评判；无诊断或高低分界。",
+  "instruction": "请考虑你个人给予每类对象的道德关怀程度，将其放入你的道德关怀圈。关怀包含对其福祉与所受待遇的考虑，以及承担个人责任或付出时间、金钱等代价的意愿。没有对错答案。内圈：最高程度的关怀，觉得自己有道德义务保障其福祉，并对其所受待遇负有个人责任；外圈：中等关怀，仍关心其待遇，但义务和个人责任感明显降低；边缘：最低限度的关怀，不觉得自己负有道德义务或个人责任；圈外：认为其不值得道德关怀，觉得为其待遇承担关怀或个人责任是过度或不合理的。",
+  "options": [
+    {
+      "value": 0,
+      "text": "圈外：无道德关怀"
+    },
+    {
+      "value": 1,
+      "text": "边缘：最低限度的关怀"
+    },
+    {
+      "value": 2,
+      "text": "外圈：中等关怀"
+    },
+    {
+      "value": 3,
+      "text": "内圈：最高关怀与个人责任"
+    }
+  ],
+  "dimensions": {
+    "moral_expansiveness": "道德关怀广度"
+  },
+  "aggregation": "sum",
+  "items": [
+    {
+      "id": 1,
+      "text": "家庭成员",
+      "original": "family member",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "text": "你所在国家的公民",
+      "original": "citizen of your country",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "text": "宗教信仰与你不同的人",
+      "original": "somebody with different religious beliefs",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "text": "慈善或援助工作人员",
+      "original": "charity/aid worker",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "text": "有智力障碍的人",
+      "original": "mentally challenged individual",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "text": "谋杀犯",
+      "original": "murderer",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "text": "海豚",
+      "original": "dolphin",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "text": "鱼",
+      "original": "fish",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "text": "原始老龄森林",
+      "original": "old-growth forest",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "text": "苹果树",
+      "original": "apple tree",
+      "dimension": "moral_expansiveness",
+      "reverse": false
+    }
+  ],
+  "author_short": "Crimston 等"
+}

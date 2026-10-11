@@ -429,6 +429,12 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--deeptalk"]:
+        from check_deeptalk_persistence import main as deeptalk_main
+        sys.exit(deeptalk_main())
+    if sys.argv[1:] == ["--research-scales"]:
+        from check_research_scale_persistence import main as research_main
+        sys.exit(research_main())
     if sys.argv[1:] in (["--duel-bomb-plane"], ["--duel-carcassonne"]):
         duel = ROOT / "vendor" / "duel"
         python = os.environ.get("DUEL_TEST_PYTHON", str(duel / ".venv" / "bin" / "python"))
@@ -464,5 +470,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere]")
+        sys.exit("用法：persistence_check.py [--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere]")
     sys.exit(main())

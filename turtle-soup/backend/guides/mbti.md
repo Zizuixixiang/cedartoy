@@ -1,36 +1,13 @@
-# MBTI 游戏说明
+# mbti · MBTI 人格类型
+用四维偏好了解人格类型。
+short/short_fast：16题；full/full_fast：93题。short、full逐题；short_fast一次16题，full_fast每批最多16题（末批13题）。
+a_score为0–5整数：5完全偏A、0完全偏B，中间值表示倾向强弱。
+整套题库文本：short/short_fast 16题 492字符 / 约585 Token；full/full_fast 93题 1950字符 / 约2339 Token（题干逐题计，相同选项组仅计一次；cl100k_base，非实际调用总消耗）。
 
-通过根 MCP 聚合层的 `play(game="mbti", action=...)` 调用。业务参数放进 params 对象。持久 MCP 连接可省略 player_id（服务端自动注入），游客须在 params 中传入 player_id。
+调用 play(game="mbti", action=下列动作, params=对应对象)。登录可省player_id；游客生成唯一英数字ID（加guest:前缀并保存复用；勿照抄示例）。
+- mbti_start {"mode":"short"}：逐题开始；批量改为short_fast。再次start会重置进度。
+- mbti_answer {"a_score":3}：提交当前题，返回下一题。
+- mbti_answer_batch {"a_scores":[3,3]}：仅用于快速模式，数组仅示意；按本批题序提交，长度须等于本批题数；返回下一批，直到完成。
+- mbti_get_result {}：读取最近完成结果，答完也自动返回结果。 账号结果长期保留，游客结果48小时。
 
-## 可用 action
-
-- `tools/list`：查看原始 MBTI MCP 工具列表。
-- `mbti_start`：开始或重置测试。
-  - 参数：`player_id`，1-10 位字母数字（账号用户可省略）。
-  - 参数：`mode`，可选 `short`、`full`、`short_fast`、`full_fast`。
-- `mbti_answer`：逐题模式提交当前题答案。
-  - 参数：`player_id`（账号用户可省略）。
-  - 参数：`a_score`，0-5 整数。5=完全偏向 A，0=完全偏向 B。
-- `mbti_answer_batch`：快速模式提交一批答案。
-  - 参数：`player_id`（账号用户可省略）。
-  - 参数：`a_scores`，按题目顺序填写 0-5 整数数组。
-- `mbti_get_result`：查询最近一次已完成测试结果。账号结果永久保留，游客结果保留 48 小时。
-  - 参数：`player_id`（账号用户可省略）。
-
-## 示例
-
-```json
-{"game":"mbti","action":"mbti_start","params":{"player_id":"u123","mode":"short_fast"}}
-```
-
-```json
-{"game":"mbti","action":"mbti_answer_batch","params":{"player_id":"u123","a_scores":[5,4,3,2,1,0,5,4,3,2,1,0,5,4,3,2]}}
-```
-
-```json
-{"game":"mbti","action":"mbti_get_result","params":{"player_id":"u123"}}
-```
-
-## 来源
-
-题库整理自网络公开题目。
+作者：南山君；中文题库整理自网络公开题目。

@@ -60,6 +60,7 @@
     h1 { margin: 7px 0 6px; color: var(--purple-darker); font-size: clamp(26px, 7vw, 46px); line-height: 1.15; }
     .hero p { margin: 0; color: var(--muted); font-size: 14px; }
     .question-intro.page-disclaimer { margin: 14px 0 0; font-size: 12px; }
+    #source { overflow-wrap: anywhere; }
     .page-disclaimer[hidden] { display: none; }
     .shell {
       position: relative;
@@ -264,6 +265,14 @@
     .compare-box h3 { margin: 0 0 10px; color: var(--purple-darker); font-size: 14px; }
     .compare-form { display: flex; flex-wrap: wrap; gap: 10px; }
     .compare-form input { flex: 1 1 220px; min-width: 0; padding: 10px 12px; color: var(--text); background: #fff; border: 3px solid var(--purple-light); }
+    .aidep-sharing { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+    .aidep-sharing label { display: block; margin-bottom: 8px; color: var(--purple-darker); font-size: 14px; font-weight: 700; }
+    .aidep-sharing p { margin: 8px 0; }
+    .aidep-sharing .share-help { color: var(--muted); font-size: 12px; }
+    .aidep-sharing select { flex: 1 1 220px; width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 3px solid var(--purple-light); background: #fff; color: var(--text); font-size: 13px; }
+    .aidep-sharing button { min-height: 44px; font-size: 12px; }
+    .aidep-sharing :focus-visible { outline: 2px solid var(--purple-darker); outline-offset: 3px; }
+    .aidep-sharing pre { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
     .compare-people { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .compare-person { padding: 14px; background: var(--bg); border: 2px solid var(--purple-light); overflow-wrap: anywhere; }
     .compare-person h3 { margin: 0 0 9px; color: var(--purple-darker); font-size: 13px; }
@@ -391,6 +400,7 @@
   </main>
   <script>
     const CONFIG = __TEST_GAME_CONFIG__;
+    const hasModes = CONFIG.research || ["mbti", "enneagram"].includes(CONFIG.game);
     const TOKEN_KEY = "cedartoy_token";
     const GUEST_KEY = "cedartoy_guest_web_player_id";
     const panels = ["loadingPanel", "modePanel", "questionPanel", "reviewPanel", "resultPanel"];
@@ -398,6 +408,7 @@
     let answers = [];
     let cursor = 0;
     let busy = false;
+    let restartSessionId = null;
     let resultRadarCleanup = null;
 
     const $ = (id) => document.getElementById(id);
@@ -406,6 +417,10 @@
     $("subtitle").textContent = CONFIG.subtitle;
     $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
     $("pageDisclaimer").hidden = !CONFIG.disclaimer;
+    if (CONFIG.research) {
+      $("modePanel").querySelector(".lead").textContent = "逐题模式每答一题即保存；批量模式先在此设备作答，答齐后一次提交。两种模式使用相同题目与计分。";
+      $("questionIntro").style.fontSize = "13px";
+    }
     if (CONFIG.game === "enneagram") {
       $("source").textContent = "题库来自 kcdjmaxx/enneagram-llm-evaluator · ";
       const sourceLink = document.createElement("a");
@@ -459,10 +474,13 @@
       $("identity").textContent = label;
     }
     function setButtonsDisabled(disabled) {
-      document.querySelectorAll("button").forEach((button) => { button.disabled = disabled; });
+      document.querySelectorAll("button").forEach((button) => {
+        if (!button.closest(".aidep-sharing")) button.disabled = disabled;
+      });
     }
 
     async function api(action, payload = {}, retryGuest = true) {
+      if (CONFIG.research && action === "answer_batch") payload = {...payload, session_id: activeState.session_id};
       const response = await fetch(`/api/${CONFIG.game}/${action}`, {
         method: "POST",
         headers: requestHeaders(),
@@ -483,6 +501,8 @@
     }
 
     function renderModes() {
+      $("aidepSharing")?.remove();
+      if (CONFIG.research && activeState) restartSessionId = activeState.session_id;
       activeState = null;
       answers = [];
       cursor = 0;
@@ -492,6 +512,11 @@
         ? [
             {edition: "quick", label: "快速型 · 36题 A/B", desc: "快速查看主型与脑、心、腹三中心相对分"},
             {edition: "complete", label: "完整型 · 180题", desc: "完整计算主型、侧翼、三中心与 tritype 推测"}
+          ]
+        : CONFIG.research
+        ? [
+            {edition: "full", label: `逐题作答 · ${CONFIG.total}题`, desc: "每题提交即保存，可恢复到下一道未答题"},
+            {edition: CONFIG.modes[1], label: `一次性提交 · ${CONFIG.total}题`, desc: "本机保存草稿，答齐后统一提交，可在提交前修改"}
           ]
         : [
             {edition: "quick", label: "快速版 · 16题", desc: "用较短时间完成一次人格偏好扫描"},
@@ -519,16 +544,21 @@
       cursor = 0;
       try {
         const saved = JSON.parse(localStorage.getItem(draftKey()) || "null");
-        if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
+        if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && (!CONFIG.research || saved.session_id === state.session_id) && saved.total === state.total && Array.isArray(saved.answers)) {
           answers = Array.from({length: state.total}, (_, index) => Number.isInteger(saved.answers[index]) ? saved.answers[index] : null);
           cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
         }
       } catch (_) {}
+      if (CONFIG.research && state.mode === "full") {
+        cursor = state.progress;
+        answers = Array(state.total).fill(null);
+      }
     }
     function saveDraft() {
       if (!activeState) return;
       localStorage.setItem(draftKey(), JSON.stringify({
         game: CONFIG.game,
+        session_id: activeState.session_id,
         edition: activeState.edition,
         total: activeState.total,
         answers,
@@ -552,7 +582,9 @@
     }
 
     function renderState(state) {
+      $("aidepSharing")?.remove();
       activeState = state;
+      restartSessionId = null;
       setIdentity(state);
       if (state.complete) {
         clearDraft();
@@ -560,25 +592,137 @@
         renderResult(state.result_data, state.result || "结果已生成。");
         $("compareBox").hidden = !(CONFIG.game === "love" || CONFIG.game === "ecr");
         showPanel("resultPanel");
+        if (CONFIG.game === "aidep" && state.identity === "account" && token()) mountAidepSharing(state);
         scrollToResultPanel();
         return;
       }
       restoreDraft(state);
-      $("statusText").textContent = "SYSTEM / LOCAL SAVE";
+      $("statusText").textContent = CONFIG.research && state.mode === "full" ? "SYSTEM / SAVED PROGRESS" : "SYSTEM / LOCAL SAVE";
       renderQuestion();
       showPanel("questionPanel");
+    }
+
+    function mountAidepSharing(state) {
+      const section = makeResultElement("section", "compare-box aidep-sharing");
+      section.id = "aidepSharing";
+      const label = makeResultElement("label", "", "允许绑定的小机查看本次结果");
+      label.htmlFor = "aidepShareTarget";
+      const help = makeResultElement("p", "share-help", "默认仅自己可见。仅分享总体与四维分数及说明，不分享22道答案。重测后需重新授权；关闭后小机不能再次读取，已读到的内容无法收回。");
+      const form = makeResultElement("div", "compare-form");
+      const select = document.createElement("select");
+      select.id = "aidepShareTarget";
+      const save = makeResultElement("button", "pixel-button secondary", "保存选择");
+      save.type = "button";
+      const status = makeResultElement("p", "", "正在读取分享设置…");
+      status.setAttribute("role", "status");
+      const retry = makeResultElement("button", "pixel-button secondary", "刷新分享设置");
+      retry.type = "button";
+      retry.hidden = true;
+      const example = makeResultElement("pre", "");
+      const copy = makeResultElement("button", "pixel-button secondary", "复制给小机的查看指令");
+      copy.type = "button";
+      example.hidden = copy.hidden = true;
+      select.disabled = save.disabled = true;
+      form.append(select, save);
+      section.append(label, help, form, status, retry, example, copy);
+      $("resultPanel").querySelector(".actions").before(section);
+      let settings = null;
+      let savedStatus = "";
+      const originalToken = token();
+      const current = () => section.isConnected && activeState === state && token() === originalToken;
+      const lock = (value) => { select.disabled = save.disabled = retry.disabled = value; };
+      async function request(change) {
+        if (!originalToken || token() !== originalToken) throw new Error("登录身份已变化，请刷新结果页");
+        const response = await fetch("/api/aidep/sharing", {
+          method: change ? "POST" : "GET", cache: "no-store",
+          headers: {"Content-Type": "application/json", Authorization: `Bearer ${originalToken}`},
+          ...(change ? {body: JSON.stringify(change)} : {})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "分享设置请求失败");
+        if (data.session_id !== state.session_id) throw new Error("结果已变化，请刷新结果页后重新授权");
+        return data;
+      }
+      function display(data) {
+        settings = data;
+        select.replaceChildren();
+        const off = makeResultElement("option", "", "关闭 · 仅自己可见");
+        off.value = "";
+        select.appendChild(off);
+        data.bindings.forEach((binding) => {
+          const option = makeResultElement("option", "", binding.username);
+          option.value = String(binding.ai_id);
+          select.appendChild(option);
+        });
+        select.value = data.enabled ? String(data.ai_id) : "";
+        const target = data.bindings.find(b => b.ai_id === data.ai_id);
+        status.textContent = data.enabled ? `已授权：${target.username} · 仅本次结果` : "当前：仅自己可见";
+        if (!data.bindings.length) status.textContent += "。暂无已绑定的小机，可在首页账号设置中绑定后刷新。";
+        savedStatus = status.textContent;
+        retry.hidden = data.bindings.length > 0;
+        example.textContent = data.example;
+        example.hidden = true;
+        copy.hidden = !data.enabled;
+        copy.textContent = "复制给小机的查看指令";
+      }
+      async function load() {
+        lock(true);
+        try {
+          const data = await request();
+          if (current()) { display(data); lock(false); }
+        } catch (error) {
+          if (current()) {
+            settings = null;
+            status.textContent = `无法确认当前分享状态：${error.message}`;
+            example.hidden = copy.hidden = true;
+            retry.hidden = false;
+            retry.disabled = false;
+          }
+        }
+      }
+      select.addEventListener("change", () => {
+        status.textContent = `${savedStatus}。选择尚未保存；点击「保存选择」后生效。`;
+      });
+      save.addEventListener("click", async () => {
+        if (!settings) return;
+        lock(true);
+        status.textContent = "正在保存…";
+        try {
+          const data = await request({enabled: select.value !== "", ai_id: Number(select.value),
+            session_id: state.session_id, result_version: settings.result_version});
+          if (current()) { display(data); lock(false); }
+        } catch (error) {
+          if (current()) {
+            settings = null;
+            status.textContent = `保存未确认：${error.message}。请刷新分享设置核对。`;
+            example.hidden = copy.hidden = true;
+            retry.hidden = false;
+            retry.disabled = false;
+          }
+        }
+      });
+      retry.addEventListener("click", load);
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(example.textContent); copy.textContent = "已复制"; }
+        catch (_) { example.hidden = false; copy.textContent = "请选中上方指令复制"; }
+      });
+      load();
     }
 
     function renderQuestion() {
       const question = activeState.questions[cursor];
       if (!question) return;
-      const answeredCount = answers.filter(Number.isInteger).length;
-      $("modeLabel").textContent = CONFIG.game === "mbti"
+      const answeredCount = CONFIG.research && activeState.mode === "full" ? activeState.progress : answers.filter(Number.isInteger).length;
+      $("modeLabel").textContent = CONFIG.research
+        ? (activeState.mode === "full" ? "逐题作答 · 即时保存" : "批量作答 · 答齐后提交")
+        : CONFIG.game === "mbti"
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
         : CONFIG.game === "enneagram"
         ? (activeState.edition === "quick" ? "快速型 · 36题 A/B" : "完整型 · 180题")
         : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题", sins_virtues: "七宗罪 VS 七美德 · 35题"}[CONFIG.game] || "测试");
-      $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
+      $("progressLabel").textContent = CONFIG.research
+        ? `${cursor + 1} / ${activeState.total} · 未答 ${activeState.total - (activeState.mode === "full" ? activeState.progress : answeredCount)}`
+        : `${cursor + 1} / ${activeState.total}`;
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
       $("questionNumber").textContent = `QUESTION ${question.number}`;
       $("questionText").textContent = question.text;
@@ -617,6 +761,7 @@
         $("answers").className = "answers";
         question.options.forEach((option) => addAnswer(option.value, `${option.value}. ${option.text}`));
       }
+      $("previousButton").hidden = CONFIG.research && activeState.mode === "full";
       $("previousButton").disabled = busy || cursor === 0;
       $("reviewButton").hidden = !answers.every(Number.isInteger);
     }
@@ -745,10 +890,10 @@
       $("statusText").textContent = "SYSTEM / INITIALIZING";
       try {
         if (discardDraft && activeState) localStorage.removeItem(draftKey());
-        renderState(await api("start", ["mbti", "enneagram"].includes(CONFIG.game) ? {edition} : {}));
+        renderState(await api("start", CONFIG.research ? {mode: edition, restart: !!restartSessionId, confirm: discardDraft, session_id: restartSessionId} : hasModes ? {edition} : {}));
       } catch (error) {
         showError(error.message);
-        if (["mbti", "enneagram"].includes(CONFIG.game)) {
+        if (hasModes) {
           renderModes();
         } else {
           $("loadingPanel").querySelector("span").textContent = "连接失败，请刷新重试";
@@ -759,8 +904,22 @@
         setButtonsDisabled(false);
       }
     }
-    function answer(value) {
+    async function answer(value) {
       if (busy || !activeState) return;
+      if (CONFIG.research && activeState.mode === "full") {
+        busy = true;
+        setButtonsDisabled(true);
+        showError();
+        try {
+          renderState(await api("answer", {session_id: activeState.session_id, expected_index: activeState.progress, answer: value}));
+        } catch (error) {
+          showError(error.message);
+        } finally {
+          busy = false;
+          setButtonsDisabled(false);
+        }
+        return;
+      }
       answers[cursor] = value;
       if (cursor < activeState.total - 1) cursor += 1;
       saveDraft();
@@ -1442,7 +1601,7 @@
       } catch (error) {
         if (error.status === 404) {
           $("identity").textContent = token() ? "ACCOUNT" : "GUEST / LOCAL SAVE";
-          if (["mbti", "enneagram"].includes(CONFIG.game)) renderModes();
+          if (hasModes) renderModes();
           else await start("standard");
         } else {
           showError(error.message);
@@ -1458,7 +1617,7 @@
     $("restartButton").addEventListener("click", () => {
       showError();
       if (activeState) localStorage.removeItem(draftKey());
-      if (["mbti", "enneagram"].includes(CONFIG.game)) renderModes();
+      if (hasModes) renderModes();
       else start("standard", true);
     });
     resume();

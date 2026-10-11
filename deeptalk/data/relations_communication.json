@@ -1,0 +1,119 @@
+{
+  "topic_id": "relations_communication",
+  "title": "关系与沟通",
+  "description": "从界限、倾听和征求同意，聊聊彼此如何沟通与相处。",
+  "author": "Intersectional Sexualized Violence – International Student Resource Development Team；© 2024 Government of British Columbia；BCcampus；Victoria Leonard & Elizabeth Coleman；ASCCC OERI；英文题中译与编排：CedarToy（逐题归属见 sources）",
+  "source_url": "https://opentextbc.ca/isvinternationalzh/",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "adaptation_note": "合并原关系与边界5题、沟通与理解4题、同意与尊重4题，保留原13题的id、text、source_ref及各来源的作者和许可。H1/H3采用官方简体中文；教材四题为CedarToy中译，授权限定Coalinga College保存的第6.8节PDF版本。顶层source_url为BCcampus作品入口，全部具体出处及处理说明见sources；不再作为三个独立题包。",
+  "questions": [
+    {
+      "id": "h1_01",
+      "text": "哪些事情和人会让我在生活中感到安全和受支持？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H1.pdf#page=1 — 第1单元《理解和表达我们的界限》，更多了解自己的界限，第1个项目符号问题。"
+    },
+    {
+      "id": "h1_02",
+      "text": "我喜欢如何度过我的时间，我想与谁在一起？当别人不尊重我在时间上的决定时，我感觉如何？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H1.pdf#page=1 — 第1单元《理解和表达我们的界限》，更多了解自己的界限，第2个项目符号问题。"
+    },
+    {
+      "id": "h1_03",
+      "text": "当有人在没有事先询问我的情况下将我的照片发布到网上时，我感觉如何？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H1.pdf#page=1 — 第1单元《理解和表达我们的界限》，更多了解自己的界限，第3个项目符号问题。"
+    },
+    {
+      "id": "h1_04",
+      "text": "当有人问我一些我不想讨论或让我不舒服的话题时，我感觉如何？我觉得有能力告诉他们不要这样做吗？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H1.pdf#page=1 — 第1单元《理解和表达我们的界限》，更多了解自己的界限，第4个项目符号问题。"
+    },
+    {
+      "id": "h1_05",
+      "text": "我认为什么是“我的个人空间”？当我的个人空间不受尊重时，我感觉如何？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H1.pdf#page=1 — 第1单元《理解和表达我们的界限》，更多了解自己的界限，第5个项目符号问题。"
+    },
+    {
+      "id": "ccc_6_8_02",
+      "text": "你倾听时的方式是怎样的？你能想到一个这种倾听方式有帮助的情境吗？你能举一个这种倾听方式有害的例子吗？了解这些情况能怎样帮助你改善倾听？",
+      "source_ref": "https://coalingacollege.edu/oer/documents/interpersonalcommunicationcontextandconnectionascccoeri.pdf — 6.8: Summary and Review，Discussion Questions 第2题，印刷页码6.8.1；同节授权在6.8.2。"
+    },
+    {
+      "id": "ccc_6_8_03",
+      "text": "哪些倾听障碍对你的影响最大？在不同的沟通情境中，你可以采取哪些措施来减少这些障碍？",
+      "source_ref": "https://coalingacollege.edu/oer/documents/interpersonalcommunicationcontextandconnectionascccoeri.pdf — 6.8: Summary and Review，Discussion Questions 第3题，印刷页码6.8.1；同节授权在6.8.2。"
+    },
+    {
+      "id": "ccc_6_8_04",
+      "text": "你发现自己容易出现哪些妨碍有效倾听的做法？你需要做出哪些具体改变，以减少或消除这些做法？",
+      "source_ref": "https://coalingacollege.edu/oer/documents/interpersonalcommunicationcontextandconnectionascccoeri.pdf — 6.8: Summary and Review，Discussion Questions 第4题，印刷页码6.8.1；同节授权在6.8.2。"
+    },
+    {
+      "id": "ccc_6_8_05",
+      "text": "你可以运用哪些积极倾听的方法来改善与他人的关系？",
+      "source_ref": "https://coalingacollege.edu/oer/documents/interpersonalcommunicationcontextandconnectionascccoeri.pdf — 6.8: Summary and Review，Discussion Questions 第5题，印刷页码6.8.1；同节授权在6.8.2。"
+    },
+    {
+      "id": "h3_01",
+      "text": "你第一次了解“同意”是什么时候？随着年龄的增长，你对“同意”的理解发生了怎样的变化？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H3.pdf#page=1 — 第3单元《谈谈有关同意的话题》，更多了解“同意”对你意味着什么，第1个项目符号问题。"
+    },
+    {
+      "id": "h3_02",
+      "text": "在哪些情况下你希望他人征求你的同意？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H3.pdf#page=1 — 第3单元《谈谈有关同意的话题》，更多了解“同意”对你意味着什么，第2个项目符号问题。"
+    },
+    {
+      "id": "h3_03",
+      "text": "你认为除了性行为之外还有哪些其他情况需要征求同意吗？可以举一些例子吗？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H3.pdf#page=1 — 第3单元《谈谈有关同意的话题》，更多了解“同意”对你意味着什么，第3个项目符号问题。"
+    },
+    {
+      "id": "h3_04",
+      "text": "你是否经常征求你的伴侣的同意？如果是，你是如何征求同意的？你对此有什么想改变的吗？如果没有，为什么没有呢？对于征求同意你有什么害怕的吗？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H3.pdf#page=1 — 第3单元《谈谈有关同意的话题》，更多了解“同意”对你意味着什么，第4至6个项目符号：主问及“如果是／如果没有”追问合并。"
+    }
+  ],
+  "sources": [
+    {
+      "question_ids": [
+        "h1_01",
+        "h1_02",
+        "h1_03",
+        "h1_04",
+        "h1_05"
+      ],
+      "author": "Intersectional Sexualized Violence – International Student Resource Development Team；© 2024 Government of British Columbia；BCcampus",
+      "source_url": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H1.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "adaptation_note": "采用《沟通、健康关系与同意》官方简体中文讲义第1单元全部5道原题；仅合并PDF排版换行，保留原有第一人称及完整追问。题包标题与简介为本次编排。"
+    },
+    {
+      "question_ids": [
+        "ccc_6_8_02",
+        "ccc_6_8_03",
+        "ccc_6_8_04",
+        "ccc_6_8_05"
+      ],
+      "author": "Victoria Leonard & Elizabeth Coleman；ASCCC Open Educational Resources Initiative (OERI)；中文翻译与编排：CedarToy",
+      "source_url": "https://coalingacollege.edu/oer/documents/interpersonalcommunicationcontextandconnectionascccoeri.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "adaptation_note": "译自 Interpersonal Communication: Context and Connection 第6.8节 Discussion Questions 第2至5题，采用 Coalinga College 保存且该节明确标注 CC BY 4.0 的PDF版本（印刷页码6.8.1为原题、6.8.2为授权）。这是本项目中文翻译，非官方中文译文；保留全部追问，不添加类型选项或评分。当前LibreTexts网页标为CC BY-SA 4.0，与所采用PDF不同，版本证据与核验限制见 docs/DEEPTALK_SOURCES.md。"
+    },
+    {
+      "question_ids": [
+        "h3_01",
+        "h3_02",
+        "h3_03",
+        "h3_04"
+      ],
+      "author": "Intersectional Sexualized Violence – International Student Resource Development Team；© 2024 Government of British Columbia；BCcampus",
+      "source_url": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H3.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "adaptation_note": "采用《沟通、健康关系与同意》官方简体中文讲义第3单元原题；仅合并PDF排版换行，将第4至6个项目符号的主问与两个条件追问合成1道完整问题，其余逐字保留，共4题。题包标题与简介为本次编排。"
+    }
+  ]
+}

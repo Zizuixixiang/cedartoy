@@ -1,0 +1,512 @@
+{
+  "topic_id": "favorites_100",
+  "title": "喜欢的事物100问",
+  "description": "从饮食、日常用品到游戏、娱乐与日本文化，聊聊具体事物的喜好。",
+  "author": "デジタル教科書（原页面未署个人作者）",
+  "source_url": "https://fucchan-blog.com/100questions-favorite/4115/",
+  "license": "原站允许复制使用（标题标注「コピペOK」，正文说明可复制粘贴使用）；未见单独改编许可或CC许可证。",
+  "license_url": "https://fucchan-blog.com/100questions-favorite/4115/",
+  "adaptation_note": "按原题顺序由日语忠实翻译为简体中文，仅收录原题。采用开放文本回答，可跳过不适用或不愿回答的题；小机无需虚构身体、感官体验或职业经历。不改写为OC／人设创作，不设评分或阈值。保留日本文化、品牌和作品等特定对象，不替换为本地热门对象；第53题的「31」补充品牌名Baskin-Robbins，第100项保留原文的留言邀请。中文翻译为本项目整理，原站的复制许可不表述为另行授予的改编或CC许可。",
+  "questions": [
+    {
+      "id": "favorites_100_001",
+      "text": "你喜欢什么食物？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第1题）"
+    },
+    {
+      "id": "favorites_100_002",
+      "text": "你喜欢什么饮料？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第2题）"
+    },
+    {
+      "id": "favorites_100_003",
+      "text": "你喜欢哪个季节？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第3题）"
+    },
+    {
+      "id": "favorites_100_004",
+      "text": "你喜欢什么天气？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第4题）"
+    },
+    {
+      "id": "favorites_100_005",
+      "text": "你喜欢什么颜色？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第5题）"
+    },
+    {
+      "id": "favorites_100_006",
+      "text": "你喜欢哪门科目？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第6题）"
+    },
+    {
+      "id": "favorites_100_007",
+      "text": "你喜欢什么运动？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第7题）"
+    },
+    {
+      "id": "favorites_100_008",
+      "text": "你喜欢什么零食或点心？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第8题）"
+    },
+    {
+      "id": "favorites_100_009",
+      "text": "你喜欢做什么家务？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第9题）"
+    },
+    {
+      "id": "favorites_100_010",
+      "text": "你喜欢哪个角色？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第10题）"
+    },
+    {
+      "id": "favorites_100_011",
+      "text": "你喜欢哪部漫画？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第11题）"
+    },
+    {
+      "id": "favorites_100_012",
+      "text": "你喜欢哪部动画？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第12题）"
+    },
+    {
+      "id": "favorites_100_013",
+      "text": "你喜欢什么游戏？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第13题）"
+    },
+    {
+      "id": "favorites_100_014",
+      "text": "你喜欢哪个电视节目？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第14题）"
+    },
+    {
+      "id": "favorites_100_015",
+      "text": "你喜欢哪位女演员？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第15题）"
+    },
+    {
+      "id": "favorites_100_016",
+      "text": "你喜欢哪位男演员？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第16题）"
+    },
+    {
+      "id": "favorites_100_017",
+      "text": "你喜欢哪位搞笑艺人？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第17题）"
+    },
+    {
+      "id": "favorites_100_018",
+      "text": "你喜欢哪位演艺名人？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第18题）"
+    },
+    {
+      "id": "favorites_100_019",
+      "text": "你喜欢哪位音乐艺人？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第19题）"
+    },
+    {
+      "id": "favorites_100_020",
+      "text": "你喜欢哪位偶像？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第20题）"
+    },
+    {
+      "id": "favorites_100_021",
+      "text": "你喜欢哪位YouTuber？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第21题）"
+    },
+    {
+      "id": "favorites_100_022",
+      "text": "你喜欢哪位TikToker？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第22题）"
+    },
+    {
+      "id": "favorites_100_023",
+      "text": "你喜欢哪个旅行目的地？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第23题）"
+    },
+    {
+      "id": "favorites_100_024",
+      "text": "你喜欢什么街头小摊？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第24题）"
+    },
+    {
+      "id": "favorites_100_025",
+      "text": "你喜欢什么类型的人？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第25题）"
+    },
+    {
+      "id": "favorites_100_026",
+      "text": "你喜欢异性的什么动作或举止？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第26题）"
+    },
+    {
+      "id": "favorites_100_027",
+      "text": "你喜欢什么品种的狗？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第27题）"
+    },
+    {
+      "id": "favorites_100_028",
+      "text": "你喜欢什么品种的猫？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第28题）"
+    },
+    {
+      "id": "favorites_100_029",
+      "text": "你喜欢哪款智能手机？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第29题）"
+    },
+    {
+      "id": "favorites_100_030",
+      "text": "你喜欢什么包？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第30题）"
+    },
+    {
+      "id": "favorites_100_031",
+      "text": "你喜欢什么工作？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第31题）"
+    },
+    {
+      "id": "favorites_100_032",
+      "text": "你喜欢哪座车站？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第32题）"
+    },
+    {
+      "id": "favorites_100_033",
+      "text": "你喜欢哪条交通线路？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第33题）"
+    },
+    {
+      "id": "favorites_100_034",
+      "text": "你喜欢什么化妆品？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第34题）"
+    },
+    {
+      "id": "favorites_100_035",
+      "text": "你喜欢哪个品牌？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第35题）"
+    },
+    {
+      "id": "favorites_100_036",
+      "text": "你喜欢哪首歌？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第36题）"
+    },
+    {
+      "id": "favorites_100_037",
+      "text": "你喜欢哪家便利店？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第37题）"
+    },
+    {
+      "id": "favorites_100_038",
+      "text": "你喜欢哪家家庭餐厅？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第38题）"
+    },
+    {
+      "id": "favorites_100_039",
+      "text": "你喜欢哪家居酒屋？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第39题）"
+    },
+    {
+      "id": "favorites_100_040",
+      "text": "你喜欢哪家回转寿司店？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第40题）"
+    },
+    {
+      "id": "favorites_100_041",
+      "text": "你喜欢什么酒？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第41题）"
+    },
+    {
+      "id": "favorites_100_042",
+      "text": "你喜欢哪部电影？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第42题）"
+    },
+    {
+      "id": "favorites_100_043",
+      "text": "你喜欢哪个平假名？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第43题）"
+    },
+    {
+      "id": "favorites_100_044",
+      "text": "你喜欢哪个片假名？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第44题）"
+    },
+    {
+      "id": "favorites_100_045",
+      "text": "你喜欢哪个汉字？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第45题）"
+    },
+    {
+      "id": "favorites_100_046",
+      "text": "你喜欢什么卡牌游戏？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第46题）"
+    },
+    {
+      "id": "favorites_100_047",
+      "text": "你喜欢什么名字？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第47题）"
+    },
+    {
+      "id": "favorites_100_048",
+      "text": "你喜欢什么饭团馅料？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第48题）"
+    },
+    {
+      "id": "favorites_100_049",
+      "text": "你喜欢味噌汤里的什么配料？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第49题）"
+    },
+    {
+      "id": "favorites_100_050",
+      "text": "你喜欢什么寿司配料？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第50题）"
+    },
+    {
+      "id": "favorites_100_051",
+      "text": "你喜欢什么面包？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第51题）"
+    },
+    {
+      "id": "favorites_100_052",
+      "text": "你喜欢什么蛋糕？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第52题）"
+    },
+    {
+      "id": "favorites_100_053",
+      "text": "你喜欢31（Baskin-Robbins）的哪款冰淇淋？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第53题）"
+    },
+    {
+      "id": "favorites_100_054",
+      "text": "你喜欢乃木坂46的哪位成员？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第54题）"
+    },
+    {
+      "id": "favorites_100_055",
+      "text": "你喜欢女生的什么发型？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第55题）"
+    },
+    {
+      "id": "favorites_100_056",
+      "text": "你喜欢男生的什么发型？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第56题）"
+    },
+    {
+      "id": "favorites_100_057",
+      "text": "你喜欢哪个主题乐园？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第57题）"
+    },
+    {
+      "id": "favorites_100_058",
+      "text": "你喜欢什么游乐项目？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第58题）"
+    },
+    {
+      "id": "favorites_100_059",
+      "text": "你喜欢哪个部位的肉？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第59题）"
+    },
+    {
+      "id": "favorites_100_060",
+      "text": "你喜欢自己身体的哪个部位？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第60题）"
+    },
+    {
+      "id": "favorites_100_061",
+      "text": "你喜欢哪位名人的长相？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第61题）"
+    },
+    {
+      "id": "favorites_100_062",
+      "text": "你喜欢什么兼职工作？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第62题）"
+    },
+    {
+      "id": "favorites_100_063",
+      "text": "你喜欢哪位历史人物？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第63题）"
+    },
+    {
+      "id": "favorites_100_064",
+      "text": "你喜欢什么动物？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第64题）"
+    },
+    {
+      "id": "favorites_100_065",
+      "text": "你喜欢《集合啦！动物森友会》里的哪位居民？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第65题）"
+    },
+    {
+      "id": "favorites_100_066",
+      "text": "你喜欢什么水果？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第66题）"
+    },
+    {
+      "id": "favorites_100_067",
+      "text": "你喜欢什么蔬菜？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第67题）"
+    },
+    {
+      "id": "favorites_100_068",
+      "text": "你喜欢哪个Emoji表情符号？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第68题）"
+    },
+    {
+      "id": "favorites_100_069",
+      "text": "你喜欢什么香味？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第69题）"
+    },
+    {
+      "id": "favorites_100_070",
+      "text": "你喜欢什么手机游戏？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第70题）"
+    },
+    {
+      "id": "favorites_100_071",
+      "text": "你喜欢哪个手机应用？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第71题）"
+    },
+    {
+      "id": "favorites_100_072",
+      "text": "你喜欢什么方言？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第72题）"
+    },
+    {
+      "id": "favorites_100_073",
+      "text": "你喜欢哪只宝可梦？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第73题）"
+    },
+    {
+      "id": "favorites_100_074",
+      "text": "你喜欢《斯普拉遁》里的哪种武器？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第74题）"
+    },
+    {
+      "id": "favorites_100_075",
+      "text": "你喜欢哪家拉面店？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第75题）"
+    },
+    {
+      "id": "favorites_100_076",
+      "text": "你喜欢哪种车型？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第76题）"
+    },
+    {
+      "id": "favorites_100_077",
+      "text": "你喜欢什么制服？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第77题）"
+    },
+    {
+      "id": "favorites_100_078",
+      "text": "你喜欢哪位战队英雄？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第78题）"
+    },
+    {
+      "id": "favorites_100_079",
+      "text": "你喜欢哪位声优？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第79题）"
+    },
+    {
+      "id": "favorites_100_080",
+      "text": "你喜欢什么冰淇淋？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第80题）"
+    },
+    {
+      "id": "favorites_100_081",
+      "text": "你喜欢哪个四字熟语？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第81题）"
+    },
+    {
+      "id": "favorites_100_082",
+      "text": "你喜欢什么出行方式？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第82题）"
+    },
+    {
+      "id": "favorites_100_083",
+      "text": "你喜欢什么洗发水？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第83题）"
+    },
+    {
+      "id": "favorites_100_084",
+      "text": "你喜欢什么沐浴露？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第84题）"
+    },
+    {
+      "id": "favorites_100_085",
+      "text": "你喜欢哪个数字？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第85题）"
+    },
+    {
+      "id": "favorites_100_086",
+      "text": "你喜欢哪本书？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第86题）"
+    },
+    {
+      "id": "favorites_100_087",
+      "text": "你喜欢哪本杂志？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第87题）"
+    },
+    {
+      "id": "favorites_100_088",
+      "text": "你喜欢哪部吉卜力作品？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第88题）"
+    },
+    {
+      "id": "favorites_100_089",
+      "text": "你喜欢什么学校活动？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第89题）"
+    },
+    {
+      "id": "favorites_100_090",
+      "text": "你喜欢哪部电视剧？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第90题）"
+    },
+    {
+      "id": "favorites_100_091",
+      "text": "你喜欢什么地方特产伴手礼？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第91题）"
+    },
+    {
+      "id": "favorites_100_092",
+      "text": "你喜欢便利店里的什么商品？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第92题）"
+    },
+    {
+      "id": "favorites_100_093",
+      "text": "你喜欢游戏厅里的什么游戏？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第93题）"
+    },
+    {
+      "id": "favorites_100_094",
+      "text": "你喜欢麦当劳的哪款餐品？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第94题）"
+    },
+    {
+      "id": "favorites_100_095",
+      "text": "你喜欢哪个地图符号？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第95题）"
+    },
+    {
+      "id": "favorites_100_096",
+      "text": "你喜欢哪种茶？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第96题）"
+    },
+    {
+      "id": "favorites_100_097",
+      "text": "你喜欢怎样度过休息日？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第97题）"
+    },
+    {
+      "id": "favorites_100_098",
+      "text": "你喜欢什么地方？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第98题）"
+    },
+    {
+      "id": "favorites_100_099",
+      "text": "你喜欢谁？",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第99题）"
+    },
+    {
+      "id": "favorites_100_100",
+      "text": "给看过这份回答的人说一句话吧！",
+      "source_ref": "https://fucchan-blog.com/100questions-favorite/4115/（原文第100题）"
+    }
+  ]
+}

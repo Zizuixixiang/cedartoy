@@ -6,6 +6,10 @@ Database paths, mutable state and configuration remain owned by the caller.
 """
 
 
+import research_scales
+from deeptalk.catalog import ALIASES as DEEPTALK_ALIASES
+from scale_test_engine import JsonRpcError as ScaleError
+
 def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *,
     schema_mode="",
     _McpError,
@@ -172,7 +176,7 @@ def _tool_play(arguments, path_token, *, defer_duel, authenticated_account,
     try:
         game = arguments.get("game") if isinstance(arguments, dict) else None
         if (path_token or authenticated_account is not None) and (
-            (game in IDENTITY_GAMES and game != "puzzle_box") or game == "turtle_soup"
+            (game in IDENTITY_GAMES and game not in {"puzzle_box", "deeptalk"}) or game == "turtle_soup"
         ):
             slot_hint = _save_slot_from_arguments(arguments)
     except _McpError:
@@ -211,6 +215,7 @@ def _deserialize_object_param(value, param_name, *,
 
 
 def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account,
+    _aidep_shared_result,
     GUEST_PREFIX,
     IDENTITY_GAMES,
     MIN_SAVE_SLOT,
@@ -242,6 +247,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     _play_mbti,
     _play_scale,
     _play_tarot,
+    _play_deeptalk,
     _play_vendor_cmd,
     _play_workkk,
     _prepare_duel_payload,
@@ -268,7 +274,16 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
         raise _McpError(-32602, "game 参数必填")
     if not action or not isinstance(action, str):
         raise _McpError(-32602, "action 参数必填")
-    maintenance = _game_maintenance(game)
+    if game == "aidep" and action == "shared_result":
+        params = _deserialize_object_param(arguments.get("params"), "params")
+        if not isinstance(params, dict) or type(params.get("human_id")) is not int:
+            raise _McpError(-32003, "无权查看此共享结果")
+        # Bypass gameplay entirely. Only the transport token establishes identity;
+        # params cannot change the action, account, player, or result being read.
+        return json.dumps(_aidep_shared_result(path_token, params["human_id"]), ensure_ascii=False)
+    if game in research_scales.SCALES and game not in research_scales.MCP_GAMES:
+        raise _McpError(-32602, "未知游戏")
+    maintenance = _game_maintenance(DEEPTALK_ALIASES.get(game, game))
     if maintenance:
         raise _McpError(-32003, maintenance["message"])
     raw_params = arguments.get("params")
@@ -278,6 +293,14 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     if params is not raw_params:
         arguments = dict(arguments)
         arguments["params"] = params
+
+    if game in DEEPTALK_ALIASES:
+        topic_id = DEEPTALK_ALIASES[game]
+        if any(obj.get("topic_id", topic_id) != topic_id for obj in (arguments, params or {})):
+            raise _McpError(-32602, "该发现ID对应固定主题，请使用对应主题的ID")
+        game = "deeptalk"
+        params = {**(params or {}), "topic_id": topic_id}
+        arguments = {**arguments, "game": game, "topic_id": topic_id, "params": params}
 
     # 统一身份：带 token 强制 player_id=账号 id；游客自报 id 落到 guest: 命名空间。
     account_user = None
@@ -292,7 +315,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
                 if authenticated_account is not None
                 else _current_account(path_token)
             )
-            if game != "puzzle_box":
+            if game not in {"puzzle_box", "deeptalk"}:
                 _auto_migrate_legacy_account_saves(account_user)
                 slot = _save_slot_from_arguments(arguments)
             account_player_id = _account_slot_player_id(account_user["id"], slot)
@@ -385,6 +408,13 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
         response = _play_scale(enneagram_handler, "enneagram", merged_arguments)
     elif game == "dnd":
         response = _play_dnd(merged_arguments)
+    elif game in research_scales.MCP_GAMES:
+        if str(merged_arguments.get("player_id", "")).startswith("guest:web"):
+            raise _McpError(-32602, "网页游客身份不能用于 MCP 量表，请使用独立游客身份。")
+        try:
+            response = research_scales.SCALES[game].execute(action, merged_arguments)
+        except ScaleError as exc:
+            raise _McpError(exc.code, exc.message)
     elif game == "love":
         response = _play_scale(love_handler, "love", merged_arguments)
     elif game == "ecr":
@@ -428,6 +458,8 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
             response = puzzle_box.play(SESSIONS_DB_PATH, int(account_user["id"]), action, merged_arguments)
         except ValueError as exc:
             raise _McpError(-32602, str(exc)) from None
+    elif game == "deeptalk":
+        response = _play_deeptalk(merged_arguments, account_user)
     elif game == "tarot":
         # Tarot is not a machine-playable card game.  The authenticated machine
         # may only create and observe an invitation bound to its one current

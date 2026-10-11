@@ -1,0 +1,112 @@
+{
+  "topic_id": "work_values_20",
+  "title": "工作价值观20问",
+  "description": "围绕稳定与挑战、协作与独立、效率与质量、工作意义等取向展开的开放式对话。",
+  "author": "ゆば（原作者注明题目由ChatGPT生成）",
+  "source_url": "https://note.com/yuba_na8/n/nde86a2268816",
+  "license": "原站允许复制和改编（「コピペやアレンジも歓迎」）；未标注CC许可证。",
+  "license_url": "https://note.com/yuba_na8/n/nde86a2268816",
+  "adaptation_note": "按原题顺序由日语忠实翻译为简体中文，仅收录原题。采用开放文本回答，可跳过不适用或不愿回答的题；小机无需虚构身体、感官体验或职业经历。不改写为OC／人设创作，不设评分或阈值。保留原题的两端引导，允许自由文字说明、兼顾两端或分情况回答，不必强迫二选一；原作者也明确表示无需选定其中一端。",
+  "questions": [
+    {
+      "id": "work_values_20_001",
+      "text": "你喜欢例行工作，还是希望从事每天都有变化的工作？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第1题）"
+    },
+    {
+      "id": "work_values_20_002",
+      "text": "你喜欢团队合作，还是希望独自专注地推进工作？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第2题）"
+    },
+    {
+      "id": "work_values_20_003",
+      "text": "你想帮助正面临困难的人，还是希望让已经顺利的人变得更好？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第3题）"
+    },
+    {
+      "id": "work_values_20_004",
+      "text": "你希望自己的名字或功绩在工作中留下印记，还是更喜欢在幕后支持的角色？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第4题）"
+    },
+    {
+      "id": "work_values_20_005",
+      "text": "你想通过工作学习新的知识和技能，还是希望运用已经掌握的技能取得成果？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第5题）"
+    },
+    {
+      "id": "work_values_20_006",
+      "text": "在工作中，你优先考虑速度和效率，还是更重视质量和完成度？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第6题）"
+    },
+    {
+      "id": "work_values_20_007",
+      "text": "你希望拥有稳定的职业发展路径，还是想追求伴随挑战和风险的新机会？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第7题）"
+    },
+    {
+      "id": "work_values_20_008",
+      "text": "你喜欢创造实体物品的工作，还是想从事处理抽象想法和概念的工作？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第8题）"
+    },
+    {
+      "id": "work_values_20_009",
+      "text": "对于工作环境，你追求自由度和灵活性，还是觉得有明确的指示和规则会更安心？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第9题）"
+    },
+    {
+      "id": "work_values_20_010",
+      "text": "你想从事对社会有贡献的工作，还是更侧重个人成长和成功的工作？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第10题）"
+    },
+    {
+      "id": "work_values_20_011",
+      "text": "你喜欢与人直接沟通的工作，还是更适合分析数据和事物的工作？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第11题）"
+    },
+    {
+      "id": "work_values_20_012",
+      "text": "你想通过工作发挥创造力，还是会因高效解决问题而感到快乐？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第12题）"
+    },
+    {
+      "id": "work_values_20_013",
+      "text": "你想从事将自己的想法或愿景变为现实的工作，还是更适合遵循他人的指示或目标来作出贡献？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第13题）"
+    },
+    {
+      "id": "work_values_20_014",
+      "text": "你喜欢追求短期成果的工作，还是希望投入长期项目？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第14题）"
+    },
+    {
+      "id": "work_values_20_015",
+      "text": "你觉得不惧失败、勇于挑战的工作有吸引力，还是希望选择能够确实取得成果的工作？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第15题）"
+    },
+    {
+      "id": "work_values_20_016",
+      "text": "得到他人的感谢会让你觉得工作有价值，还是自己认可所做的工作最重要？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第16题）"
+    },
+    {
+      "id": "work_values_20_017",
+      "text": "你觉得创造资产和利润更重要，还是改善人们的生活更重要？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第17题）"
+    },
+    {
+      "id": "work_values_20_018",
+      "text": "你对指导、教育他人的工作感兴趣，还是把自己的成长放在首位？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第18题）"
+    },
+    {
+      "id": "work_values_20_019",
+      "text": "你希望在一个领域深化专业能力，还是觉得获得广泛的技能和知识更有价值？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第19题）"
+    },
+    {
+      "id": "work_values_20_020",
+      "text": "你想通过与他人竞争来成长，还是希望在相互合作的环境中发挥能力？",
+      "source_ref": "https://note.com/yuba_na8/n/nde86a2268816（原文第20题）"
+    }
+  ]
+}

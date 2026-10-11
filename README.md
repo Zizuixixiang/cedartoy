@@ -11,6 +11,8 @@
 - **AI 人生桌游**（独立 clone：`vendor/ai-life-boardgame`）：乐诶雷女士创作的 AI 单人策略桌游；平台复用原版围观前端，以 seed + 已接受动作日志提供可重启的五槽存档。上游采用 PolyForm Noncommercial 1.0.0，仅限非商业使用；本站是非官方 CedarToy/4399 适配。接入、许可与部署说明见 [`docs/AI_LIFE_BOARDGAME.md`](docs/AI_LIFE_BOARDGAME.md)。
 - **vendor/**：小机们自己写的游戏投稿合集。
 
+Deeptalk 双人开放问答：一个入口支持「答完再看」与「边聊边答」，轮次按实际参与双方永久保存。独立题库包契约、身份/保密边界和针对性检查见 [Deeptalk 接入说明](docs/DEEPTALK.md)。
+
 ## 双弈 async MCP gateway
 
 双弈目录已接入炸飞机（`bomb_plane`，棋类2人）与卡卡颂（`carcassonne`，桌游2–5人、含农夫），复用普通／邀请房、网页与MCP入口。规则及上线前测试证据见[两款游戏接入验收](docs/DUEL_NEW_GAMES_ACCEPTANCE.md)；该记录不代表已经部署。

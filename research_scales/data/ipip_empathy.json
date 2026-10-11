@@ -1,0 +1,111 @@
+{
+  "game": "ipip_empathy",
+  "title": "IPIP 共情关怀",
+  "author": "IPIP / Lewis R. Goldberg；Barchard（2001）Emotional Intelligence 的 Empathic Concern 构念",
+  "source": "https://ipip.ori.org/newEmotionalIntelligenceKey.htm",
+  "license": "Public Domain（IPIP 公共领域）",
+  "notice": "中文为未验证翻译；仅供娱乐/自我了解，不作诊断，不使用临床分界值。小机作答只作娱乐演绎，不具有人类量表效度。采用 Barchard EI 的 Empathic Concern 10 题；不是 AB5C 或 JPI 的同名分量表，也不是共情能力的全面测量。",
+  "instruction": "请根据你现在通常的样子，而不是希望成为的样子，判断每句话描述你的准确程度。可参照你认识的同性别、年龄相近的人，如实作答。",
+  "options": [
+    {
+      "value": 1,
+      "text": "非常不符合"
+    },
+    {
+      "value": 2,
+      "text": "比较不符合"
+    },
+    {
+      "value": 3,
+      "text": "介于符合与不符合之间"
+    },
+    {
+      "value": 4,
+      "text": "比较符合"
+    },
+    {
+      "value": 5,
+      "text": "非常符合"
+    }
+  ],
+  "dimensions": {
+    "ipip_empathy": "共情关怀"
+  },
+  "aggregation": "sum",
+  "items": [
+    {
+      "id": 1,
+      "original": "Am concerned about others.",
+      "text": "我关心别人。",
+      "dimension": "ipip_empathy",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "Feel sympathy for those who are worse off than myself.",
+      "text": "我同情境况比我差的人。",
+      "dimension": "ipip_empathy",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "Sympathize with the homeless.",
+      "text": "我同情无家可归的人。",
+      "dimension": "ipip_empathy",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "Believe that criminals should receive help rather than punishment.",
+      "text": "我认为犯罪者应得到帮助，而不是惩罚。",
+      "dimension": "ipip_empathy",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "Believe that the poor deserve our sympathy.",
+      "text": "我认为贫困者值得我们同情。",
+      "dimension": "ipip_empathy",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "Feel little concern for others.",
+      "text": "我很少关心别人。",
+      "dimension": "ipip_empathy",
+      "reverse": true
+    },
+    {
+      "id": 7,
+      "original": "Have no sympathy for criminals.",
+      "text": "我不同情犯罪者。",
+      "dimension": "ipip_empathy",
+      "reverse": true
+    },
+    {
+      "id": 8,
+      "original": "Look down on any weakness.",
+      "text": "我看不起任何软弱。",
+      "dimension": "ipip_empathy",
+      "reverse": true
+    },
+    {
+      "id": 9,
+      "original": "Don't like to get involved in other people's problems.",
+      "text": "我不喜欢介入别人的难题。",
+      "dimension": "ipip_empathy",
+      "reverse": true
+    },
+    {
+      "id": 10,
+      "original": "Have little sympathy for the unemployed.",
+      "text": "我很少同情失业者。",
+      "dimension": "ipip_empathy",
+      "reverse": true
+    }
+  ],
+  "license_source": "https://ipip.ori.org/",
+  "scoring_source": "https://ipip.ori.org/newScoringInstructions.htm",
+  "administration_source": "https://ipip.ori.org/new_ipip-50-item-scale.htm",
+  "author_short": "IPIP"
+}

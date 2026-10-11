@@ -1,0 +1,268 @@
+{
+  "game": "bsr",
+  "title": "伪深刻话语测试 · 4399 娱乐改编版",
+  "author": "Gordon Pennycook、James Allan Cheyne、Nathaniel Barr、Derek J. Koehler、Jonathan A. Fugelsang（2015）；格言摘自《荀子》《论语》",
+  "author_short": "Pennycook 等",
+  "source": "https://doi.org/10.1017/S1930297500006999",
+  "license": "生成句及本地译文：CC BY 3.0 https://creativecommons.org/licenses/by/3.0/；古典格言原文：公共领域",
+  "notice": "按 Study 4 的10条伪深刻句＋10条励志格言结构改编；伪深刻句为原附录生成句的未验证翻译，格言替换为公共领域古典短句，并非原论文逐句复刻，不沿用原版信效度。分数不代表智力、识骗能力或人格好坏。",
+  "instruction": "请读每句话，稍想它可能表达的含义，再评价你觉得它有多深刻（含义深远、具有广泛意义）。1完全不深刻、2有一点深刻、3颇为深刻、4确实深刻、5非常深刻。20句混合随机呈现；同一会话题序固定，按显示顺序作答，无对错。",
+  "options": [
+    {
+      "value": 1,
+      "text": "完全不深刻"
+    },
+    {
+      "value": 2,
+      "text": "有一点深刻"
+    },
+    {
+      "value": 3,
+      "text": "颇为深刻"
+    },
+    {
+      "value": 4,
+      "text": "确实深刻"
+    },
+    {
+      "value": 5,
+      "text": "非常深刻"
+    }
+  ],
+  "options_original": [
+    "Not at all profound",
+    "somewhat profound",
+    "fairly profound",
+    "definitely profound",
+    "very profound"
+  ],
+  "dimensions": {
+    "pseudo_profound": "伪深刻语句评价均分",
+    "motivational": "励志格言均分"
+  },
+  "aggregation": "mean",
+  "randomize": true,
+  "mean_difference": {
+    "key": "difference",
+    "label": "差值（励志格言 − 伪深刻语句）",
+    "minuend": "motivational",
+    "subtrahend": "pseudo_profound"
+  },
+  "scoring_note": "无反向题；两类各10题分别取1–5均分。差值＝励志格言均分−伪深刻语句评价均分，范围−4至4；正值表示本次对格言评价更深刻，负值表示对伪深刻句评价更深刻，0表示两类均分相同。伪深刻均分越高，只表示更觉得这类句子深刻；不是答对率，不设好坏分界、诊断阈值或常模。",
+  "supplement_source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+  "supplement_sha256": "be4fd61a78b478c59700b197d0bfb76cbac319ef3d658e0d41a2dd054ea8c959",
+  "scoring_source": "正文6.2（量尺与BSR均分）、15.2–15.3（Study 4题集与混合随机顺序）、Table 4（励志均分−BSR均分）",
+  "reuse_note": "仅使用附录Table S1的10条自动生成句（Study 4复用），不使用Chopra本人推文或原励志引语。保留研究作者、来源、CC BY 3.0及翻译改编标记；古典短句仅作简体转换与标点整理，不复制现代译文、注释或校勘。题目分组和逐条出处保留在本JSON，作答接口只显示句子与量尺。",
+  "items": [
+    {
+      "id": 1,
+      "original": "Hidden meaning transforms unparalleled abstract beauty.",
+      "text": "隐藏的意义转化着无与伦比的抽象之美。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 1",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "wisdomofchopra.com",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 2,
+      "original": "Good health imparts reality to subtle creativity.",
+      "text": "良好的健康赋予微妙的创造力以现实。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 2",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "wisdomofchopra.com",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 3,
+      "original": "Wholeness quiets infinite phenomena.",
+      "text": "完整性使无限的现象归于平静。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 3",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "wisdomofchopra.com",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 4,
+      "original": "The future explains irrational facts.",
+      "text": "未来解释着非理性的事实。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 4",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "wisdomofchopra.com",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 5,
+      "original": "Imagination is inside exponential space time events.",
+      "text": "想象力处于指数式的时空事件之中。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 5",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "wisdomofchopra.com",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 6,
+      "original": "We are in the midst of a self-aware blossoming of being that will align us with the nexus itself.",
+      "text": "我们正处在存在的自我觉知绽放之中，这将使我们与联结本身对齐。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 6",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "sebpearce.com/bullshit",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 7,
+      "original": "Consciousness consists of frequencies of quantum energy. “Quantum” means an unveiling of the unrestricted.",
+      "text": "意识由量子能量的频率构成。“量子”意味着无限制之物的揭示。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 7",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "sebpearce.com/bullshit",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 8,
+      "original": "Consciousness is the growth of coherence, and of us.",
+      "text": "意识是连贯性的成长，也是我们的成长。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 8",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "sebpearce.com/bullshit",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 9,
+      "original": "We are in the midst of a high-frequency blossoming of interconnectedness that will give us access to the quantum soup itself.",
+      "text": "我们正处在相互联结的高频绽放之中，这将让我们得以进入量子汤本身。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 9",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "sebpearce.com/bullshit",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 10,
+      "original": "Today, science tells us that the essence of nature is joy.",
+      "text": "今天，科学告诉我们，自然的本质是喜悦。",
+      "dimension": "pseudo_profound",
+      "reverse": false,
+      "source_item": "Table S1, row 10",
+      "source": "https://journal.sjdm.org/15/15923a/supp.pdf",
+      "generator": "sebpearce.com/bullshit",
+      "reuse": "CC BY 3.0；本地未验证翻译"
+    },
+    {
+      "id": 11,
+      "original": "學不可以已。",
+      "text": "学不可以已。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "荀子·劝学",
+      "source": "https://zh.wikisource.org/wiki/荀子/勸學篇",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 12,
+      "original": "靑，取之於藍而靑於藍。",
+      "text": "青，取之于蓝而青于蓝。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "荀子·劝学",
+      "source": "https://zh.wikisource.org/wiki/荀子/勸學篇",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 13,
+      "original": "不積跬步，無以至千里。",
+      "text": "不积跬步，无以至千里。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "荀子·劝学",
+      "source": "https://zh.wikisource.org/wiki/荀子/勸學篇",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 14,
+      "original": "鍥而不舍，金石可鏤。",
+      "text": "锲而不舍，金石可镂。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "荀子·劝学",
+      "source": "https://zh.wikisource.org/wiki/荀子/勸學篇",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 15,
+      "original": "過則勿憚改。",
+      "text": "过则勿惮改。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "论语·子罕（孔子及其弟子）",
+      "source": "https://zh.wikisource.org/wiki/論語/子罕第九",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 16,
+      "original": "三軍可奪帥也，匹夫不可奪志也。",
+      "text": "三军可夺帅也，匹夫不可夺志也。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "论语·子罕（孔子及其弟子）",
+      "source": "https://zh.wikisource.org/wiki/論語/子罕第九",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 17,
+      "original": "歲寒，然後知松柏之後凋也。",
+      "text": "岁寒，然后知松柏之后凋也。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "论语·子罕（孔子及其弟子）",
+      "source": "https://zh.wikisource.org/wiki/論語/子罕第九",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 18,
+      "original": "知者不惑，仁者不憂，勇者不懼。",
+      "text": "知者不惑，仁者不忧，勇者不惧。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "论语·子罕（孔子及其弟子）",
+      "source": "https://zh.wikisource.org/wiki/論語/子罕第九",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 19,
+      "original": "學而不厭，誨人不倦。",
+      "text": "学而不厌，诲人不倦。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "论语·述而（孔子及其弟子）",
+      "source": "https://zh.wikisource.org/wiki/論語/述而第七",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    },
+    {
+      "id": 20,
+      "original": "三人行，必有我師焉。",
+      "text": "三人行，必有我师焉。",
+      "dimension": "motivational",
+      "reverse": false,
+      "source_item": "论语·述而（孔子及其弟子）",
+      "source": "https://zh.wikisource.org/wiki/論語/述而第七",
+      "reuse": "公共领域古典原文摘句；简体及标点整理；替代原论文励志引语"
+    }
+  ]
+}

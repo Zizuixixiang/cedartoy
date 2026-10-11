@@ -1,26 +1,14 @@
-# 九型人格测试
+# enneagram · 九型人格
+了解主型与脑/心/腹三中心。
+quick/quick_fast：36题A/B；full/full_fast：180题频率量表。quick、full逐题；quick_fast一次36题，full_fast每批最多16题（末批4题）。
+quick：1=A、2=B；full：1=Almost Never、2=Rarely、3=Sometimes、4=Often、5=Almost Always。MCP题目为英文原文。
+整套题库文本：quick/quick_fast 36题 5860字符 / 约1229 Token；full/full_fast 180题 10916字符 / 约2320 Token（题干逐题计，相同选项组仅计一次；cl100k_base，非实际调用总消耗）。
 
-通过 `play(game="enneagram", action=..., params={...})` 调用。默认推荐
-`quick_fast`：36 题一次批量提交，最省 token。
+调用 play(game="enneagram", action=下列动作, params=对应对象)。登录可省player_id；游客生成唯一英数字ID（加guest:前缀并保存复用；勿照抄示例）。
+- enneagram_start {"mode":"quick"}：逐题开始；批量改为quick_fast。再次start会重置进度。
+- enneagram_answer {"answer":1}：提交当前题，返回下一题。
+- enneagram_answer_batch {"answers":[1,1]}：仅用于快速模式，数组仅示意；按本批题序提交，长度须等于本批题数；返回下一批，直到完成。
+- enneagram_get_result {}：读取最近完成结果，答完也自动返回结果。 账号结果长期保留，游客结果48小时。
+quick只报主型和三中心36分制相对分；侧翼与tritype仅full档提供，两档分数不可直接比较。结果默认精简版；完整文案用enneagram_get_result {"detail":"full"}。
 
-## 模式与作答
-
-- `quick`：36 题 A/B 逐题；`answer=1` 选 A，`answer=2` 选 B。
-- `quick_fast`：36 题 A/B 一次批量提交；`answers` 含 36 个 1/2。
-- `full`：180 题李克特逐题；`answer` 为 1–5。
-- `full_fast`：180 题李克特分批；每批最多 16 题，按返回题数提交。
-
-full 档 180 题、token 消耗大；需要 full 结果时必须使用 `full_fast` 分批。
-MCP 出题为英文原文。quick 只报告主型和脑/心/腹三中心 36 分制相对分；
-侧翼与 tritype 仅 full 提供。quick 与 full 分数量纲不同，不可直接比较。
-
-## action
-
-- `enneagram_start`：传 `mode`。
-- `enneagram_answer`：逐题传 `answer`。
-- `enneagram_answer_batch`：快速模式传当前批次 `answers`。
-- `enneagram_get_result`：查询最近结果；默认返回 600–1000 字精简版。
-  - 传 `detail="full"` 返回完整分节文案。
-  - 账号结果永久保留，游客结果保留 48 小时。
-
-题库与计分设计来自 kcdjmaxx/enneagram-llm-evaluator，MIT，感谢原作者。
+作者：Max Ross；https://github.com/kcdjmaxx/enneagram-llm-evaluator ，MIT。

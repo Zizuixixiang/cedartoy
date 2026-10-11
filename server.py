@@ -35,6 +35,10 @@ import admin_recovery_mcp
 import avatar_appearances
 import detroit_adapter
 import puzzle_box
+from cedar_backend import deeptalk as deeptalk_service
+from deeptalk import catalog as deeptalk_catalog
+from deeptalk.catalog import DeeptalkError, GUIDE as DEEPTALK_GUIDE
+from deeptalk.store import Store as DeeptalkStore
 import game_activity
 from admin_dashboard import build_activity_dashboard, _read_only_connect
 
@@ -50,6 +54,7 @@ from dnd import handler as dnd_handler
 from dnd import questions as dnd_questions
 from dnd import scoring as dnd_scoring
 from dnd import web_questions_zh as dnd_web_questions
+import research_scales
 from ecr import handler as ecr_handler
 from ecr import questions as ecr_questions
 from ecr import scoring as ecr_scoring
@@ -110,6 +115,7 @@ from vendor_cmd_adapter.base import VendorCmdError, parse_import_save_data
 from cedar_backend import guides as mcp_guides
 from cedar_backend import mcp_schema
 from cedar_backend import human_tests
+from cedar_backend import aidep_sharing
 from cedar_backend import announcement_delivery
 from cedar_backend import anti_addiction
 from cedar_backend import public_stats, duel_history
@@ -1325,6 +1331,7 @@ def _mcp_path_and_token(request_target):
             "/humanity", "/sins_virtues",
         )
         or path.startswith("/api/")
+        or path.removeprefix("/") in research_scales.SCALES
     ):
         return path, None
     token = urllib.parse.unquote(path.strip("/"))
@@ -2742,7 +2749,7 @@ def _extract_bearer(headers):
 
 # Compatibility exports; implementation and metadata live in human_tests.
 WEB_GUEST_PLAYER_ID_RE = human_tests.WEB_GUEST_PLAYER_ID_RE
-HUMAN_TEST_GAMES = human_tests.HUMAN_TEST_GAMES
+HUMAN_TEST_GAMES = {**human_tests.HUMAN_TEST_GAMES, **research_scales.human_configs()}
 HUMAN_TEST_PUBLIC_EDITIONS = human_tests.HUMAN_TEST_PUBLIC_EDITIONS
 
 
@@ -2825,6 +2832,19 @@ def _human_test_result_data(game, player_id):
 
 
 def _human_test_action(game, action, raw_token, body):
+    if game == "aidep" and action == "sharing":
+        user = _current_account(raw_token)
+        return aidep_sharing.access(research_scales.SCALES['aidep'], _db_connect, user, _McpError,
+                                    change=body if body else None)
+    if game in research_scales.SCALES:
+        player_id, identity, user = _human_test_player_context(game, raw_token, body.get("player_id"))
+        if identity == "guest":
+            _reject_claimed_guest(player_id)
+        state = research_scales.SCALES[game].execute(action, {**body, "player_id": player_id}, web=True)
+        state["identity"] = identity
+        if state.get("result"):
+            state["result"] = _replace_storage_identity_text(state["result"], _storage_identity_line(player_id, user))
+        return state
     return human_tests._human_test_action(
         game, action, raw_token, body,
         games=HUMAN_TEST_GAMES,
@@ -2849,7 +2869,7 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"deeptalk", "puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
 PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
 VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat", "detroit")
@@ -2858,7 +2878,8 @@ ANTI_ADDICTION_DEFAULT_REMIND = anti_addiction.ANTI_ADDICTION_DEFAULT_REMIND
 ANTI_ADDICTION_DEFAULT_FORCE = anti_addiction.ANTI_ADDICTION_DEFAULT_FORCE
 ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = anti_addiction.ANTI_ADDICTION_DEFAULT_LOCK_MINUTES
 ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET = anti_addiction.ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET
-ANTI_ADDICTION_TEST_GAMES = anti_addiction.ANTI_ADDICTION_TEST_GAMES
+IDENTITY_GAMES = IDENTITY_GAMES | research_scales.MCP_GAMES
+ANTI_ADDICTION_TEST_GAMES = anti_addiction.ANTI_ADDICTION_TEST_GAMES | research_scales.MCP_GAMES
 ANTI_ADDICTION_MINI_GAMES = anti_addiction.ANTI_ADDICTION_BASE_MINI_GAMES | frozenset(VENDOR_GAMES)
 
 
@@ -3404,6 +3425,7 @@ def _duel_history_for_user(user, *, limit=DUEL_HISTORY_LIMIT):
 def _account_web_history(raw_token):
     """History page payload: save summaries plus separate Duel room history."""
     result = _account_web_saves(raw_token)
+    result["self"]["deeptalk_history"] = DeeptalkStore(SESSIONS_DB_PATH).history(result["self"]["user"])
     result["self"]["duel_history"] = _duel_history_for_user(
         result["self"]["user"]
     )
@@ -3424,13 +3446,17 @@ def _tool_list_games(path_token=None):
     camping_label = "camping_plaza" + (
         f"（{camping_maintenance['label']}）" if camping_maintenance else ""
     )
-    base = (
-        "玩法见 get_guide(game)\n"
-        "测试: mbti·人格类型·南山君 | enneagram·九型人格·Max Ross | dnd·道德阵营·南山君 | love·爱语偏好·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度·南山君 | sins_virtues·罪与美德·南山君 | bdsmtest·性癖倾向·南山君\n"
-        f"小游戏: turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
+    tests = (
+        "mbti·人格类型·南山君 | enneagram·九型人格·Max Ross | dnd·道德阵营·南山君 | love·爱语偏好·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度·南山君 | sins_virtues·罪与美德·南山君 | bdsmtest·性癖倾向·南山君"
+    )
+    games = (
+        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
-    return base
+    extra = " | ".join(f"{game}·{research_scales.SCALES[game].title.split(' · ', 1)[0]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
+    return ("玩法见 get_guide(game)\n" + deeptalk_catalog.discovery()
+            + "\n测试: " + tests + (" | " + extra if extra else "")
+            + "\n游戏: " + games)
 
 
 def _root_tools(user_agent="", *, schema_mode=""):
@@ -3456,7 +3482,21 @@ def _game_maintenance(game):
 
 
 def _tool_get_guide(arguments):
+    game = arguments.get("game")
+    if not game or not isinstance(game, str):
+        raise _McpError(-32602, "game 参数必填")
+    if game in research_scales.MCP_GAMES:
+        return json.dumps({"game": game, "guide": research_scales.guide(game)}, ensure_ascii=False)
+    if game in research_scales.SCALES:
+        raise _McpError(-32602, "未知游戏")
     # Resolve dependencies here so existing server-level patches remain effective.
+    if game in deeptalk_catalog.ALIASES:
+        try:
+            return json.dumps({"game": game, "guide": deeptalk_catalog.guide(game)}, ensure_ascii=False)
+        except DeeptalkError as exc:
+            raise _McpError(-32602, exc.message) from None
+    if game == "deeptalk":
+        return json.dumps({"game": game, "guide": DEEPTALK_GUIDE}, ensure_ascii=False)
     return mcp_guides._tool_get_guide(
         arguments,
         guide_dir=GUIDE_DIR,
@@ -3818,6 +3858,7 @@ def _tool_play_inner(
         _anti_addiction_rest=_anti_addiction_rest,
         _auto_migrate_legacy_account_saves=_auto_migrate_legacy_account_saves,
         _current_account=_current_account,
+        _aidep_shared_result=_aidep_shared_result,
         _deserialize_object_param=_deserialize_object_param,
         _duel_bound_human_player_id=_duel_bound_human_player_id,
         _finalize_play_response=_finalize_play_response,
@@ -3835,6 +3876,7 @@ def _tool_play_inner(
         _play_mbti=_play_mbti,
         _play_scale=_play_scale,
         _play_tarot=_play_tarot,
+        _play_deeptalk=_play_deeptalk,
         _play_vendor_cmd=_play_vendor_cmd,
         _play_workkk=_play_workkk,
         _prepare_duel_payload=_prepare_duel_payload,
@@ -3855,6 +3897,12 @@ def _tool_play_inner(
         puzzle_box=puzzle_box,
         sins_virtues_handler=sins_virtues_handler,
     )
+
+
+def _aidep_shared_result(raw_token, human_id):
+    user = _current_account(raw_token)
+    return aidep_sharing.access(research_scales.SCALES['aidep'], _db_connect, user, _McpError,
+                                human_id=human_id)
 
 
 def _finalize_play_response(
@@ -4018,6 +4066,16 @@ def _tarot_mcp_error(exc):
         exc,
         _McpError=_McpError,
     )
+
+
+def _play_deeptalk(arguments, ai_user):
+    try:
+        return deeptalk_service.execute(
+            ai_user, arguments.get("action"), arguments,
+            db_path=SESSIONS_DB_PATH, db_connect=_db_connect,
+        )
+    except DeeptalkError as exc:
+        raise _McpError(-32001 if exc.status == 401 else -32003 if exc.status in {403, 404} else -32602, exc.message) from None
 
 
 def _play_tarot(arguments, ai_user):
@@ -4550,7 +4608,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return False
         if path in _ROOT_MCP_PATHS:
             return True
-        if path in {"/admin", "/health", "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues"} or path.startswith("/api/"):
+        if path in {"/admin", "/health", "/mbti", "/enneagram", "/dnd", "/love", "/ecr", "/humanity", "/sins_virtues"} or path.startswith("/api/") or path.removeprefix("/") in research_scales.SCALES:
             return False
         tokenish = path.strip("/")
         return bool(tokenish and "/" not in tokenish)
@@ -6057,6 +6115,48 @@ a{{color:#c9afff}}
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
+    def _handle_deeptalk(self, method, path, params=None):
+        private_headers = {"Cache-Control": "no-store", "Vary": "Authorization"}
+        if method == "GET" and path in {"/deeptalk", "/deeptalk/"}:
+            self._send_html_file(Path(__file__).resolve().parent / "deeptalk.html", extra_headers=private_headers)
+            return
+        try:
+            user = _current_account(_extract_bearer(self.headers))
+            if method == "POST":
+                # Bearer only: no ambient cookies and no credentials in links.
+                if self.headers.get("Transfer-Encoding"):
+                    raise DeeptalkError("不支持分块请求")
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 65536:
+                    raise DeeptalkError("请求过大或为空", 413)
+                body = self._read_json_body()
+                action = body.get("action")
+                if path != "/api/deeptalk/action" or action not in {"create", "answer", "submit"}:
+                    raise DeeptalkError("未知操作", 404)
+            else:
+                if path != "/api/deeptalk":
+                    raise DeeptalkError("未知接口", 404)
+                if any(len(values) != 1 for values in params.values()):
+                    raise DeeptalkError("参数不能重复")
+                body = {key: values[0] for key, values in params.items()}
+                for key in ("number", "limit", "offset"):
+                    if key in body:
+                        body[key] = int(body[key])
+                action = body.get("action", "context")
+                if action not in {"context", "topics", "source", "questions", "history", "status", "question", "view", "result"}:
+                    raise DeeptalkError("未知操作", 404)
+            result = deeptalk_service.execute(user, action, body, db_path=SESSIONS_DB_PATH, db_connect=_db_connect, web=True)
+            self._send_json(result, extra_headers=private_headers)
+        except DeeptalkError as exc:
+            self._send_json({"error": exc.message}, status=exc.status, extra_headers=private_headers)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 403, extra_headers=private_headers)
+        except (ValueError, TypeError):
+            self._send_json({"error": "参数格式有误"}, status=400, extra_headers=private_headers)
+        except Exception:
+            logger.exception("deeptalk request failed")
+            self._send_json({"error": "暂时无法读取，请稍后重试"}, status=503, extra_headers=private_headers)
+
     def _handle_api_auth_history(self):
         try:
             result = _account_web_history(_extract_bearer(self.headers))
@@ -6192,24 +6292,25 @@ a{{color:#c9afff}}
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
     def _handle_human_test_api(self, game, action, params=None):
+        private_headers = {"Cache-Control": "no-cache, no-store"}
         try:
             if params is None:
                 body = self._read_json_body()
             else:
-                body = {"player_id": self._get_param(params, "player_id", required=False)}
+                body = {} if action == "sharing" else {"player_id": self._get_param(params, "player_id", required=False)}
             result = _human_test_action(game, action, _extract_bearer(self.headers), body)
             self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
         except _McpError as exc:
             status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else (404 if exc.code == -32004 else 400))
-            self._send_json({"ok": False, "error": exc.message}, status=status)
+            self._send_json({"ok": False, "error": exc.message}, status=status, extra_headers=private_headers)
         except (mbti_handler.JsonRpcError, enneagram_handler.JsonRpcError, dnd_handler.JsonRpcError, love_handler.JsonRpcError, ecr_handler.JsonRpcError, humanity_handler.JsonRpcError, sins_virtues_handler.JsonRpcError) as exc:
             status = 404 if exc.code in (-32001, -32003) else (503 if exc.code == -32000 else 400)
-            self._send_json({"ok": False, "error": exc.message}, status=status)
+            self._send_json({"ok": False, "error": exc.message}, status=status, extra_headers=private_headers)
         except ValueError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, status=400)
+            self._send_json({"ok": False, "error": str(exc)}, status=400, extra_headers=private_headers)
         except Exception as exc:
             logger.exception("human test api failed: game=%s action=%s", game, action)
-            self._send_json({"ok": False, "error": "server error", "detail": str(exc)}, status=500)
+            self._send_json({"ok": False, "error": "server error"}, status=500, extra_headers=private_headers)
 
     def _handle_eco_api(self, endpoint, params, species_name=None):
         try:
@@ -7382,6 +7483,9 @@ a{{color:#c9afff}}
             "subtitle": config["subtitle"],
             "source": config["source"],
             "disclaimer": config.get("disclaimer", ""),
+            "research": config.get("research", False),
+            "total": config.get("total"),
+            "modes": ["full", "full_fast"] if config.get("research") else [],
         }
         html = template.replace("__TEST_GAME_CONFIG__", json.dumps(page_config, ensure_ascii=False))
         self._send_html_bytes(html.encode("utf-8"))

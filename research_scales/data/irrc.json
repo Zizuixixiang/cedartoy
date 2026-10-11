@@ -1,0 +1,292 @@
+{
+  "game": "irrc",
+  "title": "恋爱关系能力 IRRC · 描述版",
+  "author": "Anthony J. Faber, Eu Gene Chin, Victor R. Wilburn, Shahrokh M. Shafaie",
+  "author_short": "Faber",
+  "source": "https://doi.org/10.5964/ijpr.v13i1.341",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "【4399 描述性评分】不是作者官方分数，不适用于常模比较、诊断或效度推断。中文为4399依原题所作的未验证翻译；评分汇总方式由4399另行设定。原研究对象为年轻成人大学生。本版不收集性别、不作性别DIF校正、不估计潜变量或置信区间；七维高分方向不同，不合成能力总分。",
+  "instruction": "请阅读每个陈述，选择最符合自身情况的一档：1几乎从不或从不符合，2不太常符合，3有时符合，4经常符合，5几乎总是或总是符合。",
+  "options": [
+    {
+      "value": 1,
+      "text": "几乎从不或从不符合"
+    },
+    {
+      "value": 2,
+      "text": "不太常符合"
+    },
+    {
+      "value": 3,
+      "text": "有时符合"
+    },
+    {
+      "value": 4,
+      "text": "经常符合"
+    },
+    {
+      "value": 5,
+      "text": "几乎总是或总是符合"
+    }
+  ],
+  "dimensions": {
+    "locus": "关系控制感（描述均分）",
+    "perspective": "换位思考（描述均分）",
+    "romantic_distress": "恋爱吸引力相关困扰（描述均分）",
+    "intimacy_avoidance": "亲密回避（描述均分）",
+    "emotion_difficulty": "情绪调节困难（描述均分）",
+    "temperament": "随和与灵活性（描述均分）",
+    "conflict": "冲突解决技能（描述均分）"
+  },
+  "scoring_note": "4399描述性七维均分（非作者官方IRRC分数）：依Appendix B最终编号，第1–8、9–14、15–17、18–22、23–26、27–29、30–35题分别对应七维，等权取均值，范围1–5。仅第32题（原题池37，Table 3标R）按6−原分转换，其余保留原方向。关系控制感、换位思考、随和与灵活性、冲突解决技能越高，表示更认同相应能力；恋爱吸引力相关困扰、亲密回避、情绪调节困难越高，表示更多困难，不能解释成能力更强。仅完整作答时计算；不作性别DIF、载荷或误差相关校正，不输出潜变量、置信区间、总分、截点、百分位或常模。",
+  "items": [
+    {
+      "id": 1,
+      "original": "I believe I will be able to effectively deal with conflicts that arise in my relationships.",
+      "text": "我相信自己能够有效处理关系中出现的冲突。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "I feel good about the prospects of making a romantic relationship last.",
+      "text": "对于让一段恋爱关系持续下去的前景，我感觉良好。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "I feel I have the skills needed for a lasting stable romantic relationship.",
+      "text": "我觉得自己具备维持长久、稳定恋爱关系所需的能力。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "I am confident I can handle relationship challenges that arise.",
+      "text": "我有信心处理关系中出现的挑战。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "I feel I am able to meet the emotional needs of my significant other.",
+      "text": "我觉得自己能够满足伴侣的情感需求。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "I feel I can influence my relationship satisfaction",
+      "text": "我觉得自己能够影响我对关系的满意程度。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "I feel that if I am not happy in a relationship, I can improve the relationship.",
+      "text": "我觉得，如果自己在一段关系中不开心，我能够改善这段关系。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "I am confident that I will have a long term happy committed relationship.",
+      "text": "我有信心拥有一段长久、幸福、彼此承诺的关系。",
+      "dimension": "locus",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "original": "I take into account other people’s feelings when making decisions.",
+      "text": "做决定时，我会顾及别人的感受。",
+      "dimension": "perspective",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "original": "When I get into a fight with someone, I try to understand how it happened.",
+      "text": "当我与别人发生争执时，我会试着理解争执是怎么发生的。",
+      "dimension": "perspective",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "original": "I try to understand why people are upset with me.",
+      "text": "我会试着理解别人为什么对我不满。",
+      "dimension": "perspective",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "original": "I tend to put myself in another person’s shoes to see their perspective.",
+      "text": "我倾向于设身处地，从别人的角度看问题。",
+      "dimension": "perspective",
+      "reverse": false
+    },
+    {
+      "id": 13,
+      "original": "I usually know why someone is upset with me.",
+      "text": "我通常知道别人为什么对我不满。",
+      "dimension": "perspective",
+      "reverse": false
+    },
+    {
+      "id": 14,
+      "original": "I think about how my actions will affect others.",
+      "text": "我会考虑自己的行为将如何影响别人。",
+      "dimension": "perspective",
+      "reverse": false
+    },
+    {
+      "id": 15,
+      "original": "I worry at times that I will end up alone the rest of my life.",
+      "text": "我有时会担心自己余生都将独自一人。",
+      "dimension": "romantic_distress",
+      "reverse": false
+    },
+    {
+      "id": 16,
+      "original": "I am lonely.",
+      "text": "我感到孤独。",
+      "dimension": "romantic_distress",
+      "reverse": false
+    },
+    {
+      "id": 17,
+      "original": "I struggle to find someone to date.",
+      "text": "我很难找到可以约会的人。",
+      "dimension": "romantic_distress",
+      "reverse": false
+    },
+    {
+      "id": 18,
+      "original": "I struggle to trust people that I am close with.",
+      "text": "我很难信任与我亲近的人。",
+      "dimension": "intimacy_avoidance",
+      "reverse": false
+    },
+    {
+      "id": 19,
+      "original": "I worry other people will hurt me emotionally.",
+      "text": "我担心别人会在情感上伤害我。",
+      "dimension": "intimacy_avoidance",
+      "reverse": false
+    },
+    {
+      "id": 20,
+      "original": "I have a hard time letting people get close to me.",
+      "text": "我很难让别人与我亲近。",
+      "dimension": "intimacy_avoidance",
+      "reverse": false
+    },
+    {
+      "id": 21,
+      "original": "I have a hard time sharing my feelings with others.",
+      "text": "我很难与别人分享自己的感受。",
+      "dimension": "intimacy_avoidance",
+      "reverse": false
+    },
+    {
+      "id": 22,
+      "original": "When I am upset, I like to be alone.",
+      "text": "心情不好时，我喜欢独处。",
+      "dimension": "intimacy_avoidance",
+      "reverse": false
+    },
+    {
+      "id": 23,
+      "original": "I lose my temper at times.",
+      "text": "我有时会发脾气。",
+      "dimension": "emotion_difficulty",
+      "reverse": false
+    },
+    {
+      "id": 24,
+      "original": "I get into arguments with people.",
+      "text": "我会与别人发生争吵。",
+      "dimension": "emotion_difficulty",
+      "reverse": false
+    },
+    {
+      "id": 25,
+      "original": "I often say things I don’t mean when I am mad.",
+      "text": "生气时，我常会说出并非自己本意的话。",
+      "dimension": "emotion_difficulty",
+      "reverse": false
+    },
+    {
+      "id": 26,
+      "original": "When I get mad, I do things that later I regret.",
+      "text": "生气时，我会做出事后令自己后悔的事情。",
+      "dimension": "emotion_difficulty",
+      "reverse": false
+    },
+    {
+      "id": 27,
+      "original": "People say I am easy going.",
+      "text": "别人说我很随和。",
+      "dimension": "temperament",
+      "reverse": false
+    },
+    {
+      "id": 28,
+      "original": "I don’t get too upset over things.",
+      "text": "遇到事情时，我不会变得太心烦。",
+      "dimension": "temperament",
+      "reverse": false
+    },
+    {
+      "id": 29,
+      "original": "I am pretty flexible.",
+      "text": "我相当能灵活变通。",
+      "dimension": "temperament",
+      "reverse": false
+    },
+    {
+      "id": 30,
+      "original": "I can receive negative feedback without getting upset",
+      "text": "我能够接受负面反馈，而不感到心烦。",
+      "dimension": "conflict",
+      "reverse": false
+    },
+    {
+      "id": 31,
+      "original": "I tend to address issues that are bothering me",
+      "text": "我倾向于处理那些困扰我的问题。",
+      "dimension": "conflict",
+      "reverse": false
+    },
+    {
+      "id": 32,
+      "original": "I tend to avoid discussing issues that might upset someone",
+      "text": "我倾向于回避讨论可能让别人心烦的问题。",
+      "dimension": "conflict",
+      "reverse": true
+    },
+    {
+      "id": 33,
+      "original": "I feel I handle conflict well",
+      "text": "我觉得自己能妥善处理冲突。",
+      "dimension": "conflict",
+      "reverse": false
+    },
+    {
+      "id": 34,
+      "original": "I feel I can communicate my feelings well",
+      "text": "我觉得自己能清楚地表达自己的感受。",
+      "dimension": "conflict",
+      "reverse": false
+    },
+    {
+      "id": 35,
+      "original": "I feel I can communicate my points/thoughts well",
+      "text": "我觉得自己能清楚地表达自己的观点或想法。",
+      "dimension": "conflict",
+      "reverse": false
+    }
+  ],
+  "aggregation": "mean",
+  "overall_mean": false,
+  "blocked": false
+}

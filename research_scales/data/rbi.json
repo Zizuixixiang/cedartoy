@@ -1,0 +1,169 @@
+{
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "blocked": false,
+  "aggregation": "mean",
+  "game": "rbi",
+  "title": "伴侣关系互动（RBI） · 描述版",
+  "author": "Tal Harel, Meni Koslowsky",
+  "source": "https://www.nature.com/articles/s41598-024-58901-2",
+  "instruction": "请根据过去一周的关系互动，评定以下陈述对你的行为有多符合。1表示完全没有，5表示非常符合。",
+  "options": [
+    {
+      "value": 1,
+      "text": "完全没有"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "非常符合"
+    }
+  ],
+  "dimensions": {
+    "sai": "陪伴与情感互动（描述均分）",
+    "fod": "履行伴侣责任（描述均分）",
+    "openness": "关系中的开放表达（描述均分）"
+  },
+  "notice": "【4399 描述性评分】不是作者官方分数，不适用于常模比较、诊断或效度推断。中文为4399依原题所作的未验证翻译；评分汇总方式由4399另行设定。描述过去一周的伴侣互动，不是追人主动性。原验证对象为交往超过一年的以色列异性伴侣。",
+  "items": [
+    {
+      "id": 1,
+      "original": "I hugged my partner",
+      "text": "我拥抱了伴侣。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "I praised my partner for good things he/she did",
+      "text": "我称赞了伴侣做得好的事情。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "I told my partner that I love him/her and expressed my feelings for him/her",
+      "text": "我告诉伴侣我爱对方，并表达了我对对方的感情。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "I showed my partner how much I love him/her",
+      "text": "我向伴侣展现了我有多爱对方。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "I spent time together with my partner",
+      "text": "我和伴侣一起度过了一些时光。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "I made my partner feel good",
+      "text": "我让伴侣感到愉快。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "I complimented my partner",
+      "text": "我赞美了伴侣。",
+      "dimension": "sai",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "I accepted my partner’s requests and needs",
+      "text": "我接受了伴侣的请求和需求。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "original": "I gave my partner some \"space\" so he/she could focus on things that are important to him/her",
+      "text": "我给了伴侣一些“空间”，让对方可以专注于自己重视的事情。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "original": "I followed the joint agreements I have with my partner",
+      "text": "我遵守了我和伴侣共同达成的约定。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "original": "I fulfilled my tasks and duties at home",
+      "text": "我完成了在家中应做的事情和职责。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "original": "Even when we had arguments and fights last week, I have taken actions to preserve our relationship",
+      "text": "即使上周我们发生了争执和争吵，我也采取行动来维护我们的关系。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 13,
+      "original": "In my daily actions, I considered my partner",
+      "text": "在日常行动中，我顾及了伴侣。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 14,
+      "original": "I helped my partner last week when he/she asked for help",
+      "text": "上周伴侣向我求助时，我帮助了对方。",
+      "dimension": "fod",
+      "reverse": false
+    },
+    {
+      "id": 15,
+      "original": "I had the chance to discuss shared goals, plans, and ambitions with my partner",
+      "text": "我有机会和伴侣讨论共同的目标、计划和抱负。",
+      "dimension": "openness",
+      "reverse": false
+    },
+    {
+      "id": 16,
+      "original": "I mentioned to my partner how unique our relationship is, unlike other people’s relationships",
+      "text": "我向伴侣提到，我们的关系是多么独特，与其他人的关系不同。",
+      "dimension": "openness",
+      "reverse": false
+    },
+    {
+      "id": 17,
+      "original": "I talked to my partner about my needs and what bothers me in our relationship",
+      "text": "我和伴侣谈了我的需求，以及这段关系中令我困扰的事情。",
+      "dimension": "openness",
+      "reverse": false
+    },
+    {
+      "id": 18,
+      "original": "I shared my feelings and emotions with my partner",
+      "text": "我与伴侣分享了我的感受和情绪。",
+      "dimension": "openness",
+      "reverse": false
+    }
+  ],
+  "overall_mean": false,
+  "author_short": "Harel",
+  "scoring_note": "4399描述性维度均分（非作者官方分数）：按论文Table 2排列，第1–7题陪伴与情感互动、第8–14题履行伴侣责任、第15–18题关系中的开放表达，各组等权取均值，范围1–5。保留原题方向，不设反向题；越高仅表示过去一周该类行为更符合你的情况，不代表伴侣评价、匹配度或关系预测。仅完整作答时计算，不合成总分，不设截点、百分位或常模。"
+}

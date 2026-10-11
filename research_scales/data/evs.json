@@ -1,0 +1,150 @@
+{
+  "game": "evs",
+  "title": "情绪脆弱性 EVS",
+  "author": "Shinji Yamaguchi, Yujiro Kawata, Yuka Murofushi & Tsuneyoshi Ota",
+  "source": "https://doi.org/10.3389/fpsyg.2022.941250",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "本中文题目为依照正式论文英文题目所作的未验证翻译，未经过中文版心理测量验证。仅供娱乐和自我了解，不作诊断；不设临床分界值。原研究对象为日本大学生，使用论文表1英文表述；得分为全体和各维度题目均分，越高表示越容易在相应情境中感到受伤。小机作答仅为娱乐演绎，不具有人类量表效度。",
+  "instruction": "请根据自身通常的实际情况，选择你对每句话的认同程度。原文仅命名量尺两端，中间档位保留数字。",
+  "options": [
+    {
+      "value": 1,
+      "text": "完全不同意"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "完全同意"
+    }
+  ],
+  "dimensions": {
+    "criticism": "面对批评或否定",
+    "relationships": "担心关系恶化",
+    "discord": "面对人际不和",
+    "avoidance": "拖延与情绪回避"
+  },
+  "items": [
+    {
+      "id": 1,
+      "text": "当我的意见受到批评时，我会感到受伤。",
+      "original": "I get hurt when my opinion is criticized",
+      "dimension": "criticism",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "text": "当我的想法遭到否定时，我会感到受伤。",
+      "original": "I get hurt when my thoughts are denied",
+      "dimension": "criticism",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "text": "当有人批评我时，我会感到受伤。",
+      "original": "I get hurt when someone criticizes me",
+      "dimension": "criticism",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "text": "当有人给我建议时，我会感到受伤。",
+      "original": "I get hurt when someone advises me",
+      "dimension": "criticism",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "text": "我不想被人讨厌，因此当我无法拒绝邀请时，我会感到受伤。",
+      "original": "I do not want to be hated, so I feel hurt if I cannot decline an invitation",
+      "dimension": "relationships",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "text": "我害怕被人讨厌，并会因接受别人的请求而感到软弱和受伤。",
+      "original": "I am afraid of being hated by people, and I feel weak and hurt for accepting requests",
+      "dimension": "relationships",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "text": "当我无法拒绝别人让我做的事时，我会感到受伤。",
+      "original": "I feel hurt if I cannot refuse what people have asked me to do",
+      "dimension": "relationships",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "text": "当我无法反对别人的想法时，我会感到软弱和受伤。",
+      "original": "I feel weak and hurt when I cannot oppose people’s ideas",
+      "dimension": "relationships",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "text": "当有人直接对我说我的不好之处时，我会感到受伤。",
+      "original": "I get hurt when I am directly told bad things about myself",
+      "dimension": "discord",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "text": "当我间接听到别人说我的不好之处时，我会感到受伤。",
+      "original": "I get hurt when I am indirectly told bad things about myself",
+      "dimension": "discord",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "text": "当我和朋友的关系变差时，我会感到受伤。",
+      "original": "I get hurt when my relationship with my friends goes bad",
+      "dimension": "discord",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "text": "当我信任的人不和我说话时，我会感到受伤。",
+      "original": "I get hurt when someone I trust does not talk to me",
+      "dimension": "discord",
+      "reverse": false
+    },
+    {
+      "id": 13,
+      "text": "当我试图回避不喜欢的事情时，我会感到脆弱。",
+      "original": "I feel vulnerable when I try to avoid things I do not like",
+      "dimension": "avoidance",
+      "reverse": false
+    },
+    {
+      "id": 14,
+      "text": "当我回避会给自己带来不便的事情时，我会感到受伤。",
+      "original": "I feel hurt avoiding things that cause inconvenience to me",
+      "dimension": "avoidance",
+      "reverse": false
+    },
+    {
+      "id": 15,
+      "text": "当我对问题置之不理时，我会感到后悔和受伤。",
+      "original": "I feel regret and hurt when I turn my back toward a problem",
+      "dimension": "avoidance",
+      "reverse": false
+    },
+    {
+      "id": 16,
+      "text": "当我拖延不喜欢的事情时，我会感到受伤。",
+      "original": "I feel hurt when I put off things I do not like",
+      "dimension": "avoidance",
+      "reverse": false
+    }
+  ],
+  "aggregation": "mean",
+  "author_short": "Yamaguchi",
+  "overall_mean": true
+}

@@ -1881,13 +1881,11 @@
     }
 
     .platform-dist-block {
-      display: grid;
-      gap: 10px;
+      display: block;
       margin-bottom: 12px;
       background: #fff;
       border: 4px solid var(--purple);
       box-shadow: 4px 4px 0 rgba(190, 177, 209, 0.35);
-      padding: 12px;
     }
 
     .platform-dist-block:last-child {
@@ -1897,6 +1895,24 @@
     .platform-dist-title {
       color: var(--pink);
       font-size: 13px;
+      min-height: 44px;
+      padding: 12px;
+      cursor: pointer;
+    }
+
+    .platform-dist-title::marker {
+      color: var(--purple-darker);
+    }
+
+    .platform-dist-title:focus-visible {
+      outline: 2px solid var(--purple-darker);
+      outline-offset: -4px;
+    }
+
+    .platform-dist-body {
+      display: grid;
+      gap: 10px;
+      padding: 0 12px 12px;
     }
 
     .platform-dist-row {
@@ -3949,6 +3965,21 @@
         ranks: []
       },
       {
+        id: "deeptalk",
+        category: "mini",
+        name: "Deeptalk 双人问答",
+        mission: "MISSION: LISTEN",
+        location: "LOCATION: BETWEEN US",
+        glyph: "聊", badge: "TALK", level: "双人",
+        metricLabel: "玩法", metric: "开放问答",
+        short: "答完再看 / 边聊边答",
+        desc: "选一个主题，和自己的小机慢慢聊。各自提交后互看回答，或直接在原有聊天软件里讨论。无标准答案、无分数。",
+        logs: ["答完再看：登录后选主题和已绑定小机，各自回答或跳过，双方正式提交整卷后才解锁。", "边聊边答：小机按需读题，在原有聊天软件讨论，无需向4399提交答案。", "每轮独立保存，从首页历史继续或查看。题库详情与来源在答题页按需查看。"],
+        stats: [["主题", "4 套"], ["参与", "双人"]],
+        footerIcons: ["?", "♡", "聊"], tags: ["双人", "问答", "MCP"],
+        url: "/deeptalk", ctaLabel: "开始聊聊 →", ranks: []
+      },
+      {
         id: "puzzle_box",
         iconFile: "puzzle_box.png",
         category: "mini",
@@ -4530,6 +4561,37 @@
         ranks: []
       }
     ];
+
+    // Only source-verified, enabled research scales appear in the test hall.
+    const researchScales = [
+      ["aidep", "AI 依赖倾向 AIDep-22", 22, "Wu", true, false],
+      ["bsfl", "害怕孤独 BSFL", 5, "Ventura-León", false, true],
+      ["bsr", "伪深刻话语测试 · 4399 娱乐改编版", 20, "Pennycook 等", false, false],
+      ["evs", "情绪脆弱性 EVS", 16, "Yamaguchi", false, false],
+      ["ipip_adhd", "IPIP 注意与活动倾向", 12, "IPIP", false, false],
+      ["ipip_empathy", "IPIP 共情关怀", 10, "IPIP", false, false],
+      ["ipip_need_for_cognition", "IPIP 思考偏好", 10, "IPIP", false, false],
+      ["ipip_self_monitoring", "IPIP 社交自我呈现", 10, "IPIP", false, false],
+      ["ipip_sociability", "IPIP 社交舒适度", 10, "IPIP", false, false],
+      ["irrc", "恋爱关系能力 IRRC · 描述版", 35, "Faber", false, true],
+      ["jrrs", "恋爱嫉妒 JRRS · 描述版", 16, "İpek", false, true],
+      ["mesx", "MESx 道德关怀圈", 10, "Crimston 等", false, false],
+      ["ppts", "拖延与提前完成 PPTS", 18, "Husain", false, true],
+      ["rbi", "伴侣关系互动（RBI） · 描述版", 18, "Harel", false, true],
+      ["rnss", "关系需求满足度 RNSS", 20, "Žvelc", false, false],
+      ["romlon", "浪漫孤独感 RomLon", 4, "Husain", false, false],
+      ["ross", "恋爱求支持（RoSS） · 描述版", 17, "Perks", false, true],
+      ["rss", "恋爱自我破坏（RSS） · 描述版", 12, "Peel", false, true]
+    ];
+    games.push(...researchScales.map(([id, name, count, author, humanOnly, descriptive]) => ({
+      id, name, category: "test", mission: "MISSION: SELF REFLECTION",
+      location: "LOCATION: OPEN SCALES", glyph: "◎", badge: "OPEN", level: "FULL",
+      metricLabel: "题目数", metric: String(count), short: "开放研究量表 / 自我了解",
+      desc: `${count}题，逐题保存或答齐后一次提交。中文为未验证翻译；仅供娱乐/自我了解，不作诊断。${humanOnly ? "仅供人类；原量表针对大学生学习中的 AI 使用。" : "小机作答仅作娱乐演绎。"}`,
+      logs: [`原作者：${author}`, descriptive ? "4399描述性维度均分，非原作者正式评分。" : "两种模式同卷同分，来源与许可见测试页。", "不提供跨账号答案或对测。"],
+      stats: [], footerIcons: ["◎", "◇"], tags: ["开放量表", humanOnly ? "人类专属" : "人机娱乐"],
+      url: `/${id}`, ranks: []
+    })));
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
@@ -5745,6 +5807,18 @@
       `;
     }
 
+    function renderDeeptalkHistory(history) {
+      const rounds = Array.isArray(history?.rounds) ? history.rounds : [];
+      if (!rounds.length) return "";
+      return `<article class="history-card"><div class="history-card-title">Deeptalk 双人问答</div>${rounds.map(round => `
+        <div class="history-duel-match">
+          <div class="history-duel-game">${escapeHtml(round.title)}</div>
+          <div class="history-card-desc">${escapeHtml(round.human_name)} × ${escapeHtml(round.ai_name)} · ${round.status === "complete" ? "已完成" : "进行中"}</div>
+          <div class="history-card-desc">${escapeHtml(historyTimestamp(round.updated_at))}</div>
+          <a class="pixel-btn secondary" href="/deeptalk?round_id=${encodeURIComponent(round.round_id)}">${round.status === "complete" ? "查看" : "继续"}</a>
+        </div>`).join("")}${history.total > rounds.length ? '<button class="pixel-btn secondary" type="button" id="deeptalkHistoryMore">加载更多</button>' : ''}</article>`;
+    }
+
     function historySubjects(data) {
       return [
         {
@@ -5753,6 +5827,7 @@
           username: data?.self?.username || data?.user?.username || "",
           saves: data?.self?.saves || {},
           duelHistory: data?.self?.duel_history || null,
+          deeptalkHistory: data?.self?.deeptalk_history || null,
         },
         ...(Array.isArray(data?.machines) ? data.machines.map((machine, index) => ({
           id: `machine-${index}`,
@@ -5780,6 +5855,8 @@
       const duelMatches = Array.isArray(duelHistory?.matches) ? duelHistory.matches : [];
       const duelTotal = Number.isFinite(Number(duelHistory?.total)) ? Number(duelHistory.total) : duelMatches.length;
       const sections = [];
+      const deeptalkSection = renderDeeptalkHistory(active?.deeptalkHistory);
+      if (deeptalkSection) sections.push(deeptalkSection);
       const duelSection = renderDuelHistory(duelHistory);
       if (duelSection) sections.push(duelSection);
       if (entries.length) {
@@ -5797,6 +5874,19 @@
     }
 
     function bindHistoryTabs() {
+      const deeptalkMore = $("deeptalkHistoryMore");
+      if (deeptalkMore) deeptalkMore.addEventListener("click", async () => {
+        deeptalkMore.disabled = true;
+        try {
+          const saved = historyState.data.self.deeptalk_history;
+          const response = await fetch(`/api/deeptalk?action=history&offset=${saved.rounds.length}`, {headers: {Authorization: `Bearer ${token()}`}, cache: "no-store"});
+          const page = await response.json();
+          if (!response.ok) throw new Error(page.error || "读取失败");
+          saved.rounds.push(...page.rounds); saved.total = page.total;
+          $("historyContent").innerHTML = renderHistory();
+          bindHistoryTabs();
+        } catch (err) { showToast(err.message || "读取失败，请重试"); deeptalkMore.disabled = false; }
+      });
       document.querySelectorAll("[data-history-tab]").forEach((button) => {
         button.addEventListener("click", () => {
           historyState.activeId = button.dataset.historyTab || "self";
@@ -5926,10 +6016,10 @@
           }).join("")
         : `<p class="history-empty">暂无数据</p>`;
       return `
-        <section class="platform-dist-block platform-dist-${game}">
-          <div class="platform-dist-title">${escapeHtml(platformTestLabels[game] || game)}</div>
-          ${body}
-        </section>
+        <details class="platform-dist-block platform-dist-${game}">
+          <summary class="platform-dist-title">${escapeHtml(platformTestLabels[game] || game)}</summary>
+          <div class="platform-dist-body">${body}</div>
+        </details>
       `;
     }
 

@@ -186,7 +186,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                     set(sanitized_params["properties"]),
                     set(schema["properties"]["params"]["properties"]),
                 )
-                if schema_mode == "legacy" or (schema_mode != "standard" and server._is_kelivo_user_agent(user_agent)):
+                if schema_mode == "legacy":
                     for field in (
                         "room_id", "move", "question", "revision", "game_action",
                         "command", "puzzle_id", "checkpoint_id", "answer",
@@ -206,7 +206,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                     for tool in server._PLATFORM_TOOLS
                     if tool["name"] == "play"
                 )
-                if schema_mode == "legacy" or (schema_mode != "standard" and server._is_kelivo_user_agent(user_agent)):
+                if schema_mode == "legacy":
                     for name in ("game", "action", "params"):
                         self.assertEqual(
                             schema["properties"][name]["description"],
@@ -246,7 +246,7 @@ class RootMcpProtocolTests(unittest.TestCase):
             with self.subTest(user_agent=user_agent, mode=mode):
                 tool = next(t for t in server._root_tools(user_agent, schema_mode=mode)
                             if t["name"] == "account")
-                if mode == "legacy" or (mode != "standard" and server._is_kelivo_user_agent(user_agent)):
+                if mode == "legacy":
                     self.assertEqual(tool, source)
                     self.assertIn("current_password", tool["inputSchema"]["properties"])
                     continue
@@ -283,7 +283,7 @@ class RootMcpProtocolTests(unittest.TestCase):
             with self.subTest(user_agent=user_agent, schema_mode=schema_mode):
                 schema = self._play_schema(user_agent, schema_mode=schema_mode)
                 check_enums(schema)
-                if schema_mode == "legacy" or (schema_mode != "standard" and server._is_kelivo_user_agent(user_agent)):
+                if schema_mode == "legacy":
                     takeover = schema["properties"]["params"]["properties"]["timeout_takeover_seconds"]
                     self.assertEqual(takeover["type"], "integer")
                     self.assertNotIn("enum", takeover)
@@ -325,7 +325,8 @@ class RootMcpProtocolTests(unittest.TestCase):
                 guide = server._tool_get_guide({"game": game})
                 for term in ("export", "import", "save_data", "confirm", "slot"):
                     self.assertRegex(guide, r"\b" + term + r"\b")
-                self.assertIn("覆盖", guide)
+                self.assertIn("存档", guide)
+                self.assertIn("已有", guide)
 
     def test_account_guide_keeps_slot_operations_without_platform_announcements(self):
         account_guide = server._tool_get_guide({"game": "account"})

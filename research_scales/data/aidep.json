@@ -1,0 +1,219 @@
+{
+  "game": "aidep",
+  "title": "AI 依赖倾向 AIDep-22",
+  "author": "Houyu Wu, Haiyang Ni, Wenfu Luo & Tenglong Wu",
+  "source": "https://doi.org/10.3389/fpsyg.2025.1725393",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "本中文题目为依照正式论文英文题目所作的未验证翻译，未经过中文版心理测量验证。仅供娱乐和自我了解，不作诊断；不设临床分界值。仅供人类。原研究针对中国18–24岁大学生在学习任务中的AI使用，不代表所有人、所有AI使用场景或情感陪伴。此处是论文英文版题目的未验证中文回译，并非作者验证的中文原问卷。使用表2修订后的22题，删除初始题4/8/19/20。全量和各维度均分越高代表相应依赖表现越多；不将论文探索性分组包装成临床诊断。",
+  "instruction": "请根据自身通常的实际情况，选择你对每句话的认同程度。原文仅命名量尺两端，中间档位保留数字。",
+  "options": [
+    {
+      "value": 1,
+      "text": "完全不同意"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "完全同意"
+    }
+  ],
+  "dimensions": {
+    "emotional": "情绪依赖",
+    "functional": "功能依赖",
+    "cognitive": "认知依赖",
+    "control": "失去控制"
+  },
+  "items": [
+    {
+      "id": 1,
+      "text": "没有AI的帮助，我会感到不安或缺乏安全感。",
+      "original": "I feel uneasy or insecure without the help of AI.",
+      "dimension": "emotional",
+      "reverse": false,
+      "source_id": 1
+    },
+    {
+      "id": 2,
+      "text": "用AI辅助学习会让我感到平静和放松。",
+      "original": "Using AI to assist my studies makes me feel calm and relaxed.",
+      "dimension": "emotional",
+      "reverse": false,
+      "source_id": 2
+    },
+    {
+      "id": 3,
+      "text": "如果不能用AI帮助学习，我会感到焦虑和沮丧。",
+      "original": "I would feel anxious and frustrated if I couldn't use AI for my studies.",
+      "dimension": "emotional",
+      "reverse": false,
+      "source_id": 3
+    },
+    {
+      "id": 4,
+      "text": "每当遇到难题，我的第一反应就是希望AI能帮助我；否则，我会感到紧张。",
+      "original": "Whenever I encounter a difficult problem, my first instinct is to hope AI can help me; otherwise, I feel tense.",
+      "dimension": "emotional",
+      "reverse": false,
+      "source_id": 5
+    },
+    {
+      "id": 5,
+      "text": "与AI互动（例如通过聊天提示）是一种愉快的体验，让我感到得到支持。",
+      "original": "Interacting with AI (e.g., via chat prompts) is a pleasant experience that makes me feel supported.",
+      "dimension": "emotional",
+      "reverse": false,
+      "source_id": 6
+    },
+    {
+      "id": 6,
+      "text": "我几乎把所有学习任务都交给AI，因为它做得比我更快、更好。",
+      "original": "I delegate almost all my academic tasks to AI because it performs them faster and better than I do.",
+      "dimension": "functional",
+      "reverse": false,
+      "source_id": 7
+    },
+    {
+      "id": 7,
+      "text": "我依靠AI的功能（例如提供答案、写作建议）来提高学习效率。",
+      "original": "I rely on AI's functions (e.g., providing answers, writing suggestions) to improve my learning efficiency.",
+      "dimension": "functional",
+      "reverse": false,
+      "source_id": 9
+    },
+    {
+      "id": 8,
+      "text": "没有AI的辅助，我已经无法应付复杂的学习任务。",
+      "original": "I can no longer manage complex academic tasks without the assistance of AI.",
+      "dimension": "functional",
+      "reverse": false,
+      "source_id": 10
+    },
+    {
+      "id": 9,
+      "text": "比起完全自己完成，我更愿意把收集信息和组织内容交给AI。",
+      "original": "I prefer to delegate information gathering and content organization to AI rather than doing it entirely myself.",
+      "dimension": "functional",
+      "reverse": false,
+      "source_id": 11
+    },
+    {
+      "id": 10,
+      "text": "在学习中，我过度依赖AI提供的现成答案或解决方案。",
+      "original": "In my studies, I excessively rely on the ready-made answers or solutions provided by AI.",
+      "dimension": "functional",
+      "reverse": false,
+      "source_id": 12
+    },
+    {
+      "id": 11,
+      "text": "没有AI的支持，我会觉得自己在学习上力不从心。",
+      "original": "I feel inadequate in my studies without the support of AI.",
+      "dimension": "functional",
+      "reverse": false,
+      "source_id": 13
+    },
+    {
+      "id": 12,
+      "text": "我经常不先自己思考，就直接向AI索要答案。",
+      "original": "I often ask AI for answers directly without thinking for myself first.",
+      "dimension": "cognitive",
+      "reverse": false,
+      "source_id": 14
+    },
+    {
+      "id": 13,
+      "text": "使用AI之后，我独立分析和解决问题的能力下降了。",
+      "original": "After using AI, my ability to independently analyze and solve problems has declined.",
+      "dimension": "cognitive",
+      "reverse": false,
+      "source_id": 15
+    },
+    {
+      "id": 14,
+      "text": "面对学习上的挑战时，我依赖AI，而不是尝试自己想明白。",
+      "original": "When faced with an academic challenge, I rely on AI instead of attempting to think it through on my own.",
+      "dimension": "cognitive",
+      "reverse": false,
+      "source_id": 16
+    },
+    {
+      "id": 15,
+      "text": "长期使用AI之后，我变得不太愿意独立思考，更愿意让AI完成这些工作。",
+      "original": "After long-term use of AI, I have become less inclined to think independently, preferring AI to do the work.",
+      "dimension": "cognitive",
+      "reverse": false,
+      "source_id": 17
+    },
+    {
+      "id": 16,
+      "text": "我习惯让AI替我作判断和决定，而不是充分相信自己的判断。",
+      "original": "I am accustomed to letting AI make judgments and decisions for me rather than fully trusting my own judgment.",
+      "dimension": "cognitive",
+      "reverse": false,
+      "source_id": 18
+    },
+    {
+      "id": 17,
+      "text": "我试过减少使用AI，但从未能长期坚持。",
+      "original": "I have tried to reduce my use of AI, but I have never succeeded for long.",
+      "dimension": "control",
+      "reverse": false,
+      "source_id": 21
+    },
+    {
+      "id": 18,
+      "text": "一旦开始使用AI，我常常很难停下来，即使已经花了很多时间。",
+      "original": "Once I start using AI, I often find it difficult to stop, even after spending a lot of time on it.",
+      "dimension": "control",
+      "reverse": false,
+      "source_id": 22
+    },
+    {
+      "id": 19,
+      "text": "我知道不该太依赖AI，但我控制不住自己。",
+      "original": "I know I shouldn't rely too much on AI, but I can't control myself.",
+      "dimension": "control",
+      "reverse": false,
+      "source_id": 23
+    },
+    {
+      "id": 20,
+      "text": "我几乎无法控制自己使用AI的频率和时长。",
+      "original": "I have almost no control over the frequency and duration of my AI use.",
+      "dimension": "control",
+      "reverse": false,
+      "source_id": 24
+    },
+    {
+      "id": 21,
+      "text": "我有能力不用AI完成任务，但仍然忍不住使用它。",
+      "original": "I am capable of completing tasks without AI, but I still cannot resist using it.",
+      "dimension": "control",
+      "reverse": false,
+      "source_id": 25
+    },
+    {
+      "id": 22,
+      "text": "如果一段时间不用AI，我会强烈地想用它，有时甚至感到烦躁。",
+      "original": "If I don't use AI for a period of time, I feel a strong urge to use it, sometimes even feeling irritable.",
+      "dimension": "control",
+      "reverse": false,
+      "source_id": 26
+    }
+  ],
+  "aggregation": "mean",
+  "human_only": true,
+  "author_short": "Wu",
+  "overall_mean": true
+}

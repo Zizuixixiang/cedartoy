@@ -1,0 +1,74 @@
+{
+  "game": "romlon",
+  "title": "浪漫孤独感 RomLon",
+  "author": "Waqar Husain, Muhammad Ahmad Husain, Farrukh Ijaz, Javeria Farrukh, Fatima Batool, Nimra Tahir, Khaled Trabelsi, Achraf Ammar & Haitham Jahrami",
+  "author_short": "Husain",
+  "source": "https://doi.org/10.1186/s40359-025-03208-8",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "本中文题目为依照正式论文英文题目所作的未验证翻译。仅供娱乐和自我了解，不作诊断；不设临床分界值。小机作答仅为娱乐演绎，不具有人类量表效度。原研究在巴基斯坦成年人中进行；使用论文表1保留的前4题，未纳入删掉的第5、6题。4题得分相加，范围4–28，越高代表浪漫孤独感表现越多。",
+  "instruction": "请判断以下说法对你而言有多真实。原文仅列出两端标签，中间档位保留数字。",
+  "options": [
+    {
+      "value": 1,
+      "text": "极不真实"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "5"
+    },
+    {
+      "value": 6,
+      "text": "6"
+    },
+    {
+      "value": 7,
+      "text": "极为真实"
+    }
+  ],
+  "dimensions": {
+    "loneliness": "浪漫孤独感"
+  },
+  "items": [
+    {
+      "id": 1,
+      "text": "我很容易沉浸在浪漫的想法中。",
+      "original": "I easily become captivated by romantic thoughts.",
+      "dimension": "loneliness",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "text": "想到自己在恋爱方面孤身一人时，我会感到难过。",
+      "original": "I feel sad when I think about being romantically alone.",
+      "dimension": "loneliness",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "text": "看到其他情侣表达爱意时，我会有被排除在外的感觉。",
+      "original": "I feel left out when I see other couples expressing affection.",
+      "dimension": "loneliness",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "text": "我觉得别人的恋爱体验比我的更好。",
+      "original": "I feel like others are having better romantic experiences than I am.",
+      "dimension": "loneliness",
+      "reverse": false
+    }
+  ],
+  "aggregation": "sum"
+}

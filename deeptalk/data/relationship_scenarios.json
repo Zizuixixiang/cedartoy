@@ -1,0 +1,82 @@
+{
+  "topic_id": "relationship_scenarios",
+  "title": "亲密关系情境",
+  "description": "通过具体关系情境，讨论相处、冲突与同意。",
+  "author": "原题：Sexual Violence Support & Prevention Office, Simon Fraser University（InterroBang）；官方简体中文讲义：Intersectional Sexualized Violence – International Student Resource Development Team，© 2024 Government of British Columbia，BCcampus；题包编排：CedarToy",
+  "source_url": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf",
+  "license": "CC BY-NC 4.0",
+  "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "adaptation_note": "采用官方简体中文ZH_H4《其他问题》第1页全部14个问题项目符号，按三个小节原顺序逐字保留，仅合并PDF排版换行；不将全部题目改写为假设情境。原题提取自InterroBang，上游署名与非商业许可见https://www.sfu.ca/sexual-violence/education-prevention/interrobang/print---play-.html。平台按本任务确认的非商业用途使用，保留SFU及中文讲义署名；不以讲义页脚CC BY 4.0推定上游NC限制被免除。",
+  "questions": [
+    {
+      "id": "h4_01",
+      "text": "是否有任何让你感到不舒服的社交习俗（例如问候）？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「理解和表达我们的界限」第1个问题项目符号；全页顺序第1项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_02",
+      "text": "有关你对性取向和性别的看法，你与家人讨论过多少次？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第1个问题项目符号；全页顺序第2项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_03",
+      "text": "与你交往的人可能如何向你表明他们重视你？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第2个问题项目符号；全页顺序第3项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_04",
+      "text": "你与同事、朋友、伴侣或家人之间的沟通方式有何不同？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第3个问题项目符号；全页顺序第4项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_05",
+      "text": "你的父母告诉你，不再允许你去见你最亲密的朋友之一。你会怎么说或怎么做？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第4个问题项目符号；全页顺序第5项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_06",
+      "text": "一位朋友邀请你到他们家吃饭，承认对你有感觉，并想发展一段关系，但你没有同样的感觉。你会怎么说或怎么做？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第5个问题项目符号；全页顺序第6项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_07",
+      "text": "你的父母通过社交媒体发现你一直在和比你大几岁的人约会。他们与你对质并告诉你，不许你与你的伴侣约会。你会怎么说或怎么做？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第6个问题项目符号；全页顺序第7项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_08",
+      "text": "你的伴侣给你下了最后通牒：是选择他们还是你的朋友。你会怎么说或怎么做？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第7个问题项目符号；全页顺序第8项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_09",
+      "text": "你的伴侣很沮丧，但你不知道为什么。他们有可能是因为你所做的事情而对你感到不满。你会怎么说或怎么做？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第8个问题项目符号；全页顺序第9项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_10",
+      "text": "一位新朋友邀请你在校园相对偏僻的区域来做一个项目，你喜欢这个人，但私下见面让你感到不舒服。你会怎么说或怎么做？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「界限和健康关系」第9个问题项目符号；全页顺序第10项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_11",
+      "text": "你如何定义“发生性行为”？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「谈谈有关同意的话题」第1个问题项目符号；全页顺序第11项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_12",
+      "text": "如果有人对自己的性健康有疑问，你的学校或社区可以提供哪些资源？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「谈谈有关同意的话题」第2个问题项目符号；全页顺序第12项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_13",
+      "text": "关于你对性取向和性别的看法，什么事情或什么人对你的影响最大？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「谈谈有关同意的话题」第3个问题项目符号；全页顺序第13项；原题：InterroBang，SFU SVSPO。"
+    },
+    {
+      "id": "h4_14",
+      "text": "关于你对性行为的看法，什么事情或什么人对你的影响最大？",
+      "source_ref": "https://opentextbc.ca/isvinternationalzh/wp-content/uploads/sites/454/2023/10/ZH_H4.pdf#page=1 — 《其他问题》「谈谈有关同意的话题」第4个问题项目符号；全页顺序第14项；原题：InterroBang，SFU SVSPO。"
+    }
+  ]
+}

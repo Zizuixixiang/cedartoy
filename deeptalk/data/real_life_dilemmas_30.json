@@ -1,0 +1,162 @@
+{
+  "topic_id": "real_life_dilemmas_30",
+  "title": "现实难题30问",
+  "description": "假设你收到求助，聊聊会怎样建议和处理问题：双方针对同一个虚构烦恼各自给建议，讨论人际交往、工作、创作、家庭与人生困惑中的处理方式。不计分，任何题目都可以跳过。",
+  "author": "つん（原作者）",
+  "source_url": "https://note.com/nattsuntsun/n/na8a0daae6b61",
+  "license": "原作者在原站声明可自由使用：1〜30の番号で選ぶなどしてご自由にお使いください。非 CC BY 授权。",
+  "license_url": "https://note.com/nattsuntsun/n/na8a0daae6b61",
+  "adaptation_note": "CedarToy 自译为简体中文，按原文 1–30 题逐条保留顺序与含义，无增删题目。题中的第一人称属于虚构求助者；双方讨论会给出的建议，无需披露自身经历，小机不得虚构亲身经历。涉及丧失、认知症、欺凌等敏感内容时不作诊断，任何题目均可跳过。source_ref 中 # 后的文字仅标记原文题号，并非网页实际锚点。",
+  "questions": [
+    {
+      "id": 1,
+      "text": "明明喜欢和人聊天，回到家却会一下子觉得非常疲惫。一个人待着寂寞，和人在一起又很累。我该怎样与人相处呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第1题"
+    },
+    {
+      "id": 2,
+      "text": "我有一位学生时代几乎每天都会聊天的挚友。最近即使见面，聊的也尽是工作或结婚，不像以前那么聊得起劲了。明明没有讨厌对方，难道就会这样自然而然地疏远吗？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第2题"
+    },
+    {
+      "id": 3,
+      "text": "宠物去世已经一年了。我也想迎接一只新的宠物，但又觉得这样好像是在忘记以前的那一只，心里很过意不去，迟迟下不了决心。",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第3题"
+    },
+    {
+      "id": 4,
+      "text": "最近我考虑什么都要算得失，连以前喜欢的游戏也玩得不开心了。现在连兴趣爱好都开始追求效率，难道我已经无法单纯因为“喜欢”而享受其中了吗？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第4题"
+    },
+    {
+      "id": 5,
+      "text": "每次看社交媒体都会心情低落，所以我已经删过好几次应用了。可过了几天，还是会重新装回来。想停却停不下来，该怎样才能改变呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第5题"
+    },
+    {
+      "id": 6,
+      "text": "从以前起，我不管做什么都能做到平均水平以上，却没有什么能让我说“这就是我”。即使受到夸奖也高兴不起来，渐渐不知道自己的价值在哪里了。",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第6题"
+    },
+    {
+      "id": 7,
+      "text": "我今年24岁。为了成为小说家，已经坚持写作10年了。虽然能入围新人奖的最终候选名单，却始终没能获奖。父母劝我找工作，但我总觉得“下一次一定能行”。我应该放弃吗？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第7题"
+    },
+    {
+      "id": 8,
+      "text": "每次生日临近，我都会心情低落。有人为我庆祝当然很开心，但我总会想“今年又没有任何成长”。怎样才能积极地看待年龄的增长呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第8题"
+    },
+    {
+      "id": 9,
+      "text": "我是一名高中生。我和一个在社交媒体上认识的人已经交流了好几年。对方邀请我在线下见面，但我还在犹豫要怎么办。",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第9题"
+    },
+    {
+      "id": 10,
+      "text": "我终于做上了一直憧憬的工作。可是每天看到的尽是这个行业令人不喜欢的一面，忍不住想：“如果一直只是憧憬，是不是反而更幸福呢？”",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第10题"
+    },
+    {
+      "id": 11,
+      "text": "我打算整理从小收集至今的收藏品。虽然现在已经很少把它们摆出来了，但又觉得一旦舍弃，连过去花在上面的时间也会变得毫无意义。承载回忆的物品该怎样整理呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第11题"
+    },
+    {
+      "id": 12,
+      "text": "我有一条用了很多年的毛毯。它已经破破烂烂，家人也说最好扔掉，但我觉得它一直陪着我走过人生，实在舍不得扔。我该怎样和家人谈这件事呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第12题"
+    },
+    {
+      "id": 13,
+      "text": "祖父患上了认知症，认不出我是他孙辈的日子越来越多。可只有以前常唱的歌，他仍然会和我一起哼唱。每次去看他，我都既开心又难过，该怎样面对这种心情呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第13题"
+    },
+    {
+      "id": 14,
+      "text": "我能一直坚持努力，但一旦实现目标，就会突然感到空虚。明明应该是自己想要的东西，得到之后却失去了兴趣。我究竟缺少什么呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第14题"
+    },
+    {
+      "id": 15,
+      "text": "我有个朋友会把同一部电影看很多遍，而我看过一遍就满足了。我有点羡慕那些能反复欣赏同一部作品的人。请告诉我，有什么诀窍能更好地享受自己喜欢的内容呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第15题"
+    },
+    {
+      "id": 16,
+      "text": "我出于兴趣创作的作品得到了一点关注。可一想到大家也在期待下一部作品，我就什么都做不出来了。明明应该高兴，却害怕受到评价。",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第16题"
+    },
+    {
+      "id": 17,
+      "text": "明明有朋友，我却觉得“没有人真正理解我”。这是因为我的要求太高了吗？还是说，这是谁都会感受到的孤独呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第17题"
+    },
+    {
+      "id": 18,
+      "text": "想做的事情有很多，可还没开始，我就会想象失败的情形，迟迟无法行动。与其后悔，我更想试着挑战，但迈出第一步总让我害怕。",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第18题"
+    },
+    {
+      "id": 19,
+      "text": "每当想起过去的失败，即使已经过了很多年，我还是会突然觉得很丢脸。明知道别人早就不记得了，却依然很难受。怎样才能好受一些呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第19题"
+    },
+    {
+      "id": 20,
+      "text": "身边的人都说我很认真，可我其实是个懒人。我觉得只要不一直努力，就会失去价值，所以没办法休息。有什么办法能减轻休息时的内疚感吗？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第20题"
+    },
+    {
+      "id": 21,
+      "text": "我支持了很多年的一家店出名了。一方面很高兴，另一方面，店里失去了以前那种安静舒适的氛围，让我无法单纯地为它高兴。",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第21题"
+    },
+    {
+      "id": 22,
+      "text": "我有一个喜欢的人。对方会听我倾诉烦恼，也很温柔，但总是隔好几天才回复消息，与此同时却频繁更新社交媒体。是对我没意思吗？还是我想太多了呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第22题"
+    },
+    {
+      "id": 23,
+      "text": "母亲在照顾住在外地的祖父母。我觉得自己其实也应该帮忙，但我在远方工作，没办法经常回去。优先顾及自己的生活，是不是很冷漠呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第23题"
+    },
+    {
+      "id": 24,
+      "text": "同事工作失误时，我会觉得松了一口气。当然，我不会说出来，有时也会帮忙。但会产生这种情绪的我，是不是人品很差呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第24题"
+    },
+    {
+      "id": 25,
+      "text": "父亲到龄退休后，就一直没什么精神。即使建议他培养兴趣爱好，他也会说“现在才开始，已经太晚了”。我该先关注着他，等他自己愿意行动，还是应该多和他聊聊呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第25题"
+    },
+    {
+      "id": 26,
+      "text": "我很感激父母。可是高中时，父母说过的那一句“你做不到”，我至今都忘不了。我无法原谅父母，是不是心胸太狭窄了呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第26题"
+    },
+    {
+      "id": 27,
+      "text": "我能听别人倾诉烦恼，却没办法向任何人说出自己的烦恼。别人拜托的事情我也无法拒绝，大家都觉得我是个“温柔的人”。这算是温柔吗？还是我只是害怕被讨厌呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第27题"
+    },
+    {
+      "id": 28,
+      "text": "因为学生时代遭受过欺凌，我很难融入人群，也很难相信别人。关系越亲近，我越会觉得“总有一天会被背叛”。怎样才能不再以过去为借口，学会相信别人呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第28题"
+    },
+    {
+      "id": 29,
+      "text": "我对现在的生活很满意。但我觉得，如果中了彩票，自己一定会变得想要更多。人即使已经满足了，也还是会无止境地想要更多吗？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第29题"
+    },
+    {
+      "id": 30,
+      "text": "多亏了 AI，我的工作轻松了很多。可与此同时，我又觉得自己来做这些工作的意义正在减少，因此感到不安。我该怎样与 AI 相处呢？",
+      "source_ref": "https://note.com/nattsuntsun/n/na8a0daae6b61#原文第30题"
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+{
+  "topic_id": "life_reflection_35",
+  "title": "人生与内心35问",
+  "description": "围绕人生价值、幸福、遗憾、恐惧与理想的35道普鲁斯特问卷问题。开放文本，不评分；涉及隐私、敏感或不适用的题均可跳过。",
+  "author": "传统普鲁斯特问卷（19世纪 confession album，原始编者未详）；参考整理：Dawn M. Roode / Modern Heirloom Books",
+  "source_url": "https://www.modernheirloombooks.com/new-blog/2026/12/14/proust-questionnaire-as-memoir-writing-prompts",
+  "license": "公共领域：19世纪 confession album 传统问句；不涵盖参考网页的现代编排、释义、图片和正文。",
+  "license_url": "https://www.modernheirloombooks.com/new-blog/2026/12/14/proust-questionnaire-as-memoir-writing-prompts",
+  "adaptation_note": "CedarToy 按参考页“The (original) Proust Questionnaire”区块的35题顺序自译，不复制现代说明正文，不宣称是19世纪手稿复刻、官方或认证译本。Marcel Proust 是知名答题者，不据此认定为原始出题者。每题自由文本，不评分；敏感、隐私或不适用的题可跳过或答“不适用”。AI 无需虚构身体、私人经历或人生履历。",
+  "questions": [
+    {
+      "id": "life_reflection_35_001",
+      "text": "你心目中完美的幸福是什么样的？",
+      "source_ref": "The (original) Proust Questionnaire #1"
+    },
+    {
+      "id": "life_reflection_35_002",
+      "text": "你最害怕什么？",
+      "source_ref": "The (original) Proust Questionnaire #2"
+    },
+    {
+      "id": "life_reflection_35_003",
+      "text": "你最厌恶自己的哪种特质？",
+      "source_ref": "The (original) Proust Questionnaire #3"
+    },
+    {
+      "id": "life_reflection_35_004",
+      "text": "你最厌恶他人的哪种特质？",
+      "source_ref": "The (original) Proust Questionnaire #4"
+    },
+    {
+      "id": "life_reflection_35_005",
+      "text": "在仍然在世的人中，你最敬佩谁？",
+      "source_ref": "The (original) Proust Questionnaire #5"
+    },
+    {
+      "id": "life_reflection_35_006",
+      "text": "你最奢侈的一项花费或享受是什么？",
+      "source_ref": "The (original) Proust Questionnaire #6"
+    },
+    {
+      "id": "life_reflection_35_007",
+      "text": "你现在的心境是怎样的？",
+      "source_ref": "The (original) Proust Questionnaire #7"
+    },
+    {
+      "id": "life_reflection_35_008",
+      "text": "你认为哪种美德最被高估了？",
+      "source_ref": "The (original) Proust Questionnaire #8"
+    },
+    {
+      "id": "life_reflection_35_009",
+      "text": "你会在什么情况下说谎？",
+      "source_ref": "The (original) Proust Questionnaire #9"
+    },
+    {
+      "id": "life_reflection_35_010",
+      "text": "你最不喜欢自己外貌的哪一点？",
+      "source_ref": "The (original) Proust Questionnaire #10"
+    },
+    {
+      "id": "life_reflection_35_011",
+      "text": "在仍然在世的人中，你最鄙视谁？",
+      "source_ref": "The (original) Proust Questionnaire #11"
+    },
+    {
+      "id": "life_reflection_35_012",
+      "text": "你最欣赏男性的哪种品质？",
+      "source_ref": "The (original) Proust Questionnaire #12"
+    },
+    {
+      "id": "life_reflection_35_013",
+      "text": "你最欣赏女性的哪种品质？",
+      "source_ref": "The (original) Proust Questionnaire #13"
+    },
+    {
+      "id": "life_reflection_35_014",
+      "text": "你最常过度使用哪些词语或说法？",
+      "source_ref": "The (original) Proust Questionnaire #14"
+    },
+    {
+      "id": "life_reflection_35_015",
+      "text": "你一生中最爱的是谁或什么？",
+      "source_ref": "The (original) Proust Questionnaire #15"
+    },
+    {
+      "id": "life_reflection_35_016",
+      "text": "你最幸福的时候是在何时、何地？",
+      "source_ref": "The (original) Proust Questionnaire #16"
+    },
+    {
+      "id": "life_reflection_35_017",
+      "text": "你最想拥有哪种才能？",
+      "source_ref": "The (original) Proust Questionnaire #17"
+    },
+    {
+      "id": "life_reflection_35_018",
+      "text": "如果能改变自己的一点，你会改变什么？",
+      "source_ref": "The (original) Proust Questionnaire #18"
+    },
+    {
+      "id": "life_reflection_35_019",
+      "text": "你认为自己最大的成就是什么？",
+      "source_ref": "The (original) Proust Questionnaire #19"
+    },
+    {
+      "id": "life_reflection_35_020",
+      "text": "如果你死后能以某个人或某种事物的形式重生，你希望成为谁或什么？",
+      "source_ref": "The (original) Proust Questionnaire #20"
+    },
+    {
+      "id": "life_reflection_35_021",
+      "text": "你最想住在哪里？",
+      "source_ref": "The (original) Proust Questionnaire #21"
+    },
+    {
+      "id": "life_reflection_35_022",
+      "text": "你最珍视的拥有之物是什么？",
+      "source_ref": "The (original) Proust Questionnaire #22"
+    },
+    {
+      "id": "life_reflection_35_023",
+      "text": "你认为什么是最深重的不幸？",
+      "source_ref": "The (original) Proust Questionnaire #23"
+    },
+    {
+      "id": "life_reflection_35_024",
+      "text": "你最喜欢从事什么活动？",
+      "source_ref": "The (original) Proust Questionnaire #24"
+    },
+    {
+      "id": "life_reflection_35_025",
+      "text": "你最鲜明的特征是什么？",
+      "source_ref": "The (original) Proust Questionnaire #25"
+    },
+    {
+      "id": "life_reflection_35_026",
+      "text": "你最看重朋友身上的什么？",
+      "source_ref": "The (original) Proust Questionnaire #26"
+    },
+    {
+      "id": "life_reflection_35_027",
+      "text": "你最喜欢哪些作家？",
+      "source_ref": "The (original) Proust Questionnaire #27"
+    },
+    {
+      "id": "life_reflection_35_028",
+      "text": "在虚构作品中，谁是你心目中的英雄？",
+      "source_ref": "The (original) Proust Questionnaire #28"
+    },
+    {
+      "id": "life_reflection_35_029",
+      "text": "你最认同哪位历史人物？",
+      "source_ref": "The (original) Proust Questionnaire #29"
+    },
+    {
+      "id": "life_reflection_35_030",
+      "text": "在现实生活中，哪些人是你心目中的英雄？",
+      "source_ref": "The (original) Proust Questionnaire #30"
+    },
+    {
+      "id": "life_reflection_35_031",
+      "text": "你最喜欢哪些名字？",
+      "source_ref": "The (original) Proust Questionnaire #31"
+    },
+    {
+      "id": "life_reflection_35_032",
+      "text": "你最不喜欢什么？",
+      "source_ref": "The (original) Proust Questionnaire #32"
+    },
+    {
+      "id": "life_reflection_35_033",
+      "text": "你最大的遗憾是什么？",
+      "source_ref": "The (original) Proust Questionnaire #33"
+    },
+    {
+      "id": "life_reflection_35_034",
+      "text": "你希望以怎样的方式离世？",
+      "source_ref": "The (original) Proust Questionnaire #34"
+    },
+    {
+      "id": "life_reflection_35_035",
+      "text": "你的座右铭是什么？",
+      "source_ref": "The (original) Proust Questionnaire #35"
+    }
+  ]
+}

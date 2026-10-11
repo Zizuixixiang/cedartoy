@@ -1,0 +1,135 @@
+{
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "blocked": false,
+  "aggregation": "mean",
+  "game": "rss",
+  "title": "恋爱自我破坏（RSS） · 描述版",
+  "author": "Raquel Peel, Nerina Caltabiano",
+  "source": "https://link.springer.com/article/10.1186/s40359-021-00644-0",
+  "instruction": "以下陈述涉及你在恋爱关系中的通常感受和行为，而非仅限当前关系。如果现在没有伴侣，请回想上一段关系。请选择同意程度，1为非常不同意，7为非常同意。",
+  "options": [
+    {
+      "value": 1,
+      "text": "非常不同意"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "5"
+    },
+    {
+      "value": 6,
+      "text": "6"
+    },
+    {
+      "value": 7,
+      "text": "非常同意"
+    }
+  ],
+  "dimensions": {
+    "defensiveness": "防御性（描述均分）",
+    "trust": "信任困难（描述均分）",
+    "skills": "关系技能不足（描述均分）"
+  },
+  "notice": "【4399 描述性评分】不是作者官方分数，不适用于常模比较、诊断或效度推断。中文为4399依原题所作的未验证翻译；评分汇总方式由4399另行设定。原研究涉及有关系自我破坏经历的英语作答者。",
+  "items": [
+    {
+      "id": 1,
+      "original": "I get blamed unfairly for issues in my relationship.",
+      "text": "关系中的问题会让我受到不公平的责备。",
+      "dimension": "defensiveness",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "I often feel misunderstood by my partner.",
+      "text": "我常觉得伴侣误解了我。",
+      "dimension": "defensiveness",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "I constantly feel criticised by my partner.",
+      "text": "我总是觉得伴侣在批评我。",
+      "dimension": "defensiveness",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "My partner makes me feel a lesser person.",
+      "text": "伴侣让我觉得自己低人一等。",
+      "dimension": "defensiveness",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "I get upset about how much time my partner spends with their friends.",
+      "text": "伴侣花在朋友身上的时间会让我感到不快。",
+      "dimension": "trust",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "I believe that to keep my partner safe I need to know where my partner is.",
+      "text": "我认为，为了确保伴侣安全，我需要知道伴侣在哪里。",
+      "dimension": "trust",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "I often get jealous of my partner.",
+      "text": "我常因伴侣而吃醋。",
+      "dimension": "trust",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "I sometimes check my partner’s social media profiles.",
+      "text": "我有时会查看伴侣的社交媒体个人资料。",
+      "dimension": "trust",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "original": "When I notice that my partner is upset, I try to put myself in their shoes so I can understand where they are coming from.",
+      "text": "当我注意到伴侣心情不好时，我会尝试设身处地理解他们的感受和想法。",
+      "dimension": "skills",
+      "reverse": true
+    },
+    {
+      "id": 10,
+      "original": "I am open to finding solutions and working out issues in the relationship.",
+      "text": "我愿意寻找解决办法，处理关系中的问题。",
+      "dimension": "skills",
+      "reverse": true
+    },
+    {
+      "id": 11,
+      "original": "I will admit to my partner if I know I am wrong about something.",
+      "text": "如果知道自己在某件事上错了，我会向伴侣承认。",
+      "dimension": "skills",
+      "reverse": true
+    },
+    {
+      "id": 12,
+      "original": "I am open to my partner telling me about things I should do to improve our relationship.",
+      "text": "我愿意听伴侣告诉我，为改善我们的关系，我应该做些什么。",
+      "dimension": "skills",
+      "reverse": true
+    }
+  ],
+  "overall_mean": false,
+  "author_short": "Peel",
+  "scoring_note": "4399描述性维度均分（非作者官方分数）：第9–12题依论文Table 2反向键按8−原分转换；第1–4题防御性、第5–8题信任困难、第9–12题关系技能不足，各组等权取均值，范围1–7。越高仅表示更认同该类困难。此处未复现论文的因子得分回归加权或作者手册；仅完整作答时计算，不合成总分，不设截点、百分位或常模。"
+}

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import server
+import research_scales
 
 
 class HumanTestsExtractionTests(unittest.TestCase):
@@ -20,7 +21,10 @@ class HumanTestsExtractionTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(server, "SESSIONS_DB_PATH", self.db))
+        self.stack.enter_context(patch.object(research_scales, "DB_PATH", str(self.db)))
         for config in server.HUMAN_TEST_GAMES.values():
+            if config.get("research"):
+                continue  # Research engines use the shared DB_PATH above.
             self.stack.enter_context(patch.object(config["handler"], "DB_PATH", str(self.db)))
 
     def test_replaced_game_mapping_owns_database_and_question_source(self):

@@ -1,0 +1,108 @@
+{
+  "game": "bsfl",
+  "title": "害怕孤独 BSFL",
+  "author": "José Ventura-León, Andy Rick Sánchez-Villena, Tomás Caycho-Rodríguez, Miguel Barboza-Palomino & Andrés Rubio",
+  "author_short": "Ventura-León",
+  "source": "https://doi.org/10.3389/fpsyg.2020.583396",
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "notice": "中文为依据正式论文表2所作的未验证翻译，不是作者验证的中文版。4399 描述性均分，非原量表标准分；不作诊断，不设临床阈值或常模。原研究对象为秘鲁18–40岁大学生；小机作答仅作娱乐演绎，不具有人类量表效度。",
+  "instruction": "请选择下列感受或行为在你身上出现的频率。",
+  "options": [
+    {
+      "value": 0,
+      "text": "从不",
+      "original": "Never"
+    },
+    {
+      "value": 1,
+      "text": "很少",
+      "original": "Rarely"
+    },
+    {
+      "value": 2,
+      "text": "有时",
+      "original": "Sometimes"
+    },
+    {
+      "value": 3,
+      "text": "几乎总是",
+      "original": "Almost always"
+    },
+    {
+      "value": 4,
+      "text": "总是",
+      "original": "Always"
+    }
+  ],
+  "dimensions": {
+    "fear_of_loneliness": "害怕孤独（描述性均分）"
+  },
+  "items": [
+    {
+      "id": 1,
+      "source_id": "1",
+      "text": "我害怕有人会抛下我。",
+      "original": "I fear someone may leave me",
+      "original_es": "Temo que alguien pueda abandonarme",
+      "dimension": "fear_of_loneliness",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "source_id": "2",
+      "text": "想到独自一人，我就感到担忧。",
+      "original": "The idea of being alone worries me",
+      "original_es": "La idea de estar solo me preocupa",
+      "dimension": "fear_of_loneliness",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "source_id": "3",
+      "text": "我害怕独自一人。",
+      "original": "I am afraid of being alone",
+      "original_es": "Tengo miedo a estar solo",
+      "dimension": "fear_of_loneliness",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "source_id": "4",
+      "text": "当我独自一人时，我会寻找他人的陪伴。",
+      "original": "When I am alone, I look for someone’s company",
+      "original_es": "Cuando estoy solo, busco la compañía de alguien",
+      "dimension": "fear_of_loneliness",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "source_id": "5",
+      "text": "我担心有人离开我的身边。",
+      "original": "I am concerned that someone is leaving my side",
+      "original_es": "Me preocupa que alguien se aleje de mi lado",
+      "dimension": "fear_of_loneliness",
+      "reverse": false
+    }
+  ],
+  "aggregation": "mean",
+  "overall_mean": false,
+  "suppress_total": true,
+  "blocked": false,
+  "scoring_note": "4399 描述性均分，非原量表标准分：5题均按0–4原分取算术均分，范围0–4，无反向题。较高均分仅表示更频繁报告这些感受或行为；没有诊断界值、常模百分位或高低分级。",
+  "scoring_basis": "platform_descriptive_mean",
+  "scoring_caveat": "原论文未明确个人求和、均分或因子分的计算公式。此处均分为4399描述性汇总，不冒称原作者标准算法。",
+  "source_version": "Ventura-León et al. (2020), original five-item BSFL, Table 2",
+  "sources": [
+    {
+      "url": "https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2020.583396/full",
+      "evidence": "Instruments: five items and response values 0–4; Table 2: English and Spanish items; Copyright links CC BY 4.0."
+    }
+  ],
+  "translation": {
+    "language": "zh-CN",
+    "status": "未验证翻译",
+    "from_language": "en",
+    "cross_checked_language": "es"
+  },
+  "verified_at": "2026-10-11"
+}

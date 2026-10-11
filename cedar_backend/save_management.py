@@ -8,6 +8,9 @@ server compatibility wrapper and covers the entire migration and rollback.
 """
 
 
+from research_scales import SCALES
+
+
 def _init_guest_claim_table(conn):
     conn.execute(
         """
@@ -176,7 +179,7 @@ def _stamp_save_owner(game, player_id, user_id, *,
         targets = [("eco_sessions", False)]
     elif game == "ciyuwu":
         targets = [("ciyuwu_sessions", False)]
-    elif game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"}:
+    elif game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"} or game in SCALES:
         targets = [("test_sessions", True), ("test_results", True)]
     else:
         return
@@ -824,7 +827,7 @@ def _delete_owned_session_rows(game, player_id, *,
             targets = [("eco_sessions", "eco", False)]
         elif game == "ciyuwu":
             targets = [("ciyuwu_sessions", "ciyuwu", False)]
-        elif game in {"dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"}:
+        elif game in {"dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest"} or game in SCALES:
             targets = [("test_sessions", game, True), ("test_results", game, True)]
         else:
             return deleted
@@ -941,7 +944,7 @@ def _delete_save(arguments, raw_token, *,
         raise _McpError(-32602, "game 参数必填")
     if game == "turtle_soup":
         raise _McpError(-32602, "海龟汤对局数据不支持 delete_save")
-    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "workkk", "camping_plaza", *VENDOR_GAMES}:
+    if game not in {"eco", "ciyuwu", "dnd", "mbti", "enneagram", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "workkk", "camping_plaza", *VENDOR_GAMES} and game not in SCALES:
         raise _McpError(-32602, "未知或不支持删除存档的游戏")
 
     if not raw_token:

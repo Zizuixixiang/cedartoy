@@ -1,0 +1,187 @@
+{
+  "license": "CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/",
+  "blocked": false,
+  "aggregation": "mean",
+  "game": "ross",
+  "title": "恋爱求支持（RoSS） · 描述版",
+  "author": "Rhia E. Perks, Laura M. Vowels, Claire M. Hart, Rachel R. R. Francois-Walcott, Katherine B. Carnelley",
+  "source": "https://link.springer.com/article/10.1007/s12144-025-08749-0",
+  "instruction": "当你感到痛苦、难过，需要伴侣支持时，你会怎么做？请在0（非常不同意）至10（非常同意）之间选择。",
+  "options": [
+    {
+      "value": 0,
+      "text": "非常不同意"
+    },
+    {
+      "value": 1,
+      "text": "1"
+    },
+    {
+      "value": 2,
+      "text": "2"
+    },
+    {
+      "value": 3,
+      "text": "3"
+    },
+    {
+      "value": 4,
+      "text": "4"
+    },
+    {
+      "value": 5,
+      "text": "5"
+    },
+    {
+      "value": 6,
+      "text": "6"
+    },
+    {
+      "value": 7,
+      "text": "7"
+    },
+    {
+      "value": 8,
+      "text": "8"
+    },
+    {
+      "value": 9,
+      "text": "9"
+    },
+    {
+      "value": 10,
+      "text": "非常同意"
+    }
+  ],
+  "dimensions": {
+    "emotional": "直接寻求情感支持（描述均分）",
+    "instrumental": "直接寻求实际支持（描述均分）",
+    "indirect": "间接寻求支持（描述均分）",
+    "no_support": "不希望获得支持（描述均分）"
+  },
+  "notice": "【4399 描述性评分】不是作者官方分数，不适用于常模比较、诊断或效度推断。中文为4399依原题所作的未验证翻译；评分汇总方式由4399另行设定。原研究对象为18岁以上、当前恋爱关系至少持续6个月者。",
+  "items": [
+    {
+      "id": 1,
+      "original": "I seek reassurance or comfort from my partner.",
+      "text": "我向伴侣寻求安心或安慰。",
+      "dimension": "emotional",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "I ask for physical comfort, such as hugs, from my partner.",
+      "text": "我请求伴侣通过拥抱等身体接触来安慰我。",
+      "dimension": "emotional",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "I seek verbal reassurance from my partner rather than advice (e.g., “everything will be okay”).",
+      "text": "我向伴侣寻求言语上的安慰（例如“一切都会好起来的”），而不是建议。",
+      "dimension": "emotional",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "I go to my partner for encouragement.",
+      "text": "我向伴侣寻求鼓励。",
+      "dimension": "emotional",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "I seek sympathy and understanding from my partner.",
+      "text": "我向伴侣寻求同情和理解。",
+      "dimension": "emotional",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "I ask to discuss different options with my partner.",
+      "text": "我提出和伴侣讨论不同的选择。",
+      "dimension": "instrumental",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "I discuss the pros and cons about the situation with my partner.",
+      "text": "我和伴侣讨论当前情况的利弊。",
+      "dimension": "instrumental",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "I ask my partner for advice directly.",
+      "text": "我直接向伴侣征求建议。",
+      "dimension": "instrumental",
+      "reverse": false
+    },
+    {
+      "id": 9,
+      "original": "I ask my partner for help directly.",
+      "text": "我直接向伴侣求助。",
+      "dimension": "instrumental",
+      "reverse": false
+    },
+    {
+      "id": 10,
+      "original": "I complain to my partner that they haven’t been supportive toward me.",
+      "text": "我向伴侣抱怨，他们没有给予我支持。",
+      "dimension": "indirect",
+      "reverse": false
+    },
+    {
+      "id": 11,
+      "original": "I shout or yell at my partner if they are not supporting me.",
+      "text": "如果伴侣不支持我，我会冲他们大喊大叫。",
+      "dimension": "indirect",
+      "reverse": false
+    },
+    {
+      "id": 12,
+      "original": "I sulk if I feel unsupported by my partner.",
+      "text": "如果觉得伴侣不支持我，我会生闷气。",
+      "dimension": "indirect",
+      "reverse": false
+    },
+    {
+      "id": 13,
+      "original": "I provide non-verbal cues such as huffing and puffing.",
+      "text": "我会用气呼呼地喘气等非语言方式发出信号。",
+      "dimension": "indirect",
+      "reverse": false
+    },
+    {
+      "id": 14,
+      "original": "I prefer to do things myself rather than ask my partner for support.",
+      "text": "我更愿意自己做事，而不是请求伴侣支持。",
+      "dimension": "no_support",
+      "reverse": false
+    },
+    {
+      "id": 15,
+      "original": "I prefer to solve my problems by myself rather than ask my partner.",
+      "text": "我更愿意自己解决问题，而不是向伴侣求助。",
+      "dimension": "no_support",
+      "reverse": false
+    },
+    {
+      "id": 16,
+      "original": "I don’t tell my partner if I’m stressed unless it’s absolutely necessary.",
+      "text": "除非绝对必要，否则我不会告诉伴侣我感到有压力。",
+      "dimension": "no_support",
+      "reverse": false
+    },
+    {
+      "id": 17,
+      "original": "I have a hard time accepting support from my partner even if they offer.",
+      "text": "即使伴侣主动提供支持，我也很难接受。",
+      "dimension": "no_support",
+      "reverse": false
+    }
+  ],
+  "overall_mean": false,
+  "author_short": "Perks",
+  "scoring_note": "4399描述性维度均分（非作者官方分数）：第1–5题为直接情感支持，第6–9题为直接实际支持，第10–13题为间接支持，第14–17题为不希望获得支持，各组等权取均值，范围0–10。保留各组原题方向，不设反向题；越高仅表示越认同该类应对方式，不代表关系更好或更差。仅完整作答时计算，不合成总分，不设截点、百分位或常模。"
+}

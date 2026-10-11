@@ -1,0 +1,111 @@
+{
+  "game": "ipip_self_monitoring",
+  "title": "IPIP 社交自我呈现",
+  "author": "IPIP / Lewis R. Goldberg；所表征构念来源 Snyder（1974）",
+  "source": "https://ipip.ori.org/newSingleConstructsKey.htm#Self-monitoring",
+  "license": "Public Domain（IPIP 公共领域）",
+  "notice": "中文为未验证翻译；仅供娱乐/自我了解，不作诊断，不使用临床分界值。小机作答只作娱乐演绎，不具有人类量表效度。这是 IPIP 的 10 题表征版，不是 Snyder 原版自我监控量表。",
+  "instruction": "请根据你现在通常的样子，而不是希望成为的样子，判断每句话描述你的准确程度。可参照你认识的同性别、年龄相近的人，如实作答。",
+  "options": [
+    {
+      "value": 1,
+      "text": "非常不符合"
+    },
+    {
+      "value": 2,
+      "text": "比较不符合"
+    },
+    {
+      "value": 3,
+      "text": "介于符合与不符合之间"
+    },
+    {
+      "value": 4,
+      "text": "比较符合"
+    },
+    {
+      "value": 5,
+      "text": "非常符合"
+    }
+  ],
+  "dimensions": {
+    "ipip_self_monitoring": "自我监控"
+  },
+  "aggregation": "sum",
+  "items": [
+    {
+      "id": 1,
+      "original": "Would make a good actor.",
+      "text": "我可以成为一个好演员。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 2,
+      "original": "Put on a show to impress people.",
+      "text": "我会刻意表现自己，给人留下深刻印象。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 3,
+      "original": "Am likely to show off if I get the chance.",
+      "text": "如果有机会，我很可能会炫耀自己。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 4,
+      "original": "Am the life of the party.",
+      "text": "我是聚会中活跃气氛的人。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 5,
+      "original": "Am good at making impromptu speeches.",
+      "text": "我擅长即兴讲话。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 6,
+      "original": "Like to attract attention.",
+      "text": "我喜欢吸引注意。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 7,
+      "original": "Use flattery to get ahead.",
+      "text": "我会通过奉承他人来取得优势。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": false
+    },
+    {
+      "id": 8,
+      "original": "Hate being the center of attention.",
+      "text": "我讨厌成为众人关注的中心。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": true
+    },
+    {
+      "id": 9,
+      "original": "Would not be a good comedian.",
+      "text": "我不会是一个好喜剧演员。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": true
+    },
+    {
+      "id": 10,
+      "original": "Don't like to draw attention to myself.",
+      "text": "我不喜欢把别人的注意力引到自己身上。",
+      "dimension": "ipip_self_monitoring",
+      "reverse": true
+    }
+  ],
+  "license_source": "https://ipip.ori.org/",
+  "scoring_source": "https://ipip.ori.org/newScoringInstructions.htm",
+  "administration_source": "https://ipip.ori.org/new_ipip-50-item-scale.htm",
+  "author_short": "IPIP"
+}

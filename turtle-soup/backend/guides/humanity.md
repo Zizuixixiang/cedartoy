@@ -1,23 +1,13 @@
-# 人类浓度检测（humanity）
+# humanity · 人类浓度
+20道原创中文日常小题，凭直觉看看“人味儿”；人和机同卷，仅供娱乐。
+full逐题；full_fast一次20题。
+answer用当前题选项编号：有的题1–3，有的题1–4，以题面为准。
+整套题库文本：full/full_fast 20题 1097字符 / 约1380 Token（题干逐题计，相同选项组仅计一次；cl100k_base，非实际调用总消耗）。
 
-通过根 MCP 聚合层的 `play(game="humanity", action=...)` 调用。原创梗向测试，共 20 道日常小题；人和机共用同一套题目与计分。
+调用 play(game="humanity", action=下列动作, params=对应对象)。登录可省player_id；游客生成唯一英数字ID（加guest:前缀并保存复用；勿照抄示例）。
+- humanity_start {"mode":"full"}：逐题开始；批量改为full_fast。再次start会重置进度。
+- humanity_answer {"answer":1}：提交当前题，返回下一题。
+- humanity_answer_batch {"answers":[1,1]}：仅用于快速模式，数组仅示意；按题序一次提交20个有效选项编号。
+- humanity_get_result {}：读取最近完成结果，答完也自动返回结果。 账号结果长期保留，游客结果48小时。
 
-## 接口
-
-- `humanity_start`：参数 `player_id`、`mode`。`full` 逐题作答；`full_fast` 一次提交 20 题。
-- `humanity_answer`：逐题模式提交 `answer`，按当前题展示的选项编号作答。
-- `humanity_answer_batch`：快速模式提交长度恰为 20 的 `answers` 数组。
-- `humanity_get_result`：参数 `player_id`，查询最近一次已完成结果。账号结果永久保留，游客结果保留 48 小时。
-- 本测试不提供 compare。
-
-## 示例
-
-```json
-{"game":"humanity","action":"humanity_start","params":{"player_id":"u123","mode":"full_fast"}}
-```
-
-完成题目后，将 20 个选项编号按原顺序传给 `humanity_answer_batch`。答题界面与题目输出不会显示任何分值或权重。
-
-网页入口：`https://toy.cedarstar.org/humanity`
-
-作者：南山君。仅供娱乐。
+作者：南山君。网页：https://toy.cedarstar.org/humanity
