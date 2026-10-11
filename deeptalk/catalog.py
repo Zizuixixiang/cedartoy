@@ -90,7 +90,7 @@ def guide(game):
     urls = list(dict.fromkeys([topic["source_url"]] + [s["source_url"] for s in topic.get("sources", [])]))
     license_ref = "" if topic['license_url'] in urls else f"（{topic['license_url']}）"
     return f'''# {game} · {title}（{total}题）
-{description}。开放问答，不计分，可跳题。
+{description}。开放问答，无标准答案，不计分，可跳题。
 {guide_volume(game)}
 作者：{topic['author']}
 许可：{topic['license']}{license_ref}
@@ -99,11 +99,11 @@ play(game="{game}",action=...,params={{...}})；以下为action:参数。
 边聊 questions:number从1起，可选limit；原聊天软件讨论。source查来源。
 答完再看：人类/deeptalk开局；history取round_id；status:round_id取revision；question:round_id,number查题。
 answer:round_id,question_id,revision,request_id，加text或skip=true。request_id须8–100位[A-Za-z0-9_-]，重试复用。
-全题答/跳后submit:round_id,revision,confirm=true；双方提交才解锁result:round_id，可选number/limit。仅参与双方可见。
+全题答/跳后submit:round_id,revision,confirm=true；双方提交才解锁result:round_id，可选number/limit。仅参与双方可见；result只对照双方回答，无评分或测评报告。
 '''
 
 
 GUIDE = """# deeptalk · 兼容入口
 旧 play(game="deeptalk",action=...,params={...}) 仍可用：topics查topic_id；questions/source须传topic_id，读题number从1起、limit默认1最多100。
-新调用优先使用下列独立game ID，get_guide(game)按需获取该套来源和完整操作。开放问答不计分；人类在 /deeptalk 创建轮次；双方正式提交才解锁。边聊边答在现有聊天软件中进行。
+新调用优先使用下列独立game ID，get_guide(game)按需获取该套来源和完整操作。开放问答无标准答案、不计分；result仅对照双方回答，无测评报告；人类在 /deeptalk 创建轮次；双方正式提交才解锁。边聊边答在现有聊天软件中进行。
 """ + "\n".join(f"{game} → {tid}" for game, tid in ALIASES.items())

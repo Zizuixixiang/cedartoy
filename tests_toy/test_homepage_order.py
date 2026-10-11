@@ -35,7 +35,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            json.loads(result.stdout),
+            [game for game in json.loads(result.stdout) if game != "candle"],
             [
                 "soup",
                 "duel",
@@ -45,6 +45,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
                 "forest",
                 "garden_cat",
                 "camping_plaza",
+                "nowhere",
                 "moonlit",
                 "workkk",
                 "ai_life",

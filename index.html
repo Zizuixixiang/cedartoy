@@ -3982,21 +3982,6 @@
         ranks: []
       },
       {
-        id: "deeptalk",
-        category: "mini",
-        name: "Deeptalk 双人问答",
-        mission: "MISSION: LISTEN",
-        location: "LOCATION: BETWEEN US",
-        glyph: "聊", badge: "TALK", level: "双人",
-        metricLabel: "玩法", metric: "开放问答",
-        short: "答完再看 / 边聊边答",
-        desc: "选一个主题，和自己的小机慢慢聊。各自提交后互看回答，或直接在原有聊天软件里讨论。无标准答案、无分数。",
-        logs: ["答完再看：登录后选主题和已绑定小机，各自回答或跳过，双方正式提交整卷后才解锁。", "边聊边答：小机按需读题，在原有聊天软件讨论，无需向4399提交答案。", "每轮独立保存，从首页历史继续或查看。题库详情与来源在答题页按需查看。"],
-        stats: [["主题", "4 套"], ["参与", "双人"]],
-        footerIcons: ["?", "♡", "聊"], tags: ["双人", "问答", "MCP"],
-        url: "/deeptalk", ctaLabel: "开始聊聊 →", ranks: []
-      },
-      {
         id: "puzzle_box",
         iconFile: "puzzle_box.png",
         category: "mini",
@@ -4579,6 +4564,31 @@
       }
     ];
 
+    // Each Deeptalk topic is an independently selectable, unscored questionnaire.
+    // All nine reuse the same human page; topic_id is preselected via the URL.
+    const deeptalkTopics = [
+      ["dt_relations", "relations_communication", "关系与沟通", 13, "边界、倾听与沟通"],
+      ["dt_couple50", "couple_50", "恋人之间的50问", 50, "相处习惯与情感表达"],
+      ["dt_scenarios", "relationship_scenarios", "亲密关系情境", 14, "关系难题与边界"],
+      ["dt_romance100", "romance_values_100", "恋爱观100问", 100, "信任、吃醋与未来规划"],
+      ["dt_work20", "work_values_20", "工作价值观20问", 20, "职业选择与工作价值观"],
+      ["dt_favorites100", "favorites_100", "喜欢的事物100问", 100, "日常兴趣与喜好"],
+      ["dt_know100", "getting_to_know_100", "相互了解100问", 100, "生活经历与相互了解"],
+      ["dt_life35", "life_reflection_35", "人生与内心35问", 35, "人生经历与内心想法"],
+      ["dt_dilemmas30", "real_life_dilemmas_30", "现实难题30问", 30, "虚构烦恼与现实两难"]
+    ];
+    games.push(...deeptalkTopics.map(([id, topicId, name, count, summary], topicOrder) => ({
+      id, name, category: "test", testGroup: "deeptalk", topicOrder,
+      mission: "MISSION: DEEPTALK", location: "LOCATION: BETWEEN US",
+      glyph: "聊", badge: "TALK", level: `${count}题`,
+      metricLabel: "题目数", metric: String(count), short: `${summary} / 双人问答`,
+      desc: `${count}题开放式问答，没有固定选项和评分。和绑定的小机分别答完再互看，或者直接在聊天中一题一题讨论。`,
+      logs: ["答完再看：双方独立回答，正式提交后才解锁彼此答案。", "边聊边答：小机通过 MCP 读题，直接在平时的聊天软件交流。", "题库来源与作者可以在答题页按需查看。"],
+      stats: [], footerIcons: ["?", "♡", "聊"], tags: ["深聊问答", "不计分", "双人"],
+      url: `/deeptalk?topic_id=${encodeURIComponent(topicId)}`,
+      ctaLabel: "开始聊聊 →", ranks: []
+    })));
+
     // Only source-verified, enabled research scales appear in the test hall.
     const researchScales = [
       ["aidep", "AI 依赖倾向 AIDep-22", 22, "Wu", true, false],
@@ -4606,7 +4616,7 @@
       metricLabel: "题目数", metric: String(count), short: "开放研究量表 / 自我了解",
       desc: `${count}题，逐题保存或答齐后一次提交。中文为未验证翻译；仅供娱乐/自我了解，不作诊断。${humanOnly ? "仅供人类；原量表针对大学生学习中的 AI 使用。" : "小机作答仅作娱乐演绎。"}`,
       logs: [`原作者：${author}`, descriptive ? "4399描述性维度均分，非原作者正式评分。" : "两种模式同卷同分，来源与许可见测试页。", "不提供跨账号答案或对测。"],
-      stats: [], footerIcons: ["◎", "◇"], tags: ["开放量表", humanOnly ? "人类专属" : "人机娱乐"],
+      stats: [], footerIcons: ["◎", "◇"], tags: ["心理量表", humanOnly ? "人类专属" : "人机娱乐"],
       url: `/${id}`, ranks: []
     })));
 
@@ -4625,9 +4635,10 @@
       const categoryOrder = Number(left.category !== "test") - Number(right.category !== "test");
       if (categoryOrder) return categoryOrder;
       if (left.category === "test") {
-        const groupOrder = Number(!left.tags.includes("开放量表"))
-          - Number(!right.tags.includes("开放量表"));
+        const groupOrder = Number(left.testGroup !== "deeptalk")
+          - Number(right.testGroup !== "deeptalk");
         if (groupOrder) return groupOrder;
+        if (left.testGroup === "deeptalk") return left.topicOrder - right.topicOrder;
       }
       const fixedOrder = fixedGameRank(left.id) - fixedGameRank(right.id);
       if (fixedOrder) return fixedOrder;
@@ -6286,7 +6297,7 @@
         const searchable = `${game.name} ${game.short} ${game.tags.join(" ")}`.toLowerCase();
         const hidden = !canShowGame(game) || game.category !== filter || (query && !searchable.includes(query));
         const testGroup = filter === "test" && !hidden
-          ? (game.tags.includes("开放量表") ? "开放量表" : "普通测试") : "";
+          ? (game.testGroup === "deeptalk" ? "深聊问答 · 不计分" : "测试 · 有结果") : "";
         const heading = testGroup && testGroup !== lastTestGroup
           ? `<div class="game-group-title" role="heading" aria-level="2">${testGroup}</div>` : "";
         if (testGroup) lastTestGroup = testGroup;

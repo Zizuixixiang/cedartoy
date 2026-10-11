@@ -76,7 +76,7 @@ class RealPackageTests(unittest.TestCase):
                     for field in fields:
                         self.assertIn(field, instructions, action)
                 for required in ('/deeptalk', 'history', 'source', '从1起', '8–100位[A-Za-z0-9_-]',
-                                 '重试复用', '双方提交才解锁', '仅参与双方可见', '不计分，可跳题'):
+                                 '重试复用', '双方提交才解锁', '仅参与双方可见', '不计分，可跳题', '无标准答案', 'result只对照双方回答', '无评分或测评报告'):
                     self.assertIn(required, guide)
                 operations = guide[guide.index('play(game='):].replace(game, '<game>')
                 if shared_operations is None:

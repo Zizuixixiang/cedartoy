@@ -77,7 +77,9 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 const $ = id => document.getElementById(id);
 let context, state, index = 0, busy = false, dirty = false, pendingAnswer = null, pendingCreate = null;
 const initialToken = localStorage.getItem('cedartoy_token') || '';
-let roundId = new URLSearchParams(location.search).get('round_id');
+const pageParams = new URLSearchParams(location.search);
+let roundId = pageParams.get('round_id');
+const requestedTopicId = pageParams.get('topic_id');
 const key = () => crypto.randomUUID();
 function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
 async function api(action, params = {}, write = false) {
@@ -223,6 +225,7 @@ work(async () => {
   if (roundId) { await loadRound(true); message('轮次已恢复。'); return; }
   context = await api('context');
   $('topic').replaceChildren(...context.topics.map(t => option(t.topic_id,t.title + ' · ' + t.total + '题')));
+  if (requestedTopicId && context.topics.some(t => t.topic_id === requestedTopicId)) $('topic').value = requestedTopicId;
   $('machine').replaceChildren(...context.machines.map(m => option(m.id,m.username)));
   $('bindingHint').textContent = context.machines.length ? '只会和你选择的小机共享这一轮。' : '你还没有绑定小机。请先回首页绑定；也可以选择「边聊边答」查看指引。';
   try { pendingCreate = JSON.parse(sessionStorage.getItem('deeptalk_pending_create')); } catch (_) { /* Ignore a damaged retry hint. */ }
