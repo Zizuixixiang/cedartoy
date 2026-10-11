@@ -464,10 +464,7 @@
 
     const $ = (id) => document.getElementById(id);
     // Presentation only: keep CONFIG and the backend's result/notice untouched.
-    const displayTitle = CONFIG.research
-      ? CONFIG.title.replace(/\s*·\s*(?:描述版|4399\s*娱乐改编版)\s*$/, "")
-          .replace(/[（(]([A-Za-z][A-Za-z0-9-]*)[）)]$/, " $1").trim()
-      : CONFIG.title;
+    const displayTitle = CONFIG.display_title || CONFIG.title;
     document.title = `${displayTitle} · CEDAR TOY`;
     $("title").textContent = displayTitle;
     $("subtitle").textContent = CONFIG.subtitle;

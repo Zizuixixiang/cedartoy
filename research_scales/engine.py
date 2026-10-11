@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 
 from scale_test_engine import ScaleTestEngine, JsonRpcError, PLAYER_ID_RE, MAX_SESSIONS
+from cedar_backend.display_titles import RESEARCH_TITLES
 from .interpretation import build_interpretation, format_interpretation
 
 DISCLAIMER = '仅供娱乐/自我了解，不作诊断；小机作答仅作娱乐演绎，不具有人类量表效度。'
@@ -110,7 +111,7 @@ class ResearchScaleEngine(ScaleTestEngine):
             'instructions': self.spec['instruction'], 'notice': self.notice}
         if complete:
             ranges = self.score_ranges()
-            lines = [f'【{self.title}】']
+            lines = [f'【{RESEARCH_TITLES.get(self.game, self.title)}】']
             for key, value in scores.items():
                 lines.append(f'{self.result_dimensions[key]}：{self.display_score(value, ranges[key])}')
             if self.game == 'aidep':

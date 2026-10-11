@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
 const {chromium} = require('playwright');
+const {checkHistoryTitles} = require('./history_title_cases');
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'cedar-scale-browser-'));
 const screenshots = process.env.SCALE_SCREENSHOTS || path.join(os.tmpdir(), 'cedar-scale-screenshots');
@@ -65,8 +66,20 @@ async function main(){
       assert.equal(await page.locator(`[data-game="${spec.game}"] .game-title`).innerText(),names[spec.game]);
       assert.doesNotMatch(names[spec.game],/描述版|娱乐改编版/);
     }
+    for (const query of ['ADHD', 'adhd']) {
+      await page.locator('#searchInput').fill(query);
+      assert.deepEqual(await page.locator('.game-card:not(.hidden)').evaluateAll(nodes=>nodes.map(n=>n.dataset.game)), ['ipip_adhd']);
+    }
+    await page.locator('#searchInput').fill('');
+    assert.equal(await page.locator('.game-title').evaluateAll(nodes=>nodes.some(n=>n.scrollWidth>n.clientWidth)),false,'long card titles wrap');
     await page.locator('[data-game="rbi"]').scrollIntoViewIfNeeded();
     await page.screenshot({path:path.join(screenshots,`${width}-home-titles.png`)});
+    await page.evaluate(checkHistoryTitles);
+    await page.evaluate(()=>openModal('historyModal'));
+    await page.locator('.history-card-title').filter({hasText:names.ipip_self_monitoring}).scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(screenshots,`${width}-account-history-titles.png`)});
+    assert.equal(await page.locator('#historyContent').evaluate(n=>n.scrollWidth>n.clientWidth),false,'history long names wrap');
+    await page.evaluate(()=>closeModals());
     await page.evaluate(()=>openPlatformStats());
     for(const spec of specs) assert.equal(await page.locator(`.platform-dist-${spec.game} summary`).innerText(),`${names[spec.game]} · 分数分布`);
     await page.locator('.platform-dist-irrc').scrollIntoViewIfNeeded();

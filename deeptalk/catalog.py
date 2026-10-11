@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 from cedar_backend.question_volume import guide_volume
+from cedar_backend.display_titles import DEEPTALK_TITLES
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 TOPICS = {
@@ -34,7 +35,7 @@ ALIASES = {
 
 def discovery():
     return "深聊问答:\n" + "\n".join(
-        f"{game}·{TOPICS[tid][0]}·{TOPICS[tid][2]}" for game, tid in ALIASES.items()
+        f"{game}·{DEEPTALK_TITLES[tid]}·{TOPICS[tid][2]}" for game, tid in ALIASES.items()
     )
 
 
@@ -81,7 +82,7 @@ def topics():
             available = True
         except DeeptalkError:
             available = False
-        result.append(dict(topic_id=topic_id, title=title, total=total,
+        result.append(dict(topic_id=topic_id, title=DEEPTALK_TITLES[topic_id], total=total,
                            description=description, available=available))
     return result
 
@@ -136,7 +137,8 @@ def guide(game):
     title, total, description = TOPICS[topic["topic_id"]]
     urls = list(dict.fromkeys([topic["source_url"]] + [s["source_url"] for s in topic.get("sources", [])]))
     license_ref = "" if topic['license_url'] in urls else f"（{topic['license_url']}）"
-    return f'''# {game} · {title}（{total}题）
+    return f'''# {game} · {DEEPTALK_TITLES[topic["topic_id"]]}（{total}题）
+题包原名：{title}
 {description}。开放问答，无标准答案，不计分，可跳题。
 {guide_volume(game)}
 作者：{topic['author']}

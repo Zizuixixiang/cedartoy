@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from deeptalk import catalog
+from cedar_backend.display_titles import DEEPTALK_TITLES
 from tests_toy import test_deeptalk as fixtures
 from tests_toy.test_deeptalk import ROOT, HUMAN, AI, OTHER_HUMAN, OTHER_AI
 import server
@@ -76,12 +77,37 @@ class RealPackageTests(unittest.TestCase):
         self.assertEqual({t['topic_id']: t['total'] for t in topics}, EXPECTED)
         self.assertEqual(sum(t['total'] for t in topics), 490)
         self.assertTrue(all(t['available'] for t in topics))
+        self.assertEqual({t['topic_id']: t['title'] for t in topics}, DEEPTALK_TITLES)
         self.assertNotIn('OC', catalog.GUIDE)
         for tid in EXPECTED:
             for path in (False, True):
                 one = self.request(AI, 'questions', topic_id=tid, _path=path)
                 self.assertEqual(len(one['questions']), 1)
                 self.assertEqual(one['questions'][0]['text'], catalog.load_topic(tid)['questions'][0]['text'])
+
+    def test_display_titles_preserve_round_snapshots_and_history_permissions(self):
+        for tid, title in DEEPTALK_TITLES.items():
+            with self.subTest(topic=tid):
+                original = catalog.load_topic(tid)
+                # Storage keeps the same original title/snapshot as pre-rename rounds.
+                created = self.store.create(HUMAN, AI, tid, 'title_check_' + tid)
+                rid = created['round_id']
+                with self.store.connection() as conn:
+                    before = tuple(conn.execute('SELECT * FROM deeptalk_rounds WHERE id=?', (rid,)).fetchone())
+                    stored = conn.execute('SELECT title,snapshot FROM deeptalk_rounds WHERE id=?', (rid,)).fetchone()
+                self.assertEqual(stored['title'], original['title'])
+                self.assertEqual(json.loads(stored['snapshot']), original)
+                self.assertEqual(created['title'], title)
+                for user in (HUMAN, AI):
+                    self.assertEqual(self.request(user, 'status', round_id=rid)['title'], title)
+                    summary = next(r for r in self.request(user, 'history')['rounds'] if r['round_id'] == rid)
+                    self.assertEqual(summary['title'], title)
+                self.assertEqual(self.http(OTHER_HUMAN, 'view', round_id=rid)[0], 404)
+                self.assertTrue(self.mcp(OTHER_AI, 'status', round_id=rid)['result']['isError'])
+                self.assertEqual(self.store.source(HUMAN, rid), {k: v for k, v in original.items() if k != 'questions'})
+                with self.store.connection() as conn:
+                    after = tuple(conn.execute('SELECT * FROM deeptalk_rounds WHERE id=?', (rid,)).fetchone())
+                self.assertEqual(after, before, 'presentation must not rewrite any persisted field')
 
     def test_independent_guides_keep_compact_complete_shared_operations(self):
         # Development-only measurement; production must not import tiktoken.
@@ -194,10 +220,12 @@ class RealPackageTests(unittest.TestCase):
             with self.subTest(game=game):
                 topic = catalog.load_topic(tid)
                 self.assertEqual(listing.count(game + '·'), 1)
+                self.assertIn(game + '·' + DEEPTALK_TITLES[tid] + '·', listing)
                 guide_response = server._handle_root_mcp({'jsonrpc':'2.0','id':1,'method':'tools/call',
                     'params':{'name':'get_guide','arguments':{'game':game}}})['result']
                 self.assertFalse(guide_response['isError'])
                 guide = json.loads(guide_response['content'][0]['text'])['guide']
+                self.assertTrue(guide.startswith(f'# {game} · {DEEPTALK_TITLES[tid]}'))
                 for field in ('title','author','license','source_url','license_url'):
                     self.assertIn(topic[field], guide)
                 self.assertIn(str(EXPECTED[tid]) + '题', guide)
@@ -209,6 +237,7 @@ class RealPackageTests(unittest.TestCase):
                     self.assertFalse(response['isError'], response)
                     data = json.loads(response['content'][0]['text'])
                     self.assertEqual(data['topic_id'], tid)
+                    self.assertEqual(data['title'], DEEPTALK_TITLES[tid])
                     self.assertEqual(data['questions'], [dict(number=1, id=topic['questions'][0]['id'], text=topic['questions'][0]['text'])])
                 for selected_game in (game, 'deeptalk'):
                     response = self.mcp(AI, 'questions', game=selected_game, topic_id=tid, number=1, limit=100)['result']

@@ -3453,7 +3453,7 @@ def _tool_list_games(path_token=None):
         f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
-    extra = " | ".join(f"{game}·{research_scales.SCALES[game].title.split(' · ', 1)[0]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
+    extra = " | ".join(f"{game}·{research_scales.RESEARCH_TITLES[game]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
     return ("玩法见 get_guide(game)\n" + deeptalk_catalog.discovery()
             + "\n测试: " + tests + (" | " + extra if extra else "")
             + "\n游戏: " + games)
@@ -7480,6 +7480,7 @@ a{{color:#c9afff}}
         page_config = {
             "game": game,
             "title": config["title"],
+            "display_title": config.get("display_title", config["title"]),
             "subtitle": config["subtitle"],
             "source": config["source"],
             "disclaimer": config.get("disclaimer", ""),

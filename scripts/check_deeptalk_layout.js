@@ -7,6 +7,8 @@ const {spawn} = require('node:child_process');
 const readline = require('node:readline');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '..');
+const home = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const topicTitles = JSON.parse(home.match(/const deeptalkTopics = (\[[\s\S]*?\n    \]);/)[1]);
 const child = spawn('python3', ['-u', 'scripts/deeptalk_test_server.py'], {cwd:root, stdio:['pipe','pipe','inherit']});
 const queue = [];
 let ready;
@@ -50,6 +52,13 @@ let browser;
   }
   for(const width of [360,430,1280]) {
     await page.setViewportSize({width,height:900});
+    for (const [, topicId, title] of topicTitles) {
+      await page.goto('https://deeptalk.test/deeptalk?topic_id='+topicId);
+      await page.locator('#setup').waitFor({state:'visible'}); await settled();
+      assert.equal(await page.locator('#topicTitle').innerText(),title);
+      assert.equal(await page.title(),title+' · CEDAR TOY');
+      await check('title-'+topicId,width);
+    }
     await page.goto('https://deeptalk.test/deeptalk?topic_id=relations_communication');
     await page.locator('#setup').waitFor({state:'visible'}); await settled();
     assert.equal(await page.locator('#topic, #machine').count(),0);

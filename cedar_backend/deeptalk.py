@@ -40,7 +40,7 @@ def execute(user, action, params, *, db_path, db_connect, web=False):
             return catalog.public_source(topic) if web else {k: v for k, v in topic.items() if k != "questions"}
         number = integer(params.get("number", 1), "number", 1, len(topic["questions"]))
         limit = integer(params.get("limit", 1), "limit", 1, 100)
-        return {"topic_id": topic["topic_id"], "title": topic["title"], "total": len(topic["questions"]),
+        return {"topic_id": topic["topic_id"], "title": catalog.DEEPTALK_TITLES[topic["topic_id"]], "total": len(topic["questions"]),
                 "questions": [dict(number=i, id=q["id"], text=q["text"])
                               for i, q in enumerate(topic["questions"][number - 1:number - 1 + limit], number)]}
     if action == "create" and web:

@@ -8,6 +8,7 @@ const path = require('node:path');
 const {spawn} = require('node:child_process');
 const readline = require('node:readline');
 const {JSDOM, VirtualConsole} = require('jsdom');
+const {checkHistoryTitles} = require('./history_title_cases');
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'cedar-research-dom-'));
 const env = {...process.env, SESSIONS_DB:path.join(temp, 'sessions.db'), TURTLE_SOUP_DB:path.join(temp, 'accounts.db')};
@@ -107,7 +108,7 @@ async function homeTitles(width, query="") {
     d.querySelector('[data-filter="test"]').click();
     const names=JSON.parse(dom.window.eval('JSON.stringify(Object.fromEntries(researchScales.map(([id,name])=>[id,name])))'));
     assert.equal(Object.keys(names).length,18);
-    const examples={irrc:'恋爱关系能力 IRRC',jrrs:'恋爱嫉妒 JRRS',rbi:'伴侣关系互动 RBI',ross:'恋爱求支持 RoSS',rss:'恋爱自我破坏 RSS',bsr:'伪深刻话语测试'};
+    const examples={"aidep": "学习时，你有多依赖 AI？", "bsfl": "你害怕一个人吗？", "bsr": "什么话会让你觉得深刻？", "evs": "什么情况下你更容易受伤？", "ipip_adhd": "ADHD 相关特征", "ipip_empathy": "别人难过时，你会被触动吗？", "ipip_need_for_cognition": "你有多喜欢动脑？", "ipip_self_monitoring": "你会因场合调整自己的表现吗？", "ipip_sociability": "你有多喜欢社交？", "irrc": "亲密关系中的你：优势与难题", "jrrs": "恋爱中的你有多容易吃醋？", "mesx": "你的关怀圈有多大？", "ppts": "你的做事节奏：拖延与抢先完成", "rbi": "你怎样维系亲密关系？", "rnss": "你在人际关系中的需求被满足了吗？", "romlon": "你的浪漫孤独感有多强？", "ross": "难过时，你会怎么向伴侣求助？", "rss": "哪些习惯会让恋爱变难？"};
     for(const [game,name] of Object.entries(names)) {
       if(examples[game]) assert.equal(name,examples[game]);
       assert.doesNotMatch(name,/描述版|娱乐改编版/);
@@ -123,6 +124,7 @@ async function homeTitles(width, query="") {
         assert.equal(d.querySelector(`.platform-dist-${game} summary`).textContent,`${name} · 分数分布${status==='ready'?' · 20份':''}`);
       }
     }
+    if (query === "?tab=test") await dom.window.eval(`(${checkHistoryTitles.toString()})()`);
     assert.deepEqual(errors,[]);
     return names;
   } finally { dom.window.close(); }
@@ -151,7 +153,8 @@ function assertResearchResult(dom, spec) {
   assert.equal(dom.window.document.querySelectorAll('.research-interpretation').length,hasReport?1:0);
   assert.equal(dom.window.document.querySelectorAll('.rbi-interpretation').length,spec.game==='rbi'&&!hasReport?1:0);
   assert.doesNotMatch($(dom,'resultStructured').textContent,/存档身份|小机作答|原研究对象/);
-  assert.ok(dom.window.eval('activeState.result').startsWith(`【${spec.title}】`),'backend formal title retained');
+  assert.ok(dom.window.eval('activeState.result').startsWith(`【${dom.window.eval('displayTitle')}】`),'readable result uses player display title');
+  assert.equal(dom.window.eval('CONFIG.title'),spec.title,'formal source title retained');
   assert.ok(dom.window.eval('activeState.notice').includes(spec.notice),'backend notice retained in metadata');
   if(spec.scoring_note) assert.equal(data.scoring_note,spec.scoring_note);
 }

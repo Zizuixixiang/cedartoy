@@ -8,6 +8,7 @@ import secrets
 import sqlite3
 
 from .catalog import DeeptalkError, load_topic
+from cedar_backend.display_titles import DEEPTALK_TITLES
 
 
 def integer(value, name, low, high):
@@ -97,7 +98,7 @@ class Store:
     @staticmethod
     def summary(row):
         unlocked = bool(row["human_submitted"] and row["ai_submitted"])
-        return dict(round_id=row["id"], title=row["title"], human_name=row["human_name"],
+        return dict(round_id=row["id"], title=DEEPTALK_TITLES.get(row["topic_id"], row["title"]), human_name=row["human_name"],
                     ai_name=row["ai_name"], sharing_mode=row["sharing_mode"], mode=row["mode"], status="complete" if unlocked else "in_progress",
                     created_at=row["created_at"], updated_at=row["updated_at"],
                     url=f"/deeptalk?round_id={row['id']}")
@@ -114,7 +115,7 @@ class Store:
             where, args = "human_id=?", (int(user["id"]),)
         with self.connection() as conn:
             total = conn.execute(f"SELECT COUNT(*) FROM deeptalk_rounds WHERE {where}", args).fetchone()[0]
-            rows = conn.execute(f"SELECT id,title,human_name,ai_name,sharing_mode,mode,human_submitted,ai_submitted,created_at,updated_at FROM deeptalk_rounds WHERE {where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
+            rows = conn.execute(f"SELECT id,topic_id,title,human_name,ai_name,sharing_mode,mode,human_submitted,ai_submitted,created_at,updated_at FROM deeptalk_rounds WHERE {where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
                                 (*args, limit, offset)).fetchall()
             return dict(rounds=[self.summary(r) for r in rows], total=total, offset=offset, limit=limit)
 

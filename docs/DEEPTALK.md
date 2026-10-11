@@ -6,22 +6,22 @@
 
 本发布树已集成十个正式 JSON，共490题，原九套462题逐字节保留。加载器每次按需读取文件，不依赖编译生成步骤：
 
-| 文件 | 标题 | 数量与范围 |
+| 文件 | 展示名 | 数量与范围 |
 | --- | --- | --- |
-| `deeptalk/data/relations_communication.json` | 关系与沟通 | 13：边界、倾听、同意与沟通 |
-| `deeptalk/data/couple_50.json` | 恋人之间的50问 | 50：日常相处、偏好与情感表达 |
-| `deeptalk/data/relationship_scenarios.json` | 亲密关系情境 | 14：假设关系两难、边界与冲突 |
-| `deeptalk/data/romance_values_100.json` | 恋爱观100问 | 100：吃醋、信任、同居、未来规划等全面恋爱观 |
-| `deeptalk/data/work_values_20.json` | 工作价值观20问 | 20：职业抉择 |
-| `deeptalk/data/favorites_100.json` | 喜欢的事物100问 | 100：日常兴趣 |
-| `deeptalk/data/getting_to_know_100.json` | 相互了解100问 | 100：生活背景 |
-| `deeptalk/data/life_reflection_35.json` | 人生与内心35问 | 35：价值与人生 |
-| `deeptalk/data/real_life_dilemmas_30.json` | 现实难题30问 | 30：回应虚构烦恼 |
-| `deeptalk/data/learning_goals_problem_solving.json` | 学习、目标与解决问题 | 28：目标9、周复盘6、能力举例与反思9、问题分析4 |
+| `deeptalk/data/relations_communication.json` | 好好说话，也好好相处 | 13：边界、倾听、同意与沟通 |
+| `deeptalk/data/couple_50.json` | 恋人50问：聊聊我们 | 50：日常相处、偏好与情感表达 |
+| `deeptalk/data/relationship_scenarios.json` | 关系里的两难时刻 | 14：假设关系两难、边界与冲突 |
+| `deeptalk/data/romance_values_100.json` | 恋爱观100问：我们想的一样吗？ | 100：吃醋、信任、同居、未来规划等全面恋爱观 |
+| `deeptalk/data/work_values_20.json` | 工作里，你最看重什么？ | 20：职业抉择 |
+| `deeptalk/data/favorites_100.json` | 你喜欢什么？100问 | 100：日常兴趣 |
+| `deeptalk/data/getting_to_know_100.json` | 关于你，我还想知道100件事 | 100：生活背景 |
+| `deeptalk/data/life_reflection_35.json` | 深夜谈心：35个人生问题 | 35：价值与人生 |
+| `deeptalk/data/real_life_dilemmas_30.json` | 如果有人向你求助：30道难题 | 30：回应虚构烦恼 |
+| `deeptalk/data/learning_goals_problem_solving.json` | 学习、目标与未来计划 | 28：目标9、周复盘6、能力举例与反思9、问题分析4 |
 
 来源核验：[关系四套](DEEPTALK_SOURCES.md)、[通用A](DEEPTALK_GENERAL_A_SOURCES.md)、[通用B](DEEPTALK_GENERAL_B_SOURCES.md)、[现实难题](DEEPTALK_REAL_LIFE_SOURCES.md)。新增第十套见[学习、目标与解决问题来源核验](DEEPTALK_LEARNING_SOURCES.md)：28题，CedarToy 中译与编排 v1，原作 CC BY 4.0。
 
-顶层必需 `topic_id,title,description,author,source_url,license,license_url,adaptation_note,questions`；前八项为字符串。`questions` 为 `{id,text,source_ref}` 数组，`id` 为唯一字符串或整数（读取时统一成字符串），`text` 为非空字符串，`source_ref` 保留原结构。可另带复合来源 `sources`。标题、ID、数量必须与上表一致。作者、许可和出处保留在原包中，通过 `source` 按需查看，不重复注入全局 MCP schema。
+顶层必需 `topic_id,title,description,author,source_url,license,license_url,adaptation_note,questions`；前八项为字符串。`questions` 为 `{id,text,source_ref}` 数组，`id` 为唯一字符串或整数（读取时统一成字符串），`text` 为非空字符串，`source_ref` 保留原结构。可另带复合来源 `sources`。ID、数量必须与上表一致；JSON title 保留原题包名，上表展示名由 `cedar_backend/display_titles.py` 映射，不是原作者命名。作者、许可和出处保留在原包中，通过 `source` 按需查看，不重复注入全局 MCP schema。
 
 缺失或无效的包显示「题库尚未就绪」，不能开局/读取，不会用临时题代替。可用以下命令验证正式十包，不访问数据库：
 
@@ -31,7 +31,7 @@ python3 -c 'from deeptalk.catalog import topics; t=topics(); print(t); assert al
 
 Deeptalk 不接入公开平台统计，不写入有结果测试的 `test_results`，不提供 AIDep 的 `shared_result` 分享操作；D-3 的原始自评分数不进入本题包或结果。
 
-创建时把完整包快照保存入轮次。以后修改、移除题包都不会改写已有轮次的题目、答案和来源。
+创建时把完整包快照保存入轮次。以后修改、移除题包都不会改写已有轮次的题目、答案和来源。新旧轮次的界面标题按 topic_id 映射展示名，未知主题回退保存的标题；不回写快照或历史标题。
 
 ## 身份与持久化
 

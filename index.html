@@ -4575,16 +4575,16 @@
     // Each Deeptalk topic is an independently selectable, unscored questionnaire.
     // All ten reuse the same human page; topic_id is preselected via the URL.
     const deeptalkTopics = [
-      ["dt_relations", "relations_communication", "关系与沟通", 13, "边界、倾听与沟通"],
-      ["dt_couple50", "couple_50", "恋人之间的50问", 50, "相处习惯与情感表达"],
-      ["dt_scenarios", "relationship_scenarios", "亲密关系情境", 14, "关系难题与边界"],
-      ["dt_romance100", "romance_values_100", "恋爱观100问", 100, "信任、吃醋与未来规划"],
-      ["dt_work20", "work_values_20", "工作价值观20问", 20, "职业选择与工作价值观"],
-      ["dt_favorites100", "favorites_100", "喜欢的事物100问", 100, "日常兴趣与喜好"],
-      ["dt_know100", "getting_to_know_100", "相互了解100问", 100, "生活经历与相互了解"],
-      ["dt_life35", "life_reflection_35", "人生与内心35问", 35, "人生经历与内心想法"],
-      ["dt_dilemmas30", "real_life_dilemmas_30", "现实难题30问", 30, "虚构烦恼与现实两难"],
-      ["dt_learning_goals", "learning_goals_problem_solving", "学习、目标与解决问题", 28, "个人目标、学习复盘与问题分析"]
+      ["dt_relations", "relations_communication", "好好说话，也好好相处", 13, "边界、倾听与沟通"],
+      ["dt_couple50", "couple_50", "恋人50问：聊聊我们", 50, "相处习惯与情感表达"],
+      ["dt_scenarios", "relationship_scenarios", "关系里的两难时刻", 14, "关系难题与边界"],
+      ["dt_romance100", "romance_values_100", "恋爱观100问：我们想的一样吗？", 100, "信任、吃醋与未来规划"],
+      ["dt_work20", "work_values_20", "工作里，你最看重什么？", 20, "职业选择与工作价值观"],
+      ["dt_favorites100", "favorites_100", "你喜欢什么？100问", 100, "日常兴趣与喜好"],
+      ["dt_know100", "getting_to_know_100", "关于你，我还想知道100件事", 100, "生活经历与相互了解"],
+      ["dt_life35", "life_reflection_35", "深夜谈心：35个人生问题", 35, "人生经历与内心想法"],
+      ["dt_dilemmas30", "real_life_dilemmas_30", "如果有人向你求助：30道难题", 30, "虚构烦恼与现实两难"],
+      ["dt_learning_goals", "learning_goals_problem_solving", "学习、目标与未来计划", 28, "个人目标、学习复盘与问题分析"]
     ];
     games.push(...deeptalkTopics.map(([id, topicId, name, count, summary], topicOrder) => ({
       id, name, category: "test", testGroup: "deeptalk", topicOrder,
@@ -4600,24 +4600,24 @@
 
     // Only source-verified, enabled research scales appear in the test hall.
     const researchScales = [
-      ["aidep", "AI 依赖倾向 AIDep-22", 22, "Wu", true, false],
-      ["bsfl", "害怕孤独 BSFL", 5, "Ventura-León", false, true],
-      ["bsr", "伪深刻话语测试", 20, "Pennycook 等", false, false],
-      ["evs", "情绪脆弱性 EVS", 16, "Yamaguchi", false, false],
-      ["ipip_adhd", "IPIP 注意与活动倾向", 12, "IPIP", false, false],
-      ["ipip_empathy", "IPIP 共情关怀", 10, "IPIP", false, false],
-      ["ipip_need_for_cognition", "IPIP 思考偏好", 10, "IPIP", false, false],
-      ["ipip_self_monitoring", "IPIP 社交自我呈现", 10, "IPIP", false, false],
-      ["ipip_sociability", "IPIP 社交舒适度", 10, "IPIP", false, false],
-      ["irrc", "恋爱关系能力 IRRC", 35, "Faber", false, true],
-      ["jrrs", "恋爱嫉妒 JRRS", 16, "İpek", false, true],
-      ["mesx", "MESx 道德关怀圈", 10, "Crimston 等", false, false],
-      ["ppts", "拖延与提前完成 PPTS", 18, "Husain", false, true],
-      ["rbi", "伴侣关系互动 RBI", 18, "Harel", false, true],
-      ["rnss", "关系需求满足度 RNSS", 20, "Žvelc", false, false],
-      ["romlon", "浪漫孤独感 RomLon", 4, "Husain", false, false],
-      ["ross", "恋爱求支持 RoSS", 17, "Perks", false, true],
-      ["rss", "恋爱自我破坏 RSS", 12, "Peel", false, true]
+      ["aidep", "学习时，你有多依赖 AI？", 22, "Wu", true, false],
+      ["bsfl", "你害怕一个人吗？", 5, "Ventura-León", false, true],
+      ["bsr", "什么话会让你觉得深刻？", 20, "Pennycook 等", false, false],
+      ["evs", "什么情况下你更容易受伤？", 16, "Yamaguchi", false, false],
+      ["ipip_adhd", "ADHD 相关特征", 12, "IPIP", false, false],
+      ["ipip_empathy", "别人难过时，你会被触动吗？", 10, "IPIP", false, false],
+      ["ipip_need_for_cognition", "你有多喜欢动脑？", 10, "IPIP", false, false],
+      ["ipip_self_monitoring", "你会因场合调整自己的表现吗？", 10, "IPIP", false, false],
+      ["ipip_sociability", "你有多喜欢社交？", 10, "IPIP", false, false],
+      ["irrc", "亲密关系中的你：优势与难题", 35, "Faber", false, true],
+      ["jrrs", "恋爱中的你有多容易吃醋？", 16, "İpek", false, true],
+      ["mesx", "你的关怀圈有多大？", 10, "Crimston 等", false, false],
+      ["ppts", "你的做事节奏：拖延与抢先完成", 18, "Husain", false, true],
+      ["rbi", "你怎样维系亲密关系？", 18, "Harel", false, true],
+      ["rnss", "你在人际关系中的需求被满足了吗？", 20, "Žvelc", false, false],
+      ["romlon", "你的浪漫孤独感有多强？", 4, "Husain", false, false],
+      ["ross", "难过时，你会怎么向伴侣求助？", 17, "Perks", false, true],
+      ["rss", "哪些习惯会让恋爱变难？", 12, "Peel", false, true]
     ];
     games.push(...researchScales.map(([id, name, count, author, humanOnly, descriptive]) => ({
       id, name, category: "test", mission: "MISSION: SELF REFLECTION",
@@ -5459,6 +5459,7 @@
     }
 
     const saveGameNames = {
+      ...Object.fromEntries(researchScales.map(([id, name]) => [id, name])),
       turtle_soup: "海龟汤",
       eco: "生态瓶",
       ciyuwu: "词与物",
@@ -5485,6 +5486,7 @@
     };
 
     const saveGameDescriptions = {
+      ...Object.fromEntries(researchScales.map(([id]) => [id, "测试进度与最近结果。"])),
       turtle_soup: "横向推理战绩与提问表现。",
       eco: "生态瓶长期存档状态。",
       ciyuwu: "词与物跨局进度。",
@@ -5622,6 +5624,7 @@
     }
 
     const testResultLabels = {
+      ...Object.fromEntries(researchScales.map(([id]) => [id, {RESEARCH: "已完成"}])),
       dnd: {
         LAWFUL_GOOD: "守序善良",
         NEUTRAL_GOOD: "中立善良",

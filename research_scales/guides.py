@@ -1,6 +1,7 @@
 """Compact MCP-only guides; scoring and human-facing notices stay in the engine."""
 
 from .engine import DISCLAIMER
+from cedar_backend.display_titles import RESEARCH_TITLES
 
 
 # Guide summaries of the reviewed registry, not scoring implementations.
@@ -31,7 +32,8 @@ QUESTION_VOLUME = {g:(v['variants'][0]['chars'],v['variants'][0]['tokens']) for 
 def guide(engine):
     game = engine.game
     options = '；'.join(f"{o['value']}={o['text']}" for o in engine.spec['options'])
-    return f'''# {game} · {engine.title}
+    return f'''# {game} · {RESEARCH_TITLES[game]}
+原名：{engine.title}
 {len(engine.items)}题；中文为未验证翻译。{DISCLAIMER}无临床阈值或常模。
 {NOTES[game]}
 来源：{engine.attribution}

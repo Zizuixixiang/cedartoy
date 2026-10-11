@@ -7,16 +7,16 @@ const {JSDOM, VirtualConsole} = require('jsdom');
 const homeHtml = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const deeptalkHtml = fs.readFileSync(path.join(__dirname, '../deeptalk.html'), 'utf8');
 const topics = [
-  ['dt_relations', 'relations_communication', 13, '关系与沟通'],
-  ['dt_couple50', 'couple_50', 50, '恋人之间的50问'],
-  ['dt_scenarios', 'relationship_scenarios', 14, '亲密关系情境'],
-  ['dt_romance100', 'romance_values_100', 100, '恋爱观100问'],
-  ['dt_work20', 'work_values_20', 20, '工作价值观20问'],
-  ['dt_favorites100', 'favorites_100', 100, '喜欢的事物100问'],
-  ['dt_know100', 'getting_to_know_100', 100, '相互了解100问'],
-  ['dt_life35', 'life_reflection_35', 35, '人生与内心35问'],
-  ['dt_dilemmas30', 'real_life_dilemmas_30', 30, '现实难题30问'],
-  ['dt_learning_goals', 'learning_goals_problem_solving', 28, '学习、目标与解决问题']
+  ['dt_relations', 'relations_communication', 13, '好好说话，也好好相处'],
+  ['dt_couple50', 'couple_50', 50, '恋人50问：聊聊我们'],
+  ['dt_scenarios', 'relationship_scenarios', 14, '关系里的两难时刻'],
+  ['dt_romance100', 'romance_values_100', 100, '恋爱观100问：我们想的一样吗？'],
+  ['dt_work20', 'work_values_20', 20, '工作里，你最看重什么？'],
+  ['dt_favorites100', 'favorites_100', 100, '你喜欢什么？100问'],
+  ['dt_know100', 'getting_to_know_100', 100, '关于你，我还想知道100件事'],
+  ['dt_life35', 'life_reflection_35', 35, '深夜谈心：35个人生问题'],
+  ['dt_dilemmas30', 'real_life_dilemmas_30', 30, '如果有人向你求助：30道难题'],
+  ['dt_learning_goals', 'learning_goals_problem_solving', 28, '学习、目标与未来计划']
 ];
 const delay = () => new Promise(resolve => setTimeout(resolve, 5));
 
@@ -62,10 +62,11 @@ async function home(width) {
       d.getElementById('drawerEnter').click();
     }
     assert.equal(destination, '/deeptalk?topic_id=learning_goals_problem_solving');
-    for (const [query, header] of [['恋爱观', '深聊问答 · 不计分'], ['MBTI', '测试 · 有结果']]) {
+    for (const [query, header] of [['恋爱观', '深聊问答 · 不计分'], ['MBTI', '测试 · 有结果'], ['ADHD', '测试 · 有结果'], ['adhd', '测试 · 有结果']]) {
       d.getElementById('searchInput').value = query;
       d.getElementById('searchInput').dispatchEvent(new dom.window.Event('input'));
       assert.deepEqual(headings(), [header]);
+      if (query.toLowerCase() === 'adhd') assert.deepEqual(items().filter(el => el.dataset.game).map(el => el.dataset.game), ['ipip_adhd']);
     }
     d.getElementById('searchInput').value = '';
     d.getElementById('searchInput').dispatchEvent(new dom.window.Event('input'));

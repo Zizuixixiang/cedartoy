@@ -132,6 +132,7 @@ function updateControls() {
 }
 function setupTopic() {
   $('topicTitle').textContent = topic.title;
+  document.title = `${topic.title} · CEDAR TOY`;
   $('topicDescription').textContent = topic.total + '题 · ' + topic.description + (topic.available ? '' : ' · 题库尚未就绪');
   $('sources').open = false; $('sourceBody').replaceChildren(); updateControls();
 }
@@ -162,6 +163,7 @@ function renderRound(preserveDraft = false) {
   $('setup').hidden = true; $('round').hidden = false; $('sources').hidden = false;
   $('roundDescription').textContent = state.total + '题 · ' + (state.description || '');
   $('newRound').href = '/deeptalk?topic_id=' + encodeURIComponent(state.topic_id);
+  document.title = `${state.title} · CEDAR TOY`;
   $('roundTitle').textContent = state.title; $('participants').textContent = `${state.human_name} × ${aiName()}`;
   renderProgress();
   $('lockHint').textContent = state.mode === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：双方答完后互相查看。';

@@ -110,6 +110,31 @@ class ResearchScalesTests(unittest.TestCase):
         with self.assertRaises(JsonRpcError):
             e.execute('answer', {**args, 'answer': 1})
 
+    def test_old_results_project_only_readable_title_without_rewriting_storage(self):
+        from cedar_backend.display_titles import RESEARCH_TITLES
+        for game, engine in research_scales.SCALES.items():
+            for player in ('91', '91:3'):
+                with self.subTest(game=game, player=player):
+                    original_spec = json.dumps(engine.spec, ensure_ascii=False)
+                    # Complete a pre-rename result using the old presentation label.
+                    with patch.dict(RESEARCH_TITLES, {game: engine.title}):
+                        start = engine.execute('start', {'player_id': player, 'mode': 'full_fast'})
+                        old = engine.execute('answer_batch', {'player_id': player,
+                            'session_id': start['session_id'], 'answers': [engine.answer_min] * len(engine.items)})
+                    self.assertEqual(old['result'].splitlines()[0], f'【{engine.title}】')
+                    with sqlite3.connect(self.db) as conn:
+                        before = conn.execute('SELECT * FROM test_results WHERE game=? AND player_id=?', (game, player)).fetchone()
+                    for action in ('start', 'status', 'result', 'get_result'):
+                        new = engine.execute(action, {'player_id': player}, web=True)
+                        self.assertEqual(new['result'].splitlines()[0], f'【{RESEARCH_TITLES[game]}】')
+                        self.assertEqual(new['result'].partition('\n')[2], old['result'].partition('\n')[2])
+                        self.assertEqual(new['result_data'], old['result_data'])
+                    with sqlite3.connect(self.db) as conn:
+                        after = conn.execute('SELECT * FROM test_results WHERE game=? AND player_id=?', (game, player)).fetchone()
+                    self.assertEqual(after, before)
+                    self.assertEqual(json.dumps(engine.spec, ensure_ascii=False), original_spec)
+                    self.assertEqual(engine.title, engine.spec['title'])
+
     def test_scoring_against_official_keys_and_mesx_direction(self):
         # Expected reverse counts from the official IPIP keys, independently of JSON flags.
         for game, count, negative in [('ipip_adhd',12,0), ('ipip_empathy',10,5),
@@ -240,12 +265,17 @@ class ResearchScalesTests(unittest.TestCase):
         start = html.index('const researchScales = ') + len('const researchScales = ')
         rows = json.JSONDecoder().raw_decode(html[start:])[0]
         self.assertEqual({row[0] for row in rows}, set(research_scales.SCALES))
-        short_titles = {'bsr': '伪深刻话语测试', 'rbi': '伴侣关系互动 RBI',
-                        'irrc': '恋爱关系能力 IRRC', 'jrrs': '恋爱嫉妒 JRRS',
-                        'ross': '恋爱求支持 RoSS', 'rss': '恋爱自我破坏 RSS'}
+        from cedar_backend.display_titles import RESEARCH_TITLES
         for game, title, count, author, human_only, descriptive in rows:
             e = research_scales.SCALES[game]
-            self.assertEqual((title, count, author), (short_titles.get(game, e.title), len(e.items), e.spec['author_short']))
+            self.assertEqual((title, count, author), (RESEARCH_TITLES[game], len(e.items), e.spec['author_short']))
+            self.assertEqual(server.HUMAN_TEST_GAMES[game]['display_title'], title)
+            self.assertEqual(server.HUMAN_TEST_GAMES[game]['title'], e.spec['title'])
+            guide = research_scales.guide(game)
+            self.assertTrue(guide.startswith(f'# {game} · {title}\n'))
+            self.assertIn('原名：' + e.spec['title'], guide)
+            if game in research_scales.MCP_GAMES:
+                self.assertIn(f'{game}·{title}·', server._tool_list_games())
             self.assertEqual(human_only, game == 'aidep')
             self.assertEqual(descriptive, game in {'jrrs','ross','rss','irrc','rbi','ppts','bsfl'})
 
@@ -390,7 +420,10 @@ class ResearchScalesTests(unittest.TestCase):
                                 'answers':[answer_by_text[q['text']] for q in state['questions']]}, path, bearer)
                             self.assertEqual(state['result_data'], sequential)
                         self.assertTrue(state['complete'])
-                        self.assertEqual(call(game, 'get_result', {}, path, bearer)['result_data'], state['result_data'])
+                        restored = call(game, 'get_result', {}, path, bearer)
+                        self.assertEqual(restored['result_data'], state['result_data'])
+                        self.assertEqual(restored['result'].splitlines()[0], f'【{research_scales.RESEARCH_TITLES[game]}】')
+                        self.assertEqual(state['result'].splitlines()[0], restored['result'].splitlines()[0])
             for path, bearer in (('/fixture-token',''), ('/mcp','fixture-bearer')):
                 for action in ('start','answer','answer_batch','status','result','get_result'):
                     payload = {'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':'play',

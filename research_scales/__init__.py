@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from cedar_backend.question_volume import guide_volume
+from cedar_backend.display_titles import RESEARCH_TITLES
 
 from .engine import ResearchScaleEngine, DISCLAIMER
 
@@ -21,7 +22,7 @@ MCP_GAMES = frozenset(game for game, engine in SCALES.items() if not engine.spec
 def human_configs():
     return {game: {
         'handler': SimpleNamespace(PLAYER_ID_RE=engine.PLAYER_ID_RE),
-        'title': engine.title, 'subtitle': 'OPEN SCALES / SELF REFLECTION',
+        'title': engine.title, 'display_title': RESEARCH_TITLES[game], 'subtitle': 'OPEN SCALES / SELF REFLECTION',
         'source': engine.attribution, 'disclaimer': engine.notice,
         'research': True, 'total': len(engine.items),
     } for game, engine in SCALES.items()}
@@ -47,7 +48,8 @@ def guide(game):
         notice = DISCLAIMER + ' ' + notice
     else:
         notice = engine.notice
-    return f'''# {game} · {engine.title}
+    return f'''# {game} · {RESEARCH_TITLES[game]}
+原名：{engine.title}
 {notice}
 {guide_volume(game) if game in MCP_GAMES else ''}
 {engine.attribution}
