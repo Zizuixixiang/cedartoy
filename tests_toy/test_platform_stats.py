@@ -15,6 +15,8 @@ auth_utils_stub.current_player = lambda: None
 database_stub = types.ModuleType("database")
 database_stub.DB_PATH = BACKEND_DIR / "turtle_soup.db"
 database_stub.fetch_all = lambda *_args, **_kwargs: []
+utils_stub = types.ModuleType("utils")
+utils_stub.SQL_NOW = "datetime('now')"
 module_spec = importlib.util.spec_from_file_location(
     "cedartoy_test_leaderboard",
     BACKEND_DIR / "routers" / "leaderboard.py",
@@ -22,7 +24,7 @@ module_spec = importlib.util.spec_from_file_location(
 leaderboard = importlib.util.module_from_spec(module_spec)
 with patch.dict(
     sys.modules,
-    {"auth_utils": auth_utils_stub, "database": database_stub},
+    {"auth_utils": auth_utils_stub, "database": database_stub, "utils": utils_stub},
 ):
     module_spec.loader.exec_module(leaderboard)
 
@@ -71,6 +73,79 @@ class PlatformStatsTests(unittest.TestCase):
             distributions["mbti"],
             [{"result": "INTJ", "count": 1}],
         )
+
+    def _research_distributions(self, records):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = Path(folder) / "sessions.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("""
+                    CREATE TABLE test_results (
+                        player_id TEXT, game TEXT, result_value TEXT,
+                        result_detail TEXT, completed_at REAL
+                    )
+                """)
+                conn.executemany("""
+                    INSERT INTO test_results (player_id, game, result_value, result_detail, completed_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, records)
+            with patch.object(leaderboard, "SESSIONS_DB_PATH", db_path):
+                return leaderboard._scored_research_distributions()
+
+    def test_scored_research_has_all_18_and_never_includes_deeptalk(self):
+        scales = leaderboard._scored_research_specs()
+        self.assertEqual(len(scales), 18)
+        self.assertIn("aidep", scales)
+        self.assertIn("ipip_adhd", scales)
+        self.assertNotIn("deeptalk", scales)
+        self.assertFalse(any(game.startswith("dt_") for game in scales))
+        distributions = self._research_distributions([])
+        self.assertEqual(set(distributions), set(scales))
+        self.assertTrue(all(d["status"] == "empty" and not d["dimensions"]
+                            for d in distributions.values()))
+
+    def test_scored_research_groups_numeric_bands_without_private_answers(self):
+        specs = leaderboard._scored_research_specs()
+        fields = specs["bsr"]
+        scores = {key: (lo + hi) / 2 for key, _, lo, hi in fields}
+        records = [(f"guest:case{i}", "bsr", "research", json.dumps({
+            "scores": scores, "answers": ["PRIVATE_ANSWER_NEVER_PUBLIC"],
+            "owner_name": "PRIVATE_NAME_NEVER_PUBLIC"
+        }), i) for i in range(5)]
+        records.extend([
+            ("guest:invalid", "bsr", "research", "{bad json", 1),
+            ("guest:wrong", "bsr", "research", json.dumps({"scores": {"pseudo_profound": 999}}), 1),
+            ("guest:notresearch", "bsr", "something_else", json.dumps({"scores": scores}), 1),
+        ])
+        stats = self._research_distributions(records)
+        bsr = stats["bsr"]
+        self.assertEqual(bsr["status"], "ready")
+        self.assertEqual(bsr["sample_size"], 5)
+        self.assertEqual([d["label"] for d in bsr["dimensions"]], [x[1] for x in fields])
+        for d in bsr["dimensions"]:
+            self.assertEqual(sum(row["count"] for row in d["buckets"]), 5)
+            self.assertEqual(len(d["buckets"]), 5)
+        self.assertEqual(stats["bsfl"]["status"], "empty")
+        payload = json.dumps(stats, ensure_ascii=False)
+        self.assertNotIn("PRIVATE_ANSWER", payload)
+        self.assertNotIn("PRIVATE_NAME", payload)
+        self.assertNotIn("guest:case", payload)
+        self.assertNotIn('"answers"', payload)
+
+    def test_scored_research_suppresses_small_samples_and_dedupes_slots(self):
+        shapes = leaderboard._scored_research_specs()
+        scores = {key: (lo + hi) / 2 for key, _, lo, hi in shapes["aidep"]}
+        detail = json.dumps({"scores": scores, "answers": [1, 2, 3]})
+        # Multiple save slots belong to the same account, not independent samples.
+        records = [(str(100 + i), "aidep", "research", detail, i) for i in range(9)]
+        records += [("100:2", "aidep", "research", detail, 11)]
+        rows = self._research_distributions(records)
+        self.assertEqual(rows["aidep"], {"status": "insufficient", "dimensions": []})
+        records += [("109", "aidep", "research", detail, 20)]
+        rows = self._research_distributions(records)
+        self.assertEqual(rows["aidep"]["status"], "ready")
+        self.assertEqual(rows["aidep"]["sample_size"], 10)
+        self.assertEqual(rows["aidep"]["dimensions"][0]["label"], "全量表均分")
+        self.assertEqual(sum(b["count"] for b in rows["aidep"]["dimensions"][0]["buckets"]), 10)
 
     def _sins_virtues_distributions(self, rows):
         with tempfile.TemporaryDirectory() as temp_dir:

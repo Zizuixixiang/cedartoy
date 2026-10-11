@@ -1932,6 +1932,14 @@
       padding: 0 12px 12px;
     }
 
+    .platform-dist-dimension {
+      margin-top: 5px;
+      color: var(--purple-dark);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
     .platform-dist-row {
       display: grid;
       grid-template-columns: minmax(86px, 150px) minmax(80px, 1fr) minmax(28px, auto);
@@ -4734,6 +4742,11 @@
       bdsmtest: "BDSMTest 分布",
     };
 
+    // Share the same scored-test registry as the human-facing game list.
+    const platformResearchLabels = Object.fromEntries(
+      researchScales.map(([id, name]) => [id, `${name}分数分布`])
+    );
+
     const dndResultLabels = {
       lawful_good: "守序善良",
       neutral_good: "中立善良",
@@ -6059,6 +6072,30 @@
       `;
     }
 
+    function renderResearchDistribution(game, data) {
+      const summary = escapeHtml(platformResearchLabels[game]);
+      const dimensions = Array.isArray(data?.dimensions) ? data.dimensions : [];
+      const ready = data?.status === "ready" && dimensions.length > 0;
+      const sampleCount = ready ? Math.max(0, Number(data.sample_size) || 0) : 0;
+      const rows = ready ? dimensions.map((dimension) => {
+        const buckets = Array.isArray(dimension.buckets) ? dimension.buckets : [];
+        const max = Math.max(1, ...buckets.map(row => Number(row.count) || 0));
+        return `<div class="platform-dist-dimension">${escapeHtml(dimension.label)}</div>` + buckets.map(row => {
+          const count = Math.max(0, Number(row.count) || 0);
+          const width = Math.max(4, count / max * 100);
+          return `<div class="platform-dist-row">
+            <span class="platform-dist-label">${escapeHtml(row.result)}</span>
+            <span class="platform-dist-track" aria-hidden="true"><span style="width:${width}%"></span></span>
+            <b>${count}</b>
+          </div>`;
+        }).join("");
+      }).join("") : `<p class="history-empty">${data?.status === "insufficient" ? "样本不足，暂不展示分布" : "暂无数据"}</p>`;
+      return `<details class="platform-dist-block platform-dist-${game}">
+        <summary class="platform-dist-title">${summary}${ready ? ` · ${sampleCount}份` : ""}</summary>
+        <div class="platform-dist-body">${rows}</div>
+      </details>`;
+    }
+
     function renderPlatformStats() {
       const content = $("leaderboardContent");
       if (platformStatsState.loading) {
@@ -6086,11 +6123,14 @@
         </div>
       `).join("");
       const dist = Object.keys(platformTestLabels).map((game) => renderDistribution(game, distributions[game])).join("");
+      const research = stats.research_score_distributions || {};
+      const researchDist = Object.keys(platformResearchLabels)
+        .map(game => renderResearchDistribution(game, research[game])).join("");
       $("leaderboardMsg").textContent = "";
       content.innerHTML = `
         <div class="platform-stats-grid">${cards}</div>
         <div class="platform-stat-note">仅展示聚合统计，不包含玩家 ID、用户 ID 或用户名。</div>
-        <div class="platform-distributions">${dist}</div>
+        <div class="platform-distributions">${dist}${researchDist}</div>
         <div class="platform-entertainment-badge">仅供娱乐</div>
       `;
     }

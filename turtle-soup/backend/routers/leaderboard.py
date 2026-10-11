@@ -3,6 +3,7 @@ import math
 import os
 import sqlite3
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -190,6 +191,109 @@ def _test_result_distributions() -> dict[str, list[dict[str, object]]]:
     return games
 
 
+@lru_cache(maxsize=1)
+def _scored_research_specs():
+    """Only reviewed, enabled scales with numeric result scores; no Deeptalk."""
+    shapes = {}
+    for path in sorted((ROOT_DIR / "research_scales" / "data").glob("*.json")):
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        if spec.get("blocked"):
+            continue
+        options = [item["value"] for item in spec["options"]]
+        minimum, maximum = min(options), max(options)
+        counts = {key: 0 for key in spec["dimensions"]}
+        for item in spec["items"]:
+            counts[item["dimension"]] += 1
+        dimensions = []
+        if spec.get("overall_mean"):
+            dimensions.append(("overall", "全量表均分", minimum, maximum))
+        for key, label in spec["dimensions"].items():
+            factor = counts[key] if spec["aggregation"] == "sum" else 1
+            dimensions.append((key, label, minimum * factor, maximum * factor))
+        difference = spec.get("mean_difference")
+        if difference:
+            a = difference["minuend"]
+            b = difference["subtrahend"]
+            bounds = {key: (lo, hi) for key, _, lo, hi in dimensions}
+            dimensions.append((difference["key"], difference["label"],
+                               bounds[a][0] - bounds[b][1], bounds[a][1] - bounds[b][0]))
+        shapes[spec["game"]] = dimensions
+    return shapes
+
+
+def _scored_research_distributions():
+    """Coarse anonymous numeric score bands; never return answers, IDs or raw scores.
+
+    At least five different saved identities must have valid results; the
+    private human-only AIDep requires ten. Count each identity at most once.
+    """
+    shapes = _scored_research_specs()
+    empty = lambda: {"status": "empty", "dimensions": []}
+    distributions = {game: empty() for game in shapes}
+    if not SESSIONS_DB_PATH.exists():
+        return distributions
+    try:
+        with sqlite3.connect(f"file:{SESSIONS_DB_PATH.resolve()}?mode=ro", uri=True, timeout=2) as conn:
+            found = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='test_results'").fetchone()
+            if not found:
+                return distributions
+            placeholders = ",".join("?" for _ in shapes)
+            rows = conn.execute(f"""
+                SELECT player_id, game, result_detail, completed_at
+                FROM test_results
+                WHERE game IN ({placeholders}) AND result_value='research'
+                ORDER BY completed_at DESC
+            """, list(shapes)).fetchall()
+    except sqlite3.Error:
+        return distributions
+    valid = {game: [] for game in shapes}
+    seen = {game: set() for game in shapes}
+    for player_id, game, raw, _ in rows:
+        # Account save slots are different sessions, not different people.
+        identity = str(player_id)
+        parts = identity.split(":")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1] in {"2", "3", "4", "5"}:
+            identity = parts[0]
+        if identity in seen[game]:
+            continue
+        try:
+            detail = json.loads(raw)
+            scores = detail["scores"]
+            measures = []
+            for key, _, lo, hi in shapes[game]:
+                number = scores[key]
+                if isinstance(number, bool) or not isinstance(number, (float, int)):
+                    raise ValueError("invalid score")
+                number = float(number)
+                if not math.isfinite(number) or number < lo - 1e-8 or number > hi + 1e-8:
+                    raise ValueError("score out of range")
+                measures.append(max(lo, min(hi, number)))
+        except (ValueError, TypeError, KeyError, IndexError, OverflowError):
+            continue
+        seen[game].add(identity)
+        valid[game].append(measures)
+    for game, records in valid.items():
+        if not records:
+            continue
+        if len(records) < (10 if game == "aidep" else 5):
+            distributions[game] = {"status": "insufficient", "dimensions": []}
+            continue
+        sections = []
+        for index, (_, label, lo, hi) in enumerate(shapes[game]):
+            buckets = [0] * 5
+            for measures in records:
+                value = measures[index]
+                bucket = min(4, max(0, int((value - lo) * 5 / (hi - lo)))) if hi > lo else 0
+                buckets[bucket] += 1
+            step = (hi - lo) / 5
+            sections.append({"label": label, "buckets": [
+                {"result": f"{lo + i * step:.1f}–{lo + (i + 1) * step:.1f}", "count": count}
+                for i, count in enumerate(buckets)
+            ]})
+        distributions[game] = {"status": "ready", "sample_size": len(records), "dimensions": sections}
+    return distributions
+
+
 def _vendor_save_counts() -> dict[str, int]:
     counts = {}
     for game in ("arcade", "burger", "fishing", "imitator_td", "leek"):
@@ -213,6 +317,7 @@ def _build_platform_stats() -> dict[str, object]:
             "turtle_soup_rooms": _table_count(DB_PATH, "rooms"),
         },
         "test_result_distributions": _test_result_distributions(),
+        "research_score_distributions": _scored_research_distributions(),
     }
 
 
