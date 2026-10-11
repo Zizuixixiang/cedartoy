@@ -27,7 +27,7 @@ class McpModuleCompatibilityTests(unittest.TestCase):
                 tools[0]["inputSchema"]["properties"]["test"] = {"type": "string"}
                 self.assertEqual(definitions, original)
 
-    def test_tool_selection_uses_current_server_tables_classifier_and_explicit_mode(self):
+    def test_tool_selection_defaults_standard_and_keeps_explicit_legacy(self):
         root = [{"name": "root"}, {"name": "hidden"}]
         kelivo = [{"name": "kelivo"}]
         with (
@@ -36,19 +36,13 @@ class McpModuleCompatibilityTests(unittest.TestCase):
             patch.object(server, "_ROOT_TOOL_NAMES", {"root", "kelivo"}),
             patch.object(server, "_is_kelivo_user_agent") as classify,
         ):
-            for compatible, default in ((False, root[0]), (True, kelivo[0])):
-                classify.return_value = compatible
-                for mode, expected in (("", default), ("legacy", kelivo[0]),
-                                       ("standard", root[0]), ("unknown", default)):
-                    with self.subTest(compatible=compatible, mode=mode):
-                        classify.reset_mock()
-                        selected = server._root_tools("test-client", schema_mode=mode)
-                        self.assertEqual(selected, [expected])
-                        self.assertIs(selected[0], expected)
-                        if mode in ("legacy", "standard"):
-                            classify.assert_not_called()
-                        else:
-                            classify.assert_called_once_with("test-client")
+            for mode, expected in (("", root[0]), ("legacy", kelivo[0]),
+                                   ("standard", root[0]), ("unknown", root[0])):
+                with self.subTest(mode=mode):
+                    selected = server._root_tools("Kelivo/1.3.1", schema_mode=mode)
+                    self.assertEqual(selected, [expected])
+                    self.assertIs(selected[0], expected)
+                    classify.assert_not_called()
 
     def test_guide_constants_and_note_patches_remain_effective(self):
         with (

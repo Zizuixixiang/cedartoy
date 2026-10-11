@@ -661,10 +661,9 @@ def _root_tools(
 ):
     if schema_mode == "legacy":
         platform_tools = kelivo_platform_tools
-    elif schema_mode == "standard":
-        platform_tools = root_platform_tools
     else:
-        # 48-hour transition: keep UA compatibility until the announced switch.
-        # Afterward, only replace this default assignment with root_platform_tools.
-        platform_tools = kelivo_platform_tools if is_kelivo_user_agent(user_agent) else root_platform_tools
+        # Standard schema is now the default for every client, including Kelivo.
+        # Older Kelivo builds can explicitly opt back into the compatibility table
+        # with ?schema=legacy. Unknown/old query values must not change the default.
+        platform_tools = root_platform_tools
     return [tool for tool in platform_tools if tool.get("name") in tool_names]

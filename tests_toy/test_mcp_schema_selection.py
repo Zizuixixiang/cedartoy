@@ -41,15 +41,14 @@ class McpSchemaSelectionTests(unittest.TestCase):
         compatibility = [t for t in server._KELIVO_PLATFORM_TOOLS if t["name"] in server._ROOT_TOOL_NAMES]
         self.assertNotEqual(standard, compatibility)
         for ua in ("", "ExampleMcpClient/1.0", "Kelivo/1.3.1", "Dart/3.9 (dart:io)", "ktor-client/3.0"):
-            default = compatibility if ua.startswith(("Kelivo", "Dart", "ktor")) else standard
             for path in ("/", "/mcp", "/mcp/", "/fixture-path-token"):
                 for query, expected in (
-                    ("", default), ("?schema=legacy", compatibility),
+                    ("", standard), ("?schema=legacy", compatibility),
                     ("?probe=1&schema=legacy", compatibility),
-                    ("?schema=unknown", default), ("?schema=standard", standard),
-                    ("?schema=", default), ("?schema=LEGACY", default),
-                    ("?schema=legacy&schema=unknown", default),
-                    ("?schema=unknown&schema=legacy", default),
+                    ("?schema=unknown", standard), ("?schema=standard", standard),
+                    ("?schema=", standard), ("?schema=LEGACY", standard),
+                    ("?schema=legacy&schema=unknown", standard),
+                    ("?schema=unknown&schema=legacy", standard),
                 ):
                     with self.subTest(ua=ua, path=path, query=query):
                         self.assertEqual(self.post(path + query, ua)["result"]["tools"], expected)
