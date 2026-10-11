@@ -107,7 +107,7 @@ async function main(){
   assert.equal($(w,'aidepSharing'),null,'incomplete hidden');
   for(let i=0;i<22;i++){
     assert.equal($(w,'aidepSharing'),null);
-    w.document.querySelectorAll('.answer-button')[2].click();
+    w.document.querySelectorAll('#answers button')[2].click();
     $(w,'saveAnswerButton').click();
     await until(()=>!w.eval('busy') && (w.eval('cursor')===i+1 || !$(w,'resultPanel').hidden),'next answer');
   }

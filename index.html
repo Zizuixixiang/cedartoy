@@ -4602,22 +4602,22 @@
     const researchScales = [
       ["aidep", "AI 依赖倾向 AIDep-22", 22, "Wu", true, false],
       ["bsfl", "害怕孤独 BSFL", 5, "Ventura-León", false, true],
-      ["bsr", "伪深刻话语测试 · 4399 娱乐改编版", 20, "Pennycook 等", false, false],
+      ["bsr", "伪深刻话语测试", 20, "Pennycook 等", false, false],
       ["evs", "情绪脆弱性 EVS", 16, "Yamaguchi", false, false],
       ["ipip_adhd", "IPIP 注意与活动倾向", 12, "IPIP", false, false],
       ["ipip_empathy", "IPIP 共情关怀", 10, "IPIP", false, false],
       ["ipip_need_for_cognition", "IPIP 思考偏好", 10, "IPIP", false, false],
       ["ipip_self_monitoring", "IPIP 社交自我呈现", 10, "IPIP", false, false],
       ["ipip_sociability", "IPIP 社交舒适度", 10, "IPIP", false, false],
-      ["irrc", "恋爱关系能力 IRRC · 描述版", 35, "Faber", false, true],
-      ["jrrs", "恋爱嫉妒 JRRS · 描述版", 16, "İpek", false, true],
+      ["irrc", "恋爱关系能力 IRRC", 35, "Faber", false, true],
+      ["jrrs", "恋爱嫉妒 JRRS", 16, "İpek", false, true],
       ["mesx", "MESx 道德关怀圈", 10, "Crimston 等", false, false],
       ["ppts", "拖延与提前完成 PPTS", 18, "Husain", false, true],
-      ["rbi", "伴侣关系互动（RBI） · 描述版", 18, "Harel", false, true],
+      ["rbi", "伴侣关系互动 RBI", 18, "Harel", false, true],
       ["rnss", "关系需求满足度 RNSS", 20, "Žvelc", false, false],
       ["romlon", "浪漫孤独感 RomLon", 4, "Husain", false, false],
-      ["ross", "恋爱求支持（RoSS） · 描述版", 17, "Perks", false, true],
-      ["rss", "恋爱自我破坏（RSS） · 描述版", 12, "Peel", false, true]
+      ["ross", "恋爱求支持 RoSS", 17, "Perks", false, true],
+      ["rss", "恋爱自我破坏 RSS", 12, "Peel", false, true]
     ];
     games.push(...researchScales.map(([id, name, count, author, humanOnly, descriptive]) => ({
       id, name, category: "test", mission: "MISSION: SELF REFLECTION",
@@ -4745,7 +4745,7 @@
 
     // Share the same scored-test registry as the human-facing game list.
     const platformResearchLabels = Object.fromEntries(
-      researchScales.map(([id, name]) => [id, `${name}分数分布`])
+      researchScales.map(([id, name]) => [id, `${name} · 分数分布`])
     );
 
     const dndResultLabels = {

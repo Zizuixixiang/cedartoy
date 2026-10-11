@@ -64,16 +64,24 @@
     .page-disclaimer[hidden] { display: none; }
     .hero .research-notice { margin-top: 10px; color: var(--text); font-size: 12px; line-height: 1.65; }
     .research-details, .research-help { color: var(--text); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
-    .research-details summary { width: fit-content; min-height: 28px; padding: 4px 0; cursor: pointer; }
+    .research-details summary { width: fit-content; min-height: 44px; padding: 12px 0; cursor: pointer; }
     .research-details p { margin: 6px 0; color: var(--text); font-size: 12px; white-space: pre-wrap; }
     .research-details .source { text-align: left; }
     .research-help { margin: 12px 0 0; }
     .research-help a { color: inherit; }
+    .research-page #questionIntro { color: var(--text); font-size: 13px; }
+    .research-start-help { display: block; margin-top: 6px; font-size: 12px; }
     .research-page .question-actions { flex-wrap: wrap; }
     .research-page .question-actions button { color: var(--text); font-size: 12px; min-height: 44px; }
-    .research-page #saveAnswerButton { background: var(--purple-light); border-color: var(--purple-dark); }
-    .research-page .answer-button.selected { color: var(--text); }
-    .research-page :focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+    .research-page .answer-button { min-height: 44px; padding: 8px 12px; font-size: 14px; }
+    .research-page .answer-button.selected, .research-page .scale-step.selected { color: var(--text); }
+    .mbti-scale-ends.research-scale-ends { gap: 16px; font-family: inherit; font-size: 12px; line-height: 1.5; }
+    .research-scale-ends span:last-child { text-align: right; }
+    .mbti-scale-track.research-scale-track { grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); row-gap: 2px; }
+    .research-scale-track .scale-step { color: var(--text); font-size: 13px; }
+    .research-scale-track .scale-step:focus-visible { outline-offset: -3px; }
+    .research-saved button:disabled { cursor: default; opacity: 1; }
+    .research-page button:focus-visible, .research-page summary:focus-visible, .research-page a:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
     .shell {
       position: relative;
       min-height: 430px;
@@ -347,7 +355,7 @@
       <p>人类网页端 · 进度保留 24 小时</p>
       <p class="question-intro page-disclaimer" id="pageDisclaimer" hidden></p>
       <details class="research-details" id="researchDetails" hidden>
-        <summary>查看详细说明</summary>
+        <summary>来源、许可与评分说明</summary>
         <p id="researchNotice"></p>
       </details>
     </section>
@@ -377,10 +385,9 @@
         <h2 class="question-text" id="questionText"></h2>
         <div class="mbti-poles" id="mbtiPoles" hidden></div>
         <div class="answers" id="answers"></div>
-        <p class="research-help" id="researchSaveHint" hidden></p>
         <div class="question-actions">
           <button class="pixel-button secondary pixel" id="previousButton" type="button">← 上一题</button>
-          <button class="pixel-button pixel" id="saveAnswerButton" type="button" hidden>保存并下一题 →</button>
+          <button class="pixel-button pixel" id="saveAnswerButton" type="button" hidden>下一题</button>
           <button class="pixel-button secondary pixel" id="nextSavedButton" type="button" hidden>下一题 →</button>
           <button class="pixel-button secondary pixel" id="reviewButton" type="button" hidden>查看答题卡 →</button>
         </div>
@@ -432,20 +439,24 @@
     let resultRadarCleanup = null;
 
     const $ = (id) => document.getElementById(id);
-    document.title = `${CONFIG.title} · CEDAR TOY`;
-    $("title").textContent = CONFIG.title;
+    // Presentation only: keep CONFIG and the backend's result/notice untouched.
+    const displayTitle = CONFIG.research
+      ? CONFIG.title.replace(/\s*·\s*(?:描述版|4399\s*娱乐改编版)\s*$/, "")
+          .replace(/[（(]([A-Za-z][A-Za-z0-9-]*)[）)]$/, " $1").trim()
+      : CONFIG.title;
+    document.title = `${displayTitle} · CEDAR TOY`;
+    $("title").textContent = displayTitle;
     $("subtitle").textContent = CONFIG.subtitle;
     $("pageDisclaimer").textContent = CONFIG.disclaimer || "";
     $("pageDisclaimer").hidden = !CONFIG.disclaimer;
     if (CONFIG.research) {
       document.body.classList.add("research-page");
       $("pageDisclaimer").className = "research-notice";
-      $("pageDisclaimer").textContent = "仅供娱乐/自我了解，不作诊断";
+      $("pageDisclaimer").textContent = "中文题目未经验证；仅供自我了解，不作诊断。";
       $("pageDisclaimer").hidden = false;
-      $("researchNotice").textContent = CONFIG.disclaimer || "";
+      setResearchLinkedText($("researchNotice"), CONFIG.disclaimer || "");
       $("researchDetails").hidden = false;
       $("researchDetails").appendChild($("source"));
-      $("questionIntro").style.fontSize = "13px";
     }
     if (CONFIG.game === "enneagram") {
       $("source").textContent = "题库来自 kcdjmaxx/enneagram-llm-evaluator · ";
@@ -455,8 +466,27 @@
       sourceLink.rel = "noopener noreferrer";
       sourceLink.textContent = "GitHub";
       $("source").append(sourceLink, "（MIT），感谢原作者。");
+    } else if (CONFIG.research) {
+      setResearchLinkedText($("source"), CONFIG.source);
     } else {
       $("source").textContent = CONFIG.source;
+    }
+
+    function setResearchLinkedText(node, text = "") {
+      // Keep attribution verbatim; only http(s) URLs become links, never HTML.
+      node.replaceChildren();
+      let offset = 0;
+      for (const match of text.matchAll(/https?:\/\/[^\s<>"'（）【】；，。]+/g)) {
+        node.append(text.slice(offset, match.index));
+        const link = document.createElement("a");
+        link.href = match[0];
+        link.textContent = match[0];
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        node.append(link);
+        offset = match.index + match[0].length;
+      }
+      node.append(text.slice(offset));
     }
 
     function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
@@ -774,22 +804,31 @@
     function renderQuestion() {
       const question = activeState.questions[cursor];
       if (!question) return;
+      const sequential = CONFIG.research && activeState.mode === "full";
+      const saved = sequential && cursor < activeState.progress;
       const answeredCount = CONFIG.research && activeState.mode === "full" ? activeState.progress : answers.filter(Number.isInteger).length;
       $("modeLabel").textContent = CONFIG.research
-        ? (activeState.mode === "full" ? "逐题作答 · 即时保存" : "批量作答 · 答齐后提交")
+        ? (saved ? "已保存" : "全题作答")
         : CONFIG.game === "mbti"
         ? (activeState.edition === "quick" ? "快速版 · 16题" : "完整版 · 93题")
         : CONFIG.game === "enneagram"
         ? (activeState.edition === "quick" ? "快速型 · 36题 A/B" : "完整型 · 180题")
         : ({dnd: "九阵营 · 36题", love: "爱之语 · 30题", ecr: "依恋类型 · 36题", humanity: "人类浓度 · 20题", sins_virtues: "七宗罪 VS 七美德 · 35题"}[CONFIG.game] || "测试");
-      $("progressLabel").textContent = CONFIG.research
-        ? `${cursor + 1} / ${activeState.total} · 未答 ${activeState.total - (activeState.mode === "full" ? activeState.progress : answeredCount)}`
-        : `${cursor + 1} / ${activeState.total}`;
+      $("progressLabel").textContent = `${cursor + 1} / ${activeState.total}`;
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
       $("questionNumber").textContent = `QUESTION ${question.number}`;
       $("questionText").textContent = question.text;
       $("questionIntro").textContent = activeState.instructions || "";
       $("questionIntro").hidden = cursor !== 0 || !activeState.instructions;
+      if (CONFIG.research) {
+        $("questionIntro").hidden = cursor !== 0;
+        const help = document.createElement("span");
+        help.className = "research-start-help";
+        help.textContent = sequential
+          ? "点击下一题自动保存；已保存题可回看，不可修改。"
+          : "续答旧版记录：答案只存本机，答齐后提交。";
+        if (!sequential || activeState.progress === 0) $("questionIntro").append(help);
+      }
       $("answers").innerHTML = "";
 
       if (CONFIG.game === "mbti") {
@@ -818,26 +857,51 @@
           $("answers").className = "answers mbti ecr";
           renderEnneagramScale(question);
         }
+      } else if (CONFIG.research) {
+        $("mbtiPoles").hidden = true;
+        renderResearchOptions(question);
       } else {
         $("mbtiPoles").hidden = true;
         $("answers").className = "answers";
         question.options.forEach((option) => addAnswer(option.value, `${option.value}. ${option.text}`));
       }
-      const sequential = CONFIG.research && activeState.mode === "full";
-      const saved = sequential && cursor < activeState.progress;
-      $("researchSaveHint").hidden = !CONFIG.research;
-      $("researchSaveHint").textContent = sequential
-        ? "选好后保存本题，可先改选；保存后可回看、不能修改，末题保存后出报告。"
-        : "正在续答旧版记录：答案仍只存本机，可回看修改；答齐后确认提交。";
-      if (saved) $("researchSaveHint").textContent = "本题已保存，可回看，不能修改。";
+      $("answers").classList.toggle("research-saved", saved);
       $("saveAnswerButton").hidden = !sequential || saved;
-      $("saveAnswerButton").textContent = cursor === activeState.total - 1 ? "保存并查看报告 →" : "保存并下一题 →";
+      $("saveAnswerButton").textContent = cursor === activeState.total - 1 ? "查看结果" : "下一题";
       $("saveAnswerButton").disabled = busy || !Number.isInteger(answers[cursor]);
       $("nextSavedButton").hidden = !saved;
       if (saved) $("answers").querySelectorAll("button").forEach(button => { button.disabled = true; });
       $("previousButton").hidden = false;
       $("previousButton").disabled = busy || cursor === 0;
       $("reviewButton").hidden = sequential || !answers.every(Number.isInteger);
+    }
+    function renderResearchOptions(question) {
+      const bareNumber = option => String(option.text).trim() === String(option.value);
+      // Like the original ECR scale: numeric steps and the supplied anchors.
+      // Fully worded scales keep the established answer list; no invented labels.
+      const numeric = question.options.some(bareNumber);
+      $("answers").className = numeric ? "answers mbti" : "answers";
+      if (!numeric) {
+        question.options.forEach(option => addAnswer(option.value, `${option.value}. ${option.text}`));
+        return;
+      }
+      const ends = document.createElement("div");
+      ends.className = "mbti-scale-ends research-scale-ends";
+      question.options.filter(option => !bareNumber(option)).forEach(option => {
+        const label = document.createElement("span");
+        label.textContent = `${option.value} · ${option.text}`;
+        ends.append(label);
+      });
+      const track = document.createElement("div");
+      track.className = "mbti-scale-track research-scale-track";
+      if (question.options.length <= 7) track.style.gridTemplateColumns = `repeat(${question.options.length}, minmax(0, 1fr))`;
+      track.setAttribute("role", "group");
+      track.setAttribute("aria-labelledby", "questionText");
+      question.options.forEach(option => {
+        const button = addAnswer(option.value, String(option.value), track, "scale-step");
+        if (!bareNumber(option)) button.setAttribute("aria-label", `${option.value}，${option.text}`);
+      });
+      $("answers").append(ends, track);
     }
     function renderMbtiScale() {
       const ends = document.createElement("div");
@@ -946,15 +1010,16 @@
       });
       $("answers").append(ends, track);
     }
-    function addAnswer(value, label) {
+    function addAnswer(value, label, container = $("answers"), className = "answer-button") {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "answer-button";
+      button.className = className;
       button.textContent = label;
       button.classList.toggle("selected", answers[cursor] === value);
       if (CONFIG.research) button.setAttribute("aria-pressed", String(answers[cursor] === value));
       button.addEventListener("click", () => answer(value));
-      $("answers").appendChild(button);
+      container.appendChild(button);
+      return button;
     }
 
     async function start(edition, discardDraft = false) {
@@ -990,6 +1055,7 @@
         try { saveDraft(); }
         catch (_) { showError("本机草稿保存失败，请保存本题后再离开页面。"); }
         renderQuestion();
+        $("answers").querySelector(".selected")?.focus({preventScroll: true});
         return;
       }
       answers[cursor] = value;
@@ -1015,12 +1081,19 @@
       } finally {
         busy = false;
         setButtonsDisabled(false);
-        if (!activeState.complete) renderQuestion();
+        if (!activeState.complete) {
+          renderQuestion();
+          if (!$("error").hidden) $("saveAnswerButton").focus({preventScroll: true});
+          else {
+            $("questionText").tabIndex = -1;
+            $("questionText").focus({preventScroll: true});
+          }
+        }
       }
     }
 
     function goToQuestion(index) {
-      if (!activeState) return;
+      if (!activeState || (CONFIG.research && busy)) return;
       cursor = Math.max(0, Math.min(index, CONFIG.research && activeState.mode === "full" ? activeState.progress : activeState.total - 1));
       try { saveDraft(); }
       catch (error) {
