@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 
 from scale_test_engine import ScaleTestEngine, JsonRpcError, PLAYER_ID_RE, MAX_SESSIONS
+from .interpretation import build_interpretation, format_interpretation
 
 DISCLAIMER = '仅供娱乐/自我了解，不作诊断；小机作答仅作娱乐演绎，不具有人类量表效度。'
 
@@ -72,7 +73,7 @@ class ResearchScaleEngine(ScaleTestEngine):
             scores[difference['key']] = scores[difference['minuend']] - scores[difference['subtrahend']]
         return scores
 
-    def _state(self, player, mode, session_id, answers, *, complete=False, scores=None):
+    def _state(self, player, mode, session_id, answers, *, complete=False, scores=None, include_interpretation=True):
         state = {'ok': True, 'game': self.game, 'player_id': player, 'research': True,
             'mode': mode, 'edition': mode, 'session_id': session_id,
             'progress': len(answers), 'total': len(self.items), 'complete': complete,
@@ -85,6 +86,11 @@ class ResearchScaleEngine(ScaleTestEngine):
             state.update(result='\n'.join(lines), result_data={'kind': 'research_scale',
                 'scores': scores, 'dimensions': self.result_dimensions,
                 'scoring_note': self.scoring_note, 'source': self.attribution, 'notice': self.notice})
+            if include_interpretation:
+                report = build_interpretation(self.spec, scores)
+                if report is not None:
+                    state['result_data']['interpretation'] = report
+                    state['result'] += '\n\n' + format_interpretation(report)
         else:
             state['questions'] = [{**self._public_question({**q, 'options': self.spec['options']}), 'number': index + 1}
                 for index, q in enumerate(self.ordered_items(session_id))]
@@ -212,7 +218,8 @@ class ResearchScaleEngine(ScaleTestEngine):
                     else:
                         conn.execute('UPDATE test_sessions SET current_question=?, answers=?, last_active=? WHERE player_id=? AND game=?',
                             (len(answers), json.dumps(answers), now, player, self.game))
-            state = self._state(player, mode, sid, answers, complete=complete, scores=scores)
+            state = self._state(player, mode, sid, answers, complete=complete, scores=scores,
+                                include_interpretation=web or action != 'status')
             if duplicate:
                 state['duplicate'] = True
             conn.commit()

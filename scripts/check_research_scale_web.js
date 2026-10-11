@@ -138,14 +138,87 @@ function assertResearchResult(dom, spec) {
   assert.equal($(dom,'resultText').hidden,true);
   assert.equal($(dom,'resultStructured').hidden,false);
   assert.deepEqual([...dom.window.document.querySelectorAll('.research-score dd')].map(n=>n.textContent),Object.values(data.scores).map(n=>n.toFixed(2)));
-  assert.equal(dom.window.document.querySelector('.research-result .research-notice').textContent,expectedNotice(spec.game));
+  assert.equal($(dom,'pageDisclaimer').textContent,expectedNotice(spec.game));
+  assert.equal(dom.window.document.querySelectorAll('.research-result .research-notice').length,0);
   assert.equal(dom.window.document.querySelector('.research-result a').href,spec.source);
-  assert.doesNotMatch($(dom,'resultStructured').textContent,/存档身份|4399|小机作答|常模|效度|原研究对象/);
+  const hasReport=Boolean(data.interpretation);
+  assert.equal(dom.window.document.querySelectorAll('.research-interpretation').length,hasReport?1:0);
+  assert.equal(dom.window.document.querySelectorAll('.rbi-interpretation').length,spec.game==='rbi'&&!hasReport?1:0);
+  assert.doesNotMatch($(dom,'resultStructured').textContent,/存档身份|小机作答|原研究对象/);
   assert.ok(dom.window.eval('activeState.result').startsWith(`【${spec.title}】`),'backend formal title retained');
   assert.ok(dom.window.eval('activeState.result').includes(spec.notice),'backend notice retained');
   if(spec.scoring_note) assert.equal(data.scoring_note,spec.scoring_note);
 }
+async function checkRbiInterpretation(){
+  const dom=await page('rbi');
+  try {
+    // Actual engine result for 20/7, 25/7, 18/4, using the existing temporary DB bridge.
+    await dom.window.eval(`(async()=>{
+      renderState(await api('start',{mode:'full_fast',restart:true,confirm:true,session_id:activeState.session_id}));
+      renderState(await api('answer_batch',{answers:[3,3,3,3,3,3,2,4,4,4,4,3,3,3,4,4,5,5]}));
+    })()`);
+    const d=dom.window.document;
+    assert.deepEqual([...d.querySelectorAll('.research-score dd')].map(n=>n.textContent),['2.86','3.57','4.50']);
+    const serverReport=JSON.parse(dom.window.eval('JSON.stringify(activeState.result_data.interpretation)'));
+    if (serverReport) {
+      assert.equal(d.querySelector('.research-interpretation .research-summary').textContent,serverReport.summary);
+      assert.equal(d.querySelectorAll('.research-dimension').length,3);
+      assert.equal(d.querySelectorAll('.research-actions li').length,serverReport.recommendations.length);
+      assert.match(serverReport.summary,/需求|沟通|关心|回应/);
+    }
+    // Keep the independent RBI client fallback tested for older API responses.
+    dom.window.eval(`renderResult({...activeState.result_data,interpretation:null},'')`);
+    const paragraphs=[...d.querySelectorAll('.rbi-interpretation p:not(.research-help)')].map(n=>n.textContent);
+    assert.equal(paragraphs.length,4);
+    assert.match(paragraphs[0],/中间选项.*双方都舒服/);
+    assert.match(paragraphs[1],/共同期待.*分工.*“做到了”/);
+    assert.match(paragraphs[2],/非常符合.*可行回应/);
+    assert.match(paragraphs[3],/4.50.*2.86.*1.64.*需求.*关心/);
+    assert.equal(d.querySelectorAll('.research-result .research-notice').length,0);
+    assert.match(d.querySelector('.rbi-interpretation .research-help').textContent,/平台反思建议，并非作者个人评分报告/);
+    const describe=scores=>JSON.parse(dom.window.eval(`JSON.stringify(describeRbiScores(${JSON.stringify(scores)}))`));
+    const score=(sai,fod,openness)=>({sai,fod,openness});
+    const equal=[1,3,5].map(n=>describe(score(n,n,n)));
+    assert.ok(equal.every(r=>r.observation.includes('不必分出主次')));
+    assert.equal(new Set(equal.map(r=>r.observation)).size,3);
+    for(let i=0;i<3;i++) assert.equal(new Set(equal.map(r=>r.dimensions[i].text)).size,3);
+    const permutations=[[1,3,5],[1,5,3],[3,1,5],[3,5,1],[5,1,3],[5,3,1]];
+    const directions=permutations.map(v=>describe(score(...v)).observation);
+    assert.equal(new Set(directions.map(t=>t.split('；')[1])).size,6,'six meaningful comparison directions');
+    for (const values of [[5,5,1],[5,1,5],[1,5,5],[5,1,1],[1,5,1],[1,1,5]]) {
+      assert.match(describe(score(...values)).observation,/并列/);
+    }
+    for (const values of [[3,3.1,3.2],[4.8,5,4.9],[1,1.1,1.2]]) {
+      assert.match(describe(score(...values)).observation,/不必分出主次/);
+      assert.doesNotMatch(describe(score(...values)).observation,/更突出|相对少/);
+    }
+    assert.match(describe(score(3,3.3,3.6)).observation,/相邻分数仍较接近/);
+    assert.match(describe(score(1,4.8,5)).observation,/较接近/);
+    assert.match(describe(score(1,1.2,5)).observation,/较接近/);
+    // Every anchor combination, immutability, finite output, no invented grading/diagnosis.
+    dom.window.eval(`for(let sai=1;sai<=5;sai++) for(let fod=1;fod<=5;fod++) for(let openness=1;openness<=5;openness++) {
+      const scores=Object.freeze({sai,fod,openness});
+      const result=describeRbiScores(scores);
+      if(result.dimensions.length!==3 || /undefined|NaN|高分|低分|诊断|关系质量差|伴侣不满意/.test(JSON.stringify(result))) throw Error('invalid RBI copy');
+    }`);
+    for(const expression of ['null','{}','{sai:3,fod:3}','{sai:null,fod:3,openness:3}',
+      '{sai:"3",fod:3,openness:3}','{sai:NaN,fod:3,openness:3}','{sai:Infinity,fod:3,openness:3}',
+      '{sai:0,fod:3,openness:3}','{sai:3,fod:6,openness:3}']) {
+      assert.equal(dom.window.eval(`describeRbiScores(${expression})`),null);
+    }
+    dom.window.eval(`renderResult({...activeState.result_data,interpretation:null,scores:{sai:3,fod:3}},'')`);
+    assert.equal(d.querySelector('.rbi-interpretation'),null,'partial dimensions keep scores without inventing interpretation');
+    assert.equal(d.querySelectorAll('.research-score').length,2);
+    dom.window.eval(`renderResult({...activeState.result_data,interpretation:null,scores:{sai:0,fod:3,openness:3}},'')`);
+    assert.equal(d.querySelector('.rbi-interpretation'),null);
+    assert.equal(d.querySelectorAll('.research-score').length,3);
+    dom.window.eval(`renderResult({...activeState.result_data,kind:'other'},'')`);
+    assert.equal(d.querySelector('.rbi-interpretation'),null);
+    console.log('PASS: RBI actual 2.86/3.57/4.50, six orders, ties, small gaps, 125 anchor combinations, invalid/missing scores and kind guard.');
+  } finally {dom.window.close();}
+}
 async function main(){
+  await checkRbiInterpretation();
   const games=fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n.endsWith('.json'))
     .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked);
   assert.equal(games.length,18);

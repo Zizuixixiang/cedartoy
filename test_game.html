@@ -77,6 +77,24 @@
     .research-score dt { font-size: 14px; line-height: 1.65; }
     .research-score dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .research-result .research-help { margin-top: 16px; }
+    .rbi-interpretation { margin-top: 22px; font-size: 14px; line-height: 1.8; }
+    .rbi-interpretation h3, .rbi-interpretation h4 { margin: 0 0 6px; font-size: 14px; }
+    .rbi-interpretation h4 { margin-top: 16px; }
+    .rbi-interpretation p { margin: 0; }
+    .rbi-interpretation .research-help { margin: 0 0 16px; }
+    .rbi-interpretation .research-help { margin: 0 0 16px; }
+    .research-interpretation { margin-top: 26px; padding-top: 21px; border-top: 2px solid var(--purple-light); font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+    .research-interpretation h3 { margin: 0 0 10px; color: var(--purple-darker); font-size: 15px; }
+    .research-interpretation .research-summary { margin: 0; }
+    .research-interpretation .research-dimensions { margin-top: 23px; }
+    .research-interpretation .research-dimension { margin-top: 15px; padding: 0 0 13px; border-bottom: 1px solid var(--purple-light); }
+    .research-interpretation .research-dimension:last-child { border-bottom: 0; padding-bottom: 0; }
+    .research-interpretation .research-dimension h4 { margin: 0 0 5px; font-size: 14px; color: var(--text); }
+    .research-interpretation .research-dimension p { margin: 0; }
+    .research-interpretation .research-actions { margin-top: 22px; }
+    .research-interpretation .research-actions ol { margin: 0; padding-left: 22px; }
+    .research-interpretation .research-actions li { margin: 0 0 10px; padding-left: 2px; }
+    .research-interpretation .research-report-footnote { margin: 18px 0 0; font-size: 12px; line-height: 1.65; color: var(--muted); }
     .research-help { margin: 12px 0 0; }
     .research-help a { color: inherit; }
     .research-page #questionIntro { color: var(--text); font-size: 13px; }
@@ -1762,12 +1780,135 @@
       return true;
     }
 
+    // Discussion: https://www.nature.com/articles/s41598-024-58901-2
+    // Platform reflection prompts, not the authors' individual scoring report.
+    // Pure presentation only: nearest response anchors describe the 1–5 axis;
+    // the half-step tolerance below avoids overstating small gaps, not a validated cutoff.
+    function describeRbiScores(scores) {
+      const labels = {sai: "陪伴与情感互动", fod: "履行伴侣责任", openness: "关系中的开放表达"};
+      const keys = Object.keys(labels);
+      if (!scores || keys.some(key => !Number.isFinite(scores[key]) || scores[key] < 1 || scores[key] > 5)) return null;
+      const anchors = ["", "较接近“完全没有”一端", "偏向“完全没有”一端", "接近中间选项", "偏向“非常符合”一端", "较接近“非常符合”一端"];
+      const meanings = {
+        sai: ["这周让关心变得可感知的情感互动，在你的自评中较少", "这周的情感互动有一定体现，可以留意哪些时刻让关心被感受到", "这周让关心变得可感知的情感互动，在你的自评中较多"],
+        fod: ["这周把共同期待落实为实际支持，在你的自评中体现较少", "这周有一定实际支持，可以留意它是否对应双方的共同期待", "这周把共同期待落实为实际支持，在你的自评中体现较多"],
+        openness: ["这周让伴侣了解你的需求与感受，在你的自评中体现较少", "这周有一定开放表达，可以留意表达之后是否增进了彼此理解", "这周让伴侣了解你的需求与感受，在你的自评中体现较多"]
+      };
+      const suggestions = {
+        sai: ["如果双方愿意，可各说一种能感到被在意的相处方式，选一件都舒服的小事试试", "可以回想一次双方都舒服的相处，把其中让人感到被在意的部分再安排一次", "可以问问对方哪些相处时刻最能感到被在意，保留双方都喜欢的方式"],
+        fod: ["可以选一件眼前的共同事务，商量谁来做、何时做，以及各自需要什么帮助", "可以拿一件日常分工对一下期待，看看双方说的“做到了”是否指同一件事", "可以一起检查现有分工，对一下双方对“做到了”的期待是否一致，再看需要怎样调整"],
+        openness: ["若时机合适，可以从一件小事说出自己的感受和需要，邀请对方说说听到了什么", "可以选一个还没聊清的需要，轮流说说各自理解，看看有没有遗漏", "可以挑一次已聊清的需要，共同约定一个可行回应，之后再问是否帮上了忙"]
+      };
+      const dimensions = keys.map(key => {
+        const value = scores[key];
+        const anchor = Math.round(value);
+        const direction = anchor < 3 ? 0 : anchor === 3 ? 1 : 2;
+        const position = value === 1 ? "在“完全没有”一端" : value === 5 ? "在“非常符合”一端" : anchors[anchor];
+        return {key, title: labels[key], text: `${value.toFixed(2)} / 5，${position}：${meanings[key][direction]}。${suggestions[key][direction]}。`};
+      });
+      // Compare hundredths, matching the visible scores and avoiding floating-point ties.
+      const points = Object.fromEntries(keys.map(key => [key, Math.round(scores[key] * 100)]));
+      const ordered = [...keys].sort((a, b) => points[a] - points[b]);
+      const [low, middle, high] = ordered;
+      const gap = points[high] - points[low];
+      const show = key => `${labels[key]} ${scores[key].toFixed(2)}`;
+      let observation;
+      if (gap < 50) {
+        const position = gap === 0 ? `三维同为 ${scores[low].toFixed(2)}`
+          : `三维在 ${scores[low].toFixed(2)}–${scores[high].toFixed(2)} 之间，仅差 ${(gap / 100).toFixed(2)}`;
+        const anchor = Math.round(keys.reduce((total, key) => total + scores[key], 0) / 3);
+        const reflection = anchor < 3 ? "本周三类互动在自评中都体现较少，可以先一起挑一件最愿意尝试的小事"
+          : anchor > 3 ? "本周三类互动在自评中都有较多体现，可以聊聊哪些值得继续、哪些需要调整"
+          : "三类互动都在刻度中间附近，可以从本周一个具体时刻谈谈彼此感受";
+        observation = `${position}，不必分出主次；${reflection}，无需为了分数刻意补齐。`;
+      } else {
+        const upperClose = points[high] - points[middle] < 50;
+        const lowerClose = points[middle] - points[low] < 50;
+        const bridges = {
+          'openness:sai': "开放表达比日常情感互动更突出，可以聊聊：已说清的需求，有没有转化为双方感受得到的关心",
+          'openness:fod': "开放表达比责任落实更突出，可以选一个已谈过的需要，看看是否形成了双方认可的分工与回应",
+          'sai:openness': "情感互动比开放表达更突出，可以在舒服的相处中留一点空间，说说尚未被了解的需要",
+          'sai:fod': "情感互动比责任落实更突出，可以聊聊日常的关心如何也体现在双方认可的实际分担上",
+          'fod:sai': "责任落实比情感互动更突出，可以聊聊实际付出之外，各自还通过什么感受到被在意",
+          'fod:openness': "责任落实比开放表达更突出，可以对照一次实际帮助，问问它是否回应了对方真正想要的支持"
+        };
+        if (upperClose && lowerClose) {
+          observation = `三维从${show(low)}到${show(high)}，相差 ${(gap / 100).toFixed(2)}，相邻分数仍较接近；可以围绕本周一件事，聊聊表达、实际回应和被关心的感受是否衔接。`;
+        } else if (upperClose) {
+          const reflection = {
+            sai: "可以聊聊说过的需要和实际支持，怎样也能成为双方感受得到的关心",
+            fod: "可以把相处中的关心与谈过的需要，落到一件双方认可的共同事务上",
+            openness: "可以借一次相处或实际帮助，说说各自的感受与需要是否被对方理解"
+          };
+          observation = `${show(middle)}与${show(high)}${points[middle] === points[high] ? "并列" : "较接近"}，${show(low)}在本次自评中相对少一些；${reflection[low]}。`;
+        } else if (lowerClose) {
+          const reflection = {
+            sai: "可以从双方喜欢的相处方式出发，聊清各自的需要，再商量一个实际回应",
+            fod: "可以聊聊实际付出是否让双方感到被在意，也留一点空间表达还没说出的需要",
+            openness: "可以挑一个已谈清的需要，一起商量怎样同时落实为可感知的关心和实际支持"
+          };
+          observation = `${show(high)}在本次自评中相对更突出，${show(low)}与${show(middle)}${points[low] === points[middle] ? "并列" : "较接近"}；${reflection[high]}。`;
+        } else {
+          observation = `${show(high)}与${show(low)}相差 ${(gap / 100).toFixed(2)}；${bridges[`${high}:${low}`]}。`;
+        }
+      }
+      return {dimensions, observation};
+    }
+
+    function appendRbiInterpretation(root, scores) {
+      const report = describeRbiScores(scores);
+      if (!report) return;
+      const section = makeResultElement("section", "rbi-interpretation");
+      section.appendChild(makeResultElement("h3", "", "理解这次互动"));
+      section.appendChild(makeResultElement("p", "research-help", "仅描述过去一周的自评方向；以下为平台反思建议，并非作者个人评分报告。"));
+      for (const item of [...report.dimensions, {title: "综合观察", text: report.observation}]) {
+        section.append(makeResultElement("h4", "", item.title), makeResultElement("p", "", item.text));
+      }
+      root.appendChild(section);
+    }
+
+    function appendResearchInterpretation(root, report) {
+      if (!report || typeof report.summary !== "string" || !report.summary.trim()
+          || !Array.isArray(report.dimension_notes) || !Array.isArray(report.recommendations)) return false;
+      if (report.dimension_notes.some(item => !item || typeof item.label !== "string" || typeof item.text !== "string")
+          || report.recommendations.some(item => typeof item !== "string")) return false;
+      const section = makeResultElement("section", "research-interpretation");
+      section.append(
+        makeResultElement("h3", "", "综合观察"),
+        makeResultElement("p", "research-summary", report.summary)
+      );
+      if (report.dimension_notes.length) {
+        const dimensions = makeResultElement("div", "research-dimensions");
+        dimensions.appendChild(makeResultElement("h3", "", "维度解读"));
+        for (const item of report.dimension_notes) {
+          const entry = makeResultElement("div", "research-dimension");
+          entry.append(
+            makeResultElement("h4", "", item.label),
+            makeResultElement("p", "", item.text)
+          );
+          dimensions.appendChild(entry);
+        }
+        section.appendChild(dimensions);
+      }
+      if (report.recommendations.length) {
+        const actions = makeResultElement("div", "research-actions");
+        actions.appendChild(makeResultElement("h3", "", "可以试试"));
+        const list = makeResultElement("ol", "");
+        for (const tip of report.recommendations) list.appendChild(makeResultElement("li", "", tip));
+        actions.appendChild(list);
+        section.appendChild(actions);
+      }
+      const note = [report.source_note, report.boundary].filter(value => typeof value === "string" && value.trim()).join(" ");
+      if (note) section.appendChild(makeResultElement("p", "research-report-footnote", note));
+      root.appendChild(section);
+      return true;
+    }
+
     function renderResearchResult(root, data) {
       if (data?.kind !== "research_scale" || !data.scores || !data.dimensions) return false;
       const scores = Object.entries(data.scores);
       if (!scores.length || scores.some(([key, value]) => !Number.isFinite(value) || !data.dimensions[key])) return false;
       const result = makeResultElement("div", "research-result");
-      result.appendChild(makeResultElement("p", "research-notice", researchNotice()));
       const list = makeResultElement("dl", "research-scores");
       for (const [key, value] of scores) {
         // Trim only the repeated presentation suffix; keep saved values and keys intact.
@@ -1780,6 +1921,14 @@
       const sum = CONFIG.game.startsWith("ipip_") || ["mesx", "romlon"].includes(CONFIG.game);
       result.appendChild(makeResultElement("p", "research-help", sum ? "各维度为原始总分。"
         : CONFIG.game === "bsr" ? "两类分别取均分；差值＝格言均分 − 伪深刻语句均分。" : "各维度为均分。"));
+      const report = data.interpretation;
+      const matchingReport = report && Array.isArray(report.dimension_notes)
+        && report.dimension_notes.every(item => item && typeof item.key === "string"
+          && Object.prototype.hasOwnProperty.call(data.scores, item.key)
+          && Number.isFinite(item.score) && Math.abs(data.scores[item.key] - item.score) < 0.000001);
+      if (!appendResearchInterpretation(result, matchingReport ? report : null) && CONFIG.game === "rbi") {
+        appendRbiInterpretation(result, data.scores);
+      }
       const source = makeResultElement("p", "research-help");
       setResearchLinkedText(source, researchAttribution().url);
       const link = source.querySelector("a");

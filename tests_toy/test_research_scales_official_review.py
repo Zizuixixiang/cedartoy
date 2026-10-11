@@ -86,7 +86,10 @@ class OfficialScoringReviewTests(unittest.TestCase):
             with patch.object(engine, 'score', side_effect=AssertionError('silent rescore')):
                 for action in ('start', 'status', 'result', 'get_result'):
                     state = engine.execute(action, {'player_id': 'guest:officialrestore'})
-                    self.assertEqual(state['result_data'], wanted[engine.game])
+                    expected = dict(wanted[engine.game])
+                    if action == 'status':
+                        expected.pop('interpretation', None)
+                    self.assertEqual(state['result_data'], expected)
         script = '''
 import json, sys
 from pathlib import Path

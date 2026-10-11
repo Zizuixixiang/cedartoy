@@ -201,10 +201,46 @@ async function main(){
       assert.equal(await page.locator('#resultText').isVisible(),false);
       assert.deepEqual(await page.locator('.research-score dd').allTextContents(),expected);
       assert.equal(await page.locator('.research-result a').getAttribute('href'),spec.source);
-      assert.doesNotMatch(await page.locator('#resultStructured').innerText(),/存档身份|4399|小机作答|常模|效度/);
+      const report = await page.evaluate(() => activeState.result_data.interpretation || null);
+      assert.ok(report && typeof report.summary==='string' && report.summary.length>25,
+        spec.game+' missing completed result report');
+      assert.equal(await page.locator('.research-interpretation').count(),1);
+      assert.equal(await page.locator('.research-dimension').count(),report.dimension_notes.length);
+      assert.equal(await page.locator('.research-actions li').count(),report.recommendations.length);
+      assert.equal(await page.locator('.rbi-interpretation').count(),0,'RBI uses the shared server/MCP report');
+      assert.doesNotMatch(await page.locator('#resultStructured').innerText(),/存档身份|小机作答|原研究对象/);
       await capture(spec.game+'-result');
+      if (spec.game==='irrc') {
+        // The shared 17-scale report contract must render safely on all viewports,
+        // including the largest seven-dimensional report and untrusted-looking text.
+        await page.evaluate(() => renderResult({...activeState.result_data, interpretation: {
+          summary:'查看分数的相对组合：表达方式与困难感可能并存。<img src=x onerror=alert(1)>',
+          dimension_notes:Object.entries(activeState.result_data.scores).slice(0,7).map(([key,score],i)=>({key,score,label:'解读维度'+(i+1),text:'选择一个具体场景，留意已经能做到的事，以及需要练习的一步。'})),
+          recommendations:['和信任的人交流自己期待的回应','选一次分歧练习只提一个可实现的请求'],
+          source_note:'作者论文介绍构念，以下是平台反思建议。', boundary:'不能将本分数用作关系质量或诊断判定。'
+        }},''));
+        assert.equal(await page.locator('.research-interpretation h3').count(),3);
+        assert.equal(await page.locator('.research-dimension').count(),7);
+        assert.equal(await page.locator('.research-actions li').count(),2);
+        assert.equal(await page.locator('.research-interpretation img').count(),0);
+        await capture('irrc-interpretation-rendered');
+      }
       if (spec.game==='rbi') {
-        await page.addStyleTag({content:'.research-meta, .research-result .research-notice, .research-result .research-help {font-size:24px} .research-score dt {font-size:28px} .research-score dd {font-size:40px}'});
+        for(const [name,values] of Object.entries({example:[2.86,3.57,4.5],equal:[3,3,3],minimum:[1,1,1],maximum:[5,5,5],ties:[5,1,5],reversed:[5,3,1]})) {
+          await page.evaluate(([sai,fod,openness])=>renderResult({...activeState.result_data,interpretation:null,scores:{sai,fod,openness}},''),values);
+          assert.equal(await page.locator('.rbi-interpretation h4').count(),4);
+          const geometry=await page.locator('.rbi-interpretation').evaluate(el=>({
+            font:getComputedStyle(el).fontSize,
+            overflow:[el,...el.querySelectorAll('*')].some(n=>n.scrollWidth>n.clientWidth),
+            right:el.getBoundingClientRect().right
+          }));
+          assert.equal(geometry.font,'14px');
+          assert.equal(geometry.overflow,false);
+          assert.ok(geometry.right<=width);
+          await capture('rbi-interpretation-'+name);
+        }
+        await page.evaluate(()=>renderResult({...activeState.result_data,interpretation:null,scores:{sai:2.86,fod:3.57,openness:4.5}},''));
+        await page.addStyleTag({content:'.research-meta, .research-result .research-notice, .research-result .research-help {font-size:24px} .research-score dt, .rbi-interpretation, .rbi-interpretation h3, .rbi-interpretation h4 {font-size:28px} .research-score dd {font-size:40px}'});
         await page.locator('#researchDetails summary').click();
         await capture('rbi-result-large-text');
       }

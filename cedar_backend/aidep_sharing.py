@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 from contextlib import closing
+from research_scales.interpretation import build_interpretation, format_interpretation
 
 
 def _init(conn):
@@ -84,10 +85,12 @@ def access(engine, account_connect, user, error, *, change=None, human_id=None):
             if not valid or grant[0] != int(user['id']):
                 raise error(-32003, '无权查看此共享结果')
             # No receipt, answer, question, username, or other account data here.
+            report = build_interpretation(engine.spec, result[2])
             return {'ok': True, 'game': 'aidep', 'human_id': human_id,
                     'scores': result[2], 'dimensions': dict(engine.result_dimensions),
                     'explanation': '总体与四维均分范围为1–5；越高表示相应依赖表现越多，不代表诊断或临床分级。',
-                    'notice': engine.notice}
+                    'notice': engine.notice,
+                    'interpretation': report, 'result': format_interpretation(report)}
 
         if change is not None:
             if type(change.get('enabled')) is not bool:

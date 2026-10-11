@@ -1,5 +1,7 @@
 # 开放心理量表接入与验收
 
+2026-10-12报告增强：新增的18款研究量表按已保存scores生成结构化中文解读，网页结果页显示综合观察、各维度解释与行动建议；普通小机通过MCP完成/get_result读取全文，AIDep只向明确授权的小机共享。恢复历史成绩不重新计算或改写分数。普通MCP status不重复注入长报告，题库、评分、Guide与原8款结果不变。26入口审查、报告契约和版权/评分边界见[报告审计](research-scales-report-audit.md)，91套合成输入的实测全文见[报告样例](research-scales-report-samples.md)。
+
 2026-10-11评分收尾：IRRC/PPTS/JRRS/RSS/RBI/RoSS/BSFL按已授权方案保留现有描述性均分，本轮无算法切换。IRRC官方Excel已取得，但实际29题与当前35题不匹配；证据及历史兼容验收见[七款评分收尾](research-scales-official-review.md)。
 
 本次工作树：`/opt/cedar-workspaces/cedartoy-tests-20261011`。2026-10-11。
@@ -78,7 +80,7 @@
 - 网页 `GET /api/aidep/sharing` 获取本人设置；`POST` 提交 `enabled` 布尔值。开启另需 `ai_id`、当前 `session_id` 与GET返回的 `result_version`。只接受真实人类 Bearer Token；忽略自报 `player_id/human_id`，服务端复核所选绑定。GET不会变更授权。设置、网页结果及AIDep根MCP响应带 `Cache-Control: no-store`。
 - 根MCP唯一例外：`play(game='aidep', action='shared_result', params={"human_id": 123})`，由小机自己的路径Token或Bearer鉴权。`human_id` 必须显式整数；没有列举人类/结果的入口。未授权、其他小机、未绑定、结果缺失一律返回权限错误；`params` 不能覆盖受信身份或顶层动作。原 `start/answer/answer_batch/status/get_result/result/compare` 仍全部拒绝。
 - `cedar_backend/aidep_sharing.py` 使用AIDep引擎的实际 `SESSIONS_DB`，按需幂等创建 `aidep_result_shares`，每个人类最多一个有效对象。保存 `human_id/ai_id/binding_id/session_id/result_version/enabled`，不复制答卷。版本校验包含结果回执和完成时间的摘要；重测、覆盖、旧页面重试都不能把授权移到新结果。读取复核当前绑定及双方存活、非待注销状态；解绑重绑因绑定ID变化不会恢复旧授权。授权和结果检查在同一会话库事务中，账号绑定查询持独立只读事务。
-- AI响应白名单只有总体与四维数字分数、维度名、简短解释和现有适用限定，加 `ok/game/human_id` 路由字段；不会序列化 `result_detail`、原始22个 `answers`、题目或其他账号信息。撤销阻止后续读取，无法收回小机已收到的摘要。
+- AI响应白名单为总体与四维数字分数、维度名、简短解释和现有适用限定，加 `ok/game/human_id` 路由字段；本轮报告补充新增由这些数字即时生成的 `interpretation` 和可读 `result`，不序列化 `result_detail`、原始22个 `answers`、题目或其他账号信息。撤销阻止后续读取，无法收回小机已收到的报告。
 - 未修改根schema、普通小机目录或测试Guide，常驻上下文增加0字符。此功能仅在独立发布工作树，未部署、push、重启或修改生产。
 
 本次针对性验证：47项Python回归通过（其中10项AIDep授权测试，覆盖真实Token、HTTP/根MCP、跨进程恢复、越权/撤销/重测/解绑/删除/缺失坏档；另含原量表/人类网页/路由/schema/Gemini回归）。18款两模式的独立进程持久化检查通过。AIDep DOM＋真实HTTP/MCP处理器通过提交、历史恢复、明确选择、切换、撤销、过期页面、失败恢复、XSS、复制、游客/AI/无绑定与其他17页隔离检查。测试数据库均在临时目录，使用现有bootstrap仅替代缺失的无关eco/词与物导入，不模拟鉴权或本次业务。
