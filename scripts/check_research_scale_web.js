@@ -183,7 +183,9 @@ async function checkRbiInterpretation(){
       assert.equal(d.querySelector('.research-interpretation .research-summary').textContent,serverReport.summary);
       assert.equal(d.querySelectorAll('.research-dimension').length,3);
       assert.equal(d.querySelectorAll('.research-actions li').length,serverReport.recommendations.length);
-      assert.match(serverReport.summary,/需求|沟通|关心|回应/);
+      assert.match(serverReport.summary,/谈感受|聊计划|开放表达|陪伴|需求|沟通|关心|回应/);
+      assert.equal(serverReport.recommendations.length,2,'two distinct practical actions');
+      assert.doesNotMatch(serverReport.summary,/\d+(?:\.\d+)?\s*\/\s*\d+/,'summary does not repeat numeric score');
     }
     // Keep the independent RBI client fallback tested for older API responses.
     dom.window.eval(`renderResult({...activeState.result_data,interpretation:null},'')`);

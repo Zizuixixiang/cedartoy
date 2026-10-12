@@ -108,9 +108,13 @@ async function main(){
   for(let i=0;i<22;i++){
     assert.equal($(w,'aidepSharing'),null);
     w.document.querySelectorAll('#answers button')[2].click();
-    $(w,'saveAnswerButton').click();
-    await until(()=>!w.eval('busy') && (w.eval('cursor')===i+1 || !$(w,'resultPanel').hidden),'next answer');
+    await until(()=>!w.eval('busy') && w.eval('activeState.saved_answers.length')===i+1
+      && w.eval('cursor')===Math.min(i+1,21),'autosaved answer');
   }
+  assert.equal($(w,'resultPanel').hidden,true,'final choice never auto-finalizes');
+  assert.equal($(w,'saveAnswerButton').textContent,'查看结果');
+  $(w,'saveAnswerButton').click();
+  await until(()=>!$(w,'resultPanel').hidden,'final explicit result');
   await ready(w);
   assert.equal($(w,'aidepShareTarget').value,'','private default');
   assert.equal($(w,'aidepShareTarget').options.length,3,'two explicit targets plus off');

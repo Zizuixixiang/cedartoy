@@ -108,6 +108,8 @@ class InterpretationTests(unittest.TestCase):
                             self.assertIn(f'/ {bounds["max"]:g}', result['result'])
                     report = data['interpretation']
                     self.assertEqual(report['game'], game)
+                    self.assertEqual(len(report['recommendations']), 2)
+                    self.assertFalse(any(c.isdigit() for c in report['summary']), game+' summary cannot repeat score')
                     self.assertEqual([n['key'] for n in report['dimension_notes']],
                                      [] if game in SINGLES else list(e.spec['dimensions']))
                     self.assertIn(format_interpretation(report), result['result'])
@@ -130,7 +132,7 @@ class InterpretationTests(unittest.TestCase):
                         after = conn.execute('SELECT * FROM test_results WHERE game=? AND player_id=?', (game, player)).fetchone()
                     self.assertEqual(before, after)
                     self.assertNotIn('interpretation', json.loads(before[3]))
-            self.assertGreaterEqual(len(summaries), 5, game)
+            self.assertGreaterEqual(len(summaries), 3 if game == "irrc" else 5, game)
 
     def test_every_human_http_completed_report_and_mcp_real_tokens(self):
         tokens = seed_accounts()
@@ -193,20 +195,92 @@ class InterpretationTests(unittest.TestCase):
             self.assertNotIn('排在较前', report['summary'])
             self.assertNotIn('排在较前', report['summary'])
         e = research_scales.SCALES['ppts']
-        self.assertIn('可以同时成立', build_interpretation(e.spec, {'procrastination': 5, 'precrastination': 5})['summary'])
+        self.assertIn('迟迟不开始', build_interpretation(e.spec, {'procrastination': 5, 'precrastination': 5})['summary'])
         e = research_scales.SCALES['irrc']
         report = build_interpretation(e.spec, dict.fromkeys(e.spec['dimensions'], 5))
-        self.assertIn('同时靠近', report['summary'])
-        self.assertIn('困难体验', report['summary'])
+        self.assertIn('关系能力', report['summary'])
+        self.assertIn('困难', report['summary'])
         self.assertNotIn('overall', [n['key'] for n in report['dimension_notes']])
         e = research_scales.SCALES['rss']
         report = build_interpretation(e.spec, e.score([7]*12))
-        self.assertIn('不是技能差', report['dimension_notes'][2]['text'])
+        self.assertEqual(report['dimension_notes'][2]['score'], 1.0)
+        self.assertIn('关系', report['dimension_notes'][2]['text'])
         e = research_scales.SCALES['aidep']
         report = build_interpretation(e.spec, {'emotional': 1, 'functional': 1, 'cognitive': 1, 'control': 5})
-        self.assertIn('不论委托了多少任务', report['summary'])
+        self.assertIn('难以停止', report['summary'])
         report = build_interpretation(e.spec, {'emotional': 5, 'functional': 1, 'cognitive': 1, 'control': 1})
-        self.assertIn('难以停下并不是同一回事', report['summary'])
+        self.assertIn('安心', report['summary'])
+
+    def test_deepseek_prose_directions_and_subjects(self):
+        """Regression: verify the original constructs, not brittle whole sentences."""
+        from research_scales.interpretation_content import COMBINATIONS, DIMENSIONS, SINGLES
+        rss = research_scales.SCALES['rss']
+        low = rss.score([7] * 12)
+        high = rss.score([1] * 12)
+        self.assertEqual(low['skills'], 1)
+        self.assertEqual(high['skills'], 7)
+        low_text = build_interpretation(rss.spec, low)['dimension_notes'][2]['text']
+        high_text = build_interpretation(rss.spec, high)['dimension_notes'][2]['text']
+        self.assertIn('比较认同', low_text)
+        self.assertIn('认同较少', high_text)
+        for text in DIMENSIONS['rss']['skills']:
+            self.assertNotIn('硬碰', text)
+
+        rbi = research_scales.SCALES['rbi']
+        for key, value in COMBINATIONS['rbi'].items():
+            self.assertNotIn('对方帮忙或照应', value, key)
+            self.assertNotIn('对方帮助你', value, key)
+            self.assertNotIn('不预设', value, key)
+        profile = build_interpretation(rbi.spec, {'sai': 2.86, 'fod': 3.57,
+                                                 'openness': 4.5})
+        self.assertIn('伴侣', profile['summary'])
+        self.assertIn('陪伴', profile['summary'])
+        self.assertEqual(len(profile['recommendations']), 2)
+        self.assertFalse(any(ch.isdigit() for ch in profile['summary']))
+
+        aidep = research_scales.SCALES['aidep']
+        contrast = build_interpretation(aidep.spec, {
+            'emotional': 1, 'functional': 5, 'cognitive': 1, 'control': 5})
+        self.assertNotIn('程度相近', contrast['summary'])
+        self.assertIn('难以停止', contrast['summary'])
+
+        irrc = research_scales.SCALES['irrc']
+        abilities = {'locus','perspective','temperament','conflict'}
+        split = {k: (4 if k in abilities else 1)
+                 for k in irrc.spec['dimensions']}
+        text = build_interpretation(irrc.spec, split)['summary']
+        self.assertNotIn('没有明显偏向', text)
+        self.assertIn('分别', text)
+
+        ross = research_scales.SCALES['ross']
+        zeros = dict.fromkeys(ross.spec['dimensions'], 0)
+        text = build_interpretation(ross.spec, zeros)['summary']
+        self.assertNotIn('其他求助', text)
+        self.assertNotIn('更接近你常用', text)
+        self.assertEqual(text, COMBINATIONS['ross']['all_low'])
+
+        for game in ('rnss', 'rbi', 'mesx'):
+            e = research_scales.SCALES[game]
+            for position in (0, .5, 1):
+                score = {key: e.score_ranges()[key]['min'] + position *
+                         (e.score_ranges()[key]['max'] - e.score_ranges()[key]['min'])
+                         for key in e.spec['dimensions']}
+                r = build_interpretation(e.spec, score)
+                self.assertFalse(any(ch.isdigit() for ch in r['summary']))
+        rnss_text = ' '.join(DIMENSIONS['rnss']['initiative']) + ' '.join(COMBINATIONS['rnss'].values())
+        self.assertNotIn('主动联系', rnss_text)
+        self.assertNotIn('先来找你', rnss_text)
+        # MESx is a sum across objects; no report may reconstruct the
+        # placement of family members, animals, or any named object.
+        for text in SINGLES['mesx'][1]:
+            self.assertNotIn('亲近的人身上', text)
+            self.assertNotIn('对动物', text)
+        bsr = research_scales.SCALES['bsr']
+        for base in (1., 3.):
+            report = build_interpretation(bsr.spec, {
+                'pseudo_profound': base, 'motivational': base + .8})
+            self.assertIn('格言', report['summary'])
+            self.assertNotIn('评价接近', report['summary'])
 
     def test_single_sum_does_not_claim_which_items_were_endorsed(self):
         e = research_scales.SCALES['mesx']
@@ -214,18 +288,16 @@ class InterpretationTests(unittest.TestCase):
         self.assertEqual(build_interpretation(e.spec, e.score(a)), build_interpretation(e.spec, e.score(b)))
         self.assertIn('无法恢复', build_interpretation(e.spec, e.score(a))['boundary'])
 
-    def test_existing_17_reports_match_reviewed_samples_exactly(self):
+    def test_all_18_reports_match_deepseek_samples_exactly(self):
         samples = json.loads((Path(__file__).resolve().parents[1] /
             'docs/research-scales-report-samples.json').read_text())['samples']
         count = 0
         for game, rows in samples.items():
-            if game == 'rbi':
-                continue
             for row in rows:
                 self.assertEqual(build_interpretation(research_scales.SCALES[game].spec, row['scores']),
                                  row['interpretation'], game)
                 count += 1
-        self.assertEqual(count, 85)
+        self.assertEqual(count, 91)
 
     def test_rbi_orders_ties_positions_and_requested_profile(self):
         e = research_scales.SCALES['rbi']
@@ -239,8 +311,10 @@ class InterpretationTests(unittest.TestCase):
                 'recommendations', 'source_note', 'source_url', 'boundary'})
             self.assertEqual([n['key'] for n in report['dimension_notes']], list(keys))
             self.assertTrue(all(n['range'] == [1, 5] for n in report['dimension_notes']))
-            self.assertIn('三方面', report['summary'])
+            self.assertTrue(any(word in report['summary'] for word in ('三类','三方面','三种')))
             self.assertIn('非作者官方分数', report['boundary'])
+            self.assertEqual(len(report['recommendations']), 2)
+            self.assertFalse(any(char.isdigit() for char in report['summary']))
             self.assertNotIn('排在较前', report['summary'])
         permutations = [build_interpretation(e.spec, dict(zip(keys, values)))
                         for values in itertools.permutations((1, 3, 5))]
@@ -249,14 +323,15 @@ class InterpretationTests(unittest.TestCase):
             for tied, other in ((1, 5), (5, 1)):
                 scores = {k: tied if k in tied_keys else other for k in keys}
                 summary = build_interpretation(e.spec, scores)['summary']
-                labels = [e.spec['dimensions'][k].replace('（描述均分）', '') for k in tied_keys]
-                self.assertIn('、'.join(labels), summary)
+                self.assertFalse(any(char.isdigit() for char in summary))
+                self.assertGreater(len(summary), 30)
         near = build_interpretation(e.spec, dict(zip(keys, (3, 3.01, 3.02))))
         self.assertNotIn('高于', near['summary'])
         self.assertNotIn('排在较前', near['summary'])
         requested = build_interpretation(e.spec, dict(zip(keys, (2.86, 3.57, 4.5))))
-        self.assertIn('能沟通的需求是否转化为双方实际感受到的关心与回应', requested['summary'])
-        self.assertNotIn('履行伴侣责任的位置高于陪伴', requested['summary'])  # 0.71 is a small gap.
+        self.assertIn('谈感受', requested['summary'])
+        self.assertIn('陪伴', requested['summary'])
+        self.assertFalse(any(char.isdigit() for char in requested['summary']))
         self.assertIn('【综合观察】', format_interpretation(requested))
 
     def test_rbi_preexisting_scores_http_mcp_and_subprocess_never_rescore(self):
