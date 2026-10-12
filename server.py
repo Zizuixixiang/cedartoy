@@ -1976,7 +1976,7 @@ def _create_reset_token(conn, user_id, *, lifetime_seconds, token=None):
 
 
 _RECOVERY_MISSING = "查询码不正确，请核对后重试。"
-_RECOVERY_SUBMITTED = "请保存查询码，用于查看审核结果；一般会在24小时内完成审核"
+_RECOVERY_SUBMITTED = "请保存查询码，用于查看审核结果；一般会在48小时内完成审核"
 _RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 

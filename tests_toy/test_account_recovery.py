@@ -35,7 +35,7 @@ class AccountRecoveryTests(unittest.TestCase):
                                (server._recovery_query_hash(body["query_code"]),)).fetchone()
         self.assertEqual(result["ticket_id"], row[0])
         self.assertRegex(result["query_code"], r"^[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){2}$")
-        self.assertEqual(result["message"], "请保存查询码，用于查看审核结果；一般会在24小时内完成审核")
+        self.assertEqual(result["message"], "请保存查询码，用于查看审核结果；一般会在48小时内完成审核")
         return {"query_code": result["query_code"]}, row[0]
 
     def approve(self, ticket_id, decision="approved", note="核验通过"):

@@ -24,7 +24,7 @@ async function checkForgotPassword(emailEnabled) {
         calls.push({url, body});
         if (url === "/api/auth/recovery/submit") {
           assert.deepEqual(Object.keys(body).sort(), ["account", "account_kind", "explanation", "games", "machine", "registered_about"]);
-          return reply({ticket_id: 17, query_code: secret, message: "请保存查询码，用于查看审核结果；一般会在24小时内完成审核"});
+          return reply({ticket_id: 17, query_code: secret, message: "请保存查询码，用于查看审核结果；一般会在48小时内完成审核"});
         }
         if (url === "/api/auth/recovery/query") {
           assert.deepEqual(body, {query_code: expectedCode});
@@ -82,7 +82,7 @@ async function checkForgotPassword(emailEnabled) {
       assert.equal($("recoverySuccess").hidden, false);
       assert.match($("recoverySuccessDetails").textContent, /工单号：17/);
       assert.ok($("recoverySuccessDetails").textContent.includes("查询码：" + secret));
-      assert.match($("recoverySuccess").textContent, /24\s*小时内完成审核/);
+      assert.match($("recoverySuccess").textContent, /48\s*小时内完成审核/);
       assert.deepEqual([...$("recoverySuccess").querySelectorAll("button")].map(b => b.textContent), ["复制查询码", "查询进度", "关闭"]);
     }
     function assertHandoff() {
@@ -104,7 +104,7 @@ async function checkForgotPassword(emailEnabled) {
     w.localStorage.setItem("cedartoy_recovery_query:username:Human", secret);
     w.openForgotPasswordModal();
     assertMode("apply"); assertBlank();
-    assert.match($("forgotPasswordHint").textContent, /24\s*小时内完成审核/);
+    assert.match($("forgotPasswordHint").textContent, /48\s*小时内完成审核/);
     fillApplication();
     const application = w.submitForgotPassword();
     assert.equal($("forgotPasswordSubmit").disabled, true);
@@ -133,7 +133,7 @@ async function checkForgotPassword(emailEnabled) {
       assert.equal($("recoveryResult").classList.contains("modal-hint"), false);
       assert.equal($("forgotPasswordMsg").textContent, "", "normal states must not use the error area");
       assert.equal($("recoveryLinkBox").hidden, status !== "approved");
-      if (status === "pending") assert.match($("recoveryResult").textContent, /24\s*小时内完成审核/);
+      if (status === "pending") assert.match($("recoveryResult").textContent, /48\s*小时内完成审核/);
       if (status === "approved") {
         assert.equal($("recoveryLink").href, resetUrl);
         assert.ok(panel.contains($("recoveryLinkBox")));

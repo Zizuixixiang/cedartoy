@@ -3456,7 +3456,7 @@
           <button class="pixel-btn secondary" type="button" data-recovery-mode="apply" aria-pressed="true">申请找回</button>
           <button class="pixel-btn secondary" type="button" data-recovery-mode="query" aria-pressed="false">查询进度</button>
         </div>
-        <p class="modal-hint" id="forgotPasswordHint">请填写信息供管理员核验，一般会在 24 小时内完成审核，提交成功后请保存工单号和查询码。</p>
+        <p class="modal-hint" id="forgotPasswordHint">请填写信息供管理员核验，一般会在 48 小时内完成审核，提交成功后请保存工单号和查询码。</p>
         <div id="recoveryFields">
           <div id="recoveryApplyFields">
             <div class="field"><label class="field-label" for="recoveryAccount">人类账号</label>
@@ -3493,7 +3493,7 @@
       </div>
       <div id="recoverySuccess" hidden>
         <p class="modal-hint" id="recoverySuccessDetails" aria-live="polite"></p>
-        <p class="modal-hint">一般会在 24 小时内完成审核，请保存工单号和查询码，稍后查询进度。</p>
+        <p class="modal-hint">一般会在 48 小时内完成审核，请保存工单号和查询码，稍后查询进度。</p>
         <div class="modal-msg" id="recoverySuccessMsg" aria-live="polite"></div>
         <div class="modal-actions">
           <button class="pixel-btn secondary" id="recoveryCopyCode" type="button">复制查询码</button>
@@ -7742,7 +7742,7 @@
       });
       $("recoveryApplyFields").hidden = false;
       $("recoveryQueryField").hidden = true;
-      $("forgotPasswordHint").textContent = "请填写信息供管理员核验，一般会在 24 小时内完成审核，提交成功后请保存工单号和查询码。";
+      $("forgotPasswordHint").textContent = "请填写信息供管理员核验，一般会在 48 小时内完成审核，提交成功后请保存工单号和查询码。";
       $("forgotPasswordMsg").textContent = "";
       $("forgotPasswordSubmit").textContent = "提交申请";
       $("forgotPasswordSubmit").disabled = false;
@@ -7796,7 +7796,7 @@
 
     function renderRecoveryResult(data) {
       const states = {
-        pending: ["审批中", "一般会在 24 小时内完成审核，请稍后回来查询。"],
+        pending: ["审批中", "一般会在 48 小时内完成审核，请稍后回来查询。"],
         rejected: ["未通过", "本次申请未通过审核。"],
         approved: ["已通过", "请使用下方链接重置密码。"],
         completed: ["已完成", "密码已重置，请使用新密码登录。"],
