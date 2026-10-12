@@ -102,8 +102,14 @@
     .research-page .question-actions button { color: var(--text); font-size: 12px; min-height: 44px; }
     .research-page .answer-button { min-height: 44px; padding: 8px 12px; font-size: 14px; }
     .research-page .answer-button.selected, .research-page .scale-step.selected { color: var(--text); }
-    .mbti-scale-ends.research-scale-ends { gap: 16px; font-family: inherit; font-size: 12px; line-height: 1.5; }
+    .mbti-scale-ends.research-scale-ends { gap: 16px; align-items: start; font-family: inherit; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .research-scale-ends span { flex: 1; min-width: 0; }
     .research-scale-ends span:last-child { text-align: right; }
+    .research-scale-middle { margin: 0 0 7px; text-align: center; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .research-scale-selection { min-height: 1.65em; margin: 12px 0 0; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+    .research-scale-key { margin-top: 4px; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+    .research-scale-key summary { width: fit-content; min-height: 44px; padding: 12px 0; cursor: pointer; }
+    .research-scale-key p { margin: 0 0 4px; }
     .mbti-scale-track.research-scale-track { grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); row-gap: 2px; }
     .research-scale-track .scale-step { color: var(--text); font-size: 13px; }
     .research-scale-track .scale-step:focus-visible { outline-offset: -3px; }
@@ -609,15 +615,19 @@
       });
     }
 
-    async function api(action, payload = {}, retryGuest = true) {
+    async function api(action, payload = {}, retryGuest = true, signal) {
       if (CONFIG.research && action === "answer_batch") payload = {...payload, session_id: activeState.session_id};
       const response = await fetch(`/api/${CONFIG.game}/${action}`, {
         method: "POST",
         headers: requestHeaders(),
         body: JSON.stringify(identityBody(payload)),
-        cache: "no-store"
+        cache: "no-store",
+        signal
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(error => {
+        if (signal?.aborted) throw error;
+        return {};
+      });
       if (response.status === 401 && token() && retryGuest) {
         // A research write must not be replayed under a different identity.
         if (CONFIG.research) throw new Error("登录已失效，请重新登录后刷新；当前答案仍保留在本机。");
@@ -949,9 +959,11 @@
     }
     function renderResearchOptions(question) {
       const bareNumber = option => String(option.text).trim() === String(option.value);
-      // Like the original ECR scale: numeric steps and the supplied anchors.
-      // Fully worded scales keep the established answer list; no invented labels.
-      const numeric = question.options.some(bareNumber);
+      const labelFor = option => bareNumber(option) ? String(option.value) : `${option.value} · ${option.text}`;
+      // Layout follows the consecutive numeric values, not how many labels are supplied.
+      // Longer scales retain the existing auto-wrapping track on small screens.
+      const numeric = question.options.length >= 4 && question.options.every((option, index, options) =>
+        Number.isInteger(option.value) && (!index || option.value === options[index - 1].value + 1));
       $("answers").className = numeric ? "answers mbti" : "answers";
       if (!numeric) {
         question.options.forEach(option => addAnswer(option.value, `${option.value}. ${option.text}`));
@@ -959,11 +971,19 @@
       }
       const ends = document.createElement("div");
       ends.className = "mbti-scale-ends research-scale-ends";
-      question.options.filter(option => !bareNumber(option)).forEach(option => {
+      [question.options[0], question.options[question.options.length - 1]].forEach(option => {
         const label = document.createElement("span");
-        label.textContent = `${option.value} · ${option.text}`;
+        label.textContent = labelFor(option);
         ends.append(label);
       });
+      $("answers").append(ends);
+      const middle = question.options.length % 2 ? question.options[Math.floor(question.options.length / 2)] : null;
+      if (middle && !bareNumber(middle)) {
+        const label = document.createElement("p");
+        label.className = "research-scale-middle";
+        label.textContent = labelFor(middle);
+        $("answers").append(label);
+      }
       const track = document.createElement("div");
       track.className = "mbti-scale-track research-scale-track";
       if (question.options.length <= 7) track.style.gridTemplateColumns = `repeat(${question.options.length}, minmax(0, 1fr))`;
@@ -973,7 +993,25 @@
         const button = addAnswer(option.value, String(option.value), track, "scale-step");
         if (!bareNumber(option)) button.setAttribute("aria-label", `${option.value}，${option.text}`);
       });
-      $("answers").append(ends, track);
+      const selection = document.createElement("p");
+      selection.className = "research-scale-selection";
+      const selected = question.options.find(option => option.value === answers[cursor]);
+      selection.textContent = selected ? `已选：${labelFor(selected)}` : "";
+      $("answers").append(track, selection);
+      // Touch and keyboard users can inspect every original label before choosing.
+      if (question.options.slice(1, -1).some(option => !bareNumber(option))) {
+        const key = document.createElement("details");
+        key.className = "research-scale-key";
+        const summary = document.createElement("summary");
+        summary.textContent = "查看各档含义";
+        key.append(summary);
+        question.options.forEach(option => {
+          const label = document.createElement("p");
+          label.textContent = labelFor(option);
+          key.append(label);
+        });
+        $("answers").append(key);
+      }
     }
     function renderMbtiScale() {
       const ends = document.createElement("div");
@@ -1125,8 +1163,11 @@
         answers[cursor] = value;
         try { saveDraft(); }
         catch (_) { showError("本机草稿保存失败，请保存本题后再离开页面。"); }
+        const keyOpen = $("answers").querySelector(".research-scale-key")?.open;
         renderQuestion();
+        if (keyOpen) $("answers").querySelector(".research-scale-key").open = true;
         $("answers").querySelector(".selected")?.focus({preventScroll: true});
+        await saveResearchAnswer(Math.min(cursor + 1, activeState.total - 1), false);
         return;
       }
       answers[cursor] = value;
@@ -1142,25 +1183,31 @@
 
     async function saveResearchAnswer(nextIndex = cursor + 1, finish = cursor === activeState.total - 1) {
       if (busy || !activeState || activeState.complete || activeState.mode !== "full" || !Number.isInteger(answers[cursor])) return;
+      const savedIndex = cursor;
+      const keyOpen = $("answers").querySelector(".research-scale-key")?.open;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
       busy = true;
       setButtonsDisabled(true);
       showError();
       try {
         const pendingDraft = draftSnapshot();
         const state = await api("save_answer", {session_id: activeState.session_id,
-          expected_revision: activeState.answer_revision, index: cursor, answer: answers[cursor], finish});
+          expected_revision: activeState.answer_revision, index: cursor, answer: answers[cursor], finish}, true, controller.signal);
         renderState(state, pendingDraft);
         if (!state.complete) {
           cursor = Math.max(0, Math.min(nextIndex, state.total - 1, state.progress));
           saveDraft();
         }
       } catch (error) {
-        showError(`${error.message} 未确认保存，可重试；若提示冲突，请刷新核对进度。本机草稿会保留。`);
+        showError(`${error.name === "AbortError" ? "保存请求超时。" : error.message} 未确认保存，可重试；若提示冲突，请刷新核对进度。本机草稿会保留。`);
       } finally {
+        clearTimeout(timeout);
         busy = false;
         setButtonsDisabled(false);
         if (!activeState.complete) {
           renderQuestion();
+          if (cursor === savedIndex && keyOpen) $("answers").querySelector(".research-scale-key").open = true;
           if (!$("error").hidden) $("saveAnswerButton").focus({preventScroll: true});
           else {
             $("questionText").tabIndex = -1;
@@ -1177,7 +1224,7 @@
         saveResearchAnswer(index, false);
         return;
       }
-      cursor = Math.max(0, Math.min(index, CONFIG.research && activeState.mode === "full" ? activeState.progress : activeState.total - 1));
+      cursor = Math.max(0, Math.min(index, activeState.total - 1, CONFIG.research && activeState.mode === "full" ? activeState.progress : activeState.total - 1));
       try { saveDraft(); }
       catch (error) {
         if (!CONFIG.research) throw error;
@@ -1185,6 +1232,10 @@
       }
       renderQuestion();
       showPanel("questionPanel");
+      if (CONFIG.research) {
+        $("questionText").tabIndex = -1;
+        $("questionText").focus({preventScroll: true});
+      }
     }
 
     function renderReview() {
@@ -2039,7 +2090,11 @@
       }
     }
     $("previousButton").addEventListener("click", () => goToQuestion(cursor - 1));
-    $("saveAnswerButton").addEventListener("click", () => saveResearchAnswer());
+    $("saveAnswerButton").addEventListener("click", () => {
+      if (busy || !activeState || !Number.isInteger(answers[cursor])) return;
+      if (cursor === activeState.total - 1) saveResearchAnswer(cursor, true);
+      else goToQuestion(cursor + 1);
+    });
     $("reviewButton").addEventListener("click", renderReview);
     $("modifyButton").addEventListener("click", () => goToQuestion(cursor));
     $("submitButton").addEventListener("click", submitAnswers);

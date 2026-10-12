@@ -62,6 +62,10 @@ async function page(game, saved={}, options={}) {
       Object.defineProperty(window, 'innerWidth', {value:options.width || 1280});
       window.HTMLElement.prototype.scrollIntoView=function(){};
       window.confirm=()=>options.confirm ?? false;
+      if(options.timeoutAnswer) {
+        const setTimeout=window.setTimeout.bind(window);
+        window.setTimeout=(callback,ms,...args)=>setTimeout(callback,ms===15000?50:ms,...args);
+      }
       for(const [key,value] of Object.entries(saved)) window.localStorage.setItem(key,value);
       window.fetch=async (url,opts)=>{
         const body=JSON.parse(opts.body);
@@ -72,6 +76,13 @@ async function page(game, saved={}, options={}) {
           return {ok:false,status:503,json:async()=>({error:'保存失败'})};
         }
         const result=await request(url,body,opts.headers);
+        if(options.timeoutAnswer && url.endsWith('/save_answer')) {
+          options.timeoutAnswer=false;
+          await new Promise((resolve,reject)=>{
+            const abort=()=>reject(new window.DOMException('Timed out','AbortError'));
+            if(opts.signal.aborted) abort(); else opts.signal.addEventListener('abort',abort,{once:true});
+          });
+        }
         if(options.loseAnswer && url.endsWith('/save_answer')) { options.loseAnswer=false; throw new Error('response lost'); }
         return {ok:result.status===200,status:result.status,json:async()=>JSON.parse(result.body)};
       };
@@ -83,7 +94,6 @@ function storage(dom){return {...dom.window.localStorage};}
 const $=(dom,id)=>dom.window.document.getElementById(id);
 async function choose(dom,option=0){
   dom.window.document.querySelectorAll('#answers button')[option].click();
-  if(!$(dom,'saveAnswerButton').hidden) $(dom,'saveAnswerButton').click();
   await until(()=>!dom.window.eval('busy'),'answer saved');
 }
 async function homeTitles(width, query="") {
@@ -276,58 +286,122 @@ async function main(){
     assert.equal(css($(dom,'questionIntro')).fontSize,'13px');
     assert.equal(css($(dom,'saveAnswerButton')).minHeight,'44px');
     const track=d.querySelector('.research-scale-track');
-    if(track) {
-      assert.equal(css(d.querySelector('.research-scale-ends')).fontSize,'12px');
-      assert.equal(css(track).gridTemplateColumns,spec.options.length<=7
-        ? `repeat(${spec.options.length}, minmax(0, 1fr))` : 'repeat(auto-fit, minmax(44px, 1fr))');
-      assert.equal(css(buttons[0]).minHeight,'48px');
-      assert.equal(css(buttons[0]).fontSize,'13px');
-    } else {
-      assert.equal(css(buttons[0]).minHeight,'44px');
-      assert.equal(css(buttons[0]).fontSize,'14px');
-    }
+    assert.ok(track,spec.game+' consecutive numeric scale uses a track, including fully worded options');
+    assert.equal(css(d.querySelector('.research-scale-ends')).fontSize,'12px');
+    assert.equal(css(track).gridTemplateColumns,spec.options.length<=7
+      ? `repeat(${spec.options.length}, minmax(0, 1fr))` : 'repeat(auto-fit, minmax(44px, 1fr))');
+    assert.equal(css(buttons[0]).minHeight,'48px');
+    assert.equal(css(buttons[0]).fontSize,'13px');
     spec.options.forEach((option,i)=>{
+      assert.equal(buttons[i].textContent,String(option.value));
       if(String(option.value)===String(option.text)) {
-        assert.equal(buttons[i].textContent,String(option.value));
         assert.equal(buttons[i].getAttribute('aria-label'),null,'no invented middle labels');
       } else {
         assert.ok(buttons[i].textContent.includes(option.text) || buttons[i].getAttribute('aria-label').includes(option.text));
       }
     });
-    // All 18 real pages: change a not-yet-submitted choice, restore it, commit,
-    // reload and revisit a server receipt, then complete and restore the report.
-    d.querySelectorAll('#answers button')[1].click();
-    d.querySelectorAll('#answers button')[0].click();
-    let saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
-    assert.equal(d.querySelector('#answers button').classList.contains('selected'),true);
+    const labelFor=option=>String(option.value)===String(option.text).trim() ? String(option.value) : `${option.value} · ${option.text}`;
+    assert.deepEqual([...d.querySelectorAll('.research-scale-ends span')].map(n=>n.textContent),
+      [labelFor(spec.options[0]),labelFor(spec.options.at(-1))]);
+    const middle=spec.options.length%2 ? spec.options[Math.floor(spec.options.length/2)] : null;
+    assert.equal(d.querySelector('.research-scale-middle')?.textContent ?? null,
+      middle && String(middle.text)!==String(middle.value) ? labelFor(middle) : null,'only supplied middle meaning');
+    assert.equal(d.querySelector('.research-scale-selection').textContent,'','no selection claimed initially');
+    const key=d.querySelector('.research-scale-key');
+    if(spec.options.slice(1,-1).some(o=>String(o.value)!==String(o.text))) {
+      assert.equal(key.open,false);
+      assert.deepEqual([...key.querySelectorAll('p')].map(n=>n.textContent),spec.options.map(labelFor));
+      key.open=true;
+    } else assert.equal(key,null);
+    for(const [i,option] of spec.options.entries()) {
+      const meanings=d.querySelector('.research-scale-key');
+      if(meanings) meanings.open=true;
+      const before=requests.length;
+      d.querySelectorAll('#answers button')[i].click();
+      assert.equal(dom.window.eval('cursor'),0,'wait for the server before advancing');
+      assert.equal(dom.window.eval('answers[0]'),option.value,spec.game+' exact selected value');
+      assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${labelFor(option)}`);
+      assert.equal(d.querySelectorAll('#answers [aria-pressed="true"]').length,1);
+      if(meanings) assert.equal(d.querySelector('.research-scale-key').open,true);
+      await until(()=>!dom.window.eval('busy'),'option saved before advancing');
+      assert.equal(dom.window.eval('cursor'),1);
+      assert.equal(requests.length,before+1,'one click, one save');
+      assert.equal(requests.at(-1).body.finish,false);
+      assert.equal(dom.window.eval('activeState.saved_answers[0]'),option.value);
+      assert.equal(d.activeElement,$(dom,'questionText'));
+      $(dom,'previousButton').click();
+      assert.equal(d.querySelector('#answers button.selected').textContent,String(option.value));
+      assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${labelFor(option)}`);
+    }
+    // All 18 real pages: one click saves and advances, reload retains the receipt,
+    // unchanged Next is read-only, editing an earlier answer preserves later ones.
     await choose(dom);
-    saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
-    assert.match($(dom,'progressLabel').textContent,new RegExp('2 / '+spec.items.length));
+    let receipt=JSON.parse(dom.window.eval('JSON.stringify([activeState.saved_answers,activeState.answer_revision])'));
+    let saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
+    assert.equal(dom.window.eval('cursor'),1);
+    assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify([activeState.saved_answers,activeState.answer_revision])')),receipt);
     $(dom,'previousButton').click();
-    assert.ok(d.querySelector('#answers button.selected'));
-    assert.ok([...d.querySelectorAll('#answers button')].every(b=>!b.disabled));
-    assert.equal($(dom,'researchSaveHint'),null);
-    assert.equal($(dom,'modeLabel').textContent,'全题作答');
-    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'revisit next');
-    assert.equal($(dom,'questionIntro').hidden,true);
-    await choose(dom,1); // second question
-    d.querySelectorAll('#answers button')[2].click(); // third, not yet advanced
-    $(dom,'previousButton').click();await until(()=>!dom.window.eval('busy'),'save third before going back');
-    $(dom,'previousButton').click();
-    d.querySelectorAll('#answers button')[1].click();
-    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'edit first');
-    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'return to third');
+    assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${labelFor(spec.options[0])}`);
+    const beforeNext=requests.length;
+    $(dom,'saveAnswerButton').click();
+    assert.equal(dom.window.eval('cursor'),1);
+    assert.equal(requests.length,beforeNext,'unchanged Next does not write');
+    assert.equal(dom.window.eval('activeState.answer_revision'),receipt[1]);
+    assert.equal($(dom,'saveAnswerButton').hidden,false);
+    assert.equal($(dom,'saveAnswerButton').disabled,true,'unanswered Next stays disabled');
+    await choose(dom,1);
+    await choose(dom,2);
+    assert.equal(dom.window.eval('cursor'),3);
+    $(dom,'previousButton').click();$(dom,'previousButton').click();$(dom,'previousButton').click();
+    await choose(dom,1);
+    assert.equal(dom.window.eval('cursor'),1,'changed first answer saves before advancing one question');
+    const afterEdit=requests.length;
+    $(dom,'saveAnswerButton').click();
+    assert.equal(requests.length,afterEdit,'saved second answer only navigates');
+    assert.equal(dom.window.eval('cursor'),2);
     assert.equal(dom.window.eval('answers[2]'),spec.options[2].value,'third selection survives first edit');
+    receipt=JSON.parse(dom.window.eval('JSON.stringify([activeState.saved_answers,activeState.answer_revision])'));
     saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
     assert.equal(dom.window.eval('cursor'),2);
+    assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify([activeState.saved_answers,activeState.answer_revision])')),receipt);
     assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(answers.slice(0,3))')),[spec.options[1].value,spec.options[1].value,spec.options[2].value]);
     assert.equal(d.querySelector('#answers button.selected').getAttribute('aria-pressed'),'true');
+    const questionTexts=JSON.parse(dom.window.eval('JSON.stringify(activeState.questions.map(q=>q.text))'));
+    assert.equal(new Set(questionTexts).size,spec.items.length,'question text identifies the same item across randomized sessions');
+    const submittedByText=Object.fromEntries(questionTexts.map((text,i)=>[text,spec.options[i<2?1:0].value]));
     for(let i=2;i<spec.items.length;i++) {
       assert.equal($(dom,'saveAnswerButton').textContent,i===spec.items.length-1?'查看结果':'下一题');
       await choose(dom);
     }
+    assert.equal(dom.window.eval('cursor'),spec.items.length-1);
+    assert.equal(dom.window.eval('activeState.progress'),spec.items.length);
+    assert.equal(dom.window.eval('activeState.complete'),false,'last selection saves without finalizing');
+    assert.equal(requests.at(-1).body.finish,false);
+    const lastRevision=dom.window.eval('activeState.answer_revision');
+    const beforeLastReview=requests.length;
+    $(dom,'previousButton').click();
+    assert.equal(dom.window.eval('cursor'),spec.items.length-2);
+    $(dom,'saveAnswerButton').click();
+    assert.equal(dom.window.eval('cursor'),spec.items.length-1);
+    assert.equal(requests.length,beforeLastReview,'reviewing the saved last pair never writes');
+    saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
+    assert.equal(dom.window.eval('activeState.answer_revision'),lastRevision);
+    assert.equal($(dom,'resultPanel').hidden,true);
+    assert.equal($(dom,'saveAnswerButton').textContent,'查看结果');
+    $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'explicit finalization');
+    assert.equal(requests.at(-1).body.finish,true);
     assert.equal($(dom,'resultPanel').hidden,false);
     assertResearchResult(dom,spec);
+    // Compare UI-submitted values with the unchanged batch scoring path.
+    const baselinePlayer='guest:webratingbaseline'+spec.game.replaceAll('_','');
+    const baselineResponse=await request('/api/'+spec.game+'/start',{player_id:baselinePlayer,mode:'full_fast'});
+    assert.equal(baselineResponse.status,200,baselineResponse.body);
+    const baseline=JSON.parse(baselineResponse.body);
+    const baselineResult=JSON.parse((await request('/api/'+spec.game+'/answer_batch',{
+      player_id:baselinePlayer,session_id:baseline.session_id,
+      answers:baseline.questions.map(q=>submittedByText[q.text])
+    })).body);
+    assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(activeState.result_data.scores)')),baselineResult.result_data.scores,spec.game+' score unchanged');
     const result=$(dom,'resultStructured').textContent;
     assert.equal($(dom,'compareBox').hidden,true);
     saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);
@@ -342,6 +416,8 @@ async function main(){
     assert.equal(requests.at(-1).body.confirm,true);
     assert.equal(requests.at(-1).body.restart,true);
     assert.equal(requests.at(-1).body.mode,'full');
+    assert.equal(dom.window.document.querySelector('.research-scale-selection').textContent,'');
+    assert.equal(dom.window.document.querySelector('#answers button.selected'),null);
     dom.window.close();
   }
   // Legacy full_fast record and original-format draft: no reset or conversion.
@@ -381,14 +457,56 @@ async function main(){
   $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'idempotent retry');
   assert.equal(dom.window.eval('activeState.progress'),1);
   dom.window.close();
+  // The server may commit before the response times out. Retry is still idempotent.
+  dom=await page('ipip_empathy',{}, {timeoutAnswer:true});
+  dom.window.document.querySelector('.research-scale-key').open=true;
+  await choose(dom,2);
+  assert.match($(dom,'error').textContent,/保存请求超时.*未确认保存/);
+  assert.equal(dom.window.eval('cursor'),0);
+  assert.equal(dom.window.eval('activeState.progress'),0);
+  assert.equal(dom.window.document.querySelector('.research-scale-key').open,true);
+  assert.equal(dom.window.document.querySelector('.research-scale-selection').textContent,'已选：3 · 介于符合与不符合之间');
+  const timeoutSaved=storage(dom);
+  const timeoutObserver=await page('ipip_empathy',timeoutSaved);
+  const timeoutRevision=timeoutObserver.window.eval('activeState.answer_revision');
+  assert.equal(timeoutObserver.window.eval('activeState.saved_answers[0]'),3);
+  timeoutObserver.window.close();
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'timeout retry');
+  assert.equal(dom.window.eval('cursor'),1);
+  assert.equal(dom.window.eval('activeState.progress'),1);
+  assert.equal(dom.window.eval('activeState.answer_revision'),timeoutRevision,'idempotent retry leaves the committed revision unchanged');
+  dom.window.close();
+  // Finalization failure retains the saved last answer and its explicit retry button.
+  const finalOptions={};
+  dom=await page('romlon',{},finalOptions);
+  for(let i=0;i<4;i++) await choose(dom);
+  assert.equal(dom.window.eval('activeState.complete'),false);
+  finalOptions.failAnswer=true;
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'failed finalization');
+  assert.equal(dom.window.eval('cursor'),3);
+  assert.equal(dom.window.eval('activeState.complete'),false);
+  assert.equal($(dom,'saveAnswerButton').textContent,'查看结果');
+  assert.equal($(dom,'saveAnswerButton').disabled,false);
+  $(dom,'previousButton').click();await choose(dom,1);
+  assert.equal(dom.window.eval('cursor'),3);
+  assert.equal(dom.window.eval('activeState.saved_answers[2]'),2);
+  finalOptions.loseAnswer=true;
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'lost final result response');
+  assert.equal(dom.window.eval('activeState.complete'),false);
+  assert.equal(dom.window.eval('cursor'),3);
+  const finalRequest=requests.at(-1).body;
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'retry finalization');
+  assert.deepEqual(requests.at(-1).body,finalRequest,'final retry repeats the exact receipt');
+  assert.equal(dom.window.eval('activeState.complete'),true);
+  dom.window.close();
   // Real server writes are gated behind success, at mobile and desktop DOM sizes.
   for(const width of [360,430,1280]) {
     let release;
     const opts={width,failAnswer:true,waitAnswer:new Promise(resolve=>{release=resolve;})};
     dom=await page('romlon',{},opts);
-    dom.window.document.querySelector('#answers button').click();
-    assert.equal(dom.window.document.activeElement,dom.window.document.querySelector('#answers button.selected'));
     const before=requests.filter(r=>r.url.endsWith('/save_answer')).length;
+    dom.window.document.querySelector('#answers button').click();
+    dom.window.document.querySelectorAll('#answers button')[1].click();
     $(dom,'saveAnswerButton').click();$(dom,'saveAnswerButton').click();
     assert.equal(dom.window.eval('busy'),true);
     assert.equal(dom.window.eval('cursor'),0,'no optimistic navigation');
@@ -484,6 +602,17 @@ async function main(){
   }
   // Untrusted question/source/notice remain plain text, never HTML.
   dom=await page('romlon');
+  // Six and ten steps are not in today's specs; retain the same layout contract.
+  for(const count of [4,5,6,7,10,11]) {
+    const options=Array.from({length:count},(_,i)=>({value:i,text:'原档位 '+i}));
+    dom.window.eval(`$('answers').innerHTML='';renderResearchOptions({options:${JSON.stringify(options)}});`);
+    assert.equal(dom.window.getComputedStyle(dom.window.document.querySelector('.research-scale-track')).gridTemplateColumns,
+      count<=7 ? `repeat(${count}, minmax(0, 1fr))` : 'repeat(auto-fit, minmax(44px, 1fr))');
+  }
+  dom.window.eval(`$('answers').innerHTML='';renderResearchOptions({options:[{value:1,text:'甲'},{value:3,text:'乙'},{value:4,text:'丙'},{value:5,text:'丁'}]});`);
+  assert.equal(dom.window.document.querySelector('.research-scale-track'),null,'nonconsecutive categories retain their answer list');
+  dom.window.eval(`$('answers').innerHTML='';renderResearchOptions({options:[1,2,3,4,5].map(value=>({value,text:'<img src=x onerror="window.xss=1">'}))});`);
+  assert.equal($(dom,'answers').querySelector('img'),null,'option anchors and key are plain text');
   dom.window.eval(`activeState.questions[0].text='<img src=x onerror="window.xss=1">'; renderQuestion();`);
   assert.equal($(dom,'questionText').querySelector('img'),null);
   dom.window.eval(`setResearchLinkedText($('source'), '<img src=x onerror="window.xss=1"> https://example.org/paper?a=1&b=2；许可');`);
@@ -495,7 +624,7 @@ async function main(){
   dom.window.eval(`renderResult({kind:'research_scale',scores:{bad:null},dimensions:{bad:'缺失分数'}}, '原始冗余说明');`);
   assert.equal($(dom,'resultText').textContent,'暂时无法展示分数，请刷新重试。');
   assert.equal(dom.window.xss,undefined);dom.window.close();
-  console.log('PASS: 18 home/page/browser titles and statistics empty/insufficient/ready states at 360/430/1280 DOM widths; formal titles/notices/scoring preserved; real temporary-DB edit-first/retain-third/reload/report, concurrent tabs/retry, home tab return, numeric labels/CSS, legacy drafts, auth/XSS, seven original template flows. DOM only, no rendered geometry.');
+  console.log('PASS: all 18 real specs: click saves before advancing, unchanged Next makes no write/revision change, edits preserve later answers, reload keeps receipts, last selection saves without finalizing and explicit result remains retryable; 4–7 horizontal steps/10–11 wrapping CSS, every original meaning/pressed state, score parity, source/notice unchanged; delayed/failed/timed-out/lost writes, double-click/concurrent tabs, legacy answer card and seven original template flows. DOM only, no rendered geometry.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   child.stdin.end();await exited;fs.rmSync(temp,{recursive:true,force:true});

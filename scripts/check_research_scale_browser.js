@@ -42,6 +42,9 @@ async function main(){
     const context=await browser.newContext({viewport:{width,height:900}});
     const page=await context.newPage();
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const writes=[];page.on('request',r=>{if(r.url().endsWith('/save_answer')) writes.push(r.postDataJSON());});
+    const settled=()=>page.waitForFunction(()=>!busy);
+    async function choose(index=0){await page.locator('#answers button').nth(index).click();await settled();}
     await context.route('**/*',route=>{
       const url=new URL(route.request().url());
       if(url.origin===origin && url.pathname==='/') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'index.html'),'utf8')});
@@ -102,9 +105,50 @@ async function main(){
       assert.equal(await page.locator('#saveAnswerButton').innerText(),'下一题');
       assert.equal(await page.locator('#saveAnswerButton').isDisabled(),true);
       const labels=await page.locator('#answers button').allTextContents();
-      for(const [i,option] of spec.options.entries()) {
-        if(String(option.value)===String(option.text)) assert.equal(labels[i],String(option.value));
+      assert.deepEqual(labels,spec.options.map(o=>String(o.value)),spec.game+' all numeric steps');
+      assert.equal(await page.locator('.research-scale-track').count(),1);
+      assert.equal(await page.locator('.research-scale-selection').innerText(),'');
+      const stepGeometry=await page.locator('#answers button').evaluateAll(nodes=>nodes.map(n=>{
+        const r=n.getBoundingClientRect();return {top:r.top,right:r.right,left:r.left};
+      }));
+      if(spec.options.length<=7) assert.equal(new Set(stepGeometry.map(r=>r.top)).size,1,spec.game+' 4–7 steps stay on one row');
+      else if(width<=430) assert.ok(new Set(stepGeometry.map(r=>r.top)).size>1,spec.game+' long scale wraps');
+      assert.ok(stepGeometry.every(r=>r.left>=0 && r.right<=width));
+      const labelFor=o=>String(o.value)===String(o.text).trim() ? String(o.value) : `${o.value} · ${o.text}`;
+      assert.deepEqual(await page.locator('.research-scale-ends span').allTextContents(),
+        [labelFor(spec.options[0]),labelFor(spec.options.at(-1))]);
+      const key=page.locator('.research-scale-key');
+      if(await key.count()) {
+        await key.locator('summary').focus();await page.keyboard.press('Enter');
+        assert.equal(await key.getAttribute('open'),'');
+        assert.deepEqual(await key.locator('p').allTextContents(),spec.options.map(labelFor));
+        await capture(spec.game+'-all-meanings');
+        await key.locator('summary').click();
       }
+      for(const [i,option] of spec.options.entries()) {
+        const button=page.locator('#answers button').nth(i);
+        assert.equal(await button.getAttribute('aria-label'),String(option.text)===String(option.value) ? null : `${option.value}，${option.text}`);
+        const before=writes.length;
+        await button.click();await settled();
+        assert.equal(await page.evaluate(()=>cursor),1,'selection advances only after saving');
+        assert.equal(writes.length,before+1);
+        assert.equal(writes.at(-1).finish,false);
+        assert.equal(await page.locator('#questionText').evaluate(n=>n===document.activeElement),true);
+        await page.locator('#previousButton').click();
+        assert.equal(await page.locator('.research-scale-selection').innerText(),`已选：${labelFor(option)}`);
+        assert.equal(await page.locator('#answers [aria-pressed="true"]').count(),1);
+        assert.equal(await page.locator('#answers button.selected').innerText(),String(option.value));
+      }
+      // Keyboard activation saves, then focuses the next question. Returning retains the meaning.
+      await page.locator('#answers button').first().focus();await page.keyboard.press('Tab');await page.keyboard.press('Space');await settled();
+      assert.equal(await page.evaluate(()=>cursor),1);
+      assert.equal(await page.locator('#questionText').evaluate(n=>n===document.activeElement),true);
+      await page.locator('#previousButton').click();
+      assert.equal(await page.locator('#answers button.selected').innerText(),String(spec.options[1].value));
+      await page.locator('#answers button').nth(2).focus();await page.keyboard.press('Enter');await settled();
+      await page.locator('#previousButton').click();
+      await capture(spec.game+'-selected-middle');
+      assert.equal(await page.locator('.research-scale-selection').evaluate(n=>n.scrollWidth>n.clientWidth),false);
       await page.locator('#researchDetails summary').click();
       assert.equal(await page.locator('#source a').first().getAttribute('href'),spec.source);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,spec.game+' expanded source overflow');
@@ -117,8 +161,45 @@ async function main(){
       const bounds=await page.locator('#answers button').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})));
       assert.ok(bounds.every(b=>b.height>=44 && b.width>=24),spec.game+' touch targets');
       if(['irrc','jrrs','rss'].includes(spec.game)) await capture(spec.game+'-title');
+      if(spec.game==='ipip_empathy') {
+        await page.locator('#saveAnswerButton').click();
+        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
+        assert.equal(await page.locator('#questionText').innerText(),spec.items[1].text);
+        await choose(2);
+        await page.locator('#previousButton').click();
+        await page.reload();await page.locator('#answers button.selected').waitFor();
+        assert.equal(await page.locator('.research-scale-selection').innerText(),'已选：3 · 介于符合与不符合之间');
+        await capture('ipip_empathy-question-2-selected-3');
+        await page.emulateMedia({reducedMotion:'reduce'});
+        await page.addStyleTag({content:'.research-scale-ends, .research-scale-middle, .research-scale-selection, .research-scale-key {font-size:24px !important}'});
+        await capture('ipip_empathy-large-labels');
+      }
+      const beforeForward=writes.length;
+      const revision=await page.evaluate(()=>activeState.answer_revision);
+      await page.locator('#saveAnswerButton').click();await settled();
+      assert.equal(writes.length,beforeForward,'saved answer Next is navigation only');
+      assert.equal(await page.evaluate(()=>activeState.answer_revision),revision);
+      while(await page.evaluate(()=>cursor<activeState.total-1)) {
+        const index=await page.evaluate(()=>cursor);
+        await choose(index%spec.options.length);
+        assert.equal(await page.evaluate(()=>cursor),index+1);
+      }
+      await choose(2);
+      assert.equal(await page.evaluate(()=>activeState.complete),false);
+      assert.equal(await page.evaluate(()=>activeState.progress),spec.items.length);
+      assert.equal(await page.locator('#saveAnswerButton').innerText(),'查看结果');
+      await capture(spec.game+'-last-saved');
+      await page.locator('#previousButton').click();
+      const beforeLastNext=writes.length;
+      await page.locator('#saveAnswerButton').click();
+      assert.equal(writes.length,beforeLastNext);
+      await page.locator('#saveAnswerButton').click();await settled();
+      assert.equal(writes.at(-1).finish,true);
+      assert.equal(await page.locator('#resultPanel').isVisible(),true);
+      console.log(`PASS ${width}px ${spec.game}: save-confirmed advance, read-only Next, explicit final result`);
     }
     for(const game of ['rbi','ross','aidep','bsr']){
+      await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webautonext${width}${game}`);
       await page.goto(origin+'/'+game);await page.locator('#answers button').first().waitFor();
       await capture(game+'-question');
       const sizes=await page.evaluate(()=>({
@@ -133,48 +214,54 @@ async function main(){
         assert.equal(await page.locator('#researchDetails').getAttribute('open'),'');
         await capture('rbi-details');
         await page.locator('#researchDetails summary').click();
-        // Keyboard selection retains focus after rendering the selected state.
-        await page.locator('#answers button').nth(1).focus();await page.keyboard.press('Space');
-        assert.equal(await page.locator('#answers button.selected').evaluate(n=>n===document.activeElement),true);
-        await page.locator('#answers button').nth(2).click();
-        await page.reload();await page.locator('#answers button.selected').waitFor();
-        assert.match(await page.locator('#answers button.selected').innerText(),/^3/);
-        await page.locator('#saveAnswerButton').focus();await page.keyboard.press('Enter');
-        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
-        await page.reload();await page.locator('#answers button').first().waitFor();
+        await page.locator('#answers button').nth(2).focus();await page.keyboard.press('Space');await settled();
+        assert.equal(await page.evaluate(()=>cursor),1);
+        await page.reload();await page.locator('#answers button').first().waitFor();await settled();
         await page.locator('#previousButton').click();
-        assert.equal(await page.locator('#answers button.selected').isDisabled(),false);
+        assert.equal(await page.locator('#answers button.selected').innerText(),'3');
         await capture('rbi-revisit');
-        await page.locator('#answers button').nth(3).click();
+        const receipt=await page.evaluate(()=>activeState.answer_revision);
+        const before=writes.length;
         await page.locator('#saveAnswerButton').click();
-        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
+        assert.equal(await page.evaluate(()=>cursor),1);
+        assert.equal(writes.length,before,'unchanged Next only navigates');
+        assert.equal(await page.evaluate(()=>activeState.answer_revision),receipt);
+        await page.locator('#previousButton').click();
+        await choose(3);
+        assert.equal(await page.evaluate(()=>cursor),1);
         // A failed write stays on the same question, preserving the selection.
-        await page.locator('#answers button').first().click();
         let release;
         const gate=new Promise(resolve=>{release=resolve;});
         const fail=async route=>{await gate;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'保存失败'})});};
         await page.route('**/api/rbi/save_answer',fail);
-        await page.locator('#saveAnswerButton').click();
+        const beforeFailure=writes.length;
+        await page.locator('#answers button').first().click();
+        // Programmatic rapid clicks reach the same disabled controls as repeated pointer activation.
+        await page.evaluate(()=>{document.querySelectorAll('#answers button')[1].click();document.getElementById('saveAnswerButton').click();});
         assert.equal(await page.locator('#questionNumber').innerText(),'QUESTION 2');
         assert.equal(await page.locator('#saveAnswerButton').isDisabled(),true);
-        release();await page.locator('#error').waitFor();
+        assert.equal(writes.length,beforeFailure+1);
+        await capture('rbi-saving-no-navigation');
+        release();await page.locator('#error').waitFor();await settled();
         assert.equal(await page.locator('#questionNumber').innerText(),'QUESTION 2');
+        assert.equal(await page.locator('#answers button.selected').innerText(),'1');
+        assert.equal(await page.locator('#saveAnswerButton').isEnabled(),true);
         await capture('rbi-save-error');
         await page.unroute('**/api/rbi/save_answer',fail);
+        await page.reload();await page.locator('#answers button.selected').waitFor();await settled();
+        await page.locator('#saveAnswerButton').click();await settled();
+        assert.equal(await page.evaluate(()=>cursor),2);
+        await choose(4);
+        assert.equal(await page.evaluate(()=>cursor),3);
+        await page.locator('#previousButton').click();await page.locator('#previousButton').click();await page.locator('#previousButton').click();
+        await choose(1);
+        assert.equal(await page.evaluate(()=>cursor),1);
         await page.locator('#saveAnswerButton').click();
-        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 3');
-        await page.locator('#answers button').nth(4).click();
-        await page.locator('#previousButton').click();
-        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
-        await page.locator('#previousButton').click();
-        await page.locator('#answers button').nth(1).click();
-        await page.locator('#saveAnswerButton').click();
-        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 2');
-        await page.locator('#saveAnswerButton').click();
-        await page.waitForFunction(()=>document.getElementById('questionNumber').textContent==='QUESTION 3');
+        assert.equal(await page.evaluate(()=>cursor),2);
         assert.equal(await page.locator('#answers button.selected').innerText(),'5');
-        await page.reload();await page.locator('#answers button.selected').waitFor();
-        assert.equal(await page.locator('#answers button.selected').innerText(),'5');
+        const saved=await page.evaluate(()=>[activeState.saved_answers,activeState.answer_revision]);
+        await page.reload();await page.locator('#answers button.selected').waitFor();await settled();
+        assert.deepEqual(await page.evaluate(()=>[activeState.saved_answers,activeState.answer_revision]),saved);
         await capture('rbi-edited-third-retained');
         // Reflow with enlarged text and reduced motion.
         await page.emulateMedia({reducedMotion:'reduce'});
@@ -182,13 +269,26 @@ async function main(){
         await capture('rbi-large-text');
       }
     }
+    await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webautolast${width}`);
     await page.goto(origin+'/bsfl');await page.locator('#answers button').first().waitFor();
     for(let i=0;i<5;i++){
       assert.equal(await page.locator('#saveAnswerButton').innerText(),i===4?'查看结果':'下一题');
-      await page.locator('#answers button').first().click();
-      await page.locator('#saveAnswerButton').click();
-      await page.waitForFunction(n=>document.getElementById('questionNumber').textContent===`QUESTION ${n}` || !document.getElementById('resultPanel').hidden,i+2);
+      if(i===4) await page.locator('.research-scale-key summary').click();
+      await choose();
+      assert.equal(await page.evaluate(()=>cursor),Math.min(i+1,4));
     }
+    assert.equal(await page.evaluate(()=>activeState.complete),false);
+    assert.equal(await page.evaluate(()=>activeState.progress),5);
+    assert.equal(await page.locator('.research-scale-key').getAttribute('open'),'');
+    await capture('bsfl-last-saved-not-finished');
+    await page.locator('#previousButton').click();
+    const beforeLast=writes.length;
+    await page.locator('#saveAnswerButton').click();
+    assert.equal(writes.length,beforeLast);
+    assert.equal(await page.evaluate(()=>cursor),4);
+    await page.reload();await page.locator('#answers button.selected').waitFor();await settled();
+    await page.locator('#saveAnswerButton').click();await settled();
+    assert.equal(writes.at(-1).finish,true);
     await page.locator('#resultPanel').waitFor();
     assert.equal(await page.locator('.research-score dd').innerText(),'0.00 / 4');
     await capture('bsfl-result');
@@ -201,7 +301,7 @@ async function main(){
     await capture('bsfl-retest');
     // Real completed reports restored from isolated saved records for all 18 scales.
     for (const spec of specs) {
-      await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webresearchresult${width}${spec.game}`);
+      await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webresearchresult${width}${spec.game.replaceAll('_','')}`);
       await page.goto(origin+'/'+spec.game);
       await page.locator('#answers button').first().waitFor();
       const expected=await page.evaluate(async values=>{
@@ -269,7 +369,10 @@ async function main(){
     await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webresearchresult${width}rbi`);
     for(const selector of ['.brand', '.back-link', '#resultPanel .actions a']) {
       await page.goto(origin+'/rbi');await page.locator('#resultPanel').waitFor();
-      await page.locator(selector).click();
+      await Promise.all([
+        page.waitForURL(origin+'/?tab=test',{waitUntil:'load'}),
+        page.locator(selector).click()
+      ]);
       assert.equal(await page.locator('.tab-button.active').getAttribute('data-filter'),'test');
     }
     // The established layouts remain the visual comparison, with auto-advance.
@@ -286,7 +389,7 @@ async function main(){
     await context.close();
     await browser.close();browser=null;
   }
-  console.log('PASS: Chromium '+widths.join(' / ')+'px; 18 direct research pages, numeric labels, concise structured attribution and 18 restored score reports, touch targets, keyboard/selection/reload/revisit, failed save/retry, enlarged text, BSFL zero/report/retest, MBTI/ECR reference; screenshots: '+screenshots);
+  console.log('PASS: Chromium '+widths.join(' / ')+'px; all 18 full one-click save-confirmed flows, unchanged Next without writes, last-answer review and explicit finalize; numeric rows and original meanings, touch targets, keyboard/focus/reload/revisit, delayed failure/retry/double click, enlarged text, 18 reports, BSFL zero/retest, MBTI/ECR reference; screenshots: '+screenshots);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
   if(browser) await browser.close();
