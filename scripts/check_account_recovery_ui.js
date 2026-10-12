@@ -276,7 +276,7 @@ async function checkAdmin() {
     }
     await tick();
     const tabs = d.querySelector(".admin-tabs"), panel = $("recoveryPanel");
-    assert.deepEqual([...tabs.children].map(button => button.firstChild.textContent), ["用户管理", "找回工单", "运营看板"]);
+    assert.deepEqual([...tabs.children].map(button => button.firstChild.textContent), ["用户管理", "工单", "运营看板"]);
     assert.equal(tabs.previousElementSibling.tagName, "HEADER");
     assert.equal($("recoveryTab").getAttribute("aria-controls"), panel.id);
     assert.equal(panel.getAttribute("aria-labelledby"), "recoveryTab");
@@ -290,7 +290,7 @@ async function checkAdmin() {
     assert.equal(calls.filter(c => c.url.startsWith("/api/admin/recovery?")).length, 1, "badge loads before entering recovery");
     assert.equal(lastListCall().options.headers.Authorization, "Bearer admin-fixture");
     assertCount("1");
-    assert.match($("recoveryTab").getAttribute("aria-label"), /待审批 1 条/);
+    assert.match($("recoveryTab").getAttribute("aria-label"), /待处理 1 条/);
     assert.equal($("recoveryTickets").children.length, 0, "startup badge does not render the queue");
     assertEmptyStatus();
     assert.equal(panel.querySelector("h1, h2, .sub, .badge"), null);

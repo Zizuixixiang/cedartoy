@@ -93,7 +93,7 @@ finally: case.doCleanups()
       if (screenshots) await page.screenshot({path: path.join(screenshots, `feedback-form-${width}.png`)});
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       const before = await page.locator(".bottom-nav").boundingBox();
-      await page.locator('#feedbackForm button[type="submit"]').click();
+      await page.locator('#feedbackSubmit').click();
       await page.locator("#feedbackReceipt").waitFor({state: "visible"});
       const code = await page.locator("#feedbackReceiptCode").inputValue();
       assert.equal(code.length, 43);

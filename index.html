@@ -1115,6 +1115,8 @@
     #feedbackModal input::placeholder, #feedbackModal textarea::placeholder { color: var(--text); opacity: 1; }
     #feedbackModal .modal-actions { flex-wrap: wrap; align-items: center; gap: 8px; }
     #feedbackModal .modal-actions button { font-size: 11px; padding: 8px; }
+    #feedbackModal .feedback-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: stretch; }
+    #feedbackModal .feedback-actions button { min-width: 0; min-height: 44px; }
     #feedbackModal :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--purple-darker); outline-offset: 3px; }
     #feedbackList { display: grid; gap: 10px; }
     #feedbackList .feedback-list-item { display: grid; gap: 4px; white-space: normal; overflow-wrap: anywhere; text-align: left; justify-content: flex-start; font: 13px/1.6 system-ui, sans-serif; }
@@ -3353,7 +3355,6 @@
         <label class="field"><span class="field-label">分类</span><select id="feedbackCategory"><option value="bug">问题 / Bug</option><option value="suggestion">功能建议</option><option value="account">账号相关</option><option value="other">其他</option></select></label>
         <label class="field"><span class="field-label">反馈内容（必填）</span><textarea id="feedbackContent" maxlength="4000" rows="4" required placeholder="发生了什么，或你希望怎样改进？请勿填写密码或 Token。"></textarea><span class="field-hint">最多 4000 字</span></label>
         <label class="field"><span class="field-label">自己的 4399 账号或小机 ID（选填）</span><input id="feedbackContact" maxlength="120" autocomplete="off"><span class="field-hint">仅供联系与排障参考，不用于验证身份。</span></label>
-        <button class="pixel-btn" type="submit">提交反馈</button>
       </form>
       <section id="feedbackReceipt" hidden aria-label="提交成功">
         <p class="modal-hint">反馈已提交。请立即保存私密查询码；关闭页面后无法重新获取。持码人可查看并继续回复这条反馈，请勿公开分享。</p>
@@ -3368,7 +3369,10 @@
       <nav class="modal-actions" id="feedbackPagination" aria-label="反馈分页" hidden><button class="pixel-btn secondary" id="feedbackPrev" type="button">上一页</button><span id="feedbackPage"></span><button class="pixel-btn secondary" id="feedbackNext" type="button">下一页</button></nav>
       <section class="recovery-status-card" id="feedbackDetail" tabindex="-1" hidden></section>
       <p class="modal-msg" id="feedbackMessage" role="status" aria-live="polite"></p>
-      <div class="modal-actions"><button class="pixel-btn secondary" data-close-modal type="button">关闭</button></div>
+      <div class="modal-actions feedback-actions">
+        <button class="pixel-btn" id="feedbackSubmit" type="submit" form="feedbackForm">提交反馈</button>
+        <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
+      </div>
     </div>
   </div>
 
@@ -8341,6 +8345,7 @@
         button.classList.toggle("secondary", button.dataset.feedbackMode !== mode);
       });
       $("feedbackForm").hidden = mode !== "submit" || Boolean(feedbackReceipt);
+      $("feedbackSubmit").hidden = $("feedbackForm").hidden;
       $("feedbackReceipt").hidden = mode !== "submit" || !feedbackReceipt;
       $("feedbackQueryForm").hidden = mode !== "query";
       $("feedbackList").hidden = mode !== "list";
@@ -8507,6 +8512,7 @@
           feedbackReceipt = data;
           $("feedbackReceiptCode").value = data.query_code;
           $("feedbackForm").hidden = true;
+          $("feedbackSubmit").hidden = true;
           $("feedbackReceipt").hidden = false;
           $("feedbackMessage").textContent = "提交成功，请保存私密查询码。";
         } else $("feedbackMessage").textContent = `反馈 #${data.ticket_id} 已提交，请在「我的反馈」查看进展。`;
