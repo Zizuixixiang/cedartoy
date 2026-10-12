@@ -8287,6 +8287,14 @@
     const feedbackCategories = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
     let feedbackMode = "submit", feedbackPage = 1, feedbackBusy = false, feedbackVersion = 0;
     let feedbackReceipt = null, feedbackIdentityToken = null, feedbackReturnFocus = null;
+    function updateFeedbackModeVisibility() {
+      const loggedIn = Boolean(token());
+      document.querySelectorAll("[data-feedback-mode]").forEach(button => {
+        const mode = button.dataset.feedbackMode;
+        button.hidden = (mode === "list" && !loggedIn) || (mode === "query" && loggedIn);
+        if (button.hidden && document.activeElement === button) $("feedbackModal").querySelector("button").focus();
+      });
+    }
     function feedbackResetResults() {
       feedbackConversation = null;
       $("feedbackList").replaceChildren();
@@ -8304,6 +8312,7 @@
         feedbackResetResults();
       }
       feedbackIdentityToken = token();
+      updateFeedbackModeVisibility();
       $("feedbackIdentity").textContent = token() ? "提交后可在「我的反馈」查看进展，仅当前登录账号可见。" : "无需登录也能反馈。提交后请保存私密查询码，用于查看进展。";
       openModal("feedbackModal");
       // Keep the underlying page out of keyboard and accessibility navigation.
@@ -8364,6 +8373,7 @@
         feedbackBusy = false;
         if (feedbackMode === "list") updateFeedbackPagination();
         if (identity !== token()) {
+          updateFeedbackModeVisibility();
           feedbackResetResults(); feedbackReceipt = null;
           $("feedbackReceiptCode").value = ""; $("feedbackQueryCode").value = "";
           $("feedbackReceipt").hidden = true;
@@ -8539,6 +8549,7 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        updateFeedbackModeVisibility();
         feedbackVersion++; feedbackResetResults(); feedbackReceipt = null;
         $("feedbackReceiptCode").value = ""; $("feedbackQueryCode").value = "";
         $("feedbackReceipt").hidden = true;
