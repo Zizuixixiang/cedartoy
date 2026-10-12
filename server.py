@@ -32,6 +32,8 @@ import duel_wait_control
 
 import account_deletion
 import admin_recovery_mcp
+import admin_feedback_mcp
+from cedar_backend import feedback_tickets
 import avatar_appearances
 import detroit_adapter
 import puzzle_box
@@ -951,6 +953,7 @@ def _migrate_platform_timestamps():
         _init_guest_claim_table(conn)
         _init_registration_events_table(conn)
         _init_password_reset_tokens_table(conn)
+        feedback_tickets.init_schema(conn)
         _init_username_changes_table(conn)
         _init_account_security_schema(conn)
         avatar_appearances.seed_trial(conn)
@@ -2054,6 +2057,17 @@ def _query_recovery_ticket(body):
         secrets=secrets,
         time=time,
     )
+
+
+def _feedback_store():
+    return feedback_tickets.FeedbackStore(
+        _db_connect, _McpError, lambda ip: _email_hmac("feedback-ip-v1", ip))
+
+
+def _admin_feedback(arguments, raw_token):
+    return admin_feedback_mcp.handle(
+        arguments, raw_token, require_admin=_require_admin_account,
+        store=_feedback_store(), error=_McpError)
 
 
 def _admin_recovery_tickets(view="pending", page=1):
@@ -3967,6 +3981,7 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         _set_avatar=_set_avatar,
         _workkk_save_summary=_workkk_save_summary,
         admin_recovery_mcp=admin_recovery_mcp,
+        _admin_feedback=_admin_feedback,
         json=json,
     )
 
@@ -5873,6 +5888,58 @@ a{{color:#c9afff}}
             )
         except Exception:
             self._send_json({"error": "server error"}, status=500)
+
+    def _handle_feedback(self, path):
+        response_headers = {"Cache-Control": "no-store"}
+        try:
+            # Bearer-only authentication: cookies and self-reported IDs grant no access.
+            # Bound body reads prevent oversized payloads before JSON decoding.
+            if self.headers.get("Transfer-Encoding"):
+                self.close_connection = True
+                return self._send_json({"error": "请使用 Content-Length 提交"}, status=400,
+                                       extra_headers=response_headers)
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 <= length <= 65536:
+                self.close_connection = True
+                return self._send_json({"error": "请求过大"}, status=413, extra_headers=response_headers)
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                self.close_connection = True
+                return self._send_json({"error": "需要 application/json"}, status=415,
+                                       extra_headers=response_headers)
+            if not _check_request_rate_limit(f"feedback:{self._client_ip()}", max_count=30):
+                self.close_connection = True
+                raise _McpError(RATE_LIMIT_ERROR_CODE, "请求较多，请稍后再试")
+            body = self._read_json_body()
+            raw_token = _extract_bearer(self.headers)
+            operation = path.rsplit("/", 1)[-1]
+            if path.startswith("/api/admin/"):
+                result = _admin_feedback({**body, "action": "admin_feedback_" + operation}, raw_token)
+            else:
+                store = _feedback_store()
+                if operation == "query":
+                    result = store.query(body.get("query_code"), before_id=body.get("before_id"))
+                elif operation == "message" and "query_code" in body:
+                    result = store.append(body, None, self._client_ip())
+                else:
+                    # Invalid/expired supplied credentials must never silently become anonymous.
+                    user = _current_account(raw_token) if raw_token else None
+                    owner_id = user["id"] if user else None
+                    if operation == "submit":
+                        result = store.submit(body, owner_id, self._client_ip())
+                    elif operation == "list":
+                        result = store.listing(owner_id, page=body.get("page", 1))
+                    else:
+                        result = store.append(body, owner_id, self._client_ip()) if operation == "message" else store.detail(
+                            body.get("ticket_id"), owner_id, before_id=body.get("before_id"))
+            self._send_json(result, extra_headers=response_headers)
+        except _McpError as exc:
+            status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else self._admin_error_status(exc)
+            self._send_json({"error": exc.message}, status=status, extra_headers=response_headers)
+        except (TypeError, ValueError):
+            self.close_connection = True
+            self._send_json({"error": "请求格式错误"}, status=400, extra_headers=response_headers)
+        except Exception:
+            self._send_json({"error": "server error"}, status=500, extra_headers=response_headers)
 
     def _handle_api_recovery(self, path):
         headers = {"Cache-Control": "no-store"}

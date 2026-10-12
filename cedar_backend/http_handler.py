@@ -169,6 +169,11 @@ def do_POST(
         self._handle_api_account_email_confirm()
         return
 
+    if path in {"/api/feedback/submit", "/api/feedback/query", "/api/feedback/list", "/api/feedback/detail", "/api/feedback/message",
+                "/api/admin/feedback/list", "/api/admin/feedback/detail", "/api/admin/feedback/review"}:
+        self._handle_feedback(path)
+        return
+
     if path in ("/api/auth/recovery/submit", "/api/auth/recovery/query"):
         self._handle_api_recovery(path)
         return

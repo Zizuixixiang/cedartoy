@@ -257,7 +257,9 @@ class AdminRecoveryMcpTests(unittest.TestCase):
             self.assertEqual(self.call("admin_recovery_list", token=self.admin_token)["total"], 1)
 
     def test_schema_and_guide_publish_actions_and_constraints(self):
-        schema = next(t for t in server._root_tools() if t["name"] == "account")["inputSchema"]
+        standard = next(t for t in server._root_tools() if t["name"] == "account")["inputSchema"]
+        self.assertEqual(set(standard["properties"]), {"action"})
+        schema = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "account")["inputSchema"]
         for action in admin_recovery_mcp.ACTIONS:
             self.assertIn(action, schema["properties"]["action"]["description"])
             self.assertIn(action, server._tool_get_guide({"game": "account"}))

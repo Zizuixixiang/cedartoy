@@ -144,6 +144,7 @@
       border-bottom-width: 2px;
     }
 
+    #feedbackModal [hidden],
     #forgotPasswordOpen[hidden],
     #forgotPasswordModal [hidden] {
       display: none !important;
@@ -1104,6 +1105,30 @@
       padding: 24px;
     }
 
+    #feedbackModal .modal-box { max-height: calc(var(--visual-viewport-height) - 36px); overflow-y: auto; }
+    #feedbackModal :is(input, select, textarea) {
+      width: 100%; min-width: 0; border: 2px solid var(--purple); padding: 8px;
+      font: 14px/1.5 system-ui, sans-serif; color: var(--text); background: var(--bg);
+    }
+    #feedbackModal :is(.modal-title, .modal-hint, .modal-msg, .field, .field-hint, .pixel-btn), #feedbackDetail h3 { color: var(--text); }
+    #feedbackModal .pixel-btn:not(.secondary) { color: var(--screen-bg); }
+    #feedbackModal input::placeholder, #feedbackModal textarea::placeholder { color: var(--text); opacity: 1; }
+    #feedbackModal .modal-actions { flex-wrap: wrap; align-items: center; gap: 8px; }
+    #feedbackModal .modal-actions button { font-size: 11px; padding: 8px; }
+    #feedbackModal :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--purple-darker); outline-offset: 3px; }
+    #feedbackList { display: grid; gap: 10px; }
+    #feedbackList .feedback-list-item { display: grid; gap: 4px; white-space: normal; overflow-wrap: anywhere; text-align: left; justify-content: flex-start; font: 13px/1.6 system-ui, sans-serif; }
+    #feedbackList .feedback-list-item > span:first-child { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #feedbackPage { font-size: 11px; }
+    #feedbackDetail .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--purple); background: var(--bg); }
+    #feedbackDetail .feedback-message[data-role="admin"] { border-left-color: var(--pink-dark); background: #fff; }
+    #feedbackModal .feedback-message-meta { font: 11px/1.5 system-ui, sans-serif; }
+    #feedbackDetail .feedback-message p { margin: 6px 0 0; font: 13px/1.7 system-ui, sans-serif; white-space: pre-wrap; }
+    #feedbackDetail .feedback-history summary { cursor: pointer; padding: 10px 0; font-size: 12px; }
+    #feedbackDetail .feedback-history-records { max-height: 300px; overflow-y: auto; }
+    #feedbackFollowupForm { margin-top: 14px; }
+
+
     #forgotPasswordModal .modal-box { max-height: calc(100dvh - 36px); overflow-y: auto; }
     .recovery-modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .recovery-modes button { flex: 1; padding: 8px 4px; font-size: 11px; }
@@ -1606,8 +1631,8 @@
 
     #historyModal .modal-box {
       width: min(760px, 100%);
-      height: fit-content;
-      max-height: min(82vh, 720px);
+      height: min(82dvh, 720px);
+      max-height: calc(100dvh - 36px);
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
@@ -2276,19 +2301,22 @@
     }
 
     .history-content {
-      min-height: 160px;
-      max-height: 56vh;
+      min-height: 0;
+      overscroll-behavior: contain;
+      overflow-anchor: none;
       overflow: auto;
       display: flex;
       flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
-      flex: 0 1 auto;
+      flex: 1 1 auto;
       gap: 14px;
       padding-right: 4px;
       scrollbar-width: thin;
       scrollbar-color: var(--purple) var(--purple-light);
     }
+
+    .history-content > * { flex-shrink: 0; }
 
     .history-section {
       background: #fff;
@@ -2395,6 +2423,7 @@
       border: 3px solid var(--purple-light);
       padding: 8px 10px;
       font-size: 12px;
+      overflow-wrap: anywhere;
     }
 
     .history-card-list {
@@ -2411,17 +2440,61 @@
       gap: 8px;
     }
 
-    .history-card-head {
-      display: flex;
-      justify-content: space-between;
+    .history-card-heading { font-size: 14px; font-weight: 400; min-width: 0; }
+
+    .history-fold-toggle {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto 10px;
+      align-items: center;
       gap: 10px;
-      align-items: baseline;
+      width: 100%;
+      min-height: 44px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+    }
+
+    .history-fold-toggle:hover { background: var(--bg); }
+    .history-fold-toggle:focus-visible,
+    #historyContent .pixel-btn:focus-visible,
+    .history-tab:focus-visible {
+      outline: 2px solid var(--text);
+      outline-offset: 2px;
     }
 
     .history-card-title {
-      color: var(--pink);
+      color: var(--text);
       font-size: 14px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      min-width: 0;
     }
+
+    .history-fold-summary {
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 400;
+      line-height: 1.5;
+      max-width: 9em;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .history-fold-arrow {
+      width: 7px;
+      height: 7px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+    }
+
+    .history-fold-toggle[aria-expanded="true"] .history-fold-arrow { transform: rotate(45deg); }
+    .history-fold-body { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+    .history-fold-body[hidden] { display: none; }
+    #historyContent .pixel-btn { font-size: 11px; min-height: 44px; }
+    .history-more-status { color: var(--text); font-size: 10px; line-height: 1.55; }
 
     .history-card-desc {
       color: var(--purple-dark);
@@ -2602,16 +2675,6 @@
     .history-card-row:first-of-type {
       border-top: 0;
       padding-top: 0;
-    }
-
-    .history-duel-card {
-      gap: 10px;
-    }
-
-    .history-duel-count {
-      flex: none;
-      color: var(--purple-dark);
-      font-size: 10px;
     }
 
     .history-duel-list {
@@ -3115,6 +3178,7 @@
       #machineTokenModal .modal-box {
         max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
       }
+      #feedbackModal .modal-box,
       #forgotPasswordModal .modal-box { max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom)); }
       #loginModal .modal-box {
         max-height: calc(var(--visual-viewport-height) - 96px - var(--safe-bottom));
@@ -3141,8 +3205,7 @@
       .announcement-item { padding: 12px; }
       .announcement-choice { min-height: 42px; font-size: 12px; }
       .announcement-vote-actions .pixel-btn { width: 100%; min-height: 42px; }
-      #historyModal .modal-box { max-height: calc(100dvh - 102px); }
-      #historyModal .history-content { max-height: calc(100dvh - 245px); }
+      #historyModal .modal-box { height: calc(100dvh - 102px); max-height: calc(100dvh - 102px); }
       #historyModal .history-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #historyModal .history-tabs[data-tab-count="1"] { grid-template-columns: minmax(0, 1fr); }
       #historyModal .history-card { padding: 11px; }
@@ -3270,10 +3333,43 @@
     </main>
 
     <nav class="bottom-nav" aria-label="底部导航">
+      <button class="nav-item" data-bottom-action="feedback" type="button"><span class="nav-icon">💬</span><span class="nav-label">反馈</span></button>
       <button class="nav-item active" data-bottom-action="leaderboard" type="button"><span class="nav-icon">▥</span><span class="nav-label">排行榜</span></button>
       <button class="nav-item" data-bottom-action="history" type="button"><span class="nav-icon">◴</span><span class="nav-label">历史</span></button>
       <button class="nav-item" data-bottom-action="mine" type="button" aria-describedby="humanRegistrationAgentNotice"><span class="nav-icon">☻</span><span class="nav-label">我的</span></button>
     </nav>
+  </div>
+
+  <div class="modal" id="feedbackModal" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
+    <div class="modal-box">
+      <h2 class="modal-title" id="feedbackTitle">💬 反馈与建议</h2>
+      <div class="recovery-modes" aria-label="反馈操作">
+        <button class="pixel-btn" data-feedback-mode="submit" aria-pressed="true" type="button">写反馈</button>
+        <button class="pixel-btn secondary" data-feedback-mode="list" aria-pressed="false" type="button">我的反馈</button>
+        <button class="pixel-btn secondary" data-feedback-mode="query" aria-pressed="false" type="button">凭码查询</button>
+      </div>
+      <form id="feedbackForm">
+        <p class="modal-hint" id="feedbackIdentity"></p>
+        <label class="field"><span class="field-label">分类</span><select id="feedbackCategory"><option value="bug">问题 / Bug</option><option value="suggestion">功能建议</option><option value="account">账号相关</option><option value="other">其他</option></select></label>
+        <label class="field"><span class="field-label">反馈内容（必填）</span><textarea id="feedbackContent" maxlength="4000" rows="4" required placeholder="发生了什么，或你希望怎样改进？请勿填写密码或 Token。"></textarea><span class="field-hint">最多 4000 字</span></label>
+        <label class="field"><span class="field-label">自己的 4399 账号或小机 ID（选填）</span><input id="feedbackContact" maxlength="120" autocomplete="off"><span class="field-hint">仅供联系与排障参考，不用于验证身份。</span></label>
+        <button class="pixel-btn" type="submit">提交反馈</button>
+      </form>
+      <section id="feedbackReceipt" hidden aria-label="提交成功">
+        <p class="modal-hint">反馈已提交。请立即保存私密查询码；关闭页面后无法重新获取。持码人可查看并继续回复这条反馈，请勿公开分享。</p>
+        <label class="field"><span class="field-label">私密查询码</span><input id="feedbackReceiptCode" readonly autocomplete="off" spellcheck="false"></label>
+        <div class="modal-actions"><button class="pixel-btn secondary" id="feedbackCopyCode" type="button">复制查询码</button><button class="pixel-btn" id="feedbackReceiptQuery" type="button">查询进展</button><button class="pixel-btn secondary" id="feedbackNew" type="button">已保存，写新反馈</button></div>
+      </section>
+      <form id="feedbackQueryForm" hidden>
+        <label class="field"><span class="field-label">私密查询码</span><input id="feedbackQueryCode" maxlength="43" required autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+        <button class="pixel-btn" type="submit">查询进展</button>
+      </form>
+      <div id="feedbackList" hidden></div>
+      <nav class="modal-actions" id="feedbackPagination" aria-label="反馈分页" hidden><button class="pixel-btn secondary" id="feedbackPrev" type="button">上一页</button><span id="feedbackPage"></span><button class="pixel-btn secondary" id="feedbackNext" type="button">下一页</button></nav>
+      <section class="recovery-status-card" id="feedbackDetail" tabindex="-1" hidden></section>
+      <p class="modal-msg" id="feedbackMessage" role="status" aria-live="polite"></p>
+      <div class="modal-actions"><button class="pixel-btn secondary" data-close-modal type="button">关闭</button></div>
+    </div>
   </div>
 
   <div class="modal" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
@@ -5786,6 +5882,29 @@
       return `<div class="history-achievements">成就：${escapeHtml(list.join(" / "))}</div>`;
     }
 
+    // State belongs to a subject within this history response; opening again resets it.
+    function historyViewState() {
+      historyState.views ||= new Map();
+      if (!historyState.views.has(historyState.activeId)) {
+        historyState.views.set(historyState.activeId, {open: new Set(), duelLimit: 5, deeptalkLoading: false});
+      }
+      return historyState.views.get(historyState.activeId);
+    }
+
+    function renderHistoryFold(key, title, summary, body) {
+      const open = historyViewState().open.has(key);
+      const id = `history-fold-${encodeURIComponent(key)}`;
+      return `<article class="history-card" data-history-section="${escapeHtml(key)}">
+        <h3 class="history-card-heading"><button class="history-fold-toggle" type="button"
+          data-history-fold="${escapeHtml(key)}" aria-expanded="${open}" aria-controls="${id}">
+          <span class="history-card-title">${escapeHtml(title)}</span>
+          <span class="history-fold-summary">${escapeHtml(summary)}</span>
+          <span class="history-fold-arrow" aria-hidden="true"></span>
+        </button></h3>
+        <div class="history-fold-body" id="${id}"${open ? "" : " hidden"}>${body}</div>
+      </article>`;
+    }
+
     function renderHistoryGameCard(gameName, data) {
       const title = saveGameNames[gameName] || gameName;
       const desc = saveGameDescriptions[gameName] || "存档概况。";
@@ -5800,31 +5919,19 @@
           </div>
         `;
       }).join("");
-      return `
-        <article class="history-card">
-          <div class="history-card-head">
-            <div class="history-card-title">${escapeHtml(title)}</div>
-          </div>
-          <div class="history-card-desc">${escapeHtml(desc)}</div>
-          ${rows}
-        </article>
-      `;
+      return renderHistoryFold(`game:${gameName}`, title, slots.length ? `${slots.length} 个存档` : "暂无存档",
+        `<div class="history-card-desc">${escapeHtml(desc)}</div>${rows || '<p class="history-empty">暂无存档。</p>'}`);
     }
 
     function renderDuelHistory(history) {
       if (history?.available === false) {
-        return `
-          <article class="history-card history-duel-card">
-            <div class="history-card-title">双弈对局</div>
-            <p class="history-empty">双弈记录暂时无法读取。</p>
-          </article>
-        `;
+        return renderHistoryFold("duel", "双弈对局", "暂不可用", '<p class="history-empty">双弈记录暂时无法读取。</p>');
       }
-      const matches = Array.isArray(history?.matches) ? history.matches : [];
-      if (!matches.length) return "";
-      const total = Number.isFinite(Number(history?.total)) ? Number(history.total) : matches.length;
-      const countText = total > matches.length ? `最近 ${matches.length} / 共 ${total} 局` : `共 ${total} 局`;
-      const rows = matches.map((match) => {
+      if (!history) return "";
+      const matches = Array.isArray(history.matches) ? history.matches : [];
+      const total = Number.isFinite(Number(history.total)) ? Number(history.total) : matches.length;
+      const visible = Math.min(historyViewState().duelLimit, matches.length);
+      const rows = matches.slice(0, visible).map((match) => {
         const gameName = duelGameNames[match?.game_type] || match?.game_type || "未知游戏";
         const outcome = duelOutcomeLabels[match?.outcome] ? match.outcome : "finished";
         const opponents = Array.isArray(match?.opponents)
@@ -5849,28 +5956,30 @@
           </div>
         `;
       }).join("");
-      return `
-        <article class="history-card history-duel-card">
-          <div class="history-card-head">
-            <div class="history-card-title">双弈对局</div>
-            <div class="history-duel-count">${escapeHtml(countText)}</div>
-          </div>
-          <div class="history-card-desc">真实房间对局记录，不占用存档槽。</div>
-          <div class="history-duel-list">${rows}</div>
-        </article>
-      `;
+      const status = matches.length ? `已显示 ${visible} / ${matches.length} 局` : "暂无可显示的对局。";
+      const limitHint = total > matches.length ? (matches.length
+        ? `当前仅提供最近 ${matches.length} 局，共 ${total} 局。`
+        : `共 ${total} 局，当前未返回对局详情。`) : "";
+      return renderHistoryFold("duel", "双弈对局", `共 ${total} 局`, `
+        <div class="history-card-desc">真实房间对局记录，不占用存档槽。</div>
+        <div class="history-duel-list">${rows}</div>
+        <p class="history-more-status" tabindex="-1" role="status">${escapeHtml(status)} ${escapeHtml(limitHint)}</p>
+        ${visible < matches.length ? `<button class="pixel-btn secondary" type="button" id="duelHistoryMore">查看更多（再显示 ${Math.min(5, matches.length - visible)} 局）</button>` : ''}`);
     }
 
     function renderDeeptalkHistory(history) {
       const rounds = Array.isArray(history?.rounds) ? history.rounds : [];
       if (!rounds.length) return "";
-      return `<article class="history-card"><div class="history-card-title">Deeptalk 双人问答</div>${rounds.map(round => `
+      const total = Number.isFinite(Number(history.total)) ? Number(history.total) : rounds.length;
+      return renderHistoryFold("deeptalk", "Deeptalk 双人问答", `共 ${total} 轮`, `${rounds.map(round => `
         <div class="history-duel-match">
           <div class="history-duel-game">${escapeHtml(round.title)}</div>
           <div class="history-card-desc">${escapeHtml(round.human_name)} × ${escapeHtml(round.ai_name)} · ${round.status === "complete" ? "已完成" : "进行中"}</div>
           <div class="history-card-desc">${escapeHtml(historyTimestamp(round.updated_at))}</div>
           <a class="pixel-btn secondary" href="/deeptalk?round_id=${encodeURIComponent(round.round_id)}">${round.status === "complete" ? "查看" : "继续"}</a>
-        </div>`).join("")}${history.total > rounds.length ? '<button class="pixel-btn secondary" type="button" id="deeptalkHistoryMore">加载更多</button>' : ''}</article>`;
+        </div>`).join("")}
+        <p class="history-more-status" tabindex="-1" role="status">已加载 ${rounds.length} / ${total} 轮</p>
+        ${total > rounds.length ? `<button class="pixel-btn secondary" type="button" id="deeptalkHistoryMore"${historyViewState().deeptalkLoading ? " disabled" : ""}>${historyViewState().deeptalkLoading ? "加载中…" : "加载更多"}</button>` : ''}`);
     }
 
     function historySubjects(data) {
@@ -5900,7 +6009,7 @@
       const active = subjects.find((subject) => subject.id === historyState.activeId) || subjects[0];
       const entries = Object.entries(active?.saves || {});
       const tabs = subjects.map((subject) => `
-        <button class="history-tab ${subject.id === active.id ? "active" : ""}" data-history-tab="${escapeHtml(subject.id)}" type="button">
+        <button class="history-tab ${subject.id === active.id ? "active" : ""}" data-history-tab="${escapeHtml(subject.id)}" aria-pressed="${subject.id === active.id}" type="button">
           ${escapeHtml(subject.label)}
         </button>
       `).join("");
@@ -5927,26 +6036,73 @@
       `;
     }
 
+    // Replace only the paged body, preserving the header, other folds and scroll position.
+    function refreshHistorySection(key, markup, moreId) {
+      const content = $("historyContent");
+      const section = Array.from(content.querySelectorAll("[data-history-section]"))
+        .find((item) => item.dataset.historySection === key);
+      if (!section) return;
+      const template = document.createElement("template");
+      template.innerHTML = markup;
+      const scrollTop = content.scrollTop;
+      const restoreFocus = document.activeElement === $(moreId);
+      section.querySelector(".history-fold-summary").textContent = template.content.querySelector(".history-fold-summary").textContent;
+      section.querySelector(".history-fold-body").innerHTML = template.content.querySelector(".history-fold-body").innerHTML;
+      bindHistoryTabs();
+      if (restoreFocus) ($(moreId) || section.querySelector(".history-more-status"))?.focus({preventScroll: true});
+      content.scrollTop = scrollTop;
+    }
+
     function bindHistoryTabs() {
+      const content = $("historyContent");
+      content.querySelectorAll("[data-history-fold]").forEach((button) => {
+        button.onclick = () => {
+          const key = button.dataset.historyFold;
+          const open = button.getAttribute("aria-expanded") !== "true";
+          if (open) historyViewState().open.add(key);
+          else historyViewState().open.delete(key);
+          button.setAttribute("aria-expanded", String(open));
+          $(button.getAttribute("aria-controls")).hidden = !open;
+        };
+      });
+      const duelMore = $("duelHistoryMore");
+      if (duelMore) duelMore.onclick = () => {
+        historyViewState().duelLimit += 5;
+        const active = historySubjects(historyState.data).find((subject) => subject.id === historyState.activeId);
+        refreshHistorySection("duel", renderDuelHistory(active.duelHistory), "duelHistoryMore");
+      };
       const deeptalkMore = $("deeptalkHistoryMore");
-      if (deeptalkMore) deeptalkMore.addEventListener("click", async () => {
+      if (deeptalkMore) deeptalkMore.onclick = async () => {
+        const state = historyState;
+        const subjectId = state.activeId;
+        const view = historyViewState();
+        if (view.deeptalkLoading) return;
+        view.deeptalkLoading = true;
         deeptalkMore.disabled = true;
+        deeptalkMore.textContent = "加载中…";
         try {
-          const saved = historyState.data.self.deeptalk_history;
+          const saved = state.data.self.deeptalk_history;
           const response = await fetch(`/api/deeptalk?action=history&offset=${saved.rounds.length}`, {headers: {Authorization: `Bearer ${token()}`}, cache: "no-store"});
           const page = await response.json();
           if (!response.ok) throw new Error(page.error || "读取失败");
           saved.rounds.push(...page.rounds); saved.total = page.total;
-          $("historyContent").innerHTML = renderHistory();
-          bindHistoryTabs();
-        } catch (err) { showToast(err.message || "读取失败，请重试"); deeptalkMore.disabled = false; }
-      });
-      document.querySelectorAll("[data-history-tab]").forEach((button) => {
-        button.addEventListener("click", () => {
+        } catch (err) {
+          if (historyState === state) showToast(err.message || "读取失败，请重试");
+        } finally {
+          view.deeptalkLoading = false;
+          if (historyState === state && historyState.activeId === subjectId) {
+            refreshHistorySection("deeptalk", renderDeeptalkHistory(state.data.self.deeptalk_history), "deeptalkHistoryMore");
+          }
+        }
+      };
+      content.querySelectorAll("[data-history-tab]").forEach((button) => {
+        button.onclick = () => {
           historyState.activeId = button.dataset.historyTab || "self";
-          $("historyContent").innerHTML = renderHistory();
+          content.innerHTML = renderHistory();
+          content.scrollTop = 0;
           bindHistoryTabs();
-        });
+          content.querySelector(".history-tab.active")?.focus({preventScroll: true});
+        };
       });
     }
 
@@ -8127,6 +8283,269 @@
       }
     }
 
+    const feedbackStatuses = {pending: "待处理", processing: "处理中", closed: "已结束"};
+    const feedbackCategories = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
+    let feedbackMode = "submit", feedbackPage = 1, feedbackBusy = false, feedbackVersion = 0;
+    let feedbackReceipt = null, feedbackIdentityToken = null, feedbackReturnFocus = null;
+    function feedbackResetResults() {
+      feedbackConversation = null;
+      $("feedbackList").replaceChildren();
+      $("feedbackDetail").replaceChildren();
+      $("feedbackDetail").hidden = true;
+      $("feedbackPagination").hidden = true;
+    }
+    function openFeedback() {
+      closeDrawers();
+      feedbackReturnFocus = document.activeElement;
+      if (feedbackIdentityToken !== token()) {
+        feedbackReceipt = null;
+        $("feedbackReceiptCode").value = "";
+        $("feedbackQueryCode").value = "";
+        feedbackResetResults();
+      }
+      feedbackIdentityToken = token();
+      $("feedbackIdentity").textContent = token() ? "提交后可在「我的反馈」查看进展，仅当前登录账号可见。" : "无需登录也能反馈。提交后请保存私密查询码，用于查看进展。";
+      openModal("feedbackModal");
+      // Keep the underlying page out of keyboard and accessibility navigation.
+      for (const el of document.body.children) {
+        if (el !== $("feedbackModal") && !el.inert && !["SCRIPT", "STYLE"].includes(el.tagName)) {
+          el.inert = true; el.dataset.feedbackInert = "true";
+        }
+      }
+      setFeedbackMode("submit");
+      $("feedbackModal").querySelector("button").focus();
+    }
+    function closeFeedback() {
+      feedbackVersion++;
+      feedbackResetResults();
+      document.querySelectorAll("[data-feedback-inert]").forEach(el => { el.inert = false; delete el.dataset.feedbackInert; });
+      if (feedbackReturnFocus?.isConnected) feedbackReturnFocus.focus();
+    }
+    function setFeedbackMode(mode) {
+      if (feedbackBusy) return;
+      feedbackVersion++;
+      feedbackMode = mode;
+      feedbackResetResults();
+      $("feedbackMessage").textContent = "";
+      document.querySelectorAll("[data-feedback-mode]").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.feedbackMode === mode));
+        button.classList.toggle("secondary", button.dataset.feedbackMode !== mode);
+      });
+      $("feedbackForm").hidden = mode !== "submit" || Boolean(feedbackReceipt);
+      $("feedbackReceipt").hidden = mode !== "submit" || !feedbackReceipt;
+      $("feedbackQueryForm").hidden = mode !== "query";
+      $("feedbackList").hidden = mode !== "list";
+      if (mode === "list") { feedbackPage = 1; loadFeedbackList(); }
+    }
+    async function feedbackRequest(operation, body) {
+      const res = await fetch("/api/feedback/" + operation, {method: "POST", headers: headers(true), body: JSON.stringify(body), cache: "no-store"});
+      const data = await res.json();
+      if (!res.ok) throw new Error(res.status === 401 ? "请先登录；登录失效时请重新登录，或退出后匿名反馈。" : data.error || "请求失败，请重试");
+      return data;
+    }
+    async function feedbackRun(task) {
+      if (feedbackBusy) return;
+      feedbackBusy = true;
+      const version = feedbackVersion, identity = token();
+      $("feedbackMessage").textContent = "处理中…";
+      const controls = [...$("feedbackModal").querySelectorAll("button, input, select, textarea")];
+      const states = controls.map(el => el.disabled);
+      controls.forEach(el => el.disabled = true);
+      try {
+        await task(data => {
+          if (version !== feedbackVersion || identity !== token()) return false;
+          $("feedbackMessage").textContent = "";
+          return true;
+        });
+      } catch (err) {
+        if (version === feedbackVersion && identity === token()) $("feedbackMessage").textContent = err.message || "请求失败，请重试";
+      } finally {
+        controls.forEach((el, index) => el.disabled = states[index]);
+        feedbackBusy = false;
+        if (feedbackMode === "list") updateFeedbackPagination();
+        if (identity !== token()) {
+          feedbackResetResults(); feedbackReceipt = null;
+          $("feedbackReceiptCode").value = ""; $("feedbackQueryCode").value = "";
+          $("feedbackReceipt").hidden = true;
+          $("feedbackMessage").textContent = "登录身份已变化，请关闭后重新打开反馈。";
+        } else if (version === feedbackVersion && !$("feedbackReceipt").hidden) {
+          $("feedbackReceiptCode").focus();
+        }
+      }
+    }
+    let feedbackConversation = null;
+    function feedbackConversationBody(extra = {}) {
+      return {...(feedbackConversation.code ? {query_code: feedbackConversation.code} : {ticket_id: feedbackConversation.ticket.id}), ...extra};
+    }
+    async function readFeedbackConversation(before_id) {
+      return feedbackRequest(feedbackConversation.code ? "query" : "detail", feedbackConversationBody(before_id ? {before_id} : {}));
+    }
+    function feedbackMessageElement(message) {
+      const article = document.createElement("article"); article.className = "feedback-message";
+      article.dataset.role = message.role;
+      const meta = document.createElement("div"); meta.className = "feedback-message-meta";
+      meta.textContent = `${message.role === "admin" ? "管理员答复" : "玩家提问"} · ${new Date(message.created_at_epoch * 1000).toLocaleString()}`;
+      const text = document.createElement("p"); text.textContent = message.content;
+      article.append(meta, text); return article;
+    }
+    function renderFeedbackMessages(expanded = false) {
+      const c = feedbackConversation, host = $("feedbackMessages"); host.replaceChildren();
+      const older = c.messages.slice(0, -3), recent = c.messages.slice(-3);
+      if (older.length || c.next_before_id) {
+        const history = document.createElement("details"); history.className = "feedback-history"; history.open = expanded;
+        const summary = document.createElement("summary");
+        const label = () => summary.textContent = history.open ? "收起历史消息" : `展开历史消息（${Math.max(0, c.message_count - 3)} 条）`;
+        history.ontoggle = label; label(); history.append(summary);
+        const records = document.createElement("div"); records.className = "feedback-history-records";
+        older.forEach(message => records.append(feedbackMessageElement(message))); history.append(records);
+        if (c.next_before_id) {
+          const more = document.createElement("button"); more.type = "button"; more.className = "pixel-btn secondary"; more.textContent = "加载更早消息";
+          more.onclick = () => feedbackRun(async current => {
+            const data = await readFeedbackConversation(c.next_before_id);
+            if (!current() || c !== feedbackConversation) return;
+            c.messages = [...data.messages, ...c.messages]; c.next_before_id = data.next_before_id;
+            renderFeedbackMessages(true);
+          });
+          history.append(more);
+        }
+        host.append(history);
+      }
+      const latest = document.createElement("div"); latest.className = "feedback-recent";
+      recent.forEach(message => latest.append(feedbackMessageElement(message))); host.append(latest);
+    }
+    function renderFeedbackDetail(data, code = null) {
+      feedbackConversation = {...data, code};
+      const ticket = data.ticket, panel = $("feedbackDetail"); panel.replaceChildren();
+      const title = document.createElement("h3"); title.textContent = `反馈 #${ticket.id} · ${feedbackStatuses[ticket.status]}`; panel.append(title);
+      const meta = document.createElement("p"); meta.className = "feedback-message-meta";
+      meta.textContent = `${feedbackCategories[ticket.category]} · ${data.message_count} 条消息 · 更新于 ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
+      panel.append(meta);
+      const thread = document.createElement("div"); thread.id = "feedbackMessages"; panel.append(thread);
+      const form = document.createElement("form"); form.id = "feedbackFollowupForm";
+      const label = document.createElement("label"); label.className = "field"; label.textContent = "继续提问 / 补充";
+      const input = document.createElement("textarea"); input.id = "feedbackFollowupContent"; input.maxLength = 4000; input.rows = 3; input.required = true;
+      label.append(input); form.append(label);
+      if (ticket.status === "closed") {
+        const hint = document.createElement("p"); hint.className = "field-hint"; hint.textContent = "此单已结束，继续发消息会重新打开为待处理。"; form.append(hint);
+      }
+      const send = document.createElement("button"); send.type = "submit"; send.className = "pixel-btn"; send.textContent = "发送追问";
+      const back = document.createElement("button"); back.type = "button"; back.className = "pixel-btn secondary"; back.textContent = "收起对话";
+      back.onclick = () => {
+        if (feedbackBusy) return;
+        feedbackConversation = null; panel.replaceChildren(); panel.hidden = true;
+        if (feedbackMode === "list") { loadFeedbackList()?.then(() => $("feedbackList").querySelector("button")?.focus()); }
+        else $("feedbackQueryCode").focus();
+      };
+      const actions = document.createElement("div"); actions.className = "modal-actions"; actions.append(send, back); form.append(actions); panel.append(form);
+      form.onsubmit = event => {
+        event.preventDefault();
+        const conversation = feedbackConversation;
+        feedbackRun(async current => {
+          await feedbackRequest("message", {ticket_id: ticket.id, content: input.value, ...(code ? {query_code: code} : {})});
+          if (!current() || conversation !== feedbackConversation) return;
+          // Clear only after confirmed append; a failed refresh must not resend this text.
+          input.value = "";
+          const next = await readFeedbackConversation();
+          if (current() && conversation === feedbackConversation) {
+            renderFeedbackDetail(next, code);
+            $("feedbackMessage").textContent = "消息已发送，等待管理员处理。";
+          }
+        });
+      };
+      $("feedbackList").hidden = true; $("feedbackPagination").hidden = true;
+      renderFeedbackMessages(); panel.hidden = false; panel.focus();
+    }
+    let feedbackTotal = 0;
+    function updateFeedbackPagination() {
+      $("feedbackPagination").hidden = Boolean(feedbackConversation) || feedbackTotal <= 20;
+      $("feedbackPrev").disabled = feedbackPage <= 1;
+      $("feedbackNext").disabled = feedbackPage * 20 >= feedbackTotal;
+      $("feedbackPage").textContent = `第 ${feedbackPage} 页`;
+    }
+    function loadFeedbackList() {
+      feedbackTotal = 0;
+      feedbackResetResults();
+      $("feedbackList").hidden = false;
+      if (!token()) { $("feedbackMessage").textContent = "登录后可查看自己的反馈；匿名提交请使用「凭码查询」。"; return; }
+      return feedbackRun(async current => {
+        const data = await feedbackRequest("list", {page: feedbackPage});
+        if (!current()) return;
+        feedbackTotal = data.total;
+        for (const ticket of data.tickets) {
+          const button = document.createElement("button");
+          button.type = "button"; button.className = "pixel-btn secondary feedback-list-item";
+          const title = document.createElement("span"); title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
+          const meta = document.createElement("span"); meta.className = "feedback-message-meta";
+          meta.textContent = `${feedbackStatuses[ticket.status]} · ${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
+          button.append(title, meta);
+          button.onclick = () => feedbackRun(async current => {
+            const data = await feedbackRequest("detail", {ticket_id: ticket.id});
+            if (current()) renderFeedbackDetail(data);
+          });
+          $("feedbackList").append(button);
+        }
+        if (!data.total) $("feedbackMessage").textContent = "还没有反馈。遇到问题或有建议，欢迎告诉我们。";
+      });
+    }
+    $("feedbackForm").addEventListener("submit", event => {
+      event.preventDefault();
+      feedbackRun(async current => {
+        const data = await feedbackRequest("submit", {category: $("feedbackCategory").value, content: $("feedbackContent").value, contact: $("feedbackContact").value});
+        if (!current()) return;
+        $("feedbackContent").value = "";
+        if (data.query_code) {
+          feedbackReceipt = data;
+          $("feedbackReceiptCode").value = data.query_code;
+          $("feedbackForm").hidden = true;
+          $("feedbackReceipt").hidden = false;
+          $("feedbackMessage").textContent = "提交成功，请保存私密查询码。";
+        } else $("feedbackMessage").textContent = `反馈 #${data.ticket_id} 已提交，请在「我的反馈」查看进展。`;
+      });
+    });
+    $("feedbackQueryForm").addEventListener("submit", event => {
+      event.preventDefault();
+      feedbackConversation = null;
+      $("feedbackDetail").replaceChildren(); $("feedbackDetail").hidden = true;
+      const code = $("feedbackQueryCode").value.trim();
+      feedbackRun(async current => {
+        const data = await feedbackRequest("query", {query_code: code});
+        if (current()) renderFeedbackDetail(data, code);
+      });
+    });
+    $("feedbackQueryCode").addEventListener("input", () => {
+      if (feedbackBusy) return;
+      feedbackConversation = null; $("feedbackDetail").replaceChildren(); $("feedbackDetail").hidden = true;
+    });
+    $("feedbackNew").onclick = () => {
+      $("feedbackQueryCode").value = feedbackReceipt.query_code;
+      feedbackReceipt = null; $("feedbackReceiptCode").value = "";
+      setFeedbackMode("submit"); $("feedbackContent").focus();
+    };
+    $("feedbackReceiptQuery").onclick = () => { setFeedbackMode("query"); $("feedbackQueryCode").value = feedbackReceipt.query_code; $("feedbackQueryForm").requestSubmit(); };
+    $("feedbackCopyCode").onclick = async () => {
+      try { await navigator.clipboard.writeText($("feedbackReceiptCode").value); $("feedbackMessage").textContent = "查询码已复制，请妥善保存。"; }
+      catch (_) { $("feedbackReceiptCode").select(); $("feedbackMessage").textContent = "请长按或选中查询码复制保存。"; }
+    };
+    document.querySelectorAll("[data-feedback-mode]").forEach(button => button.onclick = () => setFeedbackMode(button.dataset.feedbackMode));
+    $("feedbackPrev").onclick = () => { if (!feedbackBusy && feedbackPage > 1) { feedbackPage--; loadFeedbackList(); } };
+    $("feedbackNext").onclick = () => { if (!feedbackBusy && feedbackPage * 20 < feedbackTotal) { feedbackPage++; loadFeedbackList(); } };
+    $("feedbackModal").addEventListener("keydown", event => {
+      if (event.key !== "Tab") return;
+      const controls = [...$("feedbackModal").querySelectorAll("button, input, select, textarea, [tabindex='-1']")].filter(el => !el.disabled && el.getClientRects().length);
+      if (!controls.length) { event.preventDefault(); return; }
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+    window.addEventListener("storage", event => {
+      if (event.key === TOKEN_KEY || event.key === null) {
+        feedbackVersion++; feedbackResetResults(); feedbackReceipt = null;
+        $("feedbackReceiptCode").value = ""; $("feedbackQueryCode").value = "";
+        $("feedbackReceipt").hidden = true;
+        if ($("feedbackModal").classList.contains("show")) $("feedbackMessage").textContent = "登录身份已变化，请关闭后重新打开反馈。";
+      }
+    });
+
     function openPlaceholder(title, message) {
       closeDrawers();
       $("placeholderTitle").textContent = title;
@@ -8150,6 +8569,8 @@
     }
 
     function closeModals() {
+      if ($("feedbackModal").classList.contains("show") && feedbackBusy) return;
+      if ($("feedbackModal").classList.contains("show")) closeFeedback();
       avatarFrameState = null;
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
       pendingAdultUrl = "";
@@ -9247,6 +9668,7 @@
     document.querySelectorAll("[data-bottom-action]").forEach((item) => {
       item.addEventListener("click", () => {
         document.querySelectorAll("[data-bottom-action]").forEach((nav) => nav.classList.toggle("active", nav === item));
+        if (item.dataset.bottomAction === "feedback") { openFeedback(); return; }
         if (item.dataset.bottomAction === "leaderboard") {
           openPlatformStats();
           return;

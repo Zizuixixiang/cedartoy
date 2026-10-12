@@ -117,6 +117,21 @@
     #recoveryTab { position: relative; }
     .recovery-count { position: absolute; top: -12px; right: 0; min-width: 20px; padding: 0 4px; border-radius: 999px; background: #c63737; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; pointer-events: none; }
     .recovery-count[hidden] { display: none; }
+    .ticket-kind-switch { display: flex; gap: 8px; margin-bottom: 12px; }
+    #recoveryQueue[hidden], #feedbackQueue[hidden], #feedbackQueue [hidden] { display: none; }
+    #feedbackAdminTickets { display: grid; gap: 12px; }
+    #feedbackQueue .feedback-ticket-summary { height: auto; display: grid; gap: 6px; width: 100%; text-align: left; justify-content: stretch; padding: 12px; white-space: normal; overflow-wrap: anywhere; }
+    #feedbackQueue .feedback-ticket-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #feedbackQueue .feedback-message-meta { font-size: 12px; line-height: 1.5; color: var(--muted); }
+    #feedbackQueue .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--line); background: #fff; }
+    #feedbackQueue .feedback-message[data-role="admin"] { border-left-color: var(--accent); }
+    #feedbackQueue .feedback-message p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #feedbackQueue .feedback-history summary { cursor: pointer; padding: 10px 0; font-size: 13px; }
+    #feedbackQueue .feedback-history-records { max-height: 300px; overflow-y: auto; }
+    #feedbackQueue .feedback-admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    #feedbackAdminStatus:empty { display: none; }
+    #feedbackAdminStatus { margin: 0; font-size: 13px; }
+    #feedbackAdminPage { font-size: 13px; }
     .shell {
       width: min(1180px, calc(100vw - 28px));
       margin: 0 auto;
@@ -737,7 +752,11 @@
     </div>
 
     <div class="tab-panel" id="recoveryPanel" role="tabpanel" aria-labelledby="recoveryTab" hidden>
-      <section class="recovery-panel" aria-label="找回工单审核队列">
+      <div class="ticket-kind-switch" aria-label="工单类型">
+        <button class="primary" type="button" data-ticket-kind="recovery" aria-pressed="true">账号找回</button>
+        <button type="button" data-ticket-kind="feedback" aria-pressed="false">意见反馈</button>
+      </div>
+      <section class="recovery-panel" id="recoveryQueue" aria-label="找回工单审核队列">
         <div class="recovery-toolbar" aria-label="工单筛选">
           <select id="recoveryView" aria-label="工单状态"><option value="pending">待审批</option><option value="processed">已处理</option></select>
           <button id="recoveryRefresh" type="button">刷新</button>
@@ -745,6 +764,13 @@
         <p class="status" id="recoveryStatus" aria-live="polite"></p>
         <div id="recoveryTickets"></div>
         <nav class="recovery-pagination" id="recoveryPagination" aria-label="工单分页" hidden><button id="recoveryPrev" type="button">上一页</button><span id="recoveryPage"></span><button id="recoveryNext" type="button">下一页</button></nav>
+      </section>
+      <section class="recovery-panel" id="feedbackQueue" aria-label="意见反馈处理队列" hidden>
+        <div class="recovery-toolbar"><select id="feedbackAdminFilter" aria-label="反馈状态"><option value="all">全部状态</option><option value="pending">待处理</option><option value="processing">处理中</option><option value="closed">已结束</option></select><button id="feedbackAdminRefresh" type="button">刷新</button></div>
+        <p class="status" id="feedbackAdminStatus" aria-live="polite"></p>
+        <section class="recovery-card" id="feedbackAdminDetail" tabindex="-1" aria-label="反馈详情与处理" hidden></section>
+        <div id="feedbackAdminTickets"></div>
+        <nav class="recovery-pagination" id="feedbackAdminPagination" aria-label="反馈分页" hidden><button id="feedbackAdminPrev" type="button">上一页</button><span id="feedbackAdminPage"></span><button id="feedbackAdminNext" type="button">下一页</button></nav>
       </section>
     </div>
 
@@ -966,6 +992,166 @@
         if (version === recoveryCountVersion) updateRecoveryCount(0);
       }
     }
+
+    let ticketKind = "recovery", feedbackAdminPage = 1, feedbackAdminTotal = 0, feedbackAdminBusy = false;
+    let feedbackAdminVersion = 0;
+    const feedbackStatusLabels = {pending: "待处理", processing: "处理中", closed: "已结束"};
+    const feedbackCategoryLabels = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
+    function switchTicketKind(kind) {
+      if (feedbackAdminBusy || recoveryReviewBusy) return;
+      ticketKind = kind;
+      $("recoveryQueue").hidden = kind !== "recovery";
+      $("feedbackQueue").hidden = kind !== "feedback";
+      document.querySelectorAll("[data-ticket-kind]").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.ticketKind === kind));
+        button.classList.toggle("primary", button.dataset.ticketKind === kind);
+      });
+      if (kind === "feedback") loadAdminFeedback(); else loadRecoveryTickets();
+    }
+    async function adminFeedbackRequest(operation, body) {
+      return request("/api/admin/feedback/" + operation, {method: "POST", body: JSON.stringify(body)});
+    }
+    async function adminFeedbackRun(task) {
+      if (feedbackAdminBusy) return;
+      feedbackAdminBusy = true;
+      const version = feedbackAdminVersion, identity = token();
+      const controls = [...$("feedbackQueue").querySelectorAll("button, textarea, select")];
+      const disabled = controls.map(el => el.disabled);
+      controls.forEach(el => el.disabled = true);
+      $("feedbackAdminStatus").textContent = "处理中…";
+      try {
+        await task(() => version === feedbackAdminVersion && identity === token());
+        if (version === feedbackAdminVersion && identity === token()) $("feedbackAdminStatus").textContent = "";
+      } catch (err) {
+        if (version === feedbackAdminVersion) $("feedbackAdminStatus").textContent = err.message;
+      } finally {
+        controls.forEach((el, index) => el.disabled = disabled[index]);
+        feedbackAdminBusy = false;
+        if (identity !== token()) {
+          feedbackAdminConversation = null;
+          $("feedbackAdminTickets").replaceChildren(); $("feedbackAdminDetail").replaceChildren();
+          $("feedbackAdminDetail").hidden = true; $("feedbackAdminPagination").hidden = true;
+        }
+        $("feedbackAdminPrev").disabled = feedbackAdminPage <= 1;
+        $("feedbackAdminNext").disabled = feedbackAdminPage * 20 >= feedbackAdminTotal;
+      }
+    }
+    function loadAdminFeedback() {
+      if (feedbackAdminBusy) return;
+      feedbackAdminConversation = null;
+      $("feedbackAdminTickets").hidden = false;
+      $("feedbackAdminTickets").replaceChildren();
+      $("feedbackAdminDetail").replaceChildren();
+      $("feedbackAdminDetail").hidden = true;
+      $("feedbackAdminPagination").hidden = true;
+      return adminFeedbackRun(async current => {
+        const data = await adminFeedbackRequest("list", {page: feedbackAdminPage, status: $("feedbackAdminFilter").value});
+        if (!current()) return;
+        feedbackAdminTotal = data.total;
+        $("feedbackAdminPagination").hidden = data.total <= 20;
+        $("feedbackAdminPage").textContent = `第 ${feedbackAdminPage} 页 / 共 ${data.total} 条`;
+        for (const ticket of data.tickets) {
+          const card = document.createElement("button"); card.type = "button"; card.className = "feedback-ticket-summary";
+          const title = document.createElement("span"); title.className = "feedback-ticket-title";
+          title.textContent = `${feedbackCategoryLabels[ticket.category]} · ${ticket.preview}`;
+          const meta = document.createElement("span"); meta.className = "feedback-message-meta";
+          meta.textContent = `${feedbackStatusLabels[ticket.status]}${ticket.status === "pending" && ticket.last_message_role === "player" ? " · 玩家新留言" : ""} · ${ticket.message_count} 条消息 · ${formatEpoch(ticket.updated_at_epoch || ticket.created_at_epoch)}`;
+          card.onclick = () => openAdminFeedback(ticket.id);
+          card.append(title, meta); $("feedbackAdminTickets").append(card);
+        }
+        if (!data.total) $("feedbackAdminTickets").textContent = "暂无反馈";
+      });
+    }
+    let feedbackAdminConversation = null;
+    function adminFeedbackMessage(message) {
+      const article = document.createElement("article"); article.className = "feedback-message"; article.dataset.role = message.role;
+      const meta = document.createElement("div"); meta.className = "feedback-message-meta";
+      meta.textContent = `${message.role === "admin" ? "管理员答复" : "玩家提问"} · ${formatEpoch(message.created_at_epoch)}`;
+      const text = document.createElement("p"); text.textContent = message.content; article.append(meta, text); return article;
+    }
+    function renderAdminFeedbackMessages(expanded = false) {
+      const c = feedbackAdminConversation, host = $("feedbackAdminMessages"); host.replaceChildren();
+      const older = c.messages.slice(0, -3), recent = c.messages.slice(-3);
+      if (older.length || c.next_before_id) {
+        const history = document.createElement("details"); history.className = "feedback-history"; history.open = expanded;
+        const summary = document.createElement("summary");
+        const label = () => summary.textContent = history.open ? "收起历史消息" : `展开历史消息（${Math.max(0,c.message_count - 3)} 条）`;
+        history.ontoggle = label; label(); history.append(summary);
+        const records = document.createElement("div"); records.className = "feedback-history-records";
+        older.forEach(message => records.append(adminFeedbackMessage(message))); history.append(records);
+        if (c.next_before_id) {
+          const more = document.createElement("button"); more.type = "button"; more.textContent = "加载更早消息";
+          more.onclick = () => adminFeedbackRun(async current => {
+            const data = await adminFeedbackRequest("detail", {ticket_id: c.ticket.id, before_id: c.next_before_id});
+            if (!current() || c !== feedbackAdminConversation) return;
+            c.messages = [...data.messages, ...c.messages]; c.next_before_id = data.next_before_id;
+            renderAdminFeedbackMessages(true);
+          });
+          history.append(more);
+        }
+        host.append(history);
+      }
+      const latest = document.createElement("div"); latest.className = "feedback-recent";
+      recent.forEach(message => latest.append(adminFeedbackMessage(message))); host.append(latest);
+    }
+    function renderAdminFeedbackDetail(data) {
+      feedbackAdminConversation = data;
+      const t = data.ticket, panel = $("feedbackAdminDetail");
+      panel.innerHTML = `<div class="recovery-card-header"><h3>反馈 #${escapeHtml(t.id)} · ${feedbackStatusLabels[t.status]}</h3><button type="button" id="feedbackAdminBack">收起对话</button></div>
+        <dl class="recovery-facts">
+        ${recoveryFact("分类 / 消息数", `${feedbackCategoryLabels[t.category]} · ${data.message_count} 条`)}
+        ${recoveryFact("实际登录身份", t.owner_id == null ? "匿名（凭码访问）" : `账号 ID ${t.owner_id}`)}
+        ${recoveryFact("自填账号 / 小机 ID（未核验）", t.contact, true)}
+        ${recoveryFact("最近更新", formatEpoch(t.updated_at_epoch || t.created_at_epoch), true, true)}</dl>
+        <div id="feedbackAdminMessages"></div>
+        <form class="recovery-review" id="feedbackAdminReview">
+        <label for="feedbackAdminReply">追加答复（玩家可见，不覆盖旧消息）</label><textarea id="feedbackAdminReply" maxlength="4000" rows="3"></textarea>
+        <label for="feedbackAdminNote">内部备注（仅管理员可见，不进入对话）</label><textarea id="feedbackAdminNote" maxlength="4000" rows="2">${escapeHtml(t.internal_note)}</textarea>
+        <div class="feedback-admin-actions"><button class="primary" type="submit">发送回复</button><button id="feedbackAdminSaveNote" type="button">保存备注</button><button id="feedbackAdminProcessing" type="button">标记处理中</button><button id="feedbackAdminClose" type="button"${t.status === "closed" ? " disabled" : ""}>结束工单</button></div></form>`;
+      $("feedbackAdminTickets").hidden = true; $("feedbackAdminPagination").hidden = true;
+      renderAdminFeedbackMessages(); panel.hidden = false; panel.focus();
+      $("feedbackAdminBack").onclick = loadAdminFeedback;
+      const review = async kind => {
+        if (feedbackAdminBusy) return;
+        const body = {ticket_id: t.id, confirm: true};
+        if (kind === "reply") {
+          body.reply = $("feedbackAdminReply").value;
+          if (!body.reply.trim()) { $("feedbackAdminStatus").textContent = "请填写要追加的回复。"; return; }
+        } else if (kind === "close") body.status = "closed";
+        else if (kind === "processing") body.status = "processing";
+        if (kind === "note" || $("feedbackAdminNote").value !== t.internal_note) body.internal_note = $("feedbackAdminNote").value;
+        await adminFeedbackRun(async current => {
+          await adminFeedbackRequest("review", body);
+          if (!current() || data !== feedbackAdminConversation) return;
+          if (kind === "reply") $("feedbackAdminReply").value = "";
+          const next = await adminFeedbackRequest("detail", {ticket_id: t.id});
+          if (current() && data === feedbackAdminConversation) renderAdminFeedbackDetail(next);
+        });
+      };
+      $("feedbackAdminReview").onsubmit = event => { event.preventDefault(); review("reply"); };
+      $("feedbackAdminSaveNote").onclick = () => review("note");
+      $("feedbackAdminProcessing").onclick = () => review("processing");
+      $("feedbackAdminClose").onclick = () => review("close");
+    }
+    function openAdminFeedback(id) {
+      return adminFeedbackRun(async current => {
+        const data = await adminFeedbackRequest("detail", {ticket_id: id});
+        if (current()) renderAdminFeedbackDetail(data);
+      });
+    }
+    document.querySelectorAll("[data-ticket-kind]").forEach(button => button.onclick = () => switchTicketKind(button.dataset.ticketKind));
+    $("feedbackAdminRefresh").onclick = loadAdminFeedback;
+    $("feedbackAdminFilter").onchange = () => { feedbackAdminPage = 1; loadAdminFeedback(); };
+    $("feedbackAdminPrev").onclick = () => { if (!feedbackAdminBusy && feedbackAdminPage > 1) { feedbackAdminPage--; loadAdminFeedback(); } };
+    $("feedbackAdminNext").onclick = () => { if (!feedbackAdminBusy && feedbackAdminPage * 20 < feedbackAdminTotal) { feedbackAdminPage++; loadAdminFeedback(); } };
+    window.addEventListener("storage", event => {
+      if (event.key === TOKEN_KEY || event.key === null) {
+        feedbackAdminVersion++; feedbackAdminConversation = null;
+        $("feedbackAdminTickets").replaceChildren(); $("feedbackAdminDetail").replaceChildren();
+        $("feedbackAdminDetail").hidden = true; $("feedbackAdminPagination").hidden = true;
+        $("feedbackAdminStatus").textContent = "登录身份已变化，请刷新。";
+      }
+    });
 
     function recoveryFact(label, value, wide = false, time = false) {
       return `<div class="recovery-fact${wide ? " recovery-fact-wide" : ""}"><dt>${label}</dt><dd${time ? ' class="recovery-time"' : ""}>${escapeHtml(String(value ?? "").trim() || "—")}</dd></div>`;
@@ -1390,7 +1576,7 @@
       if (activeTab === "dashboard") {
         if (!dashboardData || Date.now() - dashboardLastLoadedAt >= DASHBOARD_REFRESH_MS) loadDashboard();
       } else if (activeTab === "recovery") {
-        loadRecoveryTickets();
+        if (ticketKind === "feedback") loadAdminFeedback(); else loadRecoveryTickets();
       } else if (!usersLoaded) {
         loadUsers();
       }

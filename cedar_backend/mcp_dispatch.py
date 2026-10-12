@@ -621,6 +621,7 @@ def _tool_account(arguments, user_agent, path_token, client_ip, *,
     _set_avatar,
     _workkk_save_summary,
     admin_recovery_mcp,
+    _admin_feedback,
     json,
 ):
     action = arguments.get("action")
@@ -647,6 +648,8 @@ def _tool_account(arguments, user_agent, path_token, client_ip, *,
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
+    if isinstance(action, str) and action.startswith("admin_feedback_"):
+        return json.dumps(_admin_feedback(arguments, raw_token), ensure_ascii=False)
     if isinstance(action, str) and action in admin_recovery_mcp.ACTIONS:
         result = admin_recovery_mcp.handle(
             arguments, raw_token, require_admin=_require_admin_account,
