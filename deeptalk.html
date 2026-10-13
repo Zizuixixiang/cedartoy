@@ -22,7 +22,7 @@ h1 { margin:0 0 6px; font-size:clamp(26px,7vw,38px); line-height:1.2; }
 h2 { margin:0 0 12px; font-size:22px; line-height:1.5; }
 h3 { font-size:18px; }
 p { margin:10px 0; }
-.lead,.hint,.meta { font-size:13px; color:var(--muted); }
+.lead,.hint { font-size:13px; color:var(--muted); }
 .shell { margin-top:22px; padding:clamp(18px,4vw,34px); background:var(--card); border:4px solid var(--purple); box-shadow:8px 8px 0 var(--purple-light); }
 label { display:block; margin:18px 0 6px; font-size:14px; font-weight:600; }
 select,textarea { width:100%; min-width:0; padding:10px; border:2px solid var(--purple-dark); background:#fff; border-radius:0; }
@@ -36,16 +36,14 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 #message { margin:8px 0; font-size:14px; overflow-wrap:anywhere; }
 #message:empty { display:none; }
 #message.error,#confirmError { color:#9b3245; }
-.progress { margin:8px 0; padding:8px 10px; background:var(--bg); border-left:4px solid var(--pink); font-size:13px; overflow-wrap:anywhere; }
+#progress { margin:6px 0; }
 #questionText { margin:12px 0; font-size:clamp(18px,4vw,23px); white-space:pre-wrap; overflow-wrap:anywhere; }
 #round { margin-top:14px; padding:clamp(14px,3vw,26px); }
 #roundTitle { margin-bottom:4px; }
 #roundDescription { margin:4px 0; }
-#participants { margin:4px 0; overflow-wrap:anywhere; }
-#lockHint { margin:6px 0; }
 .question-picker { display:flex; align-items:center; gap:10px; margin-top:10px; }
 .question-picker label { margin:0; font-size:13px; white-space:nowrap; }
-#questionJump { width:auto; flex:1; padding:6px; border-width:0 0 2px; font-size:14px; }
+#questionJump { width:auto; max-width:100%; padding:6px 10px; font-size:14px; }
 #answerLabel { margin:10px 0 4px; }
 #saveHint,#liveHint { margin:6px 0; }
 #liveHint:empty,#confirmError:empty { display:none; }
@@ -84,7 +82,7 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 
 </section>
 <section id="round" class="shell" hidden>
-<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="participants" class="meta"></p><p id="progress" class="progress"></p><p id="lockHint" class="hint"></p>
+<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" class="hint" hidden></p>
 <div id="editor">
 <div class="question-picker"><label for="questionJump">选题</label><select id="questionJump"></select></div>
 <h3 id="questionText" tabindex="-1"></h3><label id="answerLabel" for="answer">你的回答</label><textarea id="answer" rows="4" maxlength="8000" placeholder="写下你的想法…" aria-describedby="saveHint"></textarea><p id="ownRead" class="own-answer" hidden></p>
@@ -188,7 +186,6 @@ function setupTopic() {
   $('sources').open = false; $('sourceBody').replaceChildren(); updateControls();
 }
 function aiName() { return state.sharing_mode === 'bound_shared' ? '小机' : state.ai_name; }
-function progressText(role, name) { const p = state.progress[role]; return `${name}：${p.done}/${state.total}题 · ${p.submitted ? '已正式提交' : '未提交'}`; }
 function answerText(answer) { return answer ? answer.skipped ? '已跳过' : answer.text : '尚未回答'; }
 function renderQuestion(preserveDraft = false) {
   const q = state.questions[index];
@@ -213,16 +210,17 @@ function updateQuestionOptions() {
   $('questionJump').value = String(index);
 }
 function renderProgress() {
-  setText('progress', progressText('human',state.human_name) + ' ｜ ' + progressText('ai',aiName()));
+  const visible = state.mode === 'chat';
+  $('progress').hidden = !visible;
+  setText('progress', visible ? `你 ${state.progress.human.done}/${state.total} · 小机 ${state.progress.ai.done}/${state.total}` : '');
 }
 function renderRound(preserveDraft = false) {
   $('setup').hidden = true; $('round').hidden = false; $('sources').hidden = false;
   $('roundDescription').textContent = state.total + '题 · ' + (state.description || '');
   $('newRound').href = '/deeptalk?topic_id=' + encodeURIComponent(state.topic_id);
   document.title = `${state.title} · CEDAR TOY`;
-  $('roundTitle').textContent = state.title; $('participants').textContent = `${state.human_name} × ${aiName()}`;
+  $('roundTitle').textContent = state.title;
   renderProgress();
-  $('lockHint').textContent = state.mode === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：双方答完后互相查看。';
   $('peerAnswer').hidden = state.mode !== 'chat' || state.unlocked;
   $('editor').hidden = state.unlocked; $('records').hidden = !state.unlocked;
   if (state.unlocked) {
