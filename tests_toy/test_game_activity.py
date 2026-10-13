@@ -10,6 +10,10 @@ from unittest.mock import patch
 import admin_dashboard
 import game_activity as activity
 import server
+import research_scales
+from cedar_backend.display_titles import RESEARCH_TITLES, DEEPTALK_TITLES
+from deeptalk.catalog import ALIASES
+from scale_test_engine import JsonRpcError
 from vendor_cmd_adapter import base
 
 
@@ -63,6 +67,119 @@ class GameActivityTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT * FROM old_saves").fetchall(), [("untouched",)])
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             self.assertEqual(len(conn.execute("PRAGMA table_info(game_activity_events)").fetchall()), 5)
+
+    def test_complete_test_catalog_titles_match_enabled_packages_and_homepage(self):
+        import re
+        catalog = server._activity_catalog()
+        names = {item['game']: item['name'] for item in catalog}
+        self.assertEqual(len(names), len(catalog))
+        old = {'mbti', 'enneagram', 'dnd', 'love', 'ecr', 'humanity', 'sins_virtues', 'bdsmtest'}
+        # BDSM is MCP-only; the homepage's 属性测试 links to an external site.
+        self.assertEqual(set(server.HUMAN_TEST_GAMES), (old - {'bdsmtest'}) | set(research_scales.SCALES))
+        self.assertEqual(len(research_scales.SCALES), 18)
+        self.assertEqual(len(ALIASES), 10)
+        self.assertTrue(old | set(research_scales.SCALES) | set(ALIASES) <= names.keys())
+        source = server.TOY_INDEX_PATH.read_text()
+        for game in research_scales.SCALES:
+            self.assertEqual(names[game], RESEARCH_TITLES[game])
+            self.assertIn(json.dumps([game, names[game]], ensure_ascii=False)[:-1], source)
+        for alias, topic in ALIASES.items():
+            self.assertEqual(names[alias], DEEPTALK_TITLES[topic])
+            self.assertIn(json.dumps([alias, topic, names[alias]], ensure_ascii=False)[:-1], source)
+        for game, name in names.items():
+            self.assertRegex(name, r'[\u4e00-\u9fff]', game)
+        self.assertEqual(names['deeptalk'], 'DeepTalk（旧记录未细分）')
+        self.assertEqual(names['memoria'], 'Memoria 车站')
+        # Static homepage tests (including the external attribute link) remain indexed.
+        block = re.search(r'const games = \[(.*?)\n    \];', source, re.S).group(1)
+        for item in re.split(r'\n      \{', block):
+            if 'category: "test"' in item:
+                game = re.search(r'id: "([a-z0-9_]+)"', item).group(1)
+                self.assertIn(game, names)
+
+    def test_all_research_web_real_progress_only_and_own_identity(self):
+        with patch.object(research_scales, 'DB_PATH', str(self.db)), patch.object(server, '_current_account', return_value=self.human):
+            for game, engine in research_scales.SCALES.items():
+                with self.subTest(game=game):
+                    def call(action, **params):
+                        return server._human_test_action(game, action, 'token', {'player_id': 'spoof', **params})
+                    state = call('start', mode='full')
+                    sid = state['session_id']
+                    call('start', mode='full')  # resume
+                    call('status')
+                    params = dict(session_id=sid, expected_index=0, answer=engine.answer_min)
+                    state = call('answer', **params)
+                    call('answer', **params)
+                    edit = dict(session_id=sid, index=0, answer=engine.answer_max,
+                                expected_revision=state['answer_revision'])
+                    state = call('save_answer', **edit)
+                    call('save_answer', **edit)  # stale revision, same answer
+                    call('save_answer', **{**edit, 'expected_revision': state['answer_revision']})
+                    with self.assertRaises(JsonRpcError):
+                        call('answer', session_id='stale', expected_index=1, answer=engine.answer_min)
+                    state = call('start', mode='full_fast', restart=True, confirm=True, session_id=sid)
+                    batch = dict(session_id=state['session_id'], answers=[engine.answer_min] * len(engine.items))
+                    call('answer_batch', **batch)
+                    call('answer_batch', **batch)
+                    call('result')
+                    rows = [row for row in self.events() if row[1] == game]
+                    self.assertEqual([row[4] for row in rows], ['start', 'answer', 'save_answer', 'start', 'answer_batch'])
+                    self.assertEqual({row[2:4] for row in rows}, {('17', 'human')})
+        with patch.object(research_scales, 'DB_PATH', str(self.db)), patch.object(server, '_reject_claimed_guest'):
+            before = self.events()
+            for game in research_scales.SCALES:
+                server._human_test_action(game, 'start', '', {'player_id': 'guest:webactivity', 'mode': 'full'})
+            self.assertEqual(self.events(), before)
+        self.assertEqual(len(self.overview()['games']), 18)
+
+    def test_research_web_finish_retry_auth_failures_and_existing_mcp_events(self):
+        with patch.object(research_scales, 'DB_PATH', str(self.db)):
+            with patch.object(server, '_current_account', return_value=self.human):
+                state = server._human_test_action('bsfl', 'start', 'token', {'mode': 'full'})
+                for index in range(state['total']):
+                    params = dict(session_id=state['session_id'], index=index,
+                                  answer=research_scales.SCALES['bsfl'].answer_min,
+                                  expected_revision=state['answer_revision'], finish=index == state['total'] - 1)
+                    state = server._human_test_action('bsfl', 'save_answer', 'token', params)
+                self.assertTrue(state['complete'])
+                before = self.events()
+                server._human_test_action('bsfl', 'save_answer', 'token', params)
+                self.assertEqual(self.events(), before)
+            for user in (self.ai, None):
+                with patch.object(server, '_current_account', **(
+                    {'return_value': user} if user else {'side_effect': server._McpError(-32001, 'invalid')})):
+                    with self.assertRaises(server._McpError):
+                        server._human_test_action('bsfl', 'start', 'token', {'mode': 'full'})
+            self.assertEqual(self.events(), before)
+            self.assertEqual(len(before), 6)  # creation plus five genuine saves
+            server._tool_play({'game': 'bsfl', 'action': 'start', 'params': {'mode': 'full'}},
+                              authenticated_account=self.ai)
+            self.assertEqual(self.events()[-1][1:], ('bsfl', '17', 'ai', 'start'))
+
+    def test_deeptalk_legacy_separate_immutable_range_and_identity_dedup(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.executemany('INSERT INTO game_activity_events VALUES (?, ?, ?, ?, ?)', [
+                (self.NOW - 1200, 'deeptalk', '17', 'ai', 'questions'),
+                (self.NOW - 60, 'dt_relations', '17', 'ai', 'answer'),
+                (self.NOW - 30, 'dt_relations', '17', 'ai', 'answer'),
+                (self.NOW - 30, 'dt_relations', '17', 'human', 'create'),
+            ])
+        before = self.events()
+        for key in ('1h', '6h', '12h', '24h'):
+            rows = {row['game']: row for row in self.overview(key)['games']}
+            self.assertEqual(set(rows), {'deeptalk', 'dt_relations'})
+            self.assertEqual(rows['deeptalk']['name'], 'DeepTalk（旧记录未细分）')
+            self.assertEqual(rows['dt_relations']['active_users'], 2)
+            self.assertEqual((rows['dt_relations']['human_users'], rows['dt_relations']['ai_users']), (1, 1))
+            for private in ('identity_id', 'round_id', 'question', 'answers', 'username'):
+                self.assertNotIn(private, json.dumps(rows))
+        self.assertEqual([row['game'] for row in self.overview('10m')['games']], ['dt_relations'])
+        self.assertEqual(self.events(), before)
+        # Missing progress/topic evidence must not create new undifferentiated events.
+        for response, changed in [({'topic_id': 'relations_communication'}, None),
+                                   ({'topic_id': 'unknown'}, True), ({'error': 'bad'}, True)]:
+            activity.record(self.db, 'deeptalk', 'answer', self.ai, response, changed=changed)
+        self.assertEqual(self.events(), before)
 
     def test_success_failure_auth_and_first_open(self):
         self.play("open", puzzle_id="N01")

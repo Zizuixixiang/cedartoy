@@ -9,6 +9,9 @@ import sqlite3
 from contextlib import closing
 
 from .errors import _McpError
+from .display_titles import RESEARCH_TITLES, DEEPTALK_TITLES
+from deeptalk.catalog import ALIASES as DEEPTALK_ALIASES
+from research_scales import SCALES
 
 
 def _turtle_soup_stats(
@@ -248,12 +251,20 @@ def _activity_catalog(
         raise ValueError("Homepage catalog unavailable")
     names = {}
     for item in re.split(r'\n      \{', block.group(1)):
-        game = re.search(r'\bid: "([a-z_]+)"', item)
+        game = re.search(r'\bid: "([a-z0-9_]+)"', item)
         name = re.search(r'\bname: "([^"\n]+)"', item)
         if game and name and game.group(1) != "admin":
             names[{"soup": "turtle_soup"}.get(game.group(1), game.group(1))] = name.group(1)
     names.setdefault("tarot", ritual_display_name)
     names.setdefault("bdsmtest", "BDSM倾向测试")
+    # These enabled packages are appended with games.push on the homepage.
+    names.update({game: RESEARCH_TITLES[game] for game in SCALES})
+    names.update({game: DEEPTALK_TITLES[topic] for game, topic in DEEPTALK_ALIASES.items()})
+    names["deeptalk"] = "DeepTalk（旧记录未细分）"
+    # Translate only Station; retain the author's Memoria brand. The upstream
+    # README describes this as a 文字推理游戏, with station-themed chapters.
+    if "memoria" in names:
+        names["memoria"] = "Memoria 车站"
     for game in identity_games | {"turtle_soup"}:
         names.setdefault(game, game)
     return [{"game": game, "name": name} for game, name in names.items()]

@@ -20,13 +20,17 @@ const html = fs.readFileSync(path.join(__dirname, "../admin.html"), "utf8");
         users: [{id: 1, username: "布局测试", is_ai: false}], total: 1, page: 1, page_size: 50,
       }});
       if (url.pathname === "/api/admin/activity") return route.fulfill({json: {
-        range: {label: "1小时"}, overview: {ok: true, games: []}, duel: {ok: true}, turtle: {ok: true},
+        range: {label: "1小时"}, overview: {ok: true, games: [
+          {game: "rnss", name: "你在人际关系中的需求被满足了吗？", active_users: 2, human_users: 1, ai_users: 1},
+          {game: "dt_know100", name: "关于你，我还想知道100件事", active_users: 1, human_users: 1, ai_users: 0},
+          {game: "deeptalk", name: "DeepTalk（旧记录未细分）", active_users: 1, human_users: 0, ai_users: 1},
+        ]}, duel: {ok: true}, turtle: {ok: true},
       }});
       return route.abort();
     });
     await page.goto("https://toy.cedarstar.org/admin");
     await page.waitForFunction(() => document.getElementById("countText").textContent.includes("1"));
-    for (const width of [320, 375, 390, 430]) {
+    for (const width of [320, 360, 375, 390, 430, 1280]) {
       await page.setViewportSize({width, height: 844});
       for (const tab of ["users", "dashboard"]) {
         await page.locator(`#${tab}Tab`).click();
@@ -50,6 +54,12 @@ const html = fs.readFileSync(path.join(__dirname, "../admin.html"), "utf8");
         assert.equal(empty.statusDisplay, "none");
         assert.equal(empty.gap, empty.gridGap, "empty status must not leave a grid row or margins");
         assert.equal(empty.pageWidth, width, "page must not overflow horizontally");
+        if (tab === "dashboard") {
+          const cells = await page.locator('#gameOverviewContent [role="cell"]').evaluateAll(elements =>
+            elements.map(el => ({text: el.textContent, width: el.clientWidth, scroll: el.scrollWidth})));
+          assert.equal(cells.length, 12);
+          assert.ok(cells.every(cell => cell.scroll <= cell.width), "long titles and counts must wrap without clipping");
+        }
         if (process.env.SCREENSHOT_DIR) {
           fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive: true});
           await page.screenshot({path: path.join(process.env.SCREENSHOT_DIR, `admin-${tab}-${width}.png`)});

@@ -2854,7 +2854,11 @@ def _human_test_action(game, action, raw_token, body):
         player_id, identity, user = _human_test_player_context(game, raw_token, body.get("player_id"))
         if identity == "guest":
             _reject_claimed_guest(player_id)
-        state = research_scales.SCALES[game].execute(action, {**body, "player_id": player_id}, web=True)
+        with game_activity.capture_changes():
+            state = research_scales.SCALES[game].execute(action, {**body, "player_id": player_id}, web=True)
+            if identity == "account" and action in {"start", "answer", "save_answer", "answer_batch"}:
+                game_activity.record(SESSIONS_DB_PATH, game, action, user, state,
+                                     changed=game_activity.observed_change() is True)
         state["identity"] = identity
         if state.get("result"):
             state["result"] = _replace_storage_identity_text(state["result"], _storage_identity_line(player_id, user))
@@ -6223,7 +6227,10 @@ a{{color:#c9afff}}
                 action = body.get("action", "context")
                 if action not in {"context", "topics", "source", "questions", "history", "status", "question", "view", "result"}:
                     raise DeeptalkError("未知操作", 404)
-            result = deeptalk_service.execute(user, action, body, db_path=SESSIONS_DB_PATH, db_connect=_db_connect, web=True)
+            with game_activity.capture_changes():
+                result = deeptalk_service.execute(user, action, body, db_path=SESSIONS_DB_PATH, db_connect=_db_connect, web=True)
+                game_activity.record(SESSIONS_DB_PATH, "deeptalk", action, user, result,
+                                     changed=game_activity.observed_change())
             self._send_json(result, extra_headers=private_headers)
         except DeeptalkError as exc:
             self._send_json({"error": exc.message}, status=exc.status, extra_headers=private_headers)

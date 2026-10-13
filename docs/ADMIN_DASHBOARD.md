@@ -48,14 +48,16 @@ API 的 `overview: {ok, games, error?}` 仅返回所选范围内 `active_users >
 
 四列布局让游戏名占主要宽度并按需换行，后三列为较窄的数字列；不设宽表最小宽度，不依赖横向滚动或裁切。在 320/375/390/430px 手机宽度下保持完整可读。API 暂时保留 `operations/save_count` 兼容旧调用，前端不读取或展示它们。
 
-游戏目录复用 `index.html` 的 `const games`，名称与首页完全一致（`soup` 映射成统一 MCP 的 `turtle_soup`，排除管理入口）。再并入 `IDENTITY_GAMES` 中的游戏；目前没有首页卡片的塔罗沿用 `RITUAL_DISPLAY_NAME`，`bdsmtest` 沿用 MCP 名称。新增首页游戏有范围内活动后自动出现；仅接 MCP 的新游戏先显示其 game 标识。首页“属性测试”是站外链接，不冒充本站 `bdsmtest` 活动。没有手写逐游戏聚合 SQL。
+游戏目录复用 `index.html` 的静态 `const games`（`soup` 映射成统一 MCP 的 `turtle_soup`，排除管理入口），并从已启用的研究量表注册表补齐 18 套、从 `deeptalk.catalog.ALIASES` 补齐 10 套 `dt_*`；这两组在首页由 `games.push` 动态追加，中文标题复用 `cedar_backend.display_titles`，回归测试检查与首页一致。再并入 `IDENTITY_GAMES` 中的游戏；没有首页卡片的塔罗沿用 `RITUAL_DISPLAY_NAME`，`bdsmtest` 沿用 MCP 名称。监控中的 Memoria Station 显示为“Memoria 车站”（仅翻译 Station，保留作者品牌），不改首页或游戏 ID。首页“属性测试”是站外链接，不冒充本站 `bdsmtest` 活动。没有手写逐游戏聚合 SQL。
+
+DeepTalk 新事件按成功响应中的服务端 `topic_id` 映射到独立 `dt_*`，不信任请求中的 alias/topic_id；只有事务内确认的新建、答案内容变化、首次有效提交计入。重试、同值重写、只读和失败请求不计。历史 `deeptalk` 事件保持原样（包括旧口径误记的只读事件），独立显示为“DeepTalk（旧记录未细分）”，不推测题套、不回填，超出所选窗口后自然不显示。
 
 ### 通用事件口径
 
 **通用活跃从功能上线后开始积累**，没有历史回填，也不从旧日志、mtime、当前存档或双弈/海龟汤专属表推算活动。总览与下方两张详细模块因此可能不同，尤其是上线初期和海龟汤人类端。
 
 - `game_activity.py` 是同一个 recorder，事件仅保存 UTC epoch 秒、game、平台账号 ID、`human/ai` 类型和固定动作名。按 `(identity_type, identity_id)` 去重，一个账号的多个槽仍是一个身份；绑定的人类与小机分开。未登录游客不计入“活跃账号”，系统 NPC 不计入。
-- 活跃账号按所选 `[start, end)` 内的有效业务事件去重；仅围观或查状态的账号不记活跃。活动记录逻辑保持原样。
+- 活跃账号按所选 `[start, end)` 内的有效业务事件去重；仅围观或查状态的账号不记活跃。各入口按下述有效业务口径记录。
 - 统一 MCP `play` 在 `_finalize_play_response` 收口；同步、Operit 和双弈异步网关共用，异步只在完成时记录。鉴权/校验抛错、顶层或 MCP `result` 的 `error/isError/ok=false/success=false`、文本块中的结构化错误及显式 `duplicate=true` 不记。答错题、游戏输局本身是有效游戏行为，不是接口失败。
 - 排除 guide、list、状态、进度、目录、历史、结果读取、导入导出、公告和投票。双弈 state（包括 wait 挂等）不计，move 计；chips 只计签到、破产申请及互动/借款的写操作。eco 的 observe/wait 会推进时间，计；gaze/look/info 不计。解谜盲盒 draw、首次 open、submit、check_step 计，重复 open 只是回看，不计。
 - 传统 cmd 会先排除已核对的只读命令（如 status、help、背包/图鉴、花园收藏/信件、买菜的只读页面等）。`VendorCmdGame.run` 在原有玩家存档锁内比较 JSON 存档摘要；eco/词与物在原有事务内比较引擎存档。纯文字引擎没有统一成功标志，因此采用保守口径：没有持久进度变化不计，即使文字返回正常。这会少计不落档的叙事互动/重复设置，不能把它理解为所有 HTTP 200 请求数。摘要只在内存比较，不保存存档内容，也不改作者源码。批量命令只要有实际进度变化且没有明确失败标志，作为一次调用计入。
@@ -68,6 +70,8 @@ API 的 `overview: {ok, games, error?}` 仅返回所选范围内 `active_users >
 | 入口 | 计入的动作 |
 | --- | --- |
 | `/api/{mbti,enneagram,dnd,love,ecr,humanity,sins_virtues}` | start 和成功完成 answer_batch；结果读取、比较和已完成提交重试不计 |
+| 18 套研究量表 `/api/<game>`（包括人类专属 aidep） | 已认证人类的 start / answer / save_answer / answer_batch，仅事务内实际新建、修改答案或首次完成；恢复、同值重写、重复提交、只读与游客不计；原有小机事件口径保持 |
+| `/api/deeptalk/action` | create / answer / submit，与统一 MCP 共用事务进度证据及十套题目归属；网页只接受已认证人类 |
 | `/eco/api/human_action` | 通过绑定校验后的成功业务操作 |
 | `/forest/api/action` | start / choose，冲突或校验失败不计 |
 | `/duel/api/rooms` 及房间 POST | 开房、邀请处理、加入、move、resign、leave；不记 GET 轮询、聊天、通知、房间保留/删除 |

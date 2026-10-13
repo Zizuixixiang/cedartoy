@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 import sqlite3
+import game_activity
 
 from .catalog import DeeptalkError, load_topic
 from cedar_backend.display_titles import DEEPTALK_TITLES
@@ -120,6 +121,7 @@ class Store:
             return dict(rounds=[self.summary(r) for r in rows], total=total, offset=offset, limit=limit)
 
     def create(self, human, ai, topic_id, key, *, sharing_mode="single_ai", mode="blind"):
+        game_activity.observe_change(False, False)
         key = request_key(key)
         if sharing_mode not in {"single_ai", "bound_shared"}:
             raise DeeptalkError("未知共享模式")
@@ -140,6 +142,7 @@ class Store:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (rid, topic_id, topic["title"], int(human["id"]), ai_id,
                 human["username"], ai_name, json.dumps(topic, ensure_ascii=False), stamp, stamp, key, sharing_mode, mode))
             row, role = self.row(conn, rid, human)
+            game_activity.observe_change(False, True)
             return self.serialize(row, role)
 
     @staticmethod
@@ -183,6 +186,7 @@ class Store:
             return {k: v for k, v in json.loads(row["snapshot"]).items() if k != "questions"}
 
     def answer(self, user, params):
+        game_activity.observe_change(False, False)
         key = request_key(params.get("request_id"))
         revision = integer(params.get("revision"), "revision", 0, 1000000000)
         qid = params.get("question_id")
@@ -214,14 +218,17 @@ class Store:
             if qid not in {q["id"] for q in json.loads(row["snapshot"])["questions"]}:
                 raise DeeptalkError("未知题号")
             answers = json.loads(row[f"{role}_answers"])
+            changed = answers.get(qid) != answer
             answers[qid] = answer
             conn.execute(f"UPDATE deeptalk_rounds SET {role}_answers=?, {role}_revision={role}_revision+1, updated_at=? WHERE id=?",
                          (json.dumps(answers, ensure_ascii=False), now(), row["id"]))
             conn.execute("INSERT INTO deeptalk_requests VALUES (?,?,?,?)", (row["id"], role, key, digest))
             row, role = self.row(conn, row["id"], user)
+            game_activity.observe_change(False, changed)
             return self.serialize(row, role)
 
     def submit(self, user, params):
+        game_activity.observe_change(False, False)
         if params.get("confirm") is not True:
             raise DeeptalkError("请确认提交整卷：confirm=true")
         revision = integer(params.get("revision"), "revision", 0, 1000000000)
@@ -235,4 +242,5 @@ class Store:
                 stamp = now()
                 conn.execute(f"UPDATE deeptalk_rounds SET {role}_submitted=?, updated_at=? WHERE id=?", (stamp, stamp, row["id"]))
                 row, role = self.row(conn, row["id"], user)
+                game_activity.observe_change(False, True)
             return self.serialize(row, role)

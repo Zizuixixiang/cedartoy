@@ -18,6 +18,7 @@ from cedar_backend import deeptalk as service
 from tests_toy.tarot_server_test_bootstrap import install_missing_optional_game_stubs
 install_missing_optional_game_stubs()
 import server
+import game_activity
 
 ROOT = Path(__file__).resolve().parents[1]
 HUMAN = dict(id=101, username='人类甲', is_ai=False)
@@ -116,6 +117,88 @@ class DeeptalkTests(unittest.TestCase):
             getattr(handler, "do_" + method)()
             handler._handle_deeptalk.assert_called_once()
             self.assertEqual(handler._handle_deeptalk.call_args.args[:2], (method, path.split("?", 1)[0]))
+
+    def activity_events(self):
+        with sqlite3.connect(self.db) as conn:
+            game_activity.init_db(conn)
+            return conn.execute('SELECT game, identity_id, identity_type, action FROM game_activity_events').fetchall()
+
+    def test_all_ten_activity_routes_web_mcp_and_server_topic_attribution(self):
+        aliases = list(catalog.ALIASES)
+        for index, (alias, topic) in enumerate(catalog.ALIASES.items()):
+            with self.subTest(alias=alias):
+                before = len(self.activity_events())
+                creation = dict(topic_id=topic, request_id=f'activity_create_{index}')
+                status, state, _ = self.http(HUMAN, 'create', post=True, **creation)
+                self.assertEqual(status, 200)
+                self.assertEqual(self.http(HUMAN, 'create', post=True, **creation)[0], 200)
+                rid = state['round_id']
+                web_answer = dict(round_id=rid, question_id='q1', revision=0,
+                                  request_id='activity_web_answer', text='PRIVATE_ANSWER',
+                                  topic_id='forged_topic', player_id=str(OTHER_HUMAN['id']))
+                self.assertEqual(self.http(HUMAN, 'answer', post=True, **web_answer)[0], 200)
+                self.assertEqual(self.http(HUMAN, 'answer', post=True, **web_answer)[0], 200)
+                # A fresh request with the same answer changes only revision/receipt.
+                self.assertEqual(self.http(HUMAN, 'answer', post=True, **{
+                    **web_answer, 'revision': 1, 'request_id': 'same_value_fresh_key'})[0], 200)
+                ai_answer = dict(round_id=rid, question_id='q1', revision=0,
+                                 request_id='activity_ai_answer', text='PRIVATE_AI_ANSWER')
+                self.mcp(AI, 'answer', game=alias, path=bool(index % 2), **ai_answer)
+                self.mcp(AI, 'answer', game=alias, **ai_answer)
+                # Wrong discovery alias must never override the authorized round's topic.
+                wrong_alias = aliases[(index + 1) % len(aliases)]
+                self.mcp(AI, 'answer', game=wrong_alias, **{
+                    **ai_answer, 'revision': 1, 'request_id': 'activity_ai_edit', 'text': 'PRIVATE_EDIT'})
+                for action in ('topics', 'questions', 'question', 'source', 'status', 'result', 'history'):
+                    self.mcp(AI, action, game=alias, round_id=rid)
+                    self.http(HUMAN, action, round_id=rid, topic_id=topic)
+                self.http(HUMAN, 'view', round_id=rid)
+                self.http(HUMAN, 'context')
+                self.assertEqual(self.http(None, 'answer', post=True, **web_answer)[0], 401)
+                self.assertEqual(self.http(OTHER_HUMAN, 'answer', post=True, **web_answer)[0], 404)
+                self.mcp(OTHER_AI, 'answer', game=alias, **ai_answer)
+                self.mcp(AI, 'answer', game=alias, **{**ai_answer, 'request_id': 'stale_revision_key'})
+                self.assertEqual(self.http(HUMAN, 'submit', post=True, round_id=rid, revision=2, confirm=True)[0], 400)
+                # Populate the remaining synthetic answers through the store, outside
+                # either public recorder, then exercise each real submission route.
+                for user in (HUMAN, AI):
+                    for number in range(2, catalog.TOPICS[topic][1] + 1):
+                        rev = self.call(user, 'status', round_id=rid)['revision']
+                        self.call(user, 'answer', round_id=rid, question_id=f'q{number}',
+                                  revision=rev, request_id=f'fixture_fill_{number}', skip=True)
+                    rev = self.call(user, 'status', round_id=rid)['revision']
+                    submit = dict(round_id=rid, revision=rev, confirm=True)
+                    for _ in range(2):
+                        if user == HUMAN:
+                            self.assertEqual(self.http(user, 'submit', post=True, **submit)[0], 200)
+                        else:
+                            self.mcp(user, 'submit', game=alias, **submit)
+                rows = self.activity_events()[before:]
+                self.assertEqual(rows, [
+                    (alias, '101', 'human', 'create'), (alias, '101', 'human', 'answer'),
+                    (alias, '201', 'ai', 'answer'), (alias, '201', 'ai', 'answer'),
+                    (alias, '101', 'human', 'submit'), (alias, '201', 'ai', 'submit'),
+                ])
+                self.assertNotIn('PRIVATE', repr(rows))
+                self.assertNotIn(rid, repr(rows))
+
+    def test_deeptalk_concurrent_retry_records_only_one_committed_answer(self):
+        params = dict(round_id=self.rid, question_id='q1', revision=0,
+                      request_id='concurrent_answer', text='private')
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: self.http(HUMAN, 'answer', post=True, **params), range(2)))
+        self.assertEqual([result[0] for result in results], [200, 200])
+        self.assertEqual(self.activity_events(), [('dt_relations', '101', 'human', 'answer')])
+
+    def test_generic_deeptalk_mcp_ignores_client_topic_and_failed_response(self):
+        self.mcp(AI, 'answer', round_id=self.rid, question_id='q1', revision=0,
+                 request_id='generic_answer_key', text='private', topic_id='couple_50')
+        self.assertEqual(self.activity_events(), [('dt_relations', '201', 'ai', 'answer')])
+        before = self.activity_events()
+        for result in ({'ok': False, 'topic_id': 'couple_50'}, {'error': 'rejected'}):
+            with patch.object(server, '_play_deeptalk', return_value=result):
+                self.mcp(AI, 'answer', round_id=self.rid)
+        self.assertEqual(self.activity_events(), before)
 
     def test_discovery_and_guide_keep_questions_on_demand(self):
         listing = server._tool_list_games()

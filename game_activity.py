@@ -109,6 +109,8 @@ def business_action(game, action, params=None):
         return None  # Raw JSON-RPC passthrough is not a gameplay action.
     action = str(action or "").strip()
     local = action.removeprefix(game + "_")
+    if game == "deeptalk" or game.startswith("dt_"):
+        return local if local in {"create", "answer", "submit"} else None
     if local in READ_ACTIONS or local.startswith(("get_", "query_", "read_", "list_")):
         return None
     if game == "eco" and local == "observe":
@@ -186,6 +188,16 @@ def record(db_path, game, action, user, response, *, params=None, changed=None):
         action = business_action(game, action, params)
         if not action or int(user["id"]) <= 0:
             return
+        if game == "deeptalk" or game.startswith("dt_"):
+            from deeptalk.catalog import ALIASES
+            # Only committed store progress and its authorized response identify
+            # the topic. Never use the requested alias or client topic_id.
+            if changed is not True:
+                return
+            game = next((alias for alias, topic in ALIASES.items()
+                         if topic == response.get("topic_id")), None)
+            if game is None:
+                return
         now = time.time()
         with contextlib.closing(sqlite3.connect(db_path, timeout=0.2)) as conn, conn:
             init_db(conn)

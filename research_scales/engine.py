@@ -8,6 +8,7 @@ import hashlib
 import json
 import secrets
 import time
+import game_activity
 from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
 
@@ -162,6 +163,10 @@ class ResearchScaleEngine(ScaleTestEngine):
             row = conn.execute('SELECT mode, answers, created_at FROM test_sessions WHERE player_id=? AND game=?', (player, self.game)).fetchone()
             saved = conn.execute('SELECT result_detail FROM test_results WHERE player_id=? AND game=?', (player, self.game)).fetchone()
             detail = json.loads(saved[0]) if saved else None
+            # Capture semantic progress under the transaction, ignoring writes
+            # of last_active and identical answers. Keep MCP's existing events.
+            before = (str(row[2]), json.loads(row[1]), False) if row else (
+                (detail['session_id'], detail['answers'], True) if detail else None)
             restart = arguments.get('restart') is True
             if action == 'start' and (restart or (row is None and detail is None)):
                 mode = arguments.get('mode', arguments.get('edition'))
@@ -272,6 +277,8 @@ class ResearchScaleEngine(ScaleTestEngine):
             if duplicate:
                 state['duplicate'] = True
             conn.commit()
+            if web:
+                game_activity.observe_change(before, (sid, answers, complete))
         # The website uses the same ordered questions. MCP full only needs the current one.
         if web and not complete:
             # Owner-only web state lets the page revisit saved questions after reload.
