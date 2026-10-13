@@ -171,8 +171,19 @@ async function main() {
     // Inspect the changed scale at narrow/wide phone and desktop widths.
     await page.goto(origin+'/mesx');await ready();
     const meanings=['不纳入道德关怀范围','最低程度关怀，不认为有责任','会关心但责任较低','高度关怀，愿意承担责任'];
-    assert.deepEqual(await page.locator('.mesx-circle-key dd').allTextContents(),meanings);
-    for(const definition of await page.locator('.mesx-circle-key dd').all()) assert.equal(await definition.isVisible(),true);
+    const labels=['0 圈外','1 边缘','2 外圈','3 内圈'];
+    const intro=page.locator('#questionIntro');
+    assert.equal(await intro.isVisible(),true);
+    assert.deepEqual((await intro.innerText()).split('\n').slice(1,5),labels.map((label,i)=>`${label}：${meanings[i]}`));
+    assert.equal(await intro.evaluate(n=>getComputedStyle(n).whiteSpace),'pre-line');
+    assert.equal(await page.locator('.mesx-circle-key, #answers [aria-describedby]').count(),0);
+    for(const meaning of meanings) {
+      assert.equal((await page.locator('body').innerText()).split(meaning).length-1,1,'short meaning appears only in intro');
+      assert.ok(!(await page.locator('#answers').textContent()).includes(meaning),'no short meanings beside options');
+    }
+    assert.deepEqual(await page.locator('#answers button').allTextContents(),['0','1','2','3']);
+    assert.deepEqual(await page.locator('.research-scale-ends span').allTextContents(),['0 · 圈外','3 · 内圈']);
+    assert.ok((await intro.boundingBox()).y+(await intro.boundingBox()).height<=(await page.locator('#answers').boundingBox()).y);
     assert.equal(await page.locator('.research-scale-key').getAttribute('open'),null);
     assert.equal(await page.locator('#progressLabel').innerText(),'1 / 10');
     assert.equal(await page.locator('#resumeProgressButton').count(),0);
@@ -189,16 +200,26 @@ async function main() {
     await page.screenshot({path:path.join(shots,`${width}-mesx-keyboard.png`),fullPage:true});
     await page.reload();await ready();
     assert.equal(await page.locator('#progressLabel').innerText(),'2 / 10');
-    await page.locator('.research-scale-key summary').click();
+    await page.locator('.research-scale-key summary').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('.research-scale-key').getAttribute('open'),'');
     assert.equal(await page.locator('.research-scale-key p').count(),4);
+    for(const definition of await page.locator('.research-scale-key p').all()) assert.equal(await definition.isVisible(),true);
+    assert.deepEqual(await page.locator('.research-scale-key p').allTextContents(),[
+      '0 · 圈外：认为其不值得道德关怀，觉得为其待遇承担关怀或个人责任是过度或不合理的。',
+      '1 · 边缘：最低限度的关怀，不觉得自己负有道德义务或个人责任。',
+      '2 · 外圈：中等关怀，仍关心其待遇，但义务和个人责任感明显降低。',
+      '3 · 内圈：最高程度的关怀，觉得自己有道德义务保障其福祉，并对其所受待遇负有个人责任。'
+    ]);
+    await page.screenshot({path:path.join(shots,`${width}-mesx-details.png`),fullPage:true});
     await page.locator('.research-scale-key summary').click();
-    await page.addStyleTag({content:'.mesx-circle-key {font-size:24px}'});
+    await page.addStyleTag({content:'.research-page #questionIntro {font-size:26px}'});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:path.join(shots,`${width}-mesx-enlarged.png`),fullPage:true});
     assert.deepEqual(errors,[]);
     await context.close();
   }
-  console.log('PASS: 360/430/1280px legacy resume, answer edits, reload, conflict choice, progress retention, native modal isolation, bidirectional keyboard traversal, close/cancel focus restoration, unchanged drafts/results on cancel, touch sizing, explicit restart; MESx visible definitions, heading and keyboard focus, enlarged help. Screenshots: '+shots);
+  console.log('PASS: 360/430/1280px legacy resume, answer edits, reload, conflict choice, progress retention, native modal isolation, bidirectional keyboard traversal, close/cancel focus restoration, unchanged drafts/results on cancel, touch sizing, explicit restart; MESx intro-only short definitions, no duplicate option help, expandable full definitions, heading and keyboard focus, enlarged intro. Screenshots: '+shots);
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   if(browser) await browser.close();

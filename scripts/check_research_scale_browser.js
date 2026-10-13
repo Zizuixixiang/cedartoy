@@ -297,7 +297,8 @@ async function main(){
       }
       if(spec.game==='mesx') {
         assert.equal(await page.locator('#questionText').innerText(),'家庭成员');
-        assert.match(await page.locator('#questionIntro').innerText(),/圈层。\n关怀包括/);
+        assert.equal(await page.locator('#questionIntro').innerText(),'请根据你对以下对象的关怀程度选择圈层，没有标准答案。\n0 圈外：不纳入道德关怀范围\n1 边缘：最低程度关怀，不认为有责任\n2 外圈：会关心但责任较低\n3 内圈：高度关怀，愿意承担责任\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。');
+        assert.equal(await page.locator('.mesx-circle-key, #answers [aria-describedby]').count(),0);
         assert.equal(await page.locator('#questionIntro').evaluate(n=>getComputedStyle(n).whiteSpace),'pre-line');
         await capture('mesx-short-intro');
       }

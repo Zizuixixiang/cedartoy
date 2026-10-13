@@ -402,14 +402,23 @@ async function checkHumanUiFixes() {
   let dom=await page('mesx');
   function checkMeanings() {
     const d=dom.window.document;
-    assert.deepEqual([...d.querySelectorAll('.mesx-circle-key dt')].map(n=>n.textContent),labels);
-    assert.deepEqual([...d.querySelectorAll('.mesx-circle-key dd')].map(n=>n.textContent),meanings);
-    assert.equal(d.querySelector('.mesx-circle-key').closest('details'),null);
+    const intro=$(dom,'questionIntro');
+    assert.deepEqual(intro.textContent.split('\n').slice(1,5),labels.map((label,i)=>`${label}：${meanings[i]}`));
+    assert.equal(dom.window.getComputedStyle(intro).whiteSpace,'pre-line');
+    assert.ok(intro.compareDocumentPosition($(dom,'answers')) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(d.querySelector('.mesx-circle-key'),null);
+    assert.doesNotMatch(d.querySelector('style').textContent,/mesx-circle-key/,'obsolete styles removed');
+    meanings.forEach(meaning=>{
+      assert.equal(d.querySelector('main').textContent.split(meaning).length-1,1,'short meaning appears only in intro');
+      assert.ok(!$(dom,'answers').textContent.includes(meaning),'no short meanings beside options');
+    });
     assert.equal(d.querySelector('.research-scale-key').open,false);
     assert.equal(d.querySelectorAll('.research-scale-key p').length,4,'full definitions retained');
     assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(activeState.questions[0].options)')),spec.options);
     [...d.querySelectorAll('#answers button')].forEach((b,i)=>{
-      assert.equal(d.getElementById(b.getAttribute('aria-describedby')).textContent,meanings[i]);
+      assert.equal(b.getAttribute('aria-describedby'),null);
+      assert.equal(b.getAttribute('aria-label'),`${i}，${spec.options[i].text}`);
+      assert.equal(b.textContent,String(i));
     });
     assert.equal($(dom,'resumeProgressButton'),null);
   }
@@ -498,7 +507,7 @@ async function checkHumanUiFixes() {
   assert.notEqual(dom.window.eval('activeState.session_id'),session);
   assert.equal($(dom,'progressLabel').textContent,'1 / 4');
   dom.window.close();
-  console.log('PASS: MESx four visible meanings / original values / save / reading focus / reload; 25 shared routes without duplicate progress button; automatic conflict choice / preserved alternative / restart confirmation; result retest cancel and confirm.');
+  console.log('PASS: MESx intro-only short meanings / no duplicate option help / original values / save / reading focus / reload; 25 shared routes without duplicate progress button; automatic conflict choice / preserved alternative / restart confirmation; result retest cancel and confirm.');
 }
 
 async function main(){
@@ -590,7 +599,7 @@ async function main(){
     }
     if(spec.game==='mesx') {
       assert.equal($(dom,'questionText').textContent,'家庭成员');
-      assert.equal($(dom,'questionIntro').textContent,'请根据你对以下对象的关怀程度，选择对应的圈层。\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。没有标准答案。');
+      assert.equal($(dom,'questionIntro').textContent,'请根据你对以下对象的关怀程度选择圈层，没有标准答案。\n0 圈外：不纳入道德关怀范围\n1 边缘：最低程度关怀，不认为有责任\n2 外圈：会关心但责任较低\n3 内圈：高度关怀，愿意承担责任\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。');
       assert.equal(css($(dom,'questionIntro')).whiteSpace,'pre-line','newline must render visibly');
       assert.equal(dom.window.eval('activeState.instructions'),spec.instruction,'shared instructions unchanged');
     }

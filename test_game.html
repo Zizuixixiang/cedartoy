@@ -110,9 +110,6 @@
     .research-scale-ends span:last-child { text-align: right; }
     .research-scale-middle { margin: 0 0 7px; text-align: center; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .research-scale-selection { min-height: 1.65em; margin: 12px 0 0; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
-    .mesx-circle-key { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 8px; margin: 12px 0 0; font-size: 12px; line-height: 1.65; }
-    .mesx-circle-key dt { font-weight: 700; }
-    .mesx-circle-key dd { margin: 0; }
     .research-scale-key { margin-top: 4px; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
     .research-scale-key summary { width: fit-content; min-height: 44px; padding: 12px 0; cursor: pointer; }
     .research-scale-key p { margin: 0 0 4px; }
@@ -485,13 +482,7 @@
     const CONFIG = __TEST_GAME_CONFIG__;
     // Human-web presentation only; leave shared scale data and MCP instructions intact.
     const MESX_WEB = {
-      intro: "请根据你对以下对象的关怀程度，选择对应的圈层。\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。没有标准答案。",
-      shortMeanings: [
-        ["圈外", "不纳入道德关怀范围"],
-        ["边缘", "最低程度关怀，不认为有责任"],
-        ["外圈", "会关心但责任较低"],
-        ["内圈", "高度关怀，愿意承担责任"]
-      ],
+      intro: "请根据你对以下对象的关怀程度选择圈层，没有标准答案。\n0 圈外：不纳入道德关怀范围\n1 边缘：最低程度关怀，不认为有责任\n2 外圈：会关心但责任较低\n3 内圈：高度关怀，愿意承担责任\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。",
       meanings: [
         "圈外：认为其不值得道德关怀，觉得为其待遇承担关怀或个人责任是过度或不合理的。",
         "边缘：最低限度的关怀，不觉得自己负有道德义务或个人责任。",
@@ -1156,27 +1147,12 @@
       question.options.forEach(option => {
         const button = addAnswer(option.value, String(option.value), track, "scale-step");
         if (!bareNumber(option)) button.setAttribute("aria-label", `${option.value}，${option.text}`);
-        if (CONFIG.game === "mesx") button.setAttribute("aria-describedby", `mesx-meaning-${option.value}`);
       });
       const selection = document.createElement("p");
       selection.className = "research-scale-selection";
       const selected = question.options.find(option => option.value === answers[cursor]);
       selection.textContent = selected ? `已选：${labelFor(selected)}` : "";
       $("answers").append(track);
-      if (CONFIG.game === "mesx") {
-        const meanings = document.createElement("dl");
-        meanings.className = "mesx-circle-key";
-        question.options.forEach(option => {
-          const [circle, meaning] = MESX_WEB.shortMeanings[option.value];
-          const label = document.createElement("dt");
-          label.textContent = `${option.value} ${circle}`;
-          const definition = document.createElement("dd");
-          definition.id = `mesx-meaning-${option.value}`;
-          definition.textContent = meaning;
-          meanings.append(label, definition);
-        });
-        $("answers").append(meanings);
-      }
       $("answers").append(selection);
       // MESx requires all four full definitions, even if ordinary scale keys are removed.
       const hasCircleMeanings = CONFIG.game === "mesx";
