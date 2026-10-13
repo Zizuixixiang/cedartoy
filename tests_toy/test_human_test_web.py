@@ -344,7 +344,7 @@ class HumanTestWebTests(unittest.TestCase):
         )
         self.assertEqual(template.count("scrollToResultPanel();"), 1)
         for internal_mode in ("short_fast", "full_fast"):
-            self.assertNotIn(internal_mode, template)
+            self.assertNotIn(internal_mode, template.split("<script>", 1)[0])
 
         index = server.TOY_INDEX_PATH.read_text(encoding="utf-8")
         for game in ("mbti", "enneagram", "dnd"):

@@ -93,6 +93,63 @@ class ResearchWebEditsTests(unittest.TestCase):
             self.save(stale, len(engine.items)-1, 1, finish=True)
         self.assertFalse(current['complete'])
 
+    def test_web_retest_preserves_score_and_rejects_stale_restart(self):
+        engine = research_scales.SCALES['romlon']
+        state = self.start('romlon', '42')
+        for i in range(state['total']):
+            state = self.save(state, i, 1)
+        result = self.save(state, state['total'] - 1, 1, finish=True)
+        def score_row():
+            with engine._connect() as conn:
+                return conn.execute("SELECT result_detail, completed_at FROM test_results WHERE player_id='42' AND game='romlon'").fetchone()
+        previous = score_row()
+        new = engine.execute('start', {'player_id':'42', 'mode':'full', 'restart':True,
+            'confirm':True, 'session_id':result['session_id']}, web=True)
+        self.assertEqual(score_row(), previous)
+        saved = self.save(new, 0, 2)
+        with self.assertRaises(JsonRpcError):
+            engine.execute('start', {'player_id':'42', 'mode':'full', 'restart':True, 'confirm':True,
+                'session_id':new['session_id'], 'expected_revision':new['answer_revision']}, web=True)
+        self.assertEqual(engine.execute('status', {'player_id':'42'}, web=True)['saved_answers'], [2])
+        self.assertEqual(score_row(), previous)
+        # Session TTL still uses last activity, and expiry does not erase the prior score.
+        with engine._connect() as conn:
+            conn.execute("UPDATE test_sessions SET last_active=0 WHERE player_id='42'")
+        resumed = engine.execute('status', {'player_id':'42'}, web=True)
+        self.assertTrue(resumed['complete'])
+        self.assertEqual(resumed['session_id'], result['session_id'])
+        self.assertEqual(score_row(), previous)
+        # Guest unfinished progress cannot be resurrected beyond the 24-hour window.
+        guest = self.start('romlon', 'guest:webexpiredresume')
+        with engine._connect() as conn:
+            conn.execute("UPDATE test_sessions SET last_active=0 WHERE player_id=?", (guest['player_id'],))
+        with self.assertRaises(JsonRpcError):
+            engine.execute('status', {'player_id':guest['player_id']}, web=True)
+
+    def test_resume_24_hour_boundary_keeps_live_session_and_expires_old_progress(self):
+        engine = research_scales.SCALES['romlon']
+        now = 1800000000
+        for mode in ('full', 'full_fast'):
+            for age, expired in ((86400 - 1, False), (86400, False), (86400 + 1, True)):
+                with self.subTest(mode=mode, age=age), patch('time.time', return_value=now):
+                    player = 'guest:webttl' + mode.replace('_', '') + str(age)
+                    state = engine.execute('start', {'player_id':player, 'mode':mode}, web=True)
+                    if mode == 'full':
+                        state = self.save(state, 0, 2)
+                    with engine._connect() as conn:
+                        conn.execute('UPDATE test_sessions SET last_active=? WHERE player_id=?', (now-age, player))
+                    if expired:
+                        with self.assertRaises(JsonRpcError):
+                            engine.execute('status', {'player_id':player}, web=True)
+                        fresh = engine.execute('start', {'player_id':player, 'mode':'full'}, web=True)
+                        self.assertNotEqual(fresh['session_id'], state['session_id'])
+                        self.assertEqual(fresh['saved_answers'], [])
+                    else:
+                        resumed = engine.execute('status', {'player_id':player}, web=True)
+                        self.assertEqual(resumed['session_id'], state['session_id'])
+                        self.assertEqual(resumed['mode'], mode)
+                        self.assertEqual(resumed['saved_answers'], [2] if mode == 'full' else [])
+
     def test_protocol_validation_and_mcp_unchanged(self):
         state = self.start()
         engine = research_scales.SCALES['rbi']

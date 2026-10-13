@@ -177,13 +177,19 @@ class ResearchScaleEngine(ScaleTestEngine):
                     raise JsonRpcError(-32602, '重测须传当前 session_id，请先 status，避免重复重置。')
                 if restart and (row or detail) and arguments.get('confirm') is not True:
                     raise JsonRpcError(-32602, '重测会覆盖当前进度/结果，请传 confirm=true。')
+                if (web and restart and row and 'expected_revision' in arguments
+                        and arguments['expected_revision'] != self._web_revision(str(row[2]), json.loads(row[1]))):
+                    raise JsonRpcError(-32602, '答案已在其他页面更新，请刷新后再决定是否重新开始。')
                 if row is None and conn.execute('SELECT COUNT(*) FROM test_sessions').fetchone()[0] >= MAX_SESSIONS:
                     raise JsonRpcError(-32000, '当前测试人数过多，请稍后再试')
                 # SQLite REAL creation timestamps are stable across restart and reads.
                 # A random fractional component distinguishes even frozen-clock tests.
                 created = now + secrets.randbelow(1000000) / 1000000
                 conn.execute("INSERT OR REPLACE INTO test_sessions (player_id, game, mode, current_question, answers, created_at, last_active) VALUES (?, ?, ?, 0, '[]', ?, ?)", (player, self.game, mode, created, now))
-                conn.execute('DELETE FROM test_results WHERE player_id=? AND game=?', (player, self.game))
+                # Web retests retain the previous score until a new report succeeds.
+                # MCP restart semantics are unchanged.
+                if not web:
+                    conn.execute('DELETE FROM test_results WHERE player_id=? AND game=?', (player, self.game))
                 row, detail = (mode, '[]', created), None
             if row:
                 mode, raw, created = row

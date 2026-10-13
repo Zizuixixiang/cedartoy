@@ -61,6 +61,9 @@ async function page(game, saved={}, options={}) {
     beforeParse(window){
       Object.defineProperty(window, 'innerWidth', {value:options.width || 1280});
       window.HTMLElement.prototype.scrollIntoView=function(){};
+      // jsdom does not implement the native dialog top layer; browser test covers it.
+      window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+      window.HTMLDialogElement.prototype.close=function(){this.open=false;};
       window.confirm=()=>options.confirm ?? false;
       if(options.timeoutAnswer) {
         const setTimeout=window.setTimeout.bind(window);
@@ -93,7 +96,12 @@ async function page(game, saved={}, options={}) {
 function storage(dom){return {...dom.window.localStorage};}
 const $=(dom,id)=>dom.window.document.getElementById(id);
 async function choose(dom,option=0){
-  dom.window.document.querySelectorAll('#answers button')[option].click();
+  const slider=dom.window.document.querySelector('.research-slider');
+  if(slider) {
+    slider.value=option;
+    slider.dispatchEvent(new dom.window.Event('input'));
+    slider.dispatchEvent(new dom.window.Event('change'));
+  } else dom.window.document.querySelectorAll('#answers button')[option].click();
   await until(()=>!dom.window.eval('busy'),'answer saved');
 }
 async function homeTitles(width, query="") {
@@ -238,11 +246,164 @@ async function checkRbiInterpretation(){
     console.log('PASS: RBI actual 2.86/3.57/4.50, six orders, ties, small gaps, 125 anchor combinations, invalid/missing scores and kind guard.');
   } finally {dom.window.close();}
 }
+async function checkScaleControls() {
+  let dom=await page('ross'), d=dom.window.document;
+  const writes=()=>requests.filter(r=>r.url.endsWith('/save_answer'));
+  const input=()=>d.querySelector('.research-slider');
+  function pointer(type,value,id=1) {
+    const node=input();
+    node.getBoundingClientRect=()=>({left:0,width:224});
+    node.setPointerCapture=()=>{};node.releasePointerCapture=()=>{};
+    const event=new dom.window.Event(type,{cancelable:true});
+    Object.assign(event,{isPrimary:true,button:0,pointerId:id,clientX:12+value*20});
+    node.dispatchEvent(event);
+  }
+  assert.equal(d.querySelectorAll('#answers button').length,0);
+  assert.equal(d.querySelector('.research-scale-selection').textContent,'未选择');
+  assert.equal($(dom,'saveAnswerButton').disabled,true);
+  assert.equal(dom.window.eval('answers[0]'),null);
+  assert.equal(writes().length,0);
+  pointer('pointerdown',2);pointer('pointermove',7.3);
+  assert.equal(input().value,'7');
+  assert.equal(dom.window.eval('answers[0]'),null);
+  assert.equal(dom.window.eval('cursor'),0);
+  assert.equal(writes().length,0);
+  pointer('pointercancel',7);
+  assert.equal(input().hasAttribute('data-empty'),true);
+  pointer('pointerdown',5);pointer('pointerup',5);
+  await until(()=>!dom.window.eval('busy'),'midpoint selection');
+  assert.equal(writes().length,1);assert.equal(writes().at(-1).body.answer,5);
+  assert.equal(dom.window.eval('cursor'),1);
+  $(dom,'previousButton').click();
+  for(let value=0;value<=10;value++) {
+    const before=writes().length;
+    pointer('pointerdown',value);pointer('pointermove',value);
+    assert.equal(writes().length,before);
+    pointer('pointerup',value);
+    await until(()=>!dom.window.eval('busy'),'pointer commit');
+    assert.equal(writes().length,before+1);
+    assert.equal(writes().at(-1).body.answer,value);
+    assert.equal(dom.window.eval('cursor'),1);
+    $(dom,'previousButton').click();assert.equal(input().value,String(value));
+  }
+  let saved=storage(dom);dom.window.close();dom=await page('ross',saved);d=dom.window.document;
+  assert.equal(input().value,'10');
+  const before=writes().length;$(dom,'saveAnswerButton').click();
+  assert.equal(writes().length,before);assert.equal(dom.window.eval('cursor'),1);
+  input().dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowRight'}));
+  input().value='6';input().dispatchEvent(new dom.window.Event('input'));input().dispatchEvent(new dom.window.Event('change'));
+  assert.equal(writes().length,before,'keyboard change waits for release');
+  input().dispatchEvent(new dom.window.KeyboardEvent('keyup',{key:'ArrowRight'}));
+  await until(()=>!dom.window.eval('busy'),'keyboard release');
+  assert.equal(writes().length,before+1);
+  await choose(dom,4);
+  $(dom,'previousButton').click();$(dom,'previousButton').click();$(dom,'previousButton').click();
+  await choose(dom,0);$(dom,'saveAnswerButton').click();
+  assert.equal(input().value,'4');
+  saved=storage(dom);dom.window.close();dom=await page('ross',saved,{failAnswer:true});d=dom.window.document;
+  await choose(dom,9);
+  assert.equal(dom.window.eval('cursor'),2);assert.equal(input().value,'9');
+  assert.match($(dom,'error').textContent,/未确认保存/);
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'retry');
+  assert.equal(dom.window.eval('cursor'),3);
+  saved=storage(dom);dom.window.close();dom=await page('ross',saved);d=dom.window.document;
+  assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(activeState.saved_answers.slice(0,3))')),[0,6,9]);
+  while(dom.window.eval('cursor<activeState.total-1')) await choose(dom,5);
+  await choose(dom,5);
+  assert.equal(dom.window.eval('activeState.complete'),false);
+  assert.equal($(dom,'saveAnswerButton').textContent,'查看结果');
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'finalize');
+  assert.equal($(dom,'resultPanel').hidden,false);dom.window.close();
+  const specs=fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n.endsWith('.json'))
+    .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked && s.game!=='ross');
+  for(const spec of specs) {
+    dom=await page(spec.game);d=dom.window.document;
+    assert.equal(d.querySelectorAll('#answers button').length,spec.options.length);
+    assert.equal(dom.window.getComputedStyle(d.querySelector('.research-scale-track')).gridTemplateColumns,`repeat(${spec.options.length}, minmax(0, 1fr))`);
+    if(spec.options.length===5) {
+      assert.equal(d.querySelector('.research-scale-middle'),null);assert.equal(d.querySelector('.research-scale-key'),null);
+      assert.equal(dom.window.eval('answers[0]'),null);
+      assert.equal($(dom,'saveAnswerButton').disabled,true);
+      for(const [index,option] of spec.options.entries()) {
+        const button=d.querySelectorAll('#answers button')[index];
+        assert.equal(button.textContent,String(option.value));
+        assert.equal(button.getAttribute('aria-label'),String(option.text).trim()===String(option.value) ? null : `${option.value}，${option.text}`);
+        const before=writes().length;
+        await choose(dom,index);
+        assert.equal(writes().length,before+1);assert.equal(writes().at(-1).body.answer,option.value);
+        assert.equal(dom.window.eval('cursor'),1);
+        $(dom,'previousButton').click();
+        assert.equal(d.querySelector('#answers button.selected').textContent,String(option.value));
+        assert.equal(d.querySelector('.research-scale-middle, .research-scale-key'),null);
+      }
+    } else if(spec.game==='mesx') assert.ok(d.querySelector('.research-scale-key'));
+    assert.deepEqual([...d.querySelectorAll('.research-scale-ends span')].map(n=>n.textContent),
+      spec.game==='mesx' ? ['0 · 圈外','3 · 内圈'] : [spec.options[0],spec.options.at(-1)].map(o=>`${o.value} · ${o.text}`));
+    await choose(dom,2);assert.equal(dom.window.eval('cursor'),1);
+    $(dom,'previousButton').click();assert.equal(d.querySelector('button.selected').textContent,String(spec.options[2].value));
+    saved=storage(dom);dom.window.close();dom=await page(spec.game,saved);d=dom.window.document;
+    assert.equal(d.querySelector('#answers button.selected').textContent,String(spec.options[2].value));
+    const count=writes().length;$(dom,'saveAnswerButton').click();assert.equal(writes().length,count);
+    dom.window.close();
+  }
+  for(const game of ['mbti','ecr','sins_virtues','enneagram']) {
+    dom=await page(game);d=dom.window.document;
+    if(d.querySelector('.mode-button')) {d.querySelector('.mode-button').click();await until(()=>!dom.window.eval('busy'),'legacy start');}
+    assert.equal(d.querySelector('.research-slider'),null);
+    assert.ok(d.querySelector('#answers button'));
+    await choose(dom);assert.equal(dom.window.eval('cursor'),1);dom.window.close();
+  }
+  console.log('PASS targeted DOM + real HTTP handlers (temporary DBs): slider click/drag/cancel/keyboard, integers 0–10, no default, save/retry/revisit/reload/finalize; all 17 other shared scale shapes; MBTI/ECR/sins/enneagram. No browser geometry claim.');
+}
+
+async function checkIntegratedResumeSafety() {
+  // Invalid data in the active key must survive the first subsequent write too.
+  for (const [n, raw] of ['{broken', '', JSON.stringify({session_id:'other-run',answers:[1]})].entries()) {
+    const player=`guest:webinvalidactive${n}`;
+    const state=JSON.parse((await request('/api/romlon/start',{player_id:player,mode:'full'})).body);
+    const key=`cedartoy_romlon_web_draft_${player}_session_${state.session_id}`;
+    const dom=await page('romlon',{cedartoy_guest_web_player_id:player,[key]:raw});
+    assert.equal($(dom,'resumeDialog').open,false);
+    await choose(dom);
+    assert.equal(dom.window.eval('activeState.saved_answers[0]'),1);
+    assert.ok(Object.entries(storage(dom)).some(([k,v])=>k.includes('_conflict_') && v===raw),'invalid active draft preserved before overwrite');
+    dom.window.close();
+  }
+  // Two intervening writes in one millisecond must retain both alternatives.
+  const dom=await page('romlon');
+  dom.window.eval('Date.now = () => 123456789');
+  const key=dom.window.eval('currentDraftKey()');
+  for(const raw of ['first external draft','second external draft']) {
+    dom.window.localStorage.setItem(key,raw);
+    dom.window.eval('saveDraft()');
+  }
+  const archives=Object.entries(storage(dom)).filter(([k])=>k.includes('_conflict_')).map(([,v])=>v);
+  assert.ok(archives.includes('first external draft'));
+  assert.ok(archives.includes('second external draft'));
+  // If preservation fails, never replace the original active-slot contents.
+  dom.window.localStorage.setItem(key,'must survive quota failure');
+  dom.window.eval(`{
+    const originalSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(k,v) {
+      if(k.includes('_conflict_')) throw new DOMException('quota','QuotaExceededError');
+      return originalSet.call(this,k,v);
+    };
+  }`);
+  assert.throws(()=>dom.window.eval('saveDraft()'),/quota/);
+  assert.equal(dom.window.localStorage.getItem(key),'must survive quota failure');
+  dom.window.close();
+  console.log('PASS: invalid active drafts, same-millisecond archives, storage quota preservation.');
+}
+
 async function main(){
+  if(process.env.RESUME_SAFETY_ONLY==='1') return checkIntegratedResumeSafety();
+  if(process.env.SCALE_UI_ONLY==='1') return checkScaleControls();
+  await checkIntegratedResumeSafety();
   await checkRbiInterpretation();
   const games=fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n.endsWith('.json'))
     .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked);
   assert.equal(games.length,18);
+  assert.equal(games.filter(s=>s.options.length===5).length,13,'all thirteen compact five-step scales');
   let names;
   for(const width of [360,430,1280]) {
     for(const query of ["", "?tab=test", "?tab=mini", "?tab=invalid"]) names=await homeTitles(width,query);
@@ -281,20 +442,22 @@ async function main(){
     assert.equal($(dom,'saveAnswerButton').textContent,'下一题');
     assert.equal($(dom,'saveAnswerButton').disabled,true);
     const buttons=[...d.querySelectorAll('#answers button')];
-    assert.equal(buttons.length,spec.options.length);
+    const slider=d.querySelector('.research-slider');
+    const compactFive=spec.options.length===5;
+    assert.equal(buttons.length,slider?0:spec.options.length);
     // Computed CSS catches cascade regressions; jsdom cannot measure geometry.
     const css=node=>dom.window.getComputedStyle(node);
     assert.equal(css($(dom,'pageDisclaimer')).fontSize,'12px');
     assert.equal(css($(dom,'questionIntro')).fontSize,'13px');
     assert.equal(css($(dom,'saveAnswerButton')).minHeight,'44px');
     const track=d.querySelector('.research-scale-track');
-    assert.ok(track,spec.game+' consecutive numeric scale uses a track, including fully worded options');
+    assert.ok(track || slider,spec.game+' consecutive numeric scale uses a track, including fully worded options');
     assert.equal(css(d.querySelector('.research-scale-ends')).fontSize,'12px');
-    assert.equal(css(track).gridTemplateColumns,spec.options.length<=7
+    if(!slider) assert.equal(css(track).gridTemplateColumns,spec.options.length<=7
       ? `repeat(${spec.options.length}, minmax(0, 1fr))` : 'repeat(auto-fit, minmax(44px, 1fr))');
-    assert.equal(css(buttons[0]).minHeight,'48px');
-    assert.equal(css(buttons[0]).fontSize,'13px');
-    spec.options.forEach((option,i)=>{
+    if(!slider) assert.equal(css(buttons[0]).minHeight,'48px');
+    if(!slider) assert.equal(css(buttons[0]).fontSize,'13px');
+    if(!slider) spec.options.forEach((option,i)=>{
       assert.equal(buttons[i].textContent,String(option.value));
       if(String(option.value)===String(option.text)) {
         assert.equal(buttons[i].getAttribute('aria-label'),null,'no invented middle labels');
@@ -302,28 +465,46 @@ async function main(){
         assert.ok(buttons[i].textContent.includes(option.text) || buttons[i].getAttribute('aria-label').includes(option.text));
       }
     });
+    const selectedLabel=option=>slider ? `${option.value} 分` : labelFor(option);
     const labelFor=option=>String(option.value)===String(option.text).trim() ? String(option.value) : `${option.value} · ${option.text}`;
     assert.deepEqual([...d.querySelectorAll('.research-scale-ends span')].map(n=>n.textContent),
-      [labelFor(spec.options[0]),labelFor(spec.options.at(-1))]);
+      spec.game==='mesx' ? ['0 · 圈外','3 · 内圈'] : [labelFor(spec.options[0]),labelFor(spec.options.at(-1))]);
     const middle=spec.options.length%2 ? spec.options[Math.floor(spec.options.length/2)] : null;
     assert.equal(d.querySelector('.research-scale-middle')?.textContent ?? null,
-      middle && String(middle.text)!==String(middle.value) ? labelFor(middle) : null,'only supplied middle meaning');
-    assert.equal(d.querySelector('.research-scale-selection').textContent,'','no selection claimed initially');
+      !compactFive && middle && String(middle.text)!==String(middle.value) ? labelFor(middle) : null,'only supplied middle meaning');
+    assert.equal(d.querySelector('.research-scale-selection').textContent,slider?'未选择':'','no selection claimed initially');
+    const meaningsFor = spec.game==='mesx'
+      ? spec.options.map(o=>`${o.value} · ${spec.instruction.match(new RegExp(o.text.split('：')[0]+'：[^；。]+'))[0]}。`)
+      : spec.options.map(labelFor);
+    if(spec.game==='bsr') {
+      assert.equal($(dom,'questionIntro').textContent,'请阅读下面的句子，判断你觉得它们有多深刻。\n这里的「深刻」指含义深远、具有广泛意义。\n按直觉选择 1～5 分，没有标准答案。');
+      assert.equal(css($(dom,'questionIntro')).whiteSpace,'pre-line');
+      assert.equal(dom.window.eval('activeState.instructions'),spec.instruction);
+    }
+    if(spec.game==='mesx') {
+      assert.equal($(dom,'questionText').textContent,'家庭成员');
+      assert.equal($(dom,'questionIntro').textContent,'请根据你对以下对象的关怀程度，选择对应的圈层。\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。没有标准答案。');
+      assert.equal(css($(dom,'questionIntro')).whiteSpace,'pre-line','newline must render visibly');
+      assert.equal(dom.window.eval('activeState.instructions'),spec.instruction,'shared instructions unchanged');
+    }
     const key=d.querySelector('.research-scale-key');
-    if(spec.options.slice(1,-1).some(o=>String(o.value)!==String(o.text))) {
+    if(!compactFive && spec.options.slice(1,-1).some(o=>String(o.value)!==String(o.text))) {
       assert.equal(key.open,false);
-      assert.deepEqual([...key.querySelectorAll('p')].map(n=>n.textContent),spec.options.map(labelFor));
+      assert.deepEqual([...key.querySelectorAll('p')].map(n=>n.textContent),meaningsFor);
       key.open=true;
     } else assert.equal(key,null);
     for(const [i,option] of spec.options.entries()) {
       const meanings=d.querySelector('.research-scale-key');
       if(meanings) meanings.open=true;
       const before=requests.length;
-      d.querySelectorAll('#answers button')[i].click();
+      if(slider) {
+        const input=d.querySelector('.research-slider'); input.value=option.value;
+        input.dispatchEvent(new dom.window.Event('input')); input.dispatchEvent(new dom.window.Event('change'));
+      } else d.querySelectorAll('#answers button')[i].click();
       assert.equal(dom.window.eval('cursor'),0,'wait for the server before advancing');
       assert.equal(dom.window.eval('answers[0]'),option.value,spec.game+' exact selected value');
-      assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${labelFor(option)}`);
-      assert.equal(d.querySelectorAll('#answers [aria-pressed="true"]').length,1);
+      assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${selectedLabel(option)}`);
+      if(!slider) assert.equal(d.querySelectorAll('#answers [aria-pressed="true"]').length,1);
       if(meanings) assert.equal(d.querySelector('.research-scale-key').open,true);
       await until(()=>!dom.window.eval('busy'),'option saved before advancing');
       assert.equal(dom.window.eval('cursor'),1);
@@ -332,8 +513,8 @@ async function main(){
       assert.equal(dom.window.eval('activeState.saved_answers[0]'),option.value);
       assert.equal(d.activeElement,$(dom,'questionText'));
       $(dom,'previousButton').click();
-      assert.equal(d.querySelector('#answers button.selected').textContent,String(option.value));
-      assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${labelFor(option)}`);
+      assert.equal(slider ? d.querySelector('.research-slider').value : d.querySelector('#answers button.selected').textContent,String(option.value));
+      assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${selectedLabel(option)}`);
     }
     // All 18 real pages: one click saves and advances, reload retains the receipt,
     // unchanged Next is read-only, editing an earlier answer preserves later ones.
@@ -343,7 +524,7 @@ async function main(){
     assert.equal(dom.window.eval('cursor'),1);
     assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify([activeState.saved_answers,activeState.answer_revision])')),receipt);
     $(dom,'previousButton').click();
-    assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${labelFor(spec.options[0])}`);
+    assert.equal(d.querySelector('.research-scale-selection').textContent,`已选：${selectedLabel(spec.options[0])}`);
     const beforeNext=requests.length;
     $(dom,'saveAnswerButton').click();
     assert.equal(dom.window.eval('cursor'),1);
@@ -367,7 +548,7 @@ async function main(){
     assert.equal(dom.window.eval('cursor'),2);
     assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify([activeState.saved_answers,activeState.answer_revision])')),receipt);
     assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(answers.slice(0,3))')),[spec.options[1].value,spec.options[1].value,spec.options[2].value]);
-    assert.equal(d.querySelector('#answers button.selected').getAttribute('aria-pressed'),'true');
+    if(!slider) assert.equal(d.querySelector('#answers button.selected').getAttribute('aria-pressed'),'true');
     const questionTexts=JSON.parse(dom.window.eval('JSON.stringify(activeState.questions.map(q=>q.text))'));
     assert.equal(new Set(questionTexts).size,spec.items.length,'question text identifies the same item across randomized sessions');
     const submittedByText=Object.fromEntries(questionTexts.map((text,i)=>[text,spec.options[i<2?1:0].value]));
@@ -411,16 +592,99 @@ async function main(){
     assert.equal($(dom,'resultStructured').textContent,result);
     const before=requests.length;
     $(dom,'restartButton').click();
+    assert.equal($(dom,'resumeDialog').open,true);
+    $(dom,'resumeChoices').firstElementChild.click();
     assert.equal(requests.length,before,'cancel retest is read-only');
-    dom.window.confirm=()=>true;
-    $(dom,'restartButton').click();await until(()=>!dom.window.eval('busy'),'retest');
+    $(dom,'restartButton').click();
+    $(dom,'resumeChoices').lastElementChild.click();await until(()=>!dom.window.eval('busy'),'retest');
     assert.equal($(dom,'questionPanel').hidden,false);
     assert.equal(requests.at(-1).body.confirm,true);
     assert.equal(requests.at(-1).body.restart,true);
     assert.equal(requests.at(-1).body.mode,'full');
-    assert.equal(dom.window.document.querySelector('.research-scale-selection').textContent,'');
+    assert.equal(dom.window.document.querySelector('.research-scale-selection').textContent,slider?'未选择':'');
     assert.equal(dom.window.document.querySelector('#answers button.selected'),null);
     dom.window.close();
+  }
+  // Pre-session-ID website drafts remain usable only with the live batch run.
+  for (const numericId of [false, true]) {
+    const player = `guest:weboldformat${numericId}`;
+    const state = JSON.parse((await request('/api/romlon/start', {player_id:player, mode:'full_fast'})).body);
+    const key = `cedartoy_romlon_web_draft_${player}`;
+    const old = {game:'romlon',edition:'full_fast',total:4,answers:[1,2,null,null],cursor:2};
+    if (numericId) old.session_id = Number(state.session_id);
+    const raw = JSON.stringify(old);
+    const empty = JSON.stringify({...old, session_id:state.session_id, answers:[null,null,null,null],cursor:0});
+    const d = await page('romlon', {cedartoy_guest_web_player_id:player,[key]:raw,[`${key}_session_${state.session_id}`]:empty});
+    assert.equal(d.window.eval('cursor'),2,'empty newer slot must not hide valid legacy progress');
+    assert.deepEqual(Array.from(d.window.eval('answers')),[1,2,null,null]);
+    assert.equal($(d,'progressFill').style.width,'50%');
+    assert.equal($(d,'resumeDialog').open,false,'unique valid progress resumes directly');
+    assert.equal(d.window.localStorage.getItem(key),raw);
+    // A different run cannot inherit these answers (including no-ID old drafts).
+    d.window.eval('requestRestart()');
+    $(d,'resumeChoices').lastElementChild.click(); await until(()=>!d.window.eval('busy'),'restart legacy');
+    assert.equal(d.window.eval('cursor'),0);
+    assert.ok(Array.from(d.window.eval('answers')).every(v=>v===null));
+    assert.equal(d.window.localStorage.getItem(key),raw);
+    d.window.close();
+  }
+  // A sole valid preserved copy must not be hidden behind an empty active slot.
+  {
+    const player='guest:webarchiveonly';
+    const state=JSON.parse((await request('/api/romlon/start',{player_id:player,mode:'full_fast'})).body);
+    const key=`cedartoy_romlon_web_draft_${player}_session_${state.session_id}`;
+    const copy={game:'romlon',edition:'full_fast',session_id:state.session_id,total:4,answers:[1,2,null,null],cursor:2};
+    const raw=JSON.stringify(copy);
+    const d=await page('romlon',{cedartoy_guest_web_player_id:player,[key]:JSON.stringify({...copy,answers:[null,null,null,null],cursor:0}),[key+'_conflict_123']:raw});
+    assert.equal(d.window.eval('cursor'),2);
+    assert.equal($(d,'resumeDialog').open,false);
+    assert.equal(d.window.localStorage.getItem(key+'_conflict_123'),raw);
+    d.window.close();
+  }
+  // Two differing local batch progresses require an explicit, recoverable choice.
+  {
+    const player='guest:webbatchconflict';
+    const state=JSON.parse((await request('/api/romlon/start',{player_id:player,mode:'full_fast'})).body);
+    const base=`cedartoy_romlon_web_draft_${player}`;
+    const key=`${base}_session_${state.session_id}`;
+    const original=JSON.stringify({game:'romlon',edition:'full_fast',session_id:state.session_id,total:4,answers:[1,2,null,null],cursor:2});
+    const changed=JSON.stringify({...JSON.parse(original),answers:[3,2,1,null],cursor:3});
+    let d=await page('romlon',{cedartoy_guest_web_player_id:player,[base]:original,[key]:changed});
+    assert.equal($(d,'resumeDialog').open,true);
+    assert.match($(d,'resumeChoices').textContent,/已答 2\/4.*第 1 题：1/);
+    assert.match($(d,'resumeChoices').textContent,/已答 3\/4.*第 1 题：3/);
+    [...$(d,'resumeChoices').children].find(b=>b.textContent.includes('已答 3/4')).click();
+    assert.equal(d.window.eval('cursor'),3);
+    assert.equal(d.window.eval('answers[0]'),3);
+    const kept=storage(d);d.window.close();d=await page('romlon',kept);
+    assert.equal($(d,'resumeDialog').open,false,'resolved conflict does not recur');
+    assert.equal(d.window.eval('answers[0]'),3);
+    assert.ok(Object.values(storage(d)).includes(original));
+    $(d,'resumeProgressButton').click();
+    [...$(d,'resumeChoices').children].find(b=>b.textContent==='查看其他进度').click();
+    assert.equal($(d,'resumeDialog').open,true,'preserved alternative remains selectable');
+    d.window.close();
+  }
+  // Another device has no local cursor: resume at the server's next question.
+  {
+    let d=await page('romlon'); await choose(d); await choose(d,1);
+    const player=d.window.eval('activeState.player_id');
+    const staleKey=d.window.eval('currentDraftKey()');
+    const stale=JSON.stringify({...d.window.eval('draftSnapshot()'),base_answers:[],answers:[null,null,null,null],cursor:0});
+    d.window.close();
+    d=await page('romlon',{cedartoy_guest_web_player_id:player,[staleKey]:stale});
+    assert.equal(d.window.eval('cursor'),2,'server advancement supersedes an old local cursor at question one');
+    d.window.close();
+    d=await page('romlon',{cedartoy_guest_web_player_id:player});
+    assert.equal(d.window.eval('cursor'),2);
+    assert.deepEqual(Array.from(d.window.eval('answers')),[1,2,null,null]);
+    // Preserve a concurrent localStorage write before saving our own cursor.
+    const key=d.window.eval('currentDraftKey()');
+    const concurrent=JSON.stringify({...d.window.eval('draftSnapshot()'),answers:[4,2,null,null]});
+    d.window.localStorage.setItem(key,concurrent);
+    $(d,'previousButton').click();
+    assert.ok(Object.entries(storage(d)).some(([k,v])=>k.includes('_conflict_') && v===concurrent));
+    d.window.close();
   }
   // Legacy full_fast record and original-format draft: no reset or conversion.
   const player='guest:weblegacy';
@@ -446,8 +710,8 @@ async function main(){
   for(const raw of ['{broken',JSON.stringify({game:'romlon',edition:'full_fast',session_id:'old',total:4,answers:[1,2,null,null]})]){
     dom=await page('romlon',{[key]:raw,cedartoy_guest_web_player_id:player});
     assert.equal(dom.window.localStorage.getItem(key),raw);
-    assert.equal($(dom,'draftNotice').hidden,false);
-    assert.ok(decodeURIComponent($(dom,'draftNotice').querySelector('a').href).includes(JSON.stringify(raw)));
+    assert.equal($(dom,'resumeDialog').open,false);
+    assert.doesNotMatch(dom.window.document.body.textContent,/旧草稿|下载核对/);
     dom.window.close();
   }
   // A lost answer response can be retried without double advancing.
@@ -461,12 +725,11 @@ async function main(){
   dom.window.close();
   // The server may commit before the response times out. Retry is still idempotent.
   dom=await page('ipip_empathy',{}, {timeoutAnswer:true});
-  dom.window.document.querySelector('.research-scale-key').open=true;
   await choose(dom,2);
   assert.match($(dom,'error').textContent,/保存请求超时.*未确认保存/);
   assert.equal(dom.window.eval('cursor'),0);
   assert.equal(dom.window.eval('activeState.progress'),0);
-  assert.equal(dom.window.document.querySelector('.research-scale-key').open,true);
+  assert.equal(dom.window.document.querySelector('.research-scale-key'),null);
   assert.equal(dom.window.document.querySelector('.research-scale-selection').textContent,'已选：3 · 介于符合与不符合之间');
   const timeoutSaved=storage(dom);
   const timeoutObserver=await page('ipip_empathy',timeoutSaved);
@@ -535,7 +798,8 @@ async function main(){
   const conflictRaw=JSON.stringify({game:'romlon',edition:'full',session_id:conflictState.session_id,total:4,answers:[2,null,null,null],cursor:0});
   dom=await page('romlon',{cedartoy_guest_web_player_id:conflictPlayer,[conflictKey]:conflictRaw});
   assert.equal(dom.window.eval('answers[0]'),1,'server receipt wins for display');
-  assert.equal($(dom,'draftNotice').hidden,false);
+  assert.equal($(dom,'resumeDialog').open,true);
+  $(dom,'resumeChoices').firstElementChild.click();
   await choose(dom);
   const archived=Object.entries(storage(dom)).find(([key])=>key.startsWith(conflictKey+'_conflict_'));
   assert.equal(archived[1],conflictRaw,'conflicting selection preserved before next write');
@@ -555,7 +819,12 @@ async function main(){
   const conflictStorage=storage(other);other.window.close();
   const recovered=await page('rbi',conflictStorage);
   assert.equal(recovered.window.eval('answers[0]'),2);
-  assert.equal($(recovered,'draftNotice').hidden,false,'conflicting local edit remains downloadable');
+  assert.equal($(recovered,'resumeDialog').open,true,'conflicting local edit can be chosen');
+  [...$(recovered,'resumeChoices').children].find(b=>b.textContent.includes('这台设备')).click();
+  assert.equal(recovered.window.eval('answers[0]'),3,'explicit choice restores the previously unsaved edit');
+  $(recovered,'saveAnswerButton').click();await until(()=>!recovered.window.eval('busy'),'save chosen branch');
+  assert.equal(recovered.window.eval('activeState.saved_answers[0]'),3);
+  assert.equal($(recovered,'resumeDialog').open,false);
   recovered.window.close();fresh.window.close();dom.window.close();
   // No authenticated-to-guest replay on an expired login.
   const before=requests.length;
@@ -605,7 +874,7 @@ async function main(){
   // Untrusted question/source/notice remain plain text, never HTML.
   dom=await page('romlon');
   // Six and ten steps are not in today's specs; retain the same layout contract.
-  for(const count of [4,5,6,7,10,11]) {
+  for(const count of [4,5,6,7,10]) {
     const options=Array.from({length:count},(_,i)=>({value:i,text:'原档位 '+i}));
     dom.window.eval(`$('answers').innerHTML='';renderResearchOptions({options:${JSON.stringify(options)}});`);
     assert.equal(dom.window.getComputedStyle(dom.window.document.querySelector('.research-scale-track')).gridTemplateColumns,
@@ -626,7 +895,7 @@ async function main(){
   dom.window.eval(`renderResult({kind:'research_scale',scores:{bad:null},dimensions:{bad:'缺失分数'}}, '原始冗余说明');`);
   assert.equal($(dom,'resultText').textContent,'暂时无法展示分数，请刷新重试。');
   assert.equal(dom.window.xss,undefined);dom.window.close();
-  console.log('PASS: all 18 real specs: click saves before advancing, unchanged Next makes no write/revision change, edits preserve later answers, reload keeps receipts, last selection saves without finalizing and explicit result remains retryable; 4–7 horizontal steps/10–11 wrapping CSS, every original meaning/pressed state, score parity, source/notice unchanged; delayed/failed/timed-out/lost writes, double-click/concurrent tabs, legacy answer card and seven original template flows. DOM only, no rendered geometry.');
+  console.log('PASS: all 18 real specs: click saves before advancing, unchanged Next makes no write/revision change, edits preserve later answers, reload keeps receipts, last selection saves without finalizing and explicit result remains retryable; 4–7 horizontal steps/10 wrapping CSS/0–10 slider, compact five-step controls (0–4 and 1–5) and accessible option meanings, score parity, source/notice unchanged; delayed/failed/timed-out/lost writes, double-click/concurrent tabs, legacy answer card and seven original template flows. DOM only, no rendered geometry.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   child.stdin.end();await exited;fs.rmSync(temp,{recursive:true,force:true});

@@ -44,7 +44,13 @@ async function main(){
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     const writes=[];page.on('request',r=>{if(r.url().endsWith('/save_answer')) writes.push(r.postDataJSON());});
     const settled=()=>page.waitForFunction(()=>!busy);
-    async function choose(index=0){await page.locator('#answers button').nth(index).click();await settled();}
+    async function choose(index=0){
+      if(await page.locator('.research-slider').count()) {
+        const r=await page.locator('.research-slider').boundingBox();
+        await page.mouse.click(r.x+12+(r.width-24)*index/10,r.y+r.height/2);
+      } else await page.locator('#answers button').nth(index).click();
+      await settled();
+    }
     await context.route('**/*',route=>{
       const url=new URL(route.request().url());
       if(url.origin===origin && url.pathname==='/') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'index.html'),'utf8')});
@@ -58,6 +64,170 @@ async function main(){
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' horizontal overflow');
       await page.screenshot({path:path.join(screenshots,`${width}-${name}.png`),fullPage:true});
     }
+    async function checkScaleControls() {
+      async function open(game) {
+        await page.goto(origin+'/'+game);
+        await page.locator('#answers button, .research-slider').first().waitFor();
+        await settled();
+      }
+      await open('ross');
+      assert.equal(await page.locator('.research-slider').getAttribute('min'),'0');
+      assert.equal(await page.locator('.research-slider').getAttribute('max'),'10');
+      assert.equal(await page.locator('.research-slider').getAttribute('step'),'1');
+      assert.equal(await page.locator('.research-scale-selection').innerText(),'未选择');
+      assert.equal(await page.locator('#saveAnswerButton').isDisabled(),true);
+      assert.equal(await page.evaluate(()=>answers[0]),null);
+      assert.equal(writes.length,0,'no default score written');
+      await capture('ross-unselected');
+      const box=await page.locator('.research-slider').boundingBox();
+      const x=value=>box.x+12+(box.width-24)*value/10, y=box.y+box.height/2;
+      await page.mouse.move(x(2),y);await page.mouse.down();
+      await page.mouse.move(x(7.3),y,{steps:12});
+      assert.equal(await page.locator('.research-scale-selection').innerText(),'已选：7 分');
+      assert.equal(await page.evaluate(()=>cursor),0);
+      assert.equal(await page.evaluate(()=>answers[0]),null,'preview is not an answer');
+      assert.equal(writes.length,0,'drag never writes or advances');
+      await capture('ross-drag-preview');
+      await page.mouse.up();await settled();
+      assert.equal(writes.length,1);assert.equal(writes.at(-1).answer,7);
+      assert.equal(await page.evaluate(()=>cursor),1);
+      await page.locator('#previousButton').click();
+      assert.equal(await page.locator('.research-slider').inputValue(),'7');
+      await capture('ross-selected');
+      // Track clicks choose every integer, including zero, ten and the initial midpoint.
+      for(let value=0;value<=10;value++) {
+        const before=writes.length;
+        await choose(value);
+        assert.equal(writes.length,before+1);assert.equal(writes.at(-1).answer,value);
+        assert.equal(await page.evaluate(()=>cursor),1);
+        await page.locator('#previousButton').click();
+        assert.equal(await page.locator('.research-slider').inputValue(),String(value));
+      }
+      await page.reload();await page.locator('.research-slider').waitFor();await settled();
+      assert.equal(await page.locator('.research-slider').inputValue(),'10');
+      const beforeNext=writes.length;
+      await page.locator('#saveAnswerButton').click();
+      assert.equal(await page.evaluate(()=>cursor),1);
+      assert.equal(writes.length,beforeNext,'unchanged Next only navigates');
+      assert.equal(await page.locator('.research-scale-selection').innerText(),'未选择');
+      // Keyboard holds only preview; key release commits once.
+      await page.locator('.research-slider').focus();
+      await page.keyboard.down('ArrowRight');
+      assert.equal(await page.locator('.research-slider').inputValue(),'6');
+      assert.equal(writes.length,beforeNext);
+      await page.keyboard.up('ArrowRight');await settled();
+      assert.equal(writes.length,beforeNext+1);assert.equal(writes.at(-1).answer,6);
+      assert.equal(await page.evaluate(()=>cursor),2);
+      // Native input/change also supports assistive technologies.
+      await page.locator('.research-slider').evaluate(input=>{
+        input.value='4';input.dispatchEvent(new Event('input'));input.dispatchEvent(new Event('change'));
+      });await settled();
+      await page.locator('#previousButton').click();
+      await page.locator('#previousButton').click();
+      await page.locator('#previousButton').click();
+      await choose(0);
+      await page.locator('#saveAnswerButton').click();
+      assert.equal(await page.locator('.research-slider').inputValue(),'4','editing first answer preserves later answers');
+      // Cancelled touch gestures must not save; a completed touch drag saves once.
+      const touch=await context.newCDPSession(page);
+      let r=await page.locator('.research-slider').boundingBox();
+      const point=value=>({x:r.x+12+(r.width-24)*value/10,y:r.y+r.height/2});
+      let before=writes.length;
+      await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point(4)]});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point(8)]});
+      assert.equal(writes.length,before);
+      await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
+      assert.equal(await page.locator('.research-slider').inputValue(),'4');
+      assert.equal(writes.length,before);
+      await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point(4)]});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point(9)]});
+      assert.equal(writes.length,before);
+      await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await settled();
+      assert.equal(writes.length,before+1);assert.equal(writes.at(-1).answer,9);
+      await touch.detach();
+      // A failed save retains the score and offers retry without navigating.
+      let release;
+      const gate=new Promise(resolve=>{release=resolve;});
+      const fail=async route=>{await gate;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'保存失败'})});};
+      await page.route('**/api/ross/save_answer',fail);
+      await page.locator('.research-slider').evaluate(input=>{
+        input.value='2';input.dispatchEvent(new Event('input'));input.dispatchEvent(new Event('change'));
+      });
+      await page.waitForFunction(()=>busy);
+      assert.equal(await page.locator('.research-slider').isDisabled(),true);
+      assert.equal(await page.locator('#previousButton').isDisabled(),true);
+      release();await settled();
+      assert.equal(await page.evaluate(()=>cursor),3);
+      assert.equal(await page.locator('.research-slider').inputValue(),'2');
+      await page.unroute('**/api/ross/save_answer',fail);
+      await page.locator('#saveAnswerButton').click();await settled();
+      assert.equal(await page.evaluate(()=>cursor),4);
+      await page.reload();await page.locator('.research-slider').waitFor();await settled();
+      assert.equal(await page.evaluate(()=>cursor),4);
+      assert.deepEqual(await page.evaluate(()=>activeState.saved_answers.slice(0,4)),[0,6,9,2]);
+      // Complete only this scale to check the existing explicit final-result boundary.
+      while(await page.evaluate(()=>cursor<activeState.total-1)) await choose(5);
+      await choose(5);
+      assert.equal(await page.evaluate(()=>activeState.complete),false);
+      assert.equal(await page.locator('#saveAnswerButton').innerText(),'查看结果');
+      await page.locator('#saveAnswerButton').click();await settled();
+      assert.equal(await page.locator('#resultPanel').isVisible(),true);
+      // Check every real shared-template option shape without generating reports.
+      for(const spec of specs.filter(s=>s.game!=='ross')) {
+        await open(spec.game);
+        const compact=spec.options.length===5;
+        assert.equal(await page.locator('#answers button').count(),spec.options.length);
+        const tops=await page.locator('#answers button').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));
+        assert.equal(new Set(tops).size,1,spec.game+' single row');
+        if(compact) {
+          assert.equal(await page.locator('.research-scale-middle, .research-scale-key').count(),0);
+          assert.deepEqual(await page.locator('.research-scale-ends span').allTextContents(),
+            [spec.options[0],spec.options.at(-1)].map(o=>`${o.value} · ${o.text}`));
+        } else if(spec.game==='mesx') {
+          assert.equal(await page.locator('.research-scale-key').count(),1,'other option meanings retained');
+        }
+        if(['ipip_adhd','bsfl','evs','romlon'].includes(spec.game)) await capture(spec.game+'-compact');
+        if(spec.game==='bsfl') {
+          const before=writes.length;
+          await choose(0);
+          assert.equal(writes.length,before+1);assert.equal(writes.at(-1).answer,0);
+          await page.locator('#previousButton').click();
+          assert.equal(await page.locator('#answers button.selected').innerText(),'0');
+          await page.reload();await page.locator('#answers button.selected').waitFor();await settled();
+          assert.equal(await page.locator('#answers button.selected').innerText(),'0');
+          assert.equal(await page.locator('.research-scale-middle, .research-scale-key').count(),0);
+        }
+        await choose(2);
+        assert.equal(await page.evaluate(()=>cursor),1);
+        await page.locator('#previousButton').click();
+        assert.equal(await page.locator('#answers button.selected').innerText(),String(spec.options[2].value));
+        if(spec.game==='ipip_adhd') {
+          await page.reload();await page.locator('#answers button.selected').waitFor();
+          assert.equal(await page.locator('#answers button.selected').innerText(),'3');
+          await capture('ipip_adhd-selected');
+          await page.emulateMedia({reducedMotion:'reduce'});
+          await page.addStyleTag({content:'.research-scale-ends {font-size:24px !important}'});
+          await capture('ipip_adhd-enlarged');
+        }
+      }
+      for(const game of ['mbti','ecr']) {
+        await page.goto(origin+'/'+game);
+        if(game==='mbti') await page.locator('.mode-button').first().click();
+        await page.locator('.scale-step').first().waitFor();
+        await capture(game+'-reference');
+        await page.locator('.scale-step').first().click();
+        assert.equal(await page.locator('#questionNumber').innerText(),'QUESTION 2');
+      }
+      console.log(`PASS ${width}px: 0–10 click/drag/touch/cancel/keyboard, no default, save/retry/review/reload/finalize; 17 shared scale shapes and MBTI/ECR`);
+    }
+    await checkScaleControls();
+    if(process.env.SCALE_UI_ONLY==='1') {
+      assert.deepEqual(errors,[]);
+      await context.close();await browser.close();browser=null;
+      continue;
+    }
+    await context.clearCookies();
+    await page.evaluate(()=>localStorage.clear());
     for(const query of ['', '?tab=mini', '?tab=invalid', '?tab=test']) {
       await page.goto(origin+'/'+query);
       assert.equal(await page.locator('.tab-button.active').getAttribute('data-filter'),query==='?tab=test'?'test':'mini');
@@ -88,9 +258,9 @@ async function main(){
     await page.locator('.platform-dist-irrc').scrollIntoViewIfNeeded();
     await page.screenshot({path:path.join(screenshots,`${width}-stats-titles.png`)});
     // Only research pages and the original MBTI/ECR references hit test handlers.
-    for(const spec of specs){
+    for(const spec of specs.filter(s=>s.game!=='ross')){
       await page.goto(origin+'/'+spec.game);
-      await page.locator('#answers button').first().waitFor();
+      await page.locator('#answers button, .research-slider').first().waitFor();
       assert.doesNotMatch(await page.locator('#questionIntro').textContent(),/自动保存|不可修改|续答旧版/);
       assert.equal(await page.locator('#title').innerText(),names[spec.game]);
       assert.equal(await page.title(),`${names[spec.game]} · CEDAR TOY`);
@@ -116,12 +286,27 @@ async function main(){
       assert.ok(stepGeometry.every(r=>r.left>=0 && r.right<=width));
       const labelFor=o=>String(o.value)===String(o.text).trim() ? String(o.value) : `${o.value} · ${o.text}`;
       assert.deepEqual(await page.locator('.research-scale-ends span').allTextContents(),
-        [labelFor(spec.options[0]),labelFor(spec.options.at(-1))]);
+        spec.game==='mesx' ? ['0 · 圈外','3 · 内圈'] : [labelFor(spec.options[0]),labelFor(spec.options.at(-1))]);
+      const meaningsFor = spec.game==='mesx'
+        ? spec.options.map(o=>`${o.value} · ${spec.instruction.match(new RegExp(o.text.split('：')[0]+'：[^；。]+'))[0]}。`)
+        : spec.options.map(labelFor);
+      if(spec.game==='bsr') {
+        assert.equal(await page.locator('#questionIntro').innerText(),'请阅读下面的句子，判断你觉得它们有多深刻。\n这里的「深刻」指含义深远、具有广泛意义。\n按直觉选择 1～5 分，没有标准答案。');
+        assert.equal(await page.locator('#questionIntro').evaluate(n=>getComputedStyle(n).whiteSpace),'pre-line');
+        await capture('bsr-three-line-intro');
+      }
+      if(spec.game==='mesx') {
+        assert.equal(await page.locator('#questionText').innerText(),'家庭成员');
+        assert.match(await page.locator('#questionIntro').innerText(),/圈层。\n关怀包括/);
+        assert.equal(await page.locator('#questionIntro').evaluate(n=>getComputedStyle(n).whiteSpace),'pre-line');
+        await capture('mesx-short-intro');
+      }
       const key=page.locator('.research-scale-key');
+      if(spec.game==='mesx') assert.equal(await key.count(),1,'MESx special meanings must survive ordinary-scale cleanup');
       if(await key.count()) {
         await key.locator('summary').focus();await page.keyboard.press('Enter');
         assert.equal(await key.getAttribute('open'),'');
-        assert.deepEqual(await key.locator('p').allTextContents(),spec.options.map(labelFor));
+        assert.deepEqual(await key.locator('p').allTextContents(),meaningsFor);
         await capture(spec.game+'-all-meanings');
         await key.locator('summary').click();
       }
@@ -200,7 +385,7 @@ async function main(){
     }
     for(const game of ['rbi','ross','aidep','bsr']){
       await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webautonext${width}${game}`);
-      await page.goto(origin+'/'+game);await page.locator('#answers button').first().waitFor();
+      await page.goto(origin+'/'+game);await page.locator('#answers button, .research-slider').first().waitFor();
       await capture(game+'-question');
       const sizes=await page.evaluate(()=>({
         hint:parseFloat(getComputedStyle(document.getElementById('pageDisclaimer')).fontSize),
@@ -216,7 +401,7 @@ async function main(){
         await page.locator('#researchDetails summary').click();
         await page.locator('#answers button').nth(2).focus();await page.keyboard.press('Space');await settled();
         assert.equal(await page.evaluate(()=>cursor),1);
-        await page.reload();await page.locator('#answers button').first().waitFor();await settled();
+        await page.reload();await page.locator('#answers button, .research-slider').first().waitFor();await settled();
         await page.locator('#previousButton').click();
         assert.equal(await page.locator('#answers button.selected').innerText(),'3');
         await capture('rbi-revisit');
@@ -270,16 +455,15 @@ async function main(){
       }
     }
     await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webautolast${width}`);
-    await page.goto(origin+'/bsfl');await page.locator('#answers button').first().waitFor();
+    await page.goto(origin+'/bsfl');await page.locator('#answers button, .research-slider').first().waitFor();
     for(let i=0;i<5;i++){
       assert.equal(await page.locator('#saveAnswerButton').innerText(),i===4?'查看结果':'下一题');
-      if(i===4) await page.locator('.research-scale-key summary').click();
       await choose();
       assert.equal(await page.evaluate(()=>cursor),Math.min(i+1,4));
     }
     assert.equal(await page.evaluate(()=>activeState.complete),false);
     assert.equal(await page.evaluate(()=>activeState.progress),5);
-    assert.equal(await page.locator('.research-scale-key').getAttribute('open'),'');
+    assert.equal(await page.locator('.research-scale-key').count(),0);
     await capture('bsfl-last-saved-not-finished');
     await page.locator('#previousButton').click();
     const beforeLast=writes.length;
@@ -293,17 +477,18 @@ async function main(){
     assert.equal(await page.locator('.research-score dd').innerText(),'0.00 / 4');
     await capture('bsfl-result');
     await page.reload();await page.locator('#resultPanel').waitFor();
-    page.once('dialog',dialog=>dialog.dismiss());
     await page.locator('#restartButton').click();
+    await page.locator('#resumeDialog').getByRole('button',{name:'保留上次成绩',exact:true}).click();
     assert.equal(await page.locator('#resultPanel').isVisible(),true);
-    page.once('dialog',dialog=>dialog.accept());
-    await page.locator('#restartButton').click();await page.locator('#answers button').first().waitFor();
+    await page.locator('#restartButton').click();
+    await page.locator('#resumeDialog').getByRole('button',{name:'重新开始',exact:true}).click();
+    await page.locator('#answers button, .research-slider').first().waitFor();
     await capture('bsfl-retest');
     // Real completed reports restored from isolated saved records for all 18 scales.
     for (const spec of specs) {
       await page.evaluate(id=>localStorage.setItem('cedartoy_guest_web_player_id',id),`guest:webresearchresult${width}${spec.game.replaceAll('_','')}`);
       await page.goto(origin+'/'+spec.game);
-      await page.locator('#answers button').first().waitFor();
+      await page.locator('#answers button, .research-slider').first().waitFor();
       const expected=await page.evaluate(async values=>{
         renderState(await api('start',{mode:'full_fast',restart:true,confirm:true,session_id:activeState.session_id}));
         const state=await api('answer_batch',{answers:values});
@@ -389,7 +574,7 @@ async function main(){
     await context.close();
     await browser.close();browser=null;
   }
-  console.log('PASS: Chromium '+widths.join(' / ')+'px; all 18 full one-click save-confirmed flows, unchanged Next without writes, last-answer review and explicit finalize; numeric rows and original meanings, touch targets, keyboard/focus/reload/revisit, delayed failure/retry/double click, enlarged text, 18 reports, BSFL zero/retest, MBTI/ECR reference; screenshots: '+screenshots);
+  if(process.env.SCALE_UI_ONLY!=='1') console.log('PASS: Chromium '+widths.join(' / ')+'px; all 18 full one-click save-confirmed flows, unchanged Next without writes, last-answer review and explicit finalize; numeric rows and original meanings, touch targets, keyboard/focus/reload/revisit, delayed failure/retry/double click, enlarged text, 18 reports, BSFL zero/retest, MBTI/ECR reference; screenshots: '+screenshots);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
   if(browser) await browser.close();

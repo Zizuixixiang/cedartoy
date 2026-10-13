@@ -98,6 +98,7 @@
     .research-help { margin: 12px 0 0; }
     .research-help a { color: inherit; }
     .research-page #questionIntro { color: var(--text); font-size: 13px; }
+    #questionIntro.mesx-intro { white-space: pre-line; }
     .research-page .question-actions { flex-wrap: wrap; }
     .research-page .question-actions button { color: var(--text); font-size: 12px; min-height: 44px; }
     .research-page .answer-button { min-height: 44px; padding: 8px 12px; font-size: 14px; }
@@ -113,6 +114,16 @@
     .mbti-scale-track.research-scale-track { grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); row-gap: 2px; }
     .research-scale-track .scale-step { color: var(--text); font-size: 13px; }
     .research-scale-track .scale-step:focus-visible { outline-offset: -3px; }
+    .research-slider { display: block; width: 100%; height: 44px; margin: 0; appearance: none; background: transparent; cursor: pointer; touch-action: pan-y; }
+    .research-slider::-webkit-slider-runnable-track { height: 8px; background: var(--purple-light); border: 2px solid var(--purple-darker); }
+    .research-slider::-moz-range-track { height: 4px; background: var(--purple-light); border: 2px solid var(--purple-darker); }
+    .research-slider::-webkit-slider-thumb { appearance: none; width: 24px; height: 24px; margin-top: -10px; background: var(--purple-dark); border: 2px solid var(--text); }
+    .research-slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 0; background: var(--purple-dark); border: 2px solid var(--text); }
+    .research-slider[data-empty]::-webkit-slider-thumb { opacity: 0; }
+    .research-slider[data-empty]::-moz-range-thumb { opacity: 0; }
+    .research-slider:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+    .research-slider:disabled { cursor: wait; opacity: .6; }
+    .research-slider + .research-scale-selection { margin-top: 0; text-align: center; }
     .research-page button:focus-visible, .research-page summary:focus-visible, .research-page a:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
     .shell {
       position: relative;
@@ -150,6 +161,7 @@
     .progress-fill { display: block; width: 0; height: 100%; background: var(--pink); transition: width .18s ease; }
     .question-number { margin-bottom: 8px; color: var(--pink-dark); font-size: 12px; }
     .question-intro { margin: 0 0 18px; padding: 12px; color: var(--muted); background: var(--bg); border-left: 4px solid var(--pink); line-height: 1.65; }
+    .question-intro.bsr-intro { white-space: pre-line; }
     .question-intro[hidden] { display: none; }
     .question-text { margin: 0 0 22px; font-size: clamp(18px, 4vw, 25px); line-height: 1.55; color: var(--text); }
     .mbti-poles { display: grid; grid-template-columns: 1fr; gap: 10px 18px; margin-bottom: 18px; padding: 3px 0 9px; border-bottom: 2px dashed var(--purple-light); }
@@ -330,6 +342,11 @@
     .compare-person h3 { margin: 0 0 9px; color: var(--purple-darker); font-size: 13px; }
     .compare-score-line { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
     .compare-emphasis-line { margin: 7px 0 0; color: var(--purple-darker); font-size: 14px; font-weight: 700; line-height: 1.55; }
+    #resumeDialog { width: min(480px, calc(100% - 28px)); max-height: calc(100% - 40px); overflow: auto; padding: 22px; color: var(--text); background: var(--card); border: 4px solid var(--purple); box-shadow: 6px 6px 0 var(--purple-light); }
+    #resumeDialog::backdrop { background: rgb(40 32 48 / 40%); }
+    #resumeDialog h2 { font-size: 18px; }
+    #resumeChoices { flex-direction: column; }
+    #resumeChoices button { min-height: 44px; font-size: 14px; color: var(--text); }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
     .pixel-button {
       min-height: 43px;
@@ -396,7 +413,6 @@
         <span class="identity" id="identity"></span>
       </div>
       <p class="error" id="error" hidden></p>
-      <p class="research-help" id="draftNotice" hidden></p>
 
       <div class="panel loading" id="loadingPanel"><span class="pixel">LOADING SAVE...</span></div>
 
@@ -419,6 +435,7 @@
         <div class="question-actions">
           <button class="pixel-button secondary pixel" id="previousButton" type="button">← 上一题</button>
           <button class="pixel-button pixel" id="saveAnswerButton" type="button" hidden>下一题</button>
+          <button class="pixel-button secondary" id="resumeProgressButton" type="button" hidden>测试进度</button>
           <button class="pixel-button secondary pixel" id="reviewButton" type="button" hidden>查看答题卡 →</button>
         </div>
       </div>
@@ -455,8 +472,23 @@
     <p class="source" id="source"></p>
     <p class="entertainment-badge">仅供娱乐</p>
   </main>
+  <dialog id="resumeDialog" aria-labelledby="resumeTitle" aria-describedby="resumeHelp">
+    <h2 id="resumeTitle">继续上次测试</h2>
+    <p class="research-help" id="resumeHelp"></p>
+    <div class="actions" id="resumeChoices"></div>
+  </dialog>
   <script>
     const CONFIG = __TEST_GAME_CONFIG__;
+    // Human-web presentation only; leave shared scale data and MCP instructions intact.
+    const MESX_WEB = {
+      intro: "请根据你对以下对象的关怀程度，选择对应的圈层。\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。没有标准答案。",
+      meanings: [
+        "圈外：认为其不值得道德关怀，觉得为其待遇承担关怀或个人责任是过度或不合理的。",
+        "边缘：最低限度的关怀，不觉得自己负有道德义务或个人责任。",
+        "外圈：中等关怀，仍关心其待遇，但义务和个人责任感明显降低。",
+        "内圈：最高程度的关怀，觉得自己有道德义务保障其福祉，并对其所受待遇负有个人责任。"
+      ]
+    };
     const hasModes = ["mbti", "enneagram"].includes(CONFIG.game);
     const TOKEN_KEY = "cedartoy_token";
     const GUEST_KEY = "cedartoy_guest_web_player_id";
@@ -610,7 +642,7 @@
       $("identity").textContent = label;
     }
     function setButtonsDisabled(disabled) {
-      document.querySelectorAll("button").forEach((button) => {
+      document.querySelectorAll("button, .research-slider").forEach((button) => {
         if (!button.closest(".aidep-sharing")) button.disabled = disabled;
       });
     }
@@ -675,64 +707,160 @@
       showPanel("modePanel");
     }
 
-    function restoreDraft(state, pendingDraft) {
-      answers = Array(state.total).fill(null);
-      cursor = 0;
-      let saved;
-      try {
-        saved = pendingDraft || JSON.parse(localStorage.getItem(currentDraftKey()) || (CONFIG.research ? localStorage.getItem(draftKey()) : null) || "null");
-        if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && (!CONFIG.research || saved.session_id === state.session_id) && saved.total === state.total && Array.isArray(saved.answers)) {
-          answers = Array.from({length: state.total}, (_, index) => Number.isInteger(saved.answers[index]) ? saved.answers[index] : null);
-          cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
-        }
-      } catch (_) {}
-      if (CONFIG.research && state.mode === "full") {
-        let conflict = false;
-        const base = saved?.base_answers;
-        answers = answers.map((local, index) => {
-          const remote = state.saved_answers[index] ?? null;
-          const previous = Array.isArray(base) ? (base[index] ?? null) : null;
-          if (local === remote || local === null || (Array.isArray(base) && local === previous)) return remote;
-          if (remote === previous) return local;
-          conflict = true;
-          return remote;
-        });
-        if (conflict) {
-          const raw = localStorage.getItem(currentDraftKey()) || localStorage.getItem(draftKey());
-          localStorage.setItem(`${currentDraftKey()}_conflict_${Date.now()}`, raw);
-          showOtherDrafts();
-          showError("答案已在其他页面更新，已载入最新选择；本机冲突草稿已保留。");
-        }
-        cursor = Math.min(saved?.session_id === state.session_id ? cursor : state.progress, state.total - 1, state.progress);
-      }
-    }
+    let ignoredDrafts = [];
+    let lastDraftRaw = null;
     function currentDraftKey() {
       return CONFIG.research ? `${draftKey()}_session_${activeState.session_id}` : draftKey();
     }
-    function showOtherDrafts() {
-      if (!CONFIG.research) return;
-      const drafts = {};
+    function preserveDraft(raw) {
+      const base = `${currentDraftKey()}_conflict_${Date.now()}`;
+      let key = base, suffix = 0;
+      while (localStorage.getItem(key) !== null) key = `${base}_${++suffix}`;
+      localStorage.setItem(key, raw);
+    }
+    function readResearchDrafts(state, includeArchived = false) {
+      const found = [];
       const base = draftKey();
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key !== base && !key.startsWith(`${base}_session_`)) continue;
+        if (!includeArchived && key.includes("_conflict_")) continue; // Preserved alternatives, never silently reapplied.
         const raw = localStorage.getItem(key);
         try {
           const saved = JSON.parse(raw);
-          if (!key.includes("_conflict_") && saved?.session_id === activeState.session_id && saved.edition === activeState.edition && saved.total === activeState.total && Array.isArray(saved.answers)) continue;
+          // The first website version had no run ID. Only its still-live batch
+          // session can validate that draft; never attach it to a newly started run.
+          const sameRun = saved?.session_id != null
+            ? (String(saved.session_id) === String(state.session_id) || (typeof saved.session_id === "number" && Number.isFinite(saved.session_id) && saved.session_id === Number(state.session_id)))
+            : key === base && state.mode === "full_fast";
+          if (!sameRun || (saved.game && saved.game !== CONFIG.game) || saved.edition !== state.edition
+              || saved.total !== state.total || !Array.isArray(saved.answers) || saved.answers.length !== state.total
+              || !saved.answers.every((v, n) => v === null || state.questions[n].options.some(o => o.value === v))) continue;
+          const signature = JSON.stringify([saved.game, saved.session_id, saved.edition, saved.total, saved.answers, saved.cursor, saved.base_answers]);
+          found.push({key, raw, saved, signature});
         } catch (_) {}
-        drafts[key] = raw;
       }
-      const notice = $("draftNotice");
-      notice.replaceChildren();
-      notice.hidden = !Object.keys(drafts).length;
-      if (notice.hidden) return;
-      notice.append("另有旧草稿保留在本机，与当前记录不同，未覆盖或合并。");
-      const link = document.createElement("a");
-      link.textContent = "下载核对";
-      link.download = `${CONFIG.game}-drafts.json`;
-      link.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(drafts, null, 2))}`;
-      notice.append(link);
+      return found.sort((a, b) => Number(b.key === currentDraftKey()) - Number(a.key === currentDraftKey()));
+    }
+    function resumeChoice(title, help, choices) {
+      const dialog = $("resumeDialog");
+      const previousFocus = document.activeElement;
+      $("resumeTitle").textContent = title;
+      $("resumeHelp").textContent = help;
+      $("resumeChoices").replaceChildren();
+      choices.forEach(({label, run}, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `pixel-button${index ? " secondary" : ""}`;
+        button.textContent = label;
+        button.onclick = () => {
+          dialog.close();
+          previousFocus?.focus({preventScroll: true});
+          run();
+        };
+        $("resumeChoices").append(button);
+      });
+      // Escape follows the safe, current progress; it never confirms a restart.
+      dialog.oncancel = event => { event.preventDefault(); $("resumeChoices").firstElementChild.click(); };
+      if (!dialog.open) dialog.showModal();
+    }
+    function requestRestart() {
+      if (busy || !activeState) return;
+      resumeChoice("重新开始？", activeState.complete
+        ? "上次成绩会保留，完成新测试后更新。"
+        : "重新开始会替换本次未完成的进度。", [
+        {label: activeState.complete ? "保留上次成绩" : "继续上次测试", run: () => { if (!activeState.complete) { restoreDraft(activeState); renderQuestion(); } }},
+        {label: "重新开始", run: () => { restartSessionId = activeState.session_id; start("full", true); }}
+      ]);
+    }
+    function restoreDraft(state, pendingDraft, includeArchived = false) {
+      answers = Array(state.total).fill(null);
+      cursor = 0;
+      if (!CONFIG.research) {
+        try {
+          const saved = JSON.parse(localStorage.getItem(currentDraftKey()) || "null");
+          if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
+            answers = Array.from({length: state.total}, (_, i) => Number.isInteger(saved.answers[i]) ? saved.answers[i] : null);
+            cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
+          }
+        } catch (_) {}
+        return;
+      }
+      const stored = localStorage.getItem(currentDraftKey());
+      if (pendingDraft && stored !== null && stored !== lastDraftRaw) {
+        preserveDraft(stored);
+      }
+      let entries = readResearchDrafts(state, includeArchived);
+      const validCurrent = entries.some(e => e.key === currentDraftKey());
+      // Rejected active-slot data is still the user's data. Preserve it before
+      // the next write, including malformed JSON and mismatched run metadata.
+      lastDraftRaw = validCurrent ? stored : null;
+      if (stored !== null && !validCurrent) showError("本机有无法恢复的草稿，原始内容会保留；当前显示已保存进度。");
+      if (!entries.some(e => e.saved.answers.some(Number.isInteger))) entries = readResearchDrafts(state, true);
+      ignoredDrafts = entries.find(e => e.key === currentDraftKey())?.saved.ignored_drafts || [];
+      if (!Array.isArray(ignoredDrafts)) ignoredDrafts = [];
+      const remote = Array.from({length: state.total}, (_, i) => state.saved_answers[i] ?? null);
+      let alternatives = [];
+      const add = (values, at, label) => {
+        if (alternatives.some(a => JSON.stringify(a.values) === JSON.stringify(values))) return;
+        const firstEmpty = values.indexOf(null);
+        alternatives.push({values, at: Math.max(0, Math.min(Number.isInteger(at) ? at : firstEmpty < 0 ? state.total - 1 : firstEmpty, state.total - 1)), label});
+      };
+      const sources = pendingDraft ? [{saved: pendingDraft}] : entries.filter(e => includeArchived || !ignoredDrafts.includes(e.signature));
+      let hasConflict = false;
+      for (const {saved} of sources) {
+        let conflict = false;
+        const values = saved.answers.map((local, i) => {
+          if (state.mode !== "full") return local;
+          const previous = saved.base_answers?.[i] ?? null;
+          if (local === remote[i] || local === null || (Array.isArray(saved.base_answers) && local === previous)) return remote[i];
+          if (remote[i] !== previous) conflict = true;
+          return local;
+        });
+        hasConflict ||= conflict;
+        const remoteAdvanced = state.mode === "full"
+          && state.progress > (saved.base_answers?.length ?? saved.answers.filter(Number.isInteger).length)
+          && values.every((v, i) => v === remote[i]);
+        add(values, remoteAdvanced ? state.progress : saved.cursor, "这台设备");
+      }
+      if (!alternatives.length || hasConflict) add(remote, state.progress, "已保存进度");
+      // A strict prefix is one evolving progress, not a second conflicting test.
+      alternatives = alternatives.filter(a => !alternatives.some(b => a !== b
+        && a.values.every((v, i) => v === null || v === b.values[i])
+        && b.values.some((v, i) => v !== null && a.values[i] === null)));
+      alternatives.sort((a, b) => Number(b.label === "已保存进度") - Number(a.label === "已保存进度"));
+      const apply = choice => {
+        answers = [...choice.values];
+        cursor = choice.at;
+        if (state.mode === "full") {
+          const unsaved = answers.findIndex((v, i) => v !== null && v !== remote[i]);
+          cursor = Math.min(cursor, state.progress, unsaved < 0 ? state.total - 1 : unsaved);
+        }
+      };
+      apply(alternatives[0]);
+      if (alternatives.length === 1) ignoredDrafts = entries.filter(e => e.key !== currentDraftKey()).map(e => e.signature);
+      if (alternatives.length > 1) {
+        const differing = Array.from({length: state.total}, (_, i) => i)
+          .filter(i => alternatives.some(a => a.values[i] !== alternatives[0].values[i]));
+        resumeChoice("继续哪份进度？", "有不同的答题进度，请选一份继续。其他答案仍会保留在本机。", [
+          ...alternatives.map((choice, n) => ({
+            label: `继续上次测试 · ${choice.label} ${n + 1}（已答 ${choice.values.filter(Number.isInteger).length}/${state.total} 题；第 ${differing[0] + 1} 题：${choice.values[differing[0]] ?? "未答"}）`,
+            run: () => {
+              try {
+                for (const entry of entries) {
+                  preserveDraft(entry.raw);
+                }
+                ignoredDrafts = entries.filter(e => e.key !== currentDraftKey()).map(e => e.signature);
+                apply(choice);
+                saveDraft();
+                showError();
+                renderQuestion();
+              } catch (_) { showError("暂时无法保留答案，请释放浏览器存储空间后刷新重试。"); }
+            }
+          })),
+          {label: "重新开始", run: requestRestart}
+        ]);
+      }
     }
     function draftSnapshot() {
       return {
@@ -742,12 +870,20 @@
         total: activeState.total,
         answers: [...answers],
         ...(CONFIG.research && activeState.mode === "full" ? {base_answers: activeState.saved_answers} : {}),
-        cursor
+        cursor,
+        ...(CONFIG.research ? {ignored_drafts: ignoredDrafts} : {})
       };
     }
     function saveDraft() {
       if (!activeState) return;
-      localStorage.setItem(currentDraftKey(), JSON.stringify(draftSnapshot()));
+      const key = currentDraftKey();
+      const raw = localStorage.getItem(key);
+      if (CONFIG.research && raw !== null && raw !== lastDraftRaw) {
+        preserveDraft(raw);
+      }
+      const nextRaw = JSON.stringify(draftSnapshot());
+      localStorage.setItem(key, nextRaw);
+      lastDraftRaw = nextRaw;
     }
     function clearDraft() {
       // Research drafts may contain choices never acknowledged by the server.
@@ -772,7 +908,6 @@
       activeState = state;
       restartSessionId = null;
       setIdentity(state);
-      showOtherDrafts();
       if (state.complete) {
         clearDraft();
         $("statusText").textContent = "SYSTEM / SCAN COMPLETE";
@@ -912,8 +1047,14 @@
       $("progressFill").style.width = `${Math.max(2, answeredCount / activeState.total * 100)}%`;
       $("questionNumber").textContent = `QUESTION ${question.number}`;
       $("questionText").textContent = question.text;
-      $("questionIntro").textContent = activeState.instructions || "";
-      $("questionIntro").hidden = cursor !== 0 || !activeState.instructions;
+      // Human-page copy only; retain the shared instructions in the API/MCP state.
+      const instructions = CONFIG.game === "bsr"
+        ? "请阅读下面的句子，判断你觉得它们有多深刻。\n这里的「深刻」指含义深远、具有广泛意义。\n按直觉选择 1～5 分，没有标准答案。"
+        : CONFIG.game === "mesx" ? MESX_WEB.intro : activeState.instructions || "";
+      $("questionIntro").classList.toggle("bsr-intro", CONFIG.game === "bsr");
+      $("questionIntro").classList.toggle("mesx-intro", CONFIG.game === "mesx");
+      $("questionIntro").textContent = instructions;
+      $("questionIntro").hidden = cursor !== 0 || !instructions;
       $("answers").innerHTML = "";
 
       if (CONFIG.game === "mbti") {
@@ -955,13 +1096,13 @@
       $("saveAnswerButton").disabled = busy || !Number.isInteger(answers[cursor]);
       $("previousButton").hidden = false;
       $("previousButton").disabled = busy || cursor === 0;
+      $("resumeProgressButton").hidden = !CONFIG.research;
       $("reviewButton").hidden = sequential || !answers.every(Number.isInteger);
     }
     function renderResearchOptions(question) {
       const bareNumber = option => String(option.text).trim() === String(option.value);
       const labelFor = option => bareNumber(option) ? String(option.value) : `${option.value} · ${option.text}`;
       // Layout follows the consecutive numeric values, not how many labels are supplied.
-      // Longer scales retain the existing auto-wrapping track on small screens.
       const numeric = question.options.length >= 4 && question.options.every((option, index, options) =>
         Number.isInteger(option.value) && (!index || option.value === options[index - 1].value + 1));
       $("answers").className = numeric ? "answers mbti" : "answers";
@@ -973,12 +1114,18 @@
       ends.className = "mbti-scale-ends research-scale-ends";
       [question.options[0], question.options[question.options.length - 1]].forEach(option => {
         const label = document.createElement("span");
-        label.textContent = labelFor(option);
+        label.textContent = CONFIG.game === "mesx"
+          ? `${option.value} · ${option.value === 0 ? "圈外" : "内圈"}` : labelFor(option);
         ends.append(label);
       });
       $("answers").append(ends);
+      if (question.options.length === 11 && question.options[0].value === 0) {
+        renderResearchSlider();
+        return;
+      }
+      const compactFive = question.options.length === 5;
       const middle = question.options.length % 2 ? question.options[Math.floor(question.options.length / 2)] : null;
-      if (middle && !bareNumber(middle)) {
+      if (!compactFive && middle && !bareNumber(middle)) {
         const label = document.createElement("p");
         label.className = "research-scale-middle";
         label.textContent = labelFor(middle);
@@ -998,8 +1145,10 @@
       const selected = question.options.find(option => option.value === answers[cursor]);
       selection.textContent = selected ? `已选：${labelFor(selected)}` : "";
       $("answers").append(track, selection);
+      // MESx requires all four full definitions, even if ordinary scale keys are removed.
+      const hasCircleMeanings = CONFIG.game === "mesx";
       // Touch and keyboard users can inspect every original label before choosing.
-      if (question.options.slice(1, -1).some(option => !bareNumber(option))) {
+      if (hasCircleMeanings || (!compactFive && question.options.slice(1, -1).some(option => !bareNumber(option)))) {
         const key = document.createElement("details");
         key.className = "research-scale-key";
         const summary = document.createElement("summary");
@@ -1007,11 +1156,79 @@
         key.append(summary);
         question.options.forEach(option => {
           const label = document.createElement("p");
-          label.textContent = labelFor(option);
+          label.textContent = hasCircleMeanings
+            ? `${option.value} · ${MESX_WEB.meanings[option.value]}` : labelFor(option);
           key.append(label);
         });
         $("answers").append(key);
       }
+    }
+    function renderResearchSlider() {
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.className = "research-slider";
+      slider.min = "0";
+      slider.max = "10";
+      slider.step = "1";
+      slider.disabled = busy;
+      slider.setAttribute("aria-labelledby", "questionText");
+      const selection = document.createElement("p");
+      selection.className = "research-scale-selection";
+      const original = answers[cursor];
+      let pointer = null;
+      let keyboard = false;
+      const preview = value => {
+        const selected = Number.isInteger(value);
+        slider.value = selected ? value : 5;
+        slider.toggleAttribute("data-empty", !selected);
+        selection.textContent = selected ? `已选：${value} 分` : "未选择";
+        slider.setAttribute("aria-valuetext", selection.textContent);
+      };
+      const move = event => {
+        const rect = slider.getBoundingClientRect();
+        preview(Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left - 12) / (rect.width - 24))) * 10));
+      };
+      const commit = () => {
+        if (!busy && slider.isConnected && !slider.hasAttribute("data-empty")) answer(Number(slider.value));
+      };
+      // Preview stays local to this control; only a completed gesture enters the save/advance flow.
+      slider.addEventListener("pointerdown", event => {
+        if (busy || !event.isPrimary || event.button !== 0) return;
+        event.preventDefault();
+        pointer = event.pointerId;
+        slider.focus({preventScroll: true});
+        slider.setPointerCapture(pointer);
+        move(event);
+      });
+      slider.addEventListener("pointermove", event => {
+        if (event.pointerId === pointer) move(event);
+      });
+      slider.addEventListener("pointerup", event => {
+        if (event.pointerId !== pointer) return;
+        move(event);
+        pointer = null;
+        slider.releasePointerCapture(event.pointerId);
+        commit();
+      });
+      const cancel = () => {
+        if (pointer !== null) { pointer = null; preview(original); }
+      };
+      slider.addEventListener("pointercancel", cancel);
+      slider.addEventListener("lostpointercapture", cancel);
+      const valueKeys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+      slider.addEventListener("keydown", event => {
+        if (valueKeys.includes(event.key)) keyboard = true;
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); preview(Number(slider.value)); commit(); }
+      });
+      slider.addEventListener("keyup", event => {
+        if (valueKeys.includes(event.key)) { keyboard = false; commit(); }
+      });
+      slider.addEventListener("blur", () => { if (keyboard) { keyboard = false; preview(original); } });
+      slider.addEventListener("input", () => preview(Number(slider.value)));
+      // Native change remains available to assistive technologies without a pointer/keyboard gesture.
+      slider.addEventListener("change", () => { if (pointer === null && !keyboard) commit(); });
+      preview(original);
+      $("answers").append(slider, selection);
     }
     function renderMbtiScale() {
       const ends = document.createElement("div");
@@ -1140,7 +1357,7 @@
       $("statusText").textContent = "SYSTEM / INITIALIZING";
       try {
         if (discardDraft && activeState && !CONFIG.research) localStorage.removeItem(draftKey());
-        renderState(await api("start", CONFIG.research ? {mode: edition, restart: !!restartSessionId, confirm: discardDraft, session_id: restartSessionId} : hasModes ? {edition} : {}));
+        renderState(await api("start", CONFIG.research ? {mode: edition, restart: !!restartSessionId, confirm: discardDraft, session_id: restartSessionId, expected_revision: activeState?.answer_revision} : hasModes ? {edition} : {}));
       } catch (error) {
         showError(error.message);
         if (CONFIG.research && activeState) {
@@ -1200,7 +1417,7 @@
           saveDraft();
         }
       } catch (error) {
-        showError(`${error.name === "AbortError" ? "保存请求超时。" : error.message} 未确认保存，可重试；若提示冲突，请刷新核对进度。本机草稿会保留。`);
+        showError(`${error.name === "AbortError" ? "保存请求超时。" : error.message} 未确认保存，可重试；若其他页面已更新，请刷新后选择要继续的进度。`);
       } finally {
         clearTimeout(timeout);
         busy = false;
@@ -2089,6 +2306,15 @@
         }
       }
     }
+    $("resumeProgressButton").addEventListener("click", () => {
+      if (busy || !activeState) return;
+      const alternatives = readResearchDrafts(activeState, true);
+      resumeChoice("继续上次测试", `已答 ${answers.filter(Number.isInteger).length}/${activeState.total} 题。进度保留 24 小时。`, [
+        {label: "继续上次测试", run: () => {}},
+        ...(alternatives.some(e => e.key.includes("_conflict_")) ? [{label: "查看其他进度", run: () => { restoreDraft(activeState, null, true); renderQuestion(); }}] : []),
+        {label: "重新开始", run: requestRestart}
+      ]);
+    });
     $("previousButton").addEventListener("click", () => goToQuestion(cursor - 1));
     $("saveAnswerButton").addEventListener("click", () => {
       if (busy || !activeState || !Number.isInteger(answers[cursor])) return;
@@ -2101,9 +2327,7 @@
     $("compareButton").addEventListener("click", compareResults);
     $("restartButton").addEventListener("click", () => {
       if (CONFIG.research) {
-        if (busy || !activeState || !confirm("重测会覆盖当前结果，确定重新开始？本机旧草稿会保留。")) return;
-        restartSessionId = activeState.session_id;
-        start("full", true);
+        requestRestart();
         return;
       }
       showError();
