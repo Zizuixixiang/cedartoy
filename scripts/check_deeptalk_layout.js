@@ -50,6 +50,11 @@ let browser;
     for(const control of await page.locator('button:visible, select:visible, summary:visible').all()) {
       const box=await control.boundingBox(); assert.ok(box.height>=44,label+' touch target');
     }
+    if(await page.locator('#editor').isVisible()) {
+      const previous=await page.locator('#previous').boundingBox(), next=await page.locator('#next').boundingBox();
+      assert.equal(previous.y,next.y,label+' navigation is one row');
+      assert.ok(previous.width>=90 && next.width>=90,label+' usable navigation width');
+    }
     await page.screenshot({path:path.join(artifacts,`${label}-${width}.png`),fullPage:true});
   }
   for(const width of [360,430,1280]) {
@@ -77,8 +82,23 @@ let browser;
     await page.locator('#sources summary').click();
     await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
     assert.equal(await page.locator('#newRound').getAttribute('href'),'/deeptalk?topic_id=relations_communication');
+    assert.equal(await page.locator('#save, #skip, #refresh').count(),0);
+    assert.equal(await page.locator('#completion, #submit').count(),0);
+    assert.equal(await page.locator('#newRound').isVisible(),false);
+    const answerBox=await page.locator('#answer').boundingBox();
+    assert.ok(answerBox.height>=110 && answerBox.height<=140,'compact initial textarea');
+    const initialMetrics=await page.evaluate(()=>({
+      title:getComputedStyle(document.getElementById('roundTitle')).fontSize,
+      hint:getComputedStyle(document.getElementById('roundDescription')).fontSize,
+      controls:Array.from(document.querySelectorAll('.question-actions button'),el=>({width:el.offsetWidth,height:el.offsetHeight})),
+      status:document.getElementById('questionJump').selectedOptions[0].textContent
+    }));
+    assert.equal(initialMetrics.status,'第1题 · ○待回答');
+    assert.equal(await page.locator('#editor button').count(),2,'only the navigation row');
+    console.log(`METRICS ${width}px: ${JSON.stringify(initialMetrics)}`);
+    await check('first-question',width);
     await page.locator('#answer').fill('浏览器布局测试草稿');
-    await page.locator('#save').click(); await settled();
+    await page.locator('#next').click(); await settled();
     await check('round',width);
     await page.reload(); await page.locator('#round').waitFor({state:'visible'}); await settled();
     await page.locator('#questionJump').selectOption('0'); await settled();
@@ -98,8 +118,45 @@ let browser;
     assert.equal(await page.locator('#answer').inputValue(),'正在输入的回答');
     assert.equal(await page.evaluate(()=>document.activeElement.id),'answer');
     await check('chat-live',width);
-    await page.locator('#save').click(); await settled();
-    console.log(`PASS rendered ${width}px: fixed topic, shared round, save/reload, sources, keyboard, touch targets, no overflow`);
+    await page.locator('#next').click(); await settled();
+    // Long answers remain scrollable and the textarea keeps its resize affordance.
+    await page.locator('#answer').fill('可写很长的回答。'.repeat(500));
+    assert.equal(await page.locator('#answer').evaluate(el=>getComputedStyle(el).resize),'vertical');
+    await page.locator('#answer').evaluate(el=>el.style.height='260px');
+    await check('long-answer',width);
+    await page.locator('#next').click(); await settled();
+    // Complete through the public UI, then inspect cancel/confirm and locked states.
+    const remaining=await page.evaluate(()=>state.total-index);
+    for(let i=0;i<remaining;i++) { await page.locator('#next').click(); await settled(); }
+    await page.locator('#confirmDialog').waitFor({state:'visible'});
+    assert.equal(await page.evaluate(()=>state.submitted),false);
+    await check('confirm-submit',width);
+    await page.locator('#cancelSubmit').click();
+    assert.equal(await page.locator('#newRound').isVisible(),false);
+    assert.equal(await page.locator('#next').innerText(),'提交答案');
+    assert.match(await page.locator('#questionJump').inputValue(),/^12$/);
+    await check('ready-to-submit',width);
+    await page.locator('#questionJump').selectOption('0'); await settled();
+    assert.equal(await page.locator('#next').innerText(),'提交答案');
+    await page.locator('#answer').fill('回看后修改，仍由单排按钮提交');
+    await check('review-edited',width);
+    await page.locator('#next').click(); await settled();
+    await page.locator('#confirmSubmit').click(); await settled();
+    assert.equal(await page.locator('#answer').isVisible(),false);
+    assert.equal(await page.locator('#newRound').isVisible(),true);
+    await check('locked-waiting',width);
+    assert.equal(await page.locator('#newRound').innerText(),'重新答题');
+    const submittedUrl=page.url();
+    await page.locator('#newRound').click(); await page.locator('#setup').waitFor({state:'visible'}); await settled();
+    assert.equal(new URL(page.url()).searchParams.get('topic_id'),'relations_communication');
+    await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
+    assert.notEqual(await page.evaluate(()=>roundId),rid);
+    assert.equal(await page.evaluate(()=>state.progress.human.done),0);
+    assert.equal(await page.locator('#newRound').isVisible(),false);
+    await page.goto(submittedUrl); await page.locator('#round').waitFor({state:'visible'}); await settled();
+    assert.equal(await page.evaluate(()=>state.submitted),true);
+    assert.equal(await page.evaluate(()=>state.questions[0].own.text),'回看后修改，仍由单排按钮提交');
+    console.log(`PASS rendered ${width}px: fixed topic, shared round, autosave/reload, one-row navigation, long input, final confirmation/lock, sources, keyboard, touch targets, no overflow`);
   }
   await page.setViewportSize({width:360,height:900});
   await page.goto(base+'/deeptalk?topic_id=learning_goals_problem_solving');

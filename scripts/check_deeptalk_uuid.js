@@ -47,9 +47,9 @@ function page(cryptoApi) {
     assert.match(w.document.getElementById('message').textContent,/尚未保存/);
     w.eval("state={mode:'chat',submitted:false,total:1,revision:0,progress:{human:{done:0}},questions:[{id:'q1'}]}; roundId='test'; dirty=true;");
     w.document.getElementById('answer').value='保留这份输入';
-    await w.document.getElementById('save').onclick();
+    await w.document.getElementById('next').onclick();
     assert.equal(writes,0); assert.equal(w.document.getElementById('answer').value,'保留这份输入');
-    assert.equal(w.eval('dirty'),true); assert.equal(w.document.getElementById('save').disabled,false);
+    assert.equal(w.eval('dirty'),true); assert.equal(w.document.getElementById('next').disabled,false);
     assert.match(w.document.getElementById('message').textContent,/尚未保存/);
     w.close();
   }

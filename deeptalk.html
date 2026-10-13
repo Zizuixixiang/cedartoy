@@ -27,16 +27,31 @@ p { margin:10px 0; }
 label { display:block; margin:18px 0 6px; font-size:14px; font-weight:600; }
 select,textarea { width:100%; min-width:0; padding:10px; border:2px solid var(--purple-dark); background:#fff; border-radius:0; }
 select { min-height:44px; }
-textarea { min-height:180px; resize:vertical; line-height:1.65; }
+textarea { min-height:120px; resize:vertical; line-height:1.65; }
 .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:18px; }
 .pixel-btn { min-height:44px; padding:9px 16px; border:2px solid var(--purple-dark); background:var(--purple-light); box-shadow:3px 3px 0 var(--purple); font-size:14px; text-decoration:none; }
 .pixel-btn.secondary { background:#fff; }
 button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 :focus-visible { outline:3px solid #716080; outline-offset:3px; }
-#message { min-height:24px; font-size:14px; overflow-wrap:anywhere; }
-#message.error { color:#9b3245; }
-.progress { padding:12px; background:var(--bg); border-left:4px solid var(--pink); font-size:13px; }
-#questionText { margin:18px 0; font-size:clamp(18px,4vw,23px); white-space:pre-wrap; overflow-wrap:anywhere; }
+#message { margin:8px 0; font-size:14px; overflow-wrap:anywhere; }
+#message:empty { display:none; }
+#message.error,#confirmError { color:#9b3245; }
+.progress { margin:8px 0; padding:8px 10px; background:var(--bg); border-left:4px solid var(--pink); font-size:13px; overflow-wrap:anywhere; }
+#questionText { margin:12px 0; font-size:clamp(18px,4vw,23px); white-space:pre-wrap; overflow-wrap:anywhere; }
+#round { margin-top:14px; padding:clamp(14px,3vw,26px); }
+#roundTitle { margin-bottom:4px; }
+#roundDescription { margin:4px 0; }
+#participants { margin:4px 0; overflow-wrap:anywhere; }
+#lockHint { margin:6px 0; }
+.question-picker { display:flex; align-items:center; gap:10px; margin-top:10px; }
+.question-picker label { margin:0; font-size:13px; white-space:nowrap; }
+#questionJump { width:auto; flex:1; padding:6px; border-width:0 0 2px; font-size:14px; }
+#answerLabel { margin:10px 0 4px; }
+#saveHint,#liveHint { margin:6px 0; }
+#liveHint:empty,#confirmError:empty { display:none; }
+.question-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+.question-actions button { min-width:0; padding:9px 8px; }
+#newRound { display:inline-block; min-height:44px; padding:10px 0; margin-top:10px; font-size:13px; text-underline-offset:3px; }
 .record h3 { overflow-wrap:anywhere; }
 .record { padding:20px 0; border-top:2px dashed var(--purple-light); }
 .answer-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
@@ -51,7 +66,7 @@ summary { cursor:pointer; min-height:44px; padding:10px 0; font-size:14px; }
 #topicTitle,#roundTitle { overflow-wrap:anywhere; }
 dialog { max-width:min(480px,calc(100% - 28px)); padding:24px; border:4px solid var(--purple); color:var(--text); background:#fff; }
 dialog::backdrop { background:rgba(50,40,60,.45); }
-@media(max-width:599px) { .answer-pair { grid-template-columns:1fr; gap:4px; } .shell { box-shadow:5px 5px 0 var(--purple-light); } h2 { font-size:20px; } }
+@media(max-width:599px) { main { padding-top:18px; } .answer-pair { grid-template-columns:1fr; gap:4px; } .shell { box-shadow:5px 5px 0 var(--purple-light); } h2 { font-size:20px; } }
 </style>
 </head>
 <body>
@@ -70,17 +85,23 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 </section>
 <section id="round" class="shell" hidden>
 <h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="participants" class="meta"></p><p id="progress" class="progress"></p><p id="lockHint" class="hint"></p>
-<div id="editor"><label for="questionJump">查看题目</label><select id="questionJump"></select><h3 id="questionText" tabindex="-1"></h3><label id="answerLabel" for="answer">你的回答</label><textarea id="answer" maxlength="8000" placeholder="写下你的想法，也可以跳过这题。" aria-describedby="saveHint"></textarea><p id="ownRead" class="own-answer" hidden></p><p id="saveHint" class="hint">写好后点击「确认回答」，完成整卷前仍可修改。</p><div class="actions"><button id="previous" class="pixel-btn secondary" type="button">上一题</button><button id="save" class="pixel-btn" type="button">确认回答</button><button id="skip" class="pixel-btn secondary" type="button">跳过这题</button><button id="next" class="pixel-btn secondary" type="button">下一题</button></div><div class="actions"><button id="submit" class="pixel-btn" type="button">确认提交整卷</button></div></div>
-<div id="peerAnswer" class="record" hidden><h3>小机的回答</h3><p id="peerText" class="own-answer"></p><p id="liveHint" class="hint" role="status"></p></div>
-<div id="records" hidden></div><div class="actions"><button id="refresh" class="pixel-btn secondary" type="button">刷新进度</button><a id="newRound" class="pixel-btn secondary" href="/deeptalk">另开一轮</a></div>
+<div id="editor">
+<div class="question-picker"><label for="questionJump">选题</label><select id="questionJump"></select></div>
+<h3 id="questionText" tabindex="-1"></h3><label id="answerLabel" for="answer">你的回答</label><textarea id="answer" rows="4" maxlength="8000" placeholder="写下你的想法…" aria-describedby="saveHint"></textarea><p id="ownRead" class="own-answer" hidden></p>
+<p id="saveHint" class="hint">换题时自动保存，留空则跳过。</p>
+<div class="question-actions"><button id="previous" class="pixel-btn secondary" type="button">上一题</button><button id="next" class="pixel-btn" type="button">下一题</button></div>
+</div>
+<div id="peerAnswer" class="record" hidden><h3>小机的回答</h3><p id="peerText" class="own-answer"></p></div>
+<p id="liveHint" class="hint" role="status"></p>
+<div id="records" hidden></div><a id="newRound" href="/deeptalk" hidden>重新答题</a>
 </section>
 <details id="sources" class="shell" hidden><summary>来源与作者</summary><div id="sourceBody"></div></details>
-<dialog id="confirmDialog" aria-labelledby="confirmTitle"><h2 id="confirmTitle">正式提交整卷？</h2><p id="confirmText">提交后，你的回答就不能再修改。双方都正式提交后，才会解锁双人回答。</p><div class="actions"><button id="cancelSubmit" class="pixel-btn secondary" type="button" autofocus>再检查一下</button><button id="confirmSubmit" class="pixel-btn" type="button">正式提交</button></div></dialog>
+<dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText"><h2 id="confirmTitle">正式提交整卷？</h2><p id="confirmText"></p><p id="confirmError" class="hint" role="alert"></p><div class="actions"><button id="cancelSubmit" class="pixel-btn secondary" type="button" autofocus>再检查一下</button><button id="confirmSubmit" class="pixel-btn" type="button">正式提交</button></div></dialog>
 </main>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-let polling = false, viewVersion = 0;
+let polling = false, viewVersion = 0, remoteChanged = false;
 let context, topic, state, index = 0, busy = false, dirty = false, pendingAnswer = null, pendingCreate = null;
 const initialToken = localStorage.getItem('cedartoy_token') || '';
 const pageParams = new URLSearchParams(location.search);
@@ -105,7 +126,8 @@ function key() {
   const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0'));
   return `${hex.slice(0,4).join('')}-${hex.slice(4,6).join('')}-${hex.slice(6,8).join('')}-${hex.slice(8,10).join('')}-${hex.slice(10).join('')}`;
 }
-function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
+function setText(id, text) { if ($(id).textContent !== text) $(id).textContent = text; }
+function message(text, error = false) { setText('message', text); $('message').classList.toggle('error', error); }
 async function api(action, params = {}, write = false) {
   if (localStorage.getItem('cedartoy_token') !== initialToken) { location.reload(); throw new Error('账号已切换，请重新读取'); }
   const query = new URLSearchParams({action, ...params});
@@ -131,22 +153,33 @@ async function api(action, params = {}, write = false) {
 }
 async function work(fn) {
   if (busy) return;
-  busy = true;
+  busy = true; viewVersion++;
   const controls = [...document.querySelectorAll('button,select,textarea')];
   const wasDisabled = controls.map(el => el.disabled);
   controls.forEach(el => el.disabled = true);
-  try { await fn(); } catch (err) { message(err.message || '网络中断，请重试；当前输入仍保留在这里。', true); }
+  try { await fn(); } catch (err) {
+    const text = err.message || '网络中断，请重试；当前输入仍保留在这里。';
+    message(text, true);
+    if ($('confirmDialog').open) $('confirmError').textContent = text;
+  }
   finally { busy = false; controls.forEach((el, i) => el.disabled = wasDisabled[i]); updateControls(); }
 }
 function option(value, label) { const el = document.createElement('option'); el.value = value; el.textContent = label; return el; }
+function isSubmitStep() {
+  return !state.submitted && (index === state.total - 1 || state.questions.every(q => q.own));
+}
 function updateControls() {
   if (busy) return;
   if (context) $('create').disabled = !context.machines.length || !topic?.available;
   if (!state) return;
-  $('previous').disabled = index === 0;
-  $('next').disabled = index >= state.total - 1;
-  $('save').disabled = $('skip').disabled = $('answer').disabled = state.submitted;
-  $('submit').disabled = state.submitted || state.progress.human.done !== state.total || dirty;
+  const retainedDraft = state.submitted && dirty;
+  $('previous').disabled = index === 0 || retainedDraft;
+  $('next').disabled = (state.submitted && index >= state.total - 1) || retainedDraft;
+  $('next').textContent = isSubmitStep() ? '提交答案' : '下一题';
+  $('answer').disabled = false;
+  $('answer').readOnly = state.submitted;
+  $('questionJump').disabled = retainedDraft;
+  $('newRound').hidden = state.submitted !== true;
 }
 function setupTopic() {
   $('topicTitle').textContent = topic.title;
@@ -161,21 +194,26 @@ function renderQuestion(preserveDraft = false) {
   const q = state.questions[index];
   $('questionJump').value = String(index);
   $('questionText').textContent = `${index + 1}. ${q.text}`;
-  if (!preserveDraft) $('answer').value = q.own?.text || '';
-  $('answer').hidden = $('answerLabel').hidden = state.submitted;
-  $('ownRead').hidden = !state.submitted; $('ownRead').textContent = answerText(q.own);
-  $('saveHint').textContent = state.submitted ? '整卷已提交，你的回答已锁定。' : q.own?.skipped ? '这题已跳过。正式提交前，你仍可补写回答。' : q.own ? '这题已作答。完成整卷前仍可修改。' : '写好后点击「确认回答」，完成整卷前仍可修改。';
-  $('save').hidden = $('skip').hidden = $('submit').hidden = state.submitted;
-  if (!preserveDraft) { dirty = false; pendingAnswer = null; }
-  else $('saveHint').textContent = '当前输入尚未确认。';
+  if (!preserveDraft) { $('answer').value = q.own?.text || ''; dirty = false; pendingAnswer = null; }
+  const retainedDraft = state.submitted && dirty;
+  $('answer').hidden = $('answerLabel').hidden = state.submitted && !retainedDraft;
+  $('ownRead').hidden = !state.submitted || retainedDraft;
+  $('ownRead').textContent = answerText(q.own);
+  $('saveHint').textContent = retainedDraft ? '整卷已在另一页面提交。这里保留未提交的草稿供复制，不能再修改。' : state.submitted ? '整卷已提交，你的回答已锁定。' : q.own?.skipped && !dirty ? '这题已跳过，可补写。换题时自动保存。' : '换题时自动保存，留空则跳过。提交整卷前可修改。';
   renderPeer(); updateControls();
 }
 function renderPeer() {
-  $('peerAnswer').hidden = state.mode !== 'chat' || state.unlocked;
-  $('peerText').textContent = answerText(state.questions[index].partner);
+  const visible = state.mode === 'chat' && !state.unlocked;
+  $('peerAnswer').hidden = !visible;
+  // Never place blind peer content in the hidden DOM.
+  setText('peerText', visible ? answerText(state.questions[index].partner) : '');
+}
+function updateQuestionOptions() {
+  $('questionJump').replaceChildren(...state.questions.map((q,i) => option(i, `第${i+1}题 · ${q.own ? q.own.skipped ? '—已跳过' : '✓已回答' : '○待回答'}`)));
+  $('questionJump').value = String(index);
 }
 function renderProgress() {
-  $('progress').textContent = progressText('human',state.human_name) + ' ｜ ' + progressText('ai',aiName());
+  setText('progress', progressText('human',state.human_name) + ' ｜ ' + progressText('ai',aiName()));
 }
 function renderRound(preserveDraft = false) {
   $('setup').hidden = true; $('round').hidden = false; $('sources').hidden = false;
@@ -185,7 +223,6 @@ function renderRound(preserveDraft = false) {
   $('roundTitle').textContent = state.title; $('participants').textContent = `${state.human_name} × ${aiName()}`;
   renderProgress();
   $('lockHint').textContent = state.mode === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：双方答完后互相查看。';
-  $('confirmText').textContent = state.mode === 'chat' ? '提交后，你的回答就不能再修改。' : '提交后，你的回答就不能再修改。双方都正式提交后，才会解锁双人回答。';
   $('peerAnswer').hidden = state.mode !== 'chat' || state.unlocked;
   $('editor').hidden = state.unlocked; $('records').hidden = !state.unlocked;
   if (state.unlocked) {
@@ -201,7 +238,7 @@ function renderRound(preserveDraft = false) {
       article.append(pair); $('records').append(article);
     }
   } else {
-    $('questionJump').replaceChildren(...state.questions.map((q,i) => option(i, `第${i+1}题 · ${q.own ? q.own.skipped ? '已跳过' : '已回答' : '待回答'}`)));
+    updateQuestionOptions();
     renderQuestion(preserveDraft);
   }
   updateControls();
@@ -209,51 +246,102 @@ function renderRound(preserveDraft = false) {
 async function loadRound(initial = false, preserveDraft = false) {
   viewVersion++;
   const fresh = await api('view',{round_id:roundId});
-  if (preserveDraft && dirty && fresh.submitted) { message('整卷已在另一页面提交，当前输入仍保留在这里，但不能再提交。', true); return false; }
+  if (preserveDraft && dirty && fresh.submitted) {
+    state.submitted = true; state.progress = fresh.progress;
+    renderProgress(); renderQuestion(true);
+    throw new Error('整卷已在另一页面提交，当前草稿仍保留供复制。');
+  }
   preserveDraft = preserveDraft && dirty;
   if (preserveDraft && JSON.stringify(state.questions[index].own) !== JSON.stringify(fresh.questions[index].own)) {
     if (!confirm('另一页面也修改了这题：\n' + answerText(fresh.questions[index].own) + '\n\n保留当前输入，继续修改这份回答？')) return false;
   }
-  state = fresh;
+  state = fresh; remoteChanged = false;
   if (initial) index = state.next_number - 1;
   renderRound(preserveDraft);
+  return true;
 }
-// Read only the displayed question. Never replace local input, revision or focus.
+// Read-only polling in both modes. A routine poll never replaces input, selection,
+// scroll, revision or question options. Only a confirmed lock/unlock changes views.
 async function pollPeer() {
-  if (polling || busy || document.hidden || !state || state.mode !== 'chat' || state.unlocked || $('round').hidden) return;
+  if (polling || busy || document.hidden || !state || state.unlocked || $('round').hidden) return;
   polling = true;
   const version = viewVersion, currentState = state, currentIndex = index;
+  const current = () => !busy && version === viewVersion && state === currentState && index === currentIndex && !document.hidden;
   try {
     const fresh = await api('question', {round_id:roundId, number:currentIndex + 1});
-    if (busy || version !== viewVersion || state !== currentState || index !== currentIndex || document.hidden) return;
-    state.questions[index].partner = fresh.questions[0].partner;
+    if (!current()) return;
     state.progress = fresh.progress;
+    if (state.mode === 'chat') state.questions[index].partner = fresh.questions[0].partner;
     renderPeer(); renderProgress();
-    $('liveHint').textContent = fresh.revision !== state.revision || fresh.submitted !== state.submitted ? '你的回答已在另一页面更新，请刷新后继续。' : fresh.unlocked ? '双方已完成，点击刷新可查看整卷回答。' : '';
+    remoteChanged = fresh.revision !== state.revision || fresh.submitted !== state.submitted;
+    setText('liveHint', remoteChanged ? '回答已在另一页面更新，换题时会核对；当前输入已保留。' : '');
+    if (fresh.submitted && dirty) {
+      state.submitted = true;
+      if ($('confirmDialog').open) $('confirmDialog').close();
+      renderQuestion(true); return;
+    }
+    if ((fresh.submitted !== state.submitted || fresh.unlocked !== state.unlocked) && !dirty && !pendingAnswer) {
+      const full = await api('view', {round_id:roundId});
+      if (!current() || dirty || pendingAnswer) return;
+      state = full; remoteChanged = false;
+      if ($('confirmDialog').open) $('confirmDialog').close();
+      renderRound(); $('liveHint').textContent = '';
+    }
   } catch (err) {
-    if (version === viewVersion && state === currentState && index === currentIndex) {
-      $('liveHint').textContent = '暂时无法更新对方回答，稍后会重试。';
+    if (current()) {
+      $('liveHint').textContent = '暂时无法同步进度，稍后自动重试；当前输入已保留。';
       if ([401,403,404].includes(err.status)) { $('round').hidden = true; state = null; message(err.message, true); }
     }
   } finally { polling = false; }
 }
 setInterval(pollPeer, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollPeer(); });
-async function saveAnswer(skip = false) {
+async function saveAnswer() {
+  // An uncertain response must retry its original request before any reconciliation.
+  if (remoteChanged && !pendingAnswer) {
+    if (await loadRound(false, true) === false) throw new Error('未换题，当前输入已保留。');
+  }
   if (state.submitted) return;
-  const q = state.questions[index], text = $('answer').value;
-  if (!skip && !text.trim()) throw new Error('请填写回答，或点击「跳过这题」。');
+  const q = state.questions[index], text = $('answer').value, skip = !text.trim();
+  if (!dirty && q.own && !pendingAnswer) return;
   const body = {round_id:roundId, question_id:q.id, revision:state.revision, ...(skip ? {skip:true} : {text})};
   const fingerprint = JSON.stringify(body);
   if (!pendingAnswer || pendingAnswer.fingerprint !== fingerprint) pendingAnswer = {fingerprint, body:{...body,request_id:key()}};
-  const result = await api('answer',pendingAnswer.body,true);
+  let result;
+  try { result = await api('answer',pendingAnswer.body,true); }
+  catch (err) {
+    if (err.status === 409) {
+      remoteChanged = true; pendingAnswer = null;
+      throw new Error('回答已在另一页面更新。当前输入已保留，再次换题可核对后重试。');
+    }
+    throw err;
+  }
+  // Replaying an acknowledged request may return a newer revision from another tab.
+  // Do not pair that revision with our older cached answer and silently overwrite it.
+  if (result.revision !== body.revision + 1 || result.submitted) {
+    remoteChanged = true; pendingAnswer = null;
+    throw new Error('回答已保存，但答卷随后在另一页面更新。当前输入已保留，再次换题可核对。');
+  }
   state = {...state,...result}; q.own = skip ? {skipped:true} : {text,skipped:false};
-  dirty = false; pendingAnswer = null; renderRound(); message(skip ? '已跳过这题。' : '这题已作答。');
+  dirty = false; pendingAnswer = null; remoteChanged = false;
+  updateQuestionOptions(); renderProgress(); message(''); $('liveHint').textContent = '';
 }
 async function move(next) {
-  if (dirty && state.mode === 'chat') { message('请先确认回答，或跳过这题。'); return; }
-  if (dirty) await saveAnswer();
-  index = next; renderQuestion(); $('questionText').focus();
+  await saveAnswer();
+  if (state.submitted && dirty) return;
+  if (next >= state.total) {
+    const missing = state.questions.findIndex(q => !q.own);
+    if (missing < 0) { renderQuestion(); openSubmit(); return; }
+    next = missing; message('还有未处理的题目，请作答或留空跳过。');
+  }
+  index = Math.max(0, next); renderQuestion(); $('questionText').focus();
+}
+function openSubmit() {
+  if (state.submitted || dirty || state.questions.some(q => !q.own)) return;
+  const skipped = state.questions.filter(q => q.own.skipped).length;
+  $('confirmText').textContent = `共 ${state.total} 题，已回答 ${state.total - skipped} 题，已跳过 ${skipped} 题。提交后整卷锁定，不能再修改。` + (state.mode === 'blind' ? '双方都正式提交后，才会解锁双人回答。' : '');
+  $('confirmError').textContent = '';
+  $('confirmDialog').showModal();
 }
 $('mode').onchange = () => { $('modeIntro').textContent = $('mode').value === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：双方答完后互相查看。'; };
 $('create').onclick = () => work(async () => {
@@ -266,22 +354,30 @@ $('create').onclick = () => work(async () => {
   roundId = result.round_id; pendingCreate = null; sessionStorage.removeItem('deeptalk_pending_create');
   history.replaceState(null,'','/deeptalk?round_id=' + encodeURIComponent(roundId));
   $('sources').open = false; $('sourceBody').replaceChildren();
-  await loadRound(true); message('新一轮已开始。');
+  await loadRound(true); message('');
 });
-$('answer').oninput = () => { dirty = true; updateControls(); $('saveHint').textContent = '当前输入尚未确认。'; };
-$('save').onclick = () => work(() => saveAnswer());
-$('skip').onclick = () => work(async () => { await saveAnswer(true); if (index < state.total-1) { index++; renderQuestion(); } });
+$('answer').oninput = () => { dirty = true; updateControls(); $('saveHint').textContent = '换题时自动保存，留空则跳过。提交整卷前可修改。'; };
 $('previous').onclick = () => work(() => move(index-1));
-$('next').onclick = () => work(() => move(index+1));
-$('questionJump').onchange = () => { const next = Number($('questionJump').value); $('questionJump').value = String(index); work(() => move(next)); };
-$('refresh').onclick = () => work(async () => {
-  if (await loadRound(false, true) !== false) message('已刷新。');
-});
-$('submit').onclick = () => $('confirmDialog').showModal();
+$('next').onclick = () => work(() => move(isSubmitStep() ? state.total : index+1));
+$('questionJump').onchange = () => { const next = Number($('questionJump').value); $('questionJump').value = String(index); if (next !== index) work(() => move(next)); };
 $('cancelSubmit').onclick = () => $('confirmDialog').close();
 $('confirmSubmit').onclick = () => work(async () => {
-  await api('submit',{round_id:roundId,revision:state.revision,confirm:true},true);
-  $('confirmDialog').close(); await loadRound(); message('整卷已正式提交。');
+  let result;
+  try { result = await api('submit',{round_id:roundId,revision:state.revision,confirm:true},true); }
+  catch (err) {
+    if (err.status === 409) {
+      $('confirmDialog').close(); await loadRound(false, true);
+      throw new Error('答卷已在另一页面更新，请检查后重新确认提交。');
+    }
+    throw err;
+  }
+  // Lock immediately after the acknowledged write, even if the result read fails.
+  state = {...state,...result,unlocked:false};
+  $('confirmDialog').close(); renderRound(); message('整卷已正式提交。');
+  if (result.unlocked) {
+    try { await loadRound(); }
+    catch (_) { $('liveHint').textContent = '答卷已锁定，暂时无法读取双人回答，稍后自动重试。'; }
+  }
 });
 function sourceLink(label, url) {
   const text = document.createElement('span'); text.textContent = label;
@@ -314,7 +410,7 @@ window.addEventListener('storage', event => {
 work(async () => {
   if (!roundId && !requestedTopicId) { $('chooseTopic').hidden = false; message('请选择一套想聊的题库。'); return; }
   if (!initialToken) { $('login').hidden = false; message('登录后可以创建和继续轮次。'); return; }
-  if (roundId) { await loadRound(true); message('轮次已恢复。'); return; }
+  if (roundId) { await loadRound(true); message(''); return; }
   context = await api('context');
   topic = context.topics.find(t => t.topic_id === requestedTopicId);
   if (!topic) { $('chooseTopic').hidden = false; message('没有找到这套题库，请从首页重新进入。', true); return; }
