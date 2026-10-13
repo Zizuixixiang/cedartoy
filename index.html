@@ -1119,8 +1119,12 @@
     #feedbackModal .feedback-actions button { min-width: 0; min-height: 44px; }
     #feedbackModal :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--purple-darker); outline-offset: 3px; }
     #feedbackList { display: grid; gap: 10px; }
-    #feedbackList .feedback-list-item { display: grid; gap: 4px; white-space: normal; overflow-wrap: anywhere; text-align: left; justify-content: flex-start; font: 13px/1.6 system-ui, sans-serif; }
-    #feedbackList .feedback-list-item > span:first-child { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #feedbackList .feedback-list-item { display: grid; min-width: 0; gap: 4px; white-space: normal; overflow-wrap: anywhere; text-align: left; justify-content: stretch; font: 13px/1.6 system-ui, sans-serif; }
+    #feedbackModal .feedback-ticket-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+    #feedbackList .feedback-ticket-preview { flex: 1 1 8em; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #feedbackModal .feedback-status { display: inline-flex; align-items: center; flex: none; gap: 4px; padding: 0 5px; border: 1px solid var(--purple); background: var(--purple-light); color: var(--text); font: 600 12px/1.5 system-ui, sans-serif; white-space: nowrap; }
+    #feedbackModal .feedback-status[data-status="pending"] { color: #795619; border-color: #9B742D; background: #FFF9E8; }
+    #feedbackModal .feedback-status[data-status="closed"] { color: #355C43; border-color: #527A62; background: #F1FAF3; }
     #feedbackPage { font-size: 11px; }
     #feedbackDetail .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--purple); background: var(--bg); }
     #feedbackDetail .feedback-message[data-role="admin"] { border-left-color: var(--pink-dark); background: #fff; }
@@ -8337,6 +8341,16 @@
     }
 
     const feedbackStatuses = {pending: "待处理", processing: "处理中", closed: "已结束"};
+    function feedbackStatusElement(status) {
+      const known = Object.prototype.hasOwnProperty.call(feedbackStatuses, status);
+      const badge = document.createElement("span"); badge.className = "feedback-status";
+      badge.dataset.status = known ? status : "unknown";
+      const icon = document.createElement("span"); icon.setAttribute("aria-hidden", "true");
+      icon.textContent = known ? {pending: "◷", processing: "↻", closed: "✓"}[status] : "?";
+      const label = document.createElement("span"); label.textContent = known ? feedbackStatuses[status] : "状态未知";
+      badge.append(icon, label);
+      return badge;
+    }
     const feedbackCategories = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
     let feedbackMode = "submit", feedbackPage = 1, feedbackBusy = false, feedbackVersion = 0;
     let feedbackReceipt = null, feedbackIdentityToken = null, feedbackReturnFocus = null;
@@ -8480,7 +8494,9 @@
     function renderFeedbackDetail(data, code = null) {
       feedbackConversation = {...data, code};
       const ticket = data.ticket, panel = $("feedbackDetail"); panel.replaceChildren();
-      const title = document.createElement("h3"); title.textContent = `反馈 #${ticket.id} · ${feedbackStatuses[ticket.status]}`; panel.append(title);
+      const title = document.createElement("h3"); title.className = "feedback-ticket-heading";
+      const name = document.createElement("span"); name.textContent = `反馈 #${ticket.id}`;
+      title.append(name, feedbackStatusElement(ticket.status)); panel.append(title);
       const meta = document.createElement("p"); meta.className = "feedback-message-meta";
       meta.textContent = `${feedbackCategories[ticket.category]} · ${data.message_count} 条消息 · 更新于 ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
       panel.append(meta);
@@ -8538,10 +8554,12 @@
         for (const ticket of data.tickets) {
           const button = document.createElement("button");
           button.type = "button"; button.className = "pixel-btn secondary feedback-list-item";
-          const title = document.createElement("span"); title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
+          const heading = document.createElement("span"); heading.className = "feedback-ticket-heading";
+          const title = document.createElement("span"); title.className = "feedback-ticket-preview"; title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
+          heading.append(title, feedbackStatusElement(ticket.status));
           const meta = document.createElement("span"); meta.className = "feedback-message-meta";
-          meta.textContent = `${feedbackStatuses[ticket.status]} · ${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
-          button.append(title, meta);
+          meta.textContent = `${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
+          button.append(heading, meta);
           button.onclick = () => feedbackRun(async current => {
             const data = await feedbackRequest("detail", {ticket_id: ticket.id});
             if (current()) renderFeedbackDetail(data);
