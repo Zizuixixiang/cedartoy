@@ -436,8 +436,20 @@ def _build_root_platform_tools(platform_tools):
     }
     account_tool = next(tool for tool in tools if tool.get("name") == "account")
     account_tool["description"] = '账号操作先读 get_guide(game="account")。'
+    account_properties = account_tool["inputSchema"]["properties"]
+    # Strict clients drop undeclared arguments even with additionalProperties.
+    # Retain ordinary account fields and their constraints; detailed action
+    # instructions stay in the guide and admin-only fields stay in legacy.
     account_tool["inputSchema"]["properties"] = {
         "action": {"type": "string", "description": "操作名；按账号 guide 填写。"},
+        **{
+            name: {key: value for key, value in account_properties[name].items() if key != "description"}
+            for name in (
+                "username", "password", "avatar", "current_password", "old_password",
+                "new_password", "new_username", "token", "ai_user_id", "human",
+                "game", "slot", "confirm", "player_id", "claim_code",
+            )
+        },
     }
     return tools
 

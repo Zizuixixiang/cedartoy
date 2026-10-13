@@ -258,7 +258,10 @@ class AdminRecoveryMcpTests(unittest.TestCase):
 
     def test_schema_hides_admin_teaching_but_preserves_call_fields(self):
         standard = next(t for t in server._root_tools() if t["name"] == "account")["inputSchema"]
-        self.assertEqual(set(standard["properties"]), {"action"})
+        self.assertTrue({"action", "username", "password"} <= standard["properties"].keys())
+        self.assertTrue({"view", "page", "ticket_id", "status", "reply", "before_id",
+                         "internal_note", "decision", "admin_note"}.isdisjoint(standard["properties"]))
+        self.assertIs(standard["additionalProperties"], True)
         schema = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "account")["inputSchema"]
         for action in admin_recovery_mcp.ACTIONS:
             self.assertNotIn(action, json.dumps(schema))

@@ -240,8 +240,14 @@ class RootMcpProtocolTests(unittest.TestCase):
                                 "open_door", "cancel_wait", "start_game", "record_choice"):
                     self.assertNotIn(example, serialized)
 
-    def test_ordinary_account_is_a_thin_shell_and_compatibility_keeps_source(self):
+    def test_ordinary_account_declares_compact_typed_fields_and_legacy_keeps_source(self):
         source = next(t for t in server._PLATFORM_TOOLS if t["name"] == "account")
+        expected_types = {
+            **dict.fromkeys(("action", "username", "password", "avatar", "current_password",
+                             "old_password", "new_password", "new_username", "token",
+                             "game", "player_id", "claim_code"), "string"),
+            "ai_user_id": "integer", "slot": "integer", "human": "boolean", "confirm": "boolean",
+        }
         for user_agent, mode in product(("ExampleMcpClient/1.0", "Kelivo/1.3.1"), ("", "legacy", "standard")):
             with self.subTest(user_agent=user_agent, mode=mode):
                 tool = next(t for t in server._root_tools(user_agent, schema_mode=mode)
@@ -252,14 +258,27 @@ class RootMcpProtocolTests(unittest.TestCase):
                     continue
                 self.assertEqual(tool["description"], '账号操作先读 get_guide(game="account")。')
                 schema = tool["inputSchema"]
-                self.assertEqual(set(schema["properties"]), {"action"})
+                self.assertEqual({name: field["type"] for name, field in schema["properties"].items()},
+                                 expected_types)
+                for name in expected_types.keys() - {"action"}:
+                    self.assertEqual(schema["properties"][name], {
+                        key: value for key, value in source["inputSchema"]["properties"][name].items()
+                        if key != "description"
+                    })
                 self.assertEqual(schema["required"], ["action"])
                 self.assertIs(schema["additionalProperties"], True)
                 validator = Draft202012Validator(schema)
                 validator.validate({"action": "login", "username": "fixture", "password": "fixture"})
                 validator.validate({"action": "delete_account", "confirm": True, "current_password": "fixture"})
+                # Admin fields remain callable through additionalProperties, without public teaching.
+                validator.validate({"action": "admin_recovery_detail", "ticket_id": 1})
+                for field, value in (("username", 123), ("password", 123), ("ai_user_id", "42"),
+                                     ("human", "true"), ("confirm", "true"), ("slot", 0),
+                                     ("slot", 6), ("slot", "2"), ("avatar", "🤖" * 17)):
+                    self.assertFalse(validator.is_valid({"action": "fixture", field: value}), (field, value))
                 self.assertFalse(validator.is_valid({"username": "fixture"}))
-                self.assertLess(len(json.dumps(tool, ensure_ascii=False, separators=(",", ":"))), 400)
+                self.assertLess(len(json.dumps(tool, ensure_ascii=False)),
+                                len(json.dumps(source, ensure_ascii=False)) / 2)
 
     def test_announcement_history_is_absent_from_permanent_mcp_surfaces(self):
         with patch.object(server.sqlite3, "connect", side_effect=AssertionError("unexpected database access")):
@@ -268,7 +287,7 @@ class RootMcpProtocolTests(unittest.TestCase):
             for surface in surfaces:
                 self.assertNotRegex(json.dumps(surface, ensure_ascii=False), r"announcements|查看历史公告|查看公告")
 
-    def test_play_schemas_keep_gemini_numeric_enum_compatibility(self):
+    def test_root_schemas_keep_gemini_numeric_enum_compatibility(self):
         def check_enums(node):
             if isinstance(node, dict):
                 if "enum" in node:
@@ -282,7 +301,9 @@ class RootMcpProtocolTests(unittest.TestCase):
         for user_agent, schema_mode in product(("", "Kelivo/1.2.6", "Dart/3.9 (dart:io)", "ktor-client/3.0"), ("", "legacy", "standard")):
             with self.subTest(user_agent=user_agent, schema_mode=schema_mode):
                 schema = self._play_schema(user_agent, schema_mode=schema_mode)
-                check_enums(schema)
+                for tool in server._root_tools(user_agent, schema_mode=schema_mode):
+                    Draft202012Validator.check_schema(tool["inputSchema"])
+                    check_enums(tool["inputSchema"])
                 if schema_mode == "legacy":
                     takeover = schema["properties"]["params"]["properties"]["timeout_takeover_seconds"]
                     self.assertEqual(takeover["type"], "integer")
