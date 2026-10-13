@@ -63,7 +63,9 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 .answer-pair b { font-size:13px; }
 .history-entry { padding:10px 0; border-bottom:2px dashed var(--purple-light); }
 .history-entry p { margin:0; }
-.history-entry a { display:inline-block; padding:10px 0; min-height:44px; font-size:14px; }
+.history-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.history-entry a,.history-delete { display:inline-block; padding:10px 0; min-height:44px; font-size:14px; text-decoration:underline; text-underline-offset:3px; }
+.history-delete { border:0; box-shadow:none; background:transparent; color:inherit; }
 summary { cursor:pointer; min-height:44px; padding:10px 0; font-size:14px; }
 #sourceBody { font-size:13px; overflow-wrap:anywhere; }
 #sources { padding-top:8px; padding-bottom:8px; }
@@ -219,7 +221,7 @@ function historyEntry(round) {
   link.href = '/deeptalk?round_id=' + encodeURIComponent(round.round_id);
   link.textContent = round.status === 'complete' ? '查看双方回答' : round.human_submitted ? '查看上次答卷' : '继续答题';
   const remove = document.createElement('button');
-  remove.type = 'button'; remove.className = 'pixel-btn secondary'; remove.textContent = '删除';
+  remove.type = 'button'; remove.className = 'history-delete'; remove.textContent = '删除';
   remove.setAttribute('aria-label', '删除 ' + new Date(round.created_at).toLocaleString('zh-CN') + ' 的轮次');
   remove.onclick = () => work(async () => {
     pendingDelete = await api('delete_preview', {round_id:round.round_id});
@@ -229,7 +231,7 @@ function historyEntry(round) {
     $('deleteDialog').showModal();
     $('cancelDelete').disabled = false; $('cancelDelete').focus();
   });
-  const actions = document.createElement('div'); actions.className = 'actions'; actions.append(link, remove);
+  const actions = document.createElement('div'); actions.className = 'history-actions'; actions.append(link, remove);
   entry.append(meta, actions); return entry;
 }
 async function loadHistory() {
