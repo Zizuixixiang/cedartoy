@@ -1,0 +1,392 @@
+{
+  "life_reflection_35_001": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "和爱的人在一起，有说有笑吃顿饭",
+      "做着自己喜欢的事，还能赚到钱",
+      "身体健康，心里没什么挂碍",
+      "有猫有狗有花园，日子慢慢过"
+    ],
+    "question_sha256": "24d9c6c362b407277fa1e39fd444812c9b089590d9df9032ef91f34977b4f6ae"
+  },
+  "life_reflection_35_002": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "重要的人突然消失",
+      "身体垮掉，什么也做不了",
+      "一辈子活在别人眼光里",
+      "被困在无聊重复的生活中"
+    ],
+    "question_sha256": "17531bbb65d1c4d7dd009f36eae0bbf63e4693adafe670214d4ee5058a58bcee"
+  },
+  "life_reflection_35_003": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "拖延，总在deadline前爆肝",
+      "太在意别人看法，容易内耗",
+      "三分钟热度，什么都坚持不下来",
+      "嘴硬心软，吵架时说话太伤人"
+    ],
+    "question_sha256": "46224d27ab2b79c1a4abe34ffa99e86e7ee0e89caaabe587760cd1ac11d2c8a0"
+  },
+  "life_reflection_35_004": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "虚伪，当面一套背后一套",
+      "自私到只考虑自己死活",
+      "爱贬低别人找优越感",
+      "没有边界感，总把别人当情绪垃圾桶"
+    ],
+    "question_sha256": "e66f372b5af0d608bdb975ee45529eb30a51b9236a89ddaf7d22f76a337c6caf"
+  },
+  "life_reflection_35_005": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "马斯克，敢把疯狂想法做成真",
+      "妈妈，所有事都能扛下来",
+      "某个坚持创作十年的独立歌手",
+      "没什么具体的人，敬佩所有认真生活的人"
+    ],
+    "question_sha256": "6f20a08e3bccae351b05f9cb1107b360efb34ae3b6fe4fc41b7135e297ab8a71"
+  },
+  "life_reflection_35_006": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "买最新款数码产品不眨眼",
+      "心情不好就订机票去另一个城市",
+      "收藏一堆很贵但没用的潮玩",
+      "每周都去高级餐厅吃到撑"
+    ],
+    "question_sha256": "a4a0b63e55f7e3b0b5ec2a92d9bb695cd3702c6c12b64afc177e18bd6a3718f7"
+  },
+  "life_reflection_35_007": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "平静，像湖面一样没什么波澜",
+      "有点焦虑，事情堆着做不完",
+      "兴奋，刚完成一件大事",
+      "疲惫但满足，像运动完洗了热水澡"
+    ],
+    "question_sha256": "40bd85299e11f0653e60757256354a6c5380d0369fb60a7a87b6046a4ace1635"
+  },
+  "life_reflection_35_008": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "无私，总被用来绑架人牺牲自己",
+      "勤劳，让人不敢休息",
+      "谦逊，变成不敢展示自己的借口",
+      "节俭，省到生活质量都没了"
+    ],
+    "question_sha256": "0736cf0d967db026cad57c0473f1ac06a5374916536c8b0b6964050142c40b4b"
+  },
+  "life_reflection_35_009": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "为了保护别人不受伤，说善意的谎",
+      "被逼到没退路，只能编个理由挡一挡",
+      "不想解释太麻烦，随口应付过去",
+      "基本不说，宁愿沉默"
+    ],
+    "question_sha256": "0d8a4dd8705a7e465e65813248ea37f25e941c0d3a1011d9cfbe9d066c4603df"
+  },
+  "life_reflection_35_010": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "脸太圆，拍照总显胖",
+      "身高不满意，总想再高几厘米",
+      "牙齿不齐，笑的时候有点尴尬",
+      "发际线越来越高，很崩溃"
+    ],
+    "question_sha256": "f74f3dd74f1eacbfe06267789009452314198449e9c58853d851fe6d5039d825"
+  },
+  "life_reflection_35_011": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "b9a4782b2b37091db88f369aeae1991291a78ff68da2a3753797e5139ae457bc"
+  },
+  "life_reflection_35_012": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "有担当，遇事不逃避",
+      "幽默感，能接住梗",
+      "共情力强，不随便评判",
+      "行动派，少说多做"
+    ],
+    "question_sha256": "acd64bf4e210bc635756c661db14c0e6b9c65b530b730f2948f65acc2642ef3c"
+  },
+  "life_reflection_35_013": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "内心坚韧却不失柔软",
+      "有主见但愿意听人说话",
+      "幽默又飒，能玩到一起",
+      "懂得照顾自己，不轻易内耗"
+    ],
+    "question_sha256": "54675769870015eab0e1df6023cb958c3fd44d3f38832a431aed5891f3f32b5f"
+  },
+  "life_reflection_35_014": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "“真的假的”",
+      "“救命”或“笑死”",
+      "“就是说”",
+      "“还行吧”",
+      "“好困”或“好累”"
+    ],
+    "question_sha256": "3287ea56b93f231ef667198edb2a0885d0bed3b0f875d7e873504a51a34878ba"
+  },
+  "life_reflection_35_015": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "家人或某个具体的人",
+      "养的猫或狗",
+      "某个长期坚持的爱好",
+      "自由自在的生活状态"
+    ],
+    "question_sha256": "1ddf55da38bfc94626983387f83d2b0ab5de5279766494c73098718494534d51"
+  },
+  "life_reflection_35_016": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "小时候在外婆家过暑假",
+      "和好朋友一起旅行的时候",
+      "独自完成一件作品的深夜",
+      "在陌生城市漫无目的地闲逛"
+    ],
+    "question_sha256": "aeec51726b98978ab4eeabaab8d62493c055804555054635eb8fb0b8332e10bf"
+  },
+  "life_reflection_35_017": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "画画或摄影，能留住美感",
+      "写一手好文章，表达不卡壳",
+      "乐器演奏，随时能来一段",
+      "即兴演讲，聊天不冷场"
+    ],
+    "question_sha256": "a14043d3d72084e0d6b63a43c3955024e6dbf3ddc687ca9aa28136b883ace833"
+  },
+  "life_reflection_35_018": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不再容易纠结和内耗",
+      "作息规律一点，少熬夜",
+      "对不熟的人能更放得开",
+      "改掉三分钟热度，坚持到底"
+    ],
+    "question_sha256": "a68fab11da46dd6fa29e3b85967e01b9d38b745ff7c774850ed65838b3db01e9"
+  },
+  "life_reflection_35_019": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "坚持做完一件很难的事",
+      "靠自己攒钱完成某个目标",
+      "在某个领域做出作品或成绩",
+      "带家人朋友一起变好"
+    ],
+    "question_sha256": "a4de6204151bebbae2b469218b10c8ac7ab823032f6670191f0a7fd72ad3859f"
+  },
+  "life_reflection_35_020": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "一只生活在森林里的鸟",
+      "海边小镇的流浪猫",
+      "一棵长在高原上的树",
+      "隐姓埋名的自由创作者"
+    ],
+    "question_sha256": "d3743843d142bcc2b234cbe4c5cfecbbfb68eb35d6af788f62875b91660c9b7f"
+  },
+  "life_reflection_35_021": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "靠海的小城市，生活慢一点",
+      "有山有水、四季分明的北方小城",
+      "南方温暖湿润、绿植很多的地方",
+      "离家人朋友不远，又有自己空间的小区"
+    ],
+    "question_sha256": "bb36b3f6aa9c14b9f928a221bec57b318f1536dcab7ef1f76a8f1aba41d5093c"
+  },
+  "life_reflection_35_022": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "用了很多年的某件旧物",
+      "和朋友一起拍的照片或写的信",
+      "自己亲手做出来的东西",
+      "某样陪伴自己很久的随身物品"
+    ],
+    "question_sha256": "083e4b3c20d0257462cd47cdd9556adc11a82666594508387523b33251662161"
+  },
+  "life_reflection_35_023": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "失去重要的人却来不及告别",
+      "长期陷在无力改变的生活里",
+      "身边没有人能真正理解自己",
+      "身体或心理被束缚，失去自由"
+    ],
+    "question_sha256": "cee8155ef77607d3d7a0d8431ebd922a7565c1eda6eb2aa44d318786993ce5e5"
+  },
+  "life_reflection_35_024": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一个人散步或骑车，听歌放空",
+      "约朋友吃吃喝喝、聊天到半夜",
+      "看展、看演出或逛有趣的小店",
+      "窝在家里追剧、打游戏或看书"
+    ],
+    "question_sha256": "1edee050a7d0a6bbebd070ebbf83ab94929a7b23c4705f48e6b7a4029b78d079"
+  },
+  "life_reflection_35_025": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "笑点低，容易开心",
+      "对陌生人话少，熟了变话痨",
+      "拖延但最后总能交活",
+      "观察力强，爱注意小细节"
+    ],
+    "question_sha256": "f4ddd7e42d85f01823cedde5005a804bcc68d1efad9a9aabe9b8a88db06d00d8"
+  },
+  "life_reflection_35_026": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "能聊得来，笑点一致",
+      "久不联系也不生分",
+      "有分寸感，不随便越界",
+      "需要时真的会帮忙，不玩虚的"
+    ],
+    "question_sha256": "f847142c2b8b7917479ac71b6f905a47ab67151ae6a35136f753802618d1d878"
+  },
+  "life_reflection_35_027": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "余华，语言直接又有劲",
+      "村上春树，氛围感很足",
+      "三毛，自由又热烈",
+      "汪曾祺，写吃写人有烟火气",
+      "刘慈欣，脑洞大开有格局"
+    ],
+    "question_sha256": "4ee347cfeace11224ffc06c929bcc6198fc8fe3d4d262592b895e978af50533f"
+  },
+  "life_reflection_35_028": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "哈利·波特，勇敢又重情义",
+      "蝙蝠侠，以凡人之躯对抗黑暗",
+      "《鬼灭之刃》炭治郎，温柔而坚韧",
+      "孙悟空，桀骜不驯却终成大器",
+      "《三体》罗辑，孤身守护文明"
+    ],
+    "question_sha256": "8c7da513d4888f4a91668f587ed9e86662d0e5d9dac02567db8d98a1a837dabd"
+  },
+  "life_reflection_35_029": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "苏轼，豁达面对人生起落",
+      "王阳明，知行合一的践行者",
+      "特蕾莎修女，把爱落到具体的人",
+      "富兰克林，理性又充满好奇心",
+      "孔子，明知不可为而为之"
+    ],
+    "question_sha256": "4179e5bfb83d932f19962cd8c881b6c450c8969f42dcc94c74eb77f16d206e8b"
+  },
+  "life_reflection_35_030": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "我的父母，为家庭默默付出",
+      "一线医护人员，高强度下依然温柔",
+      "坚持理想的老师，不只教知识",
+      "社区里互助的普通邻居",
+      "身处困境却仍帮助他人的人"
+    ],
+    "question_sha256": "2879a2293034f24b407db1e13da742afa5b4fba630fee87fe2b35756100209a2"
+  },
+  "life_reflection_35_031": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "若云，意象轻盈",
+      "明澈，听起来干净通透",
+      "徐来，有从容不迫的感觉",
+      "南枝，温暖又有生命力",
+      "临安，古典且有余韵"
+    ],
+    "question_sha256": "21ff4e713e08c6ff613e8438f98734a84e9560b591faacb72520bd8998ec00b3"
+  },
+  "life_reflection_35_032": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "虚伪的客套，说一套做一套",
+      "公共场所大声外放短视频",
+      "各种形式的霸凌和排挤",
+      "把效率当唯一标准，失去人情味",
+      "香菜的味道和口感"
+    ],
+    "question_sha256": "0cc10a190945badf59b33b7bca8f286c7af1d08a8a44bd0c431e8c645d3984ab"
+  },
+  "life_reflection_35_033": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "没能当面和去世的亲人好好告别",
+      "高中时因为胆怯放弃了喜欢的人",
+      "选专业时全听父母的，没试自己真正想学的",
+      "在朋友最需要支持的时候没有站出来",
+      "因为拖延错过了提交作品的关键机会"
+    ],
+    "question_sha256": "709719283102bff2f12cf01bc43e0f52ca5cee7c060c625d0fdaa6b93afbd7a8"
+  },
+  "life_reflection_35_034": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "在家里被亲近的人陪伴着，安静地离开",
+      "在完成一件重要作品后，没有遗憾地告别",
+      "在睡梦中自然离世，没有痛苦",
+      "在户外面对自然时平静结束",
+      "把想说的话都说完，把后事安排妥当后离世"
+    ],
+    "question_sha256": "40ed0815db4d85677b422d73378c5e1d9f0b466256f16c023d0ab3ff5d7733a6"
+  },
+  "life_reflection_35_035": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "慢慢来，比较快",
+      "但行好事，莫问前程",
+      "人生的意义在于体验，而非结果",
+      "接受不可改变的，改变能改变的",
+      "保持敏感，但不被情绪吞没"
+    ],
+    "question_sha256": "e5f1fa4722edd2f7fc623a62dbbbbef0731706c22c044db2248519ec22a6ebcd"
+  }
+}

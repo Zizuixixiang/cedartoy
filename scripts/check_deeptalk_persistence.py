@@ -33,8 +33,10 @@ def worker(step, payload):
             read = store.read(ai,rid,action='question')
             assert read['questions'][0]['own']['text']=='private_201_1'
             assert read['mode'] == mode and not read['unlocked']
-            if mode == 'blind': assert 'private_101' not in json.dumps(read)
-            else: assert read['questions'][0]['partner']['text'] == 'private_101_1'
+            assert read['peer_visible'] and read['questions'][0]['partner']['text'] == 'private_101_1'
+            human_read = store.read(human,rid,action='view')
+            if mode == 'blind': assert 'private_201' not in json.dumps(human_read)
+            else: assert human_read['questions'][0]['partner']['text'] == 'private_201_1'
             store.submit(ai,dict(round_id=rid,revision=read['total'],confirm=True))
         elif step == 'complete':
             read = store.read(human,rid,action='view')

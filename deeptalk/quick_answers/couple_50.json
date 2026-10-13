@@ -1,0 +1,550 @@
+{
+  "couple_50_001": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "迷上了拼乐高，一拼就是三小时",
+      "最近在追《繁花》，沉迷90年代上海",
+      "开始玩滑板，摔了好几次还是想练",
+      "迷上做手冲咖啡，天天研究水温粉比"
+    ],
+    "question_sha256": "2d325c44eff12861c3cca9fad7eebd22d510717c1444421ba23566be301165dc"
+  },
+  "couple_50_002": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "悬疑烧脑片，喜欢猜不到结局的",
+      "轻松喜剧，下班后只想无脑笑",
+      "科幻大片，特效和世界观最重要",
+      "现实主义剧情片，能引发思考的"
+    ],
+    "question_sha256": "f4058a4ed18d0a8c7814649c0dee5edada2f2187b8ba9f5f9df75940c88b5fec"
+  },
+  "couple_50_003": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "找个海边小城住一周，每天吃海鲜看日落",
+      "去山里徒步露营，彻底断网充电",
+      "宅在家一周，补觉、打游戏、撸猫",
+      "去一个新城市Citywalk，逛小店和博物馆"
+    ],
+    "question_sha256": "6a1f937e2c520af286a67711fec0651718ea07db74c2dbeefe9f4595dc32ced0"
+  },
+  "couple_50_004": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "番茄炒蛋，简单但能炫三碗饭",
+      "红烧排骨，朋友来必点",
+      "清蒸鲈鱼，看着厉害其实很省事",
+      "蛋炒饭，深夜食堂专属"
+    ],
+    "question_sha256": "3612133860327c2970c1f04eda036b4583f1c3888f5e06366a28867c6b9e7e82"
+  },
+  "couple_50_005": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "我惯用右手",
+      "我惯用左手",
+      "我两手都用，但右手更多",
+      "我两手都用，但左手更多",
+      "我两只手都很灵活"
+    ],
+    "question_sha256": "a045e00182f8d99281ba765874cd5ed436fec2798f2b9601c9d75891bb2775f1"
+  },
+  "couple_50_006": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更喜欢狗，热情直接，每天催我出门",
+      "更喜欢猫，安静独立，相处不累",
+      "两个都喜欢，但养猫更省心，养狗更热闹",
+      "看品种和性格，遇到合拍的都行"
+    ],
+    "question_sha256": "6510817e6f883d0f41b7ca5c2df76848ab4e1f379d0e08b8ed2f9db7c0c68e1d"
+  },
+  "couple_50_007": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "会看成人漫画或小说",
+      "偶尔翻杂志或画册",
+      "线上浏览成人内容",
+      "不怎么看，偶尔瞄到",
+      "完全不看这类东西"
+    ],
+    "question_sha256": "c9b9c2469e3248e6b08ff6e76862e33e065d5324a93ffd0312da4b4e5443a110"
+  },
+  "couple_50_008": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "b7f87a0620fca7234c4b98049e57ec160b1f88a3d1e866b9e8c9652704f39d58"
+  },
+  "couple_50_009": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "周杰伦",
+      "林俊杰",
+      "Taylor Swift",
+      "BTS",
+      "五月天"
+    ],
+    "question_sha256": "c10cb821d78b8b5cf955f05f16bd37243202e1d7a3ddcdc623192a5ad77df017"
+  },
+  "couple_50_010": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "f84eb21f182da20005367bc404c742fa831e0451e3bf3c01b478ceb6045fa1e9"
+  },
+  "couple_50_011": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "护士装",
+      "女仆装",
+      "学生制服",
+      "空乘制服",
+      "我没有角色扮演的偏好"
+    ],
+    "question_sha256": "3f1bcda408113827f664e4b62a6856e7d11ad6e3d0a35879003b32ece0709b97"
+  },
+  "couple_50_012": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "香草味",
+      "巧克力味",
+      "草莓味",
+      "抹茶味",
+      "芒果味"
+    ],
+    "question_sha256": "36ff2cea98b798b2067af0c0faf1a0915e69e37d959311f2f49a48604bb12dad"
+  },
+  "couple_50_013": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "拿铁",
+      "美式咖啡",
+      "卡布奇诺",
+      "芝士蛋糕",
+      "三明治"
+    ],
+    "question_sha256": "eba0bd15a886c3bc1dcbf7e54b9c38a82a74301d4e448a0eaea055406df4fba2"
+  },
+  "couple_50_014": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "麦当劳",
+      "肯德基",
+      "汉堡王",
+      "Shake Shack",
+      "其他本地汉堡店"
+    ],
+    "question_sha256": "76c300a7f3b1c028ca1f12ac38e368b68386a48cec6cec41384ec3132b635643"
+  },
+  "couple_50_015": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "啤酒",
+      "红酒",
+      "威士忌",
+      "鸡尾酒",
+      "我不喝酒"
+    ],
+    "question_sha256": "199624bb53446f4ce8c749234c594f2902a4ced19433e1511795018181d0891c"
+  },
+  "couple_50_016": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "我不抽烟",
+      "偶尔社交时抽",
+      "有烟瘾，每天抽",
+      "以前抽，现在戒了"
+    ],
+    "question_sha256": "c84685e2ce5abb1009c805d6a74e9775df23a4a78eb833fecc4f5c742dd2107e"
+  },
+  "couple_50_017": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "每天用固定香水",
+      "偶尔用，看场合",
+      "只有重要约会才用",
+      "我不用香水"
+    ],
+    "question_sha256": "0ae4a5195a645d732c72b88fa914bb3b85c654ea15317a58902a18bb83812653"
+  },
+  "couple_50_018": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "海边度假",
+      "山间民宿",
+      "古城或小镇",
+      "繁华大都市",
+      "自然风景区"
+    ],
+    "question_sha256": "1227bda36efd5dcba5318d91d5aebdd9f9029aff1e159232fda370bbaf951b9b"
+  },
+  "couple_50_019": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "东京迪士尼",
+      "大阪环球影城",
+      "上海迪士尼",
+      "北京环球影城",
+      "其他主题乐园"
+    ],
+    "question_sha256": "32fa300ebeb77c9ff66b7a40c05b2348eef78d68d3d26c48fdb7f0b040bb68cb"
+  },
+  "couple_50_020": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "优衣库",
+      "ZARA",
+      "H&M",
+      "耐克",
+      "无印良品"
+    ],
+    "question_sha256": "6a0ab1b407943df6d2647db7b4e447f9a9764d99643f12957531a266dab90567"
+  },
+  "couple_50_021": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "我更倾向西餐",
+      "我更倾向日料",
+      "我更倾向中餐",
+      "轮流选，这次西餐下次日料或中餐",
+      "混搭：主菜西式、小菜选日式或中式"
+    ],
+    "question_sha256": "072d1a7d3f6704537d407fc0ad5bdb2376fffb96d7026213b3442eb430f6073c"
+  },
+  "couple_50_022": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "三文鱼刺身，肥美入口即化",
+      "玉子烧，甜甜的蛋香",
+      "蟹籽，咬开爆汁的感觉",
+      "牛油果，绵密又清新"
+    ],
+    "question_sha256": "0071dcc8d0a01698d9c2fa1e900b989a2629d11f2d9b2f53ee892bd7032c0e15"
+  },
+  "couple_50_023": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "和朋友玩桌游，笑到肚子疼",
+      "看搞笑综艺，名场面重播",
+      "和家人聊天，说起童年糗事",
+      "宠物做出离谱举动，当场笑翻"
+    ],
+    "question_sha256": "7b93fe998a6f1f1e7c238467a0e655fe4c5ad2f6f386038f707329be8a3d0402"
+  },
+  "couple_50_024": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "上个月，看电影被感动到抹泪",
+      "最近几天，因为压力大哭了一场",
+      "一个月内，和重要的人告别",
+      "已经很久没哭了，记不清"
+    ],
+    "question_sha256": "56be4cbea4ffa0660001adfafdac77a5cf2c8a96f023abf83f876dce94d4830e"
+  },
+  "couple_50_025": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "9cc297f35fdc16e4a33eb7714be9e3c2beb5849e5343f5eb59e73fd2789d17ec"
+  },
+  "couple_50_026": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "先逛博物馆，再吃一顿日料，晚上散步看夜景",
+      "去游乐园玩一整天，最后坐摩天轮",
+      "在家一起做饭、看电影，窝在沙发里",
+      "短途旅行，去海边或山里，住特色民宿"
+    ],
+    "question_sha256": "7356005a93c06470fb16f28f0a2d8400d60edb99be42dd1702d4db30aa1bff5e"
+  },
+  "couple_50_027": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "独立插画师，自由创作还能接单",
+      "咖啡店老板，每天闻着咖啡香",
+      "旅行摄影师，边走边拍记录世界",
+      "游戏策划，把自己脑洞做成游戏"
+    ],
+    "question_sha256": "1ab332f7b14780bf80a07433339b1ed8fbd42d9f949b5ebd2da1000e8cf53722"
+  },
+  "couple_50_028": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "回到过去，把没好好告别的话说完",
+      "去看未来，确认自己会不会后悔",
+      "回到某个关键节点，改变一个决定",
+      "只当旁观者，看看不同时代的日常"
+    ],
+    "question_sha256": "824d55b2264a6b58b1acb69bc593db8e71d29f3cadd9163689c11f81bf86dde1"
+  },
+  "couple_50_029": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "瞬间移动，省下所有通勤时间",
+      "读心术，但只在需要时使用",
+      "治愈能力，帮助身边人恢复健康",
+      "时间暂停，多出属于自己的时间"
+    ],
+    "question_sha256": "087642daae1417f7b850ff0252eb2b56e8056e702a855ce9f6e5724218b480cc"
+  },
+  "couple_50_030": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "任意门，随时去想去的地方",
+      "记忆面包，考试复习不再愁",
+      "竹蜻蜓，自由自在地飞",
+      "时光包袱巾，让旧物变新"
+    ],
+    "question_sha256": "9dbf3fcdd2504c1237eb465e47ffe52bb9c33196d44b8b3fe95f669ec792c2be"
+  },
+  "couple_50_031": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "睡到自然醒，然后点外卖追剧",
+      "约朋友逛街喝咖啡，聊天一下午",
+      "去公园或河边散步，放空自己",
+      "收拾房间，做点简单的饭菜"
+    ],
+    "question_sha256": "30edd89f7e6e1cba93cbef13ee4cc78096c65e1385c1295068e04c83a5c1edf3"
+  },
+  "couple_50_032": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "早起型，早上效率最高",
+      "夜猫子型，晚上灵感最多",
+      "看情况，工作日早起，周末熬夜",
+      "不固定，困了就睡，醒了就起"
+    ],
+    "question_sha256": "cec96cfd055c8424cea2748d58b120509d9ecc7e3f80fbd4ded5b46cbc5fe46a"
+  },
+  "couple_50_033": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更爱室内，宅着最舒服",
+      "更爱户外，呼吸新鲜空气",
+      "看天气和心情，晴天出去，雨天宅",
+      "都喜欢，室内看书，户外运动"
+    ],
+    "question_sha256": "d4cdd7c61967f1598c79aa09e1fd0d93239be2411b7a15d9b84fbee7d69f4d4a"
+  },
+  "couple_50_034": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "微信，和家人朋友联系",
+      "小红书，刷生活攻略和种草",
+      "B站，看视频和直播",
+      "音乐App，几乎一直挂着耳机"
+    ],
+    "question_sha256": "81169c7cbeab3da09d6f8f21cb97274117f25057a58007db2a3bb17774a87a0a"
+  },
+  "couple_50_035": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "王者荣耀，和朋友开黑",
+      "原神，喜欢探索开放世界",
+      "Switch上的塞尔达，解谜有趣",
+      "桌游，线下和朋友玩"
+    ],
+    "question_sha256": "9d15b8be4f648356d23a3ffdcb7b8e3c82ad4e8bae9f846bdbedd07a19db810a"
+  },
+  "couple_50_036": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "推理小说，比如东野圭吾的作品",
+      "科幻小说，《三体》那种",
+      "散文随笔，轻松治愈",
+      "历史类，喜欢看人物传记"
+    ],
+    "question_sha256": "34fcaf4136034b2e0fa004feaf0e1b4617dd18123841e56d844adf118ac23675"
+  },
+  "couple_50_037": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "《海贼王》，热血又感动",
+      "《间谍过家家》，轻松搞笑",
+      "《进击的巨人》，剧情震撼",
+      "《灌篮高手》，青春回忆"
+    ],
+    "question_sha256": "59fdf7a70a94940fd8304b99a90be888358e2a22f5abe022b37585dd87a0237c"
+  },
+  "couple_50_038": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "数学，逻辑题做起来很顺手",
+      "语文，写作文总能拿高分",
+      "英语，听力和口语比较轻松",
+      "物理，公式推导像玩游戏",
+      "化学，实验课特别有意思"
+    ],
+    "question_sha256": "df8abe28f28bdc9ff892d90e501aaca99480d733a9c70034f2f85a48cb5d57e2"
+  },
+  "couple_50_039": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "政治，背条目太枯燥了",
+      "历史，年份事件总记混",
+      "地理，地图空间感跟不上",
+      "生物，细胞遗传有点绕",
+      "体育，长跑总是喘不过气"
+    ],
+    "question_sha256": "8086eb9a9820a50c7463286bcba53be69d75370507ca216977448f1095a47b44"
+  },
+  "couple_50_040": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "喜欢边听歌边刷题，效率意外不错",
+      "习惯用思维导图整理知识点",
+      "考前冲去图书馆占座突击",
+      "和同学组成学习小组互相讲题"
+    ],
+    "question_sha256": "4b97e7f1c77b1761379f199a53a30776435b0ad082ecab2ed3fb0748b387c372"
+  },
+  "couple_50_041": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "看重成长空间，能不断学到新东西",
+      "在意同事氛围，合作舒服比什么都重要",
+      "追求收入回报，辛苦得有实打实反馈",
+      "希望工作有意义，不只是重复劳动"
+    ],
+    "question_sha256": "811f7cc104fcd09eaddff39f17ff6c6ff057f8742f9a6862b32a6475e8c07291"
+  },
+  "couple_50_042": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "想学会做一桌像样的家常菜",
+      "计划跑一次半程马拉松",
+      "重新捡起一门乐器练熟几首曲子",
+      "独立完成一个小的程序项目"
+    ],
+    "question_sha256": "ad9ef3a52e30c43afe6f5e9514cfe8b03ddb272a68367db01bf74aca0bd1acdf"
+  },
+  "couple_50_043": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "家人和朋友的支持最实在",
+      "保持好奇心，日子才不无聊",
+      "自由支配自己的时间",
+      "一段长期稳定的亲密关系"
+    ],
+    "question_sha256": "c9328739bc597db70afdc3bc902c603df93a466d4f59e5ed577db41e550809e9"
+  },
+  "couple_50_044": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "我导师，做事认真又肯带人",
+      "我妈，再难也把家里撑起来",
+      "一位坚持做科普的博主，把复杂东西讲明白",
+      "我佩服那些在逆境里还保持善良的普通人"
+    ],
+    "question_sha256": "2b33c1d4d3cba4a51c1bd1457a6b456e19c34d13ccc820cc70a29ecb02411e56"
+  },
+  "couple_50_045": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "开一家自己的小书店",
+      "带着家人去很多地方旅行",
+      "做一份能影响别人的创作",
+      "拥有一套带院子的房子"
+    ],
+    "question_sha256": "f4e4ed854507e04f303ccdd905b22e92f922b0f2dcafe90db3ac007c6450cc05"
+  },
+  "couple_50_046": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "和喜欢的人一起吃饭聊天",
+      "完成一件拖延很久的事",
+      "傍晚散步时看到好看的晚霞",
+      "收到朋友突然寄来的小礼物"
+    ],
+    "question_sha256": "803fd423bd200216106d7afe504183945fc455e9ec5085b3c53271685628ba74"
+  },
+  "couple_50_047": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "当众发言前会不自觉地搓手",
+      "被临时通知要见不熟的人",
+      "等待重要结果那几分钟最磨人",
+      "发现自己可能做错事的时候"
+    ],
+    "question_sha256": "044fd7f4894383e1876992945273e6b6656440f276f8b8ee08a641340b4ec52a"
+  },
+  "couple_50_048": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "早餐，吃好了一整天都有劲",
+      "晚餐，结束一天后需要好好犒劳",
+      "看当天安排，忙就早餐凑合，闲就晚餐认真做"
+    ],
+    "question_sha256": "d80dd24e530442ebe3e34ccbc078dee899cd411d5d77217829503525de408b66"
+  },
+  "couple_50_049": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一副降噪耳机，通勤能安静点",
+      "一台新的咖啡机",
+      "一双好走路的运动鞋",
+      "一套舒服的床品"
+    ],
+    "question_sha256": "3c2a39935dabd16248133e03ab064583938241f5353c336128278c9630ee3866"
+  },
+  "couple_50_050": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "最近有点累，想好好睡一觉",
+      "谢谢你一直这么有耐心",
+      "周末要不要一起去吃那家新开的店",
+      "别再拖了，今晚就把那事做完"
+    ],
+    "question_sha256": "0ff83c10bcadb27890236f61910c744d7211f66a8020e91b9575bb65702d84f9"
+  }
+}

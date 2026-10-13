@@ -1,0 +1,202 @@
+{
+  "work_values_20_001": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "喜欢例行工作，步骤清楚、成果稳定",
+      "希望每天都有变化，能接触新任务",
+      "例行为主，但每周留出时间做点新尝试"
+    ],
+    "question_sha256": "3686a0b89a321296b8d38a5873d749f70acc6c8c5d4806c5d3446011a09bfe9e"
+  },
+  "work_values_20_002": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "喜欢团队合作，大家一起讨论推进",
+      "喜欢独自专注，按自己的节奏完成",
+      "先独立准备核心方案，再和团队讨论补充并共同推进。"
+    ],
+    "question_sha256": "d2a63e4a5f5be0cc86993732d99b8efc108b0516aeee55e3a753865ea87a66d1"
+  },
+  "work_values_20_003": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "帮助困难的人",
+      "让顺利的人更好",
+      "先帮最困难的，再给顺者锦上添花"
+    ],
+    "question_sha256": "9f86a8b24bb9c6bd087b3c1f581c099767beb1521dc63fa786f31b1690819ec9"
+  },
+  "work_values_20_004": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "留下名字或功绩",
+      "幕后支持",
+      "重要项目署名，日常琐事退居幕后"
+    ],
+    "question_sha256": "366400823b7e65bd308f8eaab93319bc138794c15b4c98a257fd2b21bc641c5b"
+  },
+  "work_values_20_005": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更想学习新知识和技能，保持成长感",
+      "更想运用已有技能，快速做出成果",
+      "用70%时间应用已有技能，30%探索新领域"
+    ],
+    "question_sha256": "e83de7c46b23102ea055e98d72e1175c7027fc8399f59f7fbc0a195b3bb0622a"
+  },
+  "work_values_20_006": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "速度优先，能按时交付最重要",
+      "质量优先，宁可慢一点也要做好",
+      "常规任务求快，关键任务花时间打磨"
+    ],
+    "question_sha256": "7f7517f861eef321fa34681ff47f20136428eeefcd1d752d4838c29f14839274"
+  },
+  "work_values_20_007": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "喜欢稳定路径，有清晰的晋升节奏",
+      "喜欢挑战新机会，哪怕有风险",
+      "先稳定积累，再找合适时机尝试新机会"
+    ],
+    "question_sha256": "1ad3c44ba86cec78b2d79e7e8ad8867235ad289342a1250fefb8895fed66c235"
+  },
+  "work_values_20_008": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更喜欢创造实体物品，比如手工或产品",
+      "更喜欢抽象想法，比如策划或研究",
+      "各占一半，比如设计产品再写方案文档"
+    ],
+    "question_sha256": "001799bf34ca9c6f846436048075a893159212fc8eb9f6fbd238a902629fa8ff"
+  },
+  "work_values_20_009": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更想要自由度，灵活安排工作方式",
+      "更想要明确规则，知道每一步该做什么",
+      "整体框架清晰，执行细节可以自己把控"
+    ],
+    "question_sha256": "8106d9bcb3a17d8f75037146122743145b0c1963afd6b04a79ae08e282964c1b"
+  },
+  "work_values_20_010": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更想做对社会有贡献的工作，比如公益",
+      "更侧重个人成长和成功，比如晋升加薪",
+      "找一份能兼顾社会价值和自身发展的工作"
+    ],
+    "question_sha256": "dd0d58c4bcda8953567399be8bd7e9da0df8e3361fb1c17adedcd204d999a171"
+  },
+  "work_values_20_011": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更喜欢与人直接沟通，比如客户交流",
+      "更喜欢分析数据和事物，比如做报表",
+      "上午专注分析，下午安排会议和沟通"
+    ],
+    "question_sha256": "e09551abc9dba950dc37f1e5ff6a81340d4c91f45966b5960a2671a2d3b9e56d"
+  },
+  "work_values_20_012": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更想发挥创造力，比如设计或写作",
+      "更享受高效解决问题，比如修bug或优化流程",
+      "用创造性方法解决老问题，两者都满足"
+    ],
+    "question_sha256": "d5a83f42af277799795c1edf6c3b43484e3b8910732ed3924ec14030357788ff"
+  },
+  "work_values_20_013": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更想把自己的想法变为现实，比如创业",
+      "更倾向遵循他人指示，做好执行支持",
+      "在团队中主动提出方案，但尊重最终决策"
+    ],
+    "question_sha256": "a54f673c2394d69bc94fe3f6562dd2a97b3b16aa5f4428ef535dcd74bdc1ae0e"
+  },
+  "work_values_20_014": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "喜欢短期成果，能快速看到反馈",
+      "喜欢长期项目，愿意花时间深耕",
+      "短期小项目维持节奏，长期大项目慢慢推进"
+    ],
+    "question_sha256": "62c972c7d758c66a5886e73194bad439fcf81c16fe9b10fd51ed48849e316570"
+  },
+  "work_values_20_015": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不惧失败，愿意尝试高风险高回报的任务",
+      "希望选择能确实取得成果的任务，稳妥一点",
+      "大部分精力做稳妥任务，留小部分尝试挑战"
+    ],
+    "question_sha256": "cd8ff28c6ad504dc20837c98cefd7bc261ce9268e992e5cbde5902f6a0f89eb3"
+  },
+  "work_values_20_016": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "得到他人感谢会让我觉得工作很有价值",
+      "自己认可所做的工作最重要，哪怕没人夸",
+      "别人感谢会开心，但更在意自己是否满意"
+    ],
+    "question_sha256": "f9e61765fe5032730f01573f8bbea02e9b5777788fb4c99b48ab24595287c09a"
+  },
+  "work_values_20_017": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "创造资产和利润更重要，比如做业务增长",
+      "改善人们的生活更重要，比如做医疗或教育",
+      "选择能盈利且对用户真正有用的产品方向"
+    ],
+    "question_sha256": "77ea6f6a3f30d5fbeb4d9df6d57d0d93aace7b1efb305f0794113029bebb457d"
+  },
+  "work_values_20_018": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "对指导和教育他人感兴趣，比如带新人",
+      "把自己的成长放在首位，先提升自己",
+      "教别人的同时自己也复盘，两者都促进"
+    ],
+    "question_sha256": "a095ab9fb2cc717bad1ede0d46317d059064a97372ab94d3d25d6d4e8228b15e"
+  },
+  "work_values_20_019": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "想在一个领域深耕，成为专家",
+      "想获得广泛技能，成为多面手",
+      "主攻一个领域，同时补充相关跨界知识"
+    ],
+    "question_sha256": "b66317601b26c84c2edf7f1811941beec26acf084a977a52f9a7cc7a2974552a"
+  },
+  "work_values_20_020": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "想通过与他人竞争来激励自己成长",
+      "希望在合作环境中互相支持发挥能力",
+      "内部合作为主，对外可以保持竞争意识"
+    ],
+    "question_sha256": "92a499c65e564db78abceb37d580b253ffed15022855e29cc21c05cd902032e3"
+  }
+}

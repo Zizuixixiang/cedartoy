@@ -1,0 +1,1174 @@
+{
+  "favorites_100_001": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "火锅，尤其是麻辣锅底配毛肚",
+      "日料，寿司和烤鳗鱼都爱",
+      "家常菜，糖醋排骨、番茄炒蛋",
+      "烘焙甜点，提拉米苏或肉桂卷",
+      "东南亚菜，冬阴功和咖喱"
+    ],
+    "question_sha256": "f9e3536bbb0fceac393ed13066dba04633d30b3367e4819e2bc5deb75be9779a"
+  },
+  "favorites_100_002": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "奶茶",
+      "咖啡",
+      "果汁",
+      "碳酸饮料",
+      "白开水"
+    ],
+    "question_sha256": "6a589ba7dd7fa569e944cb17d9346f4f61d6d2b78e8a9d3c0b2549dba246d4ff"
+  },
+  "favorites_100_003": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "春天",
+      "夏天",
+      "秋天",
+      "冬天"
+    ],
+    "question_sha256": "42c46647d03e6f99e304befe84dd8d3b4defd520d9bff06d9f9625ea2e497d65"
+  },
+  "favorites_100_004": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "晴天",
+      "雨天",
+      "雪天",
+      "阴天",
+      "刮风天"
+    ],
+    "question_sha256": "dfddf0dae382c9ef0d19d1af79cd4102a93406a3eefe919cc77eeea43588364f"
+  },
+  "favorites_100_005": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "蓝色",
+      "粉色",
+      "黑色",
+      "绿色",
+      "紫色"
+    ],
+    "question_sha256": "104fd3cbf6aa2b279b9f874432384458625869f6048b1104ad1800a42979b951"
+  },
+  "favorites_100_006": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "语文",
+      "数学",
+      "英语",
+      "体育",
+      "美术"
+    ],
+    "question_sha256": "2f15e1484288eb55d9d85407c2233d38fef458587d732c452a8d95a2c01b5af2"
+  },
+  "favorites_100_007": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "篮球",
+      "足球",
+      "跑步",
+      "游泳",
+      "瑜伽"
+    ],
+    "question_sha256": "63044ff97e3c18a94357d90e266c89c8d722d101650aaad1e795fdbb16caa502"
+  },
+  "favorites_100_008": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "薯片",
+      "巧克力",
+      "饼干",
+      "蛋糕",
+      "辣条"
+    ],
+    "question_sha256": "ec316c90fbfce7306451edd3b0a5cec19c3140cbd7656bc0cd2645b6ff47199f"
+  },
+  "favorites_100_009": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "洗碗",
+      "扫地",
+      "整理房间",
+      "做饭",
+      "倒垃圾"
+    ],
+    "question_sha256": "04d9affae8a81de4991bbdfeaa5dee259e191e3f2eeb81699d0b88762de20db5"
+  },
+  "favorites_100_010": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "路飞",
+      "鸣人",
+      "柯南",
+      "哆啦A梦",
+      "悟空"
+    ],
+    "question_sha256": "b5fcf3e38995ee8e057bfb2f7d231047d1be60c63fac2b529540577ccbc78eec"
+  },
+  "favorites_100_011": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《海贼王》",
+      "《火影忍者》",
+      "《名侦探柯南》",
+      "《灌篮高手》",
+      "《进击的巨人》"
+    ],
+    "question_sha256": "e43e53f87e501050bd06bea1ecfe4040c08ff7438d533debee10f02b0a646353"
+  },
+  "favorites_100_012": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《千与千寻》",
+      "《你的名字。》",
+      "《鬼灭之刃》",
+      "《夏目友人帐》",
+      "《龙猫》"
+    ],
+    "question_sha256": "106d3737861723f85e8881836f868329ad38d7a5a944dfd61fe8f9136afed002"
+  },
+  "favorites_100_013": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "《原神》",
+      "《王者荣耀》",
+      "《我的世界》",
+      "《塞尔达传说》",
+      "《英雄联盟》"
+    ],
+    "question_sha256": "9d15b8be4f648356d23a3ffdcb7b8e3c82ad4e8bae9f846bdbedd07a19db810a"
+  },
+  "favorites_100_014": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《快乐大本营》",
+      "《向往的生活》",
+      "《奔跑吧》",
+      "《明星大侦探》",
+      "《非正式会谈》"
+    ],
+    "question_sha256": "8b084e730f800dcef652247aac2a7460e905d0f0641e6ff2fb1c90106bb6ce2a"
+  },
+  "favorites_100_015": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "新垣结衣",
+      "石原里美",
+      "刘亦菲",
+      "杨幂",
+      "迪丽热巴"
+    ],
+    "question_sha256": "41f8b500c40b8bd20eb1863eb415540d26ea1e1185d022cd31e7e35bf2d8657d"
+  },
+  "favorites_100_016": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "胡歌",
+      "吴彦祖",
+      "彭于晏",
+      "莱昂纳多·迪卡普里奥",
+      "刘德华"
+    ],
+    "question_sha256": "7b8e3a084da7771cb46e809cb15d69ba43489ac13055b6eace49a02fc3554189"
+  },
+  "favorites_100_017": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "沈腾",
+      "贾玲",
+      "岳云鹏",
+      "小S"
+    ],
+    "question_sha256": "4d9826a72fb7114dd77eb1fe523178561f517811b493398e2c74ba4bcdbee3a8"
+  },
+  "favorites_100_018": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "周星驰",
+      "刘德华",
+      "张曼玉",
+      "汤姆·汉克斯",
+      "新垣结衣"
+    ],
+    "question_sha256": "3d9f87a0964784b5bdaddc40e8a8ba02e42a8164e1b8ca5eb4cb1664c8d2ab4b"
+  },
+  "favorites_100_019": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "周杰伦",
+      "泰勒·斯威夫特",
+      "BTS",
+      "陈奕迅",
+      "Radiohead"
+    ],
+    "question_sha256": "d2c7e94e503f47afa0b0af63d9e9f7a47d37b006ac7b27dd8924452609d60596"
+  },
+  "favorites_100_020": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "BLACKPINK",
+      "TWICE",
+      "五月天",
+      "AKB48",
+      "防弹少年团"
+    ],
+    "question_sha256": "a8f9432c14ad6b205dc85de3a2bb9c0696f08c33fc6c9e15d4b74b442fdae056"
+  },
+  "favorites_100_021": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "老高與小茉",
+      "PewDiePie",
+      "MrBeast",
+      "阿滴英文",
+      "李子柒"
+    ],
+    "question_sha256": "e8b4878b2bf87a4f9807f5a8817f6060c5eb1abf6f645515e197d0fcb70d276a"
+  },
+  "favorites_100_022": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "Charli D'Amelio",
+      "Khaby Lame",
+      "Bella Poarch",
+      "蔡依林（抖音）",
+      "疯狂小杨哥"
+    ],
+    "question_sha256": "f8c273173e49e0cd373a276f91fb82c2f54245fe25f77776659073282ce725d4"
+  },
+  "favorites_100_023": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "日本京都",
+      "瑞士策马特",
+      "意大利罗马",
+      "泰国清迈",
+      "冰岛雷克雅未克"
+    ],
+    "question_sha256": "3b78120b70d6afc9a79a87891f927bd725373087e52e5bc9cb7cda6b0bac50cb"
+  },
+  "favorites_100_024": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "烤冷面",
+      "章鱼小丸子",
+      "鸡蛋仔",
+      "烤串",
+      "可丽饼"
+    ],
+    "question_sha256": "b80f31b3adcf52e8351ad4bdf955d654bec409de1b000bf41d579f3ec98ac9d9"
+  },
+  "favorites_100_025": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "幽默风趣",
+      "温柔体贴",
+      "有上进心",
+      "独立自主",
+      "善解人意"
+    ],
+    "question_sha256": "169988d351bf82cf6350e938537c112e32067b82bf2224407f013e41a6755095"
+  },
+  "favorites_100_026": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "撩头发",
+      "专注做事的样子",
+      "温柔的笑容",
+      "自然的肢体接触",
+      "认真倾听并点头"
+    ],
+    "question_sha256": "fcab2c3e58d6182c5f93e77eda3d9ff310f4f046aeed8b12967b2904b90b7c07"
+  },
+  "favorites_100_027": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "柯基",
+      "柴犬",
+      "金毛寻回犬",
+      "拉布拉多",
+      "边境牧羊犬"
+    ],
+    "question_sha256": "8b4c178dd1fcb6a10ac1125b817c3240c0a97e37e502c8a8f4a20309a9f3dd33"
+  },
+  "favorites_100_028": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "英国短毛猫",
+      "美国短毛猫",
+      "布偶猫",
+      "暹罗猫",
+      "苏格兰折耳猫"
+    ],
+    "question_sha256": "be46f87ec813d357caedcfbe4390b300f5ea1ac8f5989d4eabfb5cd3a28ae0c9"
+  },
+  "favorites_100_029": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "iPhone 15 Pro",
+      "三星 Galaxy S24 Ultra",
+      "Google Pixel 9 Pro",
+      "华为 Mate 60 Pro",
+      "小米 14 Ultra"
+    ],
+    "question_sha256": "a0347533824ee2f00bdff58377fe6b02b2ec1f0f2927c5933c6d3663030eddf6"
+  },
+  "favorites_100_030": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "帆布托特包",
+      "皮质单肩包",
+      "双肩背包",
+      "腰包",
+      "手提公文包"
+    ],
+    "question_sha256": "2839943745b1017fa977a4a224e1a28435f5c38ea1f1893934f6e4cd9beb39de"
+  },
+  "favorites_100_031": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "创意设计",
+      "数据分析",
+      "教育辅导",
+      "医护工作",
+      "自由职业/创业"
+    ],
+    "question_sha256": "92c821b55c0b539dbeeb5973f568a1d217c1f74f7f17b4dd9baa883ebb192219"
+  },
+  "favorites_100_032": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "东京站",
+      "台北车站",
+      "伦敦国王十字车站",
+      "纽约中央车站",
+      "巴黎北站"
+    ],
+    "question_sha256": "777aaeca7d43955c6f8364f0ad9d0b9e27fd9bfd615a78ea418076e8c943653d"
+  },
+  "favorites_100_033": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "东京山手线",
+      "台北捷运红线",
+      "伦敦地铁皮卡迪利线",
+      "纽约地铁7号线",
+      "巴黎地铁1号线"
+    ],
+    "question_sha256": "293f8c495733c7a1aa2575dd392cde1f13a301e8d5be00925b99e4504d89b356"
+  },
+  "favorites_100_034": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "唇膏，润色又护唇",
+      "粉底液，自然提气色",
+      "睫毛膏，眼睛瞬间有神",
+      "护手霜，包里常备",
+      "腮红，扫一点显元气"
+    ],
+    "question_sha256": "b4d81bf35b01c5e7e9a7acea38e82886a178c052b8dc14000bdbfa63662f7735"
+  },
+  "favorites_100_035": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "无印良品，简约好用",
+      "资生堂，经典不出错",
+      "珂润，敏感肌友好",
+      "欧舒丹，香味治愈",
+      "NARS，彩妆很出彩"
+    ],
+    "question_sha256": "95731f60138d1cc01dae8b0f401860cecb7e776d9f1f79d731c0116dfcb67f12"
+  },
+  "favorites_100_036": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "宇多田光《First Love》",
+      "米津玄师《Lemon》",
+      "周杰伦《晴天》",
+      "Adele《Someone Like You》",
+      "王菲《红豆》"
+    ],
+    "question_sha256": "ea799518b8cbe7056505623f07d0cad06bdd13734dca7fe6bace89a1ddcd90e6"
+  },
+  "favorites_100_037": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "7-11，关东煮和甜点很赞",
+      "全家，便当选择多",
+      "罗森，炸鸡和冰皮月亮蛋糕",
+      "迷你岛，饭团有特色",
+      "不挑，就近买饮料"
+    ],
+    "question_sha256": "a0c1752585abe323434925184cc942658fa620b7ba490742ac5d23def2fc5180"
+  },
+  "favorites_100_038": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "萨莉亚，便宜又大碗",
+      "乐雅乐，汉堡排经典",
+      "ガスト，饮料吧随便喝",
+      "大台湾，日式洋食有特色",
+      "路边家庭小馆"
+    ],
+    "question_sha256": "52995c5b22f0c0a26c3ae228a26362effa0425e3b10980865e3d7af3dff5bbaa"
+  },
+  "favorites_100_039": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "鸟贵族，烤串便宜氛围好",
+      "塚田农场，地鸡料理新鲜",
+      "和民，连锁但菜品稳定",
+      "坐·和民，适合女生聚会",
+      "路边居酒屋，看板手写的有味道"
+    ],
+    "question_sha256": "aae877365ca3615b30ac34d42d170e7b9c329db98bec34c28e7f8315aa89758b"
+  },
+  "favorites_100_040": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "寿司郎，种类多新品快",
+      "藏寿司，扭蛋好玩",
+      "滨寿司，食材新鲜价格亲民",
+      "不去回转，喜欢单点"
+    ],
+    "question_sha256": "7c2e31b9b5b32a3c310d66c69997987a02b566017e9d15f53c7e7dc592dfe745"
+  },
+  "favorites_100_041": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "啤酒，爽快解腻",
+      "梅酒，甜甜的加冰块",
+      "日本酒，冷饮热饮都行",
+      "威士忌苏打，柠檬香气",
+      "红酒，配芝士慢慢喝"
+    ],
+    "question_sha256": "199624bb53446f4ce8c749234c594f2902a4ced19433e1511795018181d0891c"
+  },
+  "favorites_100_042": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《千与千寻》",
+      "《你的名字。》",
+      "《肖申克的救赎》",
+      "《霸王别姬》",
+      "《教父》"
+    ],
+    "question_sha256": "d4da73536d896eb9b4ec87c078c95ae742a25590c3e7a0bd4690af800bb682bb"
+  },
+  "favorites_100_043": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "「あ」圆圆的像颗豆子",
+      "「い」左右对称很舒服",
+      "「う」像个小屋顶",
+      "「お」像戴帽子的小人",
+      "「ん」收尾很温柔"
+    ],
+    "question_sha256": "08f93eac26f23e1bf33686230e9f8d08f6ba1bc19a85fb027264105cc48a106c"
+  },
+  "favorites_100_044": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "「ア」钝钝的很直率",
+      "「ス」像在冲刺",
+      "「ハ」简单的两笔",
+      "「ノ」一撇干脆",
+      "「モ」像小怪物"
+    ],
+    "question_sha256": "d5fd2357b6d30a9459cb8de8b439648f8199ae1ab400eba734d127592a38ed3e"
+  },
+  "favorites_100_045": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "「光」温暖有希望",
+      "「雫」水滴很诗情画意",
+      "「夢」字形就很漂亮",
+      "「優」念起来温柔",
+      "「凛」利落有骨气"
+    ],
+    "question_sha256": "9b8d0694a755d80acae923f25024cd9512c21ddbb0c3d7ed18a91e56cc0c101a"
+  },
+  "favorites_100_046": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "狼人杀，靠演技和逻辑",
+      "UNO，简单又欢乐",
+      "扑克牌，斗地主或升级",
+      "三国杀，角色技能好玩"
+    ],
+    "question_sha256": "dbb91cc7a9d321b52b9501931627abc9df7285bc15af40fa0f301b0f3b5b12a0"
+  },
+  "favorites_100_047": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "樱，春天和美好",
+      "海，辽阔又安静",
+      "星，夜空的亮点",
+      "悠，从容自在",
+      "阳，开朗温暖"
+    ],
+    "question_sha256": "8c7ee6e0870a0fc64850e5b0673f8943dfd6b649d3131a6fb48f4c4bf70b120a"
+  },
+  "favorites_100_048": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "金枪鱼蛋黄酱，便利店人气王",
+      "梅子，酸酸的很开胃",
+      "明太子，微辣过瘾",
+      "昆布，咸甜有嚼劲",
+      "鲑鱼，油香十足"
+    ],
+    "question_sha256": "121350825d2f1e984b2c35823d43268dc2bd5c5052cb6de1543720c74496c1ff"
+  },
+  "favorites_100_049": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "豆腐，滑嫩吸汁",
+      "裙带菜，口感爽滑",
+      "萝卜，煮软了很甜",
+      "油豆腐，吸饱汤汁",
+      "滑子菇，黏糊糊的喜欢"
+    ],
+    "question_sha256": "9d5241690beb17ad84da9aad49362338b02664ec3d25d4d0fa06433cb99059fd"
+  },
+  "favorites_100_050": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "三文鱼刺身",
+      "玉子烧",
+      "鰤鱼",
+      "海胆",
+      "蟹肉"
+    ],
+    "question_sha256": "3d12bbe2d1199f434efd0d49e242a1782a6b36d7c11e94ab86d016b5ab97e6a4"
+  },
+  "favorites_100_051": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "可颂",
+      "贝果",
+      "全麦面包",
+      "菠萝包",
+      "法棍"
+    ],
+    "question_sha256": "56d727e7370959a1117f0147489dc43a1e9c61652abde02f6b275921b413bbbe"
+  },
+  "favorites_100_052": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "芝士蛋糕",
+      "巧克力蛋糕",
+      "草莓蛋糕",
+      "提拉米苏",
+      "红丝绒蛋糕"
+    ],
+    "question_sha256": "5bf20234c4d1e1ab96690117e5d63ab5532b82b4ccc5d09eb17a821c74a2a051"
+  },
+  "favorites_100_053": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "草莓芝士蛋糕",
+      "巧克力脆片",
+      "香草",
+      "抹茶",
+      "彩虹雪酪"
+    ],
+    "question_sha256": "7dea25b537d70bfa47a592c12ef48acccf8d58ea4e103077fd87d1417a757e59"
+  },
+  "favorites_100_054": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "斋藤飞鸟",
+      "生田绘梨花",
+      "西野七濑",
+      "白石麻衣",
+      "远藤樱"
+    ],
+    "question_sha256": "c62c4401a921e1ffdb23ae5ae0d2ec0032d0a62cf80b681a2568ff0506cebf0f"
+  },
+  "favorites_100_055": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "长发",
+      "短发",
+      "马尾",
+      "卷发",
+      "波波头"
+    ],
+    "question_sha256": "608f4a82959e4e8763a9927f81e3c088b98b1db54dfba44d873b866a204f980d"
+  },
+  "favorites_100_056": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "寸头",
+      "中长发",
+      "背头",
+      "自然卷",
+      "刘海"
+    ],
+    "question_sha256": "30b9620fa119947b7bb57d810c2ad8fb52eab992d91f5ef34812ef31217f15a9"
+  },
+  "favorites_100_057": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "东京迪士尼乐园",
+      "大阪环球影城",
+      "富士急乐园",
+      "上海迪士尼"
+    ],
+    "question_sha256": "228ead0c5357077a96ecd9bea70ed960223c03a261b5368a31d25ad3d1ae2beb"
+  },
+  "favorites_100_058": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "过山车",
+      "旋转木马",
+      "摩天轮",
+      "鬼屋",
+      "激流勇进"
+    ],
+    "question_sha256": "039359917f0e714c63f8d4dbfe624ba38d93ec968675023a322b31091b36b590"
+  },
+  "favorites_100_059": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "鸡胸肉",
+      "牛里脊",
+      "猪五花",
+      "羊腿",
+      "鱼腩"
+    ],
+    "question_sha256": "e8f5a1c149eb9365e8b03f9f769e94f3df43c50f902dec53aa16a1397ad19cb5"
+  },
+  "favorites_100_060": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "眼睛",
+      "手",
+      "锁骨",
+      "腿",
+      "嘴唇"
+    ],
+    "question_sha256": "82c28f14e9657858a7821e44803970b12b78e3b3f84ee685f6b555af56a1d318"
+  },
+  "favorites_100_061": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "刘亦菲",
+      "吴彦祖",
+      "新垣结衣",
+      "孔刘",
+      "迪丽热巴"
+    ],
+    "question_sha256": "7e02a0392b4a03084f1f765dfe891eef3589e456eb874c3172af23168b3816df"
+  },
+  "favorites_100_062": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "家教",
+      "咖啡师",
+      "文案编辑",
+      "翻译",
+      "活动策划"
+    ],
+    "question_sha256": "26dd544e8b878253fb427feaf7ccfd78dea04d581442415bbba2ba5793e8ef7b"
+  },
+  "favorites_100_063": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "苏轼",
+      "拿破仑",
+      "孔子",
+      "居里夫人",
+      "达芬奇"
+    ],
+    "question_sha256": "8619929c0f9be51992f15daf5613dd56656a3f22247373f7166b67977de18f63"
+  },
+  "favorites_100_064": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "猫",
+      "狗",
+      "企鹅",
+      "树懒",
+      "狐狸"
+    ],
+    "question_sha256": "169481a1abca8c123e0336a657f647018d3a03fad99b1efdb019f18ed044bc41"
+  },
+  "favorites_100_065": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "杰克",
+      "柠檬娜",
+      "茶茶丸",
+      "小润",
+      "草莓"
+    ],
+    "question_sha256": "c3fef936ade253fa6e63f81120736856b6cbd16b670701b42d90b8f8a2f029a8"
+  },
+  "favorites_100_066": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "草莓，酸酸甜甜很 juicy",
+      "芒果，热带果香太爱了",
+      "西瓜，夏天抱着挖最爽",
+      "葡萄，尤其是巨峰那种甜",
+      "苹果，但只喜欢脆的"
+    ],
+    "question_sha256": "bbf072f31e6ed5a028093e224ebff8531d391245918af95fa498d37484405f14"
+  },
+  "favorites_100_067": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "西兰花，水煮就很好吃",
+      "土豆，怎么做都下饭",
+      "番茄，更爱生吃当水果",
+      "菠菜，蒜蓉炒一下绝了",
+      "青椒，只喜欢虎皮尖椒做法"
+    ],
+    "question_sha256": "4367dae1b205aa0f5c5d743f34c9a557d95d7ac5855244397d060055a862a415"
+  },
+  "favorites_100_068": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "😂 笑哭，日常使用最多",
+      "❤️ 红心，表达喜欢必用",
+      "🔥 火焰，夸人很顶",
+      "✨ 闪光，用来点缀句子",
+      "🥺 可怜巴巴，求人专用"
+    ],
+    "question_sha256": "d97a58ee90c7c95255ce0da000754c3302763da0a84adba969c750c0c5d004b4"
+  },
+  "favorites_100_069": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "雨后泥土味，清新又踏实",
+      "烤面包香，闻着就饿",
+      "桂花香，秋天限定浪漫",
+      "柠檬柑橘类，提神醒脑",
+      "咖啡豆香，磨豆时最治愈"
+    ],
+    "question_sha256": "852fc17d2f3d813439412f7b354be4e554a7acc8fae5dac50dff324abd8b3281"
+  },
+  "favorites_100_070": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "原神，肝地图和抽卡上瘾",
+      "王者荣耀，和朋友开黑很热闹",
+      "崩坏：星穹铁道，剧情和角色香",
+      "光遇，喜欢飞来飞去放空",
+      "和平精英，偶尔吃鸡很爽"
+    ],
+    "question_sha256": "54fff14ce9a93dd69cf287ed54190c86e905a3927fcd065c1d187e412cdbc475"
+  },
+  "favorites_100_071": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "B站，刷视频停不下来",
+      "小红书，查攻略看穿搭",
+      "微信，日常聊天离不开",
+      "网易云音乐，听歌看评论",
+      "支付宝，付钱和种树"
+    ],
+    "question_sha256": "05ae670fe28dadecd54019b2aeb72f56231606badaf95b1b722a62febd8bf446"
+  },
+  "favorites_100_072": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "粤语，自带港片氛围感",
+      "四川话，听起来很泼辣有趣",
+      "东北话，一开口就想笑",
+      "吴语，吴侬软语很温柔",
+      "陕西话，朴实又带劲"
+    ],
+    "question_sha256": "b1f92a4733059a29ada79a346857e7b94f68eb54ac48cb60f19bd9d80f563ef5"
+  },
+  "favorites_100_073": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "皮卡丘，童年经典会放电",
+      "伊布，可爱还能进化多种",
+      "喷火龙，帅气又能飞",
+      "耿鬼，又贱又萌的小胖子",
+      "沙奈朵，优雅又强大"
+    ],
+    "question_sha256": "c094ed6dda5cbb887e5351f15576dedcfdab7b8f0e900130db6836172e8825c5"
+  },
+  "favorites_100_074": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "斯普拉射击枪，均衡好上手",
+      ".96加仑，射程远伤害高",
+      "电动马达滚筒，涂地效率高",
+      "新叶射击枪，辅助队友神器",
+      "四重弹跳手枪，灵活又花哨"
+    ],
+    "question_sha256": "fc6196f2b4d398bee5fd2427954ff92efc29458a419b108d4c29f59b07d82c91"
+  },
+  "favorites_100_075": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一兰拉面，豚骨汤浓郁",
+      "一风堂，赤丸新味很香",
+      "博多一幸舍，口味偏重",
+      "面屋武藏，蘸面很特别",
+      "神座拉面，汤底清爽"
+    ],
+    "question_sha256": "a18079d0ab31b25d02664706c76acf910d4714b8f9a56f0bd817d79d9718b044"
+  },
+  "favorites_100_076": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "SUV，视野好空间大",
+      "轿车，操控稳油耗低",
+      "跑车，帅就完事了",
+      "旅行车，实用又不难看",
+      "皮卡，硬核能装货"
+    ],
+    "question_sha256": "394b573ed3f15108def5f620a503447b942566989f3fd86d3c2682011338bc03"
+  },
+  "favorites_100_077": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "水手服，青春感十足",
+      "西装制服，干练有气场",
+      "空姐制服，优雅又得体",
+      "护士服，温柔又专业",
+      "日式运动服，方便又有活力"
+    ],
+    "question_sha256": "3be7daa5368d77090003a9f59a30f07f64afaf813b9faa9c3d1d4c6e3dbbc6ce"
+  },
+  "favorites_100_078": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "豪快红，热血又可靠",
+      "真剑红，认真有担当",
+      "兽王鹰，自然野性派"
+    ],
+    "question_sha256": "8e63aeea6e93d5c31c6f18e11990b9e59fa75266e9111058730aadf4fc42b596"
+  },
+  "favorites_100_079": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "花泽香菜，萌音又多变",
+      "神谷浩史，声线华丽",
+      "水濑祈，元气又可爱",
+      "松冈祯丞，后宫男主专业户",
+      "早见沙织，温柔知性"
+    ],
+    "question_sha256": "5d6787c97937213ce88a848b8282604bc5275a81d5e77bfc742369657aa6c6f0"
+  },
+  "favorites_100_080": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "香草味，经典不会腻",
+      "巧克力味，浓郁微苦",
+      "抹茶味，带点茶香",
+      "草莓味，酸酸甜甜",
+      "朗姆葡萄干，大人味搭配"
+    ],
+    "question_sha256": "3e0af7d58efa648632b332809bff0eef74e77ece9703674d439e2b8295daf2d1"
+  },
+  "favorites_100_081": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一期一会，珍惜当下相遇",
+      "不言実行，行动派最爱",
+      "温故知新，复习总有收获",
+      "七転八起，跌倒再爬起来",
+      "花鸟风月，品味自然之美"
+    ],
+    "question_sha256": "0852d6db1a99bf83fcb208980f8d16a80cd41463258a1414a09f3ae304795931"
+  },
+  "favorites_100_082": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "自己开车，方向自己掌控，上高速很爽",
+      "坐地铁，准时又不用找车位",
+      "骑自行车，顺便锻炼身体还很环保",
+      "打车或网约车，点对点不用换乘"
+    ],
+    "question_sha256": "aeb40f3c0e7b0e910206b7df1ce8e2477413aa669054d09592293824b73f1cb5"
+  },
+  "favorites_100_083": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "海飞丝，去屑效果一直很稳",
+      "欧莱雅，洗完头发很顺滑",
+      "施华蔻，香香的很持久",
+      "资生堂，温和不刺激适合天天用"
+    ],
+    "question_sha256": "4de74886dbefc60533789e7d37984ec80c26e09607d5006bd3136db1fe5169db"
+  },
+  "favorites_100_084": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "多芬，洗完皮肤不干",
+      "力士，香香的很有女人味",
+      "可悠然，泡泡好多又温和",
+      "舒肤佳，经典皂香很干净"
+    ],
+    "question_sha256": "5ca5e6f29da3c9b807479499392ef996d13ffe36dcd5d7cc642be4b593776c50"
+  },
+  "favorites_100_085": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "7，一直觉得很幸运",
+      "3，简单又常出现",
+      "13，别人觉得不吉利我觉得很个性",
+      "8，看到就觉得会发财"
+    ],
+    "question_sha256": "4cc62b43b68cdaae88a6b47d16aa639ebbead1862b64cdfbe3b737d63b4cea62"
+  },
+  "favorites_100_086": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《三体》，脑洞超大",
+      "《活着》，每次看都很触动",
+      "《围城》，特别会讽刺",
+      "《小王子》，常读常新"
+    ],
+    "question_sha256": "9fcaa7a56d65c7fcb6b17728edbbac3b43e875d5b388a37d5083223ab1063f9a"
+  },
+  "favorites_100_087": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《读者》，从小看到大",
+      "《国家地理》，图片很震撼",
+      "《三联生活周刊》，深度报道不错",
+      "《知日》，专注日本文化"
+    ],
+    "question_sha256": "9f859507a2c78c4dcb312a6acc91f0e8b771a425bc21c698190f437ee14d43b0"
+  },
+  "favorites_100_088": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《千与千寻》，太经典了",
+      "《龙猫》，软乎乎的治愈",
+      "《哈尔的移动城堡》，浪漫又奇幻",
+      "《幽灵公主》，有深度很震撼",
+      "《风之谷》，世界设定很吸引我"
+    ],
+    "question_sha256": "3d59e3a04b3fa8c0383ba5714344a5f194031e8cba846546ea83fbd3718cccd5"
+  },
+  "favorites_100_089": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "运动会，看比赛或者参赛都好玩",
+      "文化祭摆摊，热热闹闹的",
+      "合唱比赛，班级一起练歌很团结",
+      "春游秋游，能出去浪一天"
+    ],
+    "question_sha256": "f783b2f8f34140ab0b225cf65a1c8a5d20dd93d7f2a29ae45f1b0617691b0191"
+  },
+  "favorites_100_090": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "《权力的游戏》，前面几季太神了",
+      "《请回答1988》，温暖又好笑",
+      "《隐秘的角落》，悬疑很带感",
+      "《老友记》，下饭剧首选"
+    ],
+    "question_sha256": "2c859f752f9623acd372099f9d41c7084edb0bca4816c2a824079f6fcf45d749"
+  },
+  "favorites_100_091": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "凤梨酥，台湾伴手礼扛把子",
+      "稻香村点心，老字号好吃",
+      "云南鲜花饼，花香很浓",
+      "澳门杏仁饼，香香脆脆的",
+      "天津麻花，脆脆的停不下来"
+    ],
+    "question_sha256": "6501f0e5bc9e439a083ce5e5b88ee8f49080cf85a11989ff2c6eb50dcde69be7"
+  },
+  "favorites_100_092": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "冰杯，自己调饮料的快乐",
+      "关东煮，热热的汤很治愈",
+      "饭团，方便又管饱",
+      "葡萄冰，便宜又清爽"
+    ],
+    "question_sha256": "0c6bc999a1ca92b6e4cd4003076da1e4fddae4e1aa520c0392cd7653f4c744da"
+  },
+  "favorites_100_093": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "抓娃娃机，抓到就很有成就感",
+      "投篮机，和朋友一起动起来",
+      "街机格斗，拳皇最带劲",
+      "赛车游戏，方向盘很真实"
+    ],
+    "question_sha256": "e2524ce9b7ea9d6d4d86980e6c08dbfab99e8c7d07354c1afc529f93edeb4841"
+  },
+  "favorites_100_094": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "巨无霸，经典中的经典",
+      "麦辣鸡腿堡，辣辣的很过瘾",
+      "麦乐鸡块，沾酱吃很上头",
+      "薯条，刚炸出来绝了",
+      "麦旋风，奥利奥拌冰淇淋"
+    ],
+    "question_sha256": "6efadf89a61bf4df19359043979f7a4a6beabb41773b0d3f82e19d7bd3d10d14"
+  },
+  "favorites_100_095": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "星星符号，看着就很闪",
+      "地标图标，每个都不一样",
+      "箭头，简单又有方向感",
+      "小树图标，绿绿的很舒服"
+    ],
+    "question_sha256": "07085909a73ad47ce3509ee3c3cc332a5414743089b8d64c560ff3bcdbbf735e"
+  },
+  "favorites_100_096": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "绿茶，清清淡淡很舒服",
+      "红茶，暖暖的加点奶也好喝",
+      "乌龙茶，有焙火香很特别",
+      "奶茶，虽然不算茶但就是爱"
+    ],
+    "question_sha256": "439159c5bf58c09a47f476d4aa27f0eb0978a9e71d0158cfcddd652ca1799e9f"
+  },
+  "favorites_100_097": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "睡到自然醒，然后点外卖",
+      "约朋友逛街看电影，放松一下",
+      "窝在家里打游戏看剧",
+      "去公园走走，呼吸新鲜空气"
+    ],
+    "question_sha256": "9b852e98b25acb5427d88e83a151a8eaee5650e684125429369184b05a66417d"
+  },
+  "favorites_100_098": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "海边，吹风听浪很放松",
+      "山里，安静而且空气好",
+      "咖啡馆，适合发呆或聊天",
+      "自己的房间，最自在"
+    ],
+    "question_sha256": "2b9af005d79a9f27daddb0dd3761d8b2af13e0802c9b321efe11d09dde26763e"
+  },
+  "favorites_100_099": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "b0da0e589ca1c9f6adcf2b4c93ff7053487f680b0be92981b59d55fc2b756da7"
+  },
+  "favorites_100_100": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "谢谢你看到这里，祝你今天开心！",
+      "希望这些回答能让你更了解我一点。",
+      "有想问的可以直接问我，不用猜。",
+      "看到这里的都是缘分，交个朋友吧。"
+    ],
+    "question_sha256": "0a12d8219c2b74a92bceada119574dafd73f9852047bf35e641893f31dfaba4a"
+  }
+}

@@ -1,0 +1,1113 @@
+{
+  "romance_values_100_001": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "幽默、能接住我的梗，还要有点责任心",
+      "情绪稳定、尊重人，比起外形更看重聊得来",
+      "有自己热爱的事情，对生活有热情",
+      "自信但不自大，愿意分享也愿意倾听"
+    ],
+    "question_sha256": "169988d351bf82cf6350e938537c112e32067b82bf2224407f013e41a6755095"
+  },
+  "romance_values_100_002": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "叫我小名或只属于我们之间的昵称，不要肉麻叠字",
+      "直接叫我名字就很好，但偶尔叫我“宝贝”也能接受",
+      "根据场合切换：公开场合叫名字，私下叫“宝宝”或“憨憨”",
+      "希望有小动物或食物系的可爱称呼，比如“阿喵”“团子”"
+    ],
+    "question_sha256": "dd93cd289702881161239a97a65f85f661d63fa58e3b78c4eca60896a2276907"
+  },
+  "romance_values_100_003": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "喜欢比我年长一些的，感觉更成熟、能带领我",
+      "喜欢同龄人，同步成长、共同话题多",
+      "喜欢比我年轻一点的，有活力、能带给我新鲜感",
+      "年龄无所谓，心智成熟、聊得来更重要"
+    ],
+    "question_sha256": "4a0fa8c1d7ee1d744f7fc94af0ebc7a7b0b565015796aad59b6431789bfd99e0"
+  },
+  "romance_values_100_004": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "交往过的基本都比我年长，我会更依赖对方一些",
+      "同龄和年长都有过，但相处舒服的还是同龄的",
+      "多数比我年轻，我喜欢照顾人也喜欢对方的单纯",
+      "各种年龄都试过，发现年龄差不是关键，性格才重要",
+      "没有实际交往过，所以还没有可总结的模式"
+    ],
+    "question_sha256": "272c723e75d330b088c772d878570aa23d17d500b7a87a92783967ab5d724879"
+  },
+  "romance_values_100_005": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "笑起来好看，眼睛有神，不一定很帅但要干净",
+      "喜欢偏瘦偏高、有少年感的长相",
+      "对戴眼镜、有点书卷气的人容易有好感",
+      "重视整体感觉，比如发型清爽、穿搭有个人风格"
+    ],
+    "question_sha256": "4293dd4ba5f860c73a69272b31525623646c3b28662934e2439ad7ee92e149e2"
+  },
+  "romance_values_100_006": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "真诚、不装，能坦诚表达感受和需要",
+      "有边界感，不会过度控制或黏人",
+      "积极乐观，遇到问题愿意沟通而不是冷战",
+      "对世界有好奇心，愿意跟我分享各种奇怪小知识"
+    ],
+    "question_sha256": "1e9458372677ace816b469c2c2362936abdbfdf0a7d473891345e25ee096c8ef"
+  },
+  "romance_values_100_007": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "看重外貌，第一眼得顺眼",
+      "性格合拍最重要，处得来才行",
+      "金钱是基础，但不过度追求",
+      "三者都想要，但性格优先"
+    ],
+    "question_sha256": "dbafad2dcbd5f504a727bf6ad5b606ebc8cf7f5d00a9685bffb9e0c98caa8695"
+  },
+  "romance_values_100_008": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "5厘米以内，差不多高",
+      "5到10厘米，有点小鸟依人",
+      "10到15厘米，刚好靠肩",
+      "15厘米以上，最萌身高差"
+    ],
+    "question_sha256": "bce5b905cef90d3176fff82c68c024d7506123f7cfe490177f5df1195c4ae914"
+  },
+  "romance_values_100_009": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "12岁及以下，小学或更早。",
+      "13到15岁，懵懂初中",
+      "16到18岁，高中悸动",
+      "19到22岁，大学才开窍",
+      "23岁以上，比较晚熟"
+    ],
+    "question_sha256": "ede380d412acfbc06b2d6523148020975a5b8f91f4c96a24630af7783f3c2874"
+  },
+  "romance_values_100_010": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "53b5b6df3b5e9e4e0be7dd2bac9bcc284b7e4e3cde416111dfa02038c3bfaef6"
+  },
+  "romance_values_100_011": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "4d79beb9448c1b0b123a5c8bd7f13a3564025c3c9c2000743cb6ca56d0d58166"
+  },
+  "romance_values_100_012": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "0个，母胎单身",
+      "1个，就谈过一次",
+      "2到3个，有点经验",
+      "4到5个，感情丰富",
+      "6个以上，恋爱达人"
+    ],
+    "question_sha256": "53113136ee9ddef81afd083d1221e44e87ff3ae9d2b8d51186cea691d78eb228"
+  },
+  "romance_values_100_013": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不到1年",
+      "1到3年",
+      "3到5年",
+      "5年以上",
+      "从没谈过正式的长期恋爱"
+    ],
+    "question_sha256": "5441e8668b8505bfb911183659af0730bbaba6a26a0a1d027240b48ca0bc0de9"
+  },
+  "romance_values_100_014": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "低头浅笑，有点害羞",
+      "认真专注，眉头微皱",
+      "撩头发，不经意的动作",
+      "眼神对视，会躲闪",
+      "咬嘴唇，很撩人"
+    ],
+    "question_sha256": "0df765e235f6b1e9d558f8edbf5dce50eb20983939e85602cb173e3a24662c7a"
+  },
+  "romance_values_100_015": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "清爽短发，干净利落",
+      "及肩中长发，温柔气质",
+      "长直发，女神范",
+      "微卷长发，浪漫感",
+      "马尾辫，青春活力"
+    ],
+    "question_sha256": "58ee0e3940a74caacc8ba3da13dc2306da0b8bcd83a7d167697d52d818260c51"
+  },
+  "romance_values_100_016": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "白衬衫，清纯简约",
+      "牛仔裤T恤，休闲自然",
+      "西装革履，正式有型",
+      "运动装，阳光活力",
+      "裙子，优雅或可爱"
+    ],
+    "question_sha256": "ef3787e65d85957cff208a47769ded9bebf584e0f606218ffcb32c32dc0b4329"
+  },
+  "romance_values_100_017": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有过，一眼就心动",
+      "没有，都是日久生情",
+      "分不清是不是，但有过瞬间冲动"
+    ],
+    "question_sha256": "e894396fc236a129c28c46997a77b3af3e70f01658afc4ae6d3ce09bfbb66624"
+  },
+  "romance_values_100_018": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "对方记住我不经意说的话",
+      "过马路时被护在身侧",
+      "认真听我说话并回应细节",
+      "笑起来眼睛弯弯的",
+      "突然靠近，气息可感"
+    ],
+    "question_sha256": "a0da762b67a1a160e3812e0eff295fee8b80c50b109f0b03248786127e980668"
+  },
+  "romance_values_100_019": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "户外派，喜欢一起动起来",
+      "室内派，窝着最舒服",
+      "看天气和心情，两种都行"
+    ],
+    "question_sha256": "2c4d4525b4d6634037eabb102a02c26c32aef54a06f6fc156a69a193ae449ad0"
+  },
+  "romance_values_100_020": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "fa108bd4562751d4b5cea86b515f5e2acfcd51e600f1ec64c56b321954d6900f"
+  },
+  "romance_values_100_021": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有，很想结婚",
+      "有，但希望顺其自然",
+      "不确定，看遇到什么人",
+      "没有，不想被束缚"
+    ],
+    "question_sha256": "5aa80767bbfeddad935f152fbbf05c19c87ef9cec88b1e64b0b1d7efe833570e"
+  },
+  "romance_values_100_022": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不想生孩子",
+      "1个就好",
+      "2个，一男一女",
+      "3个或更多，热闹"
+    ],
+    "question_sha256": "2d13dcb396401bc862d11e463631f92e30c9c6c6f6fa7ab68f7f2191821dcc68"
+  },
+  "romance_values_100_023": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "想养猫，高冷又治愈",
+      "想养狗，忠诚又活泼",
+      "想养小仓鼠或兔子，省心",
+      "不想养，怕麻烦",
+      "对宠物过敏或没条件"
+    ],
+    "question_sha256": "21953963dfe7858ce6d2985a61d71f52634b205d7453dfca9f0eb8015a8fe708"
+  },
+  "romance_values_100_024": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "大城市，方便工作和玩",
+      "小城市或县城，生活节奏慢",
+      "乡村或郊区，喜欢自然安静",
+      "海边或山里，风景好就行",
+      "跟着恋人走，住哪都行"
+    ],
+    "question_sha256": "5a52e77c3d11ca44dc5215f9947c550883e8e5898e4125358475d01461f02f5d"
+  },
+  "romance_values_100_025": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "经常做，家务基本我包",
+      "偶尔做，看心情",
+      "很少做，有人一起才动",
+      "完全不做，靠别人或机器"
+    ],
+    "question_sha256": "9be80f34ea004e0048dfd69d1a8c4b06412437c2f617d882ed06a8596a8570de"
+  },
+  "romance_values_100_026": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "做饭，看到别人吃光很有成就感",
+      "洗碗，喜欢水冲干净的感觉",
+      "擦地，边听歌边拖地很解压",
+      "整理衣柜，把衣服叠整齐特爽",
+      "给植物浇水，顺便发呆"
+    ],
+    "question_sha256": "04d9affae8a81de4991bbdfeaa5dee259e191e3f2eeb81699d0b88762de20db5"
+  },
+  "romance_values_100_027": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "擦窗户，总留水印",
+      "洗衣服，老分不清颜色",
+      "换被套，一个人套得像打架",
+      "通下水道，又脏又搞不定",
+      "炒菜，油溅起来就慌"
+    ],
+    "question_sha256": "e43e10d023ba8105bc42386d03e143f7ced83cc47ac09b7f6358ed25c103f43c"
+  },
+  "romance_values_100_028": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "番茄炒蛋，拌饭一绝",
+      "红烧排骨，甜咸口最香",
+      "清蒸鱼，鲜嫩不腥",
+      "可乐鸡翅，简单又下饭",
+      "手撕包菜，酸辣开胃"
+    ],
+    "question_sha256": "ae84dd2514b1bf7fb53fbd712ea45c89af2d2dbe1e53230603a6d62f6b926515"
+  },
+  "romance_values_100_029": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "蛋炒饭，粒粒分明",
+      "麻婆豆腐，麻辣过瘾",
+      "玉米排骨汤，清甜暖胃",
+      "烤鸡翅，外焦里嫩",
+      "凉拌黄瓜，爽口解腻"
+    ],
+    "question_sha256": "c7120bf01f225299bd8fd77d6f139ea2fcbefc150aa308a52ee0d3cd1459da1d"
+  },
+  "romance_values_100_030": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一起打游戏，输了也不生气",
+      "一起逛超市，推车慢慢挑",
+      "一起做饭，一个切菜一个炒",
+      "一起爬山，到山顶吹风",
+      "一起看剧，边看边吐槽"
+    ],
+    "question_sha256": "9833d0254b5934282944ab7eb4fcfee3307b6fadc021d30d40064be8416bba96"
+  },
+  "romance_values_100_031": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "加班回家有热饭等着",
+      "下雨天窝在沙发看剧",
+      "收到意外的消息说想我",
+      "一起逛超市慢慢挑",
+      "睡到自然醒没人催"
+    ],
+    "question_sha256": "22128cbe519097565548524f319b9bdf8446d8d6d5e9045c5b5e0a84c0ce2ed8"
+  },
+  "romance_values_100_032": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "dbe81d84ad6737f8b287e016531ec28a8b16d797ad2a26b43f8c48f7afd0b386"
+  },
+  "romance_values_100_033": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "很可爱，带点口音特亲切",
+      "挺有趣，会想学几句",
+      "无所谓，听懂就行",
+      "有点出戏，但人好就没事",
+      "有点难接受，更喜欢普通话"
+    ],
+    "question_sha256": "8dc01e76b9ee259c5495cbf4873dfee7f858fffee8f112469baf6bd7f56627aa"
+  },
+  "romance_values_100_034": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "超想，开窗放音乐才爽",
+      "还行，偶尔兜一圈",
+      "一般，坐车更舒服",
+      "不想，开车太累"
+    ],
+    "question_sha256": "617ac2908dce422ec03391025353b8e67bbd9544f5b2d13e3896a719c49db8c7"
+  },
+  "romance_values_100_035": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "闻雨后泥土味",
+      "收集好看的杯子",
+      "摸毛绒玩具停不下来",
+      "看各种火锅探店视频",
+      "存搞笑表情包"
+    ],
+    "question_sha256": "af66bd8177c0d86e62454f7b94655f2b54232f96a6499199b5dbeb7448c21691"
+  },
+  "romance_values_100_036": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "很喜欢，觉得有品味",
+      "能接受，淡香就行",
+      "无所谓，别太冲",
+      "不太能，鼻子敏感",
+      "完全不行，闻到就晕"
+    ],
+    "question_sha256": "d797a997b6441817c5a497c7770e96e1c66996337cb48ec3b39439af0795ba5e"
+  },
+  "romance_values_100_037": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "笑容，朋友说很治愈",
+      "眼睛，有神会说话",
+      "手，修长好看",
+      "性格，开朗不记仇",
+      "声音，打电话被夸过"
+    ],
+    "question_sha256": "1fb707edce3b2872fb467941af8b0832b29af4258e1fe16ec1f08bf69a618485"
+  },
+  "romance_values_100_038": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "半年内",
+      "半年到一年",
+      "一到两年",
+      "两年以上",
+      "不想设限，感觉对了就结"
+    ],
+    "question_sha256": "dc593ffc01ccd0a2e7fee7de9ff8c893dc1673e8f2c7dc51d879d7b82b52c7bf"
+  },
+  "romance_values_100_039": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有，正在偷偷开心",
+      "有，但还不确定怎么发展",
+      "没有，单身挺自在",
+      "刚分手，还没走出来",
+      "说不清，算有好感吧"
+    ],
+    "question_sha256": "aead922b242ffb7a48a2db62d07e4c18d153a935f136d61934c5336444dd3f56"
+  },
+  "romance_values_100_040": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "必须双方经济独立，不拖累彼此",
+      "婚后要和父母分开住，保持小家庭空间",
+      "结婚前双方必须商量好要不要孩子，达成一致计划，不能一方被迫妥协。",
+      "对方不能有赌博、酗酒等恶习",
+      "必须签婚前协议，财务透明"
+    ],
+    "question_sha256": "c13263dd9e95bfa09e16a72e1de1ab92dd95f807574f4a3cad35834dab7212c2"
+  },
+  "romance_values_100_041": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全接受，文字告白也很真诚",
+      "可以接受，但事后要补当面确认",
+      "不太接受，还是希望面对面说",
+      "完全不接受，告白必须有仪式感"
+    ],
+    "question_sha256": "4b5d608ca0394a076f41f8d36ffc0110c4406849bf2faf1f6582639d4b6b9418"
+  },
+  "romance_values_100_042": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "我比较爱撒娇，喜欢被宠",
+      "我享受对方撒娇，觉得超可爱",
+      "看心情轮流，互相撒娇更有趣",
+      "都不太会撒娇，更习惯直来直去"
+    ],
+    "question_sha256": "1b95b645e274ed5a36702ba6200971acbe10b7c4f76472777aaabe8582b520d0"
+  },
+  "romance_values_100_043": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "每个重要日子都要认真过",
+      "只过大的纪念日，小的随意",
+      "不太在意，偶尔提一句就够了",
+      "完全不想过，觉得太形式化"
+    ],
+    "question_sha256": "8c4206cbd5f44c5a00dfabdbc8cba4d92d84465725affcbe67b79cecd90aba88"
+  },
+  "romance_values_100_044": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "和异性单独吃饭就算",
+      "有暧昧聊天内容就算",
+      "发生肢体接触或接吻才算",
+      "发生性关系才算",
+      "只要心还在，身体出轨也不算"
+    ],
+    "question_sha256": "101a3ec959f188555d952806dd720c54888c91884f66b9961b79d1fd7d9c9ebe"
+  },
+  "romance_values_100_045": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "8c88439b7d9d6df0f24d7976f35823d0fc93bad88a25bc909140fe044126fc76"
+  },
+  "romance_values_100_046": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "突然送我小礼物或手写信",
+      "记住我随口提过的小事",
+      "主动安排约会和惊喜",
+      "在我累的时候默默做家务",
+      "公开夸我或秀恩爱"
+    ],
+    "question_sha256": "93ce474d99e687d1613d75087a107f70ebf60e964829f0728da7c13ddc9cf16f"
+  },
+  "romance_values_100_047": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "答应的事老是忘记",
+      "吵架时冷战不说话",
+      "当着别人面否定我",
+      "和前任保持联系",
+      "不认真听我说话"
+    ],
+    "question_sha256": "705d23d10ac9e95ad394a4a82dbb098201988ccf2ae5b34ab4012c17d444fba6"
+  },
+  "romance_values_100_048": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "米饭派，配点小菜或味噌汤",
+      "面包派，搭咖啡或牛奶",
+      "看当天心情，两种都常吃",
+      "都不太吃，偶尔只喝东西"
+    ],
+    "question_sha256": "f6e11531f703ea24c1add4834c756afe04c5e00b5304b48e1b6fecb7d653b7fa"
+  },
+  "romance_values_100_049": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "能接受，有信心维持",
+      "可以试试，但有期限才行",
+      "不太能接受，见面太少会焦虑",
+      "完全不能接受，需要日常陪伴"
+    ],
+    "question_sha256": "dcd9bfea8f5249f6db7512a8f1806029569bc4d874015053b6555a94e35c91e0"
+  },
+  "romance_values_100_050": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一起做饭看电影，宅在家也很幸福",
+      "去户外走走，爬山或逛公园",
+      "找家安静的咖啡店各看各的书",
+      "临时起意来场小旅行",
+      "约朋友一起聚会热闹一下"
+    ],
+    "question_sha256": "82fad607f471dfd5e606650c2542ac4b5cec293994a747fbd29b985cd906d054"
+  },
+  "romance_values_100_051": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "日本京都，感受古都慢节奏",
+      "泰国清迈，吃小吃逛夜市",
+      "冰岛，看极光和冰川",
+      "意大利，吃美食看古迹",
+      "国内随便哪个海边，放松发呆"
+    ],
+    "question_sha256": "8ef17e270823f244b8dbd5d0041fd7fc6682f20b9d5d60d559436ff701046931"
+  },
+  "romance_values_100_052": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全接受，很方便认识新朋友",
+      "接受，但会更谨慎筛选",
+      "不太接受，还是喜欢自然认识",
+      "完全不接受，担心不真实"
+    ],
+    "question_sha256": "44582fa84a9bd94c01f0c8b22c45e50124778f31002c128fb4d5d9728cca37e2"
+  },
+  "romance_values_100_053": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一起学做菜或烘焙",
+      "一起健身或跑步",
+      "一起打电动或桌游",
+      "一起学一门外语",
+      "一起拍照或拍vlog"
+    ],
+    "question_sha256": "0aafd1e26132bc3c9133c0fc32ad7ce8d485706e031d16c39cbccdef5b097648"
+  },
+  "romance_values_100_054": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "对方说话的语气和表情",
+      "他是否记得我说过的小事",
+      "吵架后愿不愿意主动沟通",
+      "对服务员的态度好不好",
+      "花钱和存钱的习惯"
+    ],
+    "question_sha256": "d1055c95d5fd5f3b73f419e9d36f39452d8c65c9c08adb094af0527c1bd6a5e5"
+  },
+  "romance_values_100_055": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "经常吵，但很快和好",
+      "偶尔吵，都是小事",
+      "很少吵，能忍就忍",
+      "从不吵架，有问题就沟通"
+    ],
+    "question_sha256": "86efd167afafa67a1c85f4cac0c839a55a3b29ea17d938a7a89979e1230db076"
+  },
+  "romance_values_100_056": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "主动哄对方，先认错",
+      "等对方先来哄我",
+      "冷静一会儿再沟通",
+      "用行动示好，比如做好吃的"
+    ],
+    "question_sha256": "8568a2e79c5e784d4dee1c2ca4b56ae960e9e6145584a6ec0a6fa15642b71cab"
+  },
+  "romance_values_100_057": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "几乎每天都说",
+      "一周说几次",
+      "很少说，但会用行动表达",
+      "在特别的日子说"
+    ],
+    "question_sha256": "d6a3db69eb9d14048599d1c79609de893fb0a5783251672ab1cd3e18eedc61d3"
+  },
+  "romance_values_100_058": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "非常想，婚前必须同居",
+      "想，可以试试看",
+      "不太想，想保留新鲜感",
+      "完全不想，坚持婚后同居"
+    ],
+    "question_sha256": "ead68678fdac9e9169dc9f85a30ad04622d41f9f522e1429baa6f1c61a568d7f"
+  },
+  "romance_values_100_059": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "经常找对方聊天",
+      "送小礼物或零食",
+      "故意制造偶遇",
+      "直接约对方出去玩"
+    ],
+    "question_sha256": "f5d702e51e5112f5199c12cc70ffeb8f1f914a90ab8747d8144c85f7c72605d8"
+  },
+  "romance_values_100_060": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "说过，都是善意的小谎",
+      "说过，为了隐瞒一些事",
+      "很少，几乎没有",
+      "从没说过谎"
+    ],
+    "question_sha256": "27fdbce47821bb78a8dbc5581cb69bfa8e14343b0b6339671b4f10ebf2a3a485"
+  },
+  "romance_values_100_061": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "能，性格合拍更重要",
+      "能，相处久了会看顺眼",
+      "不太能，还是需要心动",
+      "不能，外貌是门槛"
+    ],
+    "question_sha256": "a870812bbe2b2ca27c2be3c00191184422614e1aa9e70578c7943e2298c2bf12"
+  },
+  "romance_values_100_062": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "绝对不能原谅，立刻分手",
+      "很难原谅，需要很长时间",
+      "看情况，如果只是意外可能考虑",
+      "可以原谅，只要还爱对方"
+    ],
+    "question_sha256": "059e8578e3f50624b348af8273bdfd5b664dc1728aa9eb7793ac1b440cd09e79"
+  },
+  "romance_values_100_063": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "经常想起，会怀念",
+      "偶尔想起，但没什么感觉",
+      "很少想起，过去了就过去了",
+      "从没想起过"
+    ],
+    "question_sha256": "5bc6a64849d79157597d4433cb46560fb756a1c9d4cf80b4569f82fd17e3a90c"
+  },
+  "romance_values_100_064": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "上学的时候，追求者很多",
+      "刚工作那几年，社交圈大",
+      "现在，更懂得展现自己",
+      "一直没有明显的桃花运"
+    ],
+    "question_sha256": "2a7374ec7fc8e2e982d89c1d8cd3808e56949dbdfcd66d4655f2781ccfaab11a"
+  },
+  "romance_values_100_065": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "有，都是关于过去的",
+      "有，是关于家庭的",
+      "有，是自己的小怪癖",
+      "没有秘密，什么都告诉恋人"
+    ],
+    "question_sha256": "768c0a45f12813bc8028f2fb7fdbf21493285a0952ef534eb25ad89ab4d053fa"
+  },
+  "romance_values_100_066": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "会，喜欢就主动说",
+      "会，但会等一个合适时机",
+      "不太会，怕被拒绝",
+      "完全不会，等对方开口"
+    ],
+    "question_sha256": "11d8298a750bd1933ba90222ba95574a79055930391dfa28acb3c8ef7f322ccc"
+  },
+  "romance_values_100_067": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "直接说“我喜欢你，做我对象吧”",
+      "我喜欢你，想认真和你在一起。",
+      "“我想当面告诉你，我喜欢你很久了”",
+      "“最近总想找你，我觉得我好像喜欢上你了”"
+    ],
+    "question_sha256": "ee80857b177fcd9b8873f1a5a889da99e6395cf0028edea08eb1f20b481b3191"
+  },
+  "romance_values_100_068": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "对方出轨或欺骗我",
+      "长期冷暴力或争吵不断",
+      "价值观差异太大，无法磨合",
+      "没有未来，比如异地且不解决"
+    ],
+    "question_sha256": "ab34920e6eced782206d5ce495ba2a2e32f0135b0cb79e5a0ac52f1364402900"
+  },
+  "romance_values_100_069": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "温馨小家庭，有孩子有宠物",
+      "两个人丁克，自由自在",
+      "大家庭，和父母住得近",
+      "相敬如宾，彼此有空间"
+    ],
+    "question_sha256": "c66ed99f5785004549a668ad93354f2c69fa78a0039962b6a52f24c008d7afb2"
+  },
+  "romance_values_100_070": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "会，喜欢那种拉扯感",
+      "有时候会，看心情",
+      "不太会，觉得累",
+      "完全不会，喜欢直来直去"
+    ],
+    "question_sha256": "790dfb394cecd4503051c5b5df4cb36dde05c5ed7c1821a0b5e7ec6aeaff85ca"
+  },
+  "romance_values_100_071": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "主动联系过，想看看近况",
+      "被动联系过，对方先找我",
+      "想过联系，但忍住了",
+      "从没联系过，已经翻篇"
+    ],
+    "question_sha256": "97cc87232b5214893b03eaf259f666a3becc9092237427fead040d900ff08fc4"
+  },
+  "romance_values_100_072": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不算高，相处舒服、聊得来比啥都强",
+      "中等吧，三观合、有责任心、能互相理解就行",
+      "挺高的，长得顺眼、收入稳定、还得灵魂有趣",
+      "很高，基本是按理想模板找，宁缺毋滥"
+    ],
+    "question_sha256": "f7fe60668961bed9f78c221152f9a6d707bc7f5a2e1ee5da2800ccee1490194d"
+  },
+  "romance_values_100_073": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "双方各管各的，但共同开销有个公共账户",
+      "一起管，定期坐下来对账、商量大额支出",
+      "我管大头，对方管零花，省心也互相信任",
+      "完全AA，谁也别欠谁，账目清清楚楚"
+    ],
+    "question_sha256": "9a327f6edd6f010c3a4bed081698b6a8c708fb50efa3a50de0bf8ce6119fc186"
+  },
+  "romance_values_100_074": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "好像没有，小时候就是个普通小孩",
+      "有一两个暗恋我的，但没捅破过",
+      "还算受欢迎，收到过情书或小礼物",
+      "挺多人喜欢的，但我自己没当回事"
+    ],
+    "question_sha256": "ce8d7f71cfed155fa3d20a0a36618a13c94cb65acc466853edd0c67c4661edc6"
+  },
+  "romance_values_100_075": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "默默祝福，然后自己慢慢放下",
+      "不放弃，继续用行动争取一下",
+      "先保持朋友关系，等他们分手再说",
+      "直接表白，给自己一个交代，成不成另说"
+    ],
+    "question_sha256": "31e9905512f025ea8e4f815f778af6399f8d69a1ee204b8a2344d41e4b83a72c"
+  },
+  "romance_values_100_076": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "多沟通，有矛盾不隔夜，当天说开",
+      "给彼此空间，不查岗不控制，信任第一",
+      "一起制造新鲜感，定期约会、尝试新事情",
+      "接受对方的缺点，不试图改造对方"
+    ],
+    "question_sha256": "14d8871e827e588407e93e2c48b3f0a0bd438eee7afe63c4e5d8819ead4594a6"
+  },
+  "romance_values_100_077": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "经历过，对方一回应我就突然没感觉了",
+      "好像有过，但不确定是不是蛙化",
+      "没经历过，我只会更上头",
+      "不知道什么叫蛙化现象"
+    ],
+    "question_sha256": "4d036e50d70ad668eca6009a6f9c81cc8fef7d94784478bf092f23dcd2843d24"
+  },
+  "romance_values_100_078": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "想被求婚，喜欢那种被珍视的感觉",
+      "想主动求婚，自己掌握节奏更踏实",
+      "谁求都行，关键是两个人都想结婚",
+      "不想搞仪式，商量好就领证"
+    ],
+    "question_sha256": "389a4e1a5bf6df826d53f76b63e9e8850f0cf80c4ff2744e55f63e017952190d"
+  },
+  "romance_values_100_079": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "在海边日落时，只有两个人，简简单单",
+      "在旅行途中，突然拿出戒指，有惊喜感",
+      "在家人朋友见证下，热闹又温馨",
+      "在家吃晚饭时自然提起，不刻意"
+    ],
+    "question_sha256": "73e4b51e96238ea20865d1c89a88e7cee927cdc78fd845e6d295f0974f7f46db"
+  },
+  "romance_values_100_080": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "13dfe9e68f2a43f35ed6162030c490f618b3130ff452b953ce44a4e2572ed2b6"
+  },
+  "romance_values_100_081": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "挺喜欢的，觉得专注自己爱好的人很有魅力",
+      "能接受，只要不影响正常生活就行",
+      "一般，不太了解御宅族",
+      "不太喜欢，怕聊不到一块去"
+    ],
+    "question_sha256": "9a785c95453f56c2a3aa1a15bd81db69c2de72e846964e97efe2c71be3c75ddb"
+  },
+  "romance_values_100_082": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "25岁前",
+      "26-30岁",
+      "31-35岁",
+      "36岁以后或随缘"
+    ],
+    "question_sha256": "68f36b380e6cb810f783a36a0bc85db4df9efb806152752f07618c3022075b79"
+  },
+  "romance_values_100_083": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "非常需要，每天都要有自己发呆的时间",
+      "偶尔需要，每周有几个小时独处就够了",
+      "不太需要，但忙起来也想静静",
+      "完全不需要，喜欢一直有人陪"
+    ],
+    "question_sha256": "270d818bfe3de9785849cfe9737b2a3aeae79e672b5110b8d358929ed7942497"
+  },
+  "romance_values_100_084": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "能，感觉挺亲密也挺放松的",
+      "可以偶尔，但不会经常一起洗",
+      "不太能，洗澡是很私人的事",
+      "完全不能，会不好意思"
+    ],
+    "question_sha256": "e01ceb678a84a815ff7adaba075887d23d23d7555346e7a9e3b5a6df2773d9bd"
+  },
+  "romance_values_100_085": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有过，复合后还是分了",
+      "有过，复合后现在在一起",
+      "没有，但想过复合",
+      "没有，分了就彻底翻篇"
+    ],
+    "question_sha256": "9a4d0767f457ca1e7fd69e7765c113dfafa376b7fc32673941fc86b00514eb4f"
+  },
+  "romance_values_100_086": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "发现跟他在一起很轻松，不用伪装",
+      "遇到大事小事都想第一个告诉他",
+      "看到他照顾家人或朋友的样子",
+      "一起旅行或生病时被照顾得很好"
+    ],
+    "question_sha256": "cd49a4802efede7de0024b21a0e46e3c92682f159c11c9859c5d68504b62bb80"
+  },
+  "romance_values_100_087": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "共用一间，喜欢睡前聊天、抱着睡",
+      "分开睡，睡眠浅，不想互相打扰",
+      "同房但分床，各有各的被子",
+      "看情况，吵架时分开，和好时一起"
+    ],
+    "question_sha256": "dfd68172d4cda122c4433a7fba3f950a3c5b227071ef8c73e9dca6d5b6b90586"
+  },
+  "romance_values_100_088": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全不会，给对方绝对自由",
+      "基本不会，但会表达不舒服",
+      "偶尔会，比如想多见面",
+      "会有点粘人，希望常陪伴",
+      "可能会，因为缺乏安全感"
+    ],
+    "question_sha256": "f2022e30da313923979f8aa0c5f1e8e9c397c99ff8e68ff5ce055ced52862f4b"
+  },
+  "romance_values_100_089": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全受不了，马上想逃",
+      "有点烦，会跟对方沟通",
+      "可以接受一点点，但要有度",
+      "只要不过分，觉得是爱",
+      "我喜欢被在乎的感觉"
+    ],
+    "question_sha256": "183a7d8cdf3c0822b0dac247313f00eb2d004a2cd9cff2632110b09b9144de77"
+  },
+  "romance_values_100_090": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一直低头玩手机",
+      "只顾自己根本不聊",
+      "对服务员很不礼貌",
+      "迟到还不解释",
+      "不停提前任"
+    ],
+    "question_sha256": "f0018b5821a9ef92fc10fd7d873acacf4bada9e8fedcbf64070801fc827b88bd"
+  },
+  "romance_values_100_091": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "直接问怎么回事",
+      "自己生闷气不说话",
+      "先观察几天再说",
+      "加倍对ta好试探",
+      "索性也冷着，看谁先忍不住"
+    ],
+    "question_sha256": "a6f03f09e481b171a7b0f8d555a2856c926cd6adc7699c2d64207e88f2d223ed"
+  },
+  "romance_values_100_092": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全不依赖，很独立",
+      "偶尔依赖，大事自己扛",
+      "情绪上很依赖对方",
+      "生活上挺依赖的",
+      "恨不得天天黏在一起"
+    ],
+    "question_sha256": "0f94a7308b4aa4d022899803244f9575435aaff5523c8f9300ba9ce3ddc04537"
+  },
+  "romance_values_100_093": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有，被对方直接说破",
+      "有，朋友看出来了",
+      "好像有，但没被明说",
+      "完全没有，藏得很好",
+      "根本没喜欢过谁"
+    ],
+    "question_sha256": "9e61cd84bb76d7c1916b0ff0257999958d279735a445fd219b9826998621c7dc"
+  },
+  "romance_values_100_094": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "超想，感觉甜蜜",
+      "可以试试基础款",
+      "无所谓，穿不穿都行",
+      "不太想，觉得尴尬",
+      "坚决不穿，太傻了"
+    ],
+    "question_sha256": "4f5fb4bc5b93a7ccf58a47f408621f680f0f23b4a18f0c95229ac2930810a234"
+  },
+  "romance_values_100_095": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "翻我手机查聊天记录",
+      "限制我和朋友见面",
+      "在公共场合大吼大叫",
+      "总是替我做决定",
+      "拿我跟别人比较"
+    ],
+    "question_sha256": "43fa48bfb97775cb34271203eca1f6ebb93696e9f3444df2fb2d614e2f80148d"
+  },
+  "romance_values_100_096": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "我全权决定，对方跟着",
+      "我提几个，对方选一个",
+      "互相抛点子，直到一致",
+      "轮流做主，这次你下次我",
+      "听对方的，我都可以"
+    ],
+    "question_sha256": "4bb8d733ac6b8a4e267c474f4dd3f7d1f19c67b4e2fad22ff4d43175772298f8"
+  },
+  "romance_values_100_097": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "当场开怼，把话说清楚",
+      "先离开冷静下",
+      "憋着不说，等对方道歉",
+      "撒娇或装可怜化解",
+      "记仇，之后找机会提"
+    ],
+    "question_sha256": "e1dfe3ea64f72e27fa4f9a7e84f4f3b4ab158990862ac844e3ee2f3ca2e6ba0d"
+  },
+  "romance_values_100_098": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "必须AA，公平第一",
+      "默认AA，但特殊情况可请",
+      "轮流请客，不细算",
+      "谁收入高谁多出点",
+      "希望对方全包"
+    ],
+    "question_sha256": "3ad91d0f3aac28d9b2892a0eb4791ca71bf11d05b2f4209b35ef6bad401cfb4b"
+  },
+  "romance_values_100_099": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "城市，方便又热闹",
+      "乡村，安静又自然",
+      "城市周边，两全其美",
+      "看工作再决定",
+      "看恋人在哪就住哪"
+    ],
+    "question_sha256": "0f1273e1466e1c57de0cc420900ba98ecbab569d3cdc9a7121ea06a3296b0352"
+  },
+  "romance_values_100_100": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "谢谢你看到这里，比心！",
+      "希望你也能找到合拍的人",
+      "我的答案有点直，别被吓到",
+      "欢迎来跟我交换真心话",
+      "看完是不是更了解我了？"
+    ],
+    "question_sha256": "2fb3d15d14cbd848cb53778b793b0e0787b1bc5b35be520e162a1262552aaa19"
+  }
+}

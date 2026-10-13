@@ -99,12 +99,12 @@ class Store:
     @staticmethod
     def summary(row):
         unlocked = bool(row["human_submitted"] and row["ai_submitted"])
-        return dict(round_id=row["id"], title=DEEPTALK_TITLES.get(row["topic_id"], row["title"]), human_name=row["human_name"],
+        return dict(round_id=row["id"], topic_id=row["topic_id"], title=DEEPTALK_TITLES.get(row["topic_id"], row["title"]), human_name=row["human_name"],
                     ai_name=row["ai_name"], sharing_mode=row["sharing_mode"], mode=row["mode"], status="complete" if unlocked else "in_progress",
                     created_at=row["created_at"], updated_at=row["updated_at"],
                     url=f"/deeptalk?round_id={row['id']}")
 
-    def history(self, user, offset=0, limit=20):
+    def history(self, user, offset=0, limit=20, topic_id=None):
         integer(offset, "offset", 0, 1000000)
         integer(limit, "limit", 1, 100)
         role = "ai" if user.get("is_ai") else "human"
@@ -114,11 +114,18 @@ class Store:
             args = (int(user["id"]), *self.bound_human_ids)
         else:
             where, args = "human_id=?", (int(user["id"]),)
+        if topic_id is not None:
+            if not isinstance(topic_id, str) or topic_id not in DEEPTALK_TITLES:
+                raise DeeptalkError("未知题库")
+            where += " AND topic_id=?"
+            args = (*args, topic_id)
         with self.connection() as conn:
             total = conn.execute(f"SELECT COUNT(*) FROM deeptalk_rounds WHERE {where}", args).fetchone()[0]
             rows = conn.execute(f"SELECT id,topic_id,title,human_name,ai_name,sharing_mode,mode,human_submitted,ai_submitted,created_at,updated_at FROM deeptalk_rounds WHERE {where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
                                 (*args, limit, offset)).fetchall()
-            return dict(rounds=[self.summary(r) for r in rows], total=total, offset=offset, limit=limit)
+            return dict(rounds=[dict(self.summary(r), human_submitted=bool(r["human_submitted"]),
+                                    ai_submitted=bool(r["ai_submitted"])) for r in rows],
+                        total=total, offset=offset, limit=limit)
 
     def create(self, human, ai, topic_id, key, *, sharing_mode="single_ai", mode="blind"):
         game_activity.observe_change(False, False)
@@ -147,12 +154,14 @@ class Store:
 
     @staticmethod
     def serialize(row, role, *, number=None, limit=1, full=False):
-        """The only detailed read path. Blind peer answers require both submissions."""
+        """Only the peer's own submission opens their blind answers to this role."""
         topic = json.loads(row["snapshot"])
         own = json.loads(row[f"{role}_answers"])
         unlocked = bool(row["human_submitted"] and row["ai_submitted"])
+        peer_role = "human" if role == "ai" else "ai"
+        peer_visible = row["mode"] == "chat" or bool(row[f"{peer_role}_submitted"])
         out = Store.summary(row)
-        out.update(topic_id=row["topic_id"], total=len(topic["questions"]), unlocked=unlocked,
+        out.update(topic_id=row["topic_id"], total=len(topic["questions"]), unlocked=unlocked, peer_visible=peer_visible,
                    submitted=bool(row[f"{role}_submitted"]), revision=row[f"{role}_revision"],
                    next_number=next((i for i, q in enumerate(topic["questions"], 1) if q["id"] not in own), 1),
                    progress={r: {"done": len(json.loads(row[f"{r}_answers"])), "submitted": bool(row[f"{r}_submitted"])} for r in ("human", "ai")})
@@ -161,8 +170,7 @@ class Store:
         if full or number is not None:
             start = 0 if full else integer(number, "number", 1, len(topic["questions"])) - 1
             count = len(topic["questions"]) if full else integer(limit, "limit", 1, 20)
-            peer_role = "human" if role == "ai" else "ai"
-            peer = json.loads(row[f"{peer_role}_answers"]) if unlocked or row["mode"] == "chat" else {}
+            peer = json.loads(row[f"{peer_role}_answers"]) if peer_visible else {}
             items = []
             for i, q in enumerate(topic["questions"][start:start + count], start + 1):
                 item = dict(number=i, id=q["id"], text=q["text"], own=own.get(q["id"]))
@@ -175,8 +183,8 @@ class Store:
     def read(self, user, round_id, *, action="status", number=1, limit=1):
         with self.connection() as conn:
             row, role = self.row(conn, round_id, user)
-            if action == "result" and row["mode"] != "chat" and not (row["human_submitted"] and row["ai_submitted"]):
-                raise DeeptalkError("双方正式提交后才可查看双人回答", 409)
+            if action == "result" and row["mode"] != "chat" and not (row["human_submitted"] or row["ai_submitted"]):
+                raise DeeptalkError("尚无人正式提交；可用 question 查看自己的回答", 409)
             return self.serialize(row, role, number=number if action in {"question", "result"} else None,
                                   limit=limit, full=action == "view")
 

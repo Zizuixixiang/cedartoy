@@ -1,0 +1,1135 @@
+{
+  "getting_to_know_100_001": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "da5f7e0ff07cb3dd9217f5ba8485819580773fc94430962a86421fe32cfa4aec"
+  },
+  "getting_to_know_100_002": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "男",
+      "女",
+      "非二元",
+      "其他"
+    ],
+    "question_sha256": "8472524dc5f4260588a69fa9c14847759684f4a38d5dce7a5e88493782739229"
+  },
+  "getting_to_know_100_003": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "80df72bcb7c289b30ef319614ad1c2a5d0c814183ab62b23a7bb3147337f329c"
+  },
+  "getting_to_know_100_004": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "18岁以下",
+      "18到25岁",
+      "26到30岁",
+      "31到40岁",
+      "40岁以上"
+    ],
+    "question_sha256": "ecd4e5b26da5bd54e1efaf6d3940a653ad6f81638b9aeeeb0bfa6cbc768a052b"
+  },
+  "getting_to_know_100_005": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "150cm以下",
+      "151-160cm",
+      "161-170cm",
+      "171-180cm",
+      "181cm以上"
+    ],
+    "question_sha256": "617ef5b29ae2f4fca70fd5196aa674cdd03b68ee3ffc48bea08fd0348da1864f"
+  },
+  "getting_to_know_100_006": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "两只眼都很好，不用戴眼镜",
+      "轻度近视，偶尔戴眼镜",
+      "高度近视，基本离不开眼镜",
+      "有远视或散光",
+      "做过视力矫正手术"
+    ],
+    "question_sha256": "25bfff77b6bf7a8df761dc4669933e1f25a59337598cd721274422b318b88c74"
+  },
+  "getting_to_know_100_007": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "左撇子",
+      "右撇子",
+      "两只手都很灵活"
+    ],
+    "question_sha256": "27ab349873a64913d725140255eea70ab813337e0da5db08e6a35ccb1695a5c2"
+  },
+  "getting_to_know_100_008": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "35码以下",
+      "36-37码",
+      "38-39码",
+      "40-41码",
+      "42码以上"
+    ],
+    "question_sha256": "92ad3626aa99ee7a233708a28289b817c017a19088a70b972af393b320b4a724"
+  },
+  "getting_to_know_100_009": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "A型",
+      "B型",
+      "AB型",
+      "O型",
+      "不知道"
+    ],
+    "question_sha256": "fd843414bcf0dc56c7af9bb92092878436b7049344176a447ed7f717dffe2a7f"
+  },
+  "getting_to_know_100_010": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "一线城市",
+      "二三线城市",
+      "小城镇",
+      "农村",
+      "海外"
+    ],
+    "question_sha256": "f0af180276b27dc26de7507f692e9e54ed37bf59e932eae0def6a98347e31a5d"
+  },
+  "getting_to_know_100_011": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "文学社，写写东西",
+      "篮球队，天天打球",
+      "合唱团，一起唱歌",
+      "广播站，播点校园新闻",
+      "没参加过社团"
+    ],
+    "question_sha256": "b5ab4b18edafab0f1a765f2813e9efde014f52c69ee562700237c54090639370"
+  },
+  "getting_to_know_100_012": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "学生会，忙着搞活动",
+      "模联社，模拟联合国很锻炼人",
+      "动漫社，一起看番聊梗",
+      "辩论队，喜欢唇枪舌剑",
+      "没参加过社团"
+    ],
+    "question_sha256": "0e6e5605e5e766a36b3032cd7c10d6a499a7fed7bff03cac9cf77357e81530f1"
+  },
+  "getting_to_know_100_013": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "钢琴，考过级",
+      "画画，素描水彩都试过",
+      "书法，练过毛笔字",
+      "舞蹈，学过民族舞",
+      "没上过兴趣班"
+    ],
+    "question_sha256": "9e8e1da30e5e4a2589eb6ef0f8c85675e30816a2d93e434dfa3100cc0009fe0b"
+  },
+  "getting_to_know_100_014": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "奶茶店店员，摇奶茶手酸",
+      "家教，教小孩写作业",
+      "发传单，站街被拒绝无数次",
+      "快餐店服务员，收盘子擦桌",
+      "没做过兼职"
+    ],
+    "question_sha256": "6658e1e396e731024aaa14d3d1ac9909ea300bd42ff04e642fad5353212452a4"
+  },
+  "getting_to_know_100_015": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "打游戏，每天肝日常",
+      "看电影，周末泡影院",
+      "跑步，保持心肺",
+      "做饭，研究新菜谱",
+      "刷短视频，停不下来"
+    ],
+    "question_sha256": "0620b25f2105137f2d811c94177c7e6b955f04739b9317d53c5e275482e0ef23"
+  },
+  "getting_to_know_100_016": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "画画或做手工",
+      "弹奏乐器",
+      "做饭或烘焙",
+      "运动健身",
+      "写作或记录生活"
+    ],
+    "question_sha256": "5a6f72fbffbc0e39eb8d20a7bc9ee73f398be628735af3e2dc7c61f495f76e62"
+  },
+  "getting_to_know_100_017": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "活在当下",
+      "努力不会背叛你",
+      "船到桥头自然直",
+      "做自己"
+    ],
+    "question_sha256": "e5f1fa4722edd2f7fc623a62dbbbbef0731706c22c044db2248519ec22a6ebcd"
+  },
+  "getting_to_know_100_018": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有哥哥或姐姐",
+      "有弟弟或妹妹",
+      "既有哥哥姐姐也有弟弟妹妹",
+      "独生子女"
+    ],
+    "question_sha256": "02278993d296bc2009bee6998cec57dc36193a69ac8cd2614df90134d0f3ee1d"
+  },
+  "getting_to_know_100_019": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "养了猫",
+      "养了狗",
+      "养了鱼或鸟",
+      "养了仓鼠、兔子等小宠",
+      "没养宠物"
+    ],
+    "question_sha256": "07cdcf0056f65b247f739e381e23f97f00fdc0ccbe75c6b4c64057bcce9dc667"
+  },
+  "getting_to_know_100_020": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "想养猫",
+      "想养狗",
+      "想养仓鼠或兔子",
+      "想养鱼",
+      "不想养宠物"
+    ],
+    "question_sha256": "6daa2e9f64b3c9ad4b426d6b7d3e2eff84d0cb10c2e15b987428cd8ca2412fb1"
+  },
+  "getting_to_know_100_021": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "火锅或烧烤",
+      "日料或寿司",
+      "家常炒菜",
+      "甜点蛋糕",
+      "面食或饺子"
+    ],
+    "question_sha256": "f9e3536bbb0fceac393ed13066dba04633d30b3367e4819e2bc5deb75be9779a"
+  },
+  "getting_to_know_100_022": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "香菜",
+      "苦瓜",
+      "动物内脏",
+      "榴莲",
+      "没有特别不喜欢的"
+    ],
+    "question_sha256": "1997f3bbabd8cf0ea55f3f3f7ccd72c1f782af45b19710284fe1777821d3d008"
+  },
+  "getting_to_know_100_023": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "奶茶",
+      "咖啡",
+      "果汁或鲜榨蔬果",
+      "茶",
+      "碳酸饮料"
+    ],
+    "question_sha256": "6a589ba7dd7fa569e944cb17d9346f4f61d6d2b78e8a9d3c0b2549dba246d4ff"
+  },
+  "getting_to_know_100_024": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "无糖茶饮",
+      "黑咖啡",
+      "气泡水",
+      "酒精饮料",
+      "没有特别不喜欢的"
+    ],
+    "question_sha256": "468d90fee5cd54c648eaef6dae62523fd4c22a46b80542cc281f5427c3dc3112"
+  },
+  "getting_to_know_100_025": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "猫",
+      "狗",
+      "兔子或仓鼠",
+      "鸟类",
+      "海洋生物"
+    ],
+    "question_sha256": "169481a1abca8c123e0336a657f647018d3a03fad99b1efdb019f18ed044bc41"
+  },
+  "getting_to_know_100_026": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "蛇",
+      "蜘蛛或虫子",
+      "大型犬",
+      "蜥蜴等爬宠",
+      "没有特别怕的"
+    ],
+    "question_sha256": "552faa8781f9d8af369c7817bd57d9936dc2c847f2fd94171970ca4afab2a71f"
+  },
+  "getting_to_know_100_027": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "蓝色系",
+      "绿色系",
+      "粉色或紫色系",
+      "黑白灰",
+      "暖色系（红橙黄）"
+    ],
+    "question_sha256": "104fd3cbf6aa2b279b9f874432384458625869f6048b1104ad1800a42979b951"
+  },
+  "getting_to_know_100_028": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "春天",
+      "夏天",
+      "秋天",
+      "冬天",
+      "都挺喜欢"
+    ],
+    "question_sha256": "42c46647d03e6f99e304befe84dd8d3b4defd520d9bff06d9f9625ea2e497d65"
+  },
+  "getting_to_know_100_029": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "日本",
+      "欧洲",
+      "云南或新疆",
+      "海边或海岛",
+      "还没想好具体地点"
+    ],
+    "question_sha256": "f5f8f41f744727a81202e619361d2410c979877fff40641008fd7e02cd4d94a4"
+  },
+  "getting_to_know_100_030": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "京都或奈良",
+      "冰岛",
+      "西藏或青海",
+      "某个海边小城",
+      "还没去远行过"
+    ],
+    "question_sha256": "20592e8a507a7e52116f45b47deb2035d74d00761403485dcf60b6758e93f9bd"
+  },
+  "getting_to_know_100_031": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "降噪耳机",
+      "舒服的床品",
+      "厨房小电器",
+      "运动装备",
+      "某本书或游戏"
+    ],
+    "question_sha256": "a045231cf519300e1e7b2bc1bebe2835ba99e3ca5f0e5465487fe202bac880d0"
+  },
+  "getting_to_know_100_032": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "新游戏机或游戏大作",
+      "一款心仪已久的电子产品",
+      "想去旅游的地方机票",
+      "某件喜欢的衣服或鞋子",
+      "一些好吃的零食大礼包"
+    ],
+    "question_sha256": "227cd750c855f755d57f7b60d6e99ebf27debb12af7698165c51aa947f552a77"
+  },
+  "getting_to_know_100_033": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "番茄炒蛋",
+      "可乐鸡翅",
+      "蛋炒饭",
+      "红烧肉",
+      "麻婆豆腐"
+    ],
+    "question_sha256": "3612133860327c2970c1f04eda036b4583f1c3888f5e06366a28867c6b9e7e82"
+  },
+  "getting_to_know_100_034": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "整理房间，让东西归位",
+      "做饭，享受创造美食",
+      "洗碗，喜欢水声",
+      "拖地，看到地面变亮",
+      "洗衣服，喜欢清新味道"
+    ],
+    "question_sha256": "04d9affae8a81de4991bbdfeaa5dee259e191e3f2eeb81699d0b88762de20db5"
+  },
+  "getting_to_know_100_035": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "非常喜欢，每天都要读",
+      "喜欢，但只读感兴趣的类型",
+      "一般，偶尔翻翻",
+      "不太读，更喜欢看视频",
+      "完全不读，没兴趣"
+    ],
+    "question_sha256": "41fd48aeb4da7fa78b6567cc854dd6435f80b368ba05670fdbfc795d20c5c674"
+  },
+  "getting_to_know_100_036": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有驾照，经常开车",
+      "有驾照，但很少开",
+      "没有驾照，正在学",
+      "没有驾照，也不想学",
+      "没有驾照，但打算以后学"
+    ],
+    "question_sha256": "93f50b6ad1634164089827dcb7a4e5d31902eeaa620efaa79481188f3a889361"
+  },
+  "getting_to_know_100_037": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "春天，万物复苏",
+      "夏天，热情活力",
+      "秋天，凉爽舒服",
+      "冬天，喜欢雪和安静",
+      "没有特别偏爱的季节"
+    ],
+    "question_sha256": "42c46647d03e6f99e304befe84dd8d3b4defd520d9bff06d9f9625ea2e497d65"
+  },
+  "getting_to_know_100_038": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全没问题，超爱刺激",
+      "可以接受，偶尔玩一下",
+      "有点怕，但敢尝试",
+      "不太能适应，太晕了",
+      "完全不能，会吓坏"
+    ],
+    "question_sha256": "22665d7f4671248423b6b2703dc29b3edd1c6bf2a20f4e1f67a157bdac307d92"
+  },
+  "getting_to_know_100_039": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "完全不怕，很享受",
+      "可以适应，觉得有趣",
+      "有点紧张，但能走完",
+      "很害怕，需要人陪",
+      "完全不敢进"
+    ],
+    "question_sha256": "d5fcf5f7f833c481f478e08aedfeeaac1123dc1fe5aaf2b248189d581726f104"
+  },
+  "getting_to_know_100_040": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "周杰伦的《晴天》",
+      "陈奕迅的《十年》",
+      "五月天的《倔强》",
+      "林俊杰的《江南》",
+      "邓紫棋的《光年之外》"
+    ],
+    "question_sha256": "c5b918c5334afc8d52ddd230d668dc05a266f6305c951d49e4a42314ec213cd8"
+  },
+  "getting_to_know_100_041": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "综艺真人秀，比如《奔跑吧》",
+      "纪录片，了解世界",
+      "新闻评论类节目",
+      "美食节目，看着流口水",
+      "体育赛事直播"
+    ],
+    "question_sha256": "d7a902afaf1aba54ca2172993989479aff32faa2045092fdd4177e26438a38f3"
+  },
+  "getting_to_know_100_042": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "《甄嬛传》，宫斗经典",
+      "《琅琊榜》，权谋佳作",
+      "《请回答1988》，温暖治愈",
+      "《权力的游戏》，史诗奇幻",
+      "《老友记》，轻松搞笑"
+    ],
+    "question_sha256": "4f9bca2389a70099873104026d12f90487ba1b6da82006e5d4f9035002b222fa"
+  },
+  "getting_to_know_100_043": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "《肖申克的救赎》，希望与自由",
+      "《阿甘正传》，人生励志",
+      "《盗梦空间》，烧脑科幻",
+      "《泰坦尼克号》，爱情经典",
+      "《怦然心动》，青春纯爱"
+    ],
+    "question_sha256": "19d89e34ea89169791a1a1f004c16814ae6559cb48360f08fc205dba00c2feb4"
+  },
+  "getting_to_know_100_044": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "《海贼王》，热血冒险",
+      "《火影忍者》，羁绊与成长",
+      "《名侦探柯南》，推理悬疑",
+      "《龙猫》，治愈温馨",
+      "《千与千寻》，奇幻经典"
+    ],
+    "question_sha256": "e71e34ce9136228af9219139e0c64d6ed25f9aa25af7ac11d3ea5763230b8b72"
+  },
+  "getting_to_know_100_045": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "路飞，乐观勇敢",
+      "鸣人，永不放弃",
+      "柯南，聪明冷静",
+      "龙猫，可爱治愈",
+      "千寻，勇敢成长"
+    ],
+    "question_sha256": "b5fcf3e38995ee8e057bfb2f7d231047d1be60c63fac2b529540577ccbc78eec"
+  },
+  "getting_to_know_100_046": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "粤语，很好听",
+      "四川话，幽默风趣",
+      "东北话，豪爽亲切",
+      "上海话，软糯温柔",
+      "闽南语，古韵味浓"
+    ],
+    "question_sha256": "c9a56592ad2f8a9dd24c7d9d005826f392fa31ed60ad8efc98ef6ddc8a569d69"
+  },
+  "getting_to_know_100_047": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "15岁以下",
+      "16-18岁",
+      "19-21岁",
+      "22-25岁",
+      "26岁以上"
+    ],
+    "question_sha256": "3e57d79b609e4ea4dca93e18eda846397eef3d9421228d55924b0a24b2ad91d1"
+  },
+  "getting_to_know_100_048": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "选年长，成熟会照顾人",
+      "选同龄，共同话题多",
+      "选比自己小的，有活力",
+      "年龄不重要，看性格契合"
+    ],
+    "question_sha256": "39692065b1485520be1ab1350bf3e682022fc5d5fa7316640ed7fbd411f947d0"
+  },
+  "getting_to_know_100_049": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "温柔体贴，情绪稳定",
+      "幽默风趣，能逗我笑",
+      "有上进心和责任感",
+      "兴趣爱好相似，聊得来",
+      "外形是我的菜，有眼缘"
+    ],
+    "question_sha256": "aeeee41457083bb081d93e53ee6ecc7c5b611770422307611c1a26c588e7913f"
+  },
+  "getting_to_know_100_050": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "389e4ecf6940b1107ca1f4a38f379cc7b2c4ca809e4b6ae4050e688568155145"
+  },
+  "getting_to_know_100_051": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "都挺温柔，脾气好",
+      "都比较幽默，爱开玩笑",
+      "对我很大方，愿意付出",
+      "都喜欢看电影和美食",
+      "都是比较独立的人"
+    ],
+    "question_sha256": "a08b82fbee8dbf0d4e03eaa344e326e314dd871f9c0d9325d86c8b7c173dd2bc"
+  },
+  "getting_to_know_100_052": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "一起做饭，然后窝着看电影",
+      "去户外走走，爬山或逛公园",
+      "找家特色餐厅，边吃边聊",
+      "看展或逛博物馆，安静待着",
+      "一起打游戏或玩桌游"
+    ],
+    "question_sha256": "0d2576e4855393a464dd36b121121ade1698b257d7a7a6ee669c2928d72948c6"
+  },
+  "getting_to_know_100_053": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "更想去爱，付出让我满足",
+      "更想被爱，享受被关怀",
+      "两者平衡，互相付出最好"
+    ],
+    "question_sha256": "2e33d40ccca3831c59b88fc66a23df670781634ae441382f9267653964b9a4be"
+  },
+  "getting_to_know_100_054": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有，希望遇到对的人就结",
+      "随缘，不排斥也不强求",
+      "暂时没有，更想先专注自己",
+      "不想结婚，喜欢自由"
+    ],
+    "question_sha256": "f551c8077cb8345782122db439b1909b16e100597619355c8f932b9f0c2f8755"
+  },
+  "getting_to_know_100_055": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不想要孩子",
+      "想要1个孩子",
+      "想要2个孩子",
+      "想要3个或更多",
+      "还没想好，看未来情况"
+    ],
+    "question_sha256": "2d13dcb396401bc862d11e463631f92e30c9c6c6f6fa7ab68f7f2191821dcc68"
+  },
+  "getting_to_know_100_056": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "有固定存钱，每月存一笔",
+      "偶尔存，看当月开销",
+      "很少存，基本月光",
+      "没存，但打算开始"
+    ],
+    "question_sha256": "5cc21f59539be7e1712358525939d95d0698b7349b2fbc17e577161c79b42212"
+  },
+  "getting_to_know_100_057": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "基本都用现金支付",
+      "基本都用无现金支付",
+      "看场合，小额用现金大额用手机",
+      "两者掺着用，没特别偏好"
+    ],
+    "question_sha256": "6a05205bf64a8498e1c9235ce909bed6494235ce4619076f3818d186adea76fa"
+  },
+  "getting_to_know_100_058": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "没有信用卡",
+      "1张",
+      "2到3张",
+      "4到5张",
+      "6张以上"
+    ],
+    "question_sha256": "c54a3121547b5311b224eaf134e271a276112fac005c37f84c7d8220cb31b773"
+  },
+  "getting_to_know_100_059": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "吃吃喝喝，美食探店",
+      "买衣服和护肤化妆品",
+      "旅游和出行",
+      "游戏氪金或买设备",
+      "学习课程和买书"
+    ],
+    "question_sha256": "c74f9b2550df4212b8c6720f4fc8c96201c5c3401d274165ec2599d4624de068"
+  },
+  "getting_to_know_100_060": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "视频会员：腾讯视频/爱奇艺/优酷",
+      "音乐会员：网易云音乐/QQ音乐",
+      "外卖会员：美团/饿了么",
+      "网盘或云存储会员",
+      "其他工具类：Office 365等"
+    ],
+    "question_sha256": "4a576f121ec2cca56c636c96f5a0a8700b74fccb4c4478fc3922dd68a6e6bf2b"
+  },
+  "getting_to_know_100_061": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "周杰伦",
+      "林俊杰",
+      "陈奕迅",
+      "泰勒斯威夫特",
+      "五月天"
+    ],
+    "question_sha256": "db392f33091d8a7ad37b0675b9186a0d1bb9071489dd80667cf37f2f16842bcc"
+  },
+  "getting_to_know_100_062": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "沈腾",
+      "贾玲",
+      "徐峥",
+      "黄渤",
+      "岳云鹏"
+    ],
+    "question_sha256": "1d2f2e067c20980920708c976dcd1660161719f42afca252bef059c833603268"
+  },
+  "getting_to_know_100_063": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "胡歌",
+      "杨幂",
+      "易烊千玺",
+      "迪丽热巴",
+      "刘亦菲"
+    ],
+    "question_sha256": "41b6faa8a4f007b8be7ecccfcaea5d5bd350aa21eb4d5a7f4533966cc899c5d8"
+  },
+  "getting_to_know_100_064": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "我尊敬那些在困难中依然保持善良的人",
+      "我尊敬在自己的领域里做到极致的人",
+      "我尊敬敢于为他人发声的人",
+      "我尊敬默默坚持自己信念的人",
+      "我尊敬能坦然承认错误并改正的人"
+    ],
+    "question_sha256": "2b33c1d4d3cba4a51c1bd1457a6b456e19c34d13ccc820cc70a29ecb02411e56"
+  },
+  "getting_to_know_100_065": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "他/她是我可以随时打扰、从不嫌我烦的人",
+      "他/她总能在我迷茫时给我清醒的建议",
+      "他/她和我三观契合，在一起很放松",
+      "他/她非常幽默，总能把我逗笑",
+      "他/她虽然不常联系，但需要时一定在"
+    ],
+    "question_sha256": "bcee1c47659eeb7b38422b3451f956e6d598d76e38d211a0653b07cade20d907"
+  },
+  "getting_to_know_100_066": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "手机和钥匙",
+      "纸巾或湿巾",
+      "耳机",
+      "充电宝",
+      "护手霜或唇膏"
+    ],
+    "question_sha256": "8aa49a7ccf8a2f4a1d47c0530ac757e84016d917cec82a5b3a301d4ef6f8baef"
+  },
+  "getting_to_know_100_067": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "双肩包，能装又方便",
+      "单肩小包，轻便日常",
+      "帆布包，简约又百搭",
+      "腰包或胸包，解放双手",
+      "托特包，容量大适合通勤"
+    ],
+    "question_sha256": "7cb313990ea26d6a8747bc53b70e9dbd309116fc2f2ea49258e0e5625e3248da"
+  },
+  "getting_to_know_100_068": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "iPhone 13",
+      "iPhone 14 Pro",
+      "iPhone 15",
+      "华为 Mate 60",
+      "小米 14"
+    ],
+    "question_sha256": "5a4908b59cb54802d4eb2ebf3a44c1ddb2dc5b690d765b407838c3b9b40bd53f"
+  },
+  "getting_to_know_100_069": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "不到2小时",
+      "2小时及以上，但不满4小时",
+      "4小时及以上，但不满6小时",
+      "6小时及以上，但不满8小时",
+      "8小时及以上"
+    ],
+    "question_sha256": "abe5460b11c0c535768fcaa3e0436f65c7343dcffd307ea4643449b30fc047f4"
+  },
+  "getting_to_know_100_070": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "刷社交媒体和短视频",
+      "看剧或电影",
+      "聊天或视频通话",
+      "玩游戏",
+      "看新闻或学习"
+    ],
+    "question_sha256": "f01bf5cb0438fbd583ebc2d83c530208673d12f905a75a723fd58247074bf273"
+  },
+  "getting_to_know_100_071": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "😂",
+      "😭",
+      "🤣",
+      "😅",
+      "🥹"
+    ],
+    "question_sha256": "e2cb219eee3a3ca27b443d7230e614917914253168b107b60c4aea6210db3da5"
+  },
+  "getting_to_know_100_072": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "原神",
+      "王者荣耀",
+      "塞尔达传说",
+      "第五人格",
+      "和平精英"
+    ],
+    "question_sha256": "9d15b8be4f648356d23a3ffdcb7b8e3c82ad4e8bae9f846bdbedd07a19db810a"
+  },
+  "getting_to_know_100_073": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "任天堂 Switch",
+      "索尼 PlayStation 5",
+      "微软 Xbox Series X",
+      "怀旧掌机（如 GBA）",
+      "没有专门游戏机"
+    ],
+    "question_sha256": "eaaff89d6218e9b62f9f92201bdab75770d339f3ac18447ca61be3b7e0afcd4c"
+  },
+  "getting_to_know_100_074": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "早起型，早上效率高",
+      "夜猫子型，晚上精神好",
+      "看情况，工作日早起、周末熬夜",
+      "都不算，睡眠不规律"
+    ],
+    "question_sha256": "907490978a1ad1e2eb3b344c98a304c7083e18c6e5d4ad6ff5a508474ce56472"
+  },
+  "getting_to_know_100_075": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "宽松的居家服",
+      "旧T恤和短裤",
+      "睡衣睡裤",
+      "随便套一件大号卫衣",
+      "运动服"
+    ],
+    "question_sha256": "e3f40d63085bc60909068eb8de489ae5710c5f043f08abcf2b1c145d1c4b68f1"
+  },
+  "getting_to_know_100_076": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "少于5小时",
+      "5小时及以上，但不满7小时",
+      "7小时及以上，但不满8小时",
+      "8小时及以上，但不满9小时",
+      "9小时及以上"
+    ],
+    "question_sha256": "6072fe811db7ca5ea4f94df9474b539f001d4dc6490aac0d91a428b1b8d45a27"
+  },
+  "getting_to_know_100_077": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "经常运动，每周至少三次",
+      "偶尔运动，每周一到两次",
+      "很少运动，几乎不主动锻炼",
+      "只做散步或骑车等轻量活动",
+      "完全不运动"
+    ],
+    "question_sha256": "fc720c8ef7c269bd4f651d635a82231fb61529abad5ad66171ae80fc12219f4e"
+  },
+  "getting_to_know_100_078": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "软毛",
+      "中毛",
+      "硬毛",
+      "超软毛",
+      "没注意过"
+    ],
+    "question_sha256": "27171997197764bea3a8dcbffb96fdbbde9bb986885a4a1552af9e2400d65249"
+  },
+  "getting_to_know_100_079": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "米饭，尤其是配菜吃很满足",
+      "面包，方便又容易搭配",
+      "看时间，早餐面包、正餐米饭",
+      "两个都喜欢，换着吃"
+    ],
+    "question_sha256": "300c84fc8985f230d521474784d3e9ec6e0a2884e98b3cee3bbab91a2f316e61"
+  },
+  "getting_to_know_100_080": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "炸鸡块，便当里的经典担当",
+      "玉子烧，甜甜的蛋卷很治愈",
+      "腌萝卜或泡菜，解腻又下饭",
+      "小香肠或汉堡排，肉食爱好者"
+    ],
+    "question_sha256": "b64b6d7b90922aa03218c74ffee9e118900b41c8328ed60960b0b227220a944c"
+  },
+  "getting_to_know_100_081": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "饭团或三明治，快速解决一餐",
+      "零食或巧克力，解馋小物",
+      "饮料，咖啡、茶或气泡水",
+      "关东煮或热食，冬天很常买"
+    ],
+    "question_sha256": "b68b6089c157ff9583d1fb81826b47334ac9dc345dbccf47f02bf26007811b5b"
+  },
+  "getting_to_know_100_082": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "一个月左右一次，维持造型",
+      "两到三个月一次，觉得长了才去",
+      "半年以上一次，不太在意发型",
+      "我都是自己剪，从没去过"
+    ],
+    "question_sha256": "e8ae95d0a2d0de172de778f8bc75c713f6838be50e4fabb6ac375664635d9b92"
+  },
+  "getting_to_know_100_083": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "被夸做菜好吃，特别有成就感",
+      "被说声音好听或很会安慰人",
+      "被称赞工作或学业上很可靠",
+      "被说笑起来很有感染力"
+    ],
+    "question_sha256": "9f21709225edeaf00b82d1627992721205cc74a3d47908556417e043a0b51598"
+  },
+  "getting_to_know_100_084": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "喜欢自己容易开心、笑点低",
+      "喜欢自己对人真诚、不虚伪",
+      "喜欢自己会主动学习新东西",
+      "喜欢自己独处时也能自得其乐"
+    ],
+    "question_sha256": "c9704f8fedee97f9b3d39939d5e81e95be766c6d67f0d532a0429cecff64c5e8"
+  },
+  "getting_to_know_100_085": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "想改掉拖延，事情总拖到最后一刻",
+      "想更会拒绝别人，不当滥好人",
+      "想减少熬夜，作息更规律",
+      "想更主动社交，不要那么慢热"
+    ],
+    "question_sha256": "c837d802231f7bb775262d88037963e5e689448dccb28c8d8785185f0f4e2851"
+  },
+  "getting_to_know_100_086": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "想事情时会不自觉咬嘴唇或指甲",
+      "紧张或无聊时会转笔、按笔盖",
+      "坐着会抖脚或把脚缩到椅子上",
+      "说话时手势很多，或喜欢摸头发"
+    ],
+    "question_sha256": "31948587bb54f6bc45f4ce405ab76c8bd1614a773836cd9c071f322d7fc671ab"
+  },
+  "getting_to_know_100_087": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "d32d2f0cfe0549c85b7cc9613adf96ca207ce12588c210dd6b4a4e894167517e"
+  },
+  "getting_to_know_100_088": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "07293f98d4125568d5b6f4c4da3b2a3f4306dbab5a8d65255257074f2374f3bf"
+  },
+  "getting_to_know_100_089": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "有人说像日本演员石原里美",
+      "有人说像韩国偶像车银优",
+      "有人说像台湾演员刘以豪",
+      "没有人说过，我大概没有明星脸"
+    ],
+    "question_sha256": "1cb1e377b9fd54cfbd7fb3e54252037e9e099ffbde22b0f5144bdd66a6338b0e"
+  },
+  "getting_to_know_100_090": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "阿滴英文，轻松学英文又有趣",
+      "老高与小茉，说故事超引人入胜",
+      "千千进食中，看她吃饭很疗愈",
+      "胡子Huzi，知识型内容很棒"
+    ],
+    "question_sha256": "23dd6dfa9c3e55bafa4a560381e560a2d87f4606d265cd99d0d592564fad508d"
+  },
+  "getting_to_know_100_091": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "开箱各国泡面或超商食品",
+      "记录一个人旅行、深度探索城市",
+      "分享理财小白也能懂的投资观念",
+      "做手作或DIY教学，陪观众一起做"
+    ],
+    "question_sha256": "de3eb7e7001df79cb2a2dc924db3b121802f85783b3bf17a45a9a06082016f1e"
+  },
+  "getting_to_know_100_092": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "早点开始存钱，理财越早越好",
+      "别怕失败，勇敢尝试想做的事",
+      "多陪陪家人，时间过得很快",
+      "少熬夜，身体真的会抗议"
+    ],
+    "question_sha256": "30a172917eab6dcaf45d48316386482063240a474135bfae3d5b053343e2f995"
+  },
+  "getting_to_know_100_093": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "你过得快乐吗？有成为想成为的人吗？",
+      "身体还健康吗？有没有好好照顾自己？",
+      "当初担心的事，现在看还重要吗？",
+      "有没有后悔没做什么？现在开始来得及吗？"
+    ],
+    "question_sha256": "702a3545be7d821a1aacffc04532bde2fc161d00e856af30697bc64256625630"
+  },
+  "getting_to_know_100_094": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "咖啡师，想学拉花和手冲",
+      "民宿管家，接待世界各地旅人",
+      "配音员，用声音演不同角色",
+      "电台DJ，分享音乐和心情"
+    ],
+    "question_sha256": "d020ac545a36bbc747663b7bb9799661cfadaefb8e2bc4c293f96e5baf51dffd"
+  },
+  "getting_to_know_100_095": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "挑战一个人出国自助旅行",
+      "挑战跑完一场半程马拉松",
+      "挑战公开演讲或上台表演",
+      "挑战半年内读完二十本书"
+    ],
+    "question_sha256": "c8db686324f577246782ab94abe6aaae7aec377d33638cca686681b14086fd2c"
+  },
+  "getting_to_know_100_096": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "开一家有猫的咖啡馆，每天做甜点",
+      "环游世界，把奇葩经历写成书",
+      "造出让人不用加班的AI神器",
+      "当自由摄影师，拍遍人间烟火"
+    ],
+    "question_sha256": "a7a7a3dc6c21f428856c7791d8370e94e5570e7955a966006fc0f126b0906cd1"
+  },
+  "getting_to_know_100_097": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "海边小镇，每天听着浪声起床",
+      "大城市高层公寓，享受便利和夜景",
+      "山里小木屋，种菜养花看星星",
+      "跟着季节换地方，哪里舒服住哪里"
+    ],
+    "question_sha256": "4580dcda000ec97c85bf02a7a3c53451b9d01efc99a2e0f19ed8ddec10a2d0a0"
+  },
+  "getting_to_know_100_098": {
+    "mode": "single",
+    "free_text_only": false,
+    "options": [
+      "和朋友家人吃超豪华大餐，笑到哭",
+      "冲去从未去过的地方，看一眼风景",
+      "把想说的话全说出口，再抱抱爱的人",
+      "去海边看最后一次日落，安静等结束"
+    ],
+    "question_sha256": "a7b94845b54321baf0cd66a830a4fb1b580052b51673db0d5b7b3c1eb855ba7a"
+  },
+  "getting_to_know_100_099": {
+    "mode": "multiple",
+    "free_text_only": false,
+    "options": [
+      "温柔又坚定，不被别人带节奏",
+      "自由自在，随时能出发去冒险",
+      "能给人力量，被朋友信任的靠山",
+      "永远好奇，老了也是个有趣的人"
+    ],
+    "question_sha256": "5147af47d22cb4b6cdbe4d629745e934898aea1338561c0040c6a6526e3bec26"
+  },
+  "getting_to_know_100_100": {
+    "mode": "single",
+    "free_text_only": true,
+    "options": [],
+    "question_sha256": "807eaf3bfccc9ffb1afb5e7d94bd4c1b13fa8690c459ffc06df366e78d9f1d4c"
+  }
+}

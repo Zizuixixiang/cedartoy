@@ -45,6 +45,12 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 .question-picker label { margin:0; font-size:13px; white-space:nowrap; }
 #questionJump { width:100%; min-width:0; padding:6px 10px; font-size:14px; }
 #answerLabel { margin:10px 0 4px; }
+.quick-options { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.quick-option { max-width:100%; min-height:44px; padding:8px 12px; border:2px solid var(--purple-dark); background:#fff; font-size:14px; line-height:1.5; text-align:left; overflow-wrap:anywhere; }
+.quick-option[aria-pressed="true"] { background:var(--purple-light); border-color:#716080; }
+.quick-option[aria-pressed="true"]::before { content:'✓ '; }
+#quickHint { margin:6px 0; }
+#draftNotice:empty { display:none; }
 #saveHint,#liveHint { margin:6px 0; }
 #liveHint:empty,#confirmError:empty { display:none; }
 .question-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
@@ -55,6 +61,9 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 .answer-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
 .answer-pair p,.own-answer { white-space:pre-wrap; overflow-wrap:anywhere; }
 .answer-pair b { font-size:13px; }
+.history-entry { padding:10px 0; border-bottom:2px dashed var(--purple-light); }
+.history-entry p { margin:0; }
+.history-entry a { display:inline-block; padding:10px 0; min-height:44px; font-size:14px; }
 summary { cursor:pointer; min-height:44px; padding:10px 0; font-size:14px; }
 #sourceBody { font-size:13px; overflow-wrap:anywhere; }
 #sources { padding-top:8px; padding-bottom:8px; }
@@ -76,16 +85,21 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 <section id="chooseTopic" class="shell" hidden><h2>从首页选择题库</h2><p class="hint">每套题库都有独立入口，选好后就可以开始聊。</p><div class="actions"><a class="pixel-btn" href="/">去首页选择题库</a></div></section>
 <section id="setup" class="shell" hidden>
 <h2 id="topicTitle"></h2><p id="topicDescription" class="hint"></p>
+<div id="recentRound" hidden></div>
+<details id="roundHistory" hidden><summary id="historyTitle">历史轮次</summary><div id="historyList"></div><button id="moreHistory" class="pixel-btn secondary" type="button" hidden>更多轮次</button></details>
 <label for="mode">怎么聊</label><select id="mode"><option value="blind">答完再看</option><option value="chat">边聊边答</option></select>
-<p id="modeIntro" class="hint">答完再看：双方答完后互相查看。</p>
+<p id="modeIntro" class="hint">答完再看：一方提交，其答卷就对另一方可见。</p>
 <p id="bindingHint" class="hint"></p><div class="actions"><button id="create" class="pixel-btn" type="button">开始新一轮</button></div>
 
 </section>
 <section id="round" class="shell" hidden>
-<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" class="hint" hidden></p>
+<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" class="hint" hidden></p><p id="waiting" class="hint" hidden>已提交，等待小机答题中；小机可查看你的回答</p>
 <div id="editor">
 <div class="question-picker"><label for="questionJump">选题</label><select id="questionJump"></select></div>
-<h3 id="questionText" tabindex="-1"></h3><label id="answerLabel" for="answer">你的回答</label><textarea id="answer" rows="4" maxlength="8000" placeholder="写下你的想法…" aria-describedby="saveHint"></textarea><p id="ownRead" class="own-answer" hidden></p>
+<h3 id="questionText" tabindex="-1"></h3>
+<div id="quickAnswers" hidden><p id="quickHint" class="hint"></p><div id="quickOptions" class="quick-options" role="group" aria-labelledby="quickHint"></div></div>
+<label id="answerLabel" for="answer">你的回答</label><textarea id="answer" rows="4" maxlength="8000" placeholder="可直接写，也可点选后修改…" aria-describedby="saveHint draftNotice"></textarea><p id="ownRead" class="own-answer" hidden></p>
+<p id="draftNotice" class="hint" role="status"></p>
 <p id="saveHint" class="hint">换题时自动保存，留空则跳过。</p>
 <div class="question-actions"><button id="previous" class="pixel-btn secondary" type="button">上一题</button><button id="next" class="pixel-btn" type="button">下一题</button></div>
 </div>
@@ -101,6 +115,8 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 const $ = id => document.getElementById(id);
 let polling = false, viewVersion = 0, remoteChanged = false;
 let context, topic, state, index = 0, busy = false, dirty = false, pendingAnswer = null, pendingCreate = null;
+let selectedChoices = [];
+let historyOffset = 0;
 const initialToken = localStorage.getItem('cedartoy_token') || '';
 const pageParams = new URLSearchParams(location.search);
 let roundId = pageParams.get('round_id');
@@ -177,6 +193,7 @@ function updateControls() {
   $('answer').disabled = false;
   $('answer').readOnly = state.submitted;
   $('questionJump').disabled = retainedDraft;
+  for (const button of $('quickOptions').children) button.disabled = state.submitted;
   $('newRound').hidden = state.submitted !== true;
 }
 function setupTopic() {
@@ -185,24 +202,131 @@ function setupTopic() {
   $('topicDescription').textContent = topic.total + '题 · ' + topic.description + (topic.available ? '' : ' · 题库尚未就绪');
   $('sources').open = false; $('sourceBody').replaceChildren(); updateControls();
 }
+function historyEntry(round, recent = false) {
+  const entry = document.createElement('div'); entry.className = 'history-entry';
+  const meta = document.createElement('p'); meta.className = 'hint';
+  const status = round.status === 'complete' ? '双方已提交' : round.human_submitted ? '等待小机提交' : round.ai_submitted ? '小机已提交' : '作答中';
+  meta.textContent = `${recent ? '最近一轮 · ' : ''}${new Date(round.created_at).toLocaleString('zh-CN')} · ${round.mode === 'chat' ? '边聊边答' : '答完再看'} · ${status}`;
+  const link = document.createElement('a');
+  link.href = '/deeptalk?round_id=' + encodeURIComponent(round.round_id);
+  link.textContent = round.status === 'complete' ? '查看双方回答' : round.human_submitted ? '查看上次答卷' : '继续答题';
+  entry.append(meta, link); return entry;
+}
+async function loadHistory() {
+  try {
+    const data = await api('history', {topic_id:topic.topic_id, offset:historyOffset, limit:20});
+    if (!historyOffset) {
+      $('recentRound').replaceChildren(); $('historyList').replaceChildren();
+      $('recentRound').hidden = !data.rounds.length;
+      if (data.rounds.length) $('recentRound').append(historyEntry(data.rounds[0], true));
+    }
+    for (const round of data.rounds.slice(historyOffset ? 0 : 1)) $('historyList').append(historyEntry(round));
+    historyOffset += data.rounds.length;
+    $('roundHistory').hidden = data.total <= 1;
+    $('historyTitle').textContent = `历史轮次（${data.total}）`;
+    $('moreHistory').hidden = historyOffset >= data.total;
+    $('moreHistory').textContent = '更多轮次';
+  } catch (err) {
+    if ([401,403,404].includes(err.status)) throw err;
+    $('roundHistory').hidden = false;
+    $('historyTitle').textContent = '历史暂时无法读取';
+    $('moreHistory').hidden = false; $('moreHistory').textContent = '重试读取历史';
+  }
+}
+$('moreHistory').onclick = () => work(loadHistory);
 function aiName() { return state.sharing_mode === 'bound_shared' ? '小机' : state.ai_name; }
 function answerText(answer) { return answer ? answer.skipped ? '已跳过' : answer.text : '尚未回答'; }
+// sessionStorage is local to this tab. Restore only after an authorized view read;
+// never store a token or send this private draft to the partner via polling.
+function draftKey() { return 'deeptalk_draft:' + roundId; }
+function persistDraft() {
+  if (!state) return;
+  try {
+    if (!dirty && !pendingAnswer) { sessionStorage.removeItem(draftKey()); return; }
+    sessionStorage.setItem(draftKey(), JSON.stringify({questionId:state.questions[index].id,
+      text:$('answer').value, selected:selectedChoices, revision:state.revision,
+      baseOwn:state.questions[index].own, pending:pendingAnswer}));
+  } catch (_) { setText('draftNotice','浏览器未能保留刷新草稿，请先复制回答；当前页面仍可继续作答。'); }
+}
+function restoreDraft() {
+  let draft;
+  try { draft = JSON.parse(sessionStorage.getItem(draftKey())); } catch (_) { return false; }
+  if (!draft || typeof draft.text !== 'string' || !Number.isInteger(draft.revision)) return false;
+  const found = state.questions.findIndex(q => q.id === draft.questionId);
+  if (found < 0) return false;
+  index = found;
+  const q = state.questions[index];
+  remoteChanged = draft.revision !== state.revision || JSON.stringify(draft.baseOwn) !== JSON.stringify(q.own);
+  if (!state.submitted) { state.revision = draft.revision; q.own = draft.baseOwn; }
+  $('answer').value = draft.text; dirty = true;
+  selectedChoices = Array.isArray(draft.selected) ? draft.selected : [];
+  const pending = draft.pending;
+  pendingAnswer = pending?.body?.round_id === roundId && pending.body.question_id === q.id ? pending : null;
+  setText('draftNotice', '已恢复这个标签页的草稿，尚未正式提交。');
+  return true;
+}
+function syncChoiceStates() {
+  const lines = $('answer').value.split('\n');
+  selectedChoices = selectedChoices.filter(text => lines.includes(text));
+  for (const button of $('quickOptions').children) {
+    button.setAttribute('aria-pressed', String(selectedChoices.includes(button.textContent)));
+  }
+}
+function editAnswer() {
+  dirty = true; syncChoiceStates(); persistDraft(); updateControls();
+  $('saveHint').textContent = '换题时自动保存，留空则跳过。提交整卷前可修改。';
+}
+function toggleChoice(text) {
+  if (busy || state.submitted) return;
+  const multiple = state.questions[index].quick_answers.mode === 'multiple';
+  const removing = selectedChoices.includes(text);
+  const remove = multiple ? (removing ? [text] : []) : selectedChoices;
+  const lines = $('answer').value.split('\n').filter(line => !remove.includes(line));
+  if (!removing) {
+    if (lines.length === 1 && !lines[0]) lines.length = 0;
+    lines.push(text);
+  }
+  const value = lines.join('\n');
+  if (value.length > $('answer').maxLength) { message('回答已很长，请先编辑输入框再添加选项。', true); return; }
+  selectedChoices = selectedChoices.filter(item => !remove.includes(item));
+  if (!removing) selectedChoices.push(text);
+  $('answer').value = value; editAnswer();
+}
+function renderChoices() {
+  const quick = state.questions[index].quick_answers;
+  $('quickAnswers').hidden = !quick || state.submitted;
+  $('quickOptions').replaceChildren();
+  if (!quick || state.submitted) return;
+  $('quickHint').textContent = '4399 快捷回答 · ' + (quick.mode === 'multiple' ? '可多选，再点可取消' : '选一项，再点可取消') + '。仅作参考，也可直接写或留空跳过。';
+  for (const text of quick.options) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'quick-option'; button.textContent = text;
+    button.disabled = busy; button.onclick = () => toggleChoice(text);
+    $('quickOptions').append(button);
+  }
+  syncChoiceStates();
+}
 function renderQuestion(preserveDraft = false) {
   const q = state.questions[index];
   $('questionJump').value = String(index);
   $('questionText').textContent = `${index + 1}. ${q.text}`;
-  if (!preserveDraft) { $('answer').value = q.own?.text || ''; dirty = false; pendingAnswer = null; }
+  if (!preserveDraft) {
+    $('answer').value = q.own?.text || ''; dirty = false; pendingAnswer = null;
+    const lines = $('answer').value.split('\n');
+    selectedChoices = (q.quick_answers?.options || []).filter(text => lines.includes(text));
+  }
   const retainedDraft = state.submitted && dirty;
   $('answer').hidden = $('answerLabel').hidden = state.submitted && !retainedDraft;
   $('ownRead').hidden = !state.submitted || retainedDraft;
   $('ownRead').textContent = answerText(q.own);
+  $('saveHint').hidden = state.submitted && !retainedDraft;
   $('saveHint').textContent = retainedDraft ? '整卷已在另一页面提交。这里保留未提交的草稿供复制，不能再修改。' : state.submitted ? '整卷已提交，你的回答已锁定。' : q.own?.skipped && !dirty ? '这题已跳过，可补写。换题时自动保存。' : '换题时自动保存，留空则跳过。提交整卷前可修改。';
-  renderPeer(); updateControls();
+  renderChoices(); renderPeer(); updateControls();
 }
 function renderPeer() {
-  const visible = state.mode === 'chat' && !state.unlocked;
+  const visible = state.peer_visible && !state.unlocked;
   $('peerAnswer').hidden = !visible;
-  // Never place blind peer content in the hidden DOM.
+  // Only render peer content authorized by the server.
   setText('peerText', visible ? answerText(state.questions[index].partner) : '');
 }
 function updateQuestionOptions() {
@@ -221,8 +345,9 @@ function renderRound(preserveDraft = false) {
   document.title = `${state.title} · CEDAR TOY`;
   $('roundTitle').textContent = state.title;
   renderProgress();
-  $('peerAnswer').hidden = state.mode !== 'chat' || state.unlocked;
-  $('editor').hidden = state.unlocked; $('records').hidden = !state.unlocked;
+  $('waiting').hidden = !state.submitted || state.unlocked;
+  $('peerAnswer').hidden = !state.peer_visible || state.unlocked;
+  $('editor').hidden = state.unlocked && !dirty; $('records').hidden = !state.unlocked;
   if (state.unlocked) {
     $('records').replaceChildren();
     for (const q of state.questions) {
@@ -235,6 +360,7 @@ function renderRound(preserveDraft = false) {
       }
       article.append(pair); $('records').append(article);
     }
+    if (dirty) { updateQuestionOptions(); renderQuestion(true); }
   } else {
     updateQuestionOptions();
     renderQuestion(preserveDraft);
@@ -254,8 +380,9 @@ async function loadRound(initial = false, preserveDraft = false) {
     if (!confirm('另一页面也修改了这题：\n' + answerText(fresh.questions[index].own) + '\n\n保留当前输入，继续修改这份回答？')) return false;
   }
   state = fresh; remoteChanged = false;
-  if (initial) index = state.next_number - 1;
+  if (initial) { index = state.next_number - 1; preserveDraft = restoreDraft(); }
   renderRound(preserveDraft);
+  if (preserveDraft) persistDraft();
   return true;
 }
 // Read-only polling in both modes. A routine poll never replaces input, selection,
@@ -268,13 +395,21 @@ async function pollPeer() {
   try {
     const fresh = await api('question', {round_id:roundId, number:currentIndex + 1});
     if (!current()) return;
+    // A blind peer submission opens every question without replacing our draft/revision.
+    if (fresh.peer_visible && state.mode === 'blind' && state.questions.some(q => !q.partner)) {
+      const full = await api('view', {round_id:roundId});
+      if (!current()) return;
+      for (let i = 0; i < state.questions.length; i++) state.questions[i].partner = full.questions[i].partner;
+    }
+    state.peer_visible = fresh.peer_visible;
     state.progress = fresh.progress;
-    if (state.mode === 'chat') state.questions[index].partner = fresh.questions[0].partner;
+    state.questions[index].partner = fresh.questions[0].partner;
     renderPeer(); renderProgress();
     remoteChanged = fresh.revision !== state.revision || fresh.submitted !== state.submitted;
     setText('liveHint', remoteChanged ? '回答已在另一页面更新，换题时会核对；当前输入已保留。' : '');
     if (fresh.submitted && dirty) {
       state.submitted = true;
+      $('waiting').hidden = fresh.unlocked;
       if ($('confirmDialog').open) $('confirmDialog').close();
       renderQuestion(true); return;
     }
@@ -295,21 +430,27 @@ async function pollPeer() {
 setInterval(pollPeer, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollPeer(); });
 async function saveAnswer() {
+  // Settle the exact uncertain request first, even if its text was edited since.
+  if (pendingAnswer) await sendPendingAnswer();
   // An uncertain response must retry its original request before any reconciliation.
-  if (remoteChanged && !pendingAnswer) {
+  if (remoteChanged) {
     if (await loadRound(false, true) === false) throw new Error('未换题，当前输入已保留。');
   }
   if (state.submitted) return;
   const q = state.questions[index], text = $('answer').value, skip = !text.trim();
   if (!dirty && q.own && !pendingAnswer) return;
   const body = {round_id:roundId, question_id:q.id, revision:state.revision, ...(skip ? {skip:true} : {text})};
-  const fingerprint = JSON.stringify(body);
-  if (!pendingAnswer || pendingAnswer.fingerprint !== fingerprint) pendingAnswer = {fingerprint, body:{...body,request_id:key()}};
+  pendingAnswer = {body:{...body,request_id:key()}};
+  persistDraft();
+  await sendPendingAnswer();
+}
+async function sendPendingAnswer() {
+  const body = pendingAnswer.body, q = state.questions[index];
   let result;
-  try { result = await api('answer',pendingAnswer.body,true); }
+  try { result = await api('answer',body,true); }
   catch (err) {
     if (err.status === 409) {
-      remoteChanged = true; pendingAnswer = null;
+      remoteChanged = true; pendingAnswer = null; persistDraft();
       throw new Error('回答已在另一页面更新。当前输入已保留，再次换题可核对后重试。');
     }
     throw err;
@@ -317,11 +458,13 @@ async function saveAnswer() {
   // Replaying an acknowledged request may return a newer revision from another tab.
   // Do not pair that revision with our older cached answer and silently overwrite it.
   if (result.revision !== body.revision + 1 || result.submitted) {
-    remoteChanged = true; pendingAnswer = null;
+    remoteChanged = true; pendingAnswer = null; persistDraft();
     throw new Error('回答已保存，但答卷随后在另一页面更新。当前输入已保留，再次换题可核对。');
   }
-  state = {...state,...result}; q.own = skip ? {skipped:true} : {text,skipped:false};
-  dirty = false; pendingAnswer = null; remoteChanged = false;
+  state = {...state,...result}; q.own = body.skip ? {skipped:true} : {text:body.text,skipped:false};
+  dirty = body.skip ? !!$('answer').value.trim() : $('answer').value !== body.text;
+  pendingAnswer = null; remoteChanged = false; persistDraft();
+  if (!dirty) setText('draftNotice', '');
   updateQuestionOptions(); renderProgress(); message(''); $('liveHint').textContent = '';
 }
 async function move(next) {
@@ -337,11 +480,11 @@ async function move(next) {
 function openSubmit() {
   if (state.submitted || dirty || state.questions.some(q => !q.own)) return;
   const skipped = state.questions.filter(q => q.own.skipped).length;
-  $('confirmText').textContent = `共 ${state.total} 题，已回答 ${state.total - skipped} 题，已跳过 ${skipped} 题。提交后整卷锁定，不能再修改。` + (state.mode === 'blind' ? '双方都正式提交后，才会解锁双人回答。' : '');
+  $('confirmText').textContent = `共 ${state.total} 题，已回答 ${state.total - skipped} 题，已跳过 ${skipped} 题。提交后整卷锁定，不能再修改。` + (state.mode === 'blind' ? '提交后，小机即可查看你的回答；双方提交后显示双人对照。' : '');
   $('confirmError').textContent = '';
   $('confirmDialog').showModal();
 }
-$('mode').onchange = () => { $('modeIntro').textContent = $('mode').value === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：双方答完后互相查看。'; };
+$('mode').onchange = () => { $('modeIntro').textContent = $('mode').value === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：一方提交，其答卷就对另一方可见。'; };
 $('create').onclick = () => work(async () => {
   const choice = {topic_id:topic.topic_id, mode:$('mode').value};
   const fingerprint = JSON.stringify(choice);
@@ -354,7 +497,7 @@ $('create').onclick = () => work(async () => {
   $('sources').open = false; $('sourceBody').replaceChildren();
   await loadRound(true); message('');
 });
-$('answer').oninput = () => { dirty = true; updateControls(); $('saveHint').textContent = '换题时自动保存，留空则跳过。提交整卷前可修改。'; };
+$('answer').oninput = editAnswer;
 $('previous').onclick = () => work(() => move(index-1));
 $('next').onclick = () => work(() => move(isSubmitStep() ? state.total : index+1));
 $('questionJump').onchange = () => { const next = Number($('questionJump').value); $('questionJump').value = String(index); if (next !== index) work(() => move(next)); };
@@ -371,7 +514,7 @@ $('confirmSubmit').onclick = () => work(async () => {
   }
   // Lock immediately after the acknowledged write, even if the result read fails.
   state = {...state,...result,unlocked:false};
-  $('confirmDialog').close(); renderRound(); message('整卷已正式提交。');
+  $('confirmDialog').close(); renderRound(); message('');
   if (result.unlocked) {
     try { await loadRound(); }
     catch (_) { $('liveHint').textContent = '答卷已锁定，暂时无法读取双人回答，稍后自动重试。'; }
@@ -397,8 +540,11 @@ $('sources').ontoggle = () => { if ($('sources').open && !$('sourceBody').hasChi
     section.append(sourceLink(entry.name, entry.source_url), author, license); $('sourceBody').append(section);
   }
   const note = document.createElement('p'); note.className = 'hint'; note.textContent = data.note; $('sourceBody').append(note);
+  const quickNote = document.createElement('p'); quickNote.className = 'hint';
+  quickNote.textContent = '「4399 快捷回答」由 CedarToy 平台另行编写，仅作聊天参考，并非原作者给定选项、统计结果或标准答案。可自由改写或跳过，不评分。';
+  $('sourceBody').append(quickNote);
 }); };
-window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty) { persistDraft(); event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('storage', event => {
   if (event.key === 'cedartoy_token') {
     dirty = false; state = null; $('round').hidden = true; $('records').replaceChildren(); $('answer').value = '';
@@ -414,6 +560,7 @@ work(async () => {
   if (!topic) { $('chooseTopic').hidden = false; message('没有找到这套题库，请从首页重新进入。', true); return; }
   $('bindingHint').textContent = context.machines.length ? '已绑定的小机一起回答，共用一份答卷。' : '请先回首页绑定小机，再开始问答。';
   try { pendingCreate = JSON.parse(sessionStorage.getItem('deeptalk_pending_create')); } catch (_) { /* Ignore a damaged retry hint. */ }
+  await loadHistory();
   $('setup').hidden = false; $('sources').hidden = false; setupTopic(); message('已登录：' + context.username);
 });
 </script>

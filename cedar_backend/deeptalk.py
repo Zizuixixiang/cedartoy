@@ -50,10 +50,14 @@ def execute(user, action, params, *, db_path, db_connect, web=False):
             raise DeeptalkError("请先回首页绑定小机，再开始问答", 403)
         return store.create(user, None, params.get("topic_id"), params.get("request_id"), sharing_mode="bound_shared", mode=params.get("mode", "blind"))
     if action == "history":
-        return store.history(user, params.get("offset", 0), params.get("limit", 20))
+        return store.history(user, params.get("offset", 0), params.get("limit", 20), params.get("topic_id"))
     if action in {"status", "question", "result"} or (action == "view" and web):
-        return store.read(user, params.get("round_id"), action=action,
-                          number=params.get("number", 1), limit=params.get("limit", 1))
+        result = store.read(user, params.get("round_id"), action=action,
+                            number=params.get("number", 1), limit=params.get("limit", 1))
+        if web and action == "view":
+            from deeptalk.quick_answers import attach_to_view
+            return attach_to_view(result)
+        return result
     if action == "answer":
         return store.answer(user, params)
     if action == "submit":

@@ -24,9 +24,9 @@ let windows = [];
 (async () => {
   const tokens = await initial;
   const errors = [];
-  let failNextView = false, failBeforeWrite = false, writeCount = 0, failNextWrite = false, noBindings = false, hostileSource = false, failQuestion = false, questionReads = 0, delayQuestion = null;
+  let failNextView = false, failBeforeWrite = false, writeCount = 0, failNextWrite = false, noBindings = false, hostileSource = false, failHistory = false, failQuestion = false, questionReads = 0, delayQuestion = null;
   const html = fs.readFileSync(path.join(root,'deeptalk.html'),'utf8');
-  function page(search = '', token = tokens[101]) {
+  function page(search = '', token = tokens[101], session = {}) {
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('jsdomError',error=>errors.push(error.message));
     const dom = new JSDOM(html, {url:'https://deeptalk.test/deeptalk'+search,runScripts:'dangerously',pretendToBeVisual:true,virtualConsole,
@@ -34,11 +34,13 @@ let windows = [];
         // Exercise all existing write/retry/restore flows on older WebViews.
         Object.defineProperty(window.crypto, 'randomUUID', {value:undefined, configurable:true});
         if(token) window.localStorage.setItem('cedartoy_token',token);
+        for (const [key, value] of Object.entries(session)) window.sessionStorage.setItem(key,value);
         window.confirm=()=>true;
         window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
         window.HTMLDialogElement.prototype.close=function(){this.open=false;};
         window.fetch = async (url, options={}) => {
           if(failNextView && String(url).includes('action=view&')) { failNextView=false; throw new TypeError('view offline'); }
+          if(failHistory && String(url).includes('action=history&')) { failHistory=false; throw new TypeError('history offline'); }
           const isQuestion = String(url).includes('action=question&');
           if(isQuestion) { questionReads++; if(failQuestion) throw new Error('offline'); }
           if (options.method === 'POST') {
@@ -63,6 +65,9 @@ let windows = [];
   async function jump(w,index) { $(w,'questionJump').value=String(index); $(w,'questionJump').dispatchEvent(new w.Event('change')); await until(()=>!w.eval('busy'),'jump'); }
   function questionStatus(w,index,text) { assert.equal($(w,'questionJump').options[index].textContent,`第${index+1}题 · ${text}`); }
   function input(w,text) { $(w,'answer').value=text; $(w,'answer').dispatchEvent(new w.Event('input')); }
+  function sessionCopy(w) { return Object.fromEntries(Array.from({length:w.sessionStorage.length}, (_,i) => {
+    const key=w.sessionStorage.key(i); return [key,w.sessionStorage.getItem(key)];
+  })); }
   let w=page('?topic_id=' + topicId); await until(()=>!$(w,'setup').hidden,'setup');
   assert.equal($(w,'topic'),null);
   assert.equal($(w,'machine'),null);
@@ -116,7 +121,15 @@ let windows = [];
     assert.equal(result.result.isError,false,JSON.stringify(result));
     return JSON.parse(result.result.content[0].text);
   }
-  const question=await mcp('question',{round_id:rid}); assert.equal(question.questions[0].partner,undefined);
+  const question=await mcp('question',{round_id:rid}); assert.match(question.questions[0].partner.text,/我的回答/);
+  assert.equal(question.unlocked,false); assert.equal(question.peer_visible,true);
+  const partial=await mcp('result',{round_id:rid,limit:20}); assert.ok(partial.questions.every(q=>q.partner));
+  assert.equal($(w,'waiting').hidden,false);
+  const writesBeforeReview=writeCount;
+  await jump(w,0); await click(w,'next'); await click(w,'previous'); await jump(w,total-1);
+  assert.equal(writeCount,writesBeforeReview,'submitted review must not write');
+  assert.equal($(w,'next').disabled,true);
+  assert.equal($(w,'answer').hidden,true); assert.equal($(w,'ownRead').hidden,false);
   const realQuestions=await mcp('questions',{topic_id:topicId,limit:100});
   for(let i=1;i<=total;i++) await mcp('answer',{round_id:rid,question_id:realQuestions.questions[i-1].id,text:'小机私密回答 '+i,revision:i-1,request_id:'ui_answer_'+i});
   await w.eval('pollPeer()'); assert.equal($(w,'records').hidden,true); assert.doesNotMatch(w.document.body.textContent,/小机私密回答/);
@@ -151,6 +164,59 @@ let windows = [];
   const legacyPage=page('?round_id='+legacySummary.round_id); await until(()=>!$(legacyPage,'round').hidden,'legacy restore');
   assert.equal(legacyPage.eval('state.mode'),'blind'); assert.equal($(legacyPage,'peerAnswer').hidden,true);
   legacyPage.close();
+  // AI-first blind submission reveals its full side without saving or locking a human draft.
+  let aiFirst=page('?topic_id='+topicId); await until(()=>!$(aiFirst,'setup').hidden,'AI-first setup');
+  await click(aiFirst,'create'); const aiFirstId=aiFirst.eval('roundId');
+  input(aiFirst,'人类仍在写的私密草稿'); $(aiFirst,'answer').focus(); $(aiFirst,'answer').setSelectionRange(2,4);
+  for(let i=0;i<total;i++) await mcp('answer',{round_id:aiFirstId,question_id:topic.questions[i].id,
+    ...(i===total-1 ? {skip:true} : {text:'先提交的小机 '+i}),revision:i,request_id:'ai_first_'+i});
+  await aiFirst.eval('pollPeer()'); assert.equal($(aiFirst,'peerAnswer').hidden,true);
+  const beforePeerSubmit=writeCount;
+  await mcp('submit',{round_id:aiFirstId,revision:total,confirm:true}); await aiFirst.eval('pollPeer()');
+  assert.equal(writeCount,beforePeerSubmit,'polling is read-only');
+  assert.equal(aiFirst.eval('state.unlocked'),false); assert.equal(aiFirst.eval('state.submitted'),false);
+  assert.equal(aiFirst.eval('state.revision'),0); assert.equal($(aiFirst,'answer').readOnly,false);
+  assert.equal($(aiFirst,'answer').value,'人类仍在写的私密草稿');
+  assert.equal(aiFirst.document.activeElement.id,'answer'); assert.equal($(aiFirst,'answer').selectionStart,2);
+  assert.equal($(aiFirst,'peerText').textContent,'先提交的小机 0');
+  assert.equal($(aiFirst,'records').hidden,true);
+  assert.equal((await mcp('result',{round_id:aiFirstId})).questions[0].partner,undefined);
+  await jump(aiFirst,total-1); assert.equal($(aiFirst,'peerText').textContent,'已跳过');
+  assert.equal((await mcp('question',{round_id:aiFirstId})).questions[0].partner,undefined,'saved blind draft stays hidden');
+  // Setup provides completion-specific links, server-filtered history and pagination.
+  const submittedOnly=page('?topic_id='+topicId); await until(()=>!$(submittedOnly,'setup').hidden,'submitted history setup');
+  await click(submittedOnly,'create'); const submittedOnlyId=submittedOnly.eval('roundId');
+  for(let i=0;i<total;i++) await click(submittedOnly,'next');
+  await click(submittedOnly,'confirmSubmit');
+  const returned=page('?topic_id='+topicId); await until(()=>!$(returned,'setup').hidden,'submitted history');
+  assert.equal($(returned,'recentRound').querySelector('a').textContent,'查看上次答卷');
+  assert.match($(returned,'recentRound').textContent,/等待小机提交/);
+  assert.equal(new URL($(returned,'recentRound').querySelector('a').href).searchParams.get('round_id'),submittedOnlyId);
+  const oldLink=page('?round_id='+submittedOnlyId); await until(()=>!$(oldLink,'round').hidden,'old submitted link');
+  assert.equal($(oldLink,'waiting').textContent,'已提交，等待小机答题中；小机可查看你的回答');
+  const readonlyWrites=writeCount; await jump(oldLink,0); await click(oldLink,'next'); await click(oldLink,'previous');
+  assert.equal(writeCount,readonlyWrites); assert.equal($(oldLink,'ownRead').textContent,'已跳过');
+  for(let i=0;i<22;i++) {
+    const result=await transport({url:'/api/deeptalk/action',method:'POST',headers:{Authorization:'Bearer '+tokens[101]},body:JSON.stringify({action:'create',topic_id:topicId,mode:i%2?'chat':'blind',request_id:'history_page_'+i})});
+    assert.equal(result.status,200);
+  }
+  failHistory=true;
+  const failedHistory=page('?topic_id='+topicId); await until(()=>!$(failedHistory,'setup').hidden,'history failure');
+  assert.equal($(failedHistory,'moreHistory').textContent,'重试读取历史');
+  assert.equal($(failedHistory,'create').disabled,false,'history failure does not block new rounds');
+  await click(failedHistory,'moreHistory'); assert.equal($(failedHistory,'recentRound').hidden,false); failedHistory.close();
+  const historyPage=page('?topic_id='+topicId); await until(()=>!$(historyPage,'setup').hidden,'paginated history');
+  assert.equal($(historyPage,'recentRound').querySelector('a').textContent,'继续答题');
+  assert.match($(historyPage,'recentRound').textContent,/边聊边答/);
+  assert.equal($(historyPage,'historyList').querySelectorAll('a').length,19);
+  while(!$(historyPage,'moreHistory').hidden) await click(historyPage,'moreHistory');
+  assert.ok([...$(historyPage,'historyList').querySelectorAll('a')].some(a=>a.textContent==='查看双方回答' && a.href.endsWith(rid)));
+  assert.ok([...$(historyPage,'historyList').querySelectorAll('a')].some(a=>a.textContent==='查看上次答卷' && a.href.endsWith(submittedOnlyId)));
+  assert.ok([...$(historyPage,'historyList').querySelectorAll('a')].some(a=>a.href.endsWith(aiFirstId)));
+  assert.equal([...$(historyPage,'historyList').querySelectorAll('a')].some(a=>a.href.endsWith(legacySummary.round_id)),topicId===legacySummary.topic_id,'history filters by topic');
+  const strangerHistory=page('?topic_id='+topicId,tokens[102]); await until(()=>!$(strangerHistory,'setup').hidden,'other human history');
+  assert.equal($(strangerHistory,'recentRound').hidden,true); assert.equal($(strangerHistory,'roundHistory').hidden,true);
+  for(const win of [aiFirst,submittedOnly,returned,oldLink,historyPage,strangerHistory]) win.close();
   let chat=page('?topic_id='+topicId); await until(()=>!$(chat,'setup').hidden,'chat setup');
   $(chat,'mode').value='chat'; $(chat,'mode').dispatchEvent(new chat.Event('change'));
   await click(chat,'create');
@@ -313,6 +379,15 @@ let windows = [];
     assert.match($(otherPage,'saveHint').textContent,/供复制/);
     assert.equal($(otherPage,'newRound').hidden,false,'remote submission also permits restarting');
     await otherPage.eval('pollPeer()'); assert.equal($(otherPage,'answer').value,'尚未保存的本地草稿');
+    const lockedReload=page(otherPage.location.search,tokens[101],sessionCopy(otherPage));
+    await until(()=>!$(lockedReload,'round').hidden && !lockedReload.eval('busy'),'locked draft reload');
+    assert.equal($(lockedReload,'answer').value,'尚未保存的本地草稿');
+    assert.equal($(lockedReload,'answer').hidden,false);
+    assert.equal($(lockedReload,'answer').readOnly,true);
+    assert.equal($(lockedReload,'quickAnswers').hidden,true);
+    assert.equal($(lockedReload,'writeOwn'),null);
+    assert.equal($(lockedReload,'next').disabled,true);
+    lockedReload.close();
     assert.equal($(nav,'newRound').textContent,'重新答题'); assert.equal($(nav,'newRound').hidden,false);
     const beforeRestart=await transport({url:'/api/deeptalk?action=view&round_id='+navId,headers:{Authorization:'Bearer '+tokens[101]}});
     const restart=page(new URL($(nav,'newRound').href).search);
@@ -327,6 +402,86 @@ let windows = [];
   }
   // All real package sources use readable links, without editorial/raw metadata.
   const sourceTopics=await transport({url:'/api/deeptalk?action=context',headers:{Authorization:'Bearer '+tokens[101]}});
+  for(const {topic_id:tid} of sourceTopics.body.topics) {
+    let quick=page('?topic_id='+tid); await until(()=>!$(quick,'setup').hidden,'quick setup');
+    await click(quick,'create');
+    const localQuestions=quick.eval('state.questions');
+    const imported=JSON.parse(fs.readFileSync(path.join(root,'deeptalk/quick_answers',tid+'.json'),'utf8'));
+    const freeTextOnly=Object.entries(imported).filter(([,item])=>item.free_text_only).map(([id])=>id);
+    assert.deepEqual(Array.from(localQuestions.filter(q=>!q.quick_answers),q=>q.id),freeTextOnly,
+      'only the 17 official free-only decisions omit suggestions');
+    const indices=localQuestions.map((_,i)=>i); // Exercise all 490 imported questions.
+    for(const idx of indices) {
+      if (quick.eval('index')!==idx) await jump(quick,idx);
+      input(quick,'');
+      const buttons=Array.from($(quick,'quickOptions').children), options=localQuestions[idx].quick_answers;
+      if (!options) {
+        assert.equal($(quick,'quickAnswers').hidden,true);
+        assert.equal(buttons.length,0);
+        assert.equal($(quick,'answer').hidden,false);
+        assert.equal($(quick,'answer').readOnly,false);
+        assert.equal($(quick,'answer').disabled,false);
+        $(quick,'answer').focus();
+        assert.equal(quick.document.activeElement,$(quick,'answer'));
+        const writes=writeCount, text='测试自填内容 '+idx;
+        input(quick,text); assert.equal(writeCount,writes,'typing remains local');
+        const freeSearch=quick.location.search, freeSession=sessionCopy(quick);
+        quick.close(); quick=page(freeSearch,tokens[101],freeSession);
+        await until(()=>!$(quick,'round').hidden && !quick.eval('busy'),'free-only draft reload');
+        assert.equal(quick.eval('index'),idx);
+        assert.equal($(quick,'answer').value,text);
+        assert.equal($(quick,'quickAnswers').hidden,true);
+        assert.equal($(quick,'quickOptions').children.length,0);
+        await click(quick,'next'); await jump(quick,idx);
+        assert.equal($(quick,'answer').value,text,'free text survives save and return');
+        continue;
+      }
+      assert.equal(buttons.length,options.options.length);
+      assert.deepEqual(buttons.map(button=>button.textContent),imported[localQuestions[idx].id].options);
+      assert.equal(options.mode,imported[localQuestions[idx].id].mode);
+      const writes=writeCount;
+      buttons[0].click(); assert.equal($(quick,'answer').value,options.options[0]);
+      assert.equal(buttons[0].getAttribute('aria-pressed'),'true');
+      $(quick,'answer').focus();
+      assert.equal(quick.document.activeElement,$(quick,'answer'));
+      assert.equal($(quick,'answer').value,options.options[0]);
+      input(quick,$(quick,'answer').value+'\n我还想补充一点');
+      buttons[1].click();
+      assert.match($(quick,'answer').value,/我还想补充一点/);
+      assert.equal(buttons[0].getAttribute('aria-pressed'),String(options.mode==='multiple'));
+      assert.equal(buttons[1].getAttribute('aria-pressed'),'true');
+      buttons[1].click(); assert.equal(buttons[1].getAttribute('aria-pressed'),'false');
+      assert.doesNotMatch($(quick,'answer').value,new RegExp(options.options[1].replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+      assert.equal(writeCount,writes,'choices and custom entry never send an answer');
+      assert.equal(quick.eval('index'),idx,'choices never navigate');
+      assert.equal(quick.eval('state.submitted'),false);
+    }
+    // The final question may be free-only and already saved above. Create an
+    // actual unsaved choice draft before testing restoration and uncertain retry.
+    await jump(quick,localQuestions.findIndex(q=>q.quick_answers));
+    input(quick,'');
+    $(quick,'quickOptions').firstElementChild.click();
+    input(quick,$(quick,'answer').value+'\nUnsaved fixture supplement');
+    const text=$(quick,'answer').value, at=quick.eval('index'), search=quick.location.search;
+    const selected=quick.eval('JSON.stringify(selectedChoices)'), session=sessionCopy(quick);
+    quick.close(); quick=page(search,tokens[101],session);
+    await until(()=>!$(quick,'round').hidden && !quick.eval('busy'),'quick draft reload');
+    assert.equal(quick.eval('index'),at); assert.equal($(quick,'answer').value,text);
+    assert.equal(quick.eval('JSON.stringify(selectedChoices)'),selected);
+    // A lost response followed by editing and refresh retries the old receipt first.
+    const beforeRevision=quick.eval('state.revision');
+    failNextWrite=true; await click(quick,'next');
+    const originalRequest=quick.eval('pendingAnswer.body.request_id');
+    input(quick,text+'\n响应丢失后继续编辑');
+    const uncertain=sessionCopy(quick); quick.close(); quick=page(search,tokens[101],uncertain);
+    await until(()=>!$(quick,'round').hidden && !quick.eval('busy'),'uncertain request reload');
+    assert.equal(quick.eval('pendingAnswer.body.request_id'),originalRequest);
+    await click(quick,'next');
+    assert.equal(quick.eval('state.revision'),beforeRevision+2,'one replay plus one changed answer');
+    assert.equal(quick.eval('state.questions['+at+'].own.text'),text+'\n响应丢失后继续编辑');
+    assert.equal(quick.sessionStorage.getItem(quick.eval('draftKey()')),null,'acknowledged draft cleared');
+    quick.close();
+  }
   for(const {topic_id:tid} of sourceTopics.body.topics) {
     const sourcePage=page('?topic_id='+tid); await until(()=>!$(sourcePage,'setup').hidden,'source setup');
     assert.equal($(sourcePage,'sources').open,false);
@@ -371,8 +526,10 @@ let windows = [];
   windows.push(home);
   await until(()=>Boolean($(home,'historyOpen')),'homepage login');
   await home.openHistory();
-  const historyLink=home.document.querySelector(`#historyContent a[href="/deeptalk?round_id=${rid}"]`);
-  assert.ok(historyLink); assert.equal(historyLink.textContent,'查看');
+  const latestHistory=await transport({url:'/api/deeptalk?action=history',headers:{Authorization:'Bearer '+tokens[101]}});
+  const latestId=latestHistory.body.rounds[0].round_id;
+  const historyLink=home.document.querySelector(`#historyContent a[href="/deeptalk?round_id=${latestId}"]`);
+  assert.ok(historyLink); assert.equal(historyLink.textContent,latestHistory.body.rounds[0].status==='complete' ? '查看' : '继续');
   assert.doesNotMatch($(home,'historyContent').textContent,/小机私密回答|我的回答/);
   assert.equal(home.eval('games.filter(g => g.testGroup === "deeptalk").length'),10);
   assert.equal(home.eval('games.filter(g => g.id === "deeptalk").length'),0);
@@ -381,5 +538,5 @@ let windows = [];
   hostile.innerHTML=home.renderDeeptalkHistory({rounds:[{...summary,human_name:'<img src=x onerror="window.xss=1">'}]});
   assert.equal(hostile.querySelector('img'),null);
   assert.equal(errors.length,0,errors.join('\n'));
-  console.log('PASS: create/blind/chat live polling/draft retention/autosave/blank-skip/edit/retry/read-only-sync/confirmation/secrecy/unlock/XSS/history/authorization (DOM + real handlers).');
+  console.log('PASS: all 10 topics / 490 questions / 17 free-only drafts; single/multiple/cancel/custom-focus/no-auto-write/refresh/edited-uncertain-retry/locked-draft-refresh; create/blind/chat/one-sided-release/private-draft/readonly-review/polling/autosave/skip/conflict/confirmation/secrecy/unlock/XSS/topic-history/pagination/retry/auth (DOM + real handlers; not rendered layout).');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{for(const w of windows)w.close();child.stdin.end();});

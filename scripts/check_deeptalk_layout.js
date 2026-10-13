@@ -50,6 +50,9 @@ let browser;
     for(const control of await page.locator('button:visible, select:visible, summary:visible').all()) {
       const box=await control.boundingBox(); assert.ok(box.height>=44,label+' touch target');
     }
+    for (const link of await page.locator('.history-entry a:visible').all()) {
+      assert.ok((await link.boundingBox()).height>=44,label+' history touch target');
+    }
     if(await page.locator('#editor').isVisible()) {
       const previous=await page.locator('#previous').boundingBox(), next=await page.locator('#next').boundingBox();
       assert.equal(previous.y,next.y,label+' navigation is one row');
@@ -86,6 +89,10 @@ let browser;
     assert.equal(await page.locator('#completion, #submit').count(),0);
     assert.equal(await page.locator('#newRound').isVisible(),false);
     const answerBox=await page.locator('#answer').boundingBox();
+    const pickerBox=await page.locator('#questionJump').boundingBox();
+    const pickerLabelBox=await page.locator('.question-picker label').boundingBox();
+    assert.ok(Math.abs(pickerBox.x-answerBox.x)<=1 && Math.abs(pickerBox.width-answerBox.width)<=1,'picker and answer field align');
+    assert.ok(pickerLabelBox.y+pickerLabelBox.height<=pickerBox.y,'picker label sits above field');
     assert.ok(answerBox.height>=110 && answerBox.height<=140,'compact initial textarea');
     const initialMetrics=await page.evaluate(()=>({
       title:getComputedStyle(document.getElementById('roundTitle')).fontSize,
@@ -94,7 +101,27 @@ let browser;
       status:document.getElementById('questionJump').selectedOptions[0].textContent
     }));
     assert.equal(initialMetrics.status,'第1题 · ○待回答');
-    assert.equal(await page.locator('#editor button').count(),2,'only the navigation row');
+    assert.equal(await page.locator('.question-actions button').count(),2,'navigation stays in one row');
+    assert.equal(await page.locator('#writeOwn').count(),0);
+    const firstChoice=page.locator('#quickOptions button').first();
+    assert.equal(await firstChoice.getAttribute('aria-pressed'),'false');
+    await firstChoice.focus(); await page.keyboard.press('Space');
+    assert.equal(await firstChoice.getAttribute('aria-pressed'),'true');
+    const chosen=await firstChoice.innerText();
+    assert.equal(await page.locator('#answer').inputValue(),chosen);
+    assert.equal(await page.evaluate(()=>state.revision),0,'keyboard choice does not save');
+    await page.locator('#answer').focus();
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'answer');
+    assert.equal(await page.locator('#answer').inputValue(),chosen);
+    await check('choice-selected',width);
+    // Real refresh preserves a private choice without creating a server answer.
+    page.once('dialog',dialog=>dialog.accept());
+    await page.reload(); await page.locator('#round').waitFor({state:'visible'}); await settled();
+    assert.equal(await page.locator('#answer').inputValue(),chosen);
+    assert.equal(await page.locator('#quickOptions button').first().getAttribute('aria-pressed'),'true');
+    assert.equal(await page.evaluate(()=>state.revision),0);
+    await page.locator('#quickOptions button').first().click();
+    assert.equal(await page.locator('#answer').inputValue(),'');
     console.log(`METRICS ${width}px: ${JSON.stringify(initialMetrics)}`);
     await check('first-question',width);
     await page.locator('#answer').fill('浏览器布局测试草稿');
@@ -146,9 +173,20 @@ let browser;
     assert.equal(await page.locator('#newRound').isVisible(),true);
     await check('locked-waiting',width);
     assert.equal(await page.locator('#newRound').innerText(),'重新答题');
+    assert.equal(await page.locator('#waiting').isVisible(),true);
+    const submittedRevision=await page.evaluate(()=>state.revision);
+    await page.locator('#questionJump').selectOption('0'); await settled();
+    await page.locator('#next').click(); await settled();
+    await page.locator('#previous').click(); await settled();
+    assert.equal(await page.evaluate(()=>state.revision),submittedRevision);
+    assert.equal(await page.locator('#ownRead').isVisible(),true);
+    await check('submitted-review',width);
     const submittedUrl=page.url();
     await page.locator('#newRound').click(); await page.locator('#setup').waitFor({state:'visible'}); await settled();
     assert.equal(new URL(page.url()).searchParams.get('topic_id'),'relations_communication');
+    assert.equal(await page.locator('#recentRound a').innerText(),'查看上次答卷');
+    await page.locator('#roundHistory summary').click();
+    await check('history',width);
     await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
     assert.notEqual(await page.evaluate(()=>roundId),rid);
     assert.equal(await page.evaluate(()=>state.progress.human.done),0);
@@ -156,6 +194,70 @@ let browser;
     await page.goto(submittedUrl); await page.locator('#round').waitFor({state:'visible'}); await settled();
     assert.equal(await page.evaluate(()=>state.submitted),true);
     assert.equal(await page.evaluate(()=>state.questions[0].own.text),'回看后修改，仍由单排按钮提交');
+    // Blind AI-first submission, a live private human draft, and immediate per-question review.
+    await page.goto(base+'/deeptalk?topic_id=relations_communication');
+    await page.locator('#setup').waitFor({state:'visible'}); await settled();
+    await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
+    const blindId=await page.evaluate(()=>roundId), blindIds=await page.evaluate(()=>state.questions.map(q=>q.id));
+    await page.locator('#answer').fill('仍在输入的私密草稿'); await page.locator('#answer').focus();
+    async function aiWrite(action,params) {
+      const result=await transport({kind:'mcp',token:tokens[201],payload:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'play',arguments:{game:'deeptalk',action,params}}}});
+      assert.equal(result.result.isError,false,JSON.stringify(result));
+    }
+    for(let i=0;i<blindIds.length;i++) await aiWrite('answer',{round_id:blindId,question_id:blindIds[i],revision:i,request_id:'layout_blind_'+i,...(i===12?{skip:true}:{text:'小机先提交的回答 '+i})});
+    await aiWrite('submit',{round_id:blindId,revision:13,confirm:true});
+    await page.waitForFunction(()=>document.getElementById('peerText').textContent==='小机先提交的回答 0',{},{timeout:12000});
+    assert.equal(await page.locator('#answer').inputValue(),'仍在输入的私密草稿');
+    assert.equal(await page.locator('#answer').evaluate(el=>el.readOnly),false);
+    assert.equal(await page.evaluate(()=>state.unlocked),false);
+    await check('blind-peer-submitted',width);
+    await page.locator('#questionJump').selectOption('12'); await settled();
+    assert.equal(await page.locator('#peerText').innerText(),'已跳过');
+    await page.locator('#next').click(); await settled();
+    for(let i=0;i<12;i++) { await page.locator('#next').click(); await settled(); }
+    await page.locator('#confirmDialog').waitFor({state:'visible'});
+    await page.locator('#confirmSubmit').click(); await settled();
+    assert.equal(await page.locator('#records').isVisible(),true);
+    assert.equal(await page.locator('#records .record').count(),13);
+    await check('both-submitted',width);
+    // Real imported free-only questions never render an empty quick-answer shell.
+    let freeOnlyCount=0;
+    for (const [,tid] of topicTitles) {
+      const imported=JSON.parse(fs.readFileSync(path.join(root,'deeptalk/quick_answers',tid+'.json'),'utf8'));
+      const freeIds=Object.keys(imported).filter(id=>imported[id].free_text_only);
+      if (!freeIds.length && tid!=='work_values_20') continue;
+      await page.goto(base+'/deeptalk?topic_id='+tid);
+      await page.locator('#setup').waitFor({state:'visible'}); await settled();
+      await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
+      const ids=await page.evaluate(()=>state.questions.map(q=>q.id));
+      for(const id of freeIds.length ? freeIds : ids) {
+        await page.locator('#questionJump').selectOption(String(ids.indexOf(id))); await settled();
+        assert.equal(await page.locator('#answer').isVisible(),true);
+        if(freeIds.length) {
+          freeOnlyCount++;
+          assert.equal(await page.locator('#quickAnswers').isVisible(),false);
+          assert.equal(await page.locator('#quickHint').isVisible(),false);
+          assert.equal(await page.locator('#quickOptions button').count(),0);
+          await page.locator('#answer').fill('Free-only browser draft '+id);
+          page.once('dialog',dialog=>dialog.accept());
+          await page.reload(); await page.locator('#round').waitFor({state:'visible'}); await settled();
+          assert.equal(await page.locator('#answer').inputValue(),'Free-only browser draft '+id);
+          assert.equal(await page.locator('#quickAnswers').isVisible(),false);
+          await check('free-only-'+id,width);
+        } else {
+          assert.equal(await page.locator('#quickOptions button').count(),3);
+          await page.locator('#quickOptions button').nth(0).click();
+          await page.locator('#quickOptions button').nth(1).click();
+          assert.equal(await page.locator('#quickOptions button[aria-pressed="true"]').count(),1);
+          await page.locator('#quickOptions button').nth(2).click();
+          assert.equal(await page.locator('#answer').inputValue(),imported[id].options[2]);
+          await check('work-choice-'+id,width);
+        }
+      }
+      // Save the final local draft before leaving this temporary round.
+      await page.locator('#previous').click(); await settled();
+    }
+    assert.equal(freeOnlyCount,17);
     console.log(`PASS rendered ${width}px: fixed topic, shared round, autosave/reload, one-row navigation, long input, final confirmation/lock, sources, keyboard, touch targets, no overflow`);
   }
   await page.setViewportSize({width:360,height:900});

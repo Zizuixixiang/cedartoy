@@ -224,29 +224,52 @@ class DeeptalkTests(unittest.TestCase):
         path=self.data/'relations_communication.json'; obj=json.loads(path.read_text()); obj['questions'][1]['id']='q1'; path.write_text(json.dumps(obj))
         with self.assertRaises(DeeptalkError): catalog.load_topic('relations_communication')
 
-    def test_every_read_path_hides_peer_before_both_submit(self):
-        for user in (HUMAN, AI): self.fill(user)
-        for phase in (0,1):
-            if phase: self.submit(HUMAN)
-            for user,peer in ((HUMAN,AI),(AI,HUMAN)):
-                for action in ('status','question','history','source'):
-                    payload=self.call(user,action,round_id=self.rid,number=1)
-                    self.assertNotIn(f'SECRET_{peer["id"]}',json.dumps(payload))
-                with self.assertRaises(DeeptalkError): self.call(user,'result',round_id=self.rid)
-                if not user['is_ai']:
-                    status,data,headers=self.http(user,round_id=self.rid)
-                    self.assertEqual(status,200); self.assertEqual(headers['Cache-Control'],'no-store')
-                    self.assertNotIn('SECRET_201',json.dumps(data)); self.assertNotIn('partner',json.dumps(data))
-                else:
-                    payload=self.mcp(user,'question',round_id=self.rid)
-                    self.assertFalse(payload['result']['isError']); self.assertNotIn('SECRET_101',json.dumps(payload))
-                    self.assertTrue(self.mcp(user,'result',round_id=self.rid)['result']['isError'])
-        self.submit(AI)
-        result=self.call(HUMAN,'view',round_id=self.rid)
-        self.assertTrue(result['unlocked']); self.assertEqual(len(result['questions']),13)
-        self.assertEqual(result['questions'][0]['partner']['text'],'SECRET_201_1')
-        result=self.call(AI,'result',round_id=self.rid)
-        self.assertEqual(result['questions'][0]['partner']['text'],'SECRET_101_1')
+    def test_blind_submission_opens_only_submitted_side_in_both_directions(self):
+        for first, second in ((HUMAN, AI), (AI, HUMAN)):
+            with self.subTest(first=first['id']):
+                self.rid = self.store.create(HUMAN, AI, 'relations_communication', f'visibility_{first["id"]}')['round_id']
+                for user in (HUMAN, AI):
+                    self.fill(user)
+                    self.answer(user, 13, skip=True)
+                for phase in (0, 1, 2):
+                    if phase: self.submit(first if phase == 1 else second)
+                    for user, peer in ((HUMAN, AI), (AI, HUMAN)):
+                        visible = phase == 2 or (phase == 1 and peer == first)
+                        for action in ('status', 'source', 'history'):
+                            self.assertNotIn('SECRET_', json.dumps(self.call(user, action, round_id=self.rid)))
+                        for action in ('question', 'result'):
+                            if action == 'result' and phase == 0:
+                                with self.assertRaises(DeeptalkError): self.call(user, action, round_id=self.rid)
+                                continue
+                            if user == HUMAN:
+                                status, data, headers = self.http(user, action, round_id=self.rid, limit=20)
+                                self.assertEqual(status, 200)
+                                self.assertEqual(headers['Cache-Control'], 'no-store')
+                            else:
+                                for path in (False, True):
+                                    response = self.mcp(user, action, path=path, round_id=self.rid, limit=20)['result']
+                                    self.assertFalse(response['isError'])
+                                    data = json.loads(response['content'][0]['text'])
+                                    self.assertEqual('partner' in data['questions'][0], visible)
+                            self.assertEqual(data['peer_visible'], visible)
+                            self.assertEqual(data['unlocked'], phase == 2)
+                            self.assertEqual(len(data['questions']), 13)
+                            for q in data['questions']:
+                                self.assertEqual('partner' in q, visible)
+                            if visible:
+                                self.assertEqual(data['questions'][0]['partner']['text'], f'SECRET_{peer["id"]}_1')
+                                self.assertTrue(data['questions'][-1]['partner']['skipped'])
+                            else:
+                                self.assertNotIn(f'SECRET_{peer["id"]}', json.dumps(data))
+                        view = self.http(HUMAN, 'view', round_id=self.rid)[1]
+                        self.assertEqual('partner' in view['questions'][0], phase == 2 or (phase == 1 and first == AI))
+                    if phase == 1:
+                        # Peer visibility never locks the unsubmitted side, even after all answers are saved.
+                        self.answer(second, 1)
+                        with self.assertRaises(DeeptalkError): self.answer(first, 1, text='late edit')
+                        for stranger in (OTHER_HUMAN, OTHER_AI):
+                            for action in ('question', 'result', 'source'):
+                                with self.assertRaises(DeeptalkError): self.call(stranger, action, round_id=self.rid)
 
     def test_skip_edit_submit_confirmation_and_immutability(self):
         self.answer(HUMAN,skip=True)
@@ -278,12 +301,33 @@ class DeeptalkTests(unittest.TestCase):
         self.assertEqual(self.call(HUMAN,'view',round_id=new)['questions'][0]['text'],'changed')
         history=self.call(HUMAN,'history',limit=1)
         self.assertEqual(history['total'],2); self.assertEqual(len(history['rounds']),1)
-        self.assertEqual(set(history['rounds'][0]), {'round_id','title','human_name','ai_name','status','created_at','updated_at','url','sharing_mode','mode'})
+        self.assertEqual(set(history['rounds'][0]), {'round_id','title','human_name','ai_name','status','created_at','updated_at','url','sharing_mode','mode','topic_id','human_submitted','ai_submitted'})
         self.assertTrue(history['rounds'][0]['url'].startswith('/deeptalk?round_id='))
         self.assertEqual(self.call(HUMAN,'history',offset=1,limit=1)['rounds'][0]['round_id'],self.rid)
         topic.unlink()
         self.assertEqual(Store(self.db).read(HUMAN,self.rid,action='view')['questions'][0]['own']['text'],'old answer')
         self.assertEqual(self.store.source(HUMAN,self.rid)['title'],'关系与沟通')
+
+    def test_topic_history_paginates_only_authorized_rounds_and_keeps_old_links(self):
+        self.fill(HUMAN); self.submit(HUMAN)
+        old = self.http(HUMAN, round_id=self.rid)[1]
+        ids = [self.store.create(HUMAN, AI, 'relations_communication', f'history_{i:04}',
+                                mode='chat' if i % 2 else 'blind')['round_id'] for i in range(23)]
+        self.store.create(HUMAN, AI, 'couple_50', 'other_topic')
+        self.store.create(OTHER_HUMAN, OTHER_AI, 'relations_communication', 'other_human')
+        status, data, _ = self.http(HUMAN, 'history', topic_id='relations_communication', limit=20)
+        self.assertEqual(status, 200); self.assertEqual(data['total'], 24)
+        self.assertEqual([r['round_id'] for r in data['rounds']], list(reversed(ids))[:20])
+        more = self.http(HUMAN, 'history', topic_id='relations_communication', offset=20)[1]
+        self.assertEqual([r['round_id'] for r in more['rounds']], list(reversed(ids))[20:]+[self.rid])
+        self.assertTrue(more['rounds'][-1]['human_submitted'])
+        self.assertFalse(more['rounds'][-1]['ai_submitted'])
+        self.assertNotIn('SECRET_', json.dumps(data)+json.dumps(more))
+        self.assertEqual(self.call(OTHER_HUMAN, 'history', topic_id='relations_communication')['total'], 1)
+        self.assertEqual(self.call(OTHER_AI, 'history', topic_id='relations_communication')['total'], 1)
+        self.assertEqual(self.http(HUMAN, round_id=self.rid)[1], old)
+        for invalid in ('unknown', "' OR 1=1 --", []):
+            with self.assertRaises(DeeptalkError): self.call(AI, 'history', topic_id=invalid)
 
     def test_identity_and_binding_cannot_be_spoofed(self):
         for user in (OTHER_HUMAN,OTHER_AI,dict(HUMAN,is_ai=True)):
@@ -415,16 +459,16 @@ class DeeptalkTests(unittest.TestCase):
         with self.assertRaises(DeeptalkError):
             self.call(OTHER_AI, 'submit', round_id=self.rid, revision=0, confirm=True)
         for q in range(2,14): self.answer(AI if q % 2 else OTHER_AI, q)
-        # AI-first submission must keep both sides sealed, including the other AI.
+        # A shared AI submission opens only the AI side; its binding peers share that lock.
         self.submit(OTHER_AI)
         for user in (HUMAN, AI, OTHER_AI):
-            for action in ('status', 'question', 'history', 'source'):
+            for action in ('question', 'result'):
                 payload = self.call(user, action, round_id=self.rid)
-                self.assertNotIn('partner', json.dumps(payload))
+                self.assertEqual(payload['peer_visible'], user == HUMAN)
+                self.assertFalse(payload['unlocked'])
                 if user['is_ai']: self.assertNotIn('SECRET_101', json.dumps(payload))
-                else: self.assertNotIn('SHARED_', json.dumps(payload))
-            with self.assertRaises(DeeptalkError): self.call(user, 'result', round_id=self.rid)
-        self.assertNotIn('SHARED_', json.dumps(self.http(HUMAN, round_id=self.rid)[1]))
+                else: self.assertIn('SHARED_', json.dumps(payload['questions'][0]['partner']))
+        self.assertIn('SHARED_', json.dumps(self.http(HUMAN, round_id=self.rid)[1]))
         self.submit(HUMAN)
         for ai in (AI, OTHER_AI):
             result = self.mcp(ai, 'result', round_id=self.rid)

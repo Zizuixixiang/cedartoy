@@ -117,7 +117,7 @@ class RealPackageTests(unittest.TestCase):
         for game in catalog.ALIASES:
             with self.subTest(game=game):
                 guide = json.loads(server._tool_get_guide({'game': game}))['guide']
-                self.assertLessEqual(len(encoding.encode(guide)), 550)
+                self.assertLessEqual(len(encoding.encode(guide)), 610)
                 self.assertNotIn('get_guide', guide)
                 self.assertEqual(guide.count('整套题库文本：'), 1)
                 self.assertIn(f'play(game="{game}",action=...,params={{...}})', guide)
@@ -134,7 +134,7 @@ class RealPackageTests(unittest.TestCase):
                     for field in fields:
                         self.assertIn(field, instructions, action)
                 for required in ('/deeptalk', 'history', 'source', '从1起', '8–100位[A-Za-z0-9_-]',
-                                 '重试复用', '双方提交才解锁', '当前绑定小机共用草稿/revision', '解绑失权', '旧轮次限原双方', '冲突先重读合并', '不计分，可跳题', '无标准答案', 'result只对照双方回答', '无评分或测评报告'):
+                                 '重试复用', '一方提交，其答卷即对另一方可见', '当前绑定小机共用草稿/revision', '解绑失权', '旧轮次限原双方', '冲突先重读合并', '不计分，可跳题', '无标准答案', 'result只展示获准查看的回答', '无评分或测评报告'):
                     self.assertIn(required, guide)
                 operations = guide[guide.index('play(game='):].replace(game, '<game>')
                 if shared_operations is None:
@@ -164,16 +164,26 @@ class RealPackageTests(unittest.TestCase):
                     if phase:
                         self.request(first, 'submit', round_id=rid, revision=total, confirm=True)
                     for user, peer in ((HUMAN, AI), (AI, HUMAN)):
-                        for action in ('status','question','source','history'):
+                        visible = bool(phase and peer == first)
+                        for action in ('status','source','history'):
                             data = self.request(user, action, round_id=rid)
                             self.assertNotIn(f'PRIVATE_{peer["id"]}', json.dumps(data))
+                        data = self.request(user, 'question', round_id=rid)
+                        self.assertEqual('partner' in data['questions'][0], visible)
                         if user == HUMAN:
                             status, view, _ = self.http(user, 'view', round_id=rid)
                             self.assertEqual(status, 200)
-                            self.assertNotIn('partner', json.dumps(view))
-                            self.assertEqual(self.http(user, 'result', round_id=rid)[0], 409)
+                            self.assertEqual('partner' in view['questions'][0], visible)
+                            self.assertEqual(self.http(user, 'result', round_id=rid)[0], 200 if phase else 409)
                         else:
-                            self.assertTrue(self.mcp(user, 'result', game=self.alias, round_id=rid)['result']['isError'])
+                            self.assertEqual(self.mcp(user, 'result', game=self.alias, round_id=rid)['result']['isError'], not phase)
+                        if phase:
+                            for start in range(1, total+1, 20):
+                                partial = self.request(user, 'result', round_id=rid, number=start, limit=20)
+                                self.assertFalse(partial['unlocked'])
+                                for q in partial['questions']:
+                                    self.assertEqual('partner' in q, visible)
+                                    if visible and q['number'] == total: self.assertTrue(q['partner']['skipped'])
                 self.request(second, 'submit', round_id=rid, revision=total, confirm=True)
                 view = self.request(HUMAN, 'view', round_id=rid)
                 self.assertEqual(len(view['questions']), total)
