@@ -3495,7 +3495,7 @@ def _game_maintenance(game):
     return maintenance if maintenance and maintenance.get("enabled") else None
 
 
-def _tool_get_guide(arguments):
+def _tool_get_guide(arguments, *, path_token=None):
     game = arguments.get("game")
     if not game or not isinstance(game, str):
         raise _McpError(-32602, "game 参数必填")
@@ -3511,7 +3511,7 @@ def _tool_get_guide(arguments):
             raise _McpError(-32602, exc.message) from None
     if game == "deeptalk":
         return json.dumps({"game": game, "guide": DEEPTALK_GUIDE}, ensure_ascii=False)
-    return mcp_guides._tool_get_guide(
+    result = mcp_guides._tool_get_guide(
         arguments,
         guide_dir=GUIDE_DIR,
         game_maintenance=_game_maintenance,
@@ -3531,6 +3531,17 @@ def _tool_get_guide(arguments):
         puzzle_box=puzzle_box,
         nowhere_adapter=nowhere_adapter,
     )
+    if game == "account" and path_token:
+        try:
+            _require_admin_account(path_token)
+        except (_McpError, sqlite3.Error):
+            pass  # Keep the public guide available; fail closed on admin details.
+        else:
+            data = json.loads(result)
+            # Internal appendix only: never a separately callable game/guide.
+            data["guide"] += "\n" + (GUIDE_DIR / "_account_admin.md").read_text(encoding="utf-8")
+            return json.dumps(data, ensure_ascii=False)
+    return result
 
 
 def _soup_error_message(resp):

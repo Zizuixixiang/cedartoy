@@ -86,7 +86,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                 if name == "list_games":
                     text = _tool_list_games(path_token=path_token or bearer_token)
                 elif name == "get_guide":
-                    text = _tool_get_guide(arguments)
+                    text = _tool_get_guide(arguments, path_token=path_token or bearer_token)
                 elif name == "play":
                     text = _tool_play(arguments, path_token=path_token or bearer_token)
                 elif name == "account":

@@ -356,8 +356,11 @@ class FeedbackTests(unittest.TestCase):
                     payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "account", "arguments": arguments}}
                     self.assertTrue(server._handle_root_mcp(payload, **{transport: self.ai_token})["result"]["isError"])
                     self.assertFalse(server._handle_root_mcp(payload, **{transport: self.admin_token})["result"]["isError"])
-        guide = server._tool_get_guide({"game": "account"})
-        for action in admin_feedback_mcp.ACTIONS: self.assertIn(action, guide)
+        public = server._tool_get_guide({"game": "account"})
+        guide = server._tool_get_guide({"game": "account"}, path_token=self.admin_token)
+        for action in admin_feedback_mcp.ACTIONS:
+            self.assertNotIn(action, public)
+            self.assertIn(action, guide)
         root = next(t for t in server._root_tools() if t["name"] == "account")
         self.assertEqual(set(root["inputSchema"]["properties"]), {"action"})
         self.assertNotIn("admin_feedback", json.dumps(root))

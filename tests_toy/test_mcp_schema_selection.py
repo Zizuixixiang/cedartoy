@@ -78,7 +78,7 @@ class McpSchemaSelectionTests(unittest.TestCase):
                             ]})
                             identity.assert_called_with(token)
                             if name == "get_guide":
-                                tool.assert_called_once_with(arguments)
+                                tool.assert_called_once_with(arguments, path_token=token)
                             elif name == "list_games":
                                 tool.assert_called_once_with(path_token=token)
                             elif name == "account":

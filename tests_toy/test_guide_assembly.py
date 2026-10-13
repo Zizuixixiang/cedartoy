@@ -10,7 +10,8 @@ import server
 
 class GuideAssemblyTests(unittest.TestCase):
     def test_account_guide_covers_public_parameters_and_their_missing_uses(self):
-        guide = (Path(__file__).resolve().parents[1] / "turtle-soup/backend/guides/account.md").read_text()
+        with patch.object(server, "_require_admin_account"):
+            guide = json.loads(server._tool_get_guide({"game": "account"}, path_token="fixture"))["guide"]
         source = next(t for t in server._PLATFORM_TOOLS if t["name"] == "account")
         for parameter in source["inputSchema"]["properties"]:
             with self.subTest(parameter=parameter):

@@ -256,15 +256,88 @@ class AdminRecoveryMcpTests(unittest.TestCase):
                     self.assertFalse(result["result"]["isError"], result)
             self.assertEqual(self.call("admin_recovery_list", token=self.admin_token)["total"], 1)
 
-    def test_schema_and_guide_publish_actions_and_constraints(self):
+    def test_schema_hides_admin_teaching_but_preserves_call_fields(self):
         standard = next(t for t in server._root_tools() if t["name"] == "account")["inputSchema"]
         self.assertEqual(set(standard["properties"]), {"action"})
         schema = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "account")["inputSchema"]
         for action in admin_recovery_mcp.ACTIONS:
-            self.assertIn(action, schema["properties"]["action"]["description"])
-            self.assertIn(action, server._tool_get_guide({"game": "account"}))
+            self.assertNotIn(action, json.dumps(schema))
+            self.assertIn(action, server._tool_get_guide({"game": "account"}, path_token=self.admin_token))
         self.assertEqual(schema["properties"]["decision"]["enum"], ["approved", "rejected"])
         self.assertEqual(schema["properties"]["ticket_id"]["type"], "integer")
+        for mode in ("", "legacy"):
+            response = server._handle_root_mcp(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, schema_mode=mode)
+            tools = response["result"]["tools"]
+            self.assertEqual({t["name"] for t in tools}, {"list_games", "get_guide", "play", "account"})
+            self.assertNotRegex(json.dumps(tools, ensure_ascii=False), r"admin_recovery_|admin_feedback_|管理员")
+
+    def test_account_guide_visibility_uses_current_token_owner(self):
+        public = server._tool_get_guide({"game": "account"})
+        self.assertNotRegex(public, r"admin_recovery_|admin_feedback_|管理员密码找回审核|管理员意见反馈 QA")
+        ordinary_ai = self._token_for(self._add_user("UnboundAI", is_ai=True))
+        forged_claim = server._create_account_jwt({**self._user(self.human_id), "is_admin": True})
+        # Self-reported identity/token arguments never affect guide authorization.
+        arguments = {"game": "account", "user_id": self.admin_id, "is_admin": True,
+                     "token": self.admin_token, "path_token": self.admin_token,
+                     "bearer_token": self.admin_token}
+        for token in (None, "invalid", self.human_token, ordinary_ai, self.ai_token, forged_claim):
+            with self.subTest(token_kind="anonymous" if token is None else "nonadmin"):
+                self.assertEqual(server._tool_get_guide(arguments, path_token=token), public)
+        public_data = json.loads(public)
+        appendix = (server.GUIDE_DIR / "_account_admin.md").read_text(encoding="utf-8")
+        admin = json.loads(server._tool_get_guide({"game": "account"}, path_token=self.admin_token))
+        self.assertEqual(admin, {**public_data, "guide": public_data["guide"] + "\n" + appendix})
+        for prefix in ("admin_recovery_", "admin_feedback_"):
+            for action in ("list", "detail", "review"):
+                self.assertIn(prefix + action, admin["guide"])
+        # Permissions are checked afresh; bindings and cached JWT claims cannot grant access.
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET is_admin=0 WHERE id=?", (self.admin_id,))
+            conn.execute("UPDATE toy_users SET is_admin=1 WHERE id=?", (self.ai_id,))
+        self.assertEqual(server._tool_get_guide({"game": "account"}, path_token=self.admin_token), public)
+        self.assertEqual(json.loads(server._tool_get_guide({"game": "account"}, path_token=self.ai_token)), admin)
+
+    def test_account_guide_auth_failure_is_closed_and_appendix_has_no_entry(self):
+        public = server._tool_get_guide({"game": "account"})
+        for error in (server._McpError(-32001, "invalid"), sqlite3.OperationalError("unavailable")):
+            with patch.object(server, "_current_account", side_effect=error):
+                self.assertEqual(server._tool_get_guide({"game": "account"}, path_token="fixture"), public)
+        for game in ("_account_admin", "account_admin", "admin_recovery", "admin_feedback"):
+            with self.subTest(game=game), self.assertRaises(server._McpError) as caught:
+                server._tool_get_guide({"game": game}, path_token=self.admin_token)
+            self.assertEqual(caught.exception.code, -32602)
+
+    def test_http_path_and_bearer_guide_visibility(self):
+        public = json.loads(server._tool_get_guide({"game": "account"}))
+        admin = json.loads(server._tool_get_guide({"game": "account"}, path_token=self.admin_token))
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "get_guide", "arguments": {"game": "account"}}}).encode()
+        with patch.object(server, "_authenticated_ai_player_id", return_value=None), \
+             patch.object(server, "_duel_unread_request_reminder", return_value=""), \
+             patch.object(server, "_mcp_forced_announcement", return_value=None), \
+             patch.object(server, "_request_rate_limit_identity", return_value="fixture"), \
+             patch.object(server, "_check_request_rate_limit", return_value=True):
+            for token, expected in ((None, public), ("invalid", public), (self.human_token, public),
+                                    (self.ai_token, public), (self.admin_token, admin)):
+                for mode in ("", "?schema=legacy"):
+                    for path, headers in (("/" + token if token else "/mcp", {}),
+                                          ("/mcp", {"Authorization": "Bearer " + token} if token else {})):
+                        with self.subTest(mode=mode, admin=expected == admin):
+                            handler = object.__new__(server.CedarToyHandler)
+                            handler.path = path + mode
+                            handler.headers = {"Content-Length": str(len(body)), **headers}
+                            handler.client_address = ("127.0.0.1", 12345)
+                            handler.rfile = io.BytesIO(body)
+                            handler._send_json = Mock()
+                            handler.do_POST()
+                            response = handler._send_json.call_args.args[0]
+                            self.assertFalse(response["result"]["isError"], response)
+                            self.assertEqual(json.loads(response["result"]["content"][0]["text"]), expected)
+            # A nonadmin path token takes precedence over an admin Bearer token.
+            response = server._handle_root_mcp(json.loads(body), path_token=self.ai_token,
+                                               bearer_token=self.admin_token)
+            self.assertEqual(json.loads(response["result"]["content"][0]["text"]), public)
 
     def test_http_path_and_authorization_header_reach_account(self):
         body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
