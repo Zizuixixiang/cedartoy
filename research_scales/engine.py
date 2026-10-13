@@ -8,6 +8,7 @@ import hashlib
 import json
 import secrets
 import time
+from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
 
 from scale_test_engine import ScaleTestEngine, JsonRpcError, PLAYER_ID_RE, MAX_SESSIONS
@@ -134,6 +135,21 @@ class ResearchScaleEngine(ScaleTestEngine):
         # A content version needs no migration and also detects MCP appends.
         return hashlib.sha256(json.dumps([session_id, answers], separators=(',', ':')).encode()).hexdigest()
 
+    @staticmethod
+    def _session_id_matches(value, expected):
+        if isinstance(value, str):
+            return value == expected
+        if type(value) not in (int, float):  # bool is not a session number.
+            return False
+        # JSON numbers may round-trip the saved REAL timestamp. Compare their
+        # decimal representations exactly: no tolerance, float coercion of long
+        # strings/integers, or changes to the canonical ID used for question order.
+        try:
+            number = Decimal(value) if type(value) is int else Decimal(str(value))
+            return number.is_finite() and number == Decimal(expected)
+        except (InvalidOperation, ValueError):
+            return False
+
     def execute(self, action, arguments, *, web=False):
         player = self._require_player_id(arguments, 'player_id')
         if action not in ('start', 'status', 'result', 'get_result', 'answer', 'answer_batch') and not (web and action == 'save_answer'):
@@ -152,7 +168,7 @@ class ResearchScaleEngine(ScaleTestEngine):
                 if mode not in ('full', 'full_fast'):
                     raise JsonRpcError(-32602, 'mode 须为 full 或 full_fast。')
                 previous_sid = str(row[2]) if row else detail['session_id'] if detail else None
-                if restart and previous_sid and arguments.get('session_id') != previous_sid:
+                if restart and previous_sid and not self._session_id_matches(arguments.get('session_id'), previous_sid):
                     raise JsonRpcError(-32602, '重测须传当前 session_id，请先 status，避免重复重置。')
                 if restart and (row or detail) and arguments.get('confirm') is not True:
                     raise JsonRpcError(-32602, '重测会覆盖当前进度/结果，请传 confirm=true。')
@@ -177,7 +193,7 @@ class ResearchScaleEngine(ScaleTestEngine):
                 raise JsonRpcError(-32003, '没有记录，请先选择模式开始。')
             duplicate = False
             if action in ('answer', 'answer_batch', 'save_answer'):
-                if arguments.get('session_id') != sid:
+                if not self._session_id_matches(arguments.get('session_id'), sid):
                     raise JsonRpcError(-32602, '会话已变化，请先 status 恢复，勿重复提交旧会话。')
                 if action == 'save_answer':
                     if mode != 'full':

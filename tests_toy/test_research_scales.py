@@ -1,6 +1,7 @@
 """Research-scale lifecycle, privacy, scoring and integration regressions."""
 import json
 import io
+import math
 import sqlite3
 import tempfile
 import unittest
@@ -109,6 +110,72 @@ class ResearchScalesTests(unittest.TestCase):
                 e.execute('status', {'player_id': player})
         with self.assertRaises(JsonRpcError):
             e.execute('answer', {**args, 'answer': 1})
+
+    def test_numeric_session_id_answers_retries_and_explicit_restart(self):
+        e = research_scales.SCALES['ipip_empathy']
+        for created, convert in ((1800000000.1234567, float), (1800000000.0, int)):
+            with self.subTest(convert=convert), patch('time.time', return_value=created), \
+                    patch('secrets.randbelow', return_value=0):
+                base = {'player_id': 'guest:numeric' + convert.__name__}
+                state = e.execute('start', {**base, 'mode': 'full'})
+                sid = state['session_id']
+                numeric_sid = convert(float(sid))
+                args = {**base, 'session_id': numeric_sid, 'expected_index': 0, 'answer': 1}
+                state = e.execute('answer', args)
+                self.assertEqual((state['session_id'], state['progress']), (sid, 1))
+                self.assertTrue(e.execute('answer', args)['duplicate'])
+                with self.assertRaises(JsonRpcError):
+                    e.execute('answer', {**args, 'answer': 2})
+                restart = {**base, 'mode': 'full_fast', 'restart': True, 'session_id': numeric_sid}
+                with self.assertRaises(JsonRpcError):
+                    e.execute('start', restart)
+                # Change time deterministically so both old representations are stale.
+                with patch('time.time', return_value=created + 1):
+                    state = e.execute('start', {**restart, 'confirm': True})
+                for old in (sid, numeric_sid):
+                    with self.assertRaises(JsonRpcError):
+                        e.execute('start', {**restart, 'confirm': True, 'session_id': old})
+                    with self.assertRaises(JsonRpcError):
+                        e.execute('answer_batch', {**base, 'session_id': old, 'answers': [1]*10})
+                sid = state['session_id']
+                args = {**base, 'session_id': convert(float(sid)), 'answers': [1]*10}
+                result = e.execute('answer_batch', args)
+                self.assertTrue(result['complete'])
+                self.assertEqual(result['session_id'], sid)
+                self.assertTrue(e.execute('answer_batch', args)['duplicate'])
+                self.assertTrue(e.execute('answer_batch', {**args, 'session_id': sid})['duplicate'])
+                with self.assertRaises(JsonRpcError):
+                    e.execute('answer_batch', {**args, 'answers': [2]*10})
+                restart['session_id'] = args['session_id']
+                with self.assertRaises(JsonRpcError):
+                    e.execute('start', restart)
+                self.assertEqual(e.execute('get_result', base)['result_data'], result['result_data'])
+                with patch('time.time', return_value=created + 2):
+                    state = e.execute('start', {**restart, 'confirm': True})
+                self.assertEqual(state['progress'], 0)
+                self.assertNotEqual(state['session_id'], sid)
+
+    def test_invalid_numeric_session_ids_do_not_write_or_restart(self):
+        e = research_scales.SCALES['ipip_empathy']
+        # Include bool-equal timestamps and the binary64 integer precision edge.
+        for created in (0.0, 1.0, 1800000000.1234567, float(2**53)):
+            with self.subTest(created=created), patch('time.time', return_value=created), \
+                    patch('secrets.randbelow', return_value=0):
+                base = {'player_id': 'guest:invalid' + str(int(created))}
+                state = e.execute('start', {**base, 'mode': 'full'})
+                sid = state['session_id']
+                invalid = (None, True, False, [], {}, float('nan'), float('inf'), -float('inf'),
+                           'NaN', 'Infinity', '', 'stale', sid + '1',
+                           math.nextafter(created, -math.inf), math.nextafter(created, math.inf),
+                           int(created) + 1, str(int(created) + 1))
+                for value in invalid:
+                    with self.subTest(value=value):
+                        with self.assertRaises(JsonRpcError):
+                            e.execute('answer', {**base, 'session_id': value, 'expected_index': 0, 'answer': 1})
+                        with self.assertRaises(JsonRpcError):
+                            e.execute('start', {**base, 'mode': 'full', 'restart': True,
+                                               'confirm': True, 'session_id': value})
+                        self.assertEqual(e.execute('status', base), state)
 
     def test_old_results_project_only_readable_title_without_rewriting_storage(self):
         from cedar_backend.display_titles import RESEARCH_TITLES
@@ -407,9 +474,9 @@ class ResearchScalesTests(unittest.TestCase):
                     with self.subTest(game=game, mode=mode):
                         params = {'mode':mode}
                         if mode == 'full_fast':
-                            params.update(restart=True, confirm=True, session_id=state['session_id'])
+                            params.update(restart=True, confirm=True, session_id=float(state['session_id']))
                         state = call(game, 'start', params, path, bearer)
-                        sid = state['session_id']
+                        sid = float(state['session_id'])
                         if mode == 'full':
                             for index in range(len(e.items)):
                                 state = call(game, 'answer', {'session_id':sid,
