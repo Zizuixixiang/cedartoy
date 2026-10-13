@@ -6324,6 +6324,38 @@
       return me.bindings.filter((user) => user && user.is_ai);
     }
 
+    function bindingsNotice() {
+      if (me?.bindings !== null) return "";
+      return me.bindingsLoading ? "正在读取绑定小机，请稍候" : "绑定信息读取失败，请重新点击游戏入口重试";
+    }
+
+    // Login does not return bindings. Keep unknown distinct from a confirmed empty list;
+    // refresh only this data, without replaying loadMe's announcement/auth side effects.
+    async function loadLoginBindings() {
+      const session = me;
+      const requestToken = token();
+      if (!session || session.bindings !== null || session.bindingsLoading) return;
+      session.bindingsLoading = true;
+      const isCurrent = () => me === session && token() === requestToken;
+      try {
+        const res = await fetch("/api/auth/me", {headers: headers(false), cache: "no-store"});
+        if (!res.ok) throw new Error("bindings unavailable");
+        const data = await res.json();
+        if (!isCurrent()) return;
+        if (data.user?.id !== session.user.id || !Array.isArray(data.bindings)) throw new Error("invalid bindings");
+        session.bindings = data.bindings;
+      } catch (_) {
+        // Keep the authenticated session and unknown bindings so the entry can retry.
+      } finally {
+        session.bindingsLoading = false;
+        if (isCurrent()) {
+          renderPuzzleBox();
+          if ($("mineDrawer").classList.contains("show")) renderMine();
+          if (currentGame().id === "arcade") loadArcadeBankStatus();
+        }
+      }
+    }
+
     function ensureArcadeTarget() {
       const bindings = aiBindings();
       if (!bindings.length) {
@@ -6343,6 +6375,9 @@
       if (game.id !== "arcade") return "";
       if (!me) {
         return `<div class="bank-title">筹码发放</div><div class="bank-msg">登录并绑定小机后可发放筹码。</div>`;
+      }
+      if (bindingsNotice()) {
+        return `<div class="bank-title">筹码发放</div><div class="bank-msg">${bindingsNotice()}</div>`;
       }
       const bindings = aiBindings();
       if (!bindings.length) {
@@ -7482,6 +7517,20 @@
       if (currentGame().id === "duel") {
         window.location.href = `/duel/?token=${encodeURIComponent(token())}`;
         return;
+      }
+      if (me.bindings === null) {
+        if (me.bindingsLoading) {
+          showToast(bindingsNotice());
+          return;
+        }
+        const session = me, requestToken = token(), gameId = currentGame().id;
+        showToast("正在重试读取绑定小机…");
+        await loadLoginBindings();
+        if (me !== session || token() !== requestToken || currentGame().id !== gameId) return;
+        if (bindingsNotice()) {
+          showToast(bindingsNotice());
+          return;
+        }
       }
       const bindings = aiBindings();
       if (!bindings.length) {
@@ -8711,7 +8760,7 @@
       }
       const machineCardsVisible = !me.user.is_ai && machineState.loaded && !machineState.error && machineState.machines.length > 0;
       const bindingUsers = (me.bindings || []).map((user) => ({id: user.id, username: user.username, is_ai: user.is_ai, avatar: user.avatar}));
-      const bindings = bindingUsers.map((user) => `<li><span>${avatarFeatureEnabled ? escapeHtml(accountAvatar(user)) : "AI"}</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || "<li><span>--</span><span>暂无绑定</span><span>--</span></li>";
+      const bindings = bindingUsers.map((user) => `<li><span>${avatarFeatureEnabled ? escapeHtml(accountAvatar(user)) : "AI"}</span><span class="username-text">${escapeHtml(user.username)}</span><span><button class="unbind-btn machine-rename" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">改名</button> <button class="unbind-btn machine-password-reset" data-ai-id="${user.id}" data-ai-name="${escapeHtml(user.username)}" type="button">重置密码</button> <button class="unbind-btn machine-unbind" data-ai-id="${user.id}" type="button">解绑</button></span></li>`).join("") || `<li><span>--</span><span>${bindingsNotice() || "暂无绑定"}</span><span>--</span></li>`;
       content.innerHTML = `
         ${avatarFeatureEnabled ? `<div class="mine-profile-row">
           <span class="mine-profile-avatar" aria-hidden="true">${accountAvatarContent(me.user)}</span>
@@ -8807,14 +8856,16 @@
         if (res.status === 401) throw new Error("auth failed");
         if (!res.ok) { if (!controller.signal.aborted) { renderAuth(); renderGames(); renderDetail(); } return; }
         if (controller.signal.aborted) return;
-        me = await res.json();
+        const data = await res.json();
+        if (controller.signal.aborted) return;
+        me = data;
         machineState = {loaded: false, loading: false, machines: [], error: ""};
         emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
         if (me && me.user && me.user.id) {
           localStorage.setItem("cedartoy_user_id", me.user.id);
         }
       } catch (err) {
-        if (err.name === "AbortError") return;
+        if (controller.signal.aborted || err.name === "AbortError") return;
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem("cedartoy_user_id");
         me = null;
@@ -8887,7 +8938,9 @@
           return;
         }
         localStorage.setItem("cedartoy_user_id", data.user.id);
-        me = {user: data.user, bindings: [], pending_deletion: Boolean(data.pending_deletion)};
+        const needsBindings = endpoint === "/api/auth/login" && !data.pending_deletion && !data.user.deletion;
+        me = {user: data.user, bindings: needsBindings ? null : [], pending_deletion: Boolean(data.pending_deletion)};
+        if (needsBindings) loadLoginBindings();
         machineState = {loaded: false, loading: false, machines: [], error: ""};
         emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
         closeModals();
@@ -8902,7 +8955,7 @@
         } else {
           await loadAnnouncements({autoPopup: true});
         }
-        if (currentGame().id === "arcade") loadArcadeBankStatus();
+        if (!needsBindings && currentGame().id === "arcade") loadArcadeBankStatus();
       } catch (err) {
         $("loginMsg").textContent = err.message;
       }
