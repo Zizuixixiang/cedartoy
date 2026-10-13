@@ -41,9 +41,9 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 #round { margin-top:14px; padding:clamp(14px,3vw,26px); }
 #roundTitle { margin-bottom:4px; }
 #roundDescription { margin:4px 0; }
-.question-picker { display:flex; align-items:center; gap:10px; margin-top:10px; }
+.question-picker { display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-top:10px; }
 .question-picker label { margin:0; font-size:13px; white-space:nowrap; }
-#questionJump { width:auto; max-width:100%; padding:6px 10px; font-size:14px; }
+#questionJump { width:100%; min-width:0; padding:6px 10px; font-size:14px; }
 #answerLabel { margin:10px 0 4px; }
 #saveHint,#liveHint { margin:6px 0; }
 #liveHint:empty,#confirmError:empty { display:none; }
