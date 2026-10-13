@@ -86,7 +86,25 @@ const initialToken = localStorage.getItem('cedartoy_token') || '';
 const pageParams = new URLSearchParams(location.search);
 let roundId = pageParams.get('round_id');
 const requestedTopicId = pageParams.get('topic_id');
-const key = () => crypto.randomUUID();
+function key() {
+  const cryptoApi = window.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    try { return cryptoApi.randomUUID(); } catch (_) { /* Try the secure fallback. */ }
+  }
+  // Older WebViews and HTTP pages may expose getRandomValues but not randomUUID.
+  // Keep UUID v4 request IDs and the existing retry/idempotency protocol.
+  const bytes = new Uint8Array(16);
+  try {
+    if (typeof cryptoApi?.getRandomValues !== 'function') throw new Error();
+    cryptoApi.getRandomValues(bytes);
+  } catch (_) {
+    throw new Error('当前浏览器无法生成安全请求编号，本次操作尚未保存。请保留当前输入，使用支持安全随机数的浏览器重试。');
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0'));
+  return `${hex.slice(0,4).join('')}-${hex.slice(4,6).join('')}-${hex.slice(6,8).join('')}-${hex.slice(8,10).join('')}-${hex.slice(10).join('')}`;
+}
 function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
 async function api(action, params = {}, write = false) {
   if (localStorage.getItem('cedartoy_token') !== initialToken) { location.reload(); throw new Error('账号已切换，请重新读取'); }

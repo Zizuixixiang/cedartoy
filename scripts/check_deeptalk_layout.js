@@ -7,6 +7,8 @@ const {spawn} = require('node:child_process');
 const readline = require('node:readline');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '..');
+// HTTP on a non-localhost origin exercises the real insecure-context API surface.
+const base = process.env.DEEPTALK_UUID_COMPAT ? 'http://deeptalk.test' : 'https://deeptalk.test';
 const home = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const topicTitles = JSON.parse(home.match(/const deeptalkTopics = (\[[\s\S]*?\n    \]);/)[1]);
 const child = spawn('python3', ['-u', 'scripts/deeptalk_test_server.py'], {cwd:root, stdio:['pipe','pipe','inherit']});
@@ -53,14 +55,17 @@ let browser;
   for(const width of [360,430,1280]) {
     await page.setViewportSize({width,height:900});
     for (const [, topicId, title] of topicTitles) {
-      await page.goto('https://deeptalk.test/deeptalk?topic_id='+topicId);
+      await page.goto(base+'/deeptalk?topic_id='+topicId);
       await page.locator('#setup').waitFor({state:'visible'}); await settled();
       assert.equal(await page.locator('#topicTitle').innerText(),title);
       assert.equal(await page.title(),title+' · CEDAR TOY');
       await check('title-'+topicId,width);
     }
-    await page.goto('https://deeptalk.test/deeptalk?topic_id=relations_communication');
+    await page.goto(base+'/deeptalk?topic_id=relations_communication');
     await page.locator('#setup').waitFor({state:'visible'}); await settled();
+    if (process.env.DEEPTALK_UUID_COMPAT) {
+      assert.deepEqual(await page.evaluate(() => [isSecureContext, typeof crypto.randomUUID, typeof crypto.getRandomValues]), [false, 'undefined', 'function']);
+    }
     assert.equal(await page.locator('#topic, #machine').count(),0);
     assert.equal(await page.locator('#sources').getAttribute('open'),null);
     await check('setup',width);
@@ -81,7 +86,7 @@ let browser;
     await page.locator('#sources summary').focus(); await page.keyboard.press('Enter');
     await page.locator('#sourceBody a').first().waitFor();
     await check('restored',width);
-    await page.goto('https://deeptalk.test/deeptalk?topic_id=relations_communication');
+    await page.goto(base+'/deeptalk?topic_id=relations_communication');
     await page.locator('#setup').waitFor({state:'visible'}); await settled();
     await page.locator('#mode').selectOption('chat');
     await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
@@ -97,7 +102,7 @@ let browser;
     console.log(`PASS rendered ${width}px: fixed topic, shared round, save/reload, sources, keyboard, touch targets, no overflow`);
   }
   await page.setViewportSize({width:360,height:900});
-  await page.goto('https://deeptalk.test/deeptalk?topic_id=learning_goals_problem_solving');
+  await page.goto(base+'/deeptalk?topic_id=learning_goals_problem_solving');
   await page.locator('#setup').waitFor({state:'visible'}); await settled();
   await page.locator('#sources summary').click(); await page.locator('#sourceBody a').first().waitFor();
   await check('learning-sources',360);
@@ -114,12 +119,12 @@ let browser;
   await page.locator('#mode').selectOption('blind');
   assert.equal(await page.locator('#create').isDisabled(),true);
   await check('no-binding',360);
-  await page.goto('https://deeptalk.test/deeptalk');
+  await page.goto(base+'/deeptalk');
   await page.locator('#chooseTopic').waitFor({state:'visible'});
   assert.equal(await page.locator('#setup').isVisible(),false);
   await check('no-topic',360);
   await page.setViewportSize({width:1280,height:900});
-  await page.goto('https://deeptalk.test/deeptalk?topic_id=relations_communication');
+  await page.goto(base+'/deeptalk?topic_id=relations_communication');
   await page.locator('#setup').waitFor({state:'visible'}); await settled();
   await page.evaluate(()=>document.body.style.zoom='2'); await check('zoom200',1280);
   assert.deepEqual(errors,[]);

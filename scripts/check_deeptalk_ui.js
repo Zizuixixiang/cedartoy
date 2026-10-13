@@ -31,6 +31,8 @@ let windows = [];
     virtualConsole.on('jsdomError',error=>errors.push(error.message));
     const dom = new JSDOM(html, {url:'https://deeptalk.test/deeptalk'+search,runScripts:'dangerously',pretendToBeVisual:true,virtualConsole,
       beforeParse(window) {
+        // Exercise all existing write/retry/restore flows on older WebViews.
+        Object.defineProperty(window.crypto, 'randomUUID', {value:undefined, configurable:true});
         if(token) window.localStorage.setItem('cedartoy_token',token);
         window.confirm=()=>true;
         window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
@@ -38,6 +40,10 @@ let windows = [];
         window.fetch = async (url, options={}) => {
           const isQuestion = String(url).includes('action=question&');
           if(isQuestion) { questionReads++; if(failQuestion) throw new Error('offline'); }
+          if (options.method === 'POST') {
+            const body = JSON.parse(options.body);
+            if (['create','answer'].includes(body.action)) assert.match(body.request_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+          }
           const result = await transport({url, ...options});
           if(isQuestion && delayQuestion) await delayQuestion;
           if(failNextWrite && options.method==='POST') { failNextWrite=false; throw new Error('测试：响应丢失，请重试'); }
@@ -107,8 +113,15 @@ let windows = [];
   const invalid=page('?topic_id=invalid'); await until(()=>!$(invalid,'chooseTopic').hidden,'invalid topic');
   assert.equal($(invalid,'setup').hidden,true);
   const loggedOut=page('?topic_id='+topicId,null); await until(()=>!$(loggedOut,'login').hidden,'login');
-  const retry=page('?topic_id='+topicId); await until(()=>!$(retry,'setup').hidden,'new page');
-  failNextWrite=true; await click(retry,'create'); await click(retry,'create');
+  let retry=page('?topic_id='+topicId); await until(()=>!$(retry,'setup').hidden,'new page');
+  failNextWrite=true; await click(retry,'create');
+  const pendingCreate=retry.sessionStorage.getItem('deeptalk_pending_create');
+  const pendingId=JSON.parse(pendingCreate).body.request_id;
+  retry.close(); retry=page('?topic_id='+topicId);
+  retry.sessionStorage.setItem('deeptalk_pending_create',pendingCreate);
+  await until(()=>!$(retry,'setup').hidden,'retry after reload');
+  assert.equal(retry.eval('pendingCreate.body.request_id'),pendingId);
+  await click(retry,'create');
   assert.notEqual(new URLSearchParams(retry.location.search).get('round_id'),rid);
   const finalHistory=await transport({url:'/api/deeptalk?action=history',headers:{Authorization:'Bearer '+tokens[101]}});
   assert.equal(finalHistory.body.total,3,'fixture + completed + retried creation');
