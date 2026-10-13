@@ -36,20 +36,19 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 #message { margin:8px 0; font-size:14px; overflow-wrap:anywhere; }
 #message:empty { display:none; }
 #message.error,#confirmError { color:#9b3245; }
-#progress { margin:6px 0; }
+#progress { margin:10px 0 8px; padding-left:10px; border-left:3px solid var(--purple-dark); font-size:16px; font-weight:700; color:var(--text); }
+#roundHint { margin:8px 0 4px; }
 #questionText { margin:12px 0; font-size:clamp(18px,4vw,23px); white-space:pre-wrap; overflow-wrap:anywhere; }
 #round { margin-top:14px; padding:clamp(14px,3vw,26px); }
 #roundTitle { margin-bottom:4px; }
 #roundDescription { margin:4px 0; }
-.question-picker { display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-top:10px; }
-.question-picker label { margin:0; font-size:13px; white-space:nowrap; }
+.question-picker { margin-top:10px; }
 #questionJump { width:100%; min-width:0; padding:6px 10px; font-size:14px; }
 #answerLabel { margin:10px 0 4px; }
 .quick-options { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
 .quick-option { max-width:100%; min-height:44px; padding:8px 12px; border:2px solid var(--purple-dark); background:#fff; font-size:14px; line-height:1.5; text-align:left; overflow-wrap:anywhere; }
 .quick-option[aria-pressed="true"] { background:var(--purple-light); border-color:#716080; }
 .quick-option[aria-pressed="true"]::before { content:'✓ '; }
-#quickHint { margin:6px 0; }
 #draftNotice:empty { display:none; }
 #saveHint,#liveHint { margin:6px 0; }
 #liveHint:empty,#confirmError:empty { display:none; }
@@ -92,14 +91,14 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 
 </section>
 <section id="round" class="shell" hidden>
-<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" class="hint" hidden></p><p id="waiting" class="hint" hidden>已提交，等待小机答题中；小机可查看你的回答</p>
+<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" hidden></p><p id="roundHint" class="hint" hidden></p><p id="waiting" class="hint" hidden>已提交，等待小机答题中；小机可查看你的回答</p>
 <div id="editor">
-<div class="question-picker"><label for="questionJump">选题</label><select id="questionJump"></select></div>
+<div class="question-picker"><select id="questionJump" aria-label="选题"></select></div>
 <h3 id="questionText" tabindex="-1"></h3>
-<div id="quickAnswers" hidden><p id="quickHint" class="hint"></p><div id="quickOptions" class="quick-options" role="group" aria-labelledby="quickHint"></div></div>
-<label id="answerLabel" for="answer">你的回答</label><textarea id="answer" rows="4" maxlength="8000" placeholder="可直接写，也可点选后修改…" aria-describedby="saveHint draftNotice"></textarea><p id="ownRead" class="own-answer" hidden></p>
+<div id="quickAnswers" hidden><div id="quickOptions" class="quick-options" role="group" aria-label="参考回答选项"></div></div>
+<label id="answerLabel" for="answer">你的回答</label><textarea id="answer" rows="4" maxlength="8000" aria-describedby="saveHint draftNotice"></textarea><p id="ownRead" class="own-answer" hidden></p>
 <p id="draftNotice" class="hint" role="status"></p>
-<p id="saveHint" class="hint">换题时自动保存，留空则跳过。</p>
+<p id="saveHint" class="hint" hidden></p>
 <div class="question-actions"><button id="previous" class="pixel-btn secondary" type="button">上一题</button><button id="next" class="pixel-btn" type="button">下一题</button></div>
 </div>
 <div id="peerAnswer" class="record" hidden><h3>小机的回答</h3><p id="peerText" class="own-answer"></p></div>
@@ -325,7 +324,6 @@ function syncChoiceStates() {
 }
 function editAnswer() {
   dirty = true; syncChoiceStates(); persistDraft(); updateControls();
-  $('saveHint').textContent = '换题时自动保存，留空则跳过。提交整卷前可修改。';
 }
 function toggleChoice(text) {
   if (busy || state.submitted) return;
@@ -348,7 +346,6 @@ function renderChoices() {
   $('quickAnswers').hidden = !quick || state.submitted;
   $('quickOptions').replaceChildren();
   if (!quick || state.submitted) return;
-  $('quickHint').textContent = '4399 快捷回答 · ' + (quick.mode === 'multiple' ? '可多选，再点可取消' : '选一项，再点可取消') + '。仅作参考，也可直接写或留空跳过。';
   for (const text of quick.options) {
     const button = document.createElement('button');
     button.type = 'button'; button.className = 'quick-option'; button.textContent = text;
@@ -361,6 +358,8 @@ function renderQuestion(preserveDraft = false) {
   const q = state.questions[index];
   $('questionJump').value = String(index);
   $('questionText').textContent = `${index + 1}. ${q.text}`;
+  $('roundHint').hidden = state.submitted || state.unlocked;
+  $('roundHint').textContent = !q.quick_answers ? '可直接填写，留空可跳过。' : q.quick_answers.mode === 'multiple' ? '参考回答可多选，也可自己写；留空可跳过。' : '可点选参考回答，也可自己写；留空可跳过。';
   if (!preserveDraft) {
     $('answer').value = q.own?.text || ''; dirty = false; pendingAnswer = null;
     const lines = $('answer').value.split('\n');
@@ -370,8 +369,8 @@ function renderQuestion(preserveDraft = false) {
   $('answer').hidden = $('answerLabel').hidden = state.submitted && !retainedDraft;
   $('ownRead').hidden = !state.submitted || retainedDraft;
   $('ownRead').textContent = answerText(q.own);
-  $('saveHint').hidden = state.submitted && !retainedDraft;
-  $('saveHint').textContent = retainedDraft ? '整卷已在另一页面提交。这里保留未提交的草稿供复制，不能再修改。' : state.submitted ? '整卷已提交，你的回答已锁定。' : q.own?.skipped && !dirty ? '这题已跳过，可补写。换题时自动保存。' : '换题时自动保存，留空则跳过。提交整卷前可修改。';
+  $('saveHint').hidden = !retainedDraft;
+  $('saveHint').textContent = retainedDraft ? '整卷已在另一页面提交。这里保留未提交的草稿供复制，不能再修改。' : '';
   renderChoices(); renderPeer(); updateControls();
 }
 function renderPeer() {
@@ -396,6 +395,7 @@ function renderRound(preserveDraft = false) {
   document.title = `${state.title} · CEDAR TOY`;
   $('roundTitle').textContent = state.title;
   renderProgress();
+  $('roundHint').hidden = state.submitted || state.unlocked;
   $('waiting').hidden = !state.submitted || state.unlocked;
   $('peerAnswer').hidden = !state.peer_visible || state.unlocked;
   $('editor').hidden = state.unlocked && !dirty; $('records').hidden = !state.unlocked;

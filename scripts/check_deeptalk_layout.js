@@ -91,9 +91,14 @@ let browser;
     assert.equal(await page.locator('#newRound').isVisible(),true);
     const answerBox=await page.locator('#answer').boundingBox();
     const pickerBox=await page.locator('#questionJump').boundingBox();
-    const pickerLabelBox=await page.locator('.question-picker label').boundingBox();
+    assert.equal(await page.locator('.question-picker label').count(),0,'no redundant picker label');
+    assert.equal(await page.locator('#questionJump').getAttribute('aria-label'),'选题');
     assert.ok(Math.abs(pickerBox.x-answerBox.x)<=1 && Math.abs(pickerBox.width-answerBox.width)<=1,'picker and answer field align');
-    assert.ok(pickerLabelBox.y+pickerLabelBox.height<=pickerBox.y,'picker label sits above field');
+    assert.equal(await page.locator('#quickHint').count(),0,'quick option guidance lives near the round heading');
+    assert.equal(await page.locator('#saveHint').isVisible(),false,'do not repeat ordinary skip/autosave hints below the answer');
+    assert.ok(await page.locator('#progress').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)) >
+      await page.locator('#roundDescription').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)),
+      'progress must stand out from muted topic description');
     assert.ok(answerBox.height>=110 && answerBox.height<=140,'compact initial textarea');
     const initialMetrics=await page.evaluate(()=>({
       title:getComputedStyle(document.getElementById('roundTitle')).fontSize,
@@ -200,7 +205,8 @@ let browser;
     await check('confirm-delete',width);
     await page.keyboard.press('Escape');
     await page.locator('#deleteDialog').waitFor({state:'hidden'});
-    assert.equal(await page.locator('#historyList button').first().evaluate(el=>el===document.activeElement),true);
+    await page.waitForFunction(()=>document.querySelector('#historyList button')===document.activeElement,
+      null,{timeout:5000}); // Native dialog close event may restore focus one tick after hiding.
     await page.locator('#create').click(); await page.locator('#round').waitFor({state:'visible'}); await settled();
     assert.notEqual(await page.evaluate(()=>roundId),rid);
     assert.equal(await page.evaluate(()=>state.progress.human.done),0);
@@ -251,8 +257,8 @@ let browser;
         assert.equal(await page.locator('#answer').isVisible(),true);
         if(freeIds.length) {
           freeOnlyCount++;
-          assert.equal(await page.locator('#quickAnswers').isVisible(),false);
-          assert.equal(await page.locator('#quickHint').isVisible(),false);
+          assert.equal(await page.locator('#quickAnswers').isVisible(),false,'free-only questions have no quick option region');
+          assert.match(await page.locator('#roundHint').innerText(),/可直接填写/);
           assert.equal(await page.locator('#quickOptions button').count(),0);
           await page.locator('#answer').fill('Free-only browser draft '+id);
           page.once('dialog',dialog=>dialog.accept());

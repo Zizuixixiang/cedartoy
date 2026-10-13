@@ -96,7 +96,9 @@ let windows = [];
   await click(w,'next'); assert.equal(w.eval('state.revision'),1,'retry must not double-write');
   questionStatus(w,0,'✓已回答'); questionStatus(w,1,'○待回答');
   input(w,'   '); await click(w,'next'); questionStatus(w,1,'—已跳过'); await click(w,'previous');
-  assert.match($(w,'saveHint').textContent,/已跳过/);
+  assert.equal($(w,'saveHint').hidden,true,'skip state is already shown in question picker');
+  assert.equal($(w,'questionJump').getAttribute('aria-label'),'选题');
+  assert.equal($(w,'quickHint'),null,'quick guidance moved to top of round');
   input(w,'回到上一题补写'); await click(w,'previous');
   assert.equal(w.eval('index'),0); assert.equal(w.eval('state.questions[1].own.text'),'回到上一题补写');
   questionStatus(w,1,'✓已回答');
@@ -427,6 +429,7 @@ let windows = [];
       input(quick,'');
       const buttons=Array.from($(quick,'quickOptions').children), options=localQuestions[idx].quick_answers;
       if (!options) {
+        assert.match($(quick,'roundHint').textContent,/直接填写.*留空可跳过/);
         assert.equal($(quick,'quickAnswers').hidden,true);
         assert.equal(buttons.length,0);
         assert.equal($(quick,'answer').hidden,false);
@@ -448,6 +451,8 @@ let windows = [];
         continue;
       }
       assert.equal(buttons.length,options.options.length);
+      assert.equal($(quick,'roundHint').textContent.includes('可多选'), options.mode==='multiple');
+      assert.match($(quick,'roundHint').textContent,/留空可跳过/);
       assert.deepEqual(buttons.map(button=>button.textContent),imported[localQuestions[idx].id].options);
       assert.equal(options.mode,imported[localQuestions[idx].id].mode);
       const writes=writeCount;
