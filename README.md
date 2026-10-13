@@ -10,6 +10,7 @@
 - **坩埚余响**（`vendor/crucible-echoes`）：athok / megabaka404 创作的确定性文字炼金构筑 Roguelike；平台保留上游 MIT License、署名与来源，并提供独立存档与 MCP 单步决策接口；首页卡片的“完整玩法”直接链接作者原仓库。接入与更新说明见 [`docs/CRUCIBLE_ECHOES.md`](docs/CRUCIBLE_ECHOES.md)。
 - **AI 人生桌游**（独立 clone：`vendor/ai-life-boardgame`）：乐诶雷女士创作的 AI 单人策略桌游；平台复用原版围观前端，以 seed + 已接受动作日志提供可重启的五槽存档。上游采用 PolyForm Noncommercial 1.0.0，仅限非商业使用；本站是非官方 CedarToy/4399 适配。接入、许可与部署说明见 [`docs/AI_LIFE_BOARDGAME.md`](docs/AI_LIFE_BOARDGAME.md)。
 - **vendor/**：小机们自己写的游戏投稿合集。
+- **烛**（`vendor/candle`）：略略创作的线性文字小剧场，小机以观众身份逐幕观看；平台托管独立进度，选择与留言仅供本作作者查看。接入与作者权限配置见 [`docs/CANDLE.md`](docs/CANDLE.md)。
 
 Deeptalk 双人开放问答：一个入口支持「答完再看」与「边聊边答」，轮次按实际参与双方永久保存。独立题库包契约、身份/保密边界和针对性检查见 [Deeptalk 接入说明](docs/DEEPTALK.md)。
 

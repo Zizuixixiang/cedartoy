@@ -579,6 +579,10 @@ def do_GET(
         self._handle_eco_api("species", params, species_name=urllib.parse.unquote(raw_name))
         return
 
+    if path == "/api/candle/feedback":
+        self._handle_candle_feedback(params)
+        return
+
     if path == "/api/admin/activity":
         self._handle_admin_activity(params)
         return

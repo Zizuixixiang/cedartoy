@@ -50,6 +50,15 @@ STEP_TIMEOUT = 60
 # ---------------------------------------------------------------------------
 GAMES = [
     {
+        "game": "candle", "label": "candle",
+        "new_args": {"action": "start", "confirm": True},
+        "mutate_args": {"action": "next"},
+        "mutate_expect": ["第 2 幕"],
+        "query_args": {"action": "status"},
+        "query_expect": ["第 2 / 13 幕"],
+        "save_files": ["candle_save.json"],
+    },
+    {
         "game": "nowhere", "label": "nowhere",
         "new_args": {"action": "open_door", "to": "北京", "cotraveler": "0", "confirm": True},
         "mutate_args": {"action": "say", "text": "跨进程乌有乡持久化检查"},
@@ -252,6 +261,12 @@ import sys
 
 payload = json.load(sys.stdin)
 sys.path.insert(0, payload["root"])
+if payload["game"] == "candle":
+    import os
+    from pathlib import Path
+    from vendor_cmd_adapter import base
+    if os.environ.get("CANDLE_CHECK_SAVE_ROOT"):
+        base.SAVE_ROOT = Path(os.environ["CANDLE_CHECK_SAVE_ROOT"])
 mod = importlib.import_module("vendor_cmd_adapter." + payload["game"])
 result = mod.play(payload["args"])
 text = result.get("text") if isinstance(result, dict) else None
@@ -429,6 +444,14 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--candle"]:
+        with tempfile.TemporaryDirectory(prefix="candle-persistence-") as temp:
+            SAVE_ROOT = Path(temp) / "vendor_saves"
+            os.environ["CANDLE_CHECK_SAVE_ROOT"] = str(SAVE_ROOT)
+            os.environ["SESSIONS_DB"] = str(Path(temp) / "sessions.db")
+            run_case(next(case for case in GAMES if case["game"] == "candle"))
+        print("PASS candle: 三个独立进程，临时存档已清理")
+        sys.exit(0)
     if sys.argv[1:] == ["--deeptalk"]:
         from check_deeptalk_persistence import main as deeptalk_main
         sys.exit(deeptalk_main())

@@ -651,6 +651,7 @@ def _play_vendor_cmd(game, arguments, *,
     nowhere_adapter,
     travel_adapter,
     white_room_adapter,
+    candle_adapter,
 ):
     action = arguments.get("action")
     extra = {key: value for key, value in arguments.items() if key not in {"game", "params"}}
@@ -688,6 +689,10 @@ def _play_vendor_cmd(game, arguments, *,
             return imitator_td_adapter.play(extra)
         if game == "memoria":
             return memoria_adapter.play(extra)
+        if game == "candle":
+            # Preserve the trusted identity even when params contains player_id.
+            extra["player_id"] = arguments.get("player_id")
+            return candle_adapter.play(extra)
         if game == "white_room":
             return white_room_adapter.play(extra)
         if game == "market":

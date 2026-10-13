@@ -50,6 +50,7 @@ except ImportError:
     CryptContext = None
 
 import announcements
+import candle_feedback
 from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
 from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
 from dnd import handler as dnd_handler
@@ -96,6 +97,7 @@ from tarot_adapter import (
 )
 from vendor_cmd_adapter import ai_life as ai_life_adapter
 from vendor_cmd_adapter import arcade as arcade_adapter
+from vendor_cmd_adapter import candle as candle_adapter
 from vendor_cmd_adapter import bar as bar_adapter
 from vendor_cmd_adapter import burger as burger_adapter
 from vendor_cmd_adapter import crucible_echoes as crucible_echoes_adapter
@@ -2887,10 +2889,10 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"deeptalk", "puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"deeptalk", "puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
-PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
-VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "garden_cat", "detroit")
+PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
+VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "garden_cat", "detroit")
 DIRECTORY_VENDOR_GAMES = tuple(game for game in VENDOR_GAMES if game != "garden_cat")
 ANTI_ADDICTION_DEFAULT_REMIND = anti_addiction.ANTI_ADDICTION_DEFAULT_REMIND
 ANTI_ADDICTION_DEFAULT_FORCE = anti_addiction.ANTI_ADDICTION_DEFAULT_FORCE
@@ -3277,6 +3279,10 @@ def _delete_owned_session_rows(game, player_id):
 
 
 def _delete_vendor_save_dir(game, player_id):
+    if game == "candle":
+        if candle_adapter.delete_save(player_id):
+            return {"target": f"vendor_saves/candle/{player_id}", "rows": 1}
+        return None
     return save_management._delete_vendor_save_dir(
         game, player_id,
         DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
@@ -3360,6 +3366,7 @@ def _account_saves_for_user(user, *, migrate_legacy=True):
         nowhere_adapter=nowhere_adapter,
         travel_adapter=travel_adapter,
         white_room_adapter=white_room_adapter,
+        candle_adapter=candle_adapter,
     )
 
 
@@ -3468,7 +3475,7 @@ def _tool_list_games(path_token=None):
         "mbti·人格类型·南山君 | enneagram·九型人格·Max Ross | dnd·道德阵营·南山君 | love·爱语偏好·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度·南山君 | sins_virtues·罪与美德·南山君 | bdsmtest·性癖倾向·南山君"
     )
     games = (
-        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
+        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
     extra = " | ".join(f"{game}·{research_scales.RESEARCH_TITLES[game]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
@@ -3544,6 +3551,16 @@ def _tool_get_guide(arguments, *, path_token=None):
             data = json.loads(result)
             # Internal appendix only: never a separately callable game/guide.
             data["guide"] += "\n" + (GUIDE_DIR / "_account_admin.md").read_text(encoding="utf-8")
+            return json.dumps(data, ensure_ascii=False)
+    if arguments.get("game") == "candle" and path_token:
+        try:
+            user = _current_account(path_token)
+            allowed = candle_feedback.author_access(SESSIONS_DB_PATH, user)
+        except (_McpError, sqlite3.Error):
+            allowed = False  # Public guide remains available; fail closed on author details.
+        if allowed:
+            data = json.loads(result)
+            data["guide"] += '\n\n【作者功能】\nplay(game="candle", action="feedback", params={"page":1}) 查看本作选幕和影评，每页10条。'
             return json.dumps(data, ensure_ascii=False)
     return result
 
@@ -3916,6 +3933,7 @@ def _tool_play_inner(
         _tool_play_announcement_history=_tool_play_announcement_history,
         _tool_play_vote=_tool_play_vote,
         _without_slot_param=_without_slot_param,
+        candle_feedback=candle_feedback,
         detroit_adapter=detroit_adapter,
         ecr_handler=ecr_handler,
         enneagram_handler=enneagram_handler,
@@ -3925,6 +3943,7 @@ def _tool_play_inner(
         love_handler=love_handler,
         puzzle_box=puzzle_box,
         sins_virtues_handler=sins_virtues_handler,
+        sqlite3=sqlite3,
     )
 
 
@@ -4420,6 +4439,7 @@ def _play_vendor_cmd(game, arguments):
         nowhere_adapter=nowhere_adapter,
         travel_adapter=travel_adapter,
         white_room_adapter=white_room_adapter,
+        candle_adapter=candle_adapter,
     )
 
 
@@ -6482,6 +6502,29 @@ a{{color:#c9afff}}
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_candle_feedback(self, params):
+        headers = {"Cache-Control": "no-store"}
+        try:
+            user = _current_account(_extract_bearer(self.headers))
+            if (params.get("access") or [""])[0] == "1":
+                self._send_json({"allowed": candle_feedback.author_access(SESSIONS_DB_PATH, user)},
+                                extra_headers=headers)
+                return
+            result = candle_feedback.read_for_author(
+                SESSIONS_DB_PATH, user,
+                page=(params.get("page") or ["1"])[0],
+                limit=(params.get("limit") or ["10"])[0],
+            )
+            self._send_json(result, extra_headers=headers)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._admin_error_status(exc), extra_headers=headers)
+        except PermissionError as exc:
+            self._send_json({"error": str(exc)}, status=403, extra_headers=headers)
+        except (ValueError, TypeError):
+            self._send_json({"error": "分页参数无效"}, status=400, extra_headers=headers)
+        except sqlite3.Error:
+            self._send_json({"error": "反馈暂时不可用"}, status=503, extra_headers=headers)
 
     def _handle_admin_activity(self, params=None):
         try:

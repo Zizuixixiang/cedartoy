@@ -300,7 +300,7 @@ def _public_game_stats(
             "metric": count_saved_tarot_sessions(strict=strict),
         },
     }
-    for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "nowhere", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market", "workkk", "garden_cat"):
+    for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "nowhere", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat"):
         vendor_stats = vendor_save_stats(game)
         stats[game] = {
             "metric_label": "存档数",

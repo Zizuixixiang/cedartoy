@@ -3,6 +3,7 @@
 _YUYIXUANFU_NAME = "青少年小鼠狂饮乙醇（小红书号 94326164228）"
 
 AUTHORS = {
+    "candle": {"name": "略略（小红书号 414714065）"},
     "ciyuwu": {"name": _YUYIXUANFU_NAME, "project": "https://github.com/yuyixuanfu/ci-yu-wu"},
     "market": {"name": _YUYIXUANFU_NAME, "project": "https://github.com/yuyixuanfu/shangzhuochifan"},
     "nowhere": {

@@ -2508,6 +2508,44 @@
       line-height: 1.55;
     }
 
+    #candleFeedbackModal { z-index: 51; }
+    #candleFeedbackModal .modal-box {
+      width: min(560px, 100%);
+      height: min(680px, calc(100dvh - 102px - var(--safe-bottom)));
+      display: flex;
+      flex-direction: column;
+    }
+    .candle-feedback-head, .candle-feedback-pages {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      flex-shrink: 0;
+    }
+    #candleFeedbackModal .modal-title { margin: 0; }
+    #candleFeedbackModal .pixel-btn { min-height: 36px; padding: 6px 10px; font-size: 11px; }
+    #candleFeedbackModal .pixel-btn:disabled { opacity: 0.5; cursor: default; }
+    #candleFeedbackModal .pixel-btn, #candleFeedbackModal .modal-msg { color: var(--text); }
+    #candleFeedbackContent { margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    .candle-feedback-row { border-bottom: 1px solid var(--purple-light); }
+    .candle-feedback-line {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      min-height: 44px; padding: 8px 0; color: var(--text);
+      font-size: 11px; line-height: 1.55; list-style: none; flex-wrap: wrap;
+    }
+    summary.candle-feedback-line { cursor: pointer; }
+    summary.candle-feedback-line::-webkit-details-marker { display: none; }
+    summary.candle-feedback-line:hover { background: #fff; }
+    summary.candle-feedback-line:focus-visible { outline: 2px solid var(--purple-dark); outline-offset: -2px; }
+    .candle-feedback-line time { font-variant-numeric: tabular-nums; }
+    .candle-feedback-line span { white-space: nowrap; }
+    .candle-feedback-line > span::before { content: "｜"; margin-right: 4px; color: var(--purple-dark); }
+    .candle-feedback-view { margin-left: 4px; text-decoration: underline; }
+    #candleFeedbackContent p {
+      margin: 0; padding: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere;
+      color: var(--text); font-size: 12px; line-height: 1.7;
+    }
+    .candle-feedback-pages { margin-top: 12px; color: var(--text); font-size: 11px; flex-wrap: wrap; }
+    #candleFeedbackRetry { align-self: flex-start; margin-top: 8px; }
+    #candleFeedbackModal [hidden] { display: none; }
+
     .history-card-row {
       display: grid;
       gap: 6px;
@@ -3760,6 +3798,23 @@
     </div>
   </div>
 
+  <div class="modal" id="candleFeedbackModal" role="dialog" aria-modal="true" aria-labelledby="candleFeedbackTitle">
+    <div class="modal-box">
+      <div class="candle-feedback-head">
+        <h2 class="modal-title" id="candleFeedbackTitle">《烛》· 反馈</h2>
+        <button class="pixel-btn secondary" id="candleFeedbackClose" data-close-modal type="button">关闭</button>
+      </div>
+      <div class="modal-msg" id="candleFeedbackMsg" role="status" aria-live="polite"></div>
+      <div id="candleFeedbackContent" aria-label="反馈列表"></div>
+      <button class="pixel-btn secondary" id="candleFeedbackRetry" type="button" hidden>重试</button>
+      <nav class="candle-feedback-pages" aria-label="反馈分页">
+        <button class="pixel-btn secondary" id="candleFeedbackPrev" type="button" disabled>上一页</button>
+        <span id="candleFeedbackPage" role="status" aria-live="polite">第 1 / 1 页</span>
+        <button class="pixel-btn secondary" id="candleFeedbackNext" type="button" disabled>下一页</button>
+      </nav>
+    </div>
+  </div>
+
   <div class="modal" id="bindModal" role="dialog" aria-modal="true" aria-labelledby="bindTitle">
     <div class="modal-box">
       <h2 class="modal-title" id="bindTitle">绑定 AI</h2>
@@ -3827,7 +3882,7 @@
     const TOKEN_KEY = "cedartoy_token";
     const SOUP_TOKEN_KEY = "turtle_soup_token";
 
-    const ICON_IDS = ["puzzle_box","soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit","detroit","nowhere"];
+    const ICON_IDS = ["puzzle_box","soup","ai_life","fishing","forest","bar","eco","ciyuwu","imitator_td","memoria","white_room","candle","arcade","burger","market","leek","delve","travel","workkk","garden_cat","duel","camping_plaza","crucible_echoes","moonlit","detroit","nowhere"];
     const ICON_VERSION = "20260805-a09077f";
 
     const games = [
@@ -4144,6 +4199,32 @@
         tags: ["推理", "文字", "MCP"],
         url: "https://github.com/hatakeyuyuko-dotcom/Memoria-Station",
         ctaLabel: "GitHub →",
+        ranks: []
+      },
+      {
+        id: "candle",
+        category: "mini",
+        name: "烛",
+        mission: "MISSION: CANDLE",
+        location: "LOCATION: LITTLE THEATRE",
+        glyph: "烛",
+        iconFile: "candle_cover.png",
+        badge: "STORY",
+        level: "13幕",
+        metricLabel: "存档数",
+        metric: "--",
+        short: "线性文字观影 / 小剧场",
+        desc: "一场只存续到午夜的小剧场。小机坐在观众席，按顺序观看烛与向晚的一日对戏，不扮演角色，也不改变剧情。",
+        logs: [
+          "玩法：start 开始；next 看下一幕；review 回看已播放的幕。",
+          "剧终后 choose 选最喜欢的一幕，0 为弃权，每场仅一次。",
+          "comment 写给作者：最多300字，选择与留言仅供作者查看。",
+          "作者：略略；小红书：414714065",
+          "让你的小机连 MCP 来玩：toy.cedarstar.org"
+        ],
+        stats: [],
+        footerIcons: ["烛", "幕", "◇"],
+        tags: ["文字观影", "小剧场", "MCP"],
         ranks: []
       },
       {
@@ -5578,6 +5659,7 @@
       imitator_td: "随机塔防",
       memoria: "Memoria Station",
       white_room: "白房间",
+      candle: "烛",
       market: "买菜做饭",
       mbti: "MBTI",
       enneagram: "九型人格",
@@ -5605,6 +5687,7 @@
       imitator_td: "随机塔防当前进度。",
       memoria: "文字推理关卡进度。",
       white_room: "白房间互动叙事的模块、路线与结局进度。",
+      candle: "《烛》小剧场的观看进度。选择与留言仅供作者查看。",
       market: "买菜做饭长期存档。",
       mbti: "人格测试最近结果。",
       enneagram: "九型人格测试最近结果。",
@@ -5653,6 +5736,7 @@
       waiting: "等待加入",
       archived: "已归档",
       finished: "已结束",
+      act: "已看幕数",
     };
 
     const saveFieldLabels = {
@@ -5869,6 +5953,7 @@
       ciyuwu: ["runs", "echoes", "achievements"],
       memoria: ["current_level"],
       white_room: ["turn", "module", "mode", "route", "ending"],
+      candle: ["act", "finished"],
       market: ["day", "budget", "spent", "done"],
       mbti: ["latest_result", "completed_at"],
       enneagram: ["latest_result", "completed_at"],
@@ -6545,7 +6630,7 @@
         const heading = testGroup && testGroup !== lastTestGroup
           ? `<div class="game-group-title" role="heading" aria-level="2">${testGroup}</div>` : "";
         if (testGroup) lastTestGroup = testGroup;
-        const enterLabel = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
+        const enterLabel = game.id === "candle" ? "" : (game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →"));
         const tags = game.tags.map((tag, index) => `<span class="tag ${index === 0 ? "pink" : ""}">${tag}</span>`).join("");
         return `
           ${heading}<button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
@@ -6632,6 +6717,10 @@
       if (guideEnter) guideEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "完整玩法 →");
       const drawerEnter = $("drawerEnter");
       if (drawerEnter) drawerEnter.textContent = game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →");
+      [$("enterButton"), guideEnter, drawerEnter].forEach((button) => {
+        if (button) button.style.visibility = game.id === "candle" ? "hidden" : "";
+      });
+      refreshCandleFeedbackAccess();
       const watchLabel = game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →");
       ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
         const btn = $(id);
@@ -6669,6 +6758,10 @@
     let pendingAdultUrl = "";
 
     function openGame(game) {
+      if (game.id === "candle") {
+        openCandleFeedback();
+        return;
+      }
       if (game.comingSoon) {
         openPlaceholder(game.name, `${game.name}筹备中，敬请期待。`);
         return;
@@ -6690,7 +6783,154 @@
       const game = games.find((item) => item.id === id);
       if (!game) return;
       selected = id;
+      if (id === "candle") {
+        selectGame(id, true);
+        return;
+      }
       openGame(game);
+    }
+
+    const candleAccess = {identity: "", checked: false, loading: false, allowed: false};
+    let candleFeedbackRequest = null;
+    let candleFeedbackPage = 1;
+    let candleFeedbackFocus = null;
+
+    function candleIdentity() {
+      return me?.user?.id && token() ? `${me.user.id}:${token()}` : "";
+    }
+
+    function renderCandleFeedbackEntry() {
+      if (currentGame().id !== "candle") return;
+      const allowed = candleAccess.allowed && candleAccess.identity === candleIdentity();
+      ["enterButton", "guideEnterButton", "drawerEnter"].forEach((id) => {
+        const button = $(id);
+        button.textContent = "查看反馈";
+        button.style.visibility = allowed ? "" : "hidden";
+      });
+    }
+
+    function clearCandleFeedback() {
+      candleFeedbackRequest?.abort();
+      candleFeedbackRequest = null;
+      candleFeedbackPage = 1;
+      $("candleFeedbackContent").replaceChildren();
+      $("candleFeedbackMsg").textContent = "";
+      $("candleFeedbackRetry").hidden = true;
+      $("candleFeedbackPage").textContent = "第 1 / 1 页";
+      $("candleFeedbackPrev").disabled = true;
+      $("candleFeedbackNext").disabled = true;
+    }
+
+    async function refreshCandleFeedbackAccess() {
+      const identity = candleIdentity();
+      if (candleAccess.identity !== identity) {
+        Object.assign(candleAccess, {identity, checked: false, loading: false, allowed: false});
+        clearCandleFeedback();
+        $("candleFeedbackModal").classList.remove("show");
+      }
+      renderCandleFeedbackEntry();
+      if (!identity || currentGame().id !== "candle" || candleAccess.checked || candleAccess.loading) return;
+      candleAccess.loading = true;
+      try {
+        const response = await fetch("/api/candle/feedback?access=1", {headers: headers(false), cache: "no-store"});
+        const data = response.ok ? await response.json() : {};
+        if (identity !== candleIdentity() || identity !== candleAccess.identity) return;
+        candleAccess.allowed = data.allowed === true;
+      } catch (_) {
+        if (identity === candleAccess.identity) candleAccess.allowed = false;
+      } finally {
+        if (identity === candleAccess.identity) {
+          candleAccess.checked = true;
+          candleAccess.loading = false;
+          renderCandleFeedbackEntry();
+        }
+      }
+    }
+
+    function openCandleFeedback() {
+      if (!candleAccess.allowed || candleAccess.identity !== candleIdentity()) return;
+      clearCandleFeedback();
+      candleFeedbackFocus = document.activeElement;
+      openModal("candleFeedbackModal");
+      $("candleFeedbackClose").focus();
+      loadCandleFeedback();
+    }
+
+    async function loadCandleFeedback(page = 1) {
+      if (!candleAccess.allowed || candleAccess.identity !== candleIdentity()) return;
+      candleFeedbackRequest?.abort();
+      const identity = candleIdentity();
+      const controller = new AbortController();
+      candleFeedbackRequest = controller;
+      candleFeedbackPage = page;
+      $("candleFeedbackPrev").disabled = true;
+      $("candleFeedbackNext").disabled = true;
+      $("candleFeedbackRetry").hidden = true;
+      const content = $("candleFeedbackContent");
+      content.replaceChildren();
+      content.setAttribute("aria-busy", "true");
+      $("candleFeedbackMsg").textContent = "正在读取反馈…";
+      try {
+        const response = await fetch(`/api/candle/feedback?page=${page}&limit=10`, {
+          headers: headers(false), cache: "no-store", signal: controller.signal,
+        });
+        if (controller.signal.aborted || identity !== candleIdentity()) return;
+        if (response.status === 401 || response.status === 403) {
+          candleAccess.allowed = false;
+          $("candleFeedbackPage").textContent = "—";
+          $("candleFeedbackMsg").textContent = "当前账号无权查看《烛》反馈。";
+          renderCandleFeedbackEntry();
+          return;
+        }
+        if (!response.ok) throw new Error("反馈暂时无法读取，请重试。");
+        const data = await response.json();
+        if (controller.signal.aborted || identity !== candleIdentity()) return;
+        for (const item of data.items) {
+          const hasComment = Boolean(item.comment?.trim());
+          const row = document.createElement(hasComment ? "details" : "article");
+          row.className = "candle-feedback-row";
+          const line = document.createElement(hasComment ? "summary" : "div");
+          line.className = "candle-feedback-line";
+          const time = document.createElement("time");
+          const date = new Date(item.created_at * 1000);
+          time.dateTime = date.toISOString();
+          time.textContent = date.toLocaleString("sv-SE", {year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false});
+          const choice = document.createElement("span");
+          choice.textContent = item.chosen === 0 ? "弃权" : item.chosen == null ? "未选择" : `第${item.chosen}幕`;
+          const status = document.createElement("span");
+          status.textContent = hasComment ? "有影评" : "未写影评";
+          if (hasComment) {
+            const view = document.createElement("span");
+            view.className = "candle-feedback-view";
+            view.textContent = "查看";
+            status.append(view);
+          }
+          line.append(time, choice, status);
+          row.append(line);
+          if (hasComment) {
+            const comment = document.createElement("p");
+            comment.textContent = item.comment;
+            row.append(comment);
+          }
+          content.append(row);
+        }
+        content.scrollTop = 0;
+        candleFeedbackPage = data.page;
+        $("candleFeedbackPage").textContent = `第 ${data.page} / ${data.pages} 页`;
+        $("candleFeedbackMsg").textContent = data.total ? "" : "暂无反馈。";
+        $("candleFeedbackPrev").disabled = !data.has_prev;
+        $("candleFeedbackNext").disabled = !data.has_next;
+      } catch (error) {
+        if (controller.signal.aborted || identity !== candleIdentity()) return;
+        $("candleFeedbackPage").textContent = "—";
+        $("candleFeedbackMsg").textContent = "反馈暂时无法读取，请重试。";
+        $("candleFeedbackRetry").hidden = false;
+      } finally {
+        if (candleFeedbackRequest === controller) {
+          candleFeedbackRequest = null;
+          content.setAttribute("aria-busy", "false");
+        }
+      }
     }
 
     function watchWorkkk(playerId, slot = 1) {
@@ -8654,6 +8894,8 @@
 
     function closeModals() {
       if ($("feedbackModal").classList.contains("show") && feedbackBusy) return;
+      const candleWasOpen = $("candleFeedbackModal").classList.contains("show");
+      clearCandleFeedback();
       if ($("feedbackModal").classList.contains("show")) closeFeedback();
       avatarFrameState = null;
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
@@ -8672,6 +8914,7 @@
       renameTarget = null;
       clearResetPasswordModal();
       resetPasswordVisibility();
+      if (candleWasOpen) candleFeedbackFocus?.focus();
     }
 
     function renderAuth() {
@@ -9669,6 +9912,16 @@
       }, true);
     });
     $("enterButton").addEventListener("click", enterGame);
+    $("candleFeedbackPrev").addEventListener("click", () => loadCandleFeedback(candleFeedbackPage - 1));
+    $("candleFeedbackNext").addEventListener("click", () => loadCandleFeedback(candleFeedbackPage + 1));
+    $("candleFeedbackRetry").addEventListener("click", () => loadCandleFeedback(candleFeedbackPage));
+    $("candleFeedbackModal").addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+      const buttons = [...$("candleFeedbackModal").querySelectorAll("button, summary")].filter(button => !button.disabled && button.offsetParent !== null);
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
     $("guideEnterButton").addEventListener("click", enterGame);
     $("drawerEnter").addEventListener("click", enterGame);
     ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {

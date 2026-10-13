@@ -48,11 +48,12 @@ def _validate_json_types(value):
 
 
 class VendorCmdGame:
-    def __init__(self, name, vendor_dir, runner_code, timeout=30):
+    def __init__(self, name, vendor_dir, runner_code, timeout=30, *, environment=None):
         self.name = name
         self.vendor_dir = ROOT_DIR / vendor_dir
         self.runner_code = runner_code
         self.timeout = timeout
+        self.environment = environment
 
     def run(self, player_id, command, *, reset=False, extra=None):
         player_id = require_player_id(player_id)
@@ -69,7 +70,7 @@ class VendorCmdGame:
             "vendor_dir": str(self.vendor_dir),
             "extra": extra or {},
         }
-        env = os.environ.copy()
+        env = os.environ.copy() if self.environment is None else dict(self.environment)
         env["PYTHONIOENCODING"] = "utf-8"
 
         with lock_path.open("w", encoding="utf-8") as lock_file:

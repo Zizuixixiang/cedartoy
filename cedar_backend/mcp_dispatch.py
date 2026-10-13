@@ -191,6 +191,8 @@ def _tool_play(arguments, path_token, *, defer_duel, authenticated_account,
     if isinstance(result, _DeferredDuelCall):
         result.slot_hint = slot_hint
         return result
+    if arguments.get("game") == "candle" and arguments.get("action") == "feedback":
+        return result  # Author feedback has no save-slot or player metadata.
     return _apply_play_slot_hint(result, slot_hint)
 
 
@@ -258,6 +260,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     _tool_play_announcement_history,
     _tool_play_vote,
     _without_slot_param,
+    candle_feedback,
     detroit_adapter,
     ecr_handler,
     enneagram_handler,
@@ -267,6 +270,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     love_handler,
     puzzle_box,
     sins_virtues_handler,
+    sqlite3,
 ):
     game = arguments.get("game")
     action = arguments.get("action")
@@ -316,7 +320,8 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
                 else _current_account(path_token)
             )
             if game not in {"puzzle_box", "deeptalk"}:
-                _auto_migrate_legacy_account_saves(account_user)
+                if not (game == "candle" and action == "feedback"):
+                    _auto_migrate_legacy_account_saves(account_user)
                 slot = _save_slot_from_arguments(arguments)
             account_player_id = _account_slot_player_id(account_user["id"], slot)
             arguments = _override_player_id(_without_slot_param(arguments), account_player_id)
@@ -324,6 +329,8 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
             arguments = _without_slot_param(arguments)
             raw = _reported_player_id(arguments)
             guest = _guest_player_id(raw)
+            if game == "candle" and (not isinstance(guest, str) or not guest.startswith(GUEST_PREFIX)):
+                raise _McpError(-32602, "《烛》游客 player_id 仅支持字母数字，不能指定账号存档槽")
             if guest != raw:
                 arguments = _override_player_id(arguments, guest)
             if isinstance(guest, str) and guest.startswith(GUEST_PREFIX):
@@ -336,6 +343,27 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     else:
         arguments = _without_slot_param(arguments)
         params = arguments.get("params")
+
+    if game == "candle" and action == "feedback":
+        # Only the platform-overridden identity is authoritative, never params.
+        # Normalize save slots to the exact account grant; no binding/admin bypass.
+        if account_user is None or account_player_id is None:
+            raise _McpError(-32001, "仅本作已授权的登录账号可查看反馈")
+        author_id = int(arguments["player_id"].split(":", 1)[0])
+        try:
+            feedback = candle_feedback.read_for_author(
+                SESSIONS_DB_PATH, {"id": author_id},
+                page=(params or {}).get("page", 1), limit=10,
+            )
+        except PermissionError:
+            raise _McpError(-32003, "仅本作已授权的登录账号可查看反馈") from None
+        except (ValueError, TypeError):
+            raise _McpError(-32602, "page 必须为正整数") from None
+        except sqlite3.Error:
+            raise _McpError(-32603, "反馈暂时不可用") from None
+        # Read-only author view: no gameplay finalization or storage identity.
+        return json.dumps({key: feedback[key] for key in ("page", "pages", "total", "items")},
+                          ensure_ascii=False)
 
     if game == "puzzle_box" and (not account_user or not account_user.get("is_ai")):
         raise _McpError(-32001, "解谜盲盒需要已认证的小机账号；请使用该小机的统一 MCP 地址")
@@ -504,7 +532,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
                 announce_player_id=announce_player_id,
             )
         response = _play_duel(merged_arguments, **duel_kwargs)
-    elif game in {"ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "market"}:
+    elif game in {"ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market"}:
         if game == "fishing" and action == "import":
             response = _fishing_import(arguments)
         else:

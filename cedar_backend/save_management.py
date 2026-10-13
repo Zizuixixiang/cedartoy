@@ -1032,6 +1032,7 @@ def _account_saves_for_user(user, *, migrate_legacy,
     nowhere_adapter,
     travel_adapter,
     white_room_adapter,
+    candle_adapter,
 ):
     """按账号聚合返回该用户在所有游戏的存档概况；没有存档的游戏不列。"""
     if migrate_legacy:
@@ -1124,6 +1125,7 @@ def _account_saves_for_user(user, *, migrate_legacy,
         "imitator_td": imitator_td_adapter.save_summary,
         "memoria": memoria_adapter.save_summary,
         "white_room": white_room_adapter.save_summary,
+        "candle": candle_adapter.save_summary,
         "market": market_adapter.save_summary,
         "workkk": _workkk_save_summary,
         "garden_cat": _garden_cat_save_summary,

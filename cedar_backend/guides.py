@@ -252,6 +252,8 @@ def _tool_get_guide(
     if game == "duel":
         # Duel has no save-slot/export/import surface; do not append SAVE_SLOT_GUIDE_NOTE.
         return json.dumps({"game": "duel", "guide": guide_texts["DUEL_GUIDE"]}, ensure_ascii=False)
+    if game == "candle":
+        return json.dumps({"game": game, "guide": vendor_guides[game]}, ensure_ascii=False)
     if game in vendor_guides:
         return json.dumps({"game": game, "guide": guide_with_slot_note(vendor_guides[game])}, ensure_ascii=False)
     if game in {"mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "account"}:
