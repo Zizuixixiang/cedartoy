@@ -429,7 +429,7 @@ let windows = [];
       input(quick,'');
       const buttons=Array.from($(quick,'quickOptions').children), options=localQuestions[idx].quick_answers;
       if (!options) {
-        assert.match($(quick,'roundHint').textContent,/直接填写.*留空可跳过/);
+        assert.match($(quick,'roundDescription').textContent,/直接填写.*留空可跳过/);
         assert.equal($(quick,'quickAnswers').hidden,true);
         assert.equal(buttons.length,0);
         assert.equal($(quick,'answer').hidden,false);
@@ -451,8 +451,9 @@ let windows = [];
         continue;
       }
       assert.equal(buttons.length,options.options.length);
-      assert.equal($(quick,'roundHint').textContent.includes('可多选'), options.mode==='multiple');
-      assert.match($(quick,'roundHint').textContent,/留空可跳过/);
+      assert.equal($(quick,'roundDescription').textContent.includes('可多选'), options.mode==='multiple');
+      assert.match($(quick,'roundDescription').textContent,/留空可跳过/);
+      assert.equal($(quick,'roundHint'),null,'intro and rules share one paragraph');
       assert.deepEqual(buttons.map(button=>button.textContent),imported[localQuestions[idx].id].options);
       assert.equal(options.mode,imported[localQuestions[idx].id].mode);
       const writes=writeCount;

@@ -95,6 +95,8 @@ let browser;
     assert.equal(await page.locator('#questionJump').getAttribute('aria-label'),'选题');
     assert.ok(Math.abs(pickerBox.x-answerBox.x)<=1 && Math.abs(pickerBox.width-answerBox.width)<=1,'picker and answer field align');
     assert.equal(await page.locator('#quickHint').count(),0,'quick option guidance lives near the round heading');
+    assert.equal(await page.locator('#roundHint').count(),0,'description and guidance are combined');
+    assert.match(await page.locator('#roundDescription').innerText(),/留空可跳过/);
     assert.equal(await page.locator('#saveHint').isVisible(),false,'do not repeat ordinary skip/autosave hints below the answer');
     assert.ok(await page.locator('#progress').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)) >
       await page.locator('#roundDescription').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)),
@@ -258,7 +260,7 @@ let browser;
         if(freeIds.length) {
           freeOnlyCount++;
           assert.equal(await page.locator('#quickAnswers').isVisible(),false,'free-only questions have no quick option region');
-          assert.match(await page.locator('#roundHint').innerText(),/可直接填写/);
+          assert.match(await page.locator('#roundDescription').innerText(),/可直接填写/);
           assert.equal(await page.locator('#quickOptions button').count(),0);
           await page.locator('#answer').fill('Free-only browser draft '+id);
           page.once('dialog',dialog=>dialog.accept());

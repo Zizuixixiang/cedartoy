@@ -37,7 +37,6 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 #message:empty { display:none; }
 #message.error,#confirmError { color:#9b3245; }
 #progress { margin:10px 0 8px; padding-left:10px; border-left:3px solid var(--purple-dark); font-size:16px; font-weight:700; color:var(--text); }
-#roundHint { margin:8px 0 4px; }
 #questionText { margin:12px 0; font-size:clamp(18px,4vw,23px); white-space:pre-wrap; overflow-wrap:anywhere; }
 #round { margin-top:14px; padding:clamp(14px,3vw,26px); }
 #roundTitle { margin-bottom:4px; }
@@ -91,7 +90,7 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 
 </section>
 <section id="round" class="shell" hidden>
-<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" hidden></p><p id="roundHint" class="hint" hidden></p><p id="waiting" class="hint" hidden>已提交，等待小机答题中；小机可查看你的回答</p>
+<h2 id="roundTitle"></h2><p id="roundDescription" class="hint"></p><p id="progress" hidden></p><p id="waiting" class="hint" hidden>已提交，等待小机答题中；小机可查看你的回答</p>
 <div id="editor">
 <div class="question-picker"><select id="questionJump" aria-label="选题"></select></div>
 <h3 id="questionText" tabindex="-1"></h3>
@@ -354,12 +353,16 @@ function renderChoices() {
   }
   syncChoiceStates();
 }
+function renderRoundDescription(q = null) {
+  const intro = state.total + '题 · ' + (state.description || '') + (state.mode === 'blind' ? ' · 答完再看（旧模式）' : '');
+  const rule = !q || state.submitted || state.unlocked ? '' : !q.quick_answers ? '可直接填写，留空可跳过。' : q.quick_answers.mode === 'multiple' ? '参考回答可多选，也可自己写；留空可跳过。' : '可点选参考回答，也可自己写；留空可跳过。';
+  $('roundDescription').textContent = rule ? intro + ' ' + rule : intro;
+}
 function renderQuestion(preserveDraft = false) {
   const q = state.questions[index];
   $('questionJump').value = String(index);
   $('questionText').textContent = `${index + 1}. ${q.text}`;
-  $('roundHint').hidden = state.submitted || state.unlocked;
-  $('roundHint').textContent = !q.quick_answers ? '可直接填写，留空可跳过。' : q.quick_answers.mode === 'multiple' ? '参考回答可多选，也可自己写；留空可跳过。' : '可点选参考回答，也可自己写；留空可跳过。';
+  renderRoundDescription(q);
   if (!preserveDraft) {
     $('answer').value = q.own?.text || ''; dirty = false; pendingAnswer = null;
     const lines = $('answer').value.split('\n');
@@ -390,12 +393,11 @@ function renderProgress() {
 }
 function renderRound(preserveDraft = false) {
   $('setup').hidden = true; $('round').hidden = false; $('sources').hidden = false;
-  $('roundDescription').textContent = state.total + '题 · ' + (state.description || '') + (state.mode === 'blind' ? ' · 答完再看（旧模式）' : '');
+  renderRoundDescription();
   $('newRound').href = '/deeptalk?topic_id=' + encodeURIComponent(state.topic_id) + '&new=1';
   document.title = `${state.title} · CEDAR TOY`;
   $('roundTitle').textContent = state.title;
   renderProgress();
-  $('roundHint').hidden = state.submitted || state.unlocked;
   $('waiting').hidden = !state.submitted || state.unlocked;
   $('peerAnswer').hidden = !state.peer_visible || state.unlocked;
   $('editor').hidden = state.unlocked && !dirty; $('records').hidden = !state.unlocked;
