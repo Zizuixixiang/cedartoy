@@ -395,7 +395,114 @@ async function checkIntegratedResumeSafety() {
   console.log('PASS: invalid active drafts, same-millisecond archives, storage quota preservation.');
 }
 
+async function checkHumanUiFixes() {
+  const spec=JSON.parse(fs.readFileSync(path.join(root,'research_scales/data/mesx.json'),'utf8'));
+  const labels=['0 圈外','1 边缘','2 外圈','3 内圈'];
+  const meanings=['不纳入道德关怀范围','最低程度关怀，不认为有责任','会关心但责任较低','高度关怀，愿意承担责任'];
+  let dom=await page('mesx');
+  function checkMeanings() {
+    const d=dom.window.document;
+    assert.deepEqual([...d.querySelectorAll('.mesx-circle-key dt')].map(n=>n.textContent),labels);
+    assert.deepEqual([...d.querySelectorAll('.mesx-circle-key dd')].map(n=>n.textContent),meanings);
+    assert.equal(d.querySelector('.mesx-circle-key').closest('details'),null);
+    assert.equal(d.querySelector('.research-scale-key').open,false);
+    assert.equal(d.querySelectorAll('.research-scale-key p').length,4,'full definitions retained');
+    assert.deepEqual(JSON.parse(dom.window.eval('JSON.stringify(activeState.questions[0].options)')),spec.options);
+    [...d.querySelectorAll('#answers button')].forEach((b,i)=>{
+      assert.equal(d.getElementById(b.getAttribute('aria-describedby')).textContent,meanings[i]);
+    });
+    assert.equal($(dom,'resumeProgressButton'),null);
+  }
+  checkMeanings();
+  assert.equal($(dom,'progressLabel').textContent,'1 / 10');
+  for(let value=0;value<4;value++) {
+    if(value) $(dom,'previousButton').click();
+    await choose(dom,value);
+    assert.equal(dom.window.eval('activeState.saved_answers[0]'),value,'original score saved');
+    assert.equal(dom.window.eval('cursor'),1);
+    assert.equal(dom.window.document.activeElement,$(dom,'questionText'),'reading focus retained');
+    assert.equal(dom.window.getComputedStyle($(dom,'questionText')).outline,'none');
+    checkMeanings();
+  }
+  assert.equal($(dom,'progressFill').style.width,'10%');
+  const saved=storage(dom);dom.window.close();dom=await page('mesx',saved);
+  assert.equal(dom.window.eval('cursor'),1);
+  assert.equal(dom.window.eval('activeState.saved_answers[0]'),3);
+  checkMeanings();dom.window.close();
+
+  // Every ordinary route using this shared template must boot without the deleted node.
+  const games=fs.readdirSync(path.join(root,'research_scales/data')).filter(n=>n.endsWith('.json'))
+    .map(n=>JSON.parse(fs.readFileSync(path.join(root,'research_scales/data',n),'utf8'))).filter(s=>!s.blocked).map(s=>s.game);
+  for(const game of [...games,'mbti','enneagram','dnd','love','ecr','humanity','sins_virtues']) {
+    dom=await page(game);
+    assert.equal($(dom,'resumeProgressButton'),null,game);
+    assert.equal($(dom,'error').hidden,true,game+' boots');
+    assert.ok($(dom,'progressLabel') && $(dom,'progressFill') && $(dom,'restartButton'));
+    dom.window.close();
+  }
+  // Selecting a legacy copy writes that signature into the active slot and ignored list.
+  // Reload must not filter out the active slot just because those signatures match.
+  const copyPlayer='guest:webuifixcopy';
+  const copyState=JSON.parse((await request('/api/romlon/start',{player_id:copyPlayer,mode:'full_fast'})).body);
+  const copyKey=`cedartoy_romlon_web_draft_${copyPlayer}`;
+  const copyCurrent=`${copyKey}_session_${copyState.session_id}`;
+  const oldCopy={game:'romlon',edition:'full_fast',session_id:copyState.session_id,total:4,answers:[1,2,null,null],cursor:2};
+  const selectedCopy={...oldCopy,answers:[4,4,4,null],cursor:3};
+  dom=await page('romlon',{cedartoy_guest_web_player_id:copyPlayer,[copyKey]:JSON.stringify(selectedCopy),[copyCurrent]:JSON.stringify(oldCopy)});
+  [...$(dom,'resumeChoices').children].find(b=>b.textContent.includes('已答 3/4')).click();
+  assert.equal(dom.window.document.activeElement,$(dom,'questionText'));
+  const copies=storage(dom);dom.window.close();dom=await page('romlon',copies);
+  assert.equal($(dom,'resumeDialog').open,false,'chosen copy does not prompt again');
+  assert.deepEqual(Array.from(dom.window.eval('answers')),[4,4,4,null],'current slot survives ignored legacy signature');
+  assert.equal(dom.window.eval('cursor'),3);
+  assert.ok(Object.values(storage(dom)).includes(JSON.stringify(oldCopy)),'old active draft preserved verbatim');
+  assert.equal(dom.window.localStorage.getItem(copyKey),JSON.stringify(selectedCopy),'legacy original preserved verbatim');
+  dom.window.close();
+  // Conflicting local progress still opens the real choice dialog automatically.
+  const player='guest:webuifixconflict';
+  const state=JSON.parse((await request('/api/romlon/start',{player_id:player,mode:'full_fast'})).body);
+  const key=`cedartoy_romlon_web_draft_${player}`;
+  const current=`${key}_session_${state.session_id}`;
+  const legacy={game:'romlon',edition:'full_fast',total:4,answers:[1,2,null,null],cursor:2};
+  const branch={...legacy,session_id:state.session_id,answers:[4,4,4,null],cursor:3};
+  dom=await page('romlon',{cedartoy_guest_web_player_id:player,[key]:JSON.stringify(legacy),[current]:JSON.stringify(branch)});
+  assert.equal($(dom,'resumeDialog').open,true);
+  [...$(dom,'resumeChoices').children].find(b=>b.textContent.includes('已答 3/4')).click();
+  assert.equal(dom.window.eval('cursor'),3);
+  assert.ok(Object.values(storage(dom)).includes(JSON.stringify(legacy)),'other progress preserved');
+  dom.window.localStorage.setItem(key,JSON.stringify({...legacy,answers:[2,2,null,null]}));
+  const conflictStorage=storage(dom);dom.window.close();dom=await page('romlon',conflictStorage);
+  assert.equal($(dom,'resumeDialog').open,true,'new conflict remains discoverable');
+  $(dom,'resumeChoices').lastElementChild.click();
+  assert.equal($(dom,'resumeTitle').textContent,'重新开始？');
+  $(dom,'resumeDialog').dispatchEvent(new dom.window.Event('cancel',{cancelable:true}));
+  assert.equal(dom.window.eval('activeState.session_id'),state.session_id,'Escape never restarts');
+  assert.equal($(dom,'resumeDialog').open,true,'unresolved conflict remains available');
+  $(dom,'resumeChoices').lastElementChild.click();
+  $(dom,'resumeChoices').lastElementChild.click();
+  await until(()=>!dom.window.eval('busy'),'conflict restart');
+  assert.notEqual(dom.window.eval('activeState.session_id'),state.session_id);
+  dom.window.close();
+  // The result-page retest still requires confirmation; cancel keeps the completed run.
+  dom=await page('romlon');
+  for(let i=0;i<4;i++) await choose(dom);
+  $(dom,'saveAnswerButton').click();await until(()=>!dom.window.eval('busy'),'result');
+  assert.equal($(dom,'resultPanel').hidden,false);
+  const session=dom.window.eval('activeState.session_id');
+  $(dom,'restartButton').click();
+  assert.equal($(dom,'resumeDialog').open,true);
+  $(dom,'resumeChoices').firstElementChild.click();
+  assert.equal(dom.window.eval('activeState.session_id'),session);
+  $(dom,'restartButton').click();$(dom,'resumeChoices').lastElementChild.click();
+  await until(()=>!dom.window.eval('busy'),'confirmed retest');
+  assert.notEqual(dom.window.eval('activeState.session_id'),session);
+  assert.equal($(dom,'progressLabel').textContent,'1 / 4');
+  dom.window.close();
+  console.log('PASS: MESx four visible meanings / original values / save / reading focus / reload; 25 shared routes without duplicate progress button; automatic conflict choice / preserved alternative / restart confirmation; result retest cancel and confirm.');
+}
+
 async function main(){
+  if(process.env.HUMAN_UI_FIXES_ONLY==='1') return checkHumanUiFixes();
   if(process.env.RESUME_SAFETY_ONLY==='1') return checkIntegratedResumeSafety();
   if(process.env.SCALE_UI_ONLY==='1') return checkScaleControls();
   await checkIntegratedResumeSafety();
@@ -660,9 +767,7 @@ async function main(){
     assert.equal($(d,'resumeDialog').open,false,'resolved conflict does not recur');
     assert.equal(d.window.eval('answers[0]'),3);
     assert.ok(Object.values(storage(d)).includes(original));
-    $(d,'resumeProgressButton').click();
-    [...$(d,'resumeChoices').children].find(b=>b.textContent==='查看其他进度').click();
-    assert.equal($(d,'resumeDialog').open,true,'preserved alternative remains selectable');
+    assert.equal($(d,'resumeProgressButton'),null,'no manual progress menu');
     d.window.close();
   }
   // Another device has no local cursor: resume at the server's next question.

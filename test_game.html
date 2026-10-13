@@ -99,6 +99,8 @@
     .research-help a { color: inherit; }
     .research-page #questionIntro { color: var(--text); font-size: 13px; }
     #questionIntro.mesx-intro { white-space: pre-line; }
+    /* Keep the programmatic reading position without a heading focus ring. */
+    .research-page #questionText:focus { outline: none; }
     .research-page .question-actions { flex-wrap: wrap; }
     .research-page .question-actions button { color: var(--text); font-size: 12px; min-height: 44px; }
     .research-page .answer-button { min-height: 44px; padding: 8px 12px; font-size: 14px; }
@@ -108,6 +110,9 @@
     .research-scale-ends span:last-child { text-align: right; }
     .research-scale-middle { margin: 0 0 7px; text-align: center; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .research-scale-selection { min-height: 1.65em; margin: 12px 0 0; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+    .mesx-circle-key { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 8px; margin: 12px 0 0; font-size: 12px; line-height: 1.65; }
+    .mesx-circle-key dt { font-weight: 700; }
+    .mesx-circle-key dd { margin: 0; }
     .research-scale-key { margin-top: 4px; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
     .research-scale-key summary { width: fit-content; min-height: 44px; padding: 12px 0; cursor: pointer; }
     .research-scale-key p { margin: 0 0 4px; }
@@ -435,7 +440,6 @@
         <div class="question-actions">
           <button class="pixel-button secondary pixel" id="previousButton" type="button">← 上一题</button>
           <button class="pixel-button pixel" id="saveAnswerButton" type="button" hidden>下一题</button>
-          <button class="pixel-button secondary" id="resumeProgressButton" type="button" hidden>测试进度</button>
           <button class="pixel-button secondary pixel" id="reviewButton" type="button" hidden>查看答题卡 →</button>
         </div>
       </div>
@@ -482,6 +486,12 @@
     // Human-web presentation only; leave shared scale data and MCP instructions intact.
     const MESX_WEB = {
       intro: "请根据你对以下对象的关怀程度，选择对应的圈层。\n关怀包括在意对方的处境，以及愿意为对方承担责任或付出代价。没有标准答案。",
+      shortMeanings: [
+        ["圈外", "不纳入道德关怀范围"],
+        ["边缘", "最低程度关怀，不认为有责任"],
+        ["外圈", "会关心但责任较低"],
+        ["内圈", "高度关怀，愿意承担责任"]
+      ],
       meanings: [
         "圈外：认为其不值得道德关怀，觉得为其待遇承担关怀或个人责任是过度或不合理的。",
         "边缘：最低限度的关怀，不觉得自己负有道德义务或个人责任。",
@@ -755,8 +765,16 @@
         button.textContent = label;
         button.onclick = () => {
           dialog.close();
-          previousFocus?.focus({preventScroll: true});
           run();
+          // The action may open another modal or replace the answer controls.
+          // Auto-opened conflicts have no opener: return to the resumed question.
+          if (!dialog.open) {
+            const target = previousFocus?.isConnected && previousFocus !== document.body
+              && !previousFocus.disabled && previousFocus.getClientRects().length
+              ? previousFocus : $("questionPanel").hidden ? $("restartButton") : $("questionText");
+            if (target === $("questionText")) target.tabIndex = -1;
+            target.focus({preventScroll: true});
+          }
         };
         $("resumeChoices").append(button);
       });
@@ -773,7 +791,7 @@
         {label: "重新开始", run: () => { restartSessionId = activeState.session_id; start("full", true); }}
       ]);
     }
-    function restoreDraft(state, pendingDraft, includeArchived = false) {
+    function restoreDraft(state, pendingDraft) {
       answers = Array(state.total).fill(null);
       cursor = 0;
       if (!CONFIG.research) {
@@ -790,7 +808,7 @@
       if (pendingDraft && stored !== null && stored !== lastDraftRaw) {
         preserveDraft(stored);
       }
-      let entries = readResearchDrafts(state, includeArchived);
+      let entries = readResearchDrafts(state);
       const validCurrent = entries.some(e => e.key === currentDraftKey());
       // Rejected active-slot data is still the user's data. Preserve it before
       // the next write, including malformed JSON and mismatched run metadata.
@@ -806,7 +824,7 @@
         const firstEmpty = values.indexOf(null);
         alternatives.push({values, at: Math.max(0, Math.min(Number.isInteger(at) ? at : firstEmpty < 0 ? state.total - 1 : firstEmpty, state.total - 1)), label});
       };
-      const sources = pendingDraft ? [{saved: pendingDraft}] : entries.filter(e => includeArchived || !ignoredDrafts.includes(e.signature));
+      const sources = pendingDraft ? [{saved: pendingDraft}] : entries.filter(e => e.key === currentDraftKey() || !ignoredDrafts.includes(e.signature));
       let hasConflict = false;
       for (const {saved} of sources) {
         let conflict = false;
@@ -1096,7 +1114,6 @@
       $("saveAnswerButton").disabled = busy || !Number.isInteger(answers[cursor]);
       $("previousButton").hidden = false;
       $("previousButton").disabled = busy || cursor === 0;
-      $("resumeProgressButton").hidden = !CONFIG.research;
       $("reviewButton").hidden = sequential || !answers.every(Number.isInteger);
     }
     function renderResearchOptions(question) {
@@ -1139,12 +1156,28 @@
       question.options.forEach(option => {
         const button = addAnswer(option.value, String(option.value), track, "scale-step");
         if (!bareNumber(option)) button.setAttribute("aria-label", `${option.value}，${option.text}`);
+        if (CONFIG.game === "mesx") button.setAttribute("aria-describedby", `mesx-meaning-${option.value}`);
       });
       const selection = document.createElement("p");
       selection.className = "research-scale-selection";
       const selected = question.options.find(option => option.value === answers[cursor]);
       selection.textContent = selected ? `已选：${labelFor(selected)}` : "";
-      $("answers").append(track, selection);
+      $("answers").append(track);
+      if (CONFIG.game === "mesx") {
+        const meanings = document.createElement("dl");
+        meanings.className = "mesx-circle-key";
+        question.options.forEach(option => {
+          const [circle, meaning] = MESX_WEB.shortMeanings[option.value];
+          const label = document.createElement("dt");
+          label.textContent = `${option.value} ${circle}`;
+          const definition = document.createElement("dd");
+          definition.id = `mesx-meaning-${option.value}`;
+          definition.textContent = meaning;
+          meanings.append(label, definition);
+        });
+        $("answers").append(meanings);
+      }
+      $("answers").append(selection);
       // MESx requires all four full definitions, even if ordinary scale keys are removed.
       const hasCircleMeanings = CONFIG.game === "mesx";
       // Touch and keyboard users can inspect every original label before choosing.
@@ -2306,15 +2339,6 @@
         }
       }
     }
-    $("resumeProgressButton").addEventListener("click", () => {
-      if (busy || !activeState) return;
-      const alternatives = readResearchDrafts(activeState, true);
-      resumeChoice("继续上次测试", `已答 ${answers.filter(Number.isInteger).length}/${activeState.total} 题。进度保留 24 小时。`, [
-        {label: "继续上次测试", run: () => {}},
-        ...(alternatives.some(e => e.key.includes("_conflict_")) ? [{label: "查看其他进度", run: () => { restoreDraft(activeState, null, true); renderQuestion(); }}] : []),
-        {label: "重新开始", run: requestRestart}
-      ]);
-    });
     $("previousButton").addEventListener("click", () => goToQuestion(cursor - 1));
     $("saveAnswerButton").addEventListener("click", () => {
       if (busy || !activeState || !Number.isInteger(answers[cursor])) return;

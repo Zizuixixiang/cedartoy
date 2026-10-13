@@ -84,8 +84,10 @@ async function main() {
     await page.reload();await ready();
     assert.equal(await page.locator('#resumeDialog').isVisible(),false);
     assert.equal(await page.evaluate(()=>answers[1]),3);
+    assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),JSON.stringify(legacy),'legacy draft stays unchanged through edits and reload');
     // Create a genuinely different local branch without altering the server run.
     await page.evaluate(({key,state})=>localStorage.setItem(key,JSON.stringify({game:'romlon',edition:'full_fast',session_id:state.session_id,total:4,answers:[4,4,4,null],cursor:3})),{key,state});
+    const conflictDrafts=await page.evaluate(()=>readResearchDrafts(activeState).map(e=>e.raw));
     await page.reload();await ready();
     await page.locator('#resumeDialog').waitFor({state:'visible'});
     assert.match(await page.locator('#resumeChoices').innerText(),/已答 2\/4.*第 1 题：1/s);
@@ -95,28 +97,108 @@ async function main() {
     for(const box of await page.locator('#resumeChoices button').evaluateAll(ns=>ns.map(n=>({w:n.getBoundingClientRect().width,h:n.getBoundingClientRect().height})))) {
       assert.ok(box.h>=44 && box.w>=44);
     }
-    for(let i=0;i<5;i++) {
-      await page.keyboard.press('Tab');
-      assert.equal(await page.evaluate(()=>!!document.activeElement.closest('#resumeDialog')),true,'native modal traps focus');
+    // Native Chromium may Tab out to browser chrome (BODY + !hasFocus).
+    // That is different from focusing an interactive element behind the modal.
+    for(const direction of ['Tab','Shift+Tab']) {
+      await page.locator('#resumeChoices button').first().focus();
+      const visited=new Set();
+      for(let i=0;i<8;i++) {
+        await page.keyboard.press(direction);
+        const focus=await page.evaluate(()=>({
+          inModal:!!document.activeElement.closest('#resumeDialog'),
+          browserChrome:document.activeElement===document.body && !document.hasFocus(),
+          index:[...document.querySelectorAll('#resumeChoices button')].indexOf(document.activeElement),
+          modal:document.querySelector('#resumeDialog').matches(':modal')
+        }));
+        assert.equal(focus.modal,true);
+        assert.ok(focus.inModal || focus.browserChrome,`${direction}: background page must remain inert`);
+        if(focus.inModal) visited.add(focus.index);
+      }
+      assert.deepEqual([...visited].sort(),[0,1,2],`${direction}: all choices remain reachable`);
     }
+    await page.locator('#resumeChoices button').first().focus();
+    assert.equal(await page.evaluate(()=>{
+      for(const node of document.querySelectorAll('a,button,input,summary,[tabindex]')) {
+        if(node.closest('#resumeDialog')) continue;
+        node.focus();
+        if(!document.activeElement.closest('#resumeDialog')) return false;
+      }
+      return true;
+    }),true,'background elements reject focus while modal is open');
     await page.screenshot({path:path.join(shots,`${width}-conflict.png`),fullPage:true});
     await page.locator('#resumeChoices button').filter({hasText:'已答 3/4'}).click();
     assert.equal(await page.locator('#progressLabel').innerText(),'4 / 4');
-    await page.locator('#resumeProgressButton').click();
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'questionText','auto-opened conflict returns focus to resumed question');
+    await page.reload();await ready();
+    assert.equal(await page.locator('#resumeDialog').isVisible(),false,'selected legacy copy does not re-prompt');
+    assert.deepEqual(await page.evaluate(()=>answers),[4,4,4,null],'current slot wins even when an ignored legacy copy has the same signature');
+    assert.equal(await page.locator('#resumeProgressButton').count(),0);
+    assert.equal(await page.locator('#questionText').evaluate(n=>getComputedStyle(n).outlineStyle),'none');
+    assert.ok(await page.evaluate(raws=>raws.every(raw=>Object.values({...localStorage}).includes(raw)),conflictDrafts),'all original conflicting drafts remain intact');
+    // Trigger a new real conflict after resolving the first one; the deleted menu is not needed.
+    await page.evaluate(({key,legacy})=>localStorage.setItem(key,JSON.stringify({...legacy,answers:[2,2,null,null]})),{key,legacy});
+    await page.reload();await ready();
+    await page.locator('#resumeDialog').waitFor({state:'visible'});
+    const beforeRestartCancel=await page.evaluate(()=>JSON.stringify({sid:activeState.session_id,answers,storage:{...localStorage}}));
     await page.locator('#resumeDialog').getByRole('button',{name:'重新开始',exact:true}).click();
+    assert.equal(await page.evaluate(()=>!!document.activeElement.closest('#resumeDialog')),true,'nested confirmation keeps modal focus');
     await page.screenshot({path:path.join(shots,`${width}-restart.png`),fullPage:true});
     await page.keyboard.press('Escape');
-    assert.equal(await page.evaluate(()=>activeState.session_id),state.session_id,'Escape never restarts');
-    await page.locator('#resumeProgressButton').click();
+    assert.equal(await page.evaluate(()=>JSON.stringify({sid:activeState.session_id,answers,storage:{...localStorage}})),beforeRestartCancel,'restart cancellation leaves all progress intact');
+    await page.locator('#resumeDialog').waitFor({state:'visible'});
+    assert.equal(await page.evaluate(()=>!!document.activeElement.closest('#resumeDialog')),true,'unresolved conflict keeps focus after cancelling restart');
     await page.locator('#resumeDialog').getByRole('button',{name:'重新开始',exact:true}).click();
     await page.locator('#resumeDialog').getByRole('button',{name:'重新开始',exact:true}).click();
     await ready();
     assert.equal(await page.locator('#progressLabel').innerText(),'1 / 4');
     assert.notEqual(await page.evaluate(()=>activeState.session_id),state.session_id);
+    // The same modal is also used on a completed result with a real opener.
+    for(let i=0;i<4;i++) { await page.locator('#answers button').first().click();await ready(); }
+    await page.locator('#saveAnswerButton').click();await ready();
+    await page.locator('#resultPanel').waitFor();
+    const completed=await page.evaluate(()=>JSON.stringify({state:activeState,storage:{...localStorage}}));
+    await page.locator('#restartButton').click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'restartButton','result cancel restores retest opener');
+    assert.equal(await page.evaluate(()=>JSON.stringify({state:activeState,storage:{...localStorage}})),completed,'Escape preserves completed result and drafts');
+    await page.locator('#restartButton').click();
+    await page.locator('#resumeChoices button').first().click();
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'restartButton','keep result restores retest opener');
+    assert.equal(await page.evaluate(()=>JSON.stringify({state:activeState,storage:{...localStorage}})),completed,'keep result preserves completed result and drafts');
+    await page.reload();await ready();
+    await page.locator('#resultPanel').waitFor();
+    assert.equal(await page.evaluate(()=>JSON.stringify({state:activeState,storage:{...localStorage}})),completed,'historical result survives reload');
+    // Inspect the changed scale at narrow/wide phone and desktop widths.
+    await page.goto(origin+'/mesx');await ready();
+    const meanings=['不纳入道德关怀范围','最低程度关怀，不认为有责任','会关心但责任较低','高度关怀，愿意承担责任'];
+    assert.deepEqual(await page.locator('.mesx-circle-key dd').allTextContents(),meanings);
+    for(const definition of await page.locator('.mesx-circle-key dd').all()) assert.equal(await definition.isVisible(),true);
+    assert.equal(await page.locator('.research-scale-key').getAttribute('open'),null);
+    assert.equal(await page.locator('#progressLabel').innerText(),'1 / 10');
+    assert.equal(await page.locator('#resumeProgressButton').count(),0);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.screenshot({path:path.join(shots,`${width}-mesx-first.png`),fullPage:true});
+    await page.locator('#answers button').nth(2).click();await ready();
+    assert.equal(await page.locator('#progressLabel').innerText(),'2 / 10');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'questionText');
+    assert.equal(await page.locator('#questionText').evaluate(n=>getComputedStyle(n).outlineStyle),'none');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(()=>document.activeElement.matches('#answers button')),true);
+    assert.equal(await page.evaluate(()=>document.activeElement.matches(':focus-visible')),true);
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.activeElement).outlineStyle),'solid');
+    await page.screenshot({path:path.join(shots,`${width}-mesx-keyboard.png`),fullPage:true});
+    await page.reload();await ready();
+    assert.equal(await page.locator('#progressLabel').innerText(),'2 / 10');
+    await page.locator('.research-scale-key summary').click();
+    assert.equal(await page.locator('.research-scale-key p').count(),4);
+    await page.locator('.research-scale-key summary').click();
+    await page.addStyleTag({content:'.mesx-circle-key {font-size:24px}'});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.screenshot({path:path.join(shots,`${width}-mesx-enlarged.png`),fullPage:true});
     assert.deepEqual(errors,[]);
     await context.close();
   }
-  console.log('PASS: 360/430/1280px legacy resume, answer edits, reload, conflict choice, progress retention, modal keyboard/touch sizing, explicit restart. Screenshots: '+shots);
+  console.log('PASS: 360/430/1280px legacy resume, answer edits, reload, conflict choice, progress retention, native modal isolation, bidirectional keyboard traversal, close/cancel focus restoration, unchanged drafts/results on cancel, touch sizing, explicit restart; MESx visible definitions, heading and keyboard focus, enlarged help. Screenshots: '+shots);
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   if(browser) await browser.close();
