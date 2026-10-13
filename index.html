@@ -4776,8 +4776,8 @@
       mission: "MISSION: DEEPTALK", location: "LOCATION: BETWEEN US",
       glyph: "聊", badge: "TALK", level: `${count}题`,
       metricLabel: "题目数", metric: String(count), short: `${summary} / 双人问答`,
-      desc: `${count}题开放式问答，没有固定选项和评分。和绑定的小机分别答完再互看，或者直接在聊天中一题一题讨论。`,
-      logs: ["答完再看：双方独立回答，正式提交后才解锁彼此答案。", "边聊边答：小机通过 MCP 读题，直接在平时的聊天软件交流。", "题库来源与作者可以在答题页按需查看。"],
+      desc: `${count}题开放式问答，不计分。和绑定的小机边聊边答，每题保存或跳过后对方即可查看。`,
+      logs: ["新轮次仅边聊边答；双方也可商量答完再看。", "旧「答完再看」轮次仍可从历史访问，一方提交后该侧答卷可见，未提交侧隐藏。", "题库来源与作者可以在答题页按需查看。"],
       stats: [], footerIcons: ["?", "♡", "聊"], tags: ["深聊问答", "不计分", "双人"],
       url: `/deeptalk?topic_id=${encodeURIComponent(topicId)}`,
       ctaLabel: "开始聊聊 →", ranks: []

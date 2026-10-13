@@ -1,6 +1,7 @@
 """All answer serialization enforces the persisted round visibility mode."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import cached_property
 import hashlib
 import json
 import re
@@ -9,6 +10,7 @@ import sqlite3
 import game_activity
 
 from .catalog import DeeptalkError, load_topic
+from .crypto import Cipher, answer_context, digest_context, parse_answers, validate_digest
 from cedar_backend.display_titles import DEEPTALK_TITLES
 
 
@@ -33,6 +35,14 @@ class Store:
         self.db_path = str(db_path)
         # Server-resolved bindings only; never populate this from request parameters.
         self.bound_human_ids = tuple(bound_human_ids)
+
+    @cached_property
+    def cipher(self):
+        # Lazy: discovery, source and history do not require answer decryption.
+        return Cipher()
+
+    def answers(self, row, role):
+        return parse_answers(self.cipher.decrypt(row[f"{role}_answers"], answer_context(row, role)))
 
     @contextmanager
     def connection(self, write=False):
@@ -127,6 +137,57 @@ class Store:
                                     ai_submitted=bool(r["ai_submitted"])) for r in rows],
                         total=total, offset=offset, limit=limit)
 
+    def resume(self, user, topic_id, draft_round_id=None):
+        """Human-only selection, across all history pages; never creates a round."""
+        if user.get("is_ai"):
+            raise DeeptalkError("仅轮次所属人类可操作", 403)
+        if not isinstance(topic_id, str) or topic_id not in DEEPTALK_TITLES:
+            raise DeeptalkError("未知题库")
+        with self.connection() as conn:
+            rows = conn.execute("""SELECT id,human_id,ai_id,human_revision,ai_revision,
+                    human_answers,ai_answers,updated_at,created_at FROM deeptalk_rounds
+                WHERE human_id=? AND topic_id=? AND human_submitted IS NULL""",
+                (int(user["id"]), topic_id))
+            best, best_rank = None, None
+            for row in rows:
+                # Resume ranks authorized saved answers, never interprets ciphertext as JSON.
+                answers = [a for role in ("human", "ai")
+                           for a in self.answers(row, role).values()]
+                real_progress = any(not a.get("skipped") and a.get("text", "").strip() for a in answers)
+                local_draft = row["id"] == draft_round_id
+                rank = (bool(real_progress or local_draft), local_draft, bool(answers), row["updated_at"], row["created_at"], row["id"])
+                if best_rank is None or rank > best_rank:
+                    best, best_rank = row["id"], rank
+            return {"round_id": best}
+
+    @staticmethod
+    def delete_version(row):
+        # Includes both sides' revisions AND submissions. No answer content leaves here.
+        values = [row[k] for k in ("id", "human_revision", "ai_revision",
+                                  "human_submitted", "ai_submitted", "updated_at")]
+        return hashlib.sha256(json.dumps(values).encode()).hexdigest()
+
+    def delete_preview(self, user, round_id):
+        if user.get("is_ai"):
+            raise DeeptalkError("仅轮次所属人类可删除", 403)
+        with self.connection() as conn:
+            row, _ = self.row(conn, round_id, user)
+            return dict(self.summary(row), delete_version=self.delete_version(row))
+
+    def delete(self, user, params):
+        if user.get("is_ai"):
+            raise DeeptalkError("仅轮次所属人类可删除", 403)
+        if params.get("confirm") is not True:
+            raise DeeptalkError("请明确确认删除整轮及双方答案")
+        with self.connection(write=True) as conn:
+            row, _ = self.row(conn, params.get("round_id"), user)
+            if params.get("delete_version") != self.delete_version(row):
+                raise DeeptalkError("这轮刚有新的作答或提交，尚未删除。请重新查看并确认。", 409)
+            # Serialized against answer/submit: a later writer gets 404, never an upsert.
+            conn.execute("DELETE FROM deeptalk_requests WHERE round_id=?", (row["id"],))
+            conn.execute("DELETE FROM deeptalk_rounds WHERE id=?", (row["id"],))
+            return {"round_id": row["id"], "deleted": True}
+
     def create(self, human, ai, topic_id, key, *, sharing_mode="single_ai", mode="blind"):
         game_activity.observe_change(False, False)
         key = request_key(key)
@@ -144,19 +205,22 @@ class Store:
                 return self.serialize(old, "human")
             topic = load_topic(topic_id)
             rid, stamp = secrets.token_urlsafe(24), now()
+            identity = dict(id=rid, human_id=int(human["id"]), ai_id=ai_id,
+                            human_revision=0, ai_revision=0)
+            empty = [self.cipher.encrypt("{}", answer_context(identity, r)) for r in ("human", "ai")]
             conn.execute("""INSERT INTO deeptalk_rounds
-                (id,topic_id,title,human_id,ai_id,human_name,ai_name,snapshot,created_at,updated_at,create_key,sharing_mode,mode)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (rid, topic_id, topic["title"], int(human["id"]), ai_id,
-                human["username"], ai_name, json.dumps(topic, ensure_ascii=False), stamp, stamp, key, sharing_mode, mode))
+                (id,topic_id,title,human_id,ai_id,human_name,ai_name,snapshot,created_at,updated_at,create_key,sharing_mode,mode,human_answers,ai_answers)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (rid, topic_id, topic["title"], int(human["id"]), ai_id,
+                human["username"], ai_name, json.dumps(topic, ensure_ascii=False), stamp, stamp, key, sharing_mode, mode, *empty))
             row, role = self.row(conn, rid, human)
             game_activity.observe_change(False, True)
             return self.serialize(row, role)
 
-    @staticmethod
-    def serialize(row, role, *, number=None, limit=1, full=False):
+    def serialize(self, row, role, *, number=None, limit=1, full=False):
         """Only the peer's own submission opens their blind answers to this role."""
         topic = json.loads(row["snapshot"])
-        own = json.loads(row[f"{role}_answers"])
+        answers = {r: self.answers(row, r) for r in ("human", "ai")}
+        own = answers[role]
         unlocked = bool(row["human_submitted"] and row["ai_submitted"])
         peer_role = "human" if role == "ai" else "ai"
         peer_visible = row["mode"] == "chat" or bool(row[f"{peer_role}_submitted"])
@@ -164,13 +228,13 @@ class Store:
         out.update(topic_id=row["topic_id"], total=len(topic["questions"]), unlocked=unlocked, peer_visible=peer_visible,
                    submitted=bool(row[f"{role}_submitted"]), revision=row[f"{role}_revision"],
                    next_number=next((i for i, q in enumerate(topic["questions"], 1) if q["id"] not in own), 1),
-                   progress={r: {"done": len(json.loads(row[f"{r}_answers"])), "submitted": bool(row[f"{r}_submitted"])} for r in ("human", "ai")})
+                   progress={r: {"done": len(answers[r]), "submitted": bool(row[f"{r}_submitted"])} for r in ("human", "ai")})
         if full:
             out["description"] = topic.get("description", "")
         if full or number is not None:
             start = 0 if full else integer(number, "number", 1, len(topic["questions"])) - 1
             count = len(topic["questions"]) if full else integer(limit, "limit", 1, 20)
-            peer = json.loads(row[f"{peer_role}_answers"]) if peer_visible else {}
+            peer = answers[peer_role] if peer_visible else {}
             items = []
             for i, q in enumerate(topic["questions"][start:start + count], start + 1):
                 item = dict(number=i, id=q["id"], text=q["text"], own=own.get(q["id"]))
@@ -216,7 +280,8 @@ class Store:
             row, role = self.row(conn, params.get("round_id"), user)
             previous = conn.execute("SELECT digest FROM deeptalk_requests WHERE round_id=? AND role=? AND request_key=?", (row["id"], role, key)).fetchone()
             if previous:
-                if previous["digest"] != digest:
+                stored_digest = validate_digest(self.cipher.decrypt(previous["digest"], digest_context(row, role, key)))
+                if not secrets.compare_digest(stored_digest, digest):
                     raise DeeptalkError("同一 request_id 不可用于不同回答", 409)
                 return self.serialize(row, role)
             if row[f"{role}_submitted"]:
@@ -225,12 +290,16 @@ class Store:
                 raise DeeptalkError("答案已在其他页面更新，请刷新后再改", 409)
             if qid not in {q["id"] for q in json.loads(row["snapshot"])["questions"]}:
                 raise DeeptalkError("未知题号")
-            answers = json.loads(row[f"{role}_answers"])
+            answers = self.answers(row, role)
             changed = answers.get(qid) != answer
             answers[qid] = answer
+            next_row = dict(row)
+            next_row[f"{role}_revision"] += 1
+            encrypted = self.cipher.encrypt(json.dumps(answers, ensure_ascii=False), answer_context(next_row, role))
+            receipt = self.cipher.encrypt(digest, digest_context(row, role, key))
             conn.execute(f"UPDATE deeptalk_rounds SET {role}_answers=?, {role}_revision={role}_revision+1, updated_at=? WHERE id=?",
-                         (json.dumps(answers, ensure_ascii=False), now(), row["id"]))
-            conn.execute("INSERT INTO deeptalk_requests VALUES (?,?,?,?)", (row["id"], role, key, digest))
+                         (encrypted, now(), row["id"]))
+            conn.execute("INSERT INTO deeptalk_requests VALUES (?,?,?,?)", (row["id"], role, key, receipt))
             row, role = self.row(conn, row["id"], user)
             game_activity.observe_change(False, changed)
             return self.serialize(row, role)
@@ -245,7 +314,7 @@ class Store:
             if not row[f"{role}_submitted"]:
                 if revision != row[f"{role}_revision"]:
                     raise DeeptalkError("答案已更新，请检查后重新确认提交", 409)
-                if len(json.loads(row[f"{role}_answers"])) != len(json.loads(row["snapshot"])["questions"]):
+                if len(self.answers(row, role)) != len(json.loads(row["snapshot"])["questions"]):
                     raise DeeptalkError("请先回答或明确跳过每一道题")
                 stamp = now()
                 conn.execute(f"UPDATE deeptalk_rounds SET {role}_submitted=?, updated_at=? WHERE id=?", (stamp, stamp, row["id"]))

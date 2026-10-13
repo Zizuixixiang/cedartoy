@@ -134,7 +134,7 @@ class RealPackageTests(unittest.TestCase):
                     for field in fields:
                         self.assertIn(field, instructions, action)
                 for required in ('/deeptalk', 'history', 'source', '从1起', '8–100位[A-Za-z0-9_-]',
-                                 '重试复用', '一方提交，其答卷即对另一方可见', '当前绑定小机共用草稿/revision', '解绑失权', '旧轮次限原双方', '冲突先重读合并', '不计分，可跳题', '无标准答案', 'result只展示获准查看的回答', '无评分或测评报告'):
+                                 '重试复用', catalog.VISIBILITY_GUIDE, '当前绑定小机共用草稿/revision', '解绑失权', '旧single_ai轮次限原双方', '冲突先重读合并', '不计分，可跳题', '无标准答案', '无测评报告'):
                     self.assertIn(required, guide)
                 operations = guide[guide.index('play(game='):].replace(game, '<game>')
                 if shared_operations is None:
@@ -145,7 +145,9 @@ class RealPackageTests(unittest.TestCase):
         for n, (tid, total) in enumerate(EXPECTED.items()):
             with self.subTest(topic=tid):
                 self.alias = next(game for game, topic in catalog.ALIASES.items() if topic == tid)
-                created = self.request(HUMAN, 'create', topic_id=tid, request_id=f'real_create_{tid}')
+                # Keep full legacy privacy coverage using a Store fixture, never Web create.
+                created = self.store.create(HUMAN, None, tid, f'real_create_{tid}',
+                                            sharing_mode='bound_shared', mode='blind')
                 rid = created['round_id']
                 self.assertEqual(created['total'], total)
                 questions = catalog.load_topic(tid)['questions']
@@ -207,6 +209,7 @@ class RealPackageTests(unittest.TestCase):
                 self.assertEqual(self.http(HUMAN, 'answer', post=True, round_id=rid, question_id=questions[0]['id'], text='late', revision=total, request_id='late_answer')[0], 409)
                 repeat = self.request(HUMAN, 'create', topic_id=tid, request_id=f'repeat_create_{tid}')
                 self.assertNotEqual(repeat['round_id'], rid)
+                self.assertEqual(repeat['mode'], 'chat')
                 self.assertEqual(self.request(HUMAN, 'view', round_id=rid), view)
                 history = self.request(HUMAN, 'history', limit=100)
                 summary = next(r for r in history['rounds'] if r['round_id'] == rid)

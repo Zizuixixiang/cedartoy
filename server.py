@@ -6233,7 +6233,7 @@ a{{color:#c9afff}}
                     raise DeeptalkError("请求过大或为空", 413)
                 body = self._read_json_body()
                 action = body.get("action")
-                if path != "/api/deeptalk/action" or action not in {"create", "answer", "submit"}:
+                if path != "/api/deeptalk/action" or action not in {"create", "answer", "submit", "delete"}:
                     raise DeeptalkError("未知操作", 404)
             else:
                 if path != "/api/deeptalk":
@@ -6245,7 +6245,7 @@ a{{color:#c9afff}}
                     if key in body:
                         body[key] = int(body[key])
                 action = body.get("action", "context")
-                if action not in {"context", "topics", "source", "questions", "history", "status", "question", "view", "result"}:
+                if action not in {"context", "topics", "source", "questions", "history", "status", "question", "view", "result", "resume", "delete_preview"}:
                     raise DeeptalkError("未知操作", 404)
             with game_activity.capture_changes():
                 result = deeptalk_service.execute(user, action, body, db_path=SESSIONS_DB_PATH, db_connect=_db_connect, web=True)

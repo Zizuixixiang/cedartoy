@@ -109,9 +109,8 @@ async function deeptalkTopic(topicId, count) {
     assert.equal(d.getElementById('machine'), null);
     assert.equal(d.getElementById('topicTitle').textContent, topics.find(t => t[1] === topicId)[3]);
     assert.ok(d.getElementById('topicDescription').textContent.includes(`${count}题`));
-    d.getElementById('mode').value = 'chat';
-    d.getElementById('mode').dispatchEvent(new dom.window.Event('change'));
-    assert.equal(d.getElementById('modeIntro').textContent, '边聊边答：双方已作答的内容实时可见。');
+    assert.equal(d.getElementById('mode'), null);
+    assert.equal(d.getElementById('modeIntro'), null);
     assert.equal(d.getElementById('create').disabled, false);
     assert.deepEqual(errors, []);
   } finally {

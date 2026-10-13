@@ -48,7 +48,18 @@ def execute(user, action, params, *, db_path, db_connect, web=False):
             raise DeeptalkError("创建方式已更新，请刷新页面后开始", 409)
         if not machines_for(user, db_connect):
             raise DeeptalkError("请先回首页绑定小机，再开始问答", 403)
-        return store.create(user, None, params.get("topic_id"), params.get("request_id"), sharing_mode="bound_shared", mode=params.get("mode", "blind"))
+        mode = params.get("mode", "chat")
+        if mode == "blind":
+            raise DeeptalkError("新轮次仅支持边聊边答，请刷新页面后重新开始；旧答完再看轮次仍可从历史访问", 409)
+        if not isinstance(mode, str) or mode != "chat":
+            raise DeeptalkError("mode 仅支持 chat（边聊边答）")
+        return store.create(user, None, params.get("topic_id"), params.get("request_id"), sharing_mode="bound_shared", mode=mode)
+    if action == "resume" and web:
+        return store.resume(user, params.get("topic_id"), params.get("draft_round_id"))
+    if action == "delete_preview" and web:
+        return store.delete_preview(user, params.get("round_id"))
+    if action == "delete" and web:
+        return store.delete(user, params)
     if action == "history":
         return store.history(user, params.get("offset", 0), params.get("limit", 20), params.get("topic_id"))
     if action in {"status", "question", "result"} or (action == "view" and web):

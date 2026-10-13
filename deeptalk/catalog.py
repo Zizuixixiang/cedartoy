@@ -132,6 +132,9 @@ def public_source(topic):
                 note=PUBLIC_NOTES.get(topic["topic_id"], "CedarToy 中文翻译与编排，非官方译文。"))
 
 
+VISIBILITY_GUIDE = "新轮次仅边聊边答（chat）：对方每题answer保存或skip=true跳过后，question/result即可读取；双方可商量答完再看。旧blind（答完再看）仍一方整卷submit后该侧可读，未提交侧隐藏。"
+
+
 def guide(game):
     topic = load_topic(ALIASES[game])
     title, total, description = TOPICS[topic["topic_id"]]
@@ -148,11 +151,12 @@ play(game="{game}",action=...,params={{...}})；以下为action:参数。
 questions:number从1起，可选limit；source查来源。
 人类首页/deeptalk开局；history取round_id（可选topic_id、offset/limit）；status:round_id取revision；question:round_id,number查题。
 answer:round_id,question_id,revision,request_id，加text或skip=true。request_id须8–100位[A-Za-z0-9_-]，重试复用。
-全题答/跳后submit:round_id,revision,confirm=true。mode=blind一方提交，其答卷即对另一方可见，未提交侧仍隐藏；chat逐题answer成功即互见。result:round_id，可选number/limit，读取已开放侧；peer_visible表示对方可读，unlocked仅双方提交为true。新轮次：当前绑定小机共用草稿/revision，任一可提交，解绑失权；旧轮次限原双方。冲突先重读合并；result只展示获准查看的回答，无评分或测评报告。
+全题答/跳后submit:round_id,revision,confirm=true。{VISIBILITY_GUIDE}result:round_id，可选number/limit；peer_visible表示对方可读，unlocked仅双方提交为true。当前绑定小机共用草稿/revision，任一可提交，解绑失权；旧single_ai轮次限原双方。冲突先重读合并；无测评报告。
 '''
 
 
 GUIDE = """# deeptalk · 兼容入口
 旧 play(game="deeptalk",action=...,params={...}) 仍可用：topics查topic_id；questions/source须传topic_id，读题number从1起、limit默认1最多100。
-新调用优先使用下列独立game ID，get_guide(game)按需获取该套来源和完整操作。开放问答无标准答案、不计分；result仅展示获准查看的回答，无测评报告；人类从首页对应题库创建轮次；当前绑定小机共用小机侧答卷，任一小机可代表提交，解绑即失去共享轮次权限；旧轮次仍仅原双方可见。mode=blind（答完再看）一方提交，其答卷即对另一方可见，未提交侧仍隐藏；peer_visible表示对方可读，unlocked仅双方提交为true；chat（边聊边答）逐题answer成功即互见，question/result可读已作答内容。
-""" + "\n".join(f"{game} → {tid}" for game, tid in ALIASES.items())
+优先使用下列game ID，get_guide(game)按需取来源与完整操作。无标准答案、不计分、无测评报告。人类从首页开局；绑定小机共用答卷/revision，任一可提交，解绑失权；旧single_ai轮次限原双方。
+history取round_id；status:round_id取revision；question/result:round_id，可选number/limit；answer:round_id,question_id,revision,request_id，加text或skip=true；全题答/跳后submit:round_id,revision,confirm=true。request_id须8–100位[A-Za-z0-9_-]，重试复用。peer_visible表示对方可读，unlocked仅双方提交为true。
+""" + VISIBILITY_GUIDE + "\n" + "\n".join(f"{game} → {tid}" for game, tid in ALIASES.items())

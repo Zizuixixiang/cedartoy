@@ -85,10 +85,7 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 <section id="chooseTopic" class="shell" hidden><h2>从首页选择题库</h2><p class="hint">每套题库都有独立入口，选好后就可以开始聊。</p><div class="actions"><a class="pixel-btn" href="/">去首页选择题库</a></div></section>
 <section id="setup" class="shell" hidden>
 <h2 id="topicTitle"></h2><p id="topicDescription" class="hint"></p>
-<div id="recentRound" hidden></div>
 <details id="roundHistory" hidden><summary id="historyTitle">历史轮次</summary><div id="historyList"></div><button id="moreHistory" class="pixel-btn secondary" type="button" hidden>更多轮次</button></details>
-<label for="mode">怎么聊</label><select id="mode"><option value="blind">答完再看</option><option value="chat">边聊边答</option></select>
-<p id="modeIntro" class="hint">答完再看：一方提交，其答卷就对另一方可见。</p>
 <p id="bindingHint" class="hint"></p><div class="actions"><button id="create" class="pixel-btn" type="button">开始新一轮</button></div>
 
 </section>
@@ -109,6 +106,7 @@ dialog::backdrop { background:rgba(50,40,60,.45); }
 </section>
 <details id="sources" class="shell" hidden><summary>来源与作者</summary><div id="sourceBody"></div></details>
 <dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText"><h2 id="confirmTitle">正式提交整卷？</h2><p id="confirmText"></p><p id="confirmError" class="hint" role="alert"></p><div class="actions"><button id="cancelSubmit" class="pixel-btn secondary" type="button" autofocus>再检查一下</button><button id="confirmSubmit" class="pixel-btn" type="button">正式提交</button></div></dialog>
+<dialog id="deleteDialog" aria-labelledby="deleteTitle" aria-describedby="deleteText"><h2 id="deleteTitle">删除这一轮？</h2><p id="deleteText"></p><p id="deleteError" class="hint" role="alert"></p><div class="actions"><button id="cancelDelete" class="pixel-btn secondary" type="button" autofocus>保留这一轮</button><button id="confirmDelete" class="pixel-btn" type="button">确认删除整轮</button></div></dialog>
 </main>
 <script>
 'use strict';
@@ -116,7 +114,7 @@ const $ = id => document.getElementById(id);
 let polling = false, viewVersion = 0, remoteChanged = false;
 let context, topic, state, index = 0, busy = false, dirty = false, pendingAnswer = null, pendingCreate = null;
 let selectedChoices = [];
-let historyOffset = 0;
+let historyOffset = 0, pendingDelete = null, deleteTrigger = null, roundMissing = false;
 const initialToken = localStorage.getItem('cedartoy_token') || '';
 const pageParams = new URLSearchParams(location.search);
 let roundId = pageParams.get('round_id');
@@ -160,6 +158,7 @@ async function api(action, params = {}, write = false) {
     throw err;
   } finally { clearTimeout(timeout); }
   if (!res.ok) {
+    if (res.status === 404 && state && params.round_id === roundId) markRoundMissing();
     if (res.status === 401) { $('login').hidden = false; $('round').hidden = $('setup').hidden = true; }
     const error = new Error(data.error || '请求失败，请重试'); error.status = res.status; throw error;
   }
@@ -172,9 +171,10 @@ async function work(fn) {
   const wasDisabled = controls.map(el => el.disabled);
   controls.forEach(el => el.disabled = true);
   try { await fn(); } catch (err) {
-    const text = err.message || '网络中断，请重试；当前输入仍保留在这里。';
+    const text = roundMissing ? '这一轮已被删除或无法访问，当前输入仍保留供复制，无法继续保存。' : err.message || '网络中断，请重试；当前输入仍保留在这里。';
     message(text, true);
     if ($('confirmDialog').open) $('confirmError').textContent = text;
+    if ($('deleteDialog').open) $('deleteError').textContent = text;
   }
   finally { busy = false; controls.forEach((el, i) => el.disabled = wasDisabled[i]); updateControls(); }
 }
@@ -184,7 +184,10 @@ function isSubmitStep() {
 }
 function updateControls() {
   if (busy) return;
-  if (context) $('create').disabled = !context.machines.length || !topic?.available;
+  if (context) {
+    $('confirmDelete').disabled = !pendingDelete;
+    $('create').disabled = !context.machines.length || !topic?.available;
+  }
   if (!state) return;
   const retainedDraft = state.submitted && dirty;
   $('previous').disabled = index === 0 || retainedDraft;
@@ -194,7 +197,12 @@ function updateControls() {
   $('answer').readOnly = state.submitted;
   $('questionJump').disabled = retainedDraft;
   for (const button of $('quickOptions').children) button.disabled = state.submitted;
-  $('newRound').hidden = state.submitted !== true;
+  $('newRound').hidden = false;
+  $('newRound').textContent = state.submitted ? '重新答题' : '题库 / 历史';
+  if (roundMissing) {
+    for (const control of $('round').querySelectorAll('button,select')) control.disabled = true;
+    $('answer').readOnly = true;
+  }
 }
 function setupTopic() {
   $('topicTitle').textContent = topic.title;
@@ -202,27 +210,37 @@ function setupTopic() {
   $('topicDescription').textContent = topic.total + '题 · ' + topic.description + (topic.available ? '' : ' · 题库尚未就绪');
   $('sources').open = false; $('sourceBody').replaceChildren(); updateControls();
 }
-function historyEntry(round, recent = false) {
+function historyEntry(round) {
   const entry = document.createElement('div'); entry.className = 'history-entry';
   const meta = document.createElement('p'); meta.className = 'hint';
   const status = round.status === 'complete' ? '双方已提交' : round.human_submitted ? '等待小机提交' : round.ai_submitted ? '小机已提交' : '作答中';
-  meta.textContent = `${recent ? '最近一轮 · ' : ''}${new Date(round.created_at).toLocaleString('zh-CN')} · ${round.mode === 'chat' ? '边聊边答' : '答完再看'} · ${status}`;
+  meta.textContent = `${new Date(round.created_at).toLocaleString('zh-CN')} · ${round.mode === 'chat' ? '边聊边答' : '答完再看（旧模式）'} · ${status}`;
   const link = document.createElement('a');
   link.href = '/deeptalk?round_id=' + encodeURIComponent(round.round_id);
   link.textContent = round.status === 'complete' ? '查看双方回答' : round.human_submitted ? '查看上次答卷' : '继续答题';
-  entry.append(meta, link); return entry;
+  const remove = document.createElement('button');
+  remove.type = 'button'; remove.className = 'pixel-btn secondary'; remove.textContent = '删除';
+  remove.setAttribute('aria-label', '删除 ' + new Date(round.created_at).toLocaleString('zh-CN') + ' 的轮次');
+  remove.onclick = () => work(async () => {
+    pendingDelete = await api('delete_preview', {round_id:round.round_id});
+    deleteTrigger = remove;
+    $('deleteText').textContent = `${pendingDelete.title} · ${new Date(pendingDelete.created_at).toLocaleString('zh-CN')} · ${pendingDelete.mode === 'chat' ? '边聊边答' : '答完再看（旧模式）'}。将永久删除这一整轮及双方答案，无法恢复。若其他页面或小机仍在作答，也将无法继续保存。`;
+    $('deleteError').textContent = ''; $('confirmDelete').disabled = false;
+    $('deleteDialog').showModal();
+    $('cancelDelete').disabled = false; $('cancelDelete').focus();
+  });
+  const actions = document.createElement('div'); actions.className = 'actions'; actions.append(link, remove);
+  entry.append(meta, actions); return entry;
 }
 async function loadHistory() {
   try {
     const data = await api('history', {topic_id:topic.topic_id, offset:historyOffset, limit:20});
     if (!historyOffset) {
-      $('recentRound').replaceChildren(); $('historyList').replaceChildren();
-      $('recentRound').hidden = !data.rounds.length;
-      if (data.rounds.length) $('recentRound').append(historyEntry(data.rounds[0], true));
+      $('historyList').replaceChildren();
     }
-    for (const round of data.rounds.slice(historyOffset ? 0 : 1)) $('historyList').append(historyEntry(round));
+    for (const round of data.rounds) $('historyList').append(historyEntry(round));
     historyOffset += data.rounds.length;
-    $('roundHistory').hidden = data.total <= 1;
+    $('roundHistory').hidden = !data.total;
     $('historyTitle').textContent = `历史轮次（${data.total}）`;
     $('moreHistory').hidden = historyOffset >= data.total;
     $('moreHistory').textContent = '更多轮次';
@@ -234,16 +252,47 @@ async function loadHistory() {
   }
 }
 $('moreHistory').onclick = () => work(loadHistory);
+$('deleteDialog').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+$('cancelDelete').onclick = () => $('deleteDialog').close();
+$('deleteDialog').addEventListener('close', () => { pendingDelete = null; deleteTrigger?.focus(); });
+$('confirmDelete').onclick = () => work(async () => {
+  if (!pendingDelete) return;
+  const target = pendingDelete;
+  try {
+    await api('delete', {round_id:target.round_id, delete_version:target.delete_version, confirm:true}, true);
+  } catch (err) {
+    // A new version requires a new preview and explicit confirmation, never auto-retry it.
+    if ([404,409].includes(err.status)) pendingDelete = null;
+    throw err;
+  }
+  try { sessionStorage.removeItem('deeptalk_draft:' + target.round_id); } catch (_) { /* Server deletion already succeeded. */ }
+  $('deleteDialog').close(); historyOffset = 0;
+  await loadHistory(); ($('roundHistory').hidden ? $('create') : $('historyTitle')).focus(); message('已删除这一轮及双方答案。');
+});
 function aiName() { return state.sharing_mode === 'bound_shared' ? '小机' : state.ai_name; }
 function answerText(answer) { return answer ? answer.skipped ? '已跳过' : answer.text : '尚未回答'; }
 // sessionStorage is local to this tab. Restore only after an authorized view read;
 // never store a token or send this private draft to the partner via polling.
+function localDraftRound() {
+  let best = null;
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const name = sessionStorage.key(i);
+      if (!name.startsWith('deeptalk_draft:')) continue;
+      const draft = JSON.parse(sessionStorage.getItem(name));
+      if (draft?.topicId === topic.topic_id && draft.text?.trim() && (!best || draft.savedAt > best.savedAt)) {
+        best = {roundId:name.slice('deeptalk_draft:'.length), savedAt:draft.savedAt};
+      }
+    }
+  } catch (_) { /* A missing or damaged local hint never authorizes a round. */ }
+  return best?.roundId || '';
+}
 function draftKey() { return 'deeptalk_draft:' + roundId; }
 function persistDraft() {
   if (!state) return;
   try {
     if (!dirty && !pendingAnswer) { sessionStorage.removeItem(draftKey()); return; }
-    sessionStorage.setItem(draftKey(), JSON.stringify({questionId:state.questions[index].id,
+    sessionStorage.setItem(draftKey(), JSON.stringify({topicId:state.topic_id, savedAt:Date.now(), questionId:state.questions[index].id,
       text:$('answer').value, selected:selectedChoices, revision:state.revision,
       baseOwn:state.questions[index].own, pending:pendingAnswer}));
   } catch (_) { setText('draftNotice','浏览器未能保留刷新草稿，请先复制回答；当前页面仍可继续作答。'); }
@@ -340,8 +389,8 @@ function renderProgress() {
 }
 function renderRound(preserveDraft = false) {
   $('setup').hidden = true; $('round').hidden = false; $('sources').hidden = false;
-  $('roundDescription').textContent = state.total + '题 · ' + (state.description || '');
-  $('newRound').href = '/deeptalk?topic_id=' + encodeURIComponent(state.topic_id);
+  $('roundDescription').textContent = state.total + '题 · ' + (state.description || '') + (state.mode === 'blind' ? ' · 答完再看（旧模式）' : '');
+  $('newRound').href = '/deeptalk?topic_id=' + encodeURIComponent(state.topic_id) + '&new=1';
   document.title = `${state.title} · CEDAR TOY`;
   $('roundTitle').textContent = state.title;
   renderProgress();
@@ -388,7 +437,7 @@ async function loadRound(initial = false, preserveDraft = false) {
 // Read-only polling in both modes. A routine poll never replaces input, selection,
 // scroll, revision or question options. Only a confirmed lock/unlock changes views.
 async function pollPeer() {
-  if (polling || busy || document.hidden || !state || state.unlocked || $('round').hidden) return;
+  if (polling || busy || document.hidden || !state || roundMissing || $('round').hidden) return;
   polling = true;
   const version = viewVersion, currentState = state, currentIndex = index;
   const current = () => !busy && version === viewVersion && state === currentState && index === currentIndex && !document.hidden;
@@ -423,13 +472,21 @@ async function pollPeer() {
   } catch (err) {
     if (current()) {
       $('liveHint').textContent = '暂时无法同步进度，稍后自动重试；当前输入已保留。';
-      if ([401,403,404].includes(err.status)) { $('round').hidden = true; state = null; message(err.message, true); }
+      if (err.status === 404) markRoundMissing();
+      else if ([401,403].includes(err.status)) { $('round').hidden = true; state = null; message(err.message, true); }
     }
   } finally { polling = false; }
 }
 setInterval(pollPeer, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollPeer(); });
+function markRoundMissing() {
+  roundMissing = true; persistDraft();
+  if ($('confirmDialog').open) $('confirmDialog').close();
+  message('这一轮已被删除或无法访问，不能继续保存；当前页面的回答仍保留供复制。', true);
+  setText('liveHint', '可通过下方链接返回题库。'); updateControls();
+}
 async function saveAnswer() {
+  if (roundMissing) throw new Error('这一轮已无法访问，当前输入仍保留供复制。');
   // Settle the exact uncertain request first, even if its text was edited since.
   if (pendingAnswer) await sendPendingAnswer();
   // An uncertain response must retry its original request before any reconciliation.
@@ -484,9 +541,8 @@ function openSubmit() {
   $('confirmError').textContent = '';
   $('confirmDialog').showModal();
 }
-$('mode').onchange = () => { $('modeIntro').textContent = $('mode').value === 'chat' ? '边聊边答：双方已作答的内容实时可见。' : '答完再看：一方提交，其答卷就对另一方可见。'; };
 $('create').onclick = () => work(async () => {
-  const choice = {topic_id:topic.topic_id, mode:$('mode').value};
+  const choice = {topic_id:topic.topic_id, mode:'chat'};
   const fingerprint = JSON.stringify(choice);
   if (!pendingCreate || pendingCreate.fingerprint !== fingerprint) pendingCreate = {fingerprint,body:{...choice,request_id:key()}};
   // Retain the exact request across a refresh after an uncertain network response.
@@ -560,8 +616,34 @@ work(async () => {
   if (!topic) { $('chooseTopic').hidden = false; message('没有找到这套题库，请从首页重新进入。', true); return; }
   $('bindingHint').textContent = context.machines.length ? '已绑定的小机一起回答，共用一份答卷。' : '请先回首页绑定小机，再开始问答。';
   try { pendingCreate = JSON.parse(sessionStorage.getItem('deeptalk_pending_create')); } catch (_) { /* Ignore a damaged retry hint. */ }
+  let resumeError = '';
+  if (pageParams.get('new') !== '1') {
+    let candidate = {};
+    try { candidate = await api('resume', {topic_id:topic.topic_id, draft_round_id:localDraftRound()}); }
+    catch (err) {
+      if ([401,403].includes(err.status)) throw err;
+      resumeError = '暂时无法自动续答，可从历史轮次继续，或明确开始新一轮。';
+    }
+    if (candidate.round_id) {
+      roundId = candidate.round_id;
+      try {
+        await loadRound(true);
+        if (!state.submitted) {
+          history.replaceState(null, '', '/deeptalk?round_id=' + encodeURIComponent(roundId));
+          pendingCreate = null; sessionStorage.removeItem('deeptalk_pending_create');
+          message(''); return;
+        }
+      } catch (err) {
+        if ([401,403].includes(err.status)) throw err;
+        if (err.status !== 404) resumeError = '暂时无法读取上次答卷，可从历史轮次重试，或明确开始新一轮。';
+      }
+      // Submitted/deleted between selection and view: return to choice, never create.
+      state = null; roundId = null; roundMissing = false; dirty = false;
+      $('round').hidden = true;
+    }
+  }
   await loadHistory();
-  $('setup').hidden = false; $('sources').hidden = false; setupTopic(); message('已登录：' + context.username);
+  $('setup').hidden = false; $('sources').hidden = false; setupTopic(); message(resumeError || '已登录：' + context.username, !!resumeError);
 });
 </script>
 </body>

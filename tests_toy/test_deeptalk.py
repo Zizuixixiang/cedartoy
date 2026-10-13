@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -42,6 +43,11 @@ class DeeptalkTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        key_file = self.root / 'deeptalk-test.key'
+        key_file.write_bytes(os.urandom(32))
+        key_file.chmod(0o600)
+        key_env = patch.dict(os.environ, DEEPTALK_SAVE_KEY_FILE=str(key_file))
+        key_env.start(); self.addCleanup(key_env.stop)
         self.data = self.root / 'questions'
         write_fixtures(self.data)
         patcher = patch.object(catalog, 'DATA_DIR', self.data)
@@ -205,10 +211,12 @@ class DeeptalkTests(unittest.TestCase):
         self.assertNotIn("deeptalk·", listing)
         guide = json.loads(server._tool_get_guide({"game": "deeptalk"}))["guide"]
         self.assertNotIn("OC", guide)
+        self.assertIn(catalog.VISIBILITY_GUIDE, guide)
         for game, tid in catalog.ALIASES.items():
             self.assertIn(tid, guide)
             self.assertIn(game, guide)
             specific = json.loads(server._tool_get_guide({"game": game}))["guide"]
+            self.assertIn(catalog.VISIBILITY_GUIDE, specific)
             self.assertIn(catalog.TOPICS[tid][0], specific)
             self.assertIn(str(catalog.TOPICS[tid][1]) + "题", specific)
         self.assertNotIn("测试占位题", guide)
@@ -402,10 +410,15 @@ class DeeptalkTests(unittest.TestCase):
         for params in ({'number':0},{'limit':101},{'number':True}):
             with self.assertRaises(DeeptalkError): self.call(AI,'questions',topic_id='couple_50',**params)
 
-    def shared_round(self, mode='blind'):
+    def shared_round(self, mode='chat'):
         with self.connect() as conn:
             conn.execute('INSERT INTO user_bindings VALUES (101,202)')
-        result = self.call(HUMAN, 'create', topic_id='relations_communication', request_id='shared_create', mode=mode)
+        if mode == 'blind':
+            # Existing shared blind rounds remain valid; Web can no longer create them.
+            result = self.store.create(HUMAN, None, 'relations_communication', 'shared_create',
+                                       sharing_mode='bound_shared', mode='blind')
+        else:
+            result = self.call(HUMAN, 'create', topic_id='relations_communication', request_id='shared_create', mode=mode)
         self.assertEqual(result['sharing_mode'], 'bound_shared')
         return result['round_id']
 
@@ -441,7 +454,7 @@ class DeeptalkTests(unittest.TestCase):
         self.assertEqual(self.call(AI, 'question', round_id=legacy)['questions'][0]['own']['text'], 'LEGACY_PRIVATE')
 
     def test_shared_drafts_revision_and_one_ai_submission(self):
-        self.rid = self.shared_round()
+        self.rid = self.shared_round(mode='blind')
         self.fill(HUMAN)
         def edit(ai):
             try:
@@ -476,6 +489,28 @@ class DeeptalkTests(unittest.TestCase):
             self.assertIn('SECRET_101', json.dumps(result))
             with self.assertRaises(DeeptalkError): self.answer(ai, text='late edit')
         self.assertTrue(self.call(HUMAN, 'view', round_id=self.rid)['unlocked'])
+
+    def test_web_creation_only_chat_and_rejected_modes_leave_history_unchanged(self):
+        for extra in ({}, {'mode': 'chat'}):
+            with self.subTest(extra=extra):
+                params = dict(topic_id='relations_communication', request_id='web_chat_' + str(len(extra)), **extra)
+                status, created, _ = self.http(HUMAN, 'create', post=True, **params)
+                self.assertEqual(status, 200)
+                self.assertEqual((created['mode'], created['sharing_mode']), ('chat', 'bound_shared'))
+                self.assertEqual(self.http(HUMAN, 'create', post=True, **params)[1]['round_id'], created['round_id'])
+        before = self.http(HUMAN, 'history')[1]
+        for mode in ('blind', '', None, True, False, 0, 1, [], {}, ['chat'], 'CHAT', ' chat', 'chat ', 'face_to_face'):
+            with self.subTest(mode=mode):
+                status, data, _ = self.http(HUMAN, 'create', post=True,
+                    topic_id='relations_communication', request_id='rejected_create', mode=mode)
+                self.assertEqual(status, 409 if mode == 'blind' else 400)
+                self.assertIn('刷新' if mode == 'blind' else 'mode', data['error'])
+                self.assertEqual(self.http(HUMAN, 'history')[1], before)
+        self.assertEqual(self.http(HUMAN, round_id=self.rid)[1]['mode'], 'blind')
+        for path in (False, True):
+            self.assertTrue(self.mcp(AI, 'create', path=path, topic_id='relations_communication',
+                                    mode='chat', request_id='mcp_no_create')['result']['isError'])
+        self.assertEqual(self.http(HUMAN, 'history')[1], before)
 
     def test_shared_creation_compatibility_and_server_identity(self):
         self.assertEqual(self.http(HUMAN, 'create', post=True, ai_id=201,
@@ -531,12 +566,31 @@ class DeeptalkTests(unittest.TestCase):
         self.assertEqual(view['questions'][0]['partner']['text'], 'LIVE_AI')
         self.assertFalse(view['unlocked'])
         self.assertNotIn('partner', view['questions'][1])
+        # Skipping is also immediately visible, in both directions, before submission.
+        self.assertEqual(self.http(HUMAN, 'answer', post=True, round_id=self.rid, question_id='q2',
+                                   skip=True, revision=1, request_id='live_human_skip')[0], 200)
+        for ai in (AI, OTHER_AI):
+            for path in (False, True):
+                for action in ('question', 'result'):
+                    result = self.mcp(ai, action, path=path, round_id=self.rid, number=2)['result']
+                    self.assertFalse(result['isError'])
+                    data = json.loads(result['content'][0]['text'])
+                    self.assertTrue(data['questions'][0]['partner']['skipped'])
+                    self.assertFalse(data['unlocked'])
+        result = self.mcp(AI, 'answer', round_id=self.rid, question_id='q2', skip=True,
+                          revision=1, request_id='live_ai_skip')['result']
+        self.assertFalse(result['isError'])
+        for action in ('view', 'question', 'result'):
+            status, view, _ = self.http(HUMAN, action, round_id=self.rid, number=2)
+            self.assertEqual(status, 200)
+            self.assertTrue(view['questions'][1 if action == 'view' else 0]['partner']['skipped'])
+            self.assertFalse(view['unlocked'])
         for user in (HUMAN, AI):
             self.assertNotIn('LIVE_', json.dumps(self.call(user, 'status', round_id=self.rid)))
             self.assertNotIn('LIVE_', json.dumps(self.call(user, 'history')))
         # Invalid edits never become visible; rejected mode changes cannot open blind rounds.
         self.assertEqual(self.http(HUMAN, 'answer', post=True, round_id=self.rid, question_id='q1',
-                         revision=1, text='', request_id='failed_live_1')[0], 400)
+                         revision=2, text='', request_id='failed_live_1')[0], 400)
         self.assertEqual(self.call(AI, 'question', round_id=self.rid)['questions'][0]['partner']['text'], 'LIVE_HUMAN')
         for user in (HUMAN, AI):
             for q in range(2, 14): self.answer(user, q, skip=True)
@@ -553,7 +607,7 @@ class DeeptalkTests(unittest.TestCase):
             self.assertEqual(self.http(OTHER_HUMAN, action, round_id=self.rid)[0], 404)
 
     def test_modes_are_immutable_validated_and_old_shared_rounds_stay_blind(self):
-        self.rid = self.shared_round()
+        self.rid = self.shared_round(mode='blind')
         self.answer(HUMAN, text='BLIND_SECRET')
         self.answer(AI, text='BLIND_AI')
         for action in ('question', 'result'):

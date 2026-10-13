@@ -49,7 +49,11 @@ def worker(step, payload):
 
 def main():
     with tempfile.TemporaryDirectory(prefix='deeptalk-persistence-') as temp:
-        env={**os.environ,'SESSIONS_DB':str(Path(temp)/'sessions.db')}
+        key_file = Path(temp) / 'deeptalk-test.key'
+        key_file.write_bytes(os.urandom(32))
+        key_file.chmod(0o600)
+        env={**os.environ,'SESSIONS_DB':str(Path(temp)/'sessions.db'),
+             'DEEPTALK_SAVE_KEY_FILE':str(key_file)}
         result={}
         for step in ('create','drafts','sealed','complete'):
             run=subprocess.run([sys.executable,__file__,'--worker',step],input=json.dumps(result),capture_output=True,text=True,env=env,cwd=ROOT,timeout=30)

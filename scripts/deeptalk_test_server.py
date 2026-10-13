@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, parse_qs
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from tests_toy.test_deeptalk import DeeptalkTests
+from tests_toy.test_deeptalk import DeeptalkTests, HUMAN
 from deeptalk import catalog
 import server
 
@@ -44,7 +44,11 @@ def main():
                 print(json.dumps({'tokens':fixture.tokens}),flush=True)
                 for line in sys.stdin:
                     req=json.loads(line)
-                    if req.get('kind')=='mcp':
+                    if req.get('kind')=='legacy_create':
+                        # Stdio-only fixture, never exposed through a Web/MCP route.
+                        result=fixture.store.create(HUMAN, None, req['topic_id'], req['request_id'],
+                                                    sharing_mode='bound_shared', mode='blind')
+                    elif req.get('kind')=='mcp':
                         result=server._handle_root_mcp(req['payload'],bearer_token=req['token'])
                     else:
                         handler=object.__new__(Handler)
