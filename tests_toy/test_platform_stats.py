@@ -92,60 +92,106 @@ class PlatformStatsTests(unittest.TestCase):
                 return leaderboard._scored_research_distributions()
 
     def test_scored_research_has_all_18_and_never_includes_deeptalk(self):
+        from deeptalk.catalog import ALIASES
+
         scales = leaderboard._scored_research_specs()
         self.assertEqual(len(scales), 18)
         self.assertIn("aidep", scales)
         self.assertIn("ipip_adhd", scales)
         self.assertNotIn("deeptalk", scales)
         self.assertFalse(any(game.startswith("dt_") for game in scales))
-        distributions = self._research_distributions([])
+        self.assertEqual(len(ALIASES), 10)
+        # Even research-shaped records must not bring unscored question banks in.
+        scores = {key: (lo + hi) / 2 for fields in scales.values()
+                  for key, _, lo, hi in fields}
+        records = [("guest:deeptalk", game, "research",
+                    json.dumps({"scores": scores}), 1)
+                   for game in ["deeptalk", *ALIASES, *ALIASES.values()]]
+        distributions = self._research_distributions(records)
         self.assertEqual(set(distributions), set(scales))
-        self.assertTrue(all(d["status"] == "empty" and not d["dimensions"]
+        self.assertTrue(all(d == {"status": "empty", "dimensions": []}
                             for d in distributions.values()))
 
-    def test_scored_research_groups_numeric_bands_without_private_answers(self):
+    def test_all_scored_research_publish_one_sample_without_private_data(self):
         specs = leaderboard._scored_research_specs()
-        fields = specs["bsr"]
-        scores = {key: (lo + hi) / 2 for key, _, lo, hi in fields}
-        records = [(f"guest:case{i}", "bsr", "research", json.dumps({
-            "scores": scores, "answers": ["PRIVATE_ANSWER_NEVER_PUBLIC"],
-            "owner_name": "PRIVATE_NAME_NEVER_PUBLIC"
-        }), i) for i in range(5)]
-        records.extend([
-            ("guest:invalid", "bsr", "research", "{bad json", 1),
-            ("guest:wrong", "bsr", "research", json.dumps({"scores": {"pseudo_profound": 999}}), 1),
-            ("guest:notresearch", "bsr", "something_else", json.dumps({"scores": scores}), 1),
-        ])
+        records = []
+        for game, fields in specs.items():
+            scores = {key: lo + (hi - lo) * 0.53 for key, _, lo, hi in fields}
+            records.append(("guest:PRIVATE_ID_NEVER_PUBLIC", game, "research", json.dumps({
+                "scores": scores, "answers": ["PRIVATE_ANSWER_NEVER_PUBLIC"],
+                "owner_name": "PRIVATE_NAME_NEVER_PUBLIC",
+                "machine_id": "PRIVATE_MACHINE_NEVER_PUBLIC",
+            }), 1))
         stats = self._research_distributions(records)
-        bsr = stats["bsr"]
-        self.assertEqual(bsr["status"], "ready")
-        self.assertEqual(bsr["sample_size"], 5)
-        self.assertEqual([d["label"] for d in bsr["dimensions"]], [x[1] for x in fields])
-        for d in bsr["dimensions"]:
-            self.assertEqual(sum(row["count"] for row in d["buckets"]), 5)
-            self.assertEqual(len(d["buckets"]), 5)
-        self.assertEqual(stats["bsfl"]["status"], "empty")
+        for game, fields in specs.items():
+            with self.subTest(game=game):
+                # Exact public shape prevents IDs, raw scores or extra details leaking.
+                self.assertEqual(stats[game], {
+                    "status": "ready", "sample_size": 1,
+                    "dimensions": [{
+                        "label": label,
+                        "buckets": [{
+                            "result": f"{lo + i * (hi - lo) / 5:.1f}–{lo + (i + 1) * (hi - lo) / 5:.1f}",
+                            "count": int(i == 2),
+                        } for i in range(5)],
+                    } for _, label, lo, hi in fields],
+                })
         payload = json.dumps(stats, ensure_ascii=False)
-        self.assertNotIn("PRIVATE_ANSWER", payload)
-        self.assertNotIn("PRIVATE_NAME", payload)
-        self.assertNotIn("guest:case", payload)
-        self.assertNotIn('"answers"', payload)
+        self.assertNotIn("PRIVATE_", payload)
 
-    def test_scored_research_suppresses_small_samples_and_dedupes_slots(self):
+    def test_scored_research_zero_samples_are_empty(self):
+        stats = self._research_distributions([])
+        self.assertEqual(len(stats), 18)
+        for game, data in stats.items():
+            with self.subTest(game=game):
+                self.assertEqual(data, {"status": "empty", "dimensions": []})
+
+    def test_scored_research_rejects_invalid_json_and_scores(self):
+        specs = leaderboard._scored_research_specs()
+        for game in ("bsr", "aidep"):
+            fields = specs[game]
+            scores = {key: (lo + hi) / 2 for key, _, lo, hi in fields}
+            key, _, lo, hi = fields[0]
+            invalid = [None, "{bad json", "null", "[]", "{}",
+                       '{"scores": null}', '{"scores": []}', '{"scores": {}}']
+            invalid.extend(json.dumps({"scores": {**scores, key: value}})
+                           for value in (True, "3", None, [], {}, lo - 1, hi + 1,
+                                         float("nan"), float("inf"), -float("inf")))
+            for raw in invalid:
+                with self.subTest(game=game, raw=raw):
+                    records = [("guest:invalid", game, "research", raw, 1),
+                               ("guest:wrong-kind", game, "something_else",
+                                json.dumps({"scores": scores}), 2)]
+                    self.assertEqual(self._research_distributions(records)[game],
+                                     {"status": "empty", "dimensions": []})
+
+    def test_scored_research_dedupes_slots_using_latest_valid_result(self):
         shapes = leaderboard._scored_research_specs()
-        scores = {key: (lo + hi) / 2 for key, _, lo, hi in shapes["aidep"]}
-        detail = json.dumps({"scores": scores, "answers": [1, 2, 3]})
-        # Multiple save slots belong to the same account, not independent samples.
-        records = [(str(100 + i), "aidep", "research", detail, i) for i in range(9)]
-        records += [("100:2", "aidep", "research", detail, 11)]
-        rows = self._research_distributions(records)
-        self.assertEqual(rows["aidep"], {"status": "insufficient", "dimensions": []})
-        records += [("109", "aidep", "research", detail, 20)]
-        rows = self._research_distributions(records)
-        self.assertEqual(rows["aidep"]["status"], "ready")
-        self.assertEqual(rows["aidep"]["sample_size"], 10)
-        self.assertEqual(rows["aidep"]["dimensions"][0]["label"], "全量表均分")
-        self.assertEqual(sum(b["count"] for b in rows["aidep"]["dimensions"][0]["buckets"]), 10)
+        for game in ("bsr", "aidep"):
+            with self.subTest(game=game):
+                def detail(fraction):
+                    return json.dumps({"scores": {
+                        key: lo + (hi - lo) * fraction
+                        for key, _, lo, hi in shapes[game]
+                    }})
+
+                # All five account slots count once; guests remain distinct.
+                records = [(player_id, game, "research", detail(0), i)
+                           for i, player_id in enumerate(("100", "100:2", "100:3", "100:4", "100:5"))]
+                records += [
+                    ("100:2", game, "research", detail(1), 10),
+                    ("100", game, "research", "{bad json", 12),
+                    ("100:5", game, "research", detail(2), 11),
+                    ("guest:one", game, "research", detail(0), 1),
+                    ("guest:two", game, "research", detail(0.25), 1),
+                    ("guest:one", game, "research", detail(0.5), 0),
+                ]
+                data = self._research_distributions(records)[game]
+                self.assertEqual(data["status"], "ready")
+                self.assertEqual(data["sample_size"], 3)
+                for dimension in data["dimensions"]:
+                    self.assertEqual([b["count"] for b in dimension["buckets"]],
+                                     [1, 1, 0, 0, 1])
 
     def _sins_virtues_distributions(self, rows):
         with tempfile.TemporaryDirectory() as temp_dir:

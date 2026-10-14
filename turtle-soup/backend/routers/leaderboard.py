@@ -224,8 +224,8 @@ def _scored_research_specs():
 def _scored_research_distributions():
     """Coarse anonymous numeric score bands; never return answers, IDs or raw scores.
 
-    At least five different saved identities must have valid results; the
-    private human-only AIDep requires ten. Count each identity at most once.
+    Publish any nonempty valid sample, including AIDep. Count each identity
+    once, using its latest valid result across save slots.
     """
     shapes = _scored_research_specs()
     empty = lambda: {"status": "empty", "dimensions": []}
@@ -274,9 +274,6 @@ def _scored_research_distributions():
         valid[game].append(measures)
     for game, records in valid.items():
         if not records:
-            continue
-        if len(records) < (10 if game == "aidep" else 5):
-            distributions[game] = {"status": "insufficient", "dimensions": []}
             continue
         sections = []
         for index, (_, label, lo, hi) in enumerate(shapes[game]):
