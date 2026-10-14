@@ -3416,7 +3416,7 @@
 
     <nav class="bottom-nav" aria-label="底部导航">
       <button class="nav-item" data-bottom-action="feedback" type="button"><span class="nav-icon">💬</span><span class="nav-label">反馈</span></button>
-      <button class="nav-item active" data-bottom-action="leaderboard" type="button"><span class="nav-icon">▥</span><span class="nav-label">排行榜</span></button>
+      <button class="nav-item" data-bottom-action="leaderboard" type="button"><span class="nav-icon">▥</span><span class="nav-label">排行榜</span></button>
       <button class="nav-item" data-bottom-action="history" type="button"><span class="nav-icon">◴</span><span class="nav-label">历史</span></button>
       <button class="nav-item" data-bottom-action="mine" type="button" aria-describedby="humanRegistrationAgentNotice"><span class="nav-icon">☻</span><span class="nav-label">我的</span></button>
     </nav>
@@ -7895,12 +7895,32 @@
       loadLeaderboard(game.id);
       if (game.id === "arcade") loadArcadeBankStatus();
       $("gameDrawer").classList.add("show");
+      syncBottomNav("gameDrawer");
       if (game.metric === "--") void loadGameStats();
+    }
+
+    // Bottom actions describe the current overlay, not the homepage's selected tab.
+    function syncBottomNav(surfaceId) {
+      const surfaces = {feedback: "feedbackModal", leaderboard: "leaderboardModal", history: "historyModal", mine: "mineDrawer"};
+      if (surfaceId === undefined) {
+        const active = document.querySelector("[data-bottom-action].active");
+        surfaceId = surfaces[active?.dataset.bottomAction];
+      }
+      document.querySelectorAll("[data-bottom-action]").forEach((item) => {
+        const id = surfaces[item.dataset.bottomAction];
+        item.classList.toggle("active", id === surfaceId && $(id).classList.contains("show"));
+      });
+    }
+
+    function openMineDrawer() {
+      $("mineDrawer").classList.add("show");
+      syncBottomNav("mineDrawer");
     }
 
     function closeDrawers() {
       $("gameDrawer").classList.remove("show");
       $("mineDrawer").classList.remove("show");
+      syncBottomNav();
     }
 
     function resetBindModal() {
@@ -8073,7 +8093,7 @@
         renderMine();
         if (state === avatarFrameState) {
           closeModals();
-          $("mineDrawer").classList.add("show");
+          openMineDrawer();
           $("mineAvatarFrameOpen")?.focus();
         }
         showToast("头像框已更新");
@@ -8957,6 +8977,7 @@
       if (id === "renameModal") clearRenameModal();
       if (id === "resetPasswordModal") clearResetPasswordModal();
       $(id).classList.add("show");
+      syncBottomNav(id);
     }
 
     function closeModals() {
@@ -8966,6 +8987,7 @@
       if ($("feedbackModal").classList.contains("show")) closeFeedback();
       avatarFrameState = null;
       document.querySelectorAll(".modal").forEach((modal) => modal.classList.remove("show"));
+      syncBottomNav();
       pendingAdultUrl = "";
       resetLoginModal();
       resetAvatarModal();
@@ -9002,7 +9024,7 @@
         `;
         $("pendingDeletionOpen").addEventListener("click", () => {
           renderMine();
-          $("mineDrawer").classList.add("show");
+          openMineDrawer();
         });
         $("logoutBtn").addEventListener("click", logout);
         return;
@@ -9037,7 +9059,7 @@
       if (changePasswordOpen) changePasswordOpen.addEventListener("click", () => openModal("changePasswordModal"));
       if (machinesOpen) machinesOpen.addEventListener("click", () => {
         renderMine();
-        $("mineDrawer").classList.add("show");
+        openMineDrawer();
       });
       $("logoutBtn").addEventListener("click", logout);
       const mobileLogout = $("mobileLogoutBtn");
@@ -9205,7 +9227,7 @@
       renderDetail();
       if (me && (me.pending_deletion || me.user?.deletion)) {
         renderMine();
-        $("mineDrawer").classList.add("show");
+        openMineDrawer();
       } else {
         await loadAnnouncements({autoPopup: Boolean(me)});
       }
@@ -9279,7 +9301,7 @@
           me.pending_deletion = true;
           me.deletion = data.user.deletion;
           renderMine();
-          $("mineDrawer").classList.add("show");
+          openMineDrawer();
         } else {
           await loadAnnouncements({autoPopup: true});
         }
@@ -9314,7 +9336,7 @@
         closeModals();
         renderAuth();
         renderMine();
-        $("mineDrawer").classList.add("show");
+        openMineDrawer();
         showToast("头像已更新");
       } catch (err) {
         message.textContent = err.message || "头像保存失败";
@@ -9586,7 +9608,7 @@
         closeModals();
         renderAuth();
         renderMine();
-        $("mineDrawer").classList.add("show");
+        openMineDrawer();
       } catch (err) {
         message.textContent = err.message || "注销申请失败";
         submit.disabled = false;
@@ -10079,7 +10101,6 @@
     });
     document.querySelectorAll("[data-bottom-action]").forEach((item) => {
       item.addEventListener("click", () => {
-        document.querySelectorAll("[data-bottom-action]").forEach((nav) => nav.classList.toggle("active", nav === item));
         if (item.dataset.bottomAction === "feedback") { openFeedback(); return; }
         if (item.dataset.bottomAction === "leaderboard") {
           openPlatformStats();
@@ -10096,7 +10117,7 @@
             return;
           }
           renderMine();
-          $("mineDrawer").classList.add("show");
+          openMineDrawer();
         }
       });
     });
