@@ -14,8 +14,7 @@ from judge import get_tarot_model_runtime_statuses, tarot_reading_chat
 
 
 router = APIRouter()
-TAROT_FLASH_MODEL = "gemini-3.5-flash"
-TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
+TAROT_AUTO_MODEL = "auto"
 
 
 class TarotMessage(BaseModel):
@@ -29,7 +28,7 @@ class TarotBridgeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     messages: list[TarotMessage] = Field(min_length=1, max_length=4)
-    model: Literal["gemini-3.5-flash", "gemini-3.1-pro-preview"] = TAROT_FLASH_MODEL
+    model: Literal["auto", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview"] = TAROT_AUTO_MODEL
     max_tokens: int = Field(default=4096, ge=1, le=8192)
     timeout: float = Field(default=90, ge=5, le=120)
 
@@ -63,7 +62,7 @@ async def tarot_reading(
     if sum(len(message["content"]) for message in messages) > 60_000:
         raise HTTPException(status_code=422, detail="Tarot bridge 请求格式无效")
     try:
-        content = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             tarot_reading_chat(
                 messages,
                 model=body.model,
@@ -80,11 +79,15 @@ async def tarot_reading(
         raise HTTPException(status_code=422, detail="Tarot bridge 请求格式无效") from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Tarot bridge 上游失败") from exc
+    content = result.get("content") if isinstance(result, dict) else None
+    model = result.get("model") if isinstance(result, dict) else None
+    if not isinstance(model, str) or not model.strip() or len(model) > 256:
+        raise HTTPException(status_code=502, detail="Tarot bridge 上游模型无效")
     if not isinstance(content, str) or not content.strip() or len(content) > 100_000:
         raise HTTPException(status_code=502, detail="Tarot bridge 上游响应无效")
     return {
         "content": content,
         "source": "tarot-ritual",
         "pool": "tarot",
-        "model": body.model,
+        "model": model,
     }

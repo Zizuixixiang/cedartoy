@@ -349,80 +349,34 @@ class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):
             "healthy",
         )
 
-    async def test_tarot_public_status_reads_live_429_state_without_claim_or_request(self):
-        flash = {
-            **CONFIG,
-            "id": 73,
-            "name": "tarot-flash",
-            "purpose": "tarot",
-            "model": judge.TAROT_FLASH_MODEL,
-        }
-        pro = {
-            **CONFIG,
-            "id": 74,
-            "name": "tarot-pro",
-            "purpose": "tarot",
-            "model": judge.TAROT_PRO_MODEL,
-        }
-        with (
-            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash, pro])),
-            patch.object(judge.httpx, "AsyncClient", FakeClient),
-            self.assertRaises(HTTPException),
-        ):
-            FakeClient.outcomes = [response(429, headers={"Retry-After": "240"})]
-            await judge.tarot_reading_chat(
-                MESSAGES, model=judge.TAROT_FLASH_MODEL, timeout=20
-            )
-        self.assertEqual(
-            [payload["model"] for payload in FakeClient.payloads],
-            [judge.TAROT_FLASH_MODEL],
-        )
+    async def test_tarot_public_status_reads_shared_health_without_claim_or_request(self):
+        tarot = {**CONFIG, "id": 73, "purpose": "tarot", "model": "flash-lite"}
+        soup = {**tarot, "id": 74, "purpose": "both"}
+        for row in (tarot, soup):
+            judge.register_config_runtime_node(row)
+        judge._record_failure(soup["id"], httpx.HTTPStatusError(
+            "limited", request=response(429).request,
+            response=response(429, headers={"Retry-After": "240"})), was_probe=False)
         claim = Mock(side_effect=AssertionError("status must not claim a probe"))
-
         with (
-            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash, pro])),
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[tarot, soup])),
             patch.object(judge, "_claim_attempt", claim),
-            patch.object(
-                judge.httpx,
-                "AsyncClient",
-                side_effect=AssertionError("status must not contact upstream"),
-            ),
+            patch.object(judge.httpx, "AsyncClient", side_effect=AssertionError("no upstream")),
         ):
             current = await judge.get_tarot_model_runtime_statuses()
             self.clock += 240
-            retry_ready = await judge.get_tarot_model_runtime_statuses()
-            judge._state(flash["id"]).probe_in_flight = True
+            retry = await judge.get_tarot_model_runtime_statuses()
+            judge._state(soup["id"]).probe_in_flight = True
             probing = await judge.get_tarot_model_runtime_statuses()
-
-        self.assertEqual(
-            current,
-            {
-                "models": [
-                    {
-                        "model": judge.TAROT_FLASH_MODEL,
-                        "status": "cooling",
-                        "remaining_seconds": 240,
-                    },
-                    {
-                        "model": judge.TAROT_PRO_MODEL,
-                        "status": "available",
-                        "remaining_seconds": 0,
-                    },
-                ]
-            },
-        )
-        self.assertEqual(retry_ready["models"][0]["status"], "retry_ready")
+        self.assertEqual(current, {"models": [{"model": "auto", "status": "cooling", "remaining_seconds": 240}]})
+        self.assertEqual(retry["models"][0]["status"], "retry_ready")
         self.assertEqual(probing["models"][0]["status"], "probing")
-        self.assertEqual(probing["models"][1]["status"], "available")
         claim.assert_not_called()
-
-        disabled_pro = {**pro, "enabled": 0}
-        with patch.object(
-            judge, "fetch_all", AsyncMock(return_value=[disabled_pro])
-        ):
-            unavailable = await judge.get_tarot_model_runtime_statuses()
-        self.assertEqual(unavailable["models"][0]["status"], "unconfigured")
-        self.assertEqual(unavailable["models"][1]["status"], "disabled")
+        for rows, expected in (([], "unconfigured"), ([{**tarot, "enabled": 0}], "disabled"),
+                               ([tarot, {**tarot, "id": 75, "model": "fallback"}], "available")):
+            with patch.object(judge, "fetch_all", AsyncMock(return_value=rows)):
+                status = await judge.get_tarot_model_runtime_statuses()
+            self.assertEqual(status["models"][0]["status"], expected)
 
     async def test_only_one_request_can_use_a_half_open_probe(self):
         state = judge._state(CONFIG["id"])
@@ -770,7 +724,7 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(judge._select_configs_for_pool([both, npc], "tarot"), [])
                 self.assertEqual(
                     judge._select_configs_for_pool(rows, "tarot"),
-                    [tarot] if model in judge.TAROT_ALLOWED_MODELS else [],
+                    [tarot],
                 )
 
     async def test_flash_routing_tries_gg_before_sakura_by_priority(self):
@@ -794,7 +748,7 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
                     "https://sakura.test/v1/chat/completions",
                 ])
 
-    def test_tarot_pool_is_exact_and_does_not_absorb_all_or_other_models(self):
+    def test_tarot_pool_is_purpose_only_and_deduplicates_nodes(self):
         tarot = {
             **CONFIG,
             "id": 54,
@@ -828,69 +782,51 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
             judge._select_configs_for_pool(
                 [ordinary, tarot, pro, unapproved_tarot, duplicate_tarot], "tarot"
             ),
-            [tarot, pro],
+            [tarot, pro, unapproved_tarot],
         )
         self.assertEqual(
             judge._select_configs_for_pool(
                 [tarot, pro], "tarot", model=judge.TAROT_PRO_MODEL
             ),
-            [pro],
+            [tarot, pro],
         )
         self.assertEqual(
             judge._select_configs_for_pool([ordinary, tarot], "judge"),
             [ordinary],
         )
 
-    async def test_tarot_selected_model_is_the_only_upstream_candidate(self):
-        flash = {
-            **CONFIG,
-            "id": 81,
-            "name": "flash",
-            "purpose": "tarot",
-            "model": judge.TAROT_FLASH_MODEL,
-        }
-        pro = {
-            **CONFIG,
-            "id": 82,
-            "name": "pro",
-            "purpose": "tarot",
-            "model": judge.TAROT_PRO_MODEL,
-        }
-        FakeClient.outcomes = [response(200, content="pro only")]
-        with (
-            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash, pro])),
-            patch.object(judge.httpx, "AsyncClient", FakeClient),
-        ):
-            result = await judge.tarot_reading_chat(
-                MESSAGES,
-                model=judge.TAROT_PRO_MODEL,
-                timeout=20,
-            )
-        self.assertEqual(result, "pro only")
-        self.assertEqual(
-            [payload["model"] for payload in FakeClient.payloads],
-            [judge.TAROT_PRO_MODEL],
-        )
+    async def test_tarot_aliases_use_priority_fallback_disabled_filter_and_deduplication(self):
+        models = ["gemini-3.8-flash", "[反重力次]gemini-3.1-flash-lite", "[aistudio2]gemini-3.7-flash"]
+        rows = [{**CONFIG, "id": 81+i, "name": str(i), "purpose": "tarot",
+                 "model": model, "priority": i, "api_url": f"https://channel{i}.test/v1"}
+                for i, model in enumerate(models)]
+        disabled = {**rows[0], "id": 90, "model": "disabled-model", "priority": -1, "enabled": 0}
+        duplicate = {**rows[0], "id": 91, "priority": 9}
+        for alias in judge.TAROT_ALLOWED_MODELS:
+            with self.subTest(alias=alias):
+                judge.reset_fail_counts()
+                FakeClient.payloads = []
+                FakeClient.outcomes = [response(503), response(429), response(200, content="reading")]
+                with (
+                    patch.object(judge, "fetch_all", AsyncMock(return_value=[duplicate, rows[2], disabled, rows[1], rows[0]])),
+                    patch.object(judge.httpx, "AsyncClient", FakeClient),
+                ):
+                    result = await judge.tarot_reading_chat(MESSAGES, model=alias, timeout=20)
+                self.assertEqual(result, {"content": "reading", "model": models[2]})
+                self.assertEqual([p["model"] for p in FakeClient.payloads], models)
 
-    async def test_unconfigured_tarot_model_does_not_fall_back(self):
-        flash = {
-            **CONFIG,
-            "id": 83,
-            "purpose": "tarot",
-            "model": judge.TAROT_FLASH_MODEL,
-        }
-        with (
-            patch.object(judge, "fetch_all", AsyncMock(return_value=[flash])),
-            patch.object(judge.httpx, "AsyncClient", FakeClient),
-            self.assertRaises(HTTPException) as raised,
-        ):
-            await judge.tarot_reading_chat(
-                MESSAGES,
-                model=judge.TAROT_PRO_MODEL,
-                timeout=20,
-            )
-        self.assertEqual(raised.exception.status_code, 503)
-        self.assertIn("所选塔罗模型未配置", raised.exception.detail)
+    async def test_empty_tarot_pool_never_borrows_other_purposes_or_arbitrary_models(self):
+        for alias in ("auto", judge.TAROT_PRO_MODEL):
+            with (
+                patch.object(judge, "fetch_all", AsyncMock(return_value=[CONFIG])),
+                patch.object(judge.httpx, "AsyncClient", FakeClient),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await judge.tarot_reading_chat(MESSAGES, model=alias, timeout=20)
+            self.assertEqual(raised.exception.status_code, 503)
+            self.assertIn("通道未配置", raised.exception.detail)
+        with self.assertRaises(ValueError):
+            await judge.tarot_reading_chat(MESSAGES, model="https://attacker.test")
         self.assertEqual(FakeClient.payloads, [])
 
     def test_tarot_model_node_is_unique_but_other_models_may_share_credential(self):
@@ -918,9 +854,8 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(
             admin_router.tarot_model_node_conflict([soup_other_model], tarot)
         )
-        self.assertIs(
-            admin_router.tarot_model_node_conflict([same_model_soup], tarot),
-            same_model_soup,
+        self.assertIsNone(
+            admin_router.tarot_model_node_conflict([same_model_soup], tarot)
         )
         self.assertIs(
             admin_router.tarot_model_node_conflict(
@@ -956,13 +891,13 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(await admin_router.update_api_config(CONFIG["id"], body, admin={"id": 1}), {"ok": True})
                     self.assertEqual(execute.await_count, 2)
 
-    async def test_admin_allows_shared_credential_for_different_model(self):
+    async def test_admin_allows_same_node_across_tarot_and_other_purposes(self):
         existing = {
             **CONFIG,
             "id": 60,
             "name": "existing gg",
             "purpose": "both",
-            "model": "gemini-3-flash-preview",
+            "model": "gemini-3.5-flash",
             "enabled": 1,
         }
         body = admin_router.ApiConfigBody(
@@ -986,10 +921,10 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"id": 61})
         execute.assert_awaited_once()
 
-    async def test_admin_still_rejects_duplicate_or_cross_purpose_tarot_node(self):
+    async def test_admin_still_rejects_duplicate_tarot_node(self):
         for model in judge.TAROT_ALLOWED_MODELS:
             existing = {**CONFIG, "id": 19, "model": model, "purpose": "tarot"}
-            for purpose in ("tarot", "both", "npc"):
+            for purpose in ("tarot",):
                 with self.subTest(model=model, purpose=purpose):
                     with (
                         patch.object(admin_router, "fetch_all", AsyncMock(return_value=[existing])),
@@ -997,6 +932,82 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
                     ):
                         await admin_router.require_api_config_assignment({**existing, "purpose": purpose})
                     self.assertEqual(raised.exception.status_code, 409)
+
+    async def test_tarot_alias_shares_physical_lock_and_has_independent_capacity(self):
+        soup = {**CONFIG, "id": 101, "model": "same-model"}
+        tarot = {**soup, "id": 102, "purpose": "tarot"}
+        npc = {**soup, "id": 103, "purpose": "npc"}
+        for cfg in (soup, tarot, npc):
+            judge.register_config_runtime_node(cfg)
+        self.assertIs(judge._config_lock(soup), judge._config_lock(tarot))
+        self.assertIs(judge._config_lock(npc), judge._config_lock(tarot))
+        started, release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def post(cfg, payload, timeout):
+            calls.append(cfg["id"])
+            started.set()
+            await release.wait()
+            return response(200)
+
+        with (
+            patch.object(judge, "TAROT_API_MAX_CONCURRENCY", 1),
+            patch.object(judge, "TAROT_API_QUEUE_TIMEOUT_SECONDS", 0.01),
+            patch.object(judge, "fetch_all", AsyncMock(return_value=[soup, tarot, npc])),
+            patch.object(judge, "_post_chat_completion", post),
+        ):
+            first = asyncio.create_task(judge._chat(MESSAGES, pool="judge"))
+            await asyncio.wait_for(started.wait(), 1)
+            second = asyncio.create_task(judge.tarot_reading_chat(MESSAGES))
+            try:
+                for _ in range(20):
+                    if judge._tarot_active:
+                        break
+                    await asyncio.sleep(0)
+                self.assertEqual(judge._tarot_active, 1)
+                self.assertEqual(judge._npc_active, 0)
+                self.assertEqual(calls, [soup["id"]])
+                with self.assertRaises(HTTPException) as overflow:
+                    await judge.tarot_reading_chat(MESSAGES)
+                self.assertEqual(overflow.exception.status_code, 503)
+            finally:
+                release.set()
+                results = await asyncio.gather(first, second)
+            self.assertEqual(results, ["ok", {"content": "ok", "model": "same-model"}])
+            self.assertEqual(calls, [soup["id"], tarot["id"]])
+            self.assertEqual(judge._tarot_active, 0)
+            self.assertEqual(judge._tarot_waiting, 0)
+
+    async def test_admin_configuration_keeps_real_tarot_model_and_channel_names(self):
+        rows = [{**CONFIG, "id": 201+i, "purpose": "tarot", "name": name, "model": model}
+                for i, (name, model) in enumerate((
+                    ("空悲切", "[反重力次]gemini-3.1-flash-lite"),
+                    ("沉默", "[aistudio2]gemini-3.7-flash"))) ]
+        expected = [(row["name"], row["model"]) for row in rows]
+        with patch.object(admin_router, "fetch_all", AsyncMock(return_value=rows)):
+            result = await admin_router.api_configs(admin={"id": 1})
+        self.assertEqual([(row["name"], row["model"]) for row in result], expected)
+
+    async def test_admin_can_create_and_update_three_tarot_channels_with_existing_aliases(self):
+        models = ("gemini-3.8-flash", "[反重力次]gemini-3.1-flash-lite", "[aistudio2]gemini-3.7-flash")
+        for priority, model in enumerate(models):
+            for purpose in ("both", "npc"):
+                existing = {**CONFIG, "model": model, "purpose": purpose}
+                body = admin_router.ApiConfigBody(
+                    name="tarot", api_url=CONFIG["api_url"], api_key=CONFIG["api_key"],
+                    model=model, purpose="tarot", enabled=1, priority=priority)
+                execute = AsyncMock(return_value=105)
+                with (
+                    patch.object(admin_router, "fetch_all", AsyncMock(return_value=[existing])),
+                    patch.object(admin_router, "fetch_one", AsyncMock(return_value={**existing, "id": 105})),
+                    patch.object(admin_router, "execute", execute),
+                ):
+                    await admin_router.add_api_config(body, admin={"id": 1})
+                    await admin_router.update_api_config(105, body, admin={"id": 1})
+                self.assertEqual(execute.await_count, 2)
+                # Validation also allows a soup/NPC assignment when Tarot exists first.
+                self.assertIsNone(admin_router.tarot_model_node_conflict(
+                    [{**existing, "purpose": "tarot"}], existing))
 
     async def test_tarot_does_not_join_soup_priority_waiter_signal(self):
         observed = []

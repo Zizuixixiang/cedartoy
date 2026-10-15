@@ -22,17 +22,12 @@ const companionPath = path.join(root, 'assets/tarot/managed-companion.v3.js');
 const upstreamCompanionPath = path.join(
   root, 'vendor/tarot-ritual/public/js/companion-adapter.js',
 );
+const AUTO_MODEL = 'auto';
 const FLASH_MODEL = 'gemini-3.5-flash';
 const PRO_MODEL = 'gemini-3.1-pro-preview';
 
-function modelStatuses(flashStatus = 'available', flashSeconds = 0,
-  proStatus = 'available', proSeconds = 0) {
-  return {
-    models: [
-      { model: FLASH_MODEL, status: flashStatus, remaining_seconds: flashSeconds },
-      { model: PRO_MODEL, status: proStatus, remaining_seconds: proSeconds },
-    ],
-  };
+function modelStatuses(status = 'available', seconds = 0) {
+  return { models: [{ model: AUTO_MODEL, status, remaining_seconds: seconds }] };
 }
 
 function settle(window) {
@@ -56,7 +51,7 @@ async function checkUiBehavior() {
   });
   const { window } = dom;
   window.fetch = async url => {
-    assert.equal(url, '/api/tarot/models/status');
+    assert.equal(url, '/api/tarot/models/status?routing=auto');
     return { ok: true, json: async () => modelStatuses() };
   };
   loadManagedUi(window);
@@ -75,14 +70,15 @@ async function checkUiBehavior() {
   await settle(window);
 
   const choices = [...window.document.querySelectorAll('.managed-model-option')];
-  assert.equal(choices.length, 2);
+  assert.equal(choices.length, 1);
   assert.deepEqual(choices.map(button => button.dataset.model), [
-    'gemini-3.5-flash',
-    'gemini-3.1-pro-preview',
+    AUTO_MODEL,
   ]);
   assert.equal(window.document.querySelector('#providerList input'), null);
-  assert.equal(window.document.getElementById('providerLabel').textContent, '本站 Flash');
+  assert.equal(window.document.getElementById('providerLabel').textContent, 'Gemini');
   assert.equal(choices[0].getAttribute('aria-checked'), 'true');
+  assert.equal(choices[0].querySelector('strong').textContent, 'Gemini');
+  assert.doesNotMatch(item.textContent, /Flash|Pro|gemini-|反重力次|aistudio2|小鸡农场|空悲切|沉默/);
 
   const select = item.querySelector('select');
   let changedTo = null;
@@ -91,12 +87,12 @@ async function checkUiBehavior() {
     changedTo = select.value;
     changeEvents += 1;
   });
-  choices[1].click();
+  choices[0].click();
   await settle(window);
-  assert.equal(changedTo, 'gemini-3.1-pro-preview');
+  assert.equal(changedTo, AUTO_MODEL);
   assert.equal(changeEvents, 1);
-  assert.equal(window.document.getElementById('providerLabel').textContent, '本站 Pro');
-  assert.equal(choices[1].getAttribute('aria-checked'), 'true');
+  assert.equal(window.document.getElementById('providerLabel').textContent, 'Gemini');
+  assert.equal(choices[0].getAttribute('aria-checked'), 'true');
   window.dispatchEvent(new window.Event('pagehide'));
 }
 
@@ -143,7 +139,7 @@ async function createCompanionHarness(session, {
   let fetchCalls = 0;
   let statusCalls = 0;
   window.fetch = async (url, options) => {
-    if (url === '/api/tarot/models/status') {
+    if (url === '/api/tarot/models/status?routing=auto') {
       statusCalls += 1;
       assert.equal(options.credentials, 'same-origin');
       assert.equal(options.cache, 'no-store');
@@ -587,7 +583,7 @@ async function createNewSessionHarness({
   let postBody = null;
   let postHeaders = null;
   window.fetch = async (url, options = {}) => {
-    if (url === '/api/tarot/models/status') {
+    if (url === '/api/tarot/models/status?routing=auto') {
       return { ok: true, json: async () => modelStatuses() };
     }
     if (url === '/companion/v1/sessions/test_session') {
@@ -983,7 +979,7 @@ async function checkHistoryEntryPlacement(viewportWidth) {
   assert.equal(trigger.getAttribute('aria-label'), '历史记录');
   assert.equal(trigger.querySelector('.managed-history-trigger-short'), null);
   assert.equal(
-    window.document.querySelector(`[data-model="${PRO_MODEL}"]`).getAttribute('aria-checked'),
+    window.document.querySelector(`[data-model="${AUTO_MODEL}"]`).getAttribute('aria-checked'),
     'true',
   );
 
@@ -993,15 +989,15 @@ async function checkHistoryEntryPlacement(viewportWidth) {
   window.document.getElementById('settingsPanel').classList.add('open');
   await settle(window);
   await settle(window);
-  assert.equal(upstreamLabel.textContent, '本站 Flash');
+  assert.equal(upstreamLabel.textContent, 'Gemini');
   assert.equal(managedLabel.textContent, '配置');
   assert.equal(
-    window.document.querySelector(`[data-model="${FLASH_MODEL}"]`).getAttribute('aria-checked'),
+    window.document.querySelector(`[data-model="${AUTO_MODEL}"]`).getAttribute('aria-checked'),
     'true',
   );
   assert.equal(
-    window.document.querySelector(`[data-model="${PRO_MODEL}"]`).getAttribute('aria-checked'),
-    'false',
+    window.document.querySelector(`[data-model="${AUTO_MODEL}"]`).getAttribute('aria-checked'),
+    'true',
   );
   upstreamLabel.textContent = '原模块再次更新的模型名称';
   await settle(window);
@@ -1172,7 +1168,7 @@ async function createModelStatusHarness(responses, { selected = FLASH_MODEL } = 
   const { window } = dom;
   let calls = 0;
   window.fetch = async (url, options) => {
-    assert.equal(url, '/api/tarot/models/status');
+    assert.equal(url, '/api/tarot/models/status?routing=auto');
     assert.equal(options.credentials, 'same-origin');
     assert.equal(options.cache, 'no-store');
     const response = responses[Math.min(calls, responses.length - 1)];
@@ -1208,23 +1204,22 @@ async function checkModelRuntimeStates() {
     { payload: modelStatuses('cooling', 1, 'available', 0) },
     { payload: modelStatuses('retry_ready', 0, 'available', 0) },
   ]);
-  let [flash, pro] = countdown.choices();
-  assert.equal(flash.disabled, true);
-  assert.equal(flash.dataset.runtimeStatus, 'cooling');
-  assert.equal(flash.querySelector('.managed-model-status').textContent, '暂不可用');
-  assert.doesNotMatch(flash.textContent, /\d+:\d+|倒计时|剩余/);
-  assert.equal(pro.disabled, false);
-  assert.match(countdown.summary(), /当前选择暂不可用/);
+  let [channel] = countdown.choices();
+  assert.equal(channel.disabled, true);
+  assert.equal(channel.dataset.runtimeStatus, 'cooling');
+  assert.equal(channel.querySelector('.managed-model-status').textContent, '暂不可用');
+  assert.doesNotMatch(channel.textContent, /\d+:\d+|倒计时|剩余/);
+  assert.match(countdown.summary(), /解读渠道暂不可用/);
   assert.equal(countdown.calls(), 1);
   await new Promise(resolve => countdown.window.setTimeout(resolve, 1150));
   await settle(countdown.window);
-  [flash, pro] = countdown.choices();
+  [channel] = countdown.choices();
   assert.equal(countdown.calls(), 2);
-  assert.equal(flash.disabled, false);
-  assert.equal(flash.dataset.runtimeStatus, 'retry_ready');
-  assert.match(flash.querySelector('.managed-model-status').textContent, /可重试/);
-  assert.match(flash.querySelector('.managed-model-status').textContent, /尚未确认恢复/);
-  assert.doesNotMatch(flash.textContent, /额度已恢复/);
+  assert.equal(channel.disabled, false);
+  assert.equal(channel.dataset.runtimeStatus, 'retry_ready');
+  assert.match(channel.querySelector('.managed-model-status').textContent, /可重试/);
+  assert.match(channel.querySelector('.managed-model-status').textContent, /尚未确认恢复/);
+  assert.doesNotMatch(channel.textContent, /额度已恢复/);
   const beforeManual = countdown.calls();
   countdown.refresh().click();
   await settle(countdown.window);
@@ -1238,32 +1233,23 @@ async function checkModelRuntimeStates() {
     { ok: false, payload: { error: 'temporary' } },
   ]);
   assert.equal(failed.choices().every(button => button.disabled), true);
-  assert.match(failed.summary(), /暂时无法确认模型状态/);
+  assert.match(failed.summary(), /暂时无法确认渠道状态/);
   failed.window.dispatchEvent(new failed.window.Event('pagehide'));
 
-  const selectedPro = await createModelStatusHarness([
-    { payload: modelStatuses('available', 0, 'cooling', 120) },
+  // A stored Pro choice migrates to auto; it cannot pin the fallback model.
+  const legacy = await createModelStatusHarness([
+    { payload: modelStatuses() },
   ], { selected: PRO_MODEL });
-  const [availableFlash, coolingPro] = selectedPro.choices();
-  assert.equal(availableFlash.disabled, false);
-  assert.equal(coolingPro.disabled, true);
-  assert.equal(selectedPro.item.querySelector('select').value, PRO_MODEL);
-  assert.equal(
-    selectedPro.window.document.getElementById('providerLabel').textContent,
-    '本站 Pro',
-  );
-  assert.match(selectedPro.summary(), /当前选择暂不可用/);
-  selectedPro.window.dispatchEvent(new selectedPro.window.Event('pagehide'));
+  assert.equal(legacy.choices().length, 1);
+  assert.equal(legacy.item.querySelector('select').value, AUTO_MODEL);
+  legacy.window.dispatchEvent(new legacy.window.Event('pagehide'));
 
-  const unavailable = await createModelStatusHarness([
-    { payload: modelStatuses('probing', 0, 'unconfigured', 0) },
-  ]);
-  const [probingFlash, unconfiguredPro] = unavailable.choices();
-  assert.equal(probingFlash.disabled, true);
-  assert.match(probingFlash.textContent, /探测中/);
-  assert.equal(unconfiguredPro.disabled, true);
-  assert.match(unconfiguredPro.textContent, /未配置/);
-  unavailable.window.dispatchEvent(new unavailable.window.Event('pagehide'));
+  for (const status of ['probing', 'unconfigured', 'disabled']) {
+    const unavailable = await createModelStatusHarness([{ payload: modelStatuses(status) }]);
+    assert.equal(unavailable.choices()[0].disabled, true);
+    assert.equal(unavailable.choices()[0].dataset.runtimeStatus, status);
+    unavailable.window.dispatchEvent(new unavailable.window.Event('pagehide'));
+  }
 
   const visible = await createModelStatusHarness([
     { payload: modelStatuses() },
@@ -1315,7 +1301,7 @@ async function checkManagedCompanionBoundary() {
   let statusFailure = false;
   const fetchImpl = async url => {
     statusCalls += 1;
-    assert.equal(url, '/api/tarot/models/status');
+    assert.equal(url, '/api/tarot/models/status?routing=auto');
     if (statusFailure) throw new Error('offline');
     return { ok: true, json: async () => current };
   };
@@ -1333,7 +1319,7 @@ async function checkManagedCompanionBoundary() {
   statusFailure = true;
   await assert.rejects(
     adapter.read({ model: PRO_MODEL, action_id: 'status_failed' }),
-    /暂时无法确认模型状态/,
+    /暂时无法确认渠道状态/,
   );
   assert.equal(upstreamReads, 1);
   const beforeRestore = statusCalls;
@@ -1365,12 +1351,13 @@ async function checkManagedCoreBoundary() {
   await module.evaluate();
   const api = module.namespace;
   api.initProviderState();
-  assert.equal(api.currentModel('managed:cedartoy-tarot'), 'gemini-3.5-flash');
+  assert.equal(api.allProviders()[0].label, 'Gemini');
+  assert.equal(api.currentModel('managed:cedartoy-tarot'), AUTO_MODEL);
   api.setModel('managed:cedartoy-tarot', 'gemini-3.1-pro-preview');
-  assert.equal(api.currentModel('managed:cedartoy-tarot'), 'gemini-3.1-pro-preview');
+  assert.equal(api.currentModel('managed:cedartoy-tarot'), AUTO_MODEL);
   assert.throws(
     () => api.setModel('managed:cedartoy-tarot', 'arbitrary-model'),
-    /Flash 或 Pro/,
+    /仅支持自动渠道/,
   );
 
   const encoder = new TextEncoder();
@@ -1404,7 +1391,7 @@ async function checkManagedCoreBoundary() {
     onDelta: value => { delta += value; },
     onDone: value => { done = value; },
   });
-  assert.deepEqual({ ...captured }, { model: 'gemini-3.1-pro-preview' });
+  assert.deepEqual({ ...captured }, { model: AUTO_MODEL });
   assert.equal(delta, 'mock reading');
   assert.equal(done, true);
 }

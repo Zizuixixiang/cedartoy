@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, post, put, del, ensureAdminSession } from '../api'
 import { formatDbDateTime } from '../utils/display.js'
+import '../styles/admin-api.css'
 
 const tableNames = {
   overview: '总览',
@@ -79,7 +80,7 @@ const tabDescriptions = {
   bans: '按 IP 封禁访问，命中后会阻止继续使用海龟汤。',
   reports: '玩家对房间发言或用户的举报记录。',
   flags: '系统或管理员标记的风险内容，用于后续处理。',
-  'api-configs': '裁判、对局 NPC 与预留塔罗用途的 LLM 节点配置。both 仍只进入裁判+提示池；npc_decision 与 npc_speech 分别用于 NPC 操作和独立发言；旧 npc 在对应专用用途没有可用配置时兼容回退；all 只覆盖海龟汤与双弈，不进入 tarot；tarot 只接受明确标为 tarot 的配置。Gemini 3.5 Flash 是塔罗专用模型，即使误标为 judge / hint / both / npc* / all 也会被强制排除出海龟汤与双弈，管理端也会拒绝保存这种误配。同一 endpoint + API Key + model 只允许一条启用的塔罗记录；不同模型可沿用现有共享 credential，但供应商账号级额度也会相应共享。裁判/提示优先于尚未发出的 NPC 请求；同一接口密钥共享串行、健康与冷却状态，NPC 另受全局并发上限保护。优先尝试 priority 数值最低的一层，同层轮询且整层失败后才使用下一层。',
+  'api-configs': '裁判、对局 NPC 与塔罗的 LLM 节点配置。both 用于裁判+提示；npc_decision 与 npc_speech 分别用于 NPC 操作和发言，未配置专用用途时依次使用 all、旧 npc；all 不进入塔罗。塔罗需单独配置 purpose=tarot，按 priority 从小到大自动选取配置的模型并回退，同层轮询；停用节点不参与。同一 endpoint + API Key + model 可跨用途复用，但塔罗池内只允许一条启用记录。同一接口密钥共享串行锁，同一模型节点共享健康与冷却；NPC 与塔罗各有独立并发上限。裁判/提示优先于尚未发出的 NPC 请求。',
   settings: '运行参数。修改后会影响新请求或后续流程。',
 }
 
@@ -107,17 +108,17 @@ const statusText = {
   waiting: '等待中',
   playing: '进行中',
   finished: '已结束',
-  judge: '问答',
-  hint: '提示',
-  both: '两边',
-  npc: 'NPC（旧版回退）',
-  npc_decision: 'NPC 操作',
-  npc_speech: 'NPC 发言',
+  judge: '海龟汤 · 裁判',
+  hint: '海龟汤 · 提示',
+  both: '海龟汤 · 裁判＋提示',
+  npc: '双弈 NPC · 决策＋发言（旧版备用）',
+  npc_decision: '双弈 NPC · 决策',
+  npc_speech: '双弈 NPC · 发言',
   tarot: '塔罗解读（专用）',
-  all: '海龟汤与双弈全部用途',
-  healthy: '健康',
+  all: '共用 · 海龟汤＋双弈（不含塔罗）',
+  healthy: '未记录异常',
   cooling: '冷却中',
-  half_open: '半开探测',
+  half_open: '等待重试',
   disabled: '已停用',
 }
 
@@ -210,16 +211,28 @@ const canDelete = new Set(['puzzles', 'submissions', 'players', 'rooms', 'bans',
 
 const timestampFields = new Set(['created_at', 'last_active_at', 'last_success_at', 'finished_at', 'updated_at', 'joined_at', 'expires_at', 'deleted_at', 'bound_at'])
 
+// UI grouping only: never translate purpose values in request payloads.
+const apiGroups = [
+  { id: 'soup', title: '海龟汤', description: '裁判＋提示', purposes: ['judge', 'hint', 'both'], defaultPurpose: 'both' },
+  { id: 'npc', title: '双弈 NPC', description: '决策＋发言 · 旧版配置仍可备用', purposes: ['npc_decision', 'npc_speech', 'npc'], defaultPurpose: 'npc_decision' },
+  { id: 'tarot', title: '塔罗', description: '解读 · 使用塔罗专用配置', purposes: ['tarot'], defaultPurpose: 'tarot' },
+  { id: 'shared', title: '海龟汤＋双弈共用', description: '同一份配置供两个游戏使用，不含塔罗', purposes: ['all'], defaultPurpose: 'all' },
+  { id: 'other', title: '其他用途', description: '用途未识别，请查看配置确认', purposes: [] },
+]
+
+function apiGroupFor(row) {
+  return apiGroups.find(group => group.purposes.includes(row.purpose)) || apiGroups[4]
+}
+
 function runtimeSummary(row) {
-  const status = statusText[row.runtime_status] || row.runtime_status || '健康'
+  if (!Number(row.enabled)) return '已停用 · 不参与调用'
   const failures = Number(row.consecutive_failures || 0)
-  const npcPool = row.npc_pool_runtime
-    ? ` · NPC ${Number(row.npc_pool_runtime.active || 0)}/${Number(row.npc_pool_runtime.max_concurrency || 0)}`
-    : ''
   if (row.runtime_status === 'cooling') {
-    return `${status} ${Number(row.cooldown_remaining_seconds || 0)} 秒 · 连败 ${failures}${npcPool}`
+    return `冷却中 · 剩余 ${Number(row.cooldown_remaining_seconds || 0)} 秒 · 连续失败 ${failures} 次`
   }
-  return `${status} · 连败 ${failures}${npcPool}`
+  if (row.runtime_status === 'half_open') return `等待重试 · 连续失败 ${failures} 次`
+  if (row.runtime_status === 'healthy') return '未记录异常 · 可参与调用'
+  return '状态未知 · 可用性待确认'
 }
 
 function displayValue(key, value) {
@@ -282,24 +295,32 @@ function TestResultBlock({ result, onClose, className = '' }) {
   )
 }
 
+function redactTestText(value, secret = '') {
+  let text = String(value || '')
+  if (secret) text = text.split(secret).join('[密钥已隐藏]')
+  return text.replace(/\bsk-[\w-]+/gi, '[密钥已隐藏]')
+    .replace(/\bBearer\s+[^\s"',}]+/gi, 'Bearer [密钥已隐藏]')
+    .replace(/(["']?(?:api[_-]?key|authorization)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi, '$1[密钥已隐藏]')
+}
+
 async function runApiConfigTest(configId, payload = null) {
   const data = payload
     ? await post('/admin/api-configs/test', payload)
     : await post(`/admin/api-configs/${configId}/test`)
   const reply = data.data?.reply || ''
-  const rawText = data.data?.raw ? JSON.stringify(data.data.raw, null, 2) : ''
+
   if (data.success) {
     return {
       success: true,
       title: '测试成功',
-      body: formatTestResultBody(data.data, reply),
+      body: redactTestText(formatTestResultBody(data.data, reply), payload?.api_key),
     }
   }
-  const errDetail = rawText.slice(0, 2000) || data.message || '(无详情)'
+  const errDetail = '请求未成功，请检查接口地址、密钥、模型及供应商额度。原始错误内容已隐藏，以免泄露凭据。'
   return {
     success: false,
     title: '测试失败',
-    body: formatTestResultBody(data.data, errDetail),
+    body: redactTestText(formatTestResultBody(data.data, errDetail), payload?.api_key),
   }
 }
 
@@ -307,8 +328,8 @@ async function runApiModelFetch(payload) {
   const data = await post('/admin/api-configs/models', payload)
   const models = Array.isArray(data.models) ? data.models : []
   const body = data.success
-    ? models.join('\n') || '(没有返回可用模型)'
-    : JSON.stringify(data.raw || data.message || '(无详情)', null, 2).slice(0, 2000)
+    ? redactTestText(models.join('\n') || '(没有返回可用模型)', payload.api_key)
+    : '拉取失败，请检查接口地址、密钥和管理员登录状态。原始错误内容已隐藏，以免泄露凭据。'
   return {
     success: Boolean(data.success),
     title: data.success ? `拉取成功 · ${models.length} 个模型` : '拉取失败',
@@ -328,16 +349,24 @@ export default function Admin() {
   const [testingConfigId, setTestingConfigId] = useState(null)
   const [testResult, setTestResult] = useState(null)
   const [modalError, setModalError] = useState('')
+  const [apiGroup, setApiGroup] = useState('all-groups')
+  const [loadedAt, setLoadedAt] = useState('')
+  const loadRequest = useRef(0)
 
   const load = async () => {
+    const request = ++loadRequest.current
     try {
       await ensureAdminSession()
       const path = tab === 'puzzles' ? '/puzzles/' : `/admin/${tab}`
       const data = await api(path)
+      if (request !== loadRequest.current) return
+      if (tab === 'api-configs' && !Array.isArray(data)) throw new Error('配置数据格式异常，请稍后刷新')
       setRows(data)
+      if (tab === 'api-configs') setLoadedAt(new Date().toLocaleTimeString('zh-CN', { hour12: false }))
       setError('')
       setAuthError(null)
     } catch (e) {
+      if (request !== loadRequest.current) return
       if (e.status === 401 || e.status === 403) {
         setRows(null)
         setError('')
@@ -350,19 +379,30 @@ export default function Admin() {
 
   useEffect(() => { document.title = `海龟汤管理后台 - ${tableNames[tab]}` }, [tab])
 
-  useEffect(() => { load() }, [tab])
+  useEffect(() => { setRows(null); setLoadedAt(''); load() }, [tab])
 
   const filteredRows = useMemo(() => {
     if (!Array.isArray(rows)) return []
     const needle = query.trim().toLowerCase()
+    if (tab === 'api-configs') {
+      return rows.filter(row => {
+        const group = apiGroupFor(row)
+        const inGroup = apiGroup === 'all-groups' || group.id === apiGroup
+          || (group.id === 'shared' && ['soup', 'npc'].includes(apiGroup))
+        const searchable = [row.name, row.api_url, row.model, row.purpose, statusText[row.purpose], group.title,
+          `优先级 ${row.priority}`, Number(row.enabled) ? '已启用' : '已停用', runtimeSummary(row)].join(' ').toLowerCase()
+        return inGroup && (!needle || searchable.includes(needle))
+      }).sort((a, b) => Number(a.priority ?? 0) - Number(b.priority ?? 0) || Number(a.id) - Number(b.id))
+    }
     if (!needle) return rows
     const cols = columns[tab] || Object.keys(rows[0] || {})
     return rows.filter((row) => cols.some((key) => displayValue('', cellValue(tab, row, key)).toLowerCase().includes(needle)))
-  }, [rows, query, tab])
+  }, [rows, query, tab, apiGroup])
 
   const openAdd = () => {
     setModalError('')
-    setDraft({ ...(defaults[tab] || {}) })
+    const purpose = apiGroups.find(group => group.id === apiGroup)?.defaultPurpose || 'both'
+    setDraft({ ...(defaults[tab] || {}), ...(tab === 'api-configs' ? { purpose } : {}) })
     setModal({ mode: 'add', tab, title: `新增${tableNames[tab]}` })
   }
 
@@ -436,7 +476,7 @@ export default function Admin() {
         configId: row.id,
         success: false,
         title: '网络错误',
-        body: e.message || '请检查接口地址、密钥或模型',
+        body: '测试请求失败，请检查网络、管理员登录状态或配置后重试。',
       })
     } finally {
       setTestingConfigId(null)
@@ -468,9 +508,9 @@ export default function Admin() {
       <div className="admin-heading">
         <div>
           <h2>管理后台</h2>
-          <p>{tabDescriptions[tab]}</p>
+          {tab === 'api-configs' ? <p>按游戏管理渠道。优先级数字越小越优先，同级轮询。</p> : <p>{tabDescriptions[tab]}</p>}
         </div>
-        {tab !== 'overview' && <input className="admin-search" placeholder={`查找${tableNames[tab]}`} value={query} onChange={(e) => setQuery(e.target.value)} />}
+        {tab !== 'overview' && <input className="admin-search" aria-label={`查找${tableNames[tab]}`} placeholder={`查找${tableNames[tab]}`} value={query} onChange={(e) => setQuery(e.target.value)} />}
       </div>
       {authError ? <AdminAuthError error={authError} /> : (
         <>
@@ -481,7 +521,21 @@ export default function Admin() {
             {canAdd.has(tab) && <button className="primary" onClick={openAdd}>新增</button>}
             <button onClick={load}>刷新</button>
           </div>
-          {error && <p className="error">{error}</p>}
+          {tab === 'api-configs' && (
+            <div className="api-config-tools">
+              <label>用途分组
+                <select value={apiGroup} onChange={e => setApiGroup(e.target.value)}>
+                  <option value="all-groups">全部用途</option>
+                  {apiGroups.filter(group => group.id !== 'other' || rows?.some?.(row => apiGroupFor(row).id === 'other')).map(group => (
+                    <option key={group.id} value={group.id}>{group.title}</option>
+                  ))}
+                </select>
+              </label>
+              <p role="status">{loadedAt ? `状态读取于 ${loadedAt}。` : ''}仅代表后台已记录的运行状态，不是实时探测或可用保证；刷新可读取最新记录。{error && loadedAt ? '刷新失败，以下为上次记录。' : ''}</p>
+              <details className="api-routing-notes"><summary>用途与调度说明</summary><p>{tabDescriptions[tab]}</p></details>
+            </div>
+          )}
+          {error && <p className="error" role="alert">{error}</p>}
           {tab === 'api-configs' && testResult && (
             <TestResultBlock
               result={testResult}
@@ -489,7 +543,10 @@ export default function Admin() {
               className="cfg-test-result--panel"
             />
           )}
-          {tab === 'overview' ? <Overview data={rows} onOpen={(nextTab) => setTab(nextTab)} /> : (
+          {tab === 'overview' ? <Overview data={rows} onOpen={(nextTab) => setTab(nextTab)} /> : tab === 'api-configs' ? (
+            <ApiConfigGroups rows={Array.isArray(rows) ? filteredRows : null} allRows={rows} groupFilter={apiGroup} query={query} error={error}
+              onView={openView} onEdit={openEdit} onDelete={removeRow} onTest={handleTestConfig} testingConfigId={testingConfigId} />
+          ) : (
             <AdminTable
               tab={tab}
               rows={filteredRows}
@@ -566,6 +623,52 @@ function Overview({ data, onOpen }) {
   )
 }
 
+function ApiConfigGroups({ rows, allRows, groupFilter, query, error, onView, onEdit, onDelete, onTest, testingConfigId }) {
+  if (rows === null) return <p className="loading">{error ? '暂时无法显示配置，请点击刷新重试。' : '正在读取配置…'}</p>
+  const hasShared = allRows?.some(row => row.purpose === 'all')
+  const groups = apiGroups.filter(group => {
+    if (group.id === 'other') return rows.some(row => apiGroupFor(row).id === 'other')
+    if (groupFilter === 'all-groups') return group.id !== 'shared' || hasShared
+    return group.id === groupFilter || (group.id === 'shared' && hasShared && ['soup', 'npc'].includes(groupFilter))
+  })
+  return (
+    <div className="api-config-groups">
+      {query.trim() && !rows.length && <p className="loading" role="status">没有匹配的渠道，请调整搜索或用途分组。</p>}
+      {groups.map(group => {
+        const items = rows.filter(row => apiGroupFor(row).id === group.id)
+        return (
+          <section className="api-config-group" key={group.id} aria-labelledby={`api-group-${group.id}`}>
+            <header className="api-config-group-head">
+              <h3 id={`api-group-${group.id}`}>{group.title}<span>{items.length} 条</span></h3>
+              <p>{group.description}{hasShared && ['soup', 'npc'].includes(group.id) ? ' · 共用渠道见下方共用组' : ''}</p>
+            </header>
+            {!items.length ? <p className="api-config-empty">{query.trim() ? '此组没有匹配的渠道。' : hasShared && ['soup', 'npc'].includes(group.id) ? '暂无专用配置；另有共用配置，实际调用取决于启用和运行状态。' : '暂无配置。可选择此用途分组后新增。'}</p> : (
+              <ul className="api-config-list">
+                {items.map(row => (
+                  <li className="api-config-row" key={row.id}>
+                    <div className="api-config-name"><strong>{row.name || '未命名渠道'}</strong><span>{statusText[row.purpose] || '未识别用途'}</span></div>
+                    <span className="api-config-priority">优先级 <b>{row.priority ?? '未设置'}</b></span>
+                    <div className="api-config-state">
+                      <span className={`runtime-status runtime-status--${Number(row.enabled) ? row.runtime_status || 'unknown' : 'disabled'}`}>{Number(row.enabled) ? '已启用' : '已停用'}</span>
+                      <span>{runtimeSummary(row)}</span>
+                    </div>
+                    <div className="row-actions" role="group" aria-label={`${row.name || '未命名渠道'}的操作`}>
+                      <button onClick={() => onView(row)}>查看</button>
+                      <button onClick={() => onEdit(row)}>编辑</button>
+                      <button disabled={testingConfigId !== null} onClick={() => onTest(row)}>{testingConfigId === row.id ? '测试中…' : '测试'}</button>
+                      <button className="danger" onClick={() => onDelete(row)}>删除</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
 function AdminTable({ tab, rows, onView, onEdit, onDelete, onAction, onTest, testingConfigId }) {
   if (!Array.isArray(rows)) return <p className="loading">加载中...</p>
   if (rows.length === 0) return <p className="loading">暂无记录</p>
@@ -584,16 +687,6 @@ function AdminTable({ tab, rows, onView, onEdit, onDelete, onAction, onTest, tes
             <tr key={rowKey(tab, row)}>
               {cols.map((key) => {
                 const value = displayValue(key, cellValue(tab, row, key))
-                if (tab === 'api-configs' && key === 'runtime_summary') {
-                  const title = [value, row.last_error, row.last_success_at ? `最近成功：${displayValue('last_success_at', row.last_success_at)}` : '']
-                    .filter(Boolean)
-                    .join('\n')
-                  return (
-                    <td key={key} data-label={fieldLabels[key]} title={title}>
-                      <span className={`runtime-status runtime-status--${row.runtime_status || 'healthy'}`}>{value}</span>
-                    </td>
-                  )
-                }
                 return <td key={key} data-label={fieldLabels[key] || key} title={value}>{clip(value)}</td>
               })}
               <td data-label="操作">
@@ -613,17 +706,6 @@ function AdminTable({ tab, rows, onView, onEdit, onDelete, onAction, onTest, tes
 }
 
 function extraActions(tab, row, onAction, onTest, testingConfigId) {
-  if (tab === 'api-configs') {
-    return (
-      <button
-        type="button"
-        disabled={testingConfigId === row.id}
-        onClick={() => onTest(row)}
-      >
-        {testingConfigId === row.id ? '测试中…' : '测试'}
-      </button>
-    )
-  }
   if (tab === 'puzzles') return <button onClick={() => onAction('togglePuzzle', row)}>{row.enabled ? '停用' : '启用'}</button>
   if (tab === 'submissions') return <><button onClick={() => onAction('addSubmission', row)}>收录</button><button onClick={() => onAction('ignoreSubmission', row)}>忽略</button></>
   if (tab === 'players') return <><button onClick={() => onAction('resetPlayer', row)}>清零</button><button onClick={() => onAction('toggleAdmin', row)}>{row.is_admin ? '取消管理员' : '设为管理员'}</button></>
@@ -634,6 +716,23 @@ function extraActions(tab, row, onAction, onTest, testingConfigId) {
 }
 
 function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
+  const dialogRef = useRef(null)
+  useEffect(() => {
+    if (modal.tab !== 'api-configs') return
+    const previous = document.activeElement
+    const dialog = dialogRef.current
+    const controls = () => [...dialog.querySelectorAll(':is(button, input, select, textarea):not(:disabled)')]
+    controls()[0]?.focus()
+    const onKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
+      if (event.key !== 'Tab') return
+      const items = controls(), first = items[0], last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+    dialog.addEventListener('keydown', onKey)
+    return () => { dialog.removeEventListener('keydown', onKey); previous?.focus() }
+  }, [modal])
   const fields = modal.mode === 'view'
     ? Object.keys(draft).map((key) => ({ key, label: fieldLabels[key] || key, readOnly: true }))
     : formFields[modal.tab] || []
@@ -668,7 +767,7 @@ function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
       setModalTestResult({
         success: false,
         title: '网络错误',
-        body: e.message || '请检查接口地址、密钥或模型',
+        body: '测试请求失败，请检查网络、管理员登录状态或配置后重试。',
       })
     } finally {
       setTesting(false)
@@ -695,7 +794,7 @@ function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
       setModalTestResult({
         success: false,
         title: '网络错误',
-        body: e.message || '请检查接口地址和密钥',
+        body: '拉取模型失败，请检查网络、管理员登录状态或配置后重试。',
       })
     } finally {
       setFetchingModels(false)
@@ -704,9 +803,9 @@ function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
 
   return (
     <div className="modal-backdrop">
-      <div className="admin-modal">
+      <div ref={dialogRef} className={`admin-modal${modal.tab === 'api-configs' ? ' api-config-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="admin-modal-title">
         <div className="modal-head">
-          <h3>{modal.title}</h3>
+          <h3 id="admin-modal-title">{modal.title}</h3>
           <button onClick={onClose}>关闭</button>
         </div>
         <div className="admin-form">
@@ -779,7 +878,7 @@ function FieldInput({ field, draft, setDraft, mode, modelOptions = [] }) {
   }
   return (
     <input
-      type={field.type || 'text'}
+      type={field.secretOnEdit ? 'password' : field.type || 'text'}
       required={field.required}
       readOnly={readOnly}
       placeholder={field.secretOnEdit && mode === 'edit' ? '留空则保留原密钥' : ''}

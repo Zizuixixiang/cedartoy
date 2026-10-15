@@ -47,8 +47,7 @@
   const secureUuidAvailable = installSecureRandomUUID();
 
   const labels = {
-    'gemini-3.5-flash': ['Flash', 'Gemini 3.5 Flash'],
-    'gemini-3.1-pro-preview': ['Pro', 'Gemini 3.1 Pro'],
+    auto: ['Gemini', '本站托管解读'],
   };
   const endedText = '本次已结束，记录已保留。';
   const terminalPhases = new Set(['returned', 'stopped', 'deleted']);
@@ -82,7 +81,7 @@
 
   function selectedModel() {
     const select = document.querySelector('#providerList select');
-    return labels[select?.value] ? select.value : 'gemini-3.5-flash';
+    return labels[select?.value] ? select.value : 'auto';
   }
 
   function companionElements() {
@@ -287,7 +286,7 @@
   }
 
   function validateStatusPayload(payload) {
-    if (!payload || !Array.isArray(payload.models) || payload.models.length !== 2) {
+    if (!payload || !Array.isArray(payload.models) || payload.models.length !== 1) {
       throw new Error('invalid model status');
     }
     const expected = Object.keys(labels);
@@ -337,7 +336,7 @@
     queueRender();
     statusRequest = (async () => {
       try {
-        const response = await fetch('/api/tarot/models/status', {
+        const response = await fetch('/api/tarot/models/status?routing=auto', {
           credentials: 'same-origin',
           cache: 'no-store',
           headers: { Accept: 'application/json' },
@@ -388,12 +387,12 @@
     const refresh = controls.querySelector('.managed-model-refresh');
     const current = modelView(selectedModel());
     let message = '打开设置时会读取当前运行状态。';
-    if (statusPhase === 'loading') message = '正在确认模型状态…';
-    else if (statusPhase === 'failed') message = '暂时无法确认模型状态，请重查。';
+    if (statusPhase === 'loading') message = '正在确认渠道状态…';
+    else if (statusPhase === 'failed') message = '暂时无法确认渠道状态，请重查。';
     else if (statusPhase === 'ready' && current.disabled) {
-      message = '当前选择暂不可用，请改选可用模型或稍后重查。';
+      message = '解读渠道暂不可用，请稍后重查。';
     } else if (statusPhase === 'ready' && current.status === 'retry_ready') {
-      message = '当前模型可重试，但尚未确认额度或服务已恢复。';
+      message = '解读渠道可重试，但尚未确认额度或服务已恢复。';
     } else if (statusPhase === 'ready') {
       message = '状态来自当前运行服务；“可重试”不代表额度已恢复。';
     }
@@ -782,9 +781,9 @@
     scheduled = false;
     ensureHistoryUi();
     const orb = document.getElementById('providerOrb');
-    if (orb) orb.title = '选择本站塔罗模型';
+    if (orb) orb.title = 'Gemini';
     const current = selectedModel();
-    setText(document.getElementById('providerLabel'), `本站 ${labels[current][0]}`);
+    setText(document.getElementById('providerLabel'), labels[current][0]);
 
     const list = document.getElementById('providerList');
     const item = list?.querySelector('.provider-item');
@@ -794,16 +793,19 @@
       setClass(select, 'managed-model-source', true);
       select.setAttribute('aria-hidden', 'true');
       for (const option of [...select.options]) {
-        if (labels[option.value]) setText(option, labels[option.value][1]);
+        if (labels[option.value]) setText(option, labels[option.value][0]);
         else option.remove();
       }
+
+      if (!select.options.length) select.add(new Option('Gemini', 'auto'));
+      select.value = 'auto';
 
       let choices = item.querySelector('.managed-model-options');
       if (!choices) {
         choices = document.createElement('div');
         choices.className = 'managed-model-options';
         choices.setAttribute('role', 'radiogroup');
-        choices.setAttribute('aria-label', '解读模型');
+        choices.setAttribute('aria-label', '解读渠道');
         for (const [model, names] of Object.entries(labels)) {
           const button = document.createElement('button');
           button.type = 'button';
@@ -844,7 +846,7 @@
       }
       setText(
         document.getElementById('providerLabel'),
-        `本站 ${labels[selectedModel()][0]}`,
+        labels[selectedModel()][0],
       );
     }
     renderStatusControls(list);

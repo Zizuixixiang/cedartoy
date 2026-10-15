@@ -33,11 +33,13 @@ RITUAL_DISPLAY_NAME = "ARCANUM · 星轨塔罗圣仪"
 RITUAL_COMMIT = "04c6ee2c112e2da9a22bf0b5b4ec80d61ef401d5"
 TAROT_FLASH_MODEL = "gemini-3.5-flash"
 TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
-TAROT_ALLOWED_MODELS = frozenset({TAROT_FLASH_MODEL, TAROT_PRO_MODEL})
-TAROT_MODEL_LABELS = {
-    TAROT_FLASH_MODEL: "Gemini 3.5 Flash",
-    TAROT_PRO_MODEL: "Gemini 3.1 Pro",
-}
+TAROT_AUTO_MODEL = "auto"
+# Legacy request IDs remain accepted, but all new attempts use automatic routing.
+TAROT_ALLOWED_MODELS = frozenset({
+    TAROT_AUTO_MODEL, TAROT_FLASH_MODEL, TAROT_PRO_MODEL, "gemini-3.8-flash",
+})
+TAROT_PUBLIC_MODEL = "Gemini"
+
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 REQUEST_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 EVENT_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -59,13 +61,13 @@ class TarotError(Exception):
 
 def require_tarot_model(value: Any) -> str:
     if not isinstance(value, str) or value not in TAROT_ALLOWED_MODELS:
-        raise TarotError(400, "只能选择本站提供的 Flash 或 Pro 模型")
-    return value
+        raise TarotError(400, "本站托管解读仅支持自动渠道")
+    return TAROT_AUTO_MODEL
 
 
 def tarot_model_source(model: str) -> str:
-    model = require_tarot_model(model)
-    return f"{RITUAL_DISPLAY_NAME} · {TAROT_MODEL_LABELS[model]} 塔罗专用池"
+    # Display only: raw model IDs remain in storage and the internal bridge.
+    return f"{RITUAL_DISPLAY_NAME} · {TAROT_PUBLIC_MODEL} 塔罗专用池"
 
 
 def _require_positive_id(value: Any, name: str) -> int:
@@ -260,9 +262,6 @@ class TarotStore:
                 CREATE INDEX IF NOT EXISTS tarot_invites_pair
                     ON tarot_invites(ai_user_id, human_user_id, created_at DESC);
                 UPDATE tarot_readings
-                SET model='gemini-3.5-flash'
-                WHERE model IN ('', 'tarot-pool');
-                UPDATE tarot_readings
                 SET state='unknown', error_code='process_restart'
                 WHERE state='running';
                 """
@@ -355,6 +354,7 @@ class TarotStore:
     @classmethod
     def _browser_view(cls, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         draws = json.loads(row["draws_json"] or "[]")
+        reading = cls._reading(conn, row)
         return {
             "id": row["id"],
             "conversation_id": f"tarot_{row['id']}",
@@ -363,7 +363,7 @@ class TarotStore:
             "question": row["question"],
             "spread_id": row["spread_id"],
             "draws": draws,
-            "reading": cls._reading(conn, row),
+            "reading": {**reading, "model": TAROT_PUBLIC_MODEL} if reading else None,
         }
 
     def create_direct_session(self, human_user_id: int) -> dict[str, Any]:
@@ -937,7 +937,7 @@ class TarotStore:
             reading_view = {
                 "state": reading["state"],
                 "text": reading["text"],
-                "model": reading["model"],
+                "model": TAROT_PUBLIC_MODEL,
                 "source": reading["source"],
             }
         return {
@@ -1169,7 +1169,7 @@ class TarotStore:
         human_user_id: int,
         action_id: str,
         csrf_token: str,
-        model: str = TAROT_FLASH_MODEL,
+        model: str = TAROT_AUTO_MODEL,
     ) -> dict[str, Any]:
         session_id = _require_id(session_id, SESSION_RE, "session_id")
         action_id = _require_id(action_id, EVENT_RE, "action_id")
@@ -1269,11 +1269,17 @@ class TarotStore:
         state: str,
         text: str = "",
         error_code: str | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         if state not in {"succeeded", "failed", "unknown", "cancelled"}:
             raise TarotError(400, "invalid reading state")
         if not isinstance(text, str) or len(text) > 100_000 or "\0" in text:
             raise TarotError(400, "invalid reading text")
+        if model is not None and (
+            not isinstance(model, str) or not model.strip()
+            or len(model) > 256 or "\0" in model
+        ):
+            raise TarotError(400, "invalid reading model")
         now = self._now()
         with self._tx() as conn:
             row = self._session_row_for_human(conn, session_id, human_user_id)
@@ -1291,10 +1297,10 @@ class TarotStore:
                 return dict(attempt)
             conn.execute(
                 """
-                UPDATE tarot_readings SET state=?,text=?,error_code=?,updated_at=?
+                UPDATE tarot_readings SET state=?,text=?,error_code=?,updated_at=?,model=COALESCE(?,model)
                 WHERE id=? AND session_id=?
                 """,
-                (state, text, error_code, now, attempt_id, session_id),
+                (state, text, error_code, now, model, attempt_id, session_id),
             )
             conn.execute(
                 "UPDATE tarot_sessions SET revision=revision+1,updated_at=? WHERE id=?",
@@ -1416,7 +1422,7 @@ class TarotStore:
                 else None
             ),
             "reading_state": reading["state"] if reading else "missing",
-            "reading_model": reading["model"] if reading else None,
+            "reading_model": TAROT_PUBLIC_MODEL if reading else None,
             "reading_source": reading["source"] if reading else None,
             "invite_url": f"{self.public_base_url}/tarot/",
             "next_call": {
@@ -1525,7 +1531,7 @@ class TarotStore:
                 "reading": {
                     "id": reading["id"] if reading else None,
                     "state": reading["state"] if reading else "missing",
-                    "model": reading["model"] if reading else None,
+                    "model": TAROT_PUBLIC_MODEL if reading else None,
                     "error_code": reading["error_code"] if reading else None,
                     "text": text,
                     "truncated": truncated,
@@ -1633,7 +1639,8 @@ class TarotWeb:
             '<script type="importmap">{ "imports": {'
             ' "three": "./vendor/three.module.js",'
             ' "/tarot/static/js/core.js": "/tarot/static/platform/managed-core.v6.js",'
-            ' "/tarot/static/js/companion-adapter.js": "/tarot/static/platform/managed-companion.v3.js",'
+            ' "/tarot/static/platform/managed-core.v1.js": "/tarot/static/platform/managed-core.v1.js?v=gemini-display-1",'
+            ' "/tarot/static/js/companion-adapter.js": "/tarot/static/platform/managed-companion.v3.js?v=auto-channel-1",'
             ' "/tarot/static/js/three/cards3d.js": "/tarot/static/platform/managed-cards3d.v6.js"'
             ' } }</script>'
         )
@@ -1675,7 +1682,7 @@ class TarotWeb:
     </div>
     </div>"""
         managed_settings = f"""    <div class="settings-body managed-settings">
-      <p class="managed-model-note">本站暂仅支持所提供的模型。如需自行配置模型，请从 <a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">GitHub</a> 克隆原版。</p>
+      <p class="managed-model-note">本站托管解读使用 Gemini。如需自行配置模型，请从 <a href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">GitHub</a> 克隆原版。</p>
       <div id="providerList" class="provider-list" aria-label="本站塔罗模型"></div>
       <div class="managed-compat" hidden aria-hidden="true">
         <div id="dshBanner"></div><button id="dshImportBtn" disabled></button>
@@ -1689,7 +1696,7 @@ class TarotWeb:
         source = source.replace(upstream_settings, managed_settings, 1)
         managed = f"""
 <script type="application/json" id="companion-config">{config}</script>
-<script src="/tarot/static/platform/managed-ui.v3.js"></script>
+<script src="/tarot/static/platform/managed-ui.v3.js?v=gemini-display-1"></script>
 <script src="/tarot/static/platform/managed-ui.v4.js"></script>
 <script src="/tarot/static/platform/managed-ui.v5.js"></script>
 <script src="/tarot/static/platform/managed-ui.v7.js"></script>

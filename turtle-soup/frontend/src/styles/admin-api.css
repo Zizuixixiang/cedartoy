@@ -1,0 +1,41 @@
+/* Model API: reuse the admin page's type scale, borders and controls. */
+.api-config-tools { display: grid; gap: 8px; min-width: 0; }
+.api-config-tools label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.api-config-tools select { width: auto; max-width: 100%; font-size: 14px; }
+.api-config-tools p, .api-routing-notes { margin: 0; color: #66736d; font-size: 13px; line-height: 1.5; }
+.api-routing-notes summary { cursor: pointer; width: fit-content; padding: 6px 0; }
+.api-routing-notes p { max-width: 80ch; overflow-wrap: anywhere; }
+.api-config-groups { display: grid; gap: 12px; min-width: 0; }
+.api-config-group { min-width: 0; background: #fff; border: 1px solid #dbe2de; border-radius: 8px; overflow: hidden; }
+.api-config-group-head { padding: 12px; background: #f2f5f4; border-bottom: 1px solid #eef2ef; }
+.api-config-group-head h3 { margin: 0; font-size: 16px; line-height: 1.4; }
+.api-config-group-head h3 span { margin-left: 10px; font-size: 13px; color: #66736d; font-weight: 400; }
+.api-config-group-head p, .api-config-empty { margin: 4px 0 0; color: #66736d; font-size: 13px; line-height: 1.5; }
+.api-config-empty { margin: 0; padding: 14px 12px; }
+.api-config-list { margin: 0; padding: 0; list-style: none; }
+.api-config-row { display: grid; grid-template-columns: minmax(160px, 1fr) 88px minmax(200px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #eef2ef; font-size: 14px; line-height: 1.45; }
+.api-config-row:last-child { border-bottom: 0; }
+.api-config-row:hover { background: #fbfdfc; }
+.api-config-name { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.api-config-name span, .api-config-priority, .api-config-state { font-size: 13px; }
+.api-config-name span { color: #66736d; }
+.api-config-priority { white-space: nowrap; }
+.api-config-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; color: #3d4a45; }
+.api-config-state .runtime-status { flex-shrink: 0; }
+.api-config-row .row-actions { min-width: 0; flex-wrap: nowrap; }
+.api-config-row .row-actions button { min-height: 36px; }
+.api-config-modal .admin-field, .api-config-modal .admin-form { min-width: 0; }
+.api-config-modal .admin-field input, .api-config-modal .admin-field select { min-width: 0; }
+.api-config-modal .modal-actions { flex-wrap: wrap; }
+.api-config-modal .modal-actions button, .api-config-modal .modal-head button { min-height: 44px; }
+.api-config-modal .admin-field input[type="checkbox"] { width: 24px; height: 24px; margin: 0; }
+.api-config-tools :focus-visible, .api-config-row button:focus-visible, .api-config-modal :focus-visible { outline: 2px solid #16745f; outline-offset: 2px; }
+@media (max-width: 1000px) {
+  .api-config-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .api-config-state { grid-column: 1 / -1; }
+  .api-config-row .row-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}
+@media (max-width: 600px) {
+  .api-config-row .row-actions button { flex: 1; min-height: 44px; }
+  .api-config-tools select { flex: 1; min-width: 0; }
+}

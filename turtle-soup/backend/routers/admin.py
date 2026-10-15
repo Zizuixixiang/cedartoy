@@ -96,7 +96,7 @@ def normalize_api_config_purpose(value: str | None) -> str:
 def tarot_model_node_conflict(
     rows: list[dict], candidate: dict, *, exclude_id: int | None = None
 ) -> dict | None:
-    """Prevent one enabled model node from competing in/with Tarot twice."""
+    """Reject duplicate Tarot assignments; cross-purpose aliases share runtime locks/health."""
     fingerprint = model_node_fingerprint(candidate)
     if fingerprint is None or not bool(int(candidate.get("enabled", 1) or 0)):
         return None
@@ -107,7 +107,7 @@ def tarot_model_node_conflict(
         if exclude_id is not None and int(row.get("id") or 0) == exclude_id:
             continue
         row_is_tarot = normalize_api_config_purpose(row.get("purpose")) == "tarot"
-        if not (candidate_is_tarot or row_is_tarot):
+        if not (candidate_is_tarot and row_is_tarot):
             continue
         if not bool(int(row.get("enabled", 1) or 0)):
             continue
@@ -119,7 +119,6 @@ def tarot_model_node_conflict(
 async def require_api_config_assignment(
     candidate: dict, *, exclude_id: int | None = None
 ) -> None:
-    purpose = normalize_api_config_purpose(candidate.get("purpose"))
     rows = await fetch_all(
         "SELECT id, name, api_url, api_key, model, purpose, enabled "
         "FROM judge_api_configs ORDER BY id ASC"
@@ -129,11 +128,7 @@ async def require_api_config_assignment(
         return
     conflict_id = int(conflict.get("id") or 0)
     conflict_name = str(conflict.get("name") or "未命名配置").strip()
-    conflict_purpose = normalize_api_config_purpose(conflict.get("purpose"))
-    if purpose == "tarot" and conflict_purpose == "tarot":
-        reason = "已有启用的重复塔罗节点"
-    else:
-        reason = "同一模型节点已跨塔罗与海龟汤/双弈用途启用"
+    reason = "已有启用的重复塔罗节点"
     raise HTTPException(
         status_code=409,
         detail=(

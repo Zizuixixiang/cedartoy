@@ -102,10 +102,10 @@ class TarotBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json(), statuses.return_value)
         statuses.assert_awaited_once_with()
 
-    async def test_reports_and_forwards_the_exact_fixed_model(self):
-        for model in ("gemini-3.5-flash", "gemini-3.1-pro-preview"):
+    async def test_legacy_aliases_and_auto_report_the_actual_upstream_model(self):
+        for model in ("auto", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview"):
             with self.subTest(model=model):
-                chat = AsyncMock(return_value="### 牌阵总览\n本次解读")
+                chat = AsyncMock(return_value={"content": "### 牌阵总览\n本次解读", "model": "[反重力次]gemini-3.1-flash-lite"})
                 with (
                     patch.dict("os.environ", {"TAROT_BRIDGE_TOKEN": "bridge-secret"}),
                     patch.object(internal_tarot, "tarot_reading_chat", chat),
@@ -117,7 +117,7 @@ class TarotBridgeTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["pool"], "tarot")
-                self.assertEqual(response.json()["model"], model)
+                self.assertEqual(response.json()["model"], "[反重力次]gemini-3.1-flash-lite")
                 chat.assert_awaited_once_with(
                     self.payload["messages"],
                     model=model,

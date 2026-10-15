@@ -15,6 +15,7 @@ from tarot_adapter import (
     MAX_INVITE_QUESTION,
     RITUAL_DISPLAY_NAME,
     TAROT_FLASH_MODEL,
+    TAROT_AUTO_MODEL,
     TAROT_PRO_MODEL,
     TarotError,
     TarotStore,
@@ -818,16 +819,10 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         upstream.json.return_value = {
             "models": [
                 {
-                    "model": TAROT_FLASH_MODEL,
+                    "model": TAROT_AUTO_MODEL,
                     "status": "cooling",
                     "remaining_seconds": 240,
                     "endpoint": "must-not-pass-through",
-                },
-                {
-                    "model": TAROT_PRO_MODEL,
-                    "status": "available",
-                    "remaining_seconds": 0,
-                    "last_error": "private-upstream-error",
                 },
             ],
             "other_pool": {"judge": "private"},
@@ -837,7 +832,7 @@ class TarotHttpBoundaryTests(unittest.TestCase):
             patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
             patch.object(server.httpx, "get", get),
         ):
-            handler._handle_tarot_get("/api/tarot/models/status", {})
+            handler._handle_tarot_get("/api/tarot/models/status", {"routing": ["auto"]})
 
         self.assertEqual(handler.response_statuses, [200])
         self.assertEqual(
@@ -845,14 +840,10 @@ class TarotHttpBoundaryTests(unittest.TestCase):
             {
                 "models": [
                     {
-                        "model": TAROT_FLASH_MODEL,
+                        "model": TAROT_AUTO_MODEL,
+                        "label": "Gemini",
                         "status": "cooling",
                         "remaining_seconds": 240,
-                    },
-                    {
-                        "model": TAROT_PRO_MODEL,
-                        "status": "available",
-                        "remaining_seconds": 0,
                     },
                 ]
             },
@@ -863,6 +854,21 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         )
         self.assertNotIn(b"private", handler.wfile.getvalue())
         self.assertIn(("Cache-Control", "no-store"), handler.response_headers)
+
+    def test_legacy_status_ids_are_aliases_for_the_automatic_pool(self):
+        handler = make_handler()
+        handler._tarot_human = Mock(return_value={"id": 101, "is_ai": 0})
+        upstream = Mock(status_code=200)
+        upstream.json.return_value = {"models": [{"model": "auto", "status": "available", "remaining_seconds": 0}]}
+        with (
+            patch.object(server, "TAROT_BRIDGE_TOKEN", "bridge-token"),
+            patch.object(server.httpx, "get", return_value=upstream),
+        ):
+            handler._handle_tarot_get("/api/tarot/models/status", {})
+        models = json.loads(handler.wfile.getvalue())["models"]
+        self.assertEqual([item["model"] for item in models], [TAROT_FLASH_MODEL, TAROT_PRO_MODEL])
+        self.assertTrue(all(item["status"] == "available" for item in models))
+        self.assertTrue(all(item["label"] == "Gemini" for item in models))
 
     def test_model_status_failure_is_honest_and_does_not_leak_bridge_error(self):
         handler = make_handler()
@@ -988,8 +994,8 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(count_saved_tarot_sessions(self.store.db_path), 0)
 
-    def test_both_fixed_models_reach_bridge_and_return_the_recorded_model(self):
-        for index, model in enumerate((TAROT_FLASH_MODEL, TAROT_PRO_MODEL), 1):
+    def test_legacy_and_auto_requests_record_the_actual_fallback_model(self):
+        for index, model in enumerate((TAROT_FLASH_MODEL, TAROT_PRO_MODEL, TAROT_AUTO_MODEL, "gemini-3.8-flash"), 1):
             with self.subTest(model=model):
                 store = TarotStore(
                     Path(self.temp_dir.name) / f"model-{index}.db",
@@ -1004,10 +1010,10 @@ class TarotHttpBoundaryTests(unittest.TestCase):
                 )
                 upstream = Mock(status_code=200)
                 upstream.json.return_value = {
-                    "content": f"{model} 的模拟解读",
+                    "content": "模拟解读",
                     "source": "tarot-ritual",
                     "pool": "tarot",
-                    "model": model,
+                    "model": "[反重力次]gemini-3.1-flash-lite",
                 }
                 post = Mock(return_value=upstream)
                 with (
@@ -1020,15 +1026,15 @@ class TarotHttpBoundaryTests(unittest.TestCase):
                     )
                 self.assertEqual(handler.response_statuses, [200])
                 self.assertEqual(post.call_count, 1)
-                self.assertEqual(post.call_args.kwargs["json"]["model"], model)
+                self.assertEqual(post.call_args.kwargs["json"]["model"], TAROT_AUTO_MODEL)
                 attempt = store.bootstrap_for_human(session_id, 101)["session"]["reading"]
-                self.assertEqual(attempt["model"], model)
-                self.assertIn(
-                    "Gemini 3.5 Flash" if model == TAROT_FLASH_MODEL else "Gemini 3.1 Pro",
-                    attempt["source"],
-                )
+                self.assertEqual(attempt["model"], "Gemini")
+                self.assertIn("Gemini", attempt["source"])
+                raw = store.reading_for_human(session_id, 101, attempt["id"])
+                self.assertEqual(raw["model"], "[反重力次]gemini-3.1-flash-lite")
                 stream = handler.wfile.getvalue().decode("utf-8")
-                self.assertIn(f'"model":"{model}"', stream)
+                self.assertIn('"model":"Gemini"', stream)
+                self.assertNotIn("反重力次", stream)
                 self.assertIn(attempt["source"], stream)
 
     def test_reading_rejects_arbitrary_model_and_provider_credentials(self):
@@ -1095,16 +1101,67 @@ class TarotHttpBoundaryTests(unittest.TestCase):
             )
         self.assertEqual(post.call_count, 1)
         attempt = self.store.bootstrap_for_human(session_id, 101)["session"]["reading"]
-        self.assertEqual(attempt["model"], TAROT_FLASH_MODEL)
+        self.assertEqual(attempt["model"], "Gemini")
+        self.assertEqual(self.store.reading_for_human(session_id, 101, attempt["id"])["model"], TAROT_FLASH_MODEL)
         self.assertIn(
-            f'"model":"{TAROT_FLASH_MODEL}"',
+            '"model":"Gemini"',
             replay.wfile.getvalue().decode("utf-8"),
         )
 
-    def test_unconfigured_pro_fails_clearly_without_cross_model_retry(self):
+    def test_legacy_saved_models_survive_restart_and_replay_without_upstream(self):
+        for index, model in enumerate(("", "tarot-pool", TAROT_FLASH_MODEL, TAROT_PRO_MODEL,
+                                       "[反重力次]gemini-3.1-flash-lite", "[aistudio2]gemini-3.7-flash",
+                                       "unknown-legacy-model")):
+            with self.subTest(model=model):
+                store = TarotStore(Path(self.temp_dir.name) / f"legacy-{index}.db", catalog=FakeCatalog())
+                session_id, csrf = self.reveal_session(store)
+                attempt = store.claim_reading(session_id, 101, "saved_reading", csrf)["attempt"]
+                store.finish_reading(session_id, 101, attempt["id"], state="succeeded", text="既有解读")
+                # Fixture for records made by old releases (including unknown model IDs).
+                with store._tx() as conn:
+                    conn.execute("UPDATE tarot_readings SET model=? WHERE id=?", (model, attempt["id"]))
+                store.init_db()
+                store.init_db()
+                saved = store.bootstrap_for_human(session_id, 101)["session"]["reading"]
+                self.assertEqual(saved["model"], "Gemini")
+                self.assertEqual(saved["text"], "既有解读")
+                late = store.finish_reading(session_id, 101, attempt["id"], state="succeeded",
+                                            text="不能覆盖", model="another-model")
+                self.assertEqual(late["text"], "既有解读")
+                self.assertEqual(late["model"], model)
+                self.assertEqual(store.reading_for_human(session_id, 101, attempt["id"])["model"], model)
+                public_views = [saved, store.ai_result(session_id, 201, 101)["reading"],
+                                store.history_detail_for_human(session_id, 101)["reading"]]
+                for view in public_views:
+                    self.assertEqual(view["model"], "Gemini")
+                    self.assertEqual(view["source"], f"{RITUAL_DISPLAY_NAME} · Gemini 塔罗专用池")
+                status = store.ai_status(session_id, 201, 101)
+                self.assertEqual(status["reading_model"], "Gemini")
+                self.assertEqual(status["reading_source"], saved["source"])
+                handler = self.reading_handler({"action_id": "saved_reading", "model": TAROT_PRO_MODEL}, csrf)
+                with (
+                    patch.object(server, "get_tarot_store", return_value=store),
+                    patch.object(server.httpx, "post") as post,
+                ):
+                    handler._handle_tarot_post(f"/companion/v1/sessions/{session_id}/reading")
+                post.assert_not_called()
+                self.assertIn("既有解读", handler.wfile.getvalue().decode())
+
+    def test_sse_model_display_is_gemini_for_all_reading_states(self):
+        for state in ("running", "succeeded", "failed", "unknown", "cancelled"):
+            for model in (TAROT_PRO_MODEL, "[aistudio2]gemini-3.7-flash", "old-provider-model"):
+                handler = make_handler()
+                attempt = {"state": state, "model": model, "text": "原解读"}
+                handler._send_tarot_reading_sse(attempt)
+                stream = handler.wfile.getvalue().decode()
+                self.assertIn('"model":"Gemini"', stream)
+                self.assertNotIn(model, stream)
+                self.assertEqual(attempt["model"], model)
+
+    def test_unconfigured_pool_fails_clearly(self):
         session_id, csrf = self.reveal_session(self.store)
         upstream = Mock(status_code=503)
-        upstream.json.return_value = {"detail": "所选塔罗模型未配置：Gemini 3.1 Pro"}
+        upstream.json.return_value = {"detail": "塔罗解读通道未配置"}
         post = Mock(return_value=upstream)
         handler = self.reading_handler(
             {"action_id": "reading_unconfigured", "model": TAROT_PRO_MODEL}, csrf
@@ -1120,11 +1177,11 @@ class TarotHttpBoundaryTests(unittest.TestCase):
         self.assertEqual(post.call_count, 1)
         attempt = self.store.bootstrap_for_human(session_id, 101)["session"]["reading"]
         self.assertEqual(attempt["state"], "failed")
-        self.assertEqual(attempt["model"], TAROT_PRO_MODEL)
+        self.assertEqual(attempt["model"], "Gemini")
         self.assertEqual(attempt["error_code"], "model_unconfigured")
         stream = handler.wfile.getvalue().decode("utf-8")
-        self.assertIn("本站尚未配置 Gemini 3.1 Pro", stream)
-        self.assertIn("未切换其他模型", stream)
+        self.assertIn("本站尚未配置可用的塔罗解读渠道", stream)
+        self.assertNotIn("Gemini Pro", stream)
 
     def test_malformed_json_is_a_bounded_client_error(self):
         handler = make_handler(
@@ -1145,12 +1202,12 @@ class TarotHttpBoundaryTests(unittest.TestCase):
             {"error": "塔罗请求格式无效"},
         )
 
-    def test_managed_provider_metadata_has_only_the_two_fixed_models(self):
+    def test_managed_provider_metadata_displays_gemini_with_auto_routing(self):
         metadata = server.CedarToyHandler._tarot_provider_metadata()
         provider = metadata["providers"][0]
         self.assertEqual(provider["id"], "managed:cedartoy-tarot")
-        self.assertEqual(provider["label"], "本站")
-        self.assertEqual(provider["models"], [TAROT_FLASH_MODEL, TAROT_PRO_MODEL])
+        self.assertEqual(provider["label"], "Gemini")
+        self.assertEqual(provider["models"], [TAROT_AUTO_MODEL])
         self.assertNotIn("note", provider)
         self.assertNotIn("source", provider)
 
@@ -1196,7 +1253,7 @@ class TarotHomepageTests(unittest.TestCase):
         )
         self.assertIn('"作者：林默Moon"', card)
         self.assertIn('"小红书号：427689021"', card)
-        self.assertIn(f"tarot·{RITUAL_DISPLAY_NAME}", server._tool_list_games())
+        self.assertIn("tarot·塔罗占卜·林默Moon", server._tool_list_games())
 
     def test_login_bridge_uses_upstream_display_name(self):
         bridge = WEB.auth_bridge("/tarot/session/example/").decode("utf-8")

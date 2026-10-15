@@ -28,13 +28,13 @@ from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 NPC_POOL_NAMES = ("npc_decision", "npc_speech")
 SOUP_DUEL_POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
 TAROT_POOL_NAME = "tarot"
-TAROT_FLASH_MODEL = "gemini-3.8-flash"
+# Public request IDs are routing aliases, never client-selected upstream models.
+TAROT_AUTO_MODEL = "auto"
+TAROT_FLASH_MODEL = "gemini-3.5-flash"
 TAROT_PRO_MODEL = "gemini-3.1-pro-preview"
-TAROT_ALLOWED_MODELS = frozenset({TAROT_FLASH_MODEL, TAROT_PRO_MODEL})
-TAROT_MODEL_LABELS = {
-    TAROT_FLASH_MODEL: "Gemini 3.5 Flash",
-    TAROT_PRO_MODEL: "Gemini 3.1 Pro",
-}
+TAROT_ALLOWED_MODELS = frozenset({
+    TAROT_AUTO_MODEL, TAROT_FLASH_MODEL, TAROT_PRO_MODEL, "gemini-3.8-flash",
+})
 POOL_NAMES = (*SOUP_DUEL_POOL_NAMES, TAROT_POOL_NAME)
 _rr_index: dict[str, dict[int, int]] = {pool: {} for pool in POOL_NAMES}
 _rr_locks: dict[str, asyncio.Lock] = {pool: asyncio.Lock() for pool in POOL_NAMES}
@@ -268,56 +268,35 @@ def _public_tarot_node_status(
 
 
 async def get_tarot_model_runtime_statuses() -> dict[str, Any]:
-    """Expose only fixed Tarot model availability from this running process.
-
-    This is deliberately read-only: it neither claims a half-open probe nor
-    performs an upstream request. Runtime health remains scoped to the same
-    endpoint + credential + model node used by actual Tarot calls.
-    """
+    """Read-only availability of the automatic Tarot pool; never claim a probe."""
     rows = await fetch_all(
-        "SELECT id, api_url, api_key, model, purpose, enabled "
+        "SELECT id, api_url, api_key, model, purpose, enabled, priority "
         "FROM judge_api_configs ORDER BY priority ASC, id ASC"
     )
-    now = _now()
-    models: list[dict[str, Any]] = []
-    for model in (TAROT_FLASH_MODEL, TAROT_PRO_MODEL):
-        configured = [
-            row
-            for row in rows
-            if str(row.get("purpose") or "judge").strip().lower()
-            == TAROT_POOL_NAME
-            and str(row.get("model") or "") == model
-        ]
-        enabled = [row for row in configured if bool(row.get("enabled"))]
-        if not configured:
-            models.append(
-                {"model": model, "status": "unconfigured", "remaining_seconds": 0}
-            )
-            continue
-        if not enabled:
-            models.append(
-                {"model": model, "status": "disabled", "remaining_seconds": 0}
-            )
-            continue
-
-        node_statuses = [_public_tarot_node_status(row, now) for row in enabled]
-        if any(status == "available" for status, _ in node_statuses):
-            status, remaining = "available", 0
-        elif any(status == "retry_ready" for status, _ in node_statuses):
-            status, remaining = "retry_ready", 0
-        elif any(status == "probing" for status, _ in node_statuses):
-            status, remaining = "probing", 0
-        else:
-            status = "cooling"
-            remaining = min(
-                seconds
-                for node_status, seconds in node_statuses
-                if node_status == "cooling"
-            )
-        models.append(
-            {"model": model, "status": status, "remaining_seconds": remaining}
+    configured = [
+        row for row in rows if _purpose_matches(row.get("purpose"), TAROT_POOL_NAME)
+    ]
+    enabled = _select_configs_for_pool(configured, TAROT_POOL_NAME)
+    remaining = 0
+    if not configured:
+        status = "unconfigured"
+    elif not enabled:
+        status = "disabled"
+    else:
+        now = _now()
+        statuses = [_public_tarot_node_status(row, now) for row in enabled]
+        status = next(
+            (value for value in ("available", "retry_ready", "probing")
+             if any(item[0] == value for item in statuses)),
+            "cooling",
         )
-    return {"models": models}
+        if status == "cooling":
+            remaining = min(seconds for _, seconds in statuses)
+    return {"models": [{
+        "model": TAROT_AUTO_MODEL,
+        "status": status,
+        "remaining_seconds": remaining,
+    }]}
 
 
 def _config_available(config_id: int, now: float | None = None) -> bool:
@@ -440,25 +419,20 @@ async def _enabled_configs() -> list[dict[str, Any]]:
 def _select_configs_for_pool(
     rows: list[dict[str, Any]], pool: str, model: str | None = None
 ) -> list[dict[str, Any]]:
-    """Keep Tarot exact-only; for NPC prefer exact, then all, then legacy."""
+    """Keep Tarot purpose-only; for NPC prefer exact, then all, then legacy."""
     pool = _pool_name(pool)
     if pool == TAROT_POOL_NAME:
         selected: list[dict[str, Any]] = []
         seen_nodes: set[str] = set()
-        for row in rows:
+        for row in sorted(rows, key=lambda row: (int(row.get("priority") or 0), int(row["id"]))):
             if (
                 str(row.get("purpose") or "judge").strip().lower()
                 != TAROT_POOL_NAME
             ):
                 continue
-            # Managed Tarot model IDs are an exact allowlist.  Do not make a
-            # malformed value (for example, surrounding whitespace) routable.
-            row_model = str(row.get("model") or "")
-            if row_model not in TAROT_ALLOWED_MODELS:
+            node = model_node_fingerprint(row)
+            if not row.get("enabled") or node is None:
                 continue
-            if model is not None and row_model != model:
-                continue
-            node = model_node_fingerprint(row) or f"config:{row.get('id')}"
             if node in seen_nodes:
                 continue
             seen_nodes.add(node)
@@ -628,13 +602,13 @@ async def _chat(
     max_tokens: int | None = None,
     pool: str = "judge",
     model: str | None = None,
-) -> str:
+) -> str | dict[str, str]:
     global _npc_active, _npc_waiting, _tarot_active, _tarot_waiting, _priority_waiters
     pool = _pool_name(pool)
     if pool == TAROT_POOL_NAME:
-        model = TAROT_FLASH_MODEL if model is None else model
+        model = TAROT_AUTO_MODEL if model is None else model
         if not isinstance(model, str) or model not in TAROT_ALLOWED_MODELS:
-            raise ValueError("只能选择本站提供的 Flash 或 Pro 模型")
+            raise ValueError("本站托管解读仅支持自动渠道")
     if pool in NPC_POOL_NAMES:
         semaphore = _npc_limit_semaphore()
         _npc_waiting += 1
@@ -707,7 +681,7 @@ async def _chat_from_pool(
     max_tokens: int | None,
     pool: str,
     model: str | None = None,
-) -> str:
+) -> str | dict[str, str]:
     errors: list[str] = []
     available = await _configs(pool, model=model)
     if not available:
@@ -716,21 +690,12 @@ async def _chat_from_pool(
             logger.warning("%s configs are cooling or already probing", pool)
         else:
             logger.warning("%s has no enabled API configs", pool)
-        if pool == TAROT_POOL_NAME and model in TAROT_ALLOWED_MODELS:
-            label = TAROT_MODEL_LABELS[model]
-            detail = (
-                f"所选塔罗模型暂时不可用：{label}"
-                if matching
-                else f"所选塔罗模型未配置：{label}"
-            )
-        else:
-            detail = (
-                "NPC 通道繁忙，请稍后再试"
-                if pool in NPC_POOL_NAMES
-                else "塔罗解读通道暂时不可用，请稍后再试"
-                if pool == TAROT_POOL_NAME
-                else "裁判暂时不可用，请稍后再试"
-            )
+        detail = (
+            "NPC 通道繁忙，请稍后再试" if pool in NPC_POOL_NAMES
+            else "塔罗解读通道暂时不可用，请稍后再试" if pool == TAROT_POOL_NAME and matching
+            else "塔罗解读通道未配置" if pool == TAROT_POOL_NAME
+            else "裁判暂时不可用，请稍后再试"
+        )
         raise HTTPException(status_code=503, detail=detail)
     layers: dict[int, list[dict[str, Any]]] = {}
     for cfg in sorted(available, key=lambda item: (int(item.get("priority") or 0), int(item["id"]))):
@@ -792,13 +757,15 @@ async def _chat_from_pool(
                     errors.append(f"{cfg.get('name')}: {error}")
                     continue
                 _record_success(cid)
+                if pool == TAROT_POOL_NAME:
+                    return {"content": text.strip(), "model": cfg["model"]}
                 return text.strip()
     logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
     detail = (
         "NPC 通道繁忙，请稍后再试"
         if pool in NPC_POOL_NAMES
-        else f"所选塔罗模型暂时不可用：{TAROT_MODEL_LABELS[model]}"
-        if pool == TAROT_POOL_NAME and model in TAROT_ALLOWED_MODELS
+        else "塔罗解读通道暂时不可用，请稍后再试"
+        if pool == TAROT_POOL_NAME
         else "裁判暂时不可用，请稍后再试"
     )
     raise HTTPException(status_code=503, detail=detail)
@@ -899,8 +866,8 @@ async def tarot_reading_chat(
     *,
     max_tokens: int = 4096,
     timeout: float = 90,
-    model: str = TAROT_FLASH_MODEL,
-) -> str:
+    model: str = TAROT_AUTO_MODEL,
+) -> dict[str, str]:
     """Internal ARCANUM completion entry; accepts only bounded canonical prompts."""
     if not isinstance(messages, list) or not 1 <= len(messages) <= 4:
         raise ValueError("messages 必须包含 1–4 条消息")
@@ -924,7 +891,7 @@ async def tarot_reading_chat(
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 5 <= timeout <= 120:
         raise ValueError("timeout 必须在 5–120 秒之间")
     if not isinstance(model, str) or model not in TAROT_ALLOWED_MODELS:
-        raise ValueError("只能选择本站提供的 Flash 或 Pro 模型")
+        raise ValueError("本站托管解读仅支持自动渠道")
     return await _chat(
         canonical,
         temperature=0.8,

@@ -86,8 +86,9 @@ from tarot_adapter import (
     RITUAL_REPOSITORY,
     MAX_INVITE_QUESTION,
     TAROT_ALLOWED_MODELS,
+    TAROT_AUTO_MODEL,
+    TAROT_PUBLIC_MODEL,
     TAROT_FLASH_MODEL,
-    TAROT_MODEL_LABELS,
     TAROT_PRO_MODEL,
     TarotError,
     WEB as TAROT_WEB,
@@ -6986,7 +6987,7 @@ a{{color:#c9afff}}
                 self._drain_body()
                 raise TarotError(
                     410,
-                    "托管版不支持导入或自定义模型；请使用右上角的本站 Flash / Pro",
+                    "托管版不支持导入或自定义模型；请使用本站自动渠道",
                 )
 
             history_delete = re.fullmatch(
@@ -7090,9 +7091,9 @@ a{{color:#c9afff}}
             "providers": [
                 {
                     "id": "managed:cedartoy-tarot",
-                    "label": "本站",
+                    "label": TAROT_PUBLIC_MODEL,
                     "kind": "managed",
-                    "models": [TAROT_FLASH_MODEL, TAROT_PRO_MODEL],
+                    "models": [TAROT_AUTO_MODEL],
                     "hasKey": True,
                     "oauth": None,
                 }
@@ -7282,7 +7283,7 @@ a{{color:#c9afff}}
                     raise ValueError("tarot status bridge failed")
                 payload = response.json()
                 raw_models = payload.get("models")
-                expected_models = (TAROT_FLASH_MODEL, TAROT_PRO_MODEL)
+                expected_models = (TAROT_AUTO_MODEL,)
                 allowed_statuses = {
                     "available",
                     "cooling",
@@ -7291,7 +7292,7 @@ a{{color:#c9afff}}
                     "disabled",
                     "unconfigured",
                 }
-                if not isinstance(raw_models, list) or len(raw_models) != 2:
+                if not isinstance(raw_models, list) or len(raw_models) != len(expected_models):
                     raise ValueError("invalid tarot status payload")
                 sanitized = []
                 for expected_model, item in zip(expected_models, raw_models):
@@ -7309,6 +7310,7 @@ a{{color:#c9afff}}
                     sanitized.append(
                         {
                             "model": expected_model,
+                            "label": TAROT_PUBLIC_MODEL,
                             "status": status,
                             "remaining_seconds": remaining,
                         }
@@ -7320,6 +7322,13 @@ a{{color:#c9afff}}
                     extra_headers={"Cache-Control": "no-store"},
                 )
                 return
+            # Cached legacy clients require two fixed IDs in this response.
+            # They are aliases for the same pool, not promises of an upstream model.
+            if params.get("routing") != ["auto"]:
+                sanitized = [
+                    {**sanitized[0], "model": alias}
+                    for alias in (TAROT_FLASH_MODEL, TAROT_PRO_MODEL)
+                ]
             self._send_json(
                 {"models": sanitized},
                 extra_headers={"Cache-Control": "no-store"},
@@ -7386,9 +7395,9 @@ a{{color:#c9afff}}
 
     def _handle_tarot_reading_start(self, session_id, human_user_id, body, csrf):
         action_id = body.get("action_id")
-        model = body.get("model", TAROT_FLASH_MODEL)
+        model = body.get("model", TAROT_AUTO_MODEL)
         if not isinstance(model, str) or model not in TAROT_ALLOWED_MODELS:
-            raise TarotError(400, "只能选择本站提供的 Flash 或 Pro 模型")
+            raise TarotError(400, "本站托管解读仅支持自动渠道")
         store = get_tarot_store()
         claim = store.claim_reading(
             session_id, human_user_id, action_id, csrf, model=model
@@ -7429,7 +7438,7 @@ a{{color:#c9afff}}
                         detail = response.json().get("detail", "")
                     except (ValueError, AttributeError):
                         detail = ""
-                    if isinstance(detail, str) and detail.startswith("所选塔罗模型未配置："):
+                    if isinstance(detail, str) and detail.startswith(("塔罗解读通道未配置", "所选塔罗模型未配置：")):
                         error_code = "model_unconfigured"
                     else:
                         error_code = "model_unavailable"
@@ -7443,8 +7452,13 @@ a{{color:#c9afff}}
             else:
                 payload = response.json()
                 if (
-                    payload.get("pool") != "tarot"
-                    or payload.get("model") != attempt["model"]
+                    not isinstance(payload, dict)
+                    or payload.get("pool") != "tarot"
+                    or not isinstance(payload.get("model"), str)
+                    or not payload["model"].strip()
+                    or len(payload["model"]) > 256
+                    or "\0" in payload["model"]
+                    or payload["model"] == TAROT_AUTO_MODEL
                     or payload.get("source") != "tarot-ritual"
                     or not isinstance(payload.get("content"), str)
                     or not payload["content"].strip()
@@ -7456,6 +7470,7 @@ a{{color:#c9afff}}
                     attempt_id,
                     state="succeeded",
                     text=payload["content"],
+                    model=payload["model"],
                 )
         except httpx.TimeoutException:
             attempt = store.finish_reading(
@@ -7478,16 +7493,15 @@ a{{color:#c9afff}}
     def _send_tarot_reading_sse(self, attempt):
         state = attempt.get("state")
         model = attempt.get("model")
-        if model not in TAROT_ALLOWED_MODELS:
-            model = TAROT_FLASH_MODEL
-        events = [{"t": "meta", "model": model, "source": tarot_model_source(model)}]
+        if not isinstance(model, str):
+            model = ""
+        events = [{"t": "meta", "model": TAROT_PUBLIC_MODEL, "source": tarot_model_source(model)}]
         if state == "succeeded":
             text = str(attempt.get("text") or "")
             for offset in range(0, len(text), 256):
                 events.append({"t": "delta", "v": text[offset:offset + 256]})
         else:
             error_code = attempt.get("error_code")
-            model_label = TAROT_MODEL_LABELS[model]
             messages = {
                 "running": "解读仍在进行；不会自动重复发起。",
                 "unknown": "先前解读状态未知，可能已经计费；请勿自动重试。",
@@ -7495,9 +7509,9 @@ a{{color:#c9afff}}
                 "failed": "本次专业解读未完成，请稍后由人类明确决定是否重试。",
             }
             if error_code == "model_unconfigured":
-                message = f"本站尚未配置 {model_label}，未切换其他模型。"
+                message = "本站尚未配置可用的塔罗解读渠道。"
             elif error_code == "model_unavailable":
-                message = f"{model_label} 暂时不可用，未切换其他模型。"
+                message = "塔罗解读渠道暂时不可用，请稍后重试。"
             else:
                 message = messages.get(state, "解读状态无效")
             events.append({"t": "error", "v": message})

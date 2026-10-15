@@ -10,6 +10,7 @@ from tarot_adapter import (
     COVE_REPOSITORY,
     MAX_INVITE_QUESTION,
     TAROT_FLASH_MODEL,
+    TAROT_AUTO_MODEL,
     TAROT_PRO_MODEL,
     TarotCatalog,
     TarotError,
@@ -828,9 +829,9 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertTrue(result["untrusted"])
         self.assertEqual(
             result["reading"]["source"],
-            f"{RITUAL_DISPLAY_NAME} · Gemini 3.5 Flash 塔罗专用池",
+            f"{RITUAL_DISPLAY_NAME} · Gemini 塔罗专用池",
         )
-        self.assertEqual(result["reading"]["model"], TAROT_FLASH_MODEL)
+        self.assertEqual(result["reading"]["model"], "Gemini")
         self.assertEqual(result["question"], "今天该看见什么？")
         self.assertEqual(result["cards"][0]["card_id"], "M00")
         self.assertEqual(result["cards"][0]["zh"], "愚者")
@@ -872,8 +873,8 @@ class TarotStoreIsolationTests(unittest.TestCase):
         self.assertTrue(first["claimed"])
         self.assertFalse(replay["claimed"])
         self.assertEqual(first["attempt"]["id"], replay["attempt"]["id"])
-        self.assertEqual(first["attempt"]["model"], TAROT_PRO_MODEL)
-        self.assertEqual(replay["attempt"]["model"], TAROT_PRO_MODEL)
+        self.assertEqual(first["attempt"]["model"], TAROT_AUTO_MODEL)
+        self.assertEqual(replay["attempt"]["model"], TAROT_AUTO_MODEL)
         self.store.finish_reading(
             session_id,
             101,
@@ -886,7 +887,7 @@ class TarotStoreIsolationTests(unittest.TestCase):
         )
         self.assertFalse(final_replay["claimed"])
         self.assertEqual(final_replay["attempt"]["state"], "unknown")
-        self.assertEqual(final_replay["attempt"]["model"], TAROT_PRO_MODEL)
+        self.assertEqual(final_replay["attempt"]["model"], TAROT_AUTO_MODEL)
 
     def test_reading_rejects_any_model_outside_the_fixed_allowlist(self):
         invite = self.store.create_invite(201, 101, "request_bad_model", "模型问题")
@@ -1169,7 +1170,7 @@ class TarotUpstreamAndUiTests(unittest.TestCase):
         self.assertIn('id="companion-config"', page)
         self.assertIn('"humanUserId":101', page)
         self.assertIn('id="providerOrb"', page)
-        self.assertIn("本站暂仅支持所提供的模型。如需自行配置模型，请从 ", page)
+        self.assertIn("本站托管解读使用 Gemini。如需自行配置模型，请从 ", page)
         self.assertIn(f'href="{COVE_REPOSITORY}" target="_blank" rel="noopener noreferrer">GitHub</a> 克隆原版', page)
         self.assertIn(f'href="{COVE_REPOSITORY}"', page)
         self.assertIn('class="managed-model-note managed-credit"', page)

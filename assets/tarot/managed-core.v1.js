@@ -7,15 +7,15 @@ export * from '/tarot/static/data/spreads.js';
 export * from '/tarot/static/js/reading.js';
 
 const PROVIDER_ID = 'managed:cedartoy-tarot';
-const FLASH_MODEL = 'gemini-3.5-flash';
-const PRO_MODEL = 'gemini-3.1-pro-preview';
-const MODELS = Object.freeze([FLASH_MODEL, PRO_MODEL]);
+const AUTO_MODEL = 'auto';
+const MODELS = Object.freeze([AUTO_MODEL]);
+const REQUEST_MODELS = [AUTO_MODEL, 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-pro-preview'];
 const LS_CUSTOM = 'arcana.customProviders.v1';
 const LS_SELECTED = 'arcana.selectedProvider.v1';
 
 const provider = Object.freeze({
   id: PROVIDER_ID,
-  label: '本站',
+  label: 'Gemini',
   kind: 'managed',
   models: MODELS,
   hasKey: true,
@@ -25,11 +25,11 @@ export const providerState = {
   dsh: { found: true, enabled: true, providers: [provider] },
   custom: [],
   selectedId: PROVIDER_ID,
-  modelByProvider: { [PROVIDER_ID]: FLASH_MODEL },
+  modelByProvider: { [PROVIDER_ID]: AUTO_MODEL },
 };
 
 function allowedModel(value) {
-  return MODELS.includes(value) ? value : FLASH_MODEL;
+  return MODELS.includes(value) ? value : AUTO_MODEL;
 }
 
 function persist() {
@@ -43,12 +43,12 @@ function persist() {
 }
 
 export function initProviderState() {
-  let selected = FLASH_MODEL;
+  let selected = AUTO_MODEL;
   try {
     localStorage.removeItem(LS_CUSTOM);
     const saved = JSON.parse(localStorage.getItem(LS_SELECTED) || 'null');
     selected = allowedModel(saved?.models?.[PROVIDER_ID]);
-  } catch { /* Bad or unavailable storage falls back to Flash. */ }
+  } catch { /* Bad or unavailable storage uses automatic routing. */ }
   providerState.custom = [];
   providerState.selectedId = PROVIDER_ID;
   providerState.modelByProvider = { [PROVIDER_ID]: selected };
@@ -87,10 +87,10 @@ export function selectProvider(id, model = null) {
 }
 
 export function setModel(id, model) {
-  if (id !== PROVIDER_ID || !MODELS.includes(model)) {
-    throw new Error('只能选择本站提供的 Flash 或 Pro 模型');
+  if (id !== PROVIDER_ID || !REQUEST_MODELS.includes(model)) {
+    throw new Error('本站托管解读仅支持自动渠道');
   }
-  providerState.modelByProvider[PROVIDER_ID] = model;
+  providerState.modelByProvider[PROVIDER_ID] = AUTO_MODEL;
   persist();
 }
 
@@ -114,12 +114,12 @@ export async function chat(options) {
     if (!transport) {
       throw new Error('本站托管版仅允许当前会话发起专业解读');
     }
-    if (!MODELS.includes(model)) {
-      throw new Error('只能选择本站提供的 Flash 或 Pro 模型');
+    if (!REQUEST_MODELS.includes(model)) {
+      throw new Error('本站托管解读仅支持自动渠道');
     }
-    // Only the fixed model ID crosses the browser/session boundary. Prompts
+    // Only the automatic routing ID crosses the browser/session boundary. Prompts
     // and provider credentials are never accepted from this managed page.
-    const response = await transport({ model }, { signal });
+    const response = await transport({ model: AUTO_MODEL }, { signal });
     if (!response.ok || !response.body) {
       const error = await response.json().catch(() => null);
       throw new Error(error?.error || `服务返回 ${response.status}`);
