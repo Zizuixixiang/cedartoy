@@ -1,15 +1,15 @@
 {
-  "ram_mb": 4096,
-  "max_annual_cents": 3000,
+  "target": {
+    "name": "4 GB KVM VPS (Black Friday 2025)",
+    "ram_mb": 4096,
+    "cpu_cores": 3,
+    "disk_gb": 65,
+    "annual_cents": 2998,
+    "official_url": "https://my.racknerd.com/index.php?rp=/store/blackfriday2025/4-gb-kvm-vps-black-friday-2025",
+    "club_url": "https://racknerd.club/en/black-friday-2025"
+  },
+  "confirm_delay_seconds": 20,
+  "baseline_max_age_seconds": 172800,
   "failure_threshold": 3,
-  "telegram_env": "/opt/cedarclio/.env",
-  "sources": [
-    "https://www.racknerd.com/specials/",
-    "https://www.racknerd.com/BlackFriday/",
-    "https://www.racknerd.com/NewYear/",
-    "https://my.racknerd.com/index.php?rp=/store/blackfriday2025&language=english",
-    "https://my.racknerd.com/index.php?rp=/store/black-friday-2024&language=english",
-    "https://my.racknerd.com/index.php?rp=/store/new-year-specials&language=english",
-    "https://my.racknerd.com/index.php?rp=/store/special-promos&language=english"
-  ]
+  "telegram_env": "/opt/cedarclio/.env"
 }
