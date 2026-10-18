@@ -5,7 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 from scripts import racknerd_monitor as monitor
 
@@ -29,6 +30,34 @@ def offer(stock=False, price=2998):
 
 
 class ParserTests(unittest.TestCase):
+    def test_deployed_sources_cover_independent_catalogues_and_keep_policy(self):
+        config = json.loads(monitor.DEFAULT_CONFIG.read_text())
+        self.assertEqual((config["ram_mb"], config["max_annual_cents"]), (4096, 3000))
+        for category in ("blackfriday2025", "black-friday-2024", "new-year-specials", "special-promos"):
+            url = f"https://my.racknerd.com/index.php?rp=/store/{category}&language=english"
+            with self.subTest(category=category):
+                self.assertIn(url, config["sources"])
+                monitor.official_url(url)
+                result = monitor.parse_offers(card(order=url.replace("&language=english", "/4-gb-kvm-vps&language=english")), url)[0]
+                self.assertEqual(result["key"], f"store:/store/{category}/4-gb-kvm-vps")
+                self.assertTrue(monitor.eligible(result, config))
+                self.assertFalse(result["stock"])
+
+    def test_product_key_ignores_url_encoding_language_and_tracking(self):
+        expected = monitor.product_key(ORDER)
+        for url in [ORDER + "&language=english&currency=1",
+                    "https://my.racknerd.com/index.php?rp=%2Fstore%2Fblackfriday2025%2F4-gb-kvm-vps-black-friday-2025",
+                    "https://my.racknerd.com/store/blackfriday2025/4-gb-kvm-vps-black-friday-2025/"]:
+            self.assertEqual(monitor.product_key(url), expected)
+        self.assertIsNone(monitor.product_key(URL))  # A category is not a product.
+        self.assertEqual(monitor.product_key("https://my.racknerd.com/cart.php?pid=954&a=add&language=english"), "pid:954")
+
+    def test_exact_ram_and_annual_price_boundary(self):
+        for ram, price, expected in [(4096, 3000, True), (4096, 3001, False),
+                                     (3584, 2998, False), (4608, 2998, False), (8192, 2998, False)]:
+            with self.subTest(ram=ram, price=price):
+                self.assertEqual(monitor.eligible(dict(offer(price=price), ram_mb=ram), CONFIG), expected)
+
     def test_zero_stock_beats_order_button(self):
         result = monitor.parse_offers(card(), URL)[0]
         self.assertEqual((result["ram_mb"], result["annual_cents"], result["stock"]), (4096, 2998, False))
@@ -39,6 +68,13 @@ class ParserTests(unittest.TestCase):
 
     def test_order_button_alone_is_unknown(self):
         self.assertIsNone(monitor.parse_offers(card(""), URL)[0]["stock"])
+
+    def test_explicit_sold_out_and_disabled_links_override_stock_count(self):
+        for status in ("Out of Stock", "Sold Out", "Unavailable"):
+            self.assertFalse(monitor.parse_offers(card(status), URL)[0]["stock"])
+        for attr in ('disabled', 'aria-disabled="true"', 'class="btn disabled"'):
+            html = card("3 Available").replace('<a href=', f'<a {attr} href=')
+            self.assertFalse(monitor.parse_offers(html, URL)[0]["stock"])
 
     def test_specials_markup_and_scripts(self):
         html = '<script>4 GB KVM VPS $1/year</script><article><h3>4 GB KVM VPS</h3><p><span>$</span>59.99/year</p><li>4 GB RAM</li><a href="https://my.racknerd.com/cart.php?a=add&amp;pid=954">Order now</a></article>'
@@ -85,6 +121,95 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(offers[0]["stock"])
         self.assertFalse(failures)
         self.assertEqual(len(succeeded), 2)
+
+    def test_redirected_sources_and_duplicate_stock_cards_do_not_duplicate_offers(self):
+        sources = ["https://www.racknerd.com/specials/", "https://www.racknerd.com/BlackFriday/", URL]
+        requested = []
+        class FakeFetcher:
+            def get(self, url):
+                # Sold-out products do not need a checkout request.
+                requested.append(url)
+                return card() + card(), URL
+        offers, failures, succeeded = monitor.scan(dict(CONFIG, sources=sources), FakeFetcher())
+        self.assertEqual(len(offers), 1)
+        self.assertFalse(offers[0]["stock"])
+        self.assertFalse(failures)
+        self.assertEqual(succeeded, sources)
+        self.assertEqual(requested, sources)
+
+    def test_catalogue_stock_requires_confirmed_checkout_before_restock(self):
+        for body, final, expected in [
+            ("<h1>Out of Stock</h1>", ORDER, False),
+            ("<h1>Shared Hosting</h1>", URL, None),
+            (card("3 Available"), URL, None),
+            ('<h1>Another VPS</h1><input name="hostname"><select name="billingcycle">$29.98 USD Annually</select>', ORDER, None),
+        ]:
+            with self.subTest(final=final, body=body):
+                class FakeFetcher:
+                    def get(self, url):
+                        return (card("3 Available"), URL) if url == URL else (body, final)
+                offers, failures, _ = monitor.scan(CONFIG, FakeFetcher())
+                self.assertIs(offers[0]["stock"], expected)
+                self.assertEqual(bool(failures), expected is None)
+                state = monitor.empty_state()
+                baseline = dict(offers[0], stock=False)
+                monitor.observe(state, [baseline], {}, [URL], CONFIG, initialize=True)
+                ready = monitor.observe(state, offers, failures, [], CONFIG)
+                self.assertFalse(ready)
+
+
+class AccessFailureTests(unittest.TestCase):
+    def test_http_403_is_not_cached_or_retried(self):
+        fetcher = monitor.Fetcher(interval=0)
+        error = HTTPError(URL, 403, "Forbidden", {"cf-mitigated": "challenge"}, None)
+        with patch.object(fetcher.opener, "open", side_effect=error) as request:
+            with self.assertRaises(HTTPError):
+                fetcher.get(URL)
+        request.assert_called_once()
+        self.assertEqual(fetcher.cache, {})
+        self.assertEqual(monitor.safe_error(error), "http_403")
+
+    def test_challenge_header_rejects_even_http_200_before_reading_inventory(self):
+        fetcher = monitor.Fetcher(interval=0)
+        response = MagicMock()
+        response.url = URL
+        response.headers = {"cf-mitigated": "challenge"}
+        response.__enter__.return_value = response
+        with patch.object(fetcher.opener, "open", return_value=response):
+            with self.assertRaises(monitor.AccessChallenge) as raised:
+                fetcher.get(URL)
+        response.read.assert_not_called()
+        self.assertEqual(fetcher.cache, {})
+        self.assertEqual(monitor.safe_error(raised.exception), "access_challenge")
+
+    def test_source_and_checkout_403_preserve_inventory_without_restock(self):
+        for blocked_url in (URL, ORDER):
+            for previous_stock in (False, True):
+                with self.subTest(blocked_url=blocked_url, previous_stock=previous_stock):
+                    baseline = monitor.parse_offers(card(), URL)[0]
+                    baseline["stock"] = previous_stock
+                    state = monitor.empty_state()
+                    monitor.observe(state, [baseline], {}, [URL], CONFIG, initialize=True)
+                    # A queued restock must not be delivered without revalidation.
+                    state["pending"][baseline["key"]] = {
+                        "signature": monitor.signature(dict(baseline, stock=True)), "text": "补货"
+                    }
+                    class FakeFetcher:
+                        def get(self, url):
+                            if url == blocked_url:
+                                raise HTTPError(url, 403, "Forbidden", {}, None)
+                            return card("3 Available"), URL
+                    offers, failures, succeeded = monitor.scan(CONFIG, FakeFetcher())
+                    self.assertEqual(failures, {URL: "http_403"})
+                    self.assertEqual(succeeded, [])
+                    if blocked_url == ORDER:
+                        self.assertIsNone(offers[0]["stock"])
+                    else:
+                        self.assertEqual(offers, [])
+                    ready = monitor.observe(state, offers, failures, succeeded, CONFIG)
+                    self.assertEqual(ready, [])
+                    self.assertEqual(state["offers"][baseline["key"]], baseline)
+                    self.assertEqual(state["failures"][URL]["error"], "http_403")
 
 
 class StateTests(unittest.TestCase):

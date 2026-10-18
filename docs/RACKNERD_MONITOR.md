@@ -18,6 +18,10 @@
 
 明确 `0 Available` / Out of Stock 优先于 Order Now 按钮；符合门槛、可能有货的产品会额外 GET 一次订购页，要求出现对应产品、年付金额及服务器配置表单后才确认为可购买。不提交表单，不登录，不下单。未知页面/反爬/异常跳转不当作有货；目标产品库存未知计入来源失败。按产品链接去重，同次重复 URL 使用缓存。
 
+购物目录存在不代表 VPS 可抓取。2026-10-18 实机核验中，四个 `my.racknerd.com` 目录和官网 `cart.php` 订购链接均返回 Cloudflare HTTP 403 验证页；去掉语言参数、标准编码的 `rp` 查询、常见目录路径及 HTML `Accept` 请求头未解决。可访问的官网 specials 只包含现行套餐，BlackFriday/NewYear 重定向到同页，不能替代旧活动目录。搜索引擎能够读取的内容也不能充当实时库存证据。
+
+目录或订购页的 403 记为 `http_403` 来源失败；带 `cf-mitigated: challenge` 的成功状态响应同样记为 `access_challenge`，不解析为库存、不缓存、不自动重试。原库存和待发补货事件保留，只有后续重新验证成功才可能发送。保留受阻目录以暴露覆盖缺口，不通过删除来源隐藏故障。需要 RackNerd 提供允许此 VPS/监控访问的方式或官方公开库存接口后，再用实机 dry-run 验证；不接入验证码绕过、伪造验证 Cookie 或代理轮换。
+
 ## 通知与持久化
 
 只读 `/opt/cedarclio/.env` 中既有 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_MAIN_USER_CHAT_ID` 和可选 HTTP(S) `TELEGRAM_PROXY`。不复制凭据，不记录响应正文、异常完整消息或 Telegram API URL。既有通知 helper 会吞掉发送错误，因此这里复用配置，直接检查 Telegram `ok` 和 `message_id`，确认成功才移除待发事件。

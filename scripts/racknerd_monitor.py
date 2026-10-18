@@ -143,6 +143,10 @@ class OfficialRedirect(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+class AccessChallenge(ValueError):
+    """An access challenge is a fetch failure, never product inventory."""
+
+
 class Fetcher:
     def __init__(self, interval=2, timeout=25):
         self.interval, self.timeout, self.last = interval, timeout, 0
@@ -157,6 +161,8 @@ class Fetcher:
             req = Request(url, headers={"User-Agent": "RackNerdOfferMonitor/1.0 (twice daily)", "Accept-Language": "en-US,en;q=0.9"})
             with self.opener.open(req, timeout=self.timeout) as response:
                 final = official_url(response.url)
+                if response.headers.get("cf-mitigated", "").lower() == "challenge":
+                    raise AccessChallenge()
                 body = response.read(2_000_001)
                 if len(body) > 2_000_000:
                     raise ValueError("page_too_large")
@@ -190,6 +196,7 @@ def scan(config, fetcher):
             html, final = fetcher.get(source)
             parsed = parse_offers(html, final)
             uncertain = False
+            checkout_error = None
             for offer in parsed:
                 # Only affordable target plans need additional stock requests.
                 if eligible(offer, config) and offer["stock"] is not False:
@@ -199,8 +206,9 @@ def scan(config, fetcher):
                         canonical = product_key(checkout_url)
                         if canonical:
                             offer["key"] = canonical
-                    except Exception:
+                    except Exception as error:
                         offer["stock"] = None
+                        checkout_error = safe_error(error)
                     uncertain |= offer["stock"] is None
                 old = offers.get(offer["key"])
                 if old and (old["annual_cents"] != offer["annual_cents"] or old["stock"] != offer["stock"]):
@@ -209,7 +217,7 @@ def scan(config, fetcher):
                     uncertain = True
                 offers[offer["key"]] = offer
             if uncertain:
-                failures[source] = "stock_unknown"
+                failures[source] = checkout_error or "stock_unknown"
             else:
                 succeeded.append(source)
         except Exception as error:
@@ -219,6 +227,8 @@ def scan(config, fetcher):
 
 def safe_error(error):
     # Exception messages/tracebacks may embed Telegram URLs and credentials.
+    if isinstance(error, AccessChallenge):
+        return "access_challenge"
     return "http_" + str(error.code) if isinstance(error, HTTPError) else type(error).__name__
 
 
