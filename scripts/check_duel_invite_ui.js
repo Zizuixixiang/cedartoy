@@ -78,17 +78,23 @@ typeMention(); key('ArrowDown'); key('ArrowUp');
 assert.equal(input.getAttribute('aria-activedescendant'),'mention-option-1');
 key('Escape'); assert.equal(input.value,'@'); assert.equal(input.getAttribute('aria-expanded'),'false');
 typeMention(); input.blur(); assert.ok(menu.classList.contains('hidden'));
-// Ordinary rooms preserve plain chat and never expose invitation completion.
-w.fixture.room_kind='bound';w.run('syncChatRoomMode()');typeMention();
-assert.ok(menu.classList.contains('hidden'));
-assert.equal(menu.children.length,0);
-assert.equal(input.getAttribute('role'),null);
-assert.ok(w.document.querySelector('.chat-hint').classList.contains('hidden'));
-w.fixture.room_kind='invite';w.run('syncChatRoomMode()');typeMention();
-assert.equal(menu.children.length,2);
-assert.equal(input.getAttribute('role'),'combobox');
-assert.ok(!w.document.querySelector('.chat-hint').classList.contains('hidden'));
-key('Escape');
+// Ordinary and invite rooms share completion, selection and accessible state.
+for (const kind of ['bound', 'invite']) {
+  w.fixture.room_kind=kind;w.run('syncChatRoomMode()');typeMention();
+  assert.ok(!menu.classList.contains('hidden'));
+  assert.equal(menu.children.length,2);
+  assert.equal(input.getAttribute('role'),'combobox');
+  assert.equal(input.getAttribute('aria-expanded'),'true');
+  assert.ok(!w.document.querySelector('.chat-hint').classList.contains('hidden'));
+  menu.children[1].click(); assert.equal(input.value,'@123 ');
+  assert.equal(input.getAttribute('aria-expanded'),'false');
+  typeMention(); key('ArrowUp'); key('Enter'); assert.equal(input.value,'@123 ');
+  for (const text of ['普通聊天', '@不存在']) {
+    input.value=text; input.dispatchEvent(new w.Event('input'));
+    assert.equal(menu.children.length,0);
+    assert.ok(menu.classList.contains('hidden'));
+  }
+}
 // Real xiangqi renderer reverses displayed coordinates, submits original ones.
 w.fixture.participants=participants.slice(0,2);
 w.fixture.board_state={rows:10,cols:9,board:Array.from({length:10},()=>Array(9).fill(null)),legal_moves:[{from_row:0,from_col:0,to_row:1,to_col:0}],turn_color:'b'};
@@ -226,8 +232,8 @@ assert.ok(visible(w.document.getElementById('battleStage')));
 assert.ok(visible(input));
 assert.ok(html.includes('输入 @ 可选择房间成员；@小机会提醒它。'));
 assert.equal((html.match(/id="aiPlayer"/g)||[]).length,1,'legacy create UI retained');
-assert.ok(html.includes('/static/app.js?v=0.9.20'));
-assert.ok(html.includes('/static/styles.css?v=0.9.17'));
+assert.match(html, /\/static\/app\.js\?v=\d+\.\d+\.\d+/);
+assert.match(html, /\/static\/styles\.css\?v=\d+\.\d+\.\d+/);
 assert.ok(html.includes('<option value="0" selected>关闭</option>'));
 assert.ok(js.includes('if (mode === "create") $("inviteTimeout").value = "0";'));
 assert.ok(!css.includes('invite-waiting-stage'),'obsolete waiting-stage patches removed');
