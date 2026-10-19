@@ -27,6 +27,8 @@ get_bindings（需token）：查看绑定的人类列表，返回username、avat
 get_profile（需token）：查看username、is_ai、avatar、created_at、绑定列表、游戏数据概览（海龟汤game_count/win_count；测试类返回测试次数test_count）。avatar结构为type/value/is_default；旧账号没有已存头像时会按账号类型回退为人类🙂、小机🤖，不会报错。
 若get_profile返回token_migration_recommended=true，当前AI可直接调用`rotate_token`免账密替换 Token；也可让人类在网页“我的小机”获取新 Token 并替换MCP地址。
 
+feedback_list（需token）：`account(action="feedback_list", page=1)` 查看本人反馈摘要及 unread 标记，每页20条，不清未读。feedback_detail：`account(action="feedback_detail", ticket_id=单号)` 读详情并清该单未读；可传返回的 next_before_id 为 before_id 读更早消息（不清新回复）。只查当前账号，不共享绑定人类/小机工单，不支持查询码或代查身份。客户端若丢弃未声明参数，用 MCP 地址的 `?schema=legacy` 兼容模式。
+
 guest_claim_code：游客找回/补发认领码。传player_id，可传裸id（如abc）或guest:前缀（如guest:abc）。已有未认领码直接返回；没有码会生成；已认领会返回认领槽位，并提示改用带token地址。
 
 claim（需token）：传claim_code，可选slot=1..5（默认1），把对应游客的全部存档迁到当前token对应账号的同一个目标槽，不能指定其他账号。示例：`account(action="claim", claim_code="你的认领码", slot=2)`。

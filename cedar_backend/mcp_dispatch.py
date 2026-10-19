@@ -22,6 +22,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
     _json_rpc_error,
     _json_rpc_result,
     _mcp_forced_announcement,
+    _feedback_unread_reminder,
     _root_tools,
     _tool_account,
     _tool_get_guide,
@@ -82,6 +83,16 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
             duel_reminder = ""
             if not is_duel_call:
                 duel_reminder = _duel_unread_request_reminder(ai_player_id)
+            def append_feedback_reminder(content):
+                # JSON-RPC notifications have no response in which to deliver a hint.
+                if request_id is None:
+                    return
+                raw_token = path_token or bearer_token
+                if not raw_token and name == "account" and isinstance(arguments, dict):
+                    raw_token = arguments.get("token")
+                reminder = _feedback_unread_reminder(raw_token)
+                if reminder:
+                    content.append({"type": "text", "text": reminder})
             try:
                 if name == "list_games":
                     text = _tool_list_games(path_token=path_token or bearer_token)
@@ -106,6 +117,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                     content.append({"type": "text", "text": forced_announcement})
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
+                append_feedback_reminder(content)
                 return _json_rpc_result(
                     request_id, {"content": content, "isError": False}
                 )
@@ -124,6 +136,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                     content.append({"type": "text", "text": forced_announcement})
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
+                append_feedback_reminder(content)
                 return _json_rpc_result(
                     request_id, {"content": content, "isError": True}
                 )
@@ -138,6 +151,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                     content.append({"type": "text", "text": forced_announcement})
                 if duel_reminder:
                     content.append({"type": "text", "text": duel_reminder})
+                append_feedback_reminder(content)
                 return _json_rpc_result(
                     request_id, {"content": content, "isError": True}
                 )
@@ -650,6 +664,7 @@ def _tool_account(arguments, user_agent, path_token, client_ip, *,
     _workkk_save_summary,
     admin_recovery_mcp,
     _admin_feedback,
+    _account_feedback,
     json,
 ):
     action = arguments.get("action")
@@ -676,6 +691,10 @@ def _tool_account(arguments, user_agent, path_token, client_ip, *,
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
+    if action in ("feedback_list", "feedback_detail"):
+        if path_token and arguments.get("token") not in (None, path_token):
+            raise _McpError(-32602, "反馈查询身份与当前连接不一致")
+        return json.dumps(_account_feedback(arguments, path_token or raw_token), ensure_ascii=False)
     if isinstance(action, str) and action.startswith("admin_feedback_"):
         return json.dumps(_admin_feedback(arguments, raw_token), ensure_ascii=False)
     if isinstance(action, str) and action in admin_recovery_mcp.ACTIONS:

@@ -17,6 +17,7 @@ class McpSchemaSelectionTests(unittest.TestCase):
                                          side_effect=AssertionError("unexpected database access")))
         stack.enter_context(patch.object(server, "_request_rate_limit_identity", return_value="fixture"))
         stack.enter_context(patch.object(server, "_check_request_rate_limit", return_value=True))
+        stack.enter_context(patch.object(server, "_feedback_unread_reminder", return_value=""))
 
     def post(self, path, user_agent, payload=None, bearer=""):
         if payload is None:

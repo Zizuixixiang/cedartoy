@@ -75,6 +75,16 @@ def init_schema(conn):
         conn.execute("""CREATE TABLE IF NOT EXISTS feedback_review_limits (
             admin_id INTEGER NOT NULL, created_at_epoch INTEGER NOT NULL)""")
         conn.execute("CREATE INDEX IF NOT EXISTS feedback_review_limits_idx ON feedback_review_limits(admin_id,created_at_epoch)")
+        # One durable rollout boundary, including any v1 replies migrated above.
+        # Never rebaseline on restart or first visit by a particular account.
+        conn.execute("""CREATE TABLE IF NOT EXISTS feedback_unread_baseline (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1), message_id INTEGER NOT NULL)""")
+        conn.execute("""INSERT OR IGNORE INTO feedback_unread_baseline
+            SELECT 1, coalesce(max(id),0) FROM feedback_messages""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS feedback_read_cursors (
+            ticket_id INTEGER NOT NULL REFERENCES feedback_tickets(id), owner_id INTEGER NOT NULL,
+            read_id INTEGER NOT NULL DEFAULT 0, notified_id INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(ticket_id, owner_id))""")
         conn.execute("RELEASE feedback_schema")
     except Exception:
         conn.execute("ROLLBACK TO feedback_schema")
@@ -127,6 +137,40 @@ class FeedbackStore:
             (ticket_id, role, actor, content, now, ip_hash))
         return cursor.lastrowid
 
+    def _unread_rows(self, conn, owner_id):
+        # owner_id always comes from authentication, never a binding or request field.
+        return conn.execute("""SELECT t.id, max(m.id) AS latest_id,
+                coalesce(c.notified_id,0) AS notified_id
+            FROM feedback_tickets t JOIN feedback_messages m ON m.ticket_id=t.id AND m.role='admin'
+            LEFT JOIN feedback_read_cursors c ON c.ticket_id=t.id AND c.owner_id=t.owner_id
+            WHERE t.owner_id=? AND m.id > max(coalesce(c.read_id,0),
+                (SELECT message_id FROM feedback_unread_baseline WHERE singleton=1))
+            GROUP BY t.id""", (owner_id,)).fetchall()
+
+    def unread(self, owner_id):
+        if owner_id is None:
+            raise self.error(-32001, "请先登录后查看自己的反馈")
+        with closing(self._open()) as conn:
+            return {"unread_count": len(self._unread_rows(conn, owner_id))}
+
+    def claim_notification(self, owner_id):
+        if owner_id is None:
+            return False
+        # Startup already migrates the schema. The common MCP path must not
+        # acquire _open()'s write lock, even for already-notified unread replies.
+        with closing(self.connect()) as conn, conn:
+            if not any(r["latest_id"] > r["notified_id"] for r in self._unread_rows(conn, owner_id)):
+                return False
+            # The SELECT above is fully consumed, with no read transaction held.
+            # Recheck after locking: another claim or detail read may have won.
+            conn.execute("BEGIN IMMEDIATE")
+            rows = [r for r in self._unread_rows(conn, owner_id) if r["latest_id"] > r["notified_id"]]
+            for row in rows:
+                conn.execute("""INSERT INTO feedback_read_cursors(ticket_id,owner_id,notified_id) VALUES (?,?,?)
+                    ON CONFLICT(ticket_id,owner_id) DO UPDATE SET notified_id=max(notified_id,excluded.notified_id)""",
+                    (row["id"], owner_id, row["latest_id"]))
+            return bool(rows)
+
     def submit(self, body, owner_id, ip):
         category = self.choice(body.get("category"), CATEGORIES, "category")
         content = self.text(body, "content", 4000, True)
@@ -172,7 +216,10 @@ class FeedbackStore:
                 FROM feedback_tickets t""" + where +
                 " ORDER BY coalesce(updated_at_epoch,created_at_epoch) DESC,id DESC LIMIT ? OFFSET ?",
                 values + [PAGE_SIZE, (page-1)*PAGE_SIZE]).fetchall()
-        return {"tickets": [dict(row) for row in rows], "total": total, "page": page, "page_size": PAGE_SIZE}
+            unread_ids = {row["id"] for row in self._unread_rows(conn, owner_id)} if not admin else set()
+        return {"tickets": [dict(row) if admin else {**dict(row), "unread": row["id"] in unread_ids} for row in rows],
+                "total": total, "page": page, "page_size": PAGE_SIZE,
+                **({"unread_count": len(unread_ids)} if not admin else {})}
 
     def _code_hash(self, code):
         if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", code):
@@ -213,10 +260,21 @@ class FeedbackStore:
     def detail(self, ticket_id, owner_id=None, *, admin=False, before_id=None):
         self.integer(ticket_id, "ticket_id")
         with closing(self._open()) as conn, conn:
-            conn.execute("BEGIN")
+            conn.execute("BEGIN" if admin else "BEGIN IMMEDIATE")
             if not admin:
                 self._owned(conn, ticket_id, owner_id)
-            return self._detail(conn, ticket_id, admin, before_id)
+            result = self._detail(conn, ticket_id, admin, before_id)
+            if not admin:
+                # Only opening the latest detail acknowledges this snapshot. Loading
+                # older history must not swallow replies arriving after it was opened.
+                if before_id is None:
+                    latest = conn.execute("SELECT coalesce(max(id),0) FROM feedback_messages WHERE ticket_id=? AND role='admin'",
+                                          (ticket_id,)).fetchone()[0]
+                    conn.execute("""INSERT INTO feedback_read_cursors(ticket_id,owner_id,read_id) VALUES (?,?,?)
+                        ON CONFLICT(ticket_id,owner_id) DO UPDATE SET read_id=max(read_id,excluded.read_id)""",
+                        (ticket_id, owner_id, latest))
+                result["unread_count"] = len(self._unread_rows(conn, owner_id))
+            return result
 
     def query(self, code, *, before_id=None):
         digest = self._code_hash(code)

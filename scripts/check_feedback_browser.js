@@ -182,6 +182,7 @@ finally: case.doCleanups()
       await page.locator("#feedbackList button").first().click();
       await page.locator("#feedbackDetail").waitFor({state: "visible"});
       await page.keyboard.press("Escape");
+      await require("./check_feedback_unread_browser.js").run({page, backend, fixture, width, screenshots});
       assert.deepEqual(errors, [], "No JavaScript errors");
       console.log(`${width}px: four navigation items; anonymous QA/close/reopen; recent-three/history folding; admin reply/filter/switch; private notes hidden; XSS text-only; account pagination; focus restored; no horizontal overflow`);
       await context.close();

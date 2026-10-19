@@ -118,11 +118,59 @@ exports.run = async ({backend, fixture, root}) => {
     $("feedbackList").querySelector("button").click(); await done();
     assert.equal($("feedbackDetail").hidden, false);
     // Cross-tab identity change clears cached private content.
+    w.closeModals();
+    const api = async (operation, body = {}, admin = false) => {
+      const response = await backend({path: `/api/${admin ? "admin/" : ""}feedback/${operation}`, method: "POST",
+        headers: {"Content-Type": "application/json", Authorization: `Bearer ${admin ? fixture.admin : fixture.human}`}, body: JSON.stringify(body)});
+      assert.equal(response.status, 200); return response.body;
+    };
+    const tickets = (await api("list")).tickets.slice(0, 2).map(t => t.id);
+    const review = (id, body) => api("review", {ticket_id:id, confirm:true, ...body}, true);
+    const openTicket = async id => {
+      const rows = (await api("list")).tickets;
+      $("feedbackList").querySelectorAll("button")[rows.findIndex(t => t.id === id)].click(); await done();
+    };
+    await w.refreshFeedbackUnread(); assert.equal($("feedbackUnreadDot").hidden, true);
+    await review(tickets[0], {status:"closed", internal_note:"only note"});
+    await w.refreshFeedbackUnread(); assert.equal($("feedbackUnreadDot").hidden, true);
+    for (const id of tickets) await review(id, {reply:"new admin reply"});
+    await w.refreshFeedbackUnread(); assert.equal($("feedbackUnreadDot").hidden, false);
+    click('[data-bottom-action="feedback"]'); click('[data-feedback-mode="list"]'); await done();
+    assert.equal($("feedbackUnreadDot").hidden, false);
+    assert.equal((await api("unread")).unread_count, 2);
+    await openTicket(tickets[0]); assert.equal($("feedbackUnreadDot").hidden, false);
+    assert.equal((await api("unread")).unread_count, 1);
+    click('[data-feedback-mode="list"]'); await done(); await openTicket(tickets[1]);
+    assert.equal($("feedbackUnreadDot").hidden, true);
+    await review(tickets[0], {reply:"another reply"});
+    // Delay an old unread response while a detail read is requested. Its snapshot
+    // must not resurrect the badge after the queued detail has acknowledged it.
+    const fetch = w.fetch;
+    let release, entered;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    w.fetch = async (url, options) => {
+      const response = await fetch(url, options);
+      if (url === "/api/feedback/unread") { entered(); await new Promise(resolve => { release = resolve; }); }
+      return response;
+    };
+    const oldSnapshot = w.refreshFeedbackUnread(); await waiting;
+    const read = w.feedbackRequest("detail", {ticket_id:tickets[0]});
+    release(); await oldSnapshot; await read; w.fetch = fetch;
+    assert.equal($("feedbackUnreadDot").hidden, true);
+    await review(tickets[0], {reply:"after read"});
+    await w.refreshFeedbackUnread(); assert.equal($("feedbackUnreadDot").hidden, false);
+    const reloaded = await page("index.html", fixture.human);
+    await reloaded.refreshFeedbackUnread(); assert.equal(reloaded.document.getElementById("feedbackUnreadDot").hidden, false);
     w.localStorage.removeItem("cedartoy_token");
     w.dispatchEvent(new w.StorageEvent("storage", {key: "cedartoy_token"}));
     assert.equal($("feedbackDetail").textContent, ""); assert.equal($("feedbackList").textContent, "");
     assert.equal($("feedbackReceiptCode").value, "");
+    assert.equal($("feedbackUnreadDot").hidden, true);
+    w.localStorage.setItem("cedartoy_token", fixture.human);
+    w.dispatchEvent(new w.StorageEvent("storage", {key:"cedartoy_token"}));
+    await w.refreshFeedbackUnread(); assert.equal($("feedbackUnreadDot").hidden, false);
+    await w.feedbackRequest("detail", {ticket_id:tickets[0]}); assert.equal($("feedbackUnreadDot").hidden, true);
     assert.deepEqual(errors, []);
-    console.log("DOM QA checks passed: immutable rounds, close/reopen, recent-three/history paging/folding, collapsed lists, anonymous code, internal notes, XSS, ownership changes and pagination. Rendered layout NOT verified.");
+    console.log("DOM QA checks passed: unread badge clear/reappear, per-ticket reads, list preserves unread, slow-response ordering, reload/login; immutable rounds, history, anonymous code, notes, XSS and pagination. Rendered layout NOT verified.");
   } finally { windows.forEach(w => w.close()); }
 };

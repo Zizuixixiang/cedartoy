@@ -12,6 +12,7 @@
 - `reply` 在管理员请求中代表**追加**的对外消息；`internal_note` 是独立内部备注，仅管理员可见，不进入消息历史。备注省略保留、空串清除；不能通过空reply清除历史答复。
 - 列表每页20条，页码1–1000000；每项只有最多80字初始问题摘要、分类、状态、更新时间、消息数、末条说话方，按更新时间倒序。管理端待处理且末条为玩家时显示「玩家新留言」。默认不展开任何工单，只打开选中会话；返回/分页重载摘要，清除原选中状态。
 - 对话默认只显示最近3条；更早记录在「展开历史消息 / 收起历史消息」中。服务端每次最多返回10条消息，按先后排列；`next_before_id` 游标用于读取更早记录，新消息插入不会使旧历史分页移位。历史区域可滚动，前后台均可继续加载，不截断服务端记录。
+- 管理员新回复未读按实际 owner 独立计算，不共享绑定人类/小机的工单。玩家提交/追问、管理员状态/内部备注更新不产生未读；管理员查看与匿名凭码查看也不改变 owner 的已读状态。登录者列表返回每单 `unread`，列表/详情/未读接口的 `unread_count` 是未读工单数（跨全部页）。只有成功读取最新详情（不带 `before_id`）才确认该单当前事务快照中的管理员回复；历史分页不会吞掉后来新增的回复。
 - 玩家响应不含内部备注、审核人、实际账号ID、IP哈希或查询码哈希。管理员也不能获得查询码/哈希。页面使用textContent或既有HTML转义，外部文本不作为指令执行。
 
 ## 限流与一致性
@@ -27,6 +28,8 @@
 
 迁移失败整体回滚，不留下半张表；重复初始化不重复追加消息。启动迁移或首次反馈访问均可初始化；不提交调用者已有事务、不触碰密码找回表。升级后不应回退运行依赖旧reply列的初版代码；需要回滚时使用账号库的一致性快照。验证仅使用隔离样本和SQLite一致性副本。
 
+未读升级在同一初始化事务内一次性记录 `feedback_unread_baseline.message_id`（当时已有消息最大 ID，含旧版迁来的回复）。此边界及之前的历史回复不提示；重启/重新登录不重设边界。`feedback_read_cursors` 按工单和 owner 保存 `read_id`、`notified_id`，两者互不替代。详情读取和已读推进、MCP 提醒领取各用 `BEGIN IMMEDIATE`，跨进程串行化读改写；不修改旧消息或工单业务字段。部署需先核实 `TURTLE_SOUP_DB` 并用一致性快照备份，重启 `cedartoy` 完成初始化。
+
 ## HTTP 与 MCP
 
 所有反馈HTTP路由均为POST、`Content-Type: application/json`：
@@ -35,6 +38,7 @@
 | --- | --- |
 | `/api/feedback/submit` | category、content、可选contact；Bearer身份或匿名 |
 | `/api/feedback/list` | 可选page；必须登录，仅本人 |
+| `/api/feedback/unread` | 无参数；必须登录，仅返回本人的未读工单数 |
 | `/api/feedback/detail` | ticket_id、可选before_id；必须登录，仅本人 |
 | `/api/feedback/query` | query_code、可选before_id；仅持码单条 |
 | `/api/feedback/message` | ticket_id、content、可选query_code；实际owner或匹配原码的匿名单；拒绝额外字段 |
@@ -44,14 +48,18 @@
 
 `account` 保留 `admin_feedback_list/detail/review`，参数与对应管理HTTP路由一致。review传非空reply会追加消息并自动转processing；可同时显式传status=closed追加后结单，也可仅设置状态/内部备注。reply不允许搭配pending，避免答复后仍伪装为新玩家留言。
 
-三个管理员动作与原 `admin_recovery_*` 共用 `_require_admin_account`，先鉴权后验证参数/读工单，绑定管理员的小机不继承权限；路径Token、Bearer、显式account token沿用原链路。管理员动作拒绝额外参数。反馈不自动注入普通MCP响应。
+三个管理员动作与原 `admin_recovery_*` 共用 `_require_admin_account`，先鉴权后验证参数/读工单，绑定管理员的小机不继承权限；路径Token、Bearer、显式account token沿用原链路。管理员动作拒绝额外参数。
 
-发现入口 `get_guide(game="account")`。普通account schema仍只有action；在既有legacy兼容schema提供status/reply/internal_note和before_id，全部使用基础string/integer类型，不引入数值enum。没有新增常驻玩家反馈MCP工具。
+玩家 MCP 提供 `account(action="feedback_list", page=1)`、`account(action="feedback_detail", ticket_id=单号, before_id=可选历史游标)`。完整鉴权取实际账号，拒绝身份/查询码等多余参数；连接 Token 与显式 account Token 冲突时拒绝。没有提交、回复或代查操作。发现入口 `get_guide(game="account")`；普通 account schema 保留通用账号字段，反馈参数按需放 Guide，不增加常驻字段/描述。既有 legacy schema 已含 page/ticket_id/before_id，基础 integer 类型；会丢弃未声明参数的客户端应使用显式 `?schema=legacy`，无需另造第三套。
+
+已认证小机在下一次有响应的 `tools/call` 末尾获得一条不含主题、正文或他人信息的短提示。完整 token 类型、版本、撤销、注销检查与详情读取一致；不凭自报用户名/owner/绑定授权。success、工具错误均沿用 content 附加，保留 isError、公告和游戏提示；initialize、tools/list、无响应的 JSON-RPC notification 不领取。一次领取覆盖当前所有未读新回复，后续新增管理员消息可再提示；提醒失败不会破坏原回包。无后台主动推送。
+
+交付边界：MCP 提醒是服务端至多一次领取，提交游标后断网无法保证客户端实际收到，但不会清除工单未读，仍可主动查询；详情以服务端成功读取快照为已读，不保证网络另一端实际阅读。网页在登录态刷新、打开反馈、切回可见页面时查询，无定时轮询；常驻前台的新回复要等下一次上述操作才更新。前端串行处理未读/列表/详情快照，避免旧响应让已清角标复现；切换身份立即清角标，不在本地保存读状态。
 
 ## 定向验证
 
 ```sh
-python3 -m unittest tests_toy.test_feedback tests_toy.test_account_recovery tests_toy.test_admin_recovery_mcp tests_toy.test_mcp_schema_selection tests_toy.test_root_mcp_protocol.RootMcpProtocolTests.test_play_schemas_keep_gemini_numeric_enum_compatibility
+python3 -m unittest tests_toy.test_feedback tests_toy.test_feedback_unread tests_toy.test_mcp_schema_selection tests_toy.test_mcp_module_compat tests_toy.test_root_mcp_protocol.RootMcpProtocolTests.test_root_schemas_keep_gemini_numeric_enum_compatibility
 node scripts/check_feedback_browser.js
 # DOM功能检查不代替视觉验收：
 FEEDBACK_DOM_ONLY=1 node scripts/check_feedback_browser.js

@@ -398,6 +398,7 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
         _json_rpc_error=_json_rpc_error,
         _json_rpc_result=_json_rpc_result,
         _mcp_forced_announcement=_mcp_forced_announcement,
+        _feedback_unread_reminder=_feedback_unread_reminder,
         _root_tools=_root_tools,
         _tool_account=_tool_account,
         _tool_get_guide=_tool_get_guide,
@@ -2065,6 +2066,35 @@ def _query_recovery_ticket(body):
 def _feedback_store():
     return feedback_tickets.FeedbackStore(
         _db_connect, _McpError, lambda ip: _email_hmac("feedback-ip-v1", ip))
+
+
+def _account_feedback(arguments, raw_token):
+    user = _current_account(raw_token)
+    action = arguments.get("action")
+    fields = {"feedback_list": {"page"}, "feedback_detail": {"ticket_id", "before_id"}}
+    if action not in fields or set(arguments) - (fields[action] | {"action", "token"}):
+        raise _McpError(-32602, "反馈查询参数无效，请查看 account Guide")
+    store = _feedback_store()
+    if action == "feedback_list":
+        return store.listing(user["id"], page=arguments.get("page", 1))
+    return store.detail(arguments.get("ticket_id"), user["id"], before_id=arguments.get("before_id"))
+
+
+def _feedback_unread_reminder(raw_token):
+    """Best-effort response attachment; claim atomically, never change read state."""
+    if not raw_token:
+        return ""
+    try:
+        # Use the same full token/type/generation/deletion checks as detail reads.
+        # The lightweight game reminder ID resolver is insufficient for legacy JWTs.
+        user = _current_account(raw_token)
+        if user.get("is_ai") and _feedback_store().claim_notification(user["id"]):
+            return '有反馈未读，可用 account(action="feedback_list") 查看。'
+    except _McpError:
+        return ""
+    except Exception:
+        logger.warning("Feedback unread reminder unavailable")
+    return ""
 
 
 def _admin_feedback(arguments, raw_token):
@@ -4017,6 +4047,7 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         _workkk_save_summary=_workkk_save_summary,
         admin_recovery_mcp=admin_recovery_mcp,
         _admin_feedback=_admin_feedback,
+        _account_feedback=_account_feedback,
         json=json,
     )
 
@@ -5964,6 +5995,8 @@ a{{color:#c9afff}}
                         result = store.submit(body, owner_id, self._client_ip())
                     elif operation == "list":
                         result = store.listing(owner_id, page=body.get("page", 1))
+                    elif operation == "unread":
+                        result = store.unread(owner_id)
                     else:
                         result = store.append(body, owner_id, self._client_ip()) if operation == "message" else store.detail(
                             body.get("ticket_id"), owner_id, before_id=body.get("before_id"))

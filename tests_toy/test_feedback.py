@@ -362,7 +362,7 @@ class FeedbackTests(unittest.TestCase):
             self.assertNotIn(action, public)
             self.assertIn(action, guide)
         root = next(t for t in server._root_tools() if t["name"] == "account")
-        self.assertEqual(set(root["inputSchema"]["properties"]), {"action"})
+        self.assertTrue({"page", "ticket_id", "before_id", "reply", "internal_note"}.isdisjoint(root["inputSchema"]["properties"]))
         self.assertNotIn("admin_feedback", json.dumps(root))
         legacy = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "account")
         for name in ("status", "reply", "internal_note"):

@@ -1052,6 +1052,18 @@
     }
 
     .nav-label { font-size: 11px; }
+    [data-bottom-action="feedback"] .nav-icon { position: relative; }
+    .feedback-unread-dot {
+      position: absolute;
+      top: -4px;
+      right: -5px;
+      width: 9px;
+      height: 9px;
+      border: 2px solid white;
+      background: var(--purple-darker);
+      pointer-events: none;
+    }
+    .feedback-unread-dot[hidden] { display: none; }
     .unbind-btn {
       border: 0;
       background: transparent;
@@ -3416,7 +3428,7 @@
     </main>
 
     <nav class="bottom-nav" aria-label="底部导航">
-      <button class="nav-item" data-bottom-action="feedback" type="button"><span class="nav-icon">💬</span><span class="nav-label">反馈</span></button>
+      <button class="nav-item" data-bottom-action="feedback" type="button" aria-label="反馈"><span class="nav-icon" aria-hidden="true">💬<span id="feedbackUnreadDot" class="feedback-unread-dot" hidden></span></span><span class="nav-label">反馈</span></button>
       <button class="nav-item" data-bottom-action="leaderboard" type="button"><span class="nav-icon">▥</span><span class="nav-label">排行榜</span></button>
       <button class="nav-item" data-bottom-action="history" type="button"><span class="nav-icon">◴</span><span class="nav-label">历史</span></button>
       <button class="nav-item" data-bottom-action="mine" type="button" aria-describedby="humanRegistrationAgentNotice"><span class="nav-icon">☻</span><span class="nav-label">我的</span></button>
@@ -8680,6 +8692,21 @@
       return badge;
     }
     const feedbackCategories = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
+    let feedbackUnreadVersion = 0, feedbackUnreadIdentity = null, feedbackUnreadQueue = Promise.resolve();
+    function setFeedbackUnread(count) {
+      const unread = Number(count) > 0;
+      $("feedbackUnreadDot").hidden = !unread;
+      document.querySelector('[data-bottom-action="feedback"]').setAttribute("aria-label", unread ? "反馈，有管理员新回复未读" : "反馈");
+    }
+    async function refreshFeedbackUnread() {
+      if (feedbackUnreadIdentity !== token()) {
+        feedbackUnreadIdentity = token();
+        feedbackUnreadVersion++;
+        setFeedbackUnread(0);
+      }
+      if (!token()) return;
+      try { await feedbackRequest("unread", {}); } catch (_) { /* Retry on next foreground visit/open. */ }
+    }
     let feedbackMode = "submit", feedbackPage = 1, feedbackBusy = false, feedbackVersion = 0;
     let feedbackReceipt = null, feedbackIdentityToken = null, feedbackReturnFocus = null;
     function updateFeedbackModeVisibility() {
@@ -8699,6 +8726,7 @@
     }
     function openFeedback() {
       closeDrawers();
+      refreshFeedbackUnread();
       feedbackReturnFocus = document.activeElement;
       if (feedbackIdentityToken !== token()) {
         feedbackReceipt = null;
@@ -8743,10 +8771,26 @@
       if (mode === "list") { feedbackPage = 1; loadFeedbackList(); }
     }
     async function feedbackRequest(operation, body) {
-      const res = await fetch("/api/feedback/" + operation, {method: "POST", headers: headers(true), body: JSON.stringify(body), cache: "no-store"});
-      const data = await res.json();
-      if (!res.ok) throw new Error(res.status === 401 ? "请先登录；登录失效时请重新登录，或退出后匿名反馈。" : data.error || "请求失败，请重试");
-      return data;
+      const identity = token();
+      const tracksUnread = ["unread", "list", "detail"].includes(operation);
+      const version = feedbackUnreadVersion, requestHeaders = headers(true);
+      const perform = async () => {
+        if (identity !== token() || (tracksUnread && version !== feedbackUnreadVersion)) throw new Error("登录身份已变化，请重试");
+        const res = await fetch("/api/feedback/" + operation, {method: "POST", headers: requestHeaders, body: JSON.stringify(body), cache: "no-store"});
+        const data = await res.json();
+        if (tracksUnread && version === feedbackUnreadVersion && identity === token()) {
+          if (res.ok && Number.isInteger(data.unread_count)) setFeedbackUnread(data.unread_count);
+          else if (res.status === 401) setFeedbackUnread(0);
+        }
+        if (!res.ok) throw new Error(res.status === 401 ? "请先登录；登录失效时请重新登录，或退出后匿名反馈。" : data.error || "请求失败，请重试");
+        return data;
+      };
+      // Serialize read snapshots: an older badge/list response cannot resurrect
+      // unread after a detail read, even across foreground events and slow fetches.
+      if (!tracksUnread) return perform();
+      const request = feedbackUnreadQueue.then(perform);
+      feedbackUnreadQueue = request.catch(() => {});
+      return request;
     }
     async function feedbackRun(task) {
       if (feedbackBusy) return;
@@ -8886,7 +8930,7 @@
           const title = document.createElement("span"); title.className = "feedback-ticket-preview"; title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
           heading.append(title, feedbackStatusElement(ticket.status));
           const meta = document.createElement("span"); meta.className = "feedback-message-meta";
-          meta.textContent = `${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
+          meta.textContent = `${ticket.unread ? "新回复 · " : ""}${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
           button.append(heading, meta);
           button.onclick = () => feedbackRun(async current => {
             const data = await feedbackRequest("detail", {ticket_id: ticket.id});
@@ -8950,12 +8994,17 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        refreshFeedbackUnread();
         updateFeedbackModeVisibility();
         feedbackVersion++; feedbackResetResults(); feedbackReceipt = null;
         $("feedbackReceiptCode").value = ""; $("feedbackQueryCode").value = "";
         $("feedbackReceipt").hidden = true;
         if ($("feedbackModal").classList.contains("show")) $("feedbackMessage").textContent = "登录身份已变化，请关闭后重新打开反馈。";
       }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshFeedbackUnread();
     });
 
     function openPlaceholder(title, message) {
@@ -9008,6 +9057,7 @@
     }
 
     function renderAuth() {
+      refreshFeedbackUnread();
       const area = $("authArea");
       if (!me) {
         area.innerHTML = `<button class="pixel-btn" id="loginOpen" type="button" aria-describedby="humanRegistrationAgentNotice">登录</button>`;
