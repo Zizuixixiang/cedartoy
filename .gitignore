@@ -39,3 +39,5 @@ backups/
 # Optional Python >=3.11 environment for Nowhere warm workers.
 /.venv-nowhere/
 /.nowhere-runtime/
+/.venv-shared-craft/
+/data/shared_craft/

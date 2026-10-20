@@ -1,0 +1,15 @@
+<dialog id="share-dialog" aria-labelledby="share-title">
+  <form id="share-form">
+    <strong id="share-title">分享给作者</strong>
+    <img id="share-image" alt="选中的成品快照">
+    <p>作者可查看这件作品与附言，不公开展示。</p>
+    <label for="share-note">附言（可选）</label>
+    <textarea id="share-note" maxlength="500" rows="3"></textarea>
+    <p id="share-status" role="status"></p>
+    <div class="actions">
+      <button type="button" id="share-cancel">取消</button>
+      <button type="button" id="share-decline" hidden>不分享</button>
+      <button type="submit">确认分享</button>
+    </div>
+  </form>
+</dialog>

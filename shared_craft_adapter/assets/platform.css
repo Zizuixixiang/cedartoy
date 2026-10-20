@@ -1,0 +1,13 @@
+/* Only new consent controls and multiplayer inventory selection. */
+#stock-actor{max-width:100px;min-height:28px;border:1px solid #dacbc0;border-radius:9px;background:#fffaf5;color:#705d78;font:11px system-ui}
+.work .actions [data-share]{grid-column:1/-1}
+#share-dialog{width:min(420px,calc(100vw - 28px));max-height:90dvh;overflow:auto;color:var(--ink)}
+#share-form>strong{display:block;margin-bottom:10px}
+#share-image{width:100%;max-height:38dvh;object-fit:contain}
+#share-form p,#share-form label{font:13px/1.5 system-ui}
+#share-note{width:100%;box-sizing:border-box;margin-top:5px;padding:8px;border:1px solid #dacbc0;border-radius:9px;background:#fffaf5;color:var(--ink);font:14px/1.5 system-ui}
+#share-form .actions{display:flex;flex-wrap:wrap;justify-content:flex-end}
+#share-form .actions button{min-height:36px;padding:8px 14px}
+#share-form button[type=submit]{background:#d98c9a;color:#fff}
+#share-form [hidden],#stock-actor[hidden]{display:none}
+#share-status:empty{display:none}

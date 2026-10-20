@@ -444,6 +444,14 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--shared-craft"]:
+        # Bound account rooms cannot use the legacy guest runner. This targeted
+        # chain creates disposable accounts and all stores under TemporaryDirectory.
+        sys.exit(subprocess.call([
+            os.environ.get("SHARED_CRAFT_TEST_PYTHON", sys.executable), "-m", "unittest",
+            "tests_toy.test_shared_craft.SharedCraftTests.test_restart_and_cross_process_concurrency",
+            "-v",
+        ], cwd=ROOT))
     if sys.argv[1:] == ["--candle"]:
         with tempfile.TemporaryDirectory(prefix="candle-persistence-") as temp:
             SAVE_ROOT = Path(temp) / "vendor_saves"
@@ -493,5 +501,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere]")
+        sys.exit("用法：persistence_check.py [--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere|--shared-craft]")
     sys.exit(main())

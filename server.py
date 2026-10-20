@@ -51,6 +51,7 @@ except ImportError:
 
 import announcements
 import candle_feedback
+from shared_craft_adapter import client as shared_craft_client, web as shared_craft_web
 from bdsmtest.handler import handle_mcp as handle_bdsmtest_mcp
 from ciyuwu_adapter.handler import handle_mcp as handle_ciyuwu_mcp
 from dnd import handler as dnd_handler
@@ -2931,7 +2932,7 @@ ANTI_ADDICTION_DEFAULT_LOCK_MINUTES = anti_addiction.ANTI_ADDICTION_DEFAULT_LOCK
 ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET = anti_addiction.ANTI_ADDICTION_DEFAULT_ALLOW_SELF_RESET
 IDENTITY_GAMES = IDENTITY_GAMES | research_scales.MCP_GAMES
 ANTI_ADDICTION_TEST_GAMES = anti_addiction.ANTI_ADDICTION_TEST_GAMES | research_scales.MCP_GAMES
-ANTI_ADDICTION_MINI_GAMES = anti_addiction.ANTI_ADDICTION_BASE_MINI_GAMES | frozenset(VENDOR_GAMES)
+ANTI_ADDICTION_MINI_GAMES = anti_addiction.ANTI_ADDICTION_BASE_MINI_GAMES | frozenset(VENDOR_GAMES) | {"shared_craft"}
 
 
 def _guest_player_id(raw):
@@ -3506,7 +3507,7 @@ def _tool_list_games(path_token=None):
         "mbti·人格类型·南山君 | enneagram·九型人格·Max Ross | dnd·道德阵营·南山君 | love·爱语偏好·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度·南山君 | sins_virtues·罪与美德·南山君 | bdsmtest·性癖倾向·南山君"
     )
     games = (
-        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
+        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | shared_craft·共同手作·嘞噫黎 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
     extra = " | ".join(f"{game}·{research_scales.RESEARCH_TITLES[game]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
@@ -3539,6 +3540,8 @@ def _game_maintenance(game):
 
 def _tool_get_guide(arguments, *, path_token=None):
     game = arguments.get("game")
+    if game == "shared_craft":
+        return json.dumps({"game": game, "guide": (Path(__file__).resolve().parent / "shared_craft_adapter/guide.txt").read_text()}, ensure_ascii=False)
     if not game or not isinstance(game, str):
         raise _McpError(-32602, "game 参数必填")
     if game in research_scales.MCP_GAMES:
@@ -3875,6 +3878,30 @@ def _apply_play_slot_hint(text, slot_hint):
 def _tool_play(
     arguments, path_token=None, *, defer_duel=False, authenticated_account=None
 ):
+    if arguments.get("game") == "shared_craft":
+        maintenance = _game_maintenance("shared_craft")
+        if maintenance:
+            raise _McpError(-32003, maintenance["message"])
+        user = authenticated_account or _current_account(path_token)
+        context = _anti_addiction_context("shared_craft", user, str(user["id"]))
+        if arguments.get("action") == "rest":
+            return json.dumps(_anti_addiction_rest(context, str(user["id"])), ensure_ascii=False)
+        blocked = _anti_addiction_preflight("shared_craft", context)
+        if blocked:
+            return json.dumps(blocked, ensure_ascii=False)
+        try:
+            result = shared_craft_client.play(user, arguments)
+        except (ValueError, httpx.HTTPError) as exc:
+            raise _McpError(-32602, str(exc) if isinstance(exc, ValueError) else "手作空间暂时不可用") from None
+        response = json.loads(result.content[0]["text"])
+        response = _finalize_play_response(
+            response, game="shared_craft", action=arguments.get("action"), account_user=user,
+            account_player_id=str(user["id"]), guest_player_id=None, slot=1,
+            anti_context=context, announce_player_id=str(user["id"]),
+            activity_params=arguments.get("params") if isinstance(arguments.get("params"), dict) else {},
+        )
+        result.content[0]["text"] = json.dumps(response, ensure_ascii=False)
+        return result
     return mcp_dispatch._tool_play(
         arguments, path_token, defer_duel=defer_duel, authenticated_account=authenticated_account,
         IDENTITY_GAMES=IDENTITY_GAMES,
@@ -4595,6 +4622,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_POST(self):
+        if self.path.split("?", 1)[0] == "/shared-craft" or self.path.startswith("/shared-craft/"):
+            return shared_craft_web.serve(self, sys.modules[__name__])
         return http_handler.do_POST(
             self,
             __name__=__name__,
@@ -4623,6 +4652,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         )
 
     def do_GET(self):
+        if self.path.split("?", 1)[0] == "/shared-craft" or self.path.startswith("/shared-craft/"):
+            return shared_craft_web.serve(self, sys.modules[__name__])
         return http_handler.do_GET(
             self,
             __name__=__name__,
@@ -4653,6 +4684,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         )
 
     def do_DELETE(self):
+        if self.path.split("?", 1)[0] == "/shared-craft" or self.path.startswith("/shared-craft/"):
+            return shared_craft_web.serve(self, sys.modules[__name__])
         return http_handler.do_DELETE(
             self,
             __name__=__name__,

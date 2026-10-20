@@ -1,0 +1,14 @@
+; Not installed by development/testing.
+; Supply matching SHARED_CRAFT_SECRET (>=32 random chars) to both processes.
+; CedarToy: SHARED_CRAFT_ORIGIN=http://127.0.0.1:8793
+; Satellite: CRAFT_DATA_DIR, TURTLE_SOUP_DB and SESSIONS_DB must be absolute paths.
+; Do not expose this port publicly or mount upstream server:app.
+[program:cedartoy-shared-craft]
+directory=/opt/cedartoy
+command=/opt/cedartoy/.venv-shared-craft/bin/python -m shared_craft_adapter.service
+autostart=false
+autorestart=true
+stopasgroup=true
+killasgroup=true
+redirect_stderr=true
+stdout_logfile=/var/log/cedartoy-shared-craft.log

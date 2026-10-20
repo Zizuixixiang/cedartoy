@@ -2558,8 +2558,8 @@
       line-height: 1.55;
     }
 
-    #candleFeedbackModal { z-index: 51; }
-    #candleFeedbackModal .modal-box {
+    :is(#candleFeedbackModal,#craftAuthorModal) { z-index: 51; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .modal-box {
       width: min(560px, 100%);
       height: min(680px, calc(100dvh - 102px - var(--safe-bottom)));
       display: flex;
@@ -2569,11 +2569,11 @@
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
       flex-shrink: 0;
     }
-    #candleFeedbackModal .modal-title { margin: 0; }
-    #candleFeedbackModal .pixel-btn { min-height: 36px; padding: 6px 10px; font-size: 11px; }
-    #candleFeedbackModal .pixel-btn:disabled { opacity: 0.5; cursor: default; }
-    #candleFeedbackModal .pixel-btn, #candleFeedbackModal .modal-msg { color: var(--text); }
-    #candleFeedbackContent { margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .modal-title { margin: 0; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn { min-height: 36px; padding: 6px 10px; font-size: 11px; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn:disabled { opacity: 0.5; cursor: default; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn, :is(#candleFeedbackModal,#craftAuthorModal) .modal-msg { color: var(--text); }
+    :is(#candleFeedbackContent,#craftAuthorContent) { margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
     .candle-feedback-row { border-bottom: 1px solid var(--purple-light); }
     .candle-feedback-line {
       display: flex; align-items: center; justify-content: space-between; gap: 6px;
@@ -2588,13 +2588,13 @@
     .candle-feedback-line span { white-space: nowrap; }
     .candle-feedback-line > span::before { content: "｜"; margin-right: 4px; color: var(--purple-dark); }
     .candle-feedback-view { margin-left: 4px; text-decoration: underline; }
-    #candleFeedbackContent p {
+    :is(#candleFeedbackContent,#craftAuthorContent) p {
       margin: 0; padding: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere;
       color: var(--text); font-size: 12px; line-height: 1.7;
     }
     .candle-feedback-pages { margin-top: 12px; color: var(--text); font-size: 11px; flex-wrap: wrap; }
-    #candleFeedbackRetry { align-self: flex-start; margin-top: 8px; }
-    #candleFeedbackModal [hidden] { display: none; }
+    :is(#candleFeedbackRetry,#craftAuthorRetry) { align-self: flex-start; margin-top: 8px; }
+    :is(#candleFeedbackModal,#craftAuthorModal) [hidden] { display: none; }
 
     .history-card-row {
       display: grid;
@@ -3865,6 +3865,22 @@
       </nav>
     </div>
   </div>
+  <div class="modal" id="craftAuthorModal" role="dialog" aria-modal="true" aria-labelledby="craftAuthorTitle">
+    <div class="modal-box">
+      <div class="candle-feedback-head">
+        <h2 class="modal-title" id="craftAuthorTitle">共同手作间 · 作者收件</h2>
+        <button class="pixel-btn secondary" id="craftAuthorClose" data-close-modal type="button">关闭</button>
+      </div>
+      <div class="modal-msg" id="craftAuthorMsg" role="status" aria-live="polite"></div>
+      <div id="craftAuthorContent" aria-label="已分享作品"></div>
+      <button class="pixel-btn secondary" id="craftAuthorRetry" type="button" hidden>重试</button>
+      <nav class="candle-feedback-pages" aria-label="反馈分页">
+        <button class="pixel-btn secondary" id="craftAuthorPrev" type="button" disabled>上一页</button>
+        <span id="craftAuthorPage" role="status" aria-live="polite">第 1 / 1 页</span>
+        <button class="pixel-btn secondary" id="craftAuthorNext" type="button" disabled>下一页</button>
+      </nav>
+    </div>
+  </div>
 
   <div class="modal" id="bindModal" role="dialog" aria-modal="true" aria-labelledby="bindTitle">
     <div class="modal-box">
@@ -4251,6 +4267,16 @@
         url: "https://github.com/hatakeyuyuko-dotcom/Memoria-Station",
         ctaLabel: "GitHub →",
         ranks: []
+      },
+      {
+        id: "shared_craft", category: "mini", name: "共同手作间",
+        mission: "MISSION: SHARED CRAFT", location: "LOCATION: CRAFT ROOM",
+        glyph: "绘", badge: "CRAFT", level: "共同创作", metricLabel: "", metric: "",
+        short: "一起画画 / 拼豆 / 收藏成品",
+        desc: "和已绑定的小机一起画画、拼豆，把成品收入共同作品间。",
+        logs: ["作者：嘞噫黎（小红书号 493242614） · MIT", "画画、拼豆与共同作品间，沿用原作玩法。"],
+        stats: [], footerIcons: ["绘", "豆", "♡"], tags: ["手作", "协作", "MCP"],
+        url: "https://github.com/SuLee3927/shared-craft-room", ctaLabel: "进入手作间 →", ranks: []
       },
       {
         id: "candle",
@@ -6801,6 +6827,8 @@
         if (button) button.style.visibility = game.id === "candle" ? "hidden" : "";
       });
       refreshCandleFeedbackAccess();
+      refreshCraftAuthorAccess();
+      if (game.id === "shared_craft" && guideEnter) guideEnter.textContent = "完整玩法 →";
       const watchLabel = game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →");
       ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
         const btn = $(id);
@@ -6809,6 +6837,7 @@
         btn.disabled = Boolean(game.maintenance);
         btn.textContent = watchLabel;
       });
+      if (game.id === "shared_craft") renderCraftAuthorEntry();
       renderRanks(game);
       renderArcadeBanks();
       renderMemoriaGuides(game);
@@ -6838,6 +6867,7 @@
     let pendingAdultUrl = "";
 
     function openGame(game) {
+      if (game.id === "shared_craft") { openCraftRoom(); return; }
       if (game.id === "candle") {
         openCandleFeedback();
         return;
@@ -6869,6 +6899,96 @@
       }
       openGame(game);
     }
+
+
+    async function openCraftRoom() {
+      if (!token()) { closeDrawers(); openModal("loginModal"); return; }
+      try {
+        const response = await fetch("/shared-craft/session", {method:"POST", headers:headers(false)});
+        if (!response.ok) throw new Error((await response.json()).error || "手作空间暂时不可用");
+        location.assign("/shared-craft/crafts/");
+      } catch (error) { showToast(error.message); }
+    }
+    let craftAuthorIdentity = "", craftAuthorAllowed = false, craftAuthorPage = 1;
+    let craftAuthorController = null, craftAuthorFocus = null;
+    const craftAuthorImages = [];
+    function clearCraftAuthor() {
+      craftAuthorController?.abort();
+      craftAuthorImages.splice(0).forEach(url => URL.revokeObjectURL(url));
+      $("craftAuthorContent").replaceChildren();
+    }
+    function renderCraftAuthorEntry() {
+      if (currentGame().id !== "shared_craft") return;
+      ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach(id => {
+        $(id).style.display = craftAuthorAllowed && craftAuthorIdentity === candleIdentity() ? "" : "none";
+        $(id).textContent = "查看已分享作品";
+      });
+    }
+    async function refreshCraftAuthorAccess() {
+      const identity = candleIdentity();
+      if (identity !== craftAuthorIdentity) {
+        craftAuthorIdentity = identity; craftAuthorAllowed = false;
+        clearCraftAuthor(); $("craftAuthorModal").classList.remove("show");
+      }
+      if (currentGame().id !== "shared_craft" || !identity) return;
+      try {
+        const response = await fetch("/shared-craft/author?access=1", {headers:headers(false),cache:"no-store"});
+        const data = await response.json();
+        if (identity !== candleIdentity()) return;
+        craftAuthorAllowed = response.ok && data.allowed === true;
+      } catch (_) { if (identity === candleIdentity()) craftAuthorAllowed = false; }
+      renderCraftAuthorEntry();
+    }
+    function openCraftAuthor() {
+      if (!craftAuthorAllowed || craftAuthorIdentity !== candleIdentity()) return;
+      craftAuthorFocus = document.activeElement;
+      openModal("craftAuthorModal"); $("craftAuthorClose").focus(); loadCraftAuthor(1);
+    }
+    async function loadCraftAuthor(page) {
+      clearCraftAuthor();
+      const controller = new AbortController(), identity = candleIdentity();
+      craftAuthorController = controller; craftAuthorPage = page;
+      $("craftAuthorMsg").textContent = "正在读取…";
+      $("craftAuthorRetry").hidden = true;
+      $("craftAuthorPrev").disabled = $("craftAuthorNext").disabled = true;
+      try {
+        const response = await fetch(`/shared-craft/author?page=${page}`, {headers:headers(false),cache:"no-store",signal:controller.signal});
+        if (!response.ok) throw new Error("无法读取已分享作品");
+        const data = await response.json();
+        if (identity !== candleIdentity() || controller.signal.aborted) return;
+        for (const item of data.items) {
+          const row = document.createElement("article"); row.className = "candle-feedback-row";
+          const title = document.createElement("strong"); title.textContent = item.title;
+          const note = document.createElement("p"); note.textContent = item.note;
+          const image = document.createElement("img"); image.alt = item.title;
+          image.style.cssText = "display:block;max-width:100%;max-height:360px;object-fit:contain;margin:8px auto";
+          const snapshot = await fetch(`/shared-craft/author/${encodeURIComponent(item.id)}`, {headers:headers(false),cache:"no-store",signal:controller.signal});
+          if (!snapshot.ok) throw new Error("作品图片读取失败");
+          const blob = await snapshot.blob();
+          if (identity !== candleIdentity() || controller.signal.aborted) return;
+          image.src = URL.createObjectURL(blob); craftAuthorImages.push(image.src);
+          row.append(title,image,note); $("craftAuthorContent").append(row);
+        }
+        craftAuthorPage = data.page;
+        $("craftAuthorMsg").textContent = data.total ? "" : "暂无主动分享的作品。";
+        $("craftAuthorPage").textContent = `第 ${data.page} / ${data.pages} 页`;
+        $("craftAuthorPrev").disabled = !data.has_prev; $("craftAuthorNext").disabled = !data.has_next;
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        clearCraftAuthor(); $("craftAuthorMsg").textContent = error.message; $("craftAuthorRetry").hidden = false;
+      }
+    }
+    $("craftAuthorClose").addEventListener("click", () => { clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); craftAuthorFocus?.focus(); });
+    $("craftAuthorRetry").addEventListener("click", () => loadCraftAuthor(craftAuthorPage));
+    $("craftAuthorPrev").addEventListener("click", () => loadCraftAuthor(craftAuthorPage-1));
+    $("craftAuthorNext").addEventListener("click", () => loadCraftAuthor(craftAuthorPage+1));
+    $("craftAuthorModal").addEventListener("keydown", event => {
+      if (event.key === "Escape") { $("craftAuthorClose").click(); return; }
+      if (event.key !== "Tab") return;
+      const buttons = [...$("craftAuthorModal").querySelectorAll("button")].filter(b => !b.disabled && b.offsetParent !== null);
+      if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1).focus(); }
+      else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0].focus(); }
+    });
 
     const candleAccess = {identity: "", checked: false, loading: false, allowed: false};
     let candleFeedbackRequest = null;
@@ -10066,11 +10186,11 @@
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
-    $("guideEnterButton").addEventListener("click", enterGame);
+    $("guideEnterButton").addEventListener("click", () => currentGame().id === "shared_craft" ? window.open(currentGame().url, "_blank", "noopener") : enterGame());
     $("drawerEnter").addEventListener("click", enterGame);
     ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
       const btn = $(id);
-      if (btn) btn.addEventListener("click", enterWatch);
+      if (btn) btn.addEventListener("click", () => currentGame().id === "shared_craft" ? openCraftAuthor() : enterWatch());
     });
     $("drawerClose").addEventListener("click", closeDrawers);
     $("mineClose").addEventListener("click", closeDrawers);

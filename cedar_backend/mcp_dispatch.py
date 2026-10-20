@@ -6,6 +6,8 @@ Database paths, mutable state and configuration remain owned by the caller.
 """
 
 
+from shared_craft_adapter.client import ContentResult
+
 import research_scales
 from deeptalk.catalog import ALIASES as DEEPTALK_ALIASES
 from scale_test_engine import JsonRpcError as ScaleError
@@ -109,7 +111,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                     )
                 else:
                     raise _McpError(-32601, f"未知工具：{name}")
-                content = [{"type": "text", "text": text}]
+                content = list(text.content) if isinstance(text, ContentResult) else [{"type": "text", "text": text}]
                 forced_announcement = _mcp_forced_announcement(
                     ai_player_id, forced_announcement_game
                 )
