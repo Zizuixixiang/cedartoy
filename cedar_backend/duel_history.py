@@ -96,6 +96,8 @@ def _duel_history_for_user(
                  AND subject.role = ?
                  AND subject.participant_kind = ?
                  AND subject.join_status IN ('joined', 'left')
+                WHERE room.terminal_reason IS NOT 'mahjong_review_demo'
+                  AND room.terminal_reason IS NOT 'rummikub_review_demo'
                 """,
                 args,
             ).fetchone()[0]
@@ -112,6 +114,8 @@ def _duel_history_for_user(
                  AND subject.role = ?
                  AND subject.participant_kind = ?
                  AND subject.join_status IN ('joined', 'left')
+                WHERE room.terminal_reason IS NOT 'mahjong_review_demo'
+                  AND room.terminal_reason IS NOT 'rummikub_review_demo'
                 ORDER BY COALESCE(
                     room.terminal_at, room.updated_at, room.created_at
                 ) DESC, room.room_id DESC

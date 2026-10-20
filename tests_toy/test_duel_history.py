@@ -219,6 +219,17 @@ class DuelHistoryTests(unittest.TestCase):
         self.assertEqual(machine_by_room["TEAMROOM"]["outcome"], "win")
         self.assertEqual(machine_by_room["WINROOM1"]["opponents"], ["小杉"])
 
+    def test_review_demo_is_excluded_from_real_history_and_total(self):
+        self._room("DEMO0001", "mahjong", "finished", winner="human",
+                   winner_player_id="10", terminal_reason="mahjong_review_demo")
+        self._human_and_machine("DEMO0001")
+        self._room("REAL0001", "mahjong", "finished", winner="human",
+                   winner_player_id="10", terminal_reason="game_result")
+        self._human_and_machine("REAL0001")
+        result = server._duel_history_for_user({"id": 10}, limit=1)
+        self.assertEqual(result["total"], 1)
+        self.assertEqual([r["room_id"] for r in result["matches"]], ["REAL0001"])
+
     def test_limit_keeps_total_count(self):
         for index in range(3):
             room_id = f"LIMIT{index:03d}"
