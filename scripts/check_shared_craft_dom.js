@@ -19,7 +19,11 @@ const {bridge} = require('./shared_craft_test_bridge');
     w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new w.Event('close'));};
     w.fetch=async(url,options={})=>{
       const name=new URL(url,w.location).pathname.replace('/shared-craft/','');
-      if(name.startsWith('api/shares')&&options.method==='POST') sharePosts++;
+      if(name.startsWith('api/shares')&&options.method==='POST') {
+        sharePosts++;
+        assert.equal(name, 'api/shares');
+        assert.equal('confirm' in JSON.parse(options.body), false);
+      }
       const r=await api.request(name,options.method,options.body?JSON.parse(options.body):undefined);
       return {ok:r.status<400,json:async()=>JSON.parse(Buffer.from(r.body,'base64'))};
     };
@@ -32,17 +36,18 @@ const {bridge} = require('./shared_craft_test_bridge');
     assert.equal(doc.querySelectorAll('[data-share]').length,1);
     doc.querySelector('[data-share]').click();
     await until(()=>doc.querySelector('#share-dialog').open);
-    assert.equal(doc.querySelector('#share-note').value,'谢谢你做了这间手作房');
-    assert(doc.querySelector('#share-note').readOnly);
+    assert.equal(doc.querySelector('#share-note').value,'');
+    assert(!doc.querySelector('#share-note').readOnly);
+    assert.equal(doc.querySelector('#share-decline'), null);
     doc.querySelector('#share-cancel').click();
     assert.equal(sharePosts,0);
-    assert.equal(JSON.parse(Buffer.from((await api.request('author','GET',undefined,6)).body,'base64')).total,0);
+    assert.equal(JSON.parse(Buffer.from((await api.request('author','GET',undefined,6)).body,'base64')).total,1);
     doc.querySelector('[data-share]').click();
     await until(()=>doc.querySelector('#share-dialog').open);
     doc.querySelector('#share-form').dispatchEvent(new w.Event('submit',{cancelable:true}));
     await until(()=>doc.querySelector('#status').textContent==='已分享给作者');
     assert.equal(sharePosts,1);
-    assert.equal(JSON.parse(Buffer.from((await api.request('author','GET',undefined,6)).body,'base64')).total,1);
+    assert.equal(JSON.parse(Buffer.from((await api.request('author','GET',undefined,6)).body,'base64')).total,2);
     doc.querySelector('[data-share]').click();
     await until(()=>doc.querySelector('#share-dialog').open);
     assert.equal(doc.querySelector('#share-note').value,'');
@@ -53,6 +58,6 @@ const {bridge} = require('./shared_craft_test_bridge');
     assert(index.includes('id: "shared_craft"'));
     assert(index.includes('id="craftAuthorModal"'));
     assert(!index.includes('公开作品大厅'));
-    console.log('PASS: private by default, cancel, fixed pending snapshot/note, explicit confirm, author read, homepage syntax');
+    console.log('PASS: no automatic share, cancel, optional note, single explicit submit, author read, homepage syntax');
   } finally { await api.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1});

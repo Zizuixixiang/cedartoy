@@ -11,13 +11,22 @@ from tests_toy import test_shared_craft
 
 
 class SharedCraftFramerTests(unittest.TestCase):
-    def test_script_rewrites_only_the_two_framer_fetch_urls(self):
+    def test_script_rewrites_only_fetch_urls_and_separates_full_from_piece_export(self):
         original = (ui.STATIC / "beads-framer.js").read_text()
         prefix = "/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}"
         expected = original
         for suffix in ("/bead-boards/${board.id}", "/gallery"):
             old = f"fetch(`{prefix}{suffix}`"
             new = f"fetch(`/shared-craft/api{suffix}`"
+            self.assertEqual(original.count(old), 1)
+            expected = expected.replace(old, new)
+        for old, new in (
+            ("function finishedDataURL(){",
+             "function assembledDataURL(){try{draw(false);return canvas.toDataURL('image/png')}finally{draw(true)}}\n"
+             "function finishedDataURL(){"),
+            ("dataUrl=finishedDataURL(),pieceUrl=pieceDataURL()",
+             "dataUrl=assembledDataURL(),pieceUrl=pieceDataURL()"),
+        ):
             self.assertEqual(original.count(old), 1)
             expected = expected.replace(old, new)
         response = ui.asset("beads-framer.js")
@@ -27,6 +36,21 @@ class SharedCraftFramerTests(unittest.TestCase):
         self.assertNotIn(prefix, response.body.decode())
         checked = subprocess.run(["node", "--check"], input=response.body, capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr.decode())
+        self.assertEqual((ui.STATIC / "beads-framer.js").read_text(), original)
+        for name in ("finishedDataURL", "pieceDataURL"):
+            original_function = next(line for line in original.splitlines()
+                                     if line.startswith(f"function {name}("))
+            self.assertIn(original_function, response.body.decode())
+
+    def test_changed_upstream_export_fails_closed(self):
+        original = (ui.STATIC / "beads-framer.js").read_bytes()
+        for altered in (original.replace(b"function finishedDataURL(){", b"function renamed(){"),
+                        original + b"\nfunction finishedDataURL(){}",
+                        original.replace(b"dataUrl=finishedDataURL()", b"dataUrl=otherExport()"),
+                        original + b"\ndataUrl=finishedDataURL(),pieceUrl=pieceDataURL()"):
+            with patch.object(type(ui.STATIC), "read_bytes", return_value=altered):
+                with self.assertRaisesRegex(ValueError, "装裱导出"):
+                    ui.asset("beads-framer.js")
 
     def test_finished_decoration_and_gallery_survive_app_restart(self):
         fixture = test_shared_craft.SharedCraftTests()
@@ -67,6 +91,21 @@ class SharedCraftFramerTests(unittest.TestCase):
             return response.json()
 
         self.assertTrue(json_response(board_path, "POST", payload)["ok"])
+        # Both 6 MB PNG limits reject before changing either persisted image.
+        for field in ("data_url", "piece_data_url"):
+            oversized = "data:image/png;base64," + base64.b64encode(b"x" * 6_000_001).decode()
+            response = fixture.request(board_path, "POST", {**payload, field: oversized})
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("too large", response.json()["error"])
+            room = fixture.app.state.rooms["1"]
+            self.assertEqual(room.beads.decorated_bytes("1", bid), full)
+            self.assertEqual(room.beads.display_piece_bytes("1", bid), piece)
+        # The existing transport cap is stricter than 20 MB, including JSON/base64.
+        response = fixture.request(board_path, "POST", {**payload, "padding": "x" * 17_000_001})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "请求过大")
+        self.assertEqual(room.beads.decorated_bytes("1", bid), full)
+        self.assertEqual(room.beads.display_piece_bytes("1", bid), piece)
         gallery_payload = {"kind": "bead", "source_id": bid, "title": "装裱回归",
                            "piece_columns": 3, "piece_rows": 1}
         item = json_response("api/gallery", "POST", gallery_payload)["item"]

@@ -103,21 +103,33 @@ fs.mkdirSync(output,{recursive:true});
             }
           }
         }
-        for(const key of ['x','y','width','height'])
+        // Upstream tall phones forced wall >=100dvh, cropping both side frames.
+        // The existing platform fix deliberately restores the artwork ratio.
+        for (const key of ['x','y','width'])
           assert(Math.abs(geometry[0][key]-geometry[1][key])<2, `${name}/${width} changed ${key}`);
+        if (name === 'crafts' && width <= 420) {
+          const expected = geometry[1].width * 1672/941;
+          assert(Math.abs(geometry[1].height-expected)<2,
+            `adapted ${width}px wall should preserve the un-cropped picture ratio`);
+          assert(geometry[0].height >= geometry[1].height,
+            'adapted narrow gallery must not enlarge artwork');
+        } else {
+          assert(Math.abs(geometry[0].height-geometry[1].height)<2,
+            `${name}/${width} unexpectedly changed height`);
+        }
         if(name==='crafts') {
           assert.deepEqual(details['crafts-original'].elements['.work-grid'].width,
             details['crafts-adapted'].elements['.work-grid'].width);
           const author=async()=>JSON.parse(Buffer.from((await api.request('author','GET',undefined,6)).body,'base64'));
-          assert.equal((await author()).total,0);
-          await page.getByRole('button',{name:'确认分享',exact:true}).click();
+          assert.equal((await author()).total,1); // Fixture AI explicitly shared once.
+          await page.locator('[data-share]').first().click();
           await page.locator('#share-dialog[open]').waitFor();
-          await page.screenshot({path:path.join(output,`${width}-share-confirm.png`),fullPage:true});
+          await page.screenshot({path:path.join(output,`${width}-share-submit.png`),fullPage:true});
           await page.locator('#share-cancel').click();
           assert.equal(await page.locator('#share-dialog[open]').count(),0);
           assert.equal(sharePosts,0,'cancel must not share');
-          assert(await page.getByRole('button',{name:'确认分享',exact:true}).evaluate(b=>b===document.activeElement));
-          await page.getByRole('button',{name:'分享给作者',exact:true}).click();
+          assert(await page.locator('[data-share]').first().evaluate(b=>b===document.activeElement));
+          await page.locator('[data-share]').last().click();
           await page.locator('#share-dialog[open]').waitFor();
           assert.equal(await page.locator('#share-note').inputValue(),'');
           assert.equal(await page.locator('#share-note').getAttribute('readonly'),null);
@@ -127,14 +139,15 @@ fs.mkdirSync(output,{recursive:true});
           await page.locator('#open-all').click();
           assert.equal(await page.locator('.work').count(),2);
           if(width===1280) {
-            await page.getByRole('button',{name:'确认分享',exact:true}).click();
+            await page.locator('[data-share]').first().click();
             await page.locator('#share-dialog[open]').waitFor();
+            await page.locator('#share-note').fill('主动分享');
             await page.locator('#share-form button[type=submit]').click();
             await page.waitForFunction(()=>document.querySelector('#status').textContent==='已分享给作者');
             assert.equal(sharePosts,1);
-            assert.equal((await author()).total,1);
-            assert.equal((await author()).items[0].note,'谢谢你做了这间手作房');
-            details.explicitHumanApproval=true;
+            assert.equal((await author()).total,2);
+            assert((await author()).items.some(item=>item.note==='主动分享'));
+            details.explicitHumanSubmission=true;
           }
         }
       }

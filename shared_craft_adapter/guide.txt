@@ -18,4 +18,4 @@ set_bead_work_plan/pin_bead_reference(board_id,beads,title?) 存1–512颗计划
 reveal_bead_gift(board_id) 揭晓；work_bead_finish(board_id,action)：params.action=cover→heat→start_iron→finish_iron→lift；等 heat_ready_at/cool_ready_at，熨烫2.8–6.2秒；uncover 在盖纸/预热时揭纸。
 
 list_gallery；save_gallery(kind,title?,source_id?,piece_columns?,piece_rows?)：kind=sketch/bead；sketch 需笔迹；bead 需网页保存装饰、source_id 豆板ID及正整数 piece_columns/piece_rows。
-share_work(item_id,note?,confirm=true)：note≤500字；AI 只能分享参与作品，共同作品须人类在作品卡片确认。默认不分享；确认后作者可看作品及附言，不公开。
+share_work(item_id,note?)：note≤500字；AI 只能分享自己参与的作品。默认不分享，主动调用即分享，作者可看到图片及附言，不公开。

@@ -1,4 +1,4 @@
-"""Explicit, immutable submissions. Pending joint work is invisible to authors."""
+"""Explicit, immutable submissions. Historical pending work stays private."""
 import sqlite3
 import time
 import uuid
@@ -25,8 +25,7 @@ class Shares:
         return conn
 
     def submit(self, room, identity, item_id, note="", confirm=False):
-        if confirm is not True:
-            raise ValueError("请明确确认分享给作者")
+        # Calling submit is the opt-in; accept legacy confirm without requiring it.
         if not isinstance(note, str) or len(note) > 500:
             raise ValueError("附言最多500字")
         item = next((i for i in room.gallery.list_items() if i["id"] == item_id), None)
@@ -35,22 +34,27 @@ class Shares:
         contributors = item.get("actor_ids", [])
         if identity["is_ai"] and identity["actor"] not in contributors:
             raise PermissionError("只能发起自己参与创作的作品分享")
-        # Unknown historical attribution must never be assumed to be solo.
-        joint = contributors != [identity["actor"]] or item["added_by"] != identity["actor"]
-        status = "pending" if identity["is_ai"] and joint else "shared"
-        image = room.gallery.image_path(item_id).read_bytes()
         with closing(self.connect()) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             previous = conn.execute("""SELECT id,status FROM submissions
                 WHERE room=? AND item=? AND actor=? AND note=?""",
                 (identity["room"], item_id, identity["actor"], note)).fetchone()
             if previous:
-                return dict(previous)
+                result = dict(previous)
+                if result["status"] == "pending":
+                    # Only an explicit repeat by this same participating actor
+                    # releases this exact frozen snapshot. Never migrate rows
+                    # on startup/read, or replace their image with a live one.
+                    conn.execute("UPDATE submissions SET status='shared',decided=? WHERE id=?",
+                                 (int(time.time()), result["id"]))
+                    result["status"] = "shared"
+                return result
+            image = room.gallery.image_path(item_id).read_bytes()
             submission = uuid.uuid4().hex
             conn.execute("INSERT INTO submissions VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (submission, identity["room"], item_id, identity["actor"], item["title"],
-                          note, image, status, int(time.time()), int(time.time()) if status == "shared" else None))
-            return {"id": submission, "status": status}
+                          note, image, "shared", int(time.time()), int(time.time())))
+            return {"id": submission, "status": "shared"}
 
     def pending(self, identity):
         if identity["is_ai"]:

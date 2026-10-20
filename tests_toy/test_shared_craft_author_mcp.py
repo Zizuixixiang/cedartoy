@@ -114,8 +114,9 @@ class SharedCraftAuthorMcpTests(unittest.TestCase):
         snapshot = self.request("author/" + shared[0]).content
         self.service_play("draw_path", uid=2, points=[{"x": 20, "y": 20}], color="#123456")
         joint = self.request("api/gallery", "POST", {"kind": "sketch", "title": "私密共同作品"}, 2).json()["item"]
-        pending = self.service_play("share_work", uid=2, item_id=joint["id"], note="待确认秘密", confirm=True)["id"]
-        declined = self.service_play("share_work", uid=2, item_id=joint["id"], note="拒绝秘密", confirm=True)["id"]
+        from tests_toy.test_shared_craft_sharing import seed_legacy
+        pending = seed_legacy(self, joint, "待确认秘密")
+        declined = seed_legacy(self, joint, "拒绝秘密")
         self.assertEqual(self.request("api/shares/" + declined, "POST", {"confirm": False}).status_code, 200)
         return shared, snapshot, (pending, declined, joint["id"])
 

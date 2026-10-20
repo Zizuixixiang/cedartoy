@@ -208,23 +208,20 @@ class SharedCraftTests(unittest.TestCase):
         self.assertEqual(set(item["actor_ids"]), {"1", "2", "3"})
         self.assertEqual(self.request("api/gallery/" + item["id"] + ".png", uid=3).content, png)
 
-    def test_private_default_explicit_human_and_joint_ai_confirmation(self):
+    def test_private_default_joint_ai_share_and_immutable_snapshot(self):
         for uid in (1,2,3):
             self.draw(uid)
         item = self.gallery()
         self.grant()
         self.assertEqual(self.request("author", uid=6).json()["total"], 0)
-        self.play("share_work", 2, ok=False, item_id=item["id"], note="hello")
-        request = self.play("share_work", 2, item_id=item["id"], note="给作者 <script>", confirm=True)
-        self.assertEqual(request["status"], "pending")
-        self.assertEqual(self.request("author", uid=6).json()["total"], 0)
-        self.assertEqual(self.request("author/" + request["id"], uid=6).status_code, 403)
+        request = self.play("share_work", 2, item_id=item["id"], note="给作者 <script>")
+        self.assertEqual(request["status"], "shared")
+        self.assertEqual(self.request("author", uid=6).json()["total"], 1)
         self.assertEqual(self.request("api/shares/" + request["id"], "POST", {"confirm": True}, 3).status_code, 403)
         self.assertEqual(self.request("api/shares/" + request["id"], "POST", {"confirm": True}, 4).status_code, 403)
-        pending = self.request("api/gallery").json()["pending_shares"]
-        self.assertEqual(pending[0]["note"], "给作者 <script>")
-        snapshot = self.request("api/shares/" + request["id"] + ".png").content
-        self.draw(3)  # Approval must refer to the submitted image, not live canvas.
+        self.assertEqual(self.request("api/gallery").json()["pending_shares"], [])
+        snapshot = self.request("author/" + request["id"], uid=6).content
+        self.draw(3)  # Sharing must retain the submitted image, not live canvas.
         self.request("api/gallery/" + item["id"], "DELETE")
         approved = self.request("api/shares/" + request["id"], "POST", {"confirm": True}).json()
         self.assertEqual(approved["status"], "shared")
@@ -248,8 +245,9 @@ class SharedCraftTests(unittest.TestCase):
         self.assertEqual(first, self.play("share_work", 2, item_id=item["id"], confirm=True))
         self.draw(1)
         item = self.gallery()
-        pending = self.play("share_work", 2, item_id=item["id"], confirm=True)
-        declined = self.request("api/shares/" + pending["id"], "POST", {"confirm": False}).json()
+        from tests_toy.test_shared_craft_sharing import seed_legacy
+        pending = seed_legacy(self, item)
+        declined = self.request("api/shares/" + pending, "POST", {"confirm": False}).json()
         self.assertEqual(declined["status"], "declined")
         self.assertEqual(self.play("share_work", 1, item_id=item["id"], note="自愿", confirm=True)["status"], "shared")
         self.grant()

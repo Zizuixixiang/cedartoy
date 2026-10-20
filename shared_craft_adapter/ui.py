@@ -82,12 +82,10 @@ function inventoryView(){
             text = replace(text, "actor!==me?.id).map", "actor===$('#stock-actor').value).map")
             text = text.replace("对方拿了一块新豆板", "伙伴拿了一块新豆板")
         if name == "crafts.js":
-            text = replace(text, "let choosing = null;", "let choosing = null;\nlet pendingShares = [];")
             text = replace(text, "${actionButtons(item, selectId)}</div>",
-                           '${actionButtons(item, selectId)}<button data-share="${item.id}">${pendingShares.some(p=>p.item===item.id) ? "确认分享" : "分享给作者"}</button></div>')
+                           '${actionButtons(item, selectId)}<button data-share="${item.id}">分享给作者</button></div>')
             text = replace(text, "function bind() {", """function bind() {
   document.querySelectorAll('[data-share]').forEach(button => button.onclick = () => openShare(button.dataset.share));""")
-            text = replace(text, "items = data.items;", "items = data.items;\n  pendingShares = data.pending_shares || [];")
             text += "\n" + (ASSETS / "share.js").read_text()
         raw = text.encode()
     elif name == "beads-framer.js":
@@ -98,6 +96,19 @@ function inventoryView(){
                 "fetch(`/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}" + suffix + "`",
                 "fetch(`/shared-craft/api" + suffix + "`",
             )
+        # Preserve both upstream transparent/cropped exporters verbatim: the
+        # pouch's display.png still needs pieceDataURL -> finishedDataURL.
+        # Only the save event exports the complete, unselected preview.
+        for before, after in (
+            ("function finishedDataURL(){",
+             "function assembledDataURL(){try{draw(false);return canvas.toDataURL('image/png')}finally{draw(true)}}\n"
+             "function finishedDataURL(){"),
+            ("dataUrl=finishedDataURL(),pieceUrl=pieceDataURL()",
+             "dataUrl=assembledDataURL(),pieceUrl=pieceDataURL()"),
+        ):
+            if text.count(before) != 1:
+                raise ValueError("上游装裱导出已变化，需重新核验适配")
+            text = replace(text, before, after)
         raw = text.encode()
     elif name == "beads-v2.css":
         raw = raw.replace('content:"对方"'.encode(), 'content:"TA"'.encode())

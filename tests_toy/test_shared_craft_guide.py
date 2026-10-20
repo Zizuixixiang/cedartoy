@@ -70,11 +70,11 @@ class SharedCraftGuideTests(unittest.TestCase):
         signatures = guide_signatures(text)
         self.assertEqual(signatures["save_gallery"],
                          dict(kind=True, title=False, source_id=False, piece_columns=False, piece_rows=False))
-        self.assertEqual(signatures["share_work"], dict(item_id=True, note=False, confirm=True))
+        self.assertEqual(signatures["share_work"], dict(item_id=True, note=False))
         for constraint in ("1–14", "1–100", "0.05–1", "1–12", "180–1200", "1–5",
                            "1–512", "1–8", "250–1500", "2.8–6.2", "40字", "60字",
                            "500字", "size-1", "正整数", "heat_ready_at/cool_ready_at",
-                           "confirm=true", "默认不分享", "共同作品须人类", "不公开"):
+                           "confirm=true", "默认不分享", "主动调用即分享", "不公开"):
             self.assertIn(constraint, text)
         for attribution in ("嘞噫黎", "493242614", "https://github.com/SuLee3927/shared-craft-room", "MIT"):
             self.assertIn(attribution, text)
