@@ -5,6 +5,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+AUTHOR_READ_ACTIONS = frozenset({"author_inbox", "author_image"})
+
 
 @dataclass
 class ContentResult:
@@ -37,7 +39,8 @@ def play(user, arguments):
     # Platform identity is never accepted in engine arguments. Untrusted IDs
     # cannot choose a room, actor, token or save slot.
     params = {k: v for k, v in params.items()
-              if k not in {"player_id", "actor", "actor_id", "room", "room_id", "slot", "user_id"}}
+              if k not in {"player_id", "actor", "actor_id", "room", "room_id", "slot", "user_id",
+                           "token", "path_token", "bearer_token", "authenticated_account"}}
     response = request(user["id"], "POST", "play", body=json.dumps(
         {"action": arguments.get("action"), "params": params}).encode())
     data = response.json()

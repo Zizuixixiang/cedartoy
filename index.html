@@ -2561,10 +2561,13 @@
     :is(#candleFeedbackModal,#craftAuthorModal) { z-index: 51; }
     :is(#candleFeedbackModal,#craftAuthorModal) .modal-box {
       width: min(560px, 100%);
-      height: min(680px, calc(100dvh - 102px - var(--safe-bottom)));
       display: flex;
       flex-direction: column;
     }
+    #candleFeedbackModal .modal-box { height: min(680px, calc(100dvh - 102px - var(--safe-bottom))); }
+    #craftAuthorModal .modal-box { max-height: min(680px, calc(100dvh - 102px - var(--safe-bottom))); }
+    #craftAuthorContent { flex: 0 1 auto; }
+    #craftAuthorContent img { display: block; max-width: 100%; max-height: 230px; width: auto; height: auto; margin: 8px auto; }
     .candle-feedback-head, .candle-feedback-pages {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
       flex-shrink: 0;
@@ -2573,7 +2576,8 @@
     :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn { min-height: 36px; padding: 6px 10px; font-size: 11px; }
     :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn:disabled { opacity: 0.5; cursor: default; }
     :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn, :is(#candleFeedbackModal,#craftAuthorModal) .modal-msg { color: var(--text); }
-    :is(#candleFeedbackContent,#craftAuthorContent) { margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    :is(#candleFeedbackContent,#craftAuthorContent) { margin-top: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    #candleFeedbackContent { flex: 1; }
     .candle-feedback-row { border-bottom: 1px solid var(--purple-light); }
     .candle-feedback-line {
       display: flex; align-items: center; justify-content: space-between; gap: 6px;
@@ -6911,21 +6915,57 @@
     }
 
 
+    // Only an intent crosses protocols; HTTPS uses its own existing login.
+    // Keep continuation in memory so refresh/back/cancel never replays it.
+    let craftRoomPending = false, craftRoomBusy = false;
     async function openCraftRoom() {
-      if (!token()) { closeDrawers(); openModal("loginModal"); return; }
+      if (location.protocol !== "https:") {
+        const url = new URL("/#shared-craft", location.origin);
+        url.protocol = "https:";
+        location.assign(url.href);
+        return;
+      }
+      if (craftRoomBusy) return;
+      craftRoomPending = false;
+      if (!token()) {
+        craftRoomPending = true;
+        closeDrawers(); openModal("loginModal"); return;
+      }
+      craftRoomBusy = true;
+      const requestToken = token();
       try {
         const response = await fetch("/shared-craft/session", {method:"POST", headers:headers(false)});
+        if (token() !== requestToken) return;
+        if (response.status === 401) {
+          craftRoomPending = true;
+          closeDrawers(); openModal("loginModal"); return;
+        }
         if (!response.ok) throw new Error((await response.json()).error || "手作空间暂时不可用");
         location.assign("/shared-craft/crafts/");
       } catch (error) { showToast(error.message); }
+      finally { craftRoomBusy = false; }
     }
     let craftAuthorIdentity = "", craftAuthorAllowed = false, craftAuthorPage = 1;
     let craftAuthorController = null, craftAuthorFocus = null;
+    let craftAuthorAccessController = null;
     const craftAuthorImages = [];
     function clearCraftAuthor() {
       craftAuthorController?.abort();
+      craftAuthorController = null;
       craftAuthorImages.splice(0).forEach(url => URL.revokeObjectURL(url));
       $("craftAuthorContent").replaceChildren();
+      $("craftAuthorContent").removeAttribute("aria-busy");
+      $("craftAuthorMsg").textContent = "";
+      $("craftAuthorRetry").hidden = true;
+      $("craftAuthorPage").textContent = "第 1 / 1 页";
+      $("craftAuthorPrev").disabled = $("craftAuthorNext").disabled = true;
+    }
+    function denyCraftAuthor() {
+      craftAuthorAllowed = false;
+      clearCraftAuthor();
+      $("craftAuthorPage").textContent = "—";
+      $("craftAuthorMsg").textContent = "当前账号无法查看已分享作品，请确认登录状态与作者权限。";
+      renderCraftAuthorEntry();
     }
     function renderCraftAuthorEntry() {
       const allowed = currentGame().id === "shared_craft" && craftAuthorAllowed && craftAuthorIdentity === candleIdentity();
@@ -6934,58 +6974,96 @@
       });
     }
     async function refreshCraftAuthorAccess() {
+      craftAuthorAccessController?.abort();
       const identity = candleIdentity();
-      if (identity !== craftAuthorIdentity) {
-        craftAuthorIdentity = identity; craftAuthorAllowed = false;
+      if (identity !== craftAuthorIdentity || currentGame().id !== "shared_craft") {
+        craftAuthorAllowed = false;
         clearCraftAuthor(); $("craftAuthorModal").classList.remove("show");
       }
+      craftAuthorIdentity = identity;
+      renderCraftAuthorEntry();
       if (currentGame().id !== "shared_craft" || !identity) return;
+      const controller = new AbortController();
+      craftAuthorAccessController = controller;
       try {
-        const response = await fetch("/shared-craft/author?access=1", {headers:headers(false),cache:"no-store"});
+        const response = await fetch("/shared-craft/author?access=1", {headers:headers(false),cache:"no-store",signal:controller.signal});
         const data = await response.json();
-        if (identity !== candleIdentity()) return;
+        if (controller.signal.aborted || identity !== candleIdentity()) return;
         craftAuthorAllowed = response.ok && data.allowed === true;
-      } catch (_) { if (identity === candleIdentity()) craftAuthorAllowed = false; }
+      } catch (_) {
+        if (controller.signal.aborted || identity !== candleIdentity()) return;
+        craftAuthorAllowed = false;
+      }
+      if (!craftAuthorAllowed) denyCraftAuthor();
       renderCraftAuthorEntry();
     }
     function openCraftAuthor() {
-      if (!craftAuthorAllowed || craftAuthorIdentity !== candleIdentity()) return;
+      if (currentGame().id !== "shared_craft" || !craftAuthorAllowed || craftAuthorIdentity !== candleIdentity()) return;
       craftAuthorFocus = document.activeElement;
       openModal("craftAuthorModal"); $("craftAuthorClose").focus(); loadCraftAuthor(1);
     }
     async function loadCraftAuthor(page) {
       clearCraftAuthor();
+      if (currentGame().id !== "shared_craft" || !craftAuthorAllowed || craftAuthorIdentity !== candleIdentity() || !$("craftAuthorModal").classList.contains("show")) return;
       const controller = new AbortController(), identity = candleIdentity();
+      const active = () => !controller.signal.aborted && craftAuthorController === controller && identity === candleIdentity();
       craftAuthorController = controller; craftAuthorPage = page;
+      $("craftAuthorContent").setAttribute("aria-busy", "true");
       $("craftAuthorMsg").textContent = "正在读取…";
       $("craftAuthorRetry").hidden = true;
       $("craftAuthorPrev").disabled = $("craftAuthorNext").disabled = true;
       try {
         const response = await fetch(`/shared-craft/author?page=${page}`, {headers:headers(false),cache:"no-store",signal:controller.signal});
-        if (!response.ok) throw new Error("无法读取已分享作品");
+        if (!active()) return;
+        if (response.status === 401 || response.status === 403) { denyCraftAuthor(); return; }
+        if (!response.ok) throw new Error("已分享作品暂时无法读取，请重试。");
         const data = await response.json();
-        if (identity !== candleIdentity() || controller.signal.aborted) return;
+        if (!active()) return;
         for (const item of data.items) {
-          const row = document.createElement("article"); row.className = "candle-feedback-row";
+          const row = document.createElement("details"); row.className = "candle-feedback-row";
+          const line = document.createElement("summary"); line.className = "candle-feedback-line";
           const title = document.createElement("strong"); title.textContent = item.title;
-          const note = document.createElement("p"); note.textContent = item.note;
-          const image = document.createElement("img"); image.alt = item.title;
-          image.style.cssText = "display:block;max-width:100%;max-height:360px;object-fit:contain;margin:8px auto";
-          const snapshot = await fetch(`/shared-craft/author/${encodeURIComponent(item.id)}`, {headers:headers(false),cache:"no-store",signal:controller.signal});
-          if (!snapshot.ok) throw new Error("作品图片读取失败");
-          const blob = await snapshot.blob();
-          if (identity !== candleIdentity() || controller.signal.aborted) return;
-          image.src = URL.createObjectURL(blob); craftAuthorImages.push(image.src);
-          row.append(title,image,note); $("craftAuthorContent").append(row);
+          const time = document.createElement("time"), date = new Date(item.created_at * 1000);
+          time.dateTime = date.toISOString();
+          time.textContent = date.toLocaleString("sv-SE", {year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false});
+          const view = document.createElement("span"); view.className = "candle-feedback-view"; view.textContent = "查看";
+          line.append(title,time,view); row.append(line);
+          const body = document.createElement("div");
+          let loading = false, loaded = false;
+          row.addEventListener("toggle", async () => {
+            if (!row.open || loading || loaded || !active()) return;
+            loading = true;
+            const status = document.createElement("p"); status.setAttribute("role", "status"); status.textContent = "正在读取作品…";
+            body.replaceChildren(status); row.append(body);
+            try {
+              const snapshot = await fetch(`/shared-craft/author/${encodeURIComponent(item.id)}`, {headers:headers(false),cache:"no-store",signal:controller.signal});
+              if (!active()) return;
+              if (snapshot.status === 401 || snapshot.status === 403) { denyCraftAuthor(); return; }
+              if (!snapshot.ok) throw new Error("image");
+              const blob = await snapshot.blob();
+              if (!active()) return;
+              if (blob.type !== "image/png") throw new Error("image");
+              const image = document.createElement("img"); image.alt = item.title;
+              const url = URL.createObjectURL(blob); craftAuthorImages.push(url);
+              image.src = url;
+              const note = document.createElement("p"); note.textContent = item.note;
+              body.replaceChildren(image,note);
+              loaded = true;
+            } catch (_) {
+              if (active()) status.textContent = "作品暂时无法读取，请收起后展开重试。";
+            } finally { loading = false; }
+          });
+          $("craftAuthorContent").append(row);
         }
+        $("craftAuthorContent").scrollTop = 0;
         craftAuthorPage = data.page;
         $("craftAuthorMsg").textContent = data.total ? "" : "暂无主动分享的作品。";
         $("craftAuthorPage").textContent = `第 ${data.page} / ${data.pages} 页`;
         $("craftAuthorPrev").disabled = !data.has_prev; $("craftAuthorNext").disabled = !data.has_next;
       } catch (error) {
-        if (controller.signal.aborted) return;
-        clearCraftAuthor(); $("craftAuthorMsg").textContent = error.message; $("craftAuthorRetry").hidden = false;
-      }
+        if (!active()) return;
+        clearCraftAuthor(); $("craftAuthorMsg").textContent = "已分享作品暂时无法读取，请重试。"; $("craftAuthorRetry").hidden = false;
+      } finally { if (active()) $("craftAuthorContent").removeAttribute("aria-busy"); }
     }
     $("craftAuthorClose").addEventListener("click", () => { clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); craftAuthorFocus?.focus(); });
     $("craftAuthorRetry").addEventListener("click", () => loadCraftAuthor(craftAuthorPage));
@@ -6994,7 +7072,7 @@
     $("craftAuthorModal").addEventListener("keydown", event => {
       if (event.key === "Escape") { $("craftAuthorClose").click(); return; }
       if (event.key !== "Tab") return;
-      const buttons = [...$("craftAuthorModal").querySelectorAll("button")].filter(b => !b.disabled && b.offsetParent !== null);
+      const buttons = [...$("craftAuthorModal").querySelectorAll("button, summary")].filter(b => !b.disabled && b.offsetParent !== null);
       if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1).focus(); }
       else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0].focus(); }
     });
@@ -9127,6 +9205,7 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        refreshCraftAuthorAccess();
         refreshFeedbackUnread();
         updateFeedbackModeVisibility();
         feedbackVersion++; feedbackResetResults(); feedbackReceipt = null;
@@ -9148,6 +9227,7 @@
     }
 
     function openModal(id) {
+      if (id === "loginModal") { clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); }
       if (id === "loginModal") resetLoginModal();
       if (id === "avatarModal") resetAvatarModal();
       if (id === "forgotPasswordModal") resetForgotPasswordModal();
@@ -9165,7 +9245,10 @@
 
     function closeModals() {
       if ($("feedbackModal").classList.contains("show") && feedbackBusy) return;
+      craftRoomPending = false;
       const candleWasOpen = $("candleFeedbackModal").classList.contains("show");
+      const craftWasOpen = $("craftAuthorModal").classList.contains("show");
+      clearCraftAuthor();
       clearCandleFeedback();
       if ($("feedbackModal").classList.contains("show")) closeFeedback();
       avatarFrameState = null;
@@ -9187,6 +9270,7 @@
       clearResetPasswordModal();
       resetPasswordVisibility();
       if (candleWasOpen) candleFeedbackFocus?.focus();
+      if (craftWasOpen) craftAuthorFocus?.focus();
     }
 
     function renderAuth() {
@@ -9477,6 +9561,7 @@
         if (needsBindings) loadLoginBindings();
         machineState = {loaded: false, loading: false, machines: [], error: ""};
         emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
+        const continueCraftRoom = craftRoomPending;
         closeModals();
         renderAuth();
         renderGames();
@@ -9486,6 +9571,8 @@
           me.deletion = data.user.deletion;
           renderMine();
           openMineDrawer();
+        } else if (continueCraftRoom) {
+          await openCraftRoom();
         } else {
           await loadAnnouncements({autoPopup: true});
         }
@@ -10098,6 +10185,7 @@
     }
 
     function logout() {
+      craftRoomPending = false;
       loadMeAbort?.abort();
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem("cedartoy_user_id");
@@ -10351,7 +10439,16 @@
     renderAuth();
     openResetPasswordFromUrl();
     loadAvatarCapability();
+    if (location.protocol === "https:" && location.hash === "#shared-craft") {
+      history.replaceState(null, "", location.pathname + location.search);
+      craftRoomPending = true;
+      selectGame("shared_craft", false);
+    }
     loadMe().then(() => {
+      if (craftRoomPending) {
+        openCraftRoom();
+        return;
+      }
       if (location.hash !== "#nowhere") return;
       history.replaceState(null, "", location.pathname + location.search);
       selectGame("nowhere", false);

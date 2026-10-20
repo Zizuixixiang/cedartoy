@@ -20,7 +20,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from .identity import resolve, author_access
+from .identity import resolve, author_access, require_active_account
 from .storage import RoomLock, protect_store, read_json
 from .sharing import Shares
 from . import ui
@@ -211,13 +211,12 @@ def create_app(data_dir, accounts_db, grants_db, secret):
             if path == "author" or path.startswith("author/"):
                 if request.method != "GET":
                     return Response(status_code=405)
+                require_active_account(accounts_db, user_id)
                 if request.query_params.get("access") == "1":
                     return JSONResponse({"allowed": author_access(grants_db, user_id)})
                 if path == "author":
                     return JSONResponse(shares.read(user_id, request.query_params.get("page", 1)))
                 return Response(shares.read(user_id, image_id=path.split("/")[1]), media_type="image/png")
-            identity = resolve(accounts_db, user_id)
-            request.scope["craft_identity"] = identity
             if request.method == "POST":
                 raw = await request.body()
                 if len(raw) > 17_000_000:
@@ -225,6 +224,28 @@ def create_app(data_dir, accounts_db, grants_db, secret):
                 request._json = json.loads(raw)
                 if not isinstance(request._json, dict):
                     raise ValueError("参数必须为对象")
+            if path == "play" and request.method == "POST":
+                action = request._json.get("action")
+                if action in ("author_inbox", "author_image"):
+                    # Read-only management is independent of game membership.
+                    # Only the authenticated gateway header supplies identity.
+                    require_active_account(accounts_db, user_id)
+                    if not author_access(grants_db, user_id):
+                        raise PermissionError("仅本作已授权作者可查看")
+                    params = request._json.get("params") or {}
+                    if not isinstance(params, dict):
+                        raise ValueError("params 必须为对象")
+                    if action == "author_inbox":
+                        result = shares.read(user_id, page=params.get("page", 1))
+                    else:
+                        submission_id = params.get("submission_id")
+                        if not isinstance(submission_id, str) or not re.fullmatch(r"[a-f0-9]{32}", submission_id):
+                            raise ValueError("submission_id 必须为投稿 ID")
+                        result = {"submission_id": submission_id,
+                                  "_image_bytes": shares.read(user_id, image_id=submission_id)}
+                    return JSONResponse({"content": mcp_content(result)})
+            identity = resolve(accounts_db, user_id)
+            request.scope["craft_identity"] = identity
             # Static assets use exactly the original files with narrowly scoped
             # transport/multiplayer changes; no alternative room UI.
             if request.method == "GET" and path.startswith("assets/"):

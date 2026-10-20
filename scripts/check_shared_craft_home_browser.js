@@ -15,7 +15,7 @@ for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) 
 async function checkDom() {
   const {JSDOM} = require('jsdom');
   const report = [];
-  for (const width of [360,430,1280]) {
+  for (const width of [360,390,430,1280]) {
     const dom = new JSDOM(html, {url:'https://craft-home.test/',runScripts:'outside-only',pretendToBeVisual:true});
     const w = dom.window, d = w.document, requests = [];
     let allowed = false, failSession = false, failAccess = false, delayedAccess, statsMetric = null;
@@ -132,7 +132,7 @@ async function checkDom() {
   let browser;
   const report = [];
   try {
-    for (const width of [360,430,1280]) {
+    for (const width of [360,390,430,1280]) {
       browser = await chromium.launch({
         headless:true, executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH, args:['--no-sandbox'],
       });

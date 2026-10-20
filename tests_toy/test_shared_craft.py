@@ -380,6 +380,25 @@ for i in range(8):
             web.serve(http, server)
             self.assertEqual(http.status, 200)
             self.assertEqual({s["actor"] for s in json.loads(http.wfile.getvalue())["canvas"]["strokes"]}, {"2","3"})
+            # Public HTTP must never mint a craft cookie, including ambiguous
+            # forwarding headers. These calls use only the temporary account DB.
+            for proto in ("", "http", "https,http", "http,https", "invalid"):
+                http = Http()
+                http.command, http.path = "POST", "/shared-craft/session"
+                http.headers = {**Http.headers, "Origin": "http://craft.test",
+                                "X-Forwarded-Proto": proto}
+                web.serve(http, server)
+                self.assertEqual(http.status, 403, proto)
+                self.assertNotIn("Set-Cookie", http.response_headers)
+            for extra in ({"Origin": "https://other.test"},
+                          {"Authorization": "", "Cookie": "shared_craft_token=" + tokens[1]}):
+                http = Http()
+                http.command, http.path = "POST", "/shared-craft/session"
+                http.headers = {**Http.headers, "Origin": "https://craft.test",
+                                "X-Forwarded-Proto": "https", **extra}
+                web.serve(http, server)
+                self.assertEqual(http.status, 403)
+                self.assertNotIn("Set-Cookie", http.response_headers)
             http = Http()
             http.command, http.path = "POST", "/shared-craft/session"
             http.headers = {**Http.headers, "Origin": "https://craft.test", "X-Forwarded-Proto": "https"}

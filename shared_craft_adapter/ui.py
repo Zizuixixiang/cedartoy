@@ -33,6 +33,7 @@ def page(name):
         text = replace(text, '<span id="box-count">',
                        '<select id="stock-actor" aria-label="查看伙伴豆盒" hidden></select><span id="box-count">')
     if name == "crafts":
+        text = replace(text, "<body>", '<body class="craft-gallery">')
         text = replace(text, "</body>", (ASSETS / "share.html").read_text() + "</body>")
     text = replace(text, "</head>", '<link rel="stylesheet" href="../assets/platform.css"></head>')
     return Response(text, media_type="text/html")
@@ -88,6 +89,15 @@ function inventoryView(){
   document.querySelectorAll('[data-share]').forEach(button => button.onclick = () => openShare(button.dataset.share));""")
             text = replace(text, "items = data.items;", "items = data.items;\n  pendingShares = data.pending_shares || [];")
             text += "\n" + (ASSETS / "share.js").read_text()
+        raw = text.encode()
+    elif name == "beads-framer.js":
+        text = raw.decode()
+        for suffix in ("/bead-boards/${board.id}", "/gallery"):
+            text = replace(
+                text,
+                "fetch(`/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}" + suffix + "`",
+                "fetch(`/shared-craft/api" + suffix + "`",
+            )
         raw = text.encode()
     elif name == "beads-v2.css":
         raw = raw.replace('content:"对方"'.encode(), 'content:"TA"'.encode())

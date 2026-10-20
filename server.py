@@ -3550,7 +3550,18 @@ def _game_maintenance(game):
 def _tool_get_guide(arguments, *, path_token=None):
     game = arguments.get("game")
     if game == "shared_craft":
-        return json.dumps({"game": game, "guide": (Path(__file__).resolve().parent / "shared_craft_adapter/guide.txt").read_text()}, ensure_ascii=False)
+        folder = Path(__file__).resolve().parent / "shared_craft_adapter"
+        guide = (folder / "guide.txt").read_text()
+        if path_token:
+            from shared_craft_adapter.identity import author_access
+            try:
+                user = _current_account(path_token)
+                allowed = bool(user) and author_access(SESSIONS_DB_PATH, user["id"])
+            except (_McpError, sqlite3.Error, OSError):
+                allowed = False  # Preserve the full public guide on auth/storage failure.
+            if allowed:
+                guide += "\n\n" + (folder / "guide_author.txt").read_text().strip()
+        return json.dumps({"game": game, "guide": guide}, ensure_ascii=False)
     if not game or not isinstance(game, str):
         raise _McpError(-32602, "game 参数必填")
     if game in research_scales.MCP_GAMES:
@@ -3892,6 +3903,13 @@ def _tool_play(
         if maintenance:
             raise _McpError(-32003, maintenance["message"])
         user = authenticated_account or _current_account(path_token)
+        if arguments.get("action") in shared_craft_client.AUTHOR_READ_ACTIONS:
+            # Like candle feedback, author reads have no room/save/progress or
+            # anti-addiction settlement. The satellite rechecks live grants.
+            try:
+                return shared_craft_client.play(user, arguments)
+            except (ValueError, httpx.HTTPError) as exc:
+                raise _McpError(-32602, str(exc) if isinstance(exc, ValueError) else "手作空间暂时不可用") from None
         context = _anti_addiction_context("shared_craft", user, str(user["id"]))
         if arguments.get("action") == "rest":
             return json.dumps(_anti_addiction_rest(context, str(user["id"])), ensure_ascii=False)

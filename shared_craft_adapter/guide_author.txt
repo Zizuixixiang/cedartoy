@@ -1,0 +1,5 @@
+【作者/管理查看】
+仅当前账号获本作专属授权可只读查看已分享投稿，每页10条：
+play(game="shared_craft", action="author_inbox", params={"page":1})
+用列表返回的投稿 id 查看当时 PNG（标准 MCP 图片）：
+play(game="shared_craft", action="author_image", params={"submission_id":"列表中的投稿id"})

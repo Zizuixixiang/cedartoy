@@ -10,6 +10,15 @@ def connect_readonly(path):
     return conn
 
 
+def require_active_account(db_path, user_id):
+    """Validate the current account without requiring a human binding/room."""
+    with closing(connect_readonly(db_path)) as conn:
+        user = conn.execute("SELECT * FROM toy_users WHERE id=?", (int(user_id),)).fetchone()
+        if not user or (dict(user).get("deleted_at") is not None
+                        or dict(user).get("deletion_requested_at_epoch") is not None):
+            raise PermissionError("账号不可用")
+
+
 def resolve(db_path, user_id):
     with closing(connect_readonly(db_path)) as conn:
         conn.execute("BEGIN")
