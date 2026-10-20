@@ -3397,6 +3397,9 @@
                     <ol class="rank-list" id="rankList"></ol>
                   </div>
                   <div class="arcade-bank" data-bank-scope="screen"></div>
+                  <div class="modal-actions" data-craft-author-entry style="display:none">
+                    <button class="pixel-btn watch-btn secondary" data-craft-author type="button">查看已分享作品</button>
+                  </div>
                 </div>
               </div>
               <div class="screen-footer">
@@ -3922,6 +3925,9 @@
         <button class="pixel-btn watch-btn" id="drawerWatchButton" type="button" style="display:none">围观大屏 →</button>
         <button class="pixel-btn" id="drawerEnter" type="button">ENTER →</button>
       </div>
+      <div class="modal-actions" data-craft-author-entry style="display:none">
+        <button class="pixel-btn watch-btn secondary" data-craft-author type="button">查看已分享作品</button>
+      </div>
     </section>
   </div>
 
@@ -4269,14 +4275,19 @@
         ranks: []
       },
       {
-        id: "shared_craft", category: "mini", name: "共同手作间",
+        id: "shared_craft", category: "mini", watch: true, name: "共同手作间",
         mission: "MISSION: SHARED CRAFT", location: "LOCATION: CRAFT ROOM",
-        glyph: "绘", badge: "CRAFT", level: "共同创作", metricLabel: "", metric: "",
+        glyph: "绘", badge: "CRAFT", level: "LV.01", metricLabel: "玩法数", metric: "2",
         short: "一起画画 / 拼豆 / 收藏成品",
-        desc: "和已绑定的小机一起画画、拼豆，把成品收入共同作品间。",
-        logs: ["作者：嘞噫黎（小红书号 493242614） · MIT", "画画、拼豆与共同作品间，沿用原作玩法。"],
+        desc: "和已绑定的小机一起画画、拼豆，收藏共同完成的作品。",
+        logs: [
+          "玩法：人类进入网页，小机通过 MCP 协作；完成的作品可自愿分享给作者。",
+          "作者：嘞噫黎（小红书号 493242614）",
+          "原仓库：SuLee3927/shared-craft-room · MIT"
+        ],
         stats: [], footerIcons: ["绘", "豆", "♡"], tags: ["手作", "协作", "MCP"],
-        url: "https://github.com/SuLee3927/shared-craft-room", ctaLabel: "进入手作间 →", ranks: []
+        url: "https://github.com/SuLee3927/shared-craft-room",
+        ctaLabel: "GitHub →", watchLabel: "进入手作间 →", ranks: []
       },
       {
         id: "candle",
@@ -6828,7 +6839,6 @@
       });
       refreshCandleFeedbackAccess();
       refreshCraftAuthorAccess();
-      if (game.id === "shared_craft" && guideEnter) guideEnter.textContent = "完整玩法 →";
       const watchLabel = game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →");
       ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
         const btn = $(id);
@@ -6837,7 +6847,7 @@
         btn.disabled = Boolean(game.maintenance);
         btn.textContent = watchLabel;
       });
-      if (game.id === "shared_craft") renderCraftAuthorEntry();
+      renderCraftAuthorEntry();
       renderRanks(game);
       renderArcadeBanks();
       renderMemoriaGuides(game);
@@ -6867,7 +6877,6 @@
     let pendingAdultUrl = "";
 
     function openGame(game) {
-      if (game.id === "shared_craft") { openCraftRoom(); return; }
       if (game.id === "candle") {
         openCandleFeedback();
         return;
@@ -6918,10 +6927,9 @@
       $("craftAuthorContent").replaceChildren();
     }
     function renderCraftAuthorEntry() {
-      if (currentGame().id !== "shared_craft") return;
-      ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach(id => {
-        $(id).style.display = craftAuthorAllowed && craftAuthorIdentity === candleIdentity() ? "" : "none";
-        $(id).textContent = "查看已分享作品";
+      const allowed = currentGame().id === "shared_craft" && craftAuthorAllowed && craftAuthorIdentity === candleIdentity();
+      document.querySelectorAll("[data-craft-author-entry]").forEach(entry => {
+        entry.style.display = allowed ? "" : "none";
       });
     }
     async function refreshCraftAuthorAccess() {
@@ -7929,6 +7937,10 @@
     }
 
     async function enterWatch() {
+      if (currentGame().id === "shared_craft") {
+        await openCraftRoom();
+        return;
+      }
       if (currentGame().id === "nowhere") {
         if (!ensureNowhereHttps()) return;
         await loadMe();
@@ -10186,11 +10198,14 @@
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
-    $("guideEnterButton").addEventListener("click", () => currentGame().id === "shared_craft" ? window.open(currentGame().url, "_blank", "noopener") : enterGame());
+    $("guideEnterButton").addEventListener("click", enterGame);
     $("drawerEnter").addEventListener("click", enterGame);
     ["watchButton", "guideWatchButton", "drawerWatchButton"].forEach((id) => {
       const btn = $(id);
-      if (btn) btn.addEventListener("click", () => currentGame().id === "shared_craft" ? openCraftAuthor() : enterWatch());
+      if (btn) btn.addEventListener("click", enterWatch);
+    });
+    document.querySelectorAll("[data-craft-author]").forEach(button => {
+      button.addEventListener("click", openCraftAuthor);
     });
     $("drawerClose").addEventListener("click", closeDrawers);
     $("mineClose").addEventListener("click", closeDrawers);
