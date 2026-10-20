@@ -11,7 +11,7 @@ const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
 const out = process.env.ANNOUNCEMENT_SCREENSHOTS || '/tmp/cedartoy-announcements-fold-review';
 fs.mkdirSync(out, {recursive:true});
-const content = '原有正文，保留换行。\n\n项目链接：https://example.test/guide?a=1&b=2\n<em>纯文本，不执行 HTML</em>\n' + '很长的公告内容，手机端应在弹窗内滚动。\n'.repeat(35);
+const content = '**加粗提示**\n- **一起画画**：共享画布\n- **一起拼豆**：制作装饰\n\n原有正文，保留换行。\n\n项目链接：https://example.test/guide?a=1&b=2\n<em>纯文本，不执行 HTML</em>\n' + '很长的公告内容，手机端应在弹窗内滚动。\n'.repeat(35);
 const fixture = () => [
   {id:'notice', title:'新游戏与站点更新', type:'notice', content, unread:true},
   {id:'poll', title:'来选一选你希望下次优先上线的玩法', type:'poll', content:'请保留选择和补充意见。', unread:true, multiple:true, allow_feedback:true, options:['双人合作','解谜探索']},
@@ -31,6 +31,12 @@ const fixture = () => [
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', async route => {
         const req = route.request(), url = new URL(req.url());
+        // In production the existing marked CDN can load normally. Run once
+        // without it (offline fallback), and optionally with a pinned local
+        // copy supplied in ANNOUNCEMENT_MARKED_JS to verify the real parser.
+        if (url.hostname === 'cdnjs.cloudflare.com' && url.pathname.endsWith('/marked.min.js') && process.env.ANNOUNCEMENT_MARKED_JS) {
+          return route.fulfill({contentType:'application/javascript',body:fs.readFileSync(process.env.ANNOUNCEMENT_MARKED_JS)});
+        }
         if (url.hostname !== 'announcements.test') return route.abort();
         if (url.pathname === '/') return route.fulfill({contentType:'text/html',body:html});
         const authenticated = !!req.headers().authorization;
@@ -78,13 +84,21 @@ const fixture = () => [
       };
       const shot = name => page.locator('#announcementModal').screenshot({path:path.join(out,`${width}-${name}.png`)});
 
-      // Automatic unread popup and manual history both start folded, with original read semantics.
+      // Automatic unread popup opens every notice in full; only the history
+      // opened from the notification bell is an accordion.
       await page.evaluate(() => loadAnnouncements({autoPopup:true}));
-      await expanded(null);
       assert.equal(await page.locator('.announcement-item').count(),2);
+      assert.equal(await page.locator('.announcement-body:visible').count(),2);
+      assert.equal(await page.locator('[data-announcement-toggle]').count(),0);
+      assert.equal(await page.locator('.announcement-arrow').count(),0);
       assert.equal(await page.locator('.announcement-unread').count(),2);
+      assert.equal(await body('notice').locator('.announcement-content strong').first().textContent(),'加粗提示');
+      assert.equal(await body('notice').locator('.announcement-content li').count(),2);
+      assert.equal(await body('notice').locator('.announcement-content em').count(),0);
+      assert.equal(await page.evaluate(() => Boolean(window.marked?.parse)),Boolean(process.env.ANNOUNCEMENT_MARKED_JS));
       assert.equal(writes.length,1); assert.deepEqual(writes[0].body.announcement_ids,['notice','poll']);
       assert.match(await page.locator('#announcementHint').innerText(),/已读不等于投票/);
+      await geometry(); await shot('automatic-full');
       await open(); await expanded(null);
       assert.deepEqual(await page.locator('.announcement-item').evaluateAll(nodes=>nodes.map(n=>n.dataset.announcementItem)),data.map(x=>x.id));
       assert.equal(await page.locator('.announcement-unread').count(),0);
@@ -93,8 +107,13 @@ const fixture = () => [
       await geometry(); await shot('collapsed');
 
       await touch(fold('notice')); await expanded('notice');
-      assert.equal(await body('notice').locator('.announcement-content').textContent(),content);
-      assert.equal(await body('notice').locator('em').count(),0,'existing text escaping retained');
+      const rendered=body('notice').locator('.announcement-content');
+      assert.equal(await rendered.locator('strong').first().textContent(),'加粗提示');
+      assert.equal(await rendered.locator('li').count(),2);
+      assert.match(await rendered.textContent(),/原有正文[\s\S]*项目链接/);
+      assert.match(await rendered.textContent(),/<em>纯文本，不执行 HTML<\/em>/);
+      assert.equal(await rendered.locator('em').count(),0,'raw HTML must remain literal text');
+      assert.equal(await rendered.locator('script,img').count(),0);
       await geometry(); await shot('expanded');
       // Clicking the next row after scrolling through long content keeps that row reachable.
       await fold('poll').scrollIntoViewIfNeeded();
@@ -149,7 +168,7 @@ const fixture = () => [
       data=[]; await open(); assert.match(await page.locator('#announcementList').innerText(),/暂无通知/);
       failLoad=true; await open(); assert.match(await page.locator('#announcementList').innerText(),/测试加载失败/);
       assert.deepEqual(errors,[]); await page.close();
-      console.log(`PASS ${width}px: folds, keyboard/touch, scroll, drafts, read/vote separation, voting/error/skip, guest and empty/error states`);
+      console.log(`PASS ${width}px: automatic full notices, Markdown, history-only accordion, keyboard/touch, scroll, drafts, read/vote, guest/error`);
     }
   } finally {await browser.close();}
 })().catch(err=>{console.error(err);process.exitCode=1;});

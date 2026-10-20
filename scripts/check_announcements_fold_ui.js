@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const {JSDOM, VirtualConsole} = require('jsdom');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
-const content = '首段\n\n第二段 https://example.test/?a=1&b=2\n<em>仍为纯文本</em>';
+const content = '首段\n\n**加粗提示**\n- **一起画画**：共享画布\n- **一起拼豆**：创作爱心\n\n第二段 https://example.test/?a=1&b=2\n<em>仍为纯文本</em>';
 let items = [
   {id:'notice', title:'更新通知', content, unread:true},
   {id:'poll', title:'玩法投票', content:'请选择', type:'poll', multiple:true, allow_feedback:true, options:['合作','探索'], unread:true},
@@ -58,9 +58,17 @@ function input(selector,value) {
 }
 (async()=>{
   await tick(); w.localStorage.setItem('cedartoy_token','fixture-only');
-  await w.loadAnnouncements({autoPopup:true}); expanded(null);
+  await w.loadAnnouncements({autoPopup:true});
   assert.equal(d.querySelectorAll('.announcement-item').length,2);
+  assert.equal(d.querySelectorAll('.announcement-body:not([hidden])').length,2,
+    'automatic new notices must show all content immediately');
+  assert.equal(d.querySelectorAll('[data-announcement-toggle]').length,0,
+    'automatic popups must not show collapse buttons');
+  assert.equal(d.querySelectorAll('.announcement-arrow').length,0);
   assert.equal(d.querySelectorAll('.announcement-unread').length,2);
+  assert.equal(d.querySelector('[data-announcement-item="notice"] .announcement-content strong').textContent,'加粗提示');
+  assert.equal(d.querySelectorAll('[data-announcement-item="notice"] .announcement-content li').length,2);
+  assert.equal(d.querySelectorAll('#announcementList em, #announcementList script, #announcementList img').length,0);
   assert.deepEqual(JSON.parse(writes()[0].init.body),{announcement_ids:['notice','poll']});
   assert.match($('announcementHint').textContent,/已读不等于投票/);
   await w.openAnnouncementList(); expanded(null);
@@ -74,8 +82,13 @@ function input(selector,value) {
     assert.equal(button.querySelector('.announcement-arrow').getAttribute('aria-hidden'),'true');
   }
   fold('notice').click(); expanded('notice');
-  assert.equal(body('notice').querySelector('.announcement-content').textContent,content);
-  assert.equal(body('notice').querySelector('em'),null);
+  const rendered=body('notice').querySelector('.announcement-content');
+  assert.equal(rendered.querySelector('strong').textContent,'加粗提示');
+  assert.equal(rendered.querySelectorAll('li').length,2);
+  assert.match(rendered.textContent,/首段[\s\S]*第二段/);
+  assert.match(rendered.textContent,/<em>仍为纯文本<\/em>/);
+  assert(!rendered.textContent.includes('**加粗提示**'));
+  assert.equal(rendered.querySelector('em'),null);
   fold('poll').focus(); fold('poll').click(); expanded('poll');
   assert.equal(d.activeElement,fold('poll'));
   const originalForm=form(); input('[value="1"]'); input('textarea','我的草稿');
@@ -110,5 +123,5 @@ function input(selector,value) {
   items=[]; await w.openAnnouncementList(); assert.match($('announcementList').textContent,/暂无通知/);
   failLoad=true; await w.openAnnouncementList(); assert.match($('announcementList').textContent,/测试加载失败/);
   assert.deepEqual(errors,[]);
-  console.log('PASS: syntax, default/exclusive folds, order/escaping/content, focus/ARIA, draft retention, read semantics, vote validation/failure/skip/success/race, reopen, guest/empty/error.');
+  console.log('PASS: automatic expanded full notices, safe Markdown with offline fallback, history-only folds, focus/ARIA, draft/read/vote behavior, guest/error.');
 })().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>w.close());
