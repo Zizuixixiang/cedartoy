@@ -89,9 +89,19 @@ def read_json(path, kind):
         raise ValueError("存档损坏，原文件及备份已保留；请联系管理员恢复") from None
 
 
-def protect_store(store, kind, lock):
+def protect_store(store, kind, lock, images=None):
     store.lock = lock
     original_load = store._load
+    # Historical files are handled by the explicit backfill command. Only new
+    # or replaced images enter the bounded background queue during normal saves.
+    image_folder = (store.image_dir if kind == "gallery" else
+                    store.path.with_name("shared-bead-finished") if kind == "beads" else None)
+    def fingerprint(path):
+        stat = path.stat()
+        return stat.st_ino, stat.st_size, stat.st_mtime_ns
+    tracking = images is not None and images.enabled(store.path.parent.name)
+    known = ({path: fingerprint(path) for path in image_folder.glob("*.png")}
+             if image_folder and tracking else {})
 
     def load():
         read_json(store.path, kind)
@@ -101,25 +111,49 @@ def protect_store(store, kind, lock):
     def save(data):
         # Upstream already replaces PNGs atomically. Flush them before publishing
         # metadata that makes those snapshots visible after a power loss.
-        images = []
+        image_paths = []
         if kind == "gallery":
-            images = [store.image_dir / (item["id"] + suffix)
+            image_paths = [store.image_dir / (item["id"] + suffix)
                       for item in data["items"] for suffix in (".png", "-display.png")]
         elif kind == "beads":
-            images = [store.path.with_name("shared-bead-finished") / (board["id"] + suffix)
+            image_paths = [store.path.with_name("shared-bead-finished") / (board["id"] + suffix)
                       for board in data["boards"] if board.get("craft", {}).get("decorated")
                       for suffix in (".png", "-piece.png")]
-        for image in images:
+        for image in image_paths:
             if image.exists():
                 with image.open("rb") as stream:
                     os.fsync(stream.fileno())
-        for directory in {image.parent for image in images if image.exists()}:
+        for directory in {image.parent for image in image_paths if image.exists()}:
             fd = os.open(directory, os.O_RDONLY)
             try:
                 os.fsync(fd)
             finally:
                 os.close(fd)
         atomic_bytes(store.path, json.dumps(data, ensure_ascii=False).encode("utf-8"))
+        if images is not None and images.enabled(store.path.parent.name):
+            try:
+                current = {path: fingerprint(path) for path in image_paths if path.exists()}
+                for path, stamp in current.items():
+                    if known.get(path) != stamp:
+                        images.mirror_file(path)
+                known.clear()
+                known.update(current)
+            except Exception:
+                # Local commit already succeeded. Any optional mirror failure
+                # is repaired by backfill, never reported as a failed craft save.
+                images._failure()
 
     store._load = load
     store._save = save
+    if kind == "beads" and images is not None:
+        def remote_reader(original, suffix):
+            def read(actor, board_id):
+                # Preserve upstream visibility, decoration and existence checks.
+                raw = original(actor, board_id)
+                path = image_folder / (board_id + suffix)
+                from .object_storage import file_identity
+                identity = file_identity(images.root, path)
+                return images.read(*identity, raw)
+            return read
+        store.decorated_bytes = remote_reader(store.decorated_bytes, ".png")
+        store.display_piece_bytes = remote_reader(store.display_piece_bytes, "-piece.png")

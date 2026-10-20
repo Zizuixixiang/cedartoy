@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import sys
 import threading
+from contextlib import asynccontextmanager
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -23,6 +24,7 @@ from starlette.routing import Route
 from .identity import resolve, author_access, require_active_account
 from .storage import RoomLock, protect_store, read_json
 from .sharing import Shares
+from .object_storage import Images
 from . import ui
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,7 +115,7 @@ def mcp_content(result):
 
 
 class Room:
-    def __init__(self, root, room_id, accounts):
+    def __init__(self, root, room_id, accounts, images=None):
         self.id, self.accounts = room_id, accounts
         folder = root / "rooms" / room_id
         self.lock = RoomLock(folder / ".lock")
@@ -126,7 +128,7 @@ class Room:
                 if path.exists():
                     read_json(path, name)
                 store = self.ns[cls](path)
-                protect_store(store, name, self.lock)
+                protect_store(store, name, self.lock, images)
                 setattr(self, name, store)
                 self.ns[name] = store
             history_path = folder / "participants.json"
@@ -186,20 +188,21 @@ class Room:
         return identity
 
 
-def create_app(data_dir, accounts_db, grants_db, secret):
+def create_app(data_dir, accounts_db, grants_db, secret, *, images=None):
     if len(secret) < 32:
         raise ValueError("SHARED_CRAFT_SECRET must contain at least 32 characters")
     verify_upstream()
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     # The platform backup job snapshots data/**/*.db with SQLite's backup API.
-    shares = Shares(data_dir / "shares.db", grants_db)
+    images = images if images is not None else Images.from_env(data_dir)
+    shares = Shares(data_dir / "shares.db", grants_db, images)
     rooms, cache_lock = {}, threading.Lock()
 
     def get_room(identity):
         with cache_lock:
             if identity["room"] not in rooms:
-                rooms[identity["room"]] = Room(data_dir, identity["room"], accounts_db)
+                rooms[identity["room"]] = Room(data_dir, identity["room"], accounts_db, images)
             return rooms[identity["room"]]
 
     async def endpoint(request):
@@ -314,7 +317,7 @@ def create_app(data_dir, accounts_db, grants_db, secret):
                         # FileResponse streams after the lock is released. Read
                         # the immutable snapshot now, before a concurrent delete.
                         if hasattr(response, "path"):
-                            response = Response(Path(response.path).read_bytes(), media_type="image/png")
+                            response = Response(images.read_file(response.path), media_type="image/png")
                         return response
                 return JSONResponse({"error": "Not found"}, status_code=404)
         except PermissionError as exc:
@@ -326,8 +329,15 @@ def create_app(data_dir, accounts_db, grants_db, secret):
             logging.getLogger(__name__).exception("Shared craft request failed")
             return JSONResponse({"ok": False, "error": "手作空间暂时不可用；数据未重置"}, status_code=503)
 
-    app = Starlette(routes=[Route("/{path:path}", endpoint, methods=["GET", "POST", "DELETE"])])
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        images.close()
+
+    app = Starlette(routes=[Route("/{path:path}", endpoint, methods=["GET", "POST", "DELETE"])],
+                    lifespan=lifespan)
     app.state.rooms, app.state.shares = rooms, shares
+    app.state.images = images
     return app
 
 

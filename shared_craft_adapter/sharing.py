@@ -8,8 +8,9 @@ from .identity import author_access
 
 
 class Shares:
-    def __init__(self, path, grants_db):
+    def __init__(self, path, grants_db, images=None):
         self.path, self.grants_db = path, grants_db
+        self.images = images
         with closing(self.connect()) as conn, conn:
             conn.execute("""CREATE TABLE IF NOT EXISTS submissions (
                 id TEXT PRIMARY KEY, room TEXT NOT NULL, item TEXT NOT NULL,
@@ -54,7 +55,18 @@ class Shares:
             conn.execute("INSERT INTO submissions VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (submission, identity["room"], item_id, identity["actor"], item["title"],
                           note, image, "shared", int(time.time()), int(time.time())))
-            return {"id": submission, "status": "shared"}
+        # The frozen BLOB commits first and is never replaced by a live image.
+        if self.images is not None:
+            try:
+                self.images.mirror(identity["room"], "shares", submission, image)
+            except Exception:
+                self.images._failure()
+        return {"id": submission, "status": "shared"}
+
+    def _image(self, row):
+        if self.images is None:
+            return row["image"]
+        return self.images.read(row["room"], "shares", row["id"], row["image"])
 
     def pending(self, identity):
         if identity["is_ai"]:
@@ -87,22 +99,22 @@ class Shares:
         if identity["is_ai"]:
             raise PermissionError("仅所属人类可确认")
         with closing(self.connect()) as conn:
-            row = conn.execute("SELECT image FROM submissions WHERE id=? AND room=? AND status='pending'",
+            row = conn.execute("SELECT id,room,image FROM submissions WHERE id=? AND room=? AND status='pending'",
                                (submission, identity["room"])).fetchone()
             if not row:
                 raise PermissionError("无权查看")
-            return row["image"]
+            return self._image(row)
 
     def read(self, user_id, page=1, image_id=None):
         if not author_access(self.grants_db, user_id):
             raise PermissionError("仅本作已授权作者可查看")
         with closing(self.connect()) as conn:
             if image_id:
-                row = conn.execute("SELECT image FROM submissions WHERE id=? AND status='shared'",
+                row = conn.execute("SELECT id,room,image FROM submissions WHERE id=? AND status='shared'",
                                    (image_id,)).fetchone()
                 if not row:
                     raise PermissionError("作品不可用")
-                return row["image"]
+                return self._image(row)
             page = int(page)
             if page < 1:
                 raise ValueError("page 必须为正数")
