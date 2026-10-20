@@ -259,6 +259,8 @@ DUEL_HISTORY_LIMIT = 100
 GARDEN_NOTES_DB_PATH = Path(__file__).resolve().parent / "data" / "garden_cat_notes.db"
 GARDEN_LEGACY_DB_PATH = Path(__file__).resolve().parent / "vendor" / "Garden-Cat-Engine" / "garden_cat.db"
 CAMPING_PLAZA_DB_PATH = Path(os.getenv("CAMPING_PLAZA_DB_PATH", Path(__file__).resolve().parent / "data" / "camping_plaza.db"))
+# Match the satellite's CRAFT_DATA_DIR when overriding the local default.
+SHARED_CRAFT_DATA_DIR = Path(os.getenv("CRAFT_DATA_DIR", Path(__file__).resolve().parent / "data" / "shared_craft"))
 GAME_MAINTENANCE = {
     "camping_plaza": {
         "enabled": False,
@@ -2389,6 +2391,12 @@ def _activity_catalog():
     )
 
 
+def _count_shared_craft_saves(*, strict=False):
+    return public_stats._count_shared_craft_saves(
+        data_dir=SHARED_CRAFT_DATA_DIR, strict=strict,
+    )
+
+
 def _public_game_stats(*, strict=False):
     return public_stats._public_game_stats(
         strict=strict,
@@ -2396,6 +2404,7 @@ def _public_game_stats(*, strict=False):
         count_table_rows=_count_table_rows,
         sum_ciyuwu_runs=_sum_ciyuwu_runs,
         count_saved_tarot_sessions=count_saved_tarot_sessions,
+        count_shared_craft_saves=_count_shared_craft_saves,
         vendor_save_stats=_vendor_save_stats,
         camping_plaza_db_path=CAMPING_PLAZA_DB_PATH,
         camping_plaza_save_admin=_camping_plaza_save_admin,

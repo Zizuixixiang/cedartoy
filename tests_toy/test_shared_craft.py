@@ -68,6 +68,23 @@ class SharedCraftTests(unittest.TestCase):
             initialize_author_grants(conn)
             conn.execute("INSERT INTO shared_craft_authors VALUES (?)", (uid,))
 
+    def test_public_save_count_reads_real_room_storage_without_counting_visits_or_actors(self):
+        from cedar_backend.public_stats import _count_shared_craft_saves
+        count = lambda: _count_shared_craft_saves(data_dir=self.root / "craft")
+        for uid in (1, 2, 3, 4):
+            self.assertEqual(self.request("api/canvas", uid=uid).status_code, 200)
+        self.assertEqual(count(), 0)
+        board = self.play("new_bead_board", 4, title="空板", mode="gift", size=8)["id"]
+        self.assertEqual(count(), 0)
+        for uid in (1, 2, 3):
+            self.draw(uid)
+        self.assertEqual(count(), 1)
+        self.play("place_beads", 4, board_id=board, beads=[{"x": 0, "y": 0, "color": "F14"}])
+        self.assertEqual(count(), 2)
+        self.gallery()
+        self.play("new_canvas", 1, confirm=True)
+        self.assertEqual(count(), 2, "gallery preserves the creative room after clearing canvas")
+
     def test_three_actors_share_canvas_distinct_undo_and_room_isolation(self):
         for uid in (1, 2, 3):
             self.draw(uid)

@@ -1,14 +1,21 @@
-# shared_craft·共同手作间
-作者：嘞噫黎（小红书号 493242614） · https://github.com/SuLee3927/shared-craft-room · MIT
-一个人类与当前绑定的各只 AI 共用空间，各自保留笔迹、豆盒与署名。使用账号 MCP；人类从首页进入原作网页。
-调用 play(game="shared_craft", action="原动作名", params={...})，以下为真实参数；无参数动作省略 params。
+# 共同手作间
+作者：嘞噫黎（小红书 493242614） · https://github.com/SuLee3927/shared-craft-room · MIT
+账号 MCP；人类与绑定 AI 共用空间，各自豆盒/署名。
+play(game="shared_craft",action="动作名",params={...})；?可选。
 
-画画：先 get_canvas_snapshot，再 select_canvas_color(color)，随后 draw_path(points,color?,width?,opacity?,mode?,brush?)；brush_stroke 同参。points=[{"x":100,"y":100},...]，每笔1–14点；mode=draw/erase，brush=pencil/pen/marker/brush。fill_region(x,y,color) 上色；undo_canvas 撤销自己的上一笔；export_image 返回 PNG。new_canvas(background?,orientation?) 换新页，orientation=portrait/landscape，已有笔迹须另带 confirm=true。
-queue_canvas_strokes(strokes,interval_ms?) 分笔落下，strokes 为1–12个 draw_path 参数对象，间隔180–1200毫秒。get_craft_job(job_id) 查排队进度。
+先 get_canvas_snapshot，再 select_canvas_color(color)。
+draw_path(points,color?,width?,opacity?,mode?,brush?)；brush_stroke 同参但无 mode。
+points=[{"x":100,"y":100},...]，每笔1–14点，坐标在快照尺寸内；颜色 hex，width=1–100，opacity=0.05–1，mode=draw/erase，brush=pencil/pen/marker/brush。
+fill_region(x,y,color) 填色；undo_canvas 撤销自己上一笔；export_image 导出 PNG。
+new_canvas(background?,orientation?,confirm?)：background=hex；orientation=portrait/landscape；覆盖须确认后传 confirm=true。
+queue_canvas_strokes(strokes,interval_ms?)：strokes=1–12组 draw_path 参数，间隔180–1200毫秒；get_craft_job(job_id) 查进度。
 
-拼豆：list_bead_boards；new_bead_board(title,mode,size)，mode=together/separate/gift，size=8/12/16/24/32/48/64。open_bead_board(board_id) 查看板、色表、库存；select_bead_color(board_id,color)，color 为 MARD 色号/中文色名/hex。place_beads(board_id,beads)，beads=[{"x":0,"y":0,"color":"F14"}]，每次1–5颗，坐标从0开始。take_bead(board_id,x,y) 取回一颗；refill_beads(board_id,color) 用完该色后补80颗；get_bead_snapshot(board_id) 返回 PNG。
-set_bead_work_plan(board_id,beads,title?) / pin_bead_reference 同参，保存1–512颗计划；continue_bead_work(board_id,handfuls?,interval_ms?) 分批执行，handfuls=1–8，每批仍最多5颗，间隔250–1500毫秒。
-reveal_bead_gift(board_id) 揭晓礼物；work_bead_finish(board_id,action)，内层 action 依次 cover→heat→start_iron→finish_iron→lift，按返回的就绪时间预热、冷却，熨烫2.8–6.2秒；uncover 可在盖纸/预热阶段揭纸。网页保留装饰和收入共同作品间。
+list_bead_boards；new_bead_board(title,mode,size)：title≤40字，mode=together/separate/gift（一起/各自/惊喜），size=8/12/16/24/32/48/64。
+open_bead_board(board_id) 查板/色表/库存；select_bead_color(board_id,color)：MARD 色号/中文色名/hex。
+place_beads(board_id,beads)：beads=[{"x":0,"y":0,"color":"F14"}]，每次1–5颗，x/y 为整数0..size-1。
+take_bead(board_id,x,y) 取豆；refill_beads(board_id,color) 用完后补80颗；get_bead_snapshot(board_id) 看 PNG。
+set_bead_work_plan/pin_bead_reference(board_id,beads,title?) 存1–512颗计划，title≤60字；continue_bead_work(board_id,handfuls?,interval_ms?) 执行1–8批，每批≤5颗，间隔250–1500毫秒。
+reveal_bead_gift(board_id) 揭晓；work_bead_finish(board_id,action)：params.action=cover→heat→start_iron→finish_iron→lift；等 heat_ready_at/cool_ready_at，熨烫2.8–6.2秒；uncover 在盖纸/预热时揭纸。
 
-list_gallery 查看已完成作品；save_gallery(kind,title?,source_id?,piece_columns?,piece_rows?) 对应原作收入作品间：sketch 保存当前画作，bead 需已在网页保存装饰及提供豆板 source_id、成品尺寸。share_work(item_id,note?,confirm=true) 明确发起分享，note 最多500字；AI 只能分享参与创作的作品，共同作品须人类在原作品卡片确认。
-作品默认不分享；自愿分享后作者可查看该作品与附言，不公开展示。
+list_gallery；save_gallery(kind,title?,source_id?,piece_columns?,piece_rows?)：kind=sketch/bead；sketch 需笔迹；bead 需网页保存装饰、source_id 豆板ID及正整数 piece_columns/piece_rows。
+share_work(item_id,note?,confirm=true)：note≤500字；AI 只能分享参与作品，共同作品须人类在作品卡片确认。默认不分享；确认后作者可看作品及附言，不公开。

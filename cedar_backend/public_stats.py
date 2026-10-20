@@ -4,8 +4,11 @@ No database paths or server callbacks are captured at import time.
 """
 
 import json
+import os
 import re
 import sqlite3
+import stat
+import time
 from contextlib import closing
 
 from .errors import _McpError
@@ -238,6 +241,78 @@ def _vendor_save_stats(
     return {"save_count": len(player_dirs), "file_count": file_count}
 
 
+def _count_shared_craft_saves(*, data_dir, strict=False):
+    """Count creative rooms, once per human room, without loading the engine.
+
+    Evidence: canvas strokes, beads actually placed, or gallery metadata.
+    Empty boards/visits, participants, PNGs, locks and backups do not count.
+    Atomic JSON replacement allows read-only snapshots without creating locks.
+    This is an aggregate observation, not a transaction across all rooms.
+    Missing storage is 0 (unknown in strict mode); unreadable/invalid/over-budget
+    storage is always unknown. Never expose partial counts or repair files.
+    """
+    root = data_dir / "rooms"
+    # Bound each request rather than walking arbitrary trees or reading images.
+    file_limit, byte_budget, entry_limit = 2 * 1024**2, 16 * 1024**2, 2048
+    deadline = time.monotonic() + (0.1 if strict else 0.25)
+    total_bytes = count = 0
+    try:
+        if root.is_symlink():
+            return None
+        try:
+            entries = os.scandir(root)
+        except FileNotFoundError:
+            return None if strict else 0
+        with entries:
+            for number, entry in enumerate(entries, 1):
+                if number > entry_limit or time.monotonic() > deadline:
+                    return None
+                # Room IDs come from the human account, never from each AI.
+                if not re.fullmatch(r"[1-9][0-9]*", entry.name) or not entry.is_dir(follow_symlinks=False):
+                    continue
+                active = False
+                for name, field in (("canvas", "strokes"), ("beads", "boards"), ("gallery", "items")):
+                    try:
+                        fd = os.open(root / entry.name / (name + ".json"),
+                                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                    except FileNotFoundError:
+                        continue
+                    with os.fdopen(fd, "rb") as stream:
+                        info = os.fstat(stream.fileno())
+                        if (not stat.S_ISREG(info.st_mode) or info.st_size > file_limit
+                                or total_bytes + info.st_size > byte_budget):
+                            return None
+                        raw = stream.read(min(file_limit, byte_budget - total_bytes) + 1)
+                    total_bytes += len(raw)
+                    if len(raw) > file_limit or total_bytes > byte_budget:
+                        return None
+                    data = json.loads(raw)
+                    if not isinstance(data, dict) or not isinstance(data.get(field), list):
+                        return None
+                    for item in data[field]:
+                        if not isinstance(item, dict):
+                            return None
+                        if name == "canvas":
+                            if not isinstance(item.get("points"), list) or not isinstance(item.get("actor"), str):
+                                return None
+                            active |= bool(item["points"])
+                        elif name == "beads":
+                            if (not isinstance(item.get("cells"), dict) or not isinstance(item.get("id"), str)
+                                    or item.get("mode") not in ("together", "separate", "gift")):
+                                return None
+                            active |= bool(item["cells"])
+                        else:
+                            if not isinstance(item.get("id"), str) or not isinstance(item.get("authors"), list):
+                                return None
+                            active = True
+                    if time.monotonic() > deadline:
+                        return None
+                count += int(active)
+        return count
+    except (OSError, ValueError, RecursionError):
+        return None
+
+
 def _activity_catalog(
     *,
     index_path,
@@ -277,6 +352,7 @@ def _public_game_stats(
     count_table_rows,
     sum_ciyuwu_runs,
     count_saved_tarot_sessions,
+    count_shared_craft_saves,
     vendor_save_stats,
     camping_plaza_db_path,
     camping_plaza_save_admin,
@@ -298,6 +374,10 @@ def _public_game_stats(
         "tarot": {
             "metric_label": "存档数",
             "metric": count_saved_tarot_sessions(strict=strict),
+        },
+        "shared_craft": {
+            "metric_label": "存档数",
+            "metric": count_shared_craft_saves(strict=strict),
         },
     }
     for game in ("ai_life", "detroit", "arcade", "bar", "burger", "crucible_echoes", "leek", "delve", "travel", "nowhere", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat"):

@@ -18,7 +18,7 @@ async function checkDom() {
   for (const width of [360,430,1280]) {
     const dom = new JSDOM(html, {url:'https://craft-home.test/',runScripts:'outside-only',pretendToBeVisual:true});
     const w = dom.window, d = w.document, requests = [];
-    let allowed = false, failSession = false, failAccess = false, delayedAccess;
+    let allowed = false, failSession = false, failAccess = false, delayedAccess, statsMetric = null;
     w.matchMedia = query => ({matches:query.includes('599px') && width<600,addEventListener(){},removeEventListener(){}});
     w.scrollTo = () => {};
     w.HTMLElement.prototype.scrollIntoView = () => {};
@@ -26,6 +26,7 @@ async function checkDom() {
     w.fetch = async (url, options = {}) => {
       requests.push({url,options});
       let data = {}, ok = true;
+      if (url === '/api/games/stats') data = {shared_craft:{metric_label:'存档数',metric:statsMetric}};
       if (url === '/api/announcements') data = {announcements:[],unread_count:0};
       if (url === '/shared-craft/author?access=1') {
         if (delayedAccess) return delayedAccess;
@@ -51,19 +52,25 @@ async function checkDom() {
     const tick = () => new Promise(resolve=>setImmediate(resolve));
     await tick();
     const select = () => w.eval('selectGame("shared_craft", true)');
-    const entries = () => {
+    const entries = (metric = '7') => {
       for (const id of ['enterButton','guideEnterButton','drawerEnter']) assert.equal(d.getElementById(id).textContent,'GitHub →');
       for (const id of ['watchButton','guideWatchButton','drawerWatchButton']) {
         assert.equal(d.getElementById(id).textContent,'进入手作间 →');
         assert.notEqual(d.getElementById(id).style.display,'none');
       }
-      assert.equal(d.getElementById('drawerMetricLabel').textContent,'玩法数');
-      assert.equal(d.getElementById('drawerMetric').textContent,'2');
+      assert.equal(d.getElementById('drawerMetricLabel').textContent,'存档数');
+      assert.equal(d.getElementById('drawerMetric').textContent,metric);
     };
     const authorVisible = () => [...d.querySelectorAll('[data-craft-author-entry]')].some(el=>el.style.display!=='none');
-    select(); entries(); assert.equal(authorVisible(),false);
-    assert.equal(d.querySelector('[data-game="shared_craft"] .card-enter').textContent,'GitHub →');
-    d.querySelector('[data-game="shared_craft"]').click();
+    select(); entries('--'); assert.equal(authorVisible(),false);
+    for (const [value, shown] of [[7,'7'],[0,'0'],[null,'0'],[7,'7']]) {
+      statsMetric = value; await w.loadGameStats(); entries(shown);
+      assert.equal(d.getElementById('detailMetric').textContent,shown);
+    }
+    assert.match(d.getElementById('detailDesc').textContent,/笔刷绘画、填色/);
+    assert.match(d.getElementById('detailDesc').textContent,/一起拼、各自拼或做惊喜礼物/);
+    assert.equal(d.querySelector('.game-card[data-game="shared_craft"] .card-enter').textContent,'GitHub →');
+    d.querySelector('.game-card[data-game="shared_craft"]').click();
     if (width<600) assert(d.getElementById('gameDrawer').classList.contains('show'));
     else assert.equal(w.__navigations.pop(),repo);
     for (const id of ['enterButton','guideEnterButton','drawerEnter']) {
@@ -112,7 +119,7 @@ async function checkDom() {
     resolveAccess({ok:true,json:async()=>({allowed:true})});
     await pending; await tick();
     assert.equal(authorVisible(),false); entries();
-    report.push({width,mode:'DOM only; no layout or screenshots',dualEntries:true,metric:'玩法数 2',
+    report.push({width,mode:'DOM only; no layout or screenshots',dualEntries:true,metric:'存档数（动态）',
       sessionAndLogin:true,authorAccessAndStaleResponse:true});
     w.close();
   }
@@ -122,21 +129,26 @@ async function checkDom() {
 
 (async () => {
   if (domOnly) return checkDom();
-  const browser = await chromium.launch({
-    headless:true, executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH, args:['--no-sandbox'],
-  });
+  let browser;
   const report = [];
   try {
     for (const width of [360,430,1280]) {
+      browser = await chromium.launch({
+        headless:true, executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH, args:['--no-sandbox'],
+      });
       const page = await browser.newPage({viewport:{width,height:900},hasTouch:width<600});
       const errors = [], sessions = [];
-      let allowed = false, sessionError = false, accessError = false;
+      let allowed = false, sessionError = false, accessError = false, statsMetric = null;
       page.on('pageerror', error => errors.push(error.message));
       await page.route('**/*', async route => {
         const req = route.request(), url = new URL(req.url());
         if (url.href === repo) return route.fulfill({body:'Captured repository navigation'});
         if (url.hostname !== 'craft-home.test') return route.abort();
         if (url.pathname === '/') return route.fulfill({contentType:'text/html',body:html});
+        if (url.pathname === '/api/auth/me') return route.fulfill({json:{
+          user:{id:req.headers().authorization === 'Bearer fixture-author' ? 102 : 101,
+            username:'验收账号'},bindings:[],
+        }});
         if (url.pathname === '/shared-craft/session') {
           sessions.push({method:req.method(),authorization:req.headers().authorization});
           return route.fulfill(sessionError ? {status:403,json:{error:'请先绑定小机'}} : {json:{ok:true}});
@@ -147,6 +159,7 @@ async function checkDom() {
             ? {status:503,json:{error:'unavailable'}} : {json:{allowed}});
           return route.fulfill({json:{items:[],page:1,pages:1,total:0,has_prev:false,has_next:false}});
         }
+        if (url.pathname === '/api/games/stats') return route.fulfill({json:{shared_craft:{metric_label:'存档数',metric:statsMetric}}});
         if (url.pathname === '/api/announcements') return route.fulfill({json:{announcements:[],unread_count:0}});
         if (url.pathname.startsWith('/assets/')) {
           const file = path.resolve('.' + url.pathname);
@@ -165,14 +178,15 @@ async function checkDom() {
             me = {user:{id:role === 'author' ? 102 : 101,username:'验收账号'},bindings:[]};
           }
         }, role);
+        await page.evaluate(() => loadGameStats());
         await page.locator('#searchInput').fill('共同手作间');
-        if (width<600) await touch(page.locator('[data-game="shared_craft"]'));
-        else await page.locator('[data-game="shared_craft"]').hover();
+        if (width<600) await touch(page.locator('.game-card[data-game="shared_craft"]'));
+        else await page.locator('.game-card[data-game="shared_craft"]').hover();
       }
       const shot = name => page.screenshot({path:path.join(output,`${width}-${name}.png`)});
       const primary = width<600 ? '#drawerEnter' : '#enterButton';
       const secondary = width<600 ? '#drawerWatchButton' : '#watchButton';
-      async function entries() {
+      async function entries(metric = '7') {
         for (const id of ['enterButton','guideEnterButton','drawerEnter']) {
           assert.equal(await page.locator('#'+id).textContent(), 'GitHub →');
         }
@@ -182,9 +196,9 @@ async function checkDom() {
         }
         assert(await page.locator(primary).isVisible());
         assert(await page.locator(secondary).isVisible());
-        assert.equal(await page.locator('#drawerMetricLabel').textContent(), '玩法数');
-        assert.equal(await page.locator('#drawerMetric').textContent(), '2');
-        assert.equal(await page.locator('#detailMetric').textContent(), '2');
+        assert.equal(await page.locator('#drawerMetricLabel').textContent(), '存档数');
+        assert.equal(await page.locator('#drawerMetric').textContent(), metric);
+        assert.equal(await page.locator('#detailMetric').textContent(), metric);
         assert.equal(await page.locator('#guideTab').isVisible(), false, 'do not invent a guide page');
         assert.equal(await page.locator('[data-drawer-tab="guide"]').isVisible(), false);
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -195,11 +209,15 @@ async function checkDom() {
       }
 
       await home();
+      await shot('pending-stats');
+      if (captureOnly) { await browser.close(); continue; }
+      await entries('--');
+      for (const [value, shown] of [[7,'7'],[0,'0'],[null,'0'],[7,'7']]) {
+        statsMetric = value; await page.evaluate(() => loadGameStats()); await entries(shown);
+      }
       await shot('guest');
-      if (captureOnly) { await page.close(); continue; }
-      await entries();
       assert.equal(await page.locator('[data-craft-author]:visible').count(), 0);
-      assert.equal(await page.locator('[data-game="shared_craft"] .card-enter').textContent(), 'GitHub →');
+      assert.equal(await page.locator('.game-card[data-game="shared_craft"] .card-enter').textContent(), 'GitHub →');
       await touch(page.locator(secondary));
       await page.locator('#loginModal.show').waitFor();
       assert.equal(await page.locator('#gameDrawer.show').count(), 0);
@@ -217,7 +235,7 @@ async function checkDom() {
       }
       if (width>=600) {
         await home();
-        await page.locator('[data-game="shared_craft"]').click();
+        await page.locator('.game-card[data-game="shared_craft"]').click();
         await page.waitForURL(repo);
       }
       assert.equal(sessions.length, 0);
@@ -266,6 +284,8 @@ async function checkDom() {
       // Permission controls disappear on game/account switches and failed access checks.
       await home('author');
       await page.locator('[data-craft-author]:visible').waitFor();
+      // Rerendering cards under a stationary mouse re-triggers homepage preview.
+      await page.mouse.move(0, 0);
       for (const id of ['garden_cat','camping_plaza','duel','workkk']) {
         await page.evaluate(id => selectGame(id, true), id);
         assert.equal(await page.locator('[data-craft-author]:visible').count(), 0);
@@ -283,11 +303,13 @@ async function checkDom() {
       assert.equal(await page.locator('[data-craft-author]:visible').count(), 0);
       await entries();
       assert.deepEqual(errors, []);
-      report.push({width,dualEntries:true,metric:'玩法数 2',guestLogin:true,sessionError:true,
+      report.push({width,dualEntries:true,metric:'存档数（动态）',guestLogin:true,sessionError:true,
         authorControls:true,accountAndGameSwitch:true,consoleErrors:errors});
       await page.close();
+      await browser.close();
+      console.log(`homepage ${width}px passed`);
     }
     fs.writeFileSync(path.join(output,'report.json'), JSON.stringify(report,null,2));
     console.log(JSON.stringify(report));
-  } finally { await browser.close(); }
+  } finally { await browser?.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

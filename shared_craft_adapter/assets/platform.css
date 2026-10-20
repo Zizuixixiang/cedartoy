@@ -1,4 +1,8 @@
-/* Only new consent controls and multiplayer inventory selection. */
+/* Gallery sizing, consent controls and multiplayer inventory selection. */
+/* Keep the artwork and its percentage hotspots on the same canvas on tall phones. */
+@media(max-width:420px){
+  .wall{min-height:0;aspect-ratio:941/1672}
+}
 #stock-actor{max-width:100px;min-height:28px;border:1px solid #dacbc0;border-radius:9px;background:#fffaf5;color:#705d78;font:11px system-ui}
 .work .actions [data-share]{grid-column:1/-1}
 #share-dialog{width:min(420px,calc(100vw - 28px));max-height:90dvh;overflow:auto;color:var(--ink)}

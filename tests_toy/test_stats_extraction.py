@@ -2,6 +2,8 @@
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
+import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -23,6 +25,7 @@ class StatsExtractionTests(unittest.TestCase):
             ("TURTLE_DB_PATH", self.root / "accounts.db"),
             ("VENDOR_SAVE_ROOT", self.root / "saves"),
             ("CAMPING_PLAZA_DB_PATH", self.root / "camp.db"),
+            ("SHARED_CRAFT_DATA_DIR", self.root / "craft"),
         ):
             self.stack.enter_context(patch.object(server, name, value))
 
@@ -104,10 +107,13 @@ class StatsExtractionTests(unittest.TestCase):
         with (patch.object(server, "TOY_INDEX_PATH", index),
               patch.object(server, "IDENTITY_GAMES", {"eco"}),
               patch.object(server, "RITUAL_DISPLAY_NAME", "塔罗")):
-            self.assertEqual(server._activity_catalog(), [
+            catalog = server._activity_catalog()
+            # Research/deeptalk catalogs are appended independently of this fixture.
+            self.assertEqual(catalog[:4], [
                 {"game": "turtle_soup", "name": "汤"}, {"game": "eco", "name": "生态"},
                 {"game": "tarot", "name": "塔罗"}, {"game": "bdsmtest", "name": "BDSM倾向测试"},
             ])
+            self.assertNotIn("admin", {item["game"] for item in catalog})
             index.write_text("no catalog")
             with self.assertRaisesRegex(ValueError, "Homepage catalog unavailable"):
                 server._activity_catalog()
@@ -118,6 +124,7 @@ class StatsExtractionTests(unittest.TestCase):
               patch.object(server, "_count_table_rows", return_value=4),
               patch.object(server, "_sum_ciyuwu_runs", return_value=9) as runs,
               patch.object(server, "_vendor_save_stats", return_value={"save_count": None, "file_count": 0}),
+              patch.object(server, "_count_shared_craft_saves", return_value=5) as craft,
               patch.object(server, "count_saved_tarot_sessions", return_value=2) as tarot,
               patch.object(server, "_camping_plaza_save_admin", return_value={"save_count": "6"}) as camp):
             for strict in (False, True):
@@ -125,12 +132,110 @@ class StatsExtractionTests(unittest.TestCase):
                 self.assertEqual(result["puzzle_box"]["metric"], 3)
                 self.assertEqual(result["ciyuwu"], {"metric_label": "对局数", "metric": None if strict else 9, "save_count": 4})
                 self.assertEqual(result["camping_plaza"]["metric"], 6)
+                self.assertEqual(result["shared_craft"], {"metric_label": "存档数", "metric": 5})
+                craft.assert_called_with(strict=strict)
                 camp.assert_called_with("stats", timeout=2 if strict else 20)
                 tarot.assert_called_with(strict=strict)
             runs.assert_called_once_with()
             camp.side_effect = server._McpError(-32603, "fixture")
             self.assertEqual(server._public_game_stats()["camping_plaza"]["metric"], 0)
             self.assertIsNone(server._public_game_stats(strict=True)["camping_plaza"]["metric"])
+            craft.return_value = None
+            self.assertIsNone(server._public_game_stats()["shared_craft"]["metric"])
+
+
+class SharedCraftSaveCountTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="craft-count-")
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name) / "craft"
+        self.patch = patch.object(server, "SHARED_CRAFT_DATA_DIR", self.root)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+
+    def save(self, room, name, data):
+        target = self.root / "rooms" / str(room) / (name + ".json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(data), encoding="utf-8")
+        return target
+
+    def count(self, strict=False):
+        return server._count_shared_craft_saves(strict=strict)
+
+    def test_empty_visits_and_creative_rooms_count_once_without_writes(self):
+        self.save(1, "canvas", {"strokes": []})
+        self.save(1, "beads", {"boards": [{"id": "blank", "mode": "gift", "cells": {}}]})
+        self.save(1, "gallery", {"items": []})
+        self.save(2, "canvas", {"strokes": [
+            {"actor": "human", "points": [{"x": 1, "y": 1}]},
+            {"actor": "ai-one", "points": [{"x": 2, "y": 1}]},
+            {"actor": "ai-two", "points": [{"x": 3, "y": 1}]},
+        ]})
+        self.save(2, "beads", {"boards": [{"id": "same-room", "mode": "together", "cells": {"0,0": {}}}]})
+        self.save(2, "gallery", {"items": [{"id": "work", "authors": ["human", "ai-one", "ai-two"]}]})
+        self.save(3, "beads", {"boards": [{"id": "bead-only", "mode": "separate", "cells": {"0,0": {}}}]})
+        self.save(4, "gallery", {"items": [{"id": "gallery-only", "authors": ["ai"]}]})
+        self.save(5, "participants", {"participants": [{"id": "5"}]})
+        (self.root / "rooms" / "6").mkdir()
+        self.save("backup", "canvas", {"strokes": [{}]})
+        (self.root / "rooms" / "7").symlink_to(self.root / "rooms" / "2", target_is_directory=True)
+        before = {str(p): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        for strict in (False, True):
+            self.assertEqual(self.count(strict), 3)
+        self.assertEqual(before, {str(p): p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+
+    def test_missing_directory_is_not_created_and_strict_is_unknown(self):
+        self.assertEqual(self.count(), 0)
+        self.assertIsNone(self.count(True))
+        self.assertFalse(self.root.exists())
+
+    def test_corrupt_unreadable_and_unexpected_files_are_unknown_not_partial(self):
+        self.save(1, "gallery", {"items": [{"id": "valid", "authors": []}]})
+        target = self.save(2, "canvas", {})
+        for raw in (b'bad json', b'\xff', b'[]', b'{"strokes":{}}', b'{"strokes":[{}]}',
+                    b'{"strokes":[false]}', b'[' * 2000):
+            target.write_bytes(raw)
+            for strict in (False, True):
+                self.assertIsNone(self.count(strict))
+            self.assertEqual(target.read_bytes(), raw)
+            self.assertEqual(list(target.parent.iterdir()), [target], "no backup/lock/repair writes")
+        target.write_text('{"strokes":[]}')
+        original = os.open
+        def denied(path, *args, **kwargs):
+            if Path(path) == target:
+                raise PermissionError("fixture")
+            return original(path, *args, **kwargs)
+        with patch.object(server.public_stats.os, "open", side_effect=denied):
+            self.assertIsNone(self.count())
+            self.assertIsNone(self.count(True))
+        with patch.object(server.public_stats.os, "scandir", side_effect=PermissionError("fixture")):
+            self.assertIsNone(self.count())
+        target.unlink()
+        os.mkfifo(target)
+        self.assertIsNone(self.count(), "special files must not block")
+        target.unlink()
+        target.symlink_to(self.root / "rooms" / "1" / "gallery.json")
+        self.assertIsNone(self.count(), "do not follow metadata symlinks")
+
+    def test_scan_budgets_return_unknown(self):
+        target = self.save(1, "canvas", {"strokes": []})
+        with target.open("wb") as stream:
+            stream.truncate(2 * 1024**2 + 1)
+        self.assertIsNone(self.count())
+        target.write_text('{"strokes":[]}')
+        with patch.object(server.public_stats.time, "monotonic", side_effect=[0, 1]):
+            self.assertIsNone(self.count())
+        payload = {"strokes": [], "padding": " " * (1024**2)}
+        for room in range(1, 18):
+            self.save(room, "canvas", payload)
+        with patch.object(server.public_stats.time, "monotonic", return_value=0):
+            self.assertIsNone(self.count(), "total byte budget")
+        for room in range(1, 18):
+            (self.root / "rooms" / str(room) / "canvas.json").unlink()
+        for room in range(18, 2050):
+            (self.root / "rooms" / str(room)).mkdir()
+        with patch.object(server.public_stats.time, "monotonic", return_value=0):
+            self.assertIsNone(self.count(), "entry budget")
 
 
 if __name__ == "__main__":
