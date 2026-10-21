@@ -24,7 +24,14 @@ const html = fs.readFileSync(path.join(__dirname, "../admin.html"), "utf8");
           {game: "rnss", name: "你在人际关系中的需求被满足了吗？", active_users: 2, human_users: 1, ai_users: 1},
           {game: "dt_know100", name: "关于你，我还想知道100件事", active_users: 1, human_users: 1, ai_users: 0},
           {game: "deeptalk", name: "DeepTalk（旧记录未细分）", active_users: 1, human_users: 0, ai_users: 1},
-        ]}, duel: {ok: true}, turtle: {ok: true},
+          {game: "gem_merchant", name: "gem_merchant", active_users: 1, human_users: 0, ai_users: 1},
+          {game: "memoria", name: "Memoria 车站", active_users: 1, human_users: 0, ai_users: 1},
+          {game: "aidep", name: "学习时，你有多依赖 AI？", active_users: 1, human_users: 1, ai_users: 0},
+        ]}, duel: {ok: true, range: {game_distribution: [
+          {game_type: "gem_merchant", rooms: 7},
+          {game_type: "monopoly_plus", rooms: 3},
+          {game_type: "uno", rooms: 2},
+        ]}}, turtle: {ok: true},
       }});
       return route.abort();
     });
@@ -57,12 +64,18 @@ const html = fs.readFileSync(path.join(__dirname, "../admin.html"), "utf8");
         if (tab === "dashboard") {
           const cells = await page.locator('#gameOverviewContent [role="cell"]').evaluateAll(elements =>
             elements.map(el => ({text: el.textContent, width: el.clientWidth, scroll: el.scrollWidth})));
-          assert.equal(cells.length, 12);
+          assert.equal(cells.length, 24);
           assert.ok(cells.every(cell => cell.scroll <= cell.width), "long titles and counts must wrap without clipping");
+          assert.ok(cells.some(cell => cell.text === "宝石商人"));
+          assert.ok(cells.some(cell => cell.text === "记忆车站"));
+          assert.ok(cells.some(cell => cell.text === "深聊问答（旧记录未细分）"));
+          assert.deepEqual(await page.locator("#duelContent .bar-label").allTextContents(), ["宝石商人", "大富翁·改", "优诺牌"]);
+          assert.equal(await page.locator("#duelContent .bar-row").first().getAttribute("title"), "宝石商人: 7");
+          assert.doesNotMatch(await page.locator("#dashboardPanel").innerText(), /gem_merchant|monopoly_plus|UNO|Memoria|DeepTalk/);
         }
         if (process.env.SCREENSHOT_DIR) {
           fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive: true});
-          await page.screenshot({path: path.join(process.env.SCREENSHOT_DIR, `admin-${tab}-${width}.png`)});
+          await page.screenshot({path: path.join(process.env.SCREENSHOT_DIR, `admin-${tab}-${width}.png`), fullPage: true});
         }
         for (const [message, error] of [["加载中...", false], ["操作完成", false], ["读取失败，请重试", true]]) {
           await page.evaluate(({tab, message, error}) => {

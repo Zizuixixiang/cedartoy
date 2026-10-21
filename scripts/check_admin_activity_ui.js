@@ -86,6 +86,65 @@ const dom = new JSDOM(html, {
       assert.ok(document.getElementById(id).textContent.startsWith(range));
     }
   }
+  const distribution = [
+    {game_type: "gem_merchant", rooms: 7},
+    {game_type: "monopoly_plus", rooms: 3},
+    {game_type: "gomoku", rooms: 2},
+    {game_type: "future_game", rooms: 1},
+  ];
+  const snapshot = JSON.stringify(distribution);
+  const labels = ["宝石商人", "大富翁·改", "五子棋", "未知游戏"];
+  window.renderDuel({ok: true, range: {game_distribution: distribution}}, "1h");
+  const bars = Array.from(document.querySelectorAll("#duelContent .bar-row"));
+  assert.deepEqual(bars.map(bar => bar.querySelector(".bar-label").textContent), labels);
+  assert.deepEqual(bars.map(bar => bar.title), labels.map((label, i) => `${label}: ${distribution[i].rooms}`));
+  const games = distribution.map(item => ({game: item.game_type, name: item.game_type, active_users: item.rooms}));
+  const gamesSnapshot = JSON.stringify(games);
+  window.renderGameOverview({ok: true, games}, "1h");
+  assert.deepEqual(Array.from(content.querySelectorAll('[role="row"]')).slice(1).map(row => row.firstElementChild.textContent), labels);
+  assert.equal(JSON.stringify(distribution), snapshot, "display labels must not replace internal game IDs");
+  assert.equal(JSON.stringify(games), gamesSnapshot, "overview input must remain unchanged");
+  const translatedGames = [
+    ["uno", "UNO", "优诺牌"],
+    ["memoria", "Memoria 车站", "记忆车站"],
+    ["deeptalk", "DeepTalk（旧记录未细分）", "深聊问答（旧记录未细分）"],
+    ["ai_life", "AI人生桌游", "小机人生桌游"],
+    ["fishing", "AI钓鱼", "小机钓鱼"],
+    ["workkk", "AI打工人", "小机打工人"],
+    ["mbti", "MBTI 人格", "十六型人格"],
+    ["sins_virtues", "七宗罪 VS 七美德", "七宗罪与七美德"],
+    ["bdsmtest", "BDSM倾向测试", "支配与臣服倾向测试"],
+    ["aidep", "学习时，你有多依赖 AI？", "学习时，你有多依赖人工智能？"],
+    ["ipip_adhd", "ADHD 相关特征", "注意缺陷多动相关特征"],
+    ["dt_know100", "关于你，我还想知道100件事", "关于你，我还想知道100件事"],
+    ["future_game", "Future Game", "未知游戏"],
+    ["constructor", "", "未知游戏"],
+  ];
+  const translatedInput = translatedGames.map(([game, name]) => Object.freeze({game, name, active_users: 3, human_users: 1, ai_users: 2}));
+  const translatedSnapshot = JSON.stringify(translatedInput);
+  window.renderGameOverview({ok: true, games: Object.freeze(translatedInput)}, "1h");
+  const translatedRows = Array.from(content.querySelectorAll('[role="row"]')).slice(1);
+  assert.deepEqual(translatedRows.map(row => row.firstElementChild.textContent), translatedGames.map(item => item[2]));
+  for (const row of translatedRows) {
+    assert.deepEqual(Array.from(row.children).slice(1).map(cell => cell.textContent), ["3", "1", "2"]);
+  }
+  assert.equal(JSON.stringify(translatedInput), translatedSnapshot);
+  // Check the installed Duel catalog so newly added games cannot silently show IDs.
+  const duelDir = path.join(__dirname, "../vendor/duel/app/games");
+  const modules = Array.from(fs.readFileSync(path.join(duelDir, "__init__.py"), "utf8").matchAll(/^from \.(\w+) import /gm), match => match[1]);
+  const allDuelGames = modules.map(module => {
+    const source = fs.readFileSync(path.join(duelDir, `${module}.py`), "utf8");
+    const id = source.match(/^    game_type = ["']([^"']+)["']/m)?.[1];
+    assert.ok(id, `missing game_type in ${module}`);
+    const label = window.gameLabel(id);
+    assert.match(label, /[\u4e00-\u9fff]/);
+    assert.doesNotMatch(label, /[a-zA-Z]|未知游戏/, `${id} needs a Chinese label`);
+    return {game_type: id, rooms: 2};
+  });
+  window.renderDuel({ok: true, range: {game_distribution: allDuelGames}}, "1h");
+  for (const bar of document.querySelectorAll("#duelContent .bar-row")) {
+    assert.equal(bar.title, `${bar.querySelector(".bar-label").textContent}: 2`);
+  }
   assert.ok(timers.includes(30000));
   const previousDuel = document.getElementById("duelContent").innerHTML;
   const previousTurtle = document.getElementById("turtleContent").innerHTML;
