@@ -1304,6 +1304,27 @@
       accent-color: var(--pink);
     }
 
+    #feedbackModal .checkbox-field,
+    #forgotPasswordModal .checkbox-field {
+      justify-content: flex-start;
+      text-align: left;
+    }
+
+    #feedbackModal .checkbox-field input[type="checkbox"],
+    #forgotPasswordModal .checkbox-field input[type="checkbox"] {
+      flex: 0 0 18px;
+      width: 18px;
+      min-width: 18px;
+      height: 18px;
+      margin: 0;
+      padding: 0;
+    }
+
+    #feedbackModal .checkbox-field > span,
+    #forgotPasswordModal .checkbox-field > span {
+      white-space: nowrap;
+    }
+
     #machineTokenModal {
       overflow-y: auto;
       overscroll-behavior: contain;
