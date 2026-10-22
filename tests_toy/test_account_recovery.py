@@ -84,8 +84,9 @@ class AccountRecoveryTests(unittest.TestCase):
     def test_notification_and_query_share_one_24h_single_use_link(self):
         for consume_from in ("email", "query"):
             body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
-            def during_send(email, decision, note, url):
+            def during_send(email, decision, note, url, *, verified_username):
                 # A separate DB connection sees the committed review before SMTP.
+                self.assertEqual(verified_username, "Human")
                 self.assertEqual(self.ticket(tid)["status"], "approved")
                 self.assertEqual(self.ticket(tid)["email_status"], "sending")
                 self.assertEqual(server._query_recovery_ticket(body)["reset_url"], url)
@@ -133,6 +134,10 @@ class AccountRecoveryTests(unittest.TestCase):
             send.assert_called_once()
 
     def test_notification_smtp_success_failure_and_rejection_content(self):
+        footer = (
+            "此邮件由 4399 系统自动发送，请勿直接回复。\n\n"
+            "如需联系管理员，请通过 4399「意见反馈」留言，或发送邮件至 1452010907@qq.com。"
+        )
         for decision, failure in (("approved", False), ("approved", True), ("rejected", False), ("rejected", True)):
             body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
             client = MagicMock()
@@ -146,6 +151,9 @@ class AccountRecoveryTests(unittest.TestCase):
                 message = client.send_message.call_args.args[0]
                 self.assertEqual(message["To"], "contact@example.invalid")
                 content = message.get_content()
+                self.assertTrue(content.endswith("\n\n" + footer + "\n"))
+                self.assertEqual(content.count(footer), 1)
+                self.assertIn("如果不是你本人申请，请忽略这封邮件。\n\n" + footer, content)
                 self.assertNotIn("private-token-and-provider-response", str(log.mock_calls))
                 self.assertNotIn("contact@example.invalid", str(log.mock_calls))
                 self.assertNotIn("Machine / 3", content)
@@ -163,6 +171,27 @@ class AccountRecoveryTests(unittest.TestCase):
             self.assertEqual(row["status"], decision)
             self.assertEqual(row["email_status"], "failed" if failure else "sent")
             self.assertEqual(row["email_error"], "email_delivery_unavailable" if failure else "")
+
+    def test_approval_email_uses_verified_username_for_name_and_id_requests(self):
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET username=? WHERE id=?", ("南杉", self.human_id))
+        for kind, account in (("username", "南杉"), ("id", str(self.human_id))):
+            with self.subTest(kind=kind):
+                body, tid = self.submit(account=account, account_kind=kind,
+                                        notify_email=True, contact_email="contact@example.invalid")
+                with patch.object(server.account_email, "_send_email_message") as send:
+                    # A caller-supplied name must not replace the database identity.
+                    server._review_recovery_ticket(tid, {
+                        "decision": "approved", "admin_note": "核验通过",
+                        "verified_username": "未经核验的名字",
+                    }, {"id": 999})
+                send.assert_called_once()
+                content = send.call_args.args[0].get_content()
+                self.assertIn("你的账号「南杉」找回申请已通过人工审核。", content)
+                self.assertNotIn("未经核验的名字", content)
+                self.assertNotIn(f"账号「{self.human_id}」", content)
+                self.assertIn(server._query_recovery_ticket(body)["reset_url"], content)
+                self.assertIn("24 小时内有效，仅可使用一次，请勿转发", content)
 
     def test_notification_configuration_failure_preserves_review_and_fallback(self):
         for config in (None, "none"):
@@ -220,7 +249,8 @@ class AccountRecoveryTests(unittest.TestCase):
         client.__enter__.return_value = client
         with patch.object(server, "_smtp_config", return_value=config), \
                 patch.object(server.smtplib, "SMTP_SSL", return_value=client) as smtp:
-            server._send_recovery_email("contact@example.invalid", "approved", "", "https://toy.cedarstar.org/?reset_token=fixture")
+            server._send_recovery_email("contact@example.invalid", "approved", "",
+                                       "https://toy.cedarstar.org/?reset_token=fixture", verified_username="Human")
             self.assertEqual(smtp.call_args.kwargs["timeout"], 10)
             self.assertIsNotNone(smtp.call_args.kwargs["context"])
             client.login.assert_called_once_with("test-user", "test-password")
@@ -233,6 +263,8 @@ class AccountRecoveryTests(unittest.TestCase):
             )
             self.assertEqual(client.send_message.call_count, 2)
             self.assertIn("123456", client.send_message.call_args.args[0].get_content())
+            self.assertNotIn("此邮件由 4399 系统自动发送", client.send_message.call_args.args[0].get_content())
+            self.assertNotIn("1452010907@qq.com", client.send_message.call_args.args[0].get_content())
 
     def test_email_schema_migration_preserves_legacy_link_on_consistent_snapshot(self):
         body, tid = self.submit()

@@ -1099,9 +1099,10 @@ def _send_verification_email(email, code, purpose, smtp_config):
     )
 
 
-def _send_recovery_email(email, decision, note, reset_url):
+def _send_recovery_email(email, decision, note, reset_url, *, verified_username):
     return account_email._send_recovery_email(
         email, decision, note, reset_url, _smtp_config(),
+        verified_username=verified_username,
         EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE,
         EmailMessage=EmailMessage, _McpError=_McpError,
         logger=logger, smtplib=smtplib, ssl=ssl,
@@ -2090,9 +2091,10 @@ def _recovery_reset_token(ticket, code=None):
     return account_recovery._recovery_reset_token(ticket, code, _email_hmac=_email_hmac)
 
 
-def _deliver_recovery_notification(ticket_id, email, decision, note, reset_url):
+def _deliver_recovery_notification(ticket_id, email, decision, note, reset_url, *, verified_username):
     return account_recovery._deliver_recovery_notification(
         ticket_id, email, decision, note, reset_url,
+        verified_username=verified_username,
         _db_connect=_db_connect, _send_recovery_email=_send_recovery_email,
         logger=logger, time=time,
     )

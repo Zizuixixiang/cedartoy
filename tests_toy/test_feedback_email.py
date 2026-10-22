@@ -15,6 +15,7 @@ class FeedbackEmailTests(unittest.TestCase):
     setUp = fixtures.FeedbackTests.setUp
     submit = fixtures.FeedbackTests.submit
     call = fixtures.FeedbackTests.call
+    http = fixtures.FeedbackTests.http
 
     def _events(self, ticket_id):
         with self._connect() as conn:
@@ -48,6 +49,38 @@ class FeedbackEmailTests(unittest.TestCase):
             send.assert_any_call("1452010907@qq.com", tid, "补充说明", True)
             self.assertEqual([(e["kind"], e["status"]) for e in self._events(tid)],
                              [("reply", "sent"), ("closed", "sent"), ("reply", "sent")])
+
+    def test_review_http_sends_one_email_for_each_public_action(self):
+        footer = (
+            "此邮件由 4399 系统自动发送，请勿直接回复。\n\n"
+            "如需联系管理员，请通过 4399「意见反馈」留言，或发送邮件至 1452010907@qq.com。"
+        )
+        for review, expected_status, expected_reply, closed in (
+            ({"reply": "已修好", "status": "closed"}, "closed", "已修好", True),
+            ({"status": "closed"}, "closed", None, True),
+            ({"reply": "请再试一次"}, "processing", "请再试一次", False),
+        ):
+            with self.subTest(review=review), patch.object(account_email, "_send_email_message") as send:
+                receipt = self.submit(notify_email=True, contact_email="contact@example.invalid")
+                tid = receipt["ticket_id"]
+                status, result = self.http("review", {"ticket_id": tid, "confirm": True, **review},
+                                           self.admin_token, admin=True)
+                self.assertEqual(status, 200)
+                self.assertTrue(result["ok"])
+                send.assert_called_once()
+                content = send.call_args.args[0].get_content()
+                self.assertTrue(content.endswith("\n\n" + footer + "\n"))
+                self.assertEqual(content.count(footer), 1)
+                self.assertIn("可在 4399「反馈」中查看详情。\n\n" + footer, content)
+                self.assertEqual("已结束" in content, closed)
+                detail = self.store.query(receipt["query_code"])
+                self.assertEqual(detail["ticket"]["status"], expected_status)
+                self.assertEqual(len(detail["messages"]), 2 if expected_reply else 1)
+                if expected_reply:
+                    self.assertIn(expected_reply, content)
+                    self.assertEqual(detail["messages"][-1]["content"], expected_reply)
+                self.assertEqual(len(self._events(tid)), 1)
+                self.assertEqual(self._events(tid)[0]["status"], "sent")
 
     def test_unchecked_never_sends_and_invalid_address_rejected(self):
         with patch.object(server, "_send_feedback_email") as send:

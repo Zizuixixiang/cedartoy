@@ -242,6 +242,7 @@ def _review_recovery_ticket(ticket_id, body, admin, *,
         raise _McpError(-32602, "请选择通过或不通过")
     note = _recovery_text(body, "admin_note", 2000, optional=decision == "approved")
     reset_url = None
+    verified_username = None
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         ticket = conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (ticket_id,)).fetchone()
@@ -256,6 +257,7 @@ def _review_recovery_ticket(ticket_id, body, admin, *,
             if not user or user["is_ai"] or user["deleted_at"] is not None or user["deletion_requested_at_epoch"] is not None:
                 raise _McpError(-32602, "目标不是可找回的人类账号，请核验后拒绝此申请")
             user_id = user["id"]
+            verified_username = user["username"]
         now = int(time.time())
         conn.execute(
             """UPDATE account_recovery_tickets SET status=?, admin_note=?, user_id=?, reviewed_by=?,
@@ -278,7 +280,8 @@ def _review_recovery_ticket(ticket_id, body, admin, *,
             )
         conn.commit()
     if ticket["contact_email"]:
-        _deliver_recovery_notification(ticket_id, ticket["contact_email"], decision, note, reset_url)
+        _deliver_recovery_notification(ticket_id, ticket["contact_email"], decision, note, reset_url,
+                                       verified_username=verified_username)
     return {"ok": True}
 
 

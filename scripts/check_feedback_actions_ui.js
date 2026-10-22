@@ -99,6 +99,48 @@ async function checkAdmin() {
       else $(action === 'close' ? 'feedbackAdminClose' : 'feedbackAdminProcessing').click();
       await tick(); badge(0);
     }
+    const reviews = () => state.calls.filter(c => c.url === '/api/admin/feedback/review');
+    // Closing sends the draft in the same request; empty/whitespace drafts only close.
+    for (const draft of ['已修好', '', '  \n ']) {
+      state.status = 'pending'; await w.openAdminFeedback(1);
+      $('feedbackAdminReply').value = draft;
+      const before = reviews().length;
+      $('feedbackAdminClose').click(); await tick();
+      assert.equal(reviews().length, before + 1);
+      assert.deepEqual(reviews().at(-1).body, {ticket_id: 1, confirm: true, status: 'closed', ...(draft.trim() ? {reply: draft} : {})});
+      assert.equal($('feedbackAdminClose').disabled, true);
+      if (draft.trim()) assert.equal($('feedbackAdminReply').value, '');
+    }
+    // Failure retains the draft, and the busy guard prevents duplicate submissions.
+    state.status = 'pending'; await w.openAdminFeedback(1);
+    $('feedbackAdminReply').value = '待发送';
+    let finishReview;
+    state.intercept = url => url.endsWith('/feedback/review') ? new Promise(resolve => { finishReview = resolve; }) : null;
+    const before = reviews().length;
+    $('feedbackAdminClose').click(); $('feedbackAdminClose').click();
+    assert.equal(reviews().length, before + 1);
+    assert.equal($('feedbackAdminReply').disabled, true);
+    finishReview(reply({error: '模拟失败'}, 500)); await tick();
+    assert.equal($('feedbackAdminReply').value, '待发送');
+    assert.equal($('feedbackAdminClose').disabled, false);
+    state.intercept = null;
+    $('feedbackAdminClose').click(); await tick();
+    assert.equal(reviews().length, before + 2);
+    assert.deepEqual(reviews().at(-1).body, {ticket_id: 1, confirm: true, status: 'closed', reply: '待发送'});
+    assert.equal($('feedbackAdminReply').value, '');
+    state.status = 'pending'; await w.openAdminFeedback(1);
+    $('feedbackAdminReply').value = '保留草稿';
+    for (const id of ['feedbackAdminSaveNote', 'feedbackAdminProcessing']) {
+      $(id).click(); await tick();
+      assert.equal($('feedbackAdminReply').value, '保留草稿');
+      assert.equal('reply' in reviews().at(-1).body, false);
+    }
+    const beforeReply = reviews().length;
+    $('feedbackAdminReview').requestSubmit(); await tick();
+    assert.equal(reviews().length, beforeReply + 1);
+    assert.deepEqual(reviews().at(-1).body, {ticket_id: 1, confirm: true, reply: '保留草稿'});
+    assert.equal(state.status, 'processing');
+    assert.equal($('feedbackAdminReply').value, '');
     // Player follow-up reopens pending; refresh sees it even with the closed filter selected.
     await state.fetch('/api/feedback/message');
     $('feedbackAdminFilter').value = 'closed'; $('feedbackAdminRefresh').click(); await tick(); badge(1);

@@ -1163,16 +1163,22 @@
         if (kind === "reply") {
           body.reply = $("feedbackAdminReply").value;
           if (!body.reply.trim()) { $("feedbackAdminStatus").textContent = "请填写要追加的回复。"; return; }
-        } else if (kind === "close") body.status = "closed";
-        else if (kind === "processing") body.status = "processing";
+        } else if (kind === "close") {
+          body.status = "closed";
+          if ($("feedbackAdminReply").value.trim()) body.reply = $("feedbackAdminReply").value;
+        } else if (kind === "processing") body.status = "processing";
         if (kind === "note" || $("feedbackAdminNote").value !== t.internal_note) body.internal_note = $("feedbackAdminNote").value;
         await adminFeedbackRun(async current => {
           await adminFeedbackRequest("review", body);
           if (!current() || data !== feedbackAdminConversation) return;
           loadRecoveryCount();
-          if (kind === "reply") $("feedbackAdminReply").value = "";
+          if (body.reply !== undefined) $("feedbackAdminReply").value = "";
+          const draftReply = $("feedbackAdminReply").value;
           const next = await adminFeedbackRequest("detail", {ticket_id: t.id});
-          if (current() && data === feedbackAdminConversation) renderAdminFeedbackDetail(next);
+          if (current() && data === feedbackAdminConversation) {
+            renderAdminFeedbackDetail(next);
+            $("feedbackAdminReply").value = draftReply;
+          }
         });
       };
       $("feedbackAdminReview").onsubmit = event => { event.preventDefault(); review("reply"); };

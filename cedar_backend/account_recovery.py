@@ -277,14 +277,14 @@ def _recovery_reset_token(ticket, code=None, *, _email_hmac):
 
 
 def _deliver_recovery_notification(ticket_id, email, decision, note, reset_url, *,
-    _db_connect, _send_recovery_email, logger, time,
+    verified_username, _db_connect, _send_recovery_email, logger, time,
 ):
     # Approval and the one-shot send reservation are already committed. SMTP
     # cannot be exactly-once: a crash/timeout may leave delivery uncertain, so
     # never automatically retry; the query code remains the fallback.
     status, error = "sent", ""
     try:
-        _send_recovery_email(email, decision, note, reset_url)
+        _send_recovery_email(email, decision, note, reset_url, verified_username=verified_username)
     except Exception as exc:
         status = "failed"
         reason = getattr(exc, "details", {}).get("reason")
