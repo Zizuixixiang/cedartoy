@@ -1,5 +1,6 @@
 """Private append-only feedback conversations, separate from password recovery."""
 import hashlib
+import logging
 import re
 import secrets
 import time
@@ -65,6 +66,20 @@ def init_schema(conn):
                 conn.execute("UPDATE sqlite_sequence SET seq=max(seq,?) WHERE name='feedback_tickets'", (old_sequence,))
             else:
                 conn.execute("INSERT INTO sqlite_sequence(name,seq) VALUES ('feedback_tickets',?)", (old_sequence,))
+        # Adding an optional contact address leaves existing tickets and query codes unchanged.
+        ticket_columns = {row[1] for row in conn.execute("PRAGMA table_info(feedback_tickets)")}
+        if "contact_email" not in ticket_columns:
+            conn.execute("ALTER TABLE feedback_tickets ADD COLUMN contact_email TEXT")
+        conn.execute("""CREATE TABLE IF NOT EXISTS feedback_email_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL REFERENCES feedback_tickets(id),
+            admin_message_id INTEGER REFERENCES feedback_messages(id),
+            kind TEXT NOT NULL CHECK(kind IN ('reply','closed')),
+            status TEXT NOT NULL CHECK(status IN ('sending','sent','failed')),
+            error TEXT NOT NULL DEFAULT '',
+            created_at_epoch INTEGER NOT NULL, finished_at_epoch INTEGER
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS feedback_email_ticket_idx ON feedback_email_events(ticket_id,id)")
         for name, columns in (("owner", "owner_id, id"), ("status", "status, id"),
                               ("ip_time", "ip_hash, created_at_epoch")):
             conn.execute(f"CREATE INDEX IF NOT EXISTS feedback_{name}_idx ON feedback_tickets({columns})")
@@ -93,8 +108,9 @@ def init_schema(conn):
 
 
 class FeedbackStore:
-    def __init__(self, connect, error, ip_hash):
+    def __init__(self, connect, error, ip_hash, *, normalize_email=None, send_email=None):
         self.connect, self.error, self.ip_hash = connect, error, ip_hash
+        self.normalize_email, self.send_email = normalize_email, send_email
 
     def _open(self):
         conn = self.connect()
@@ -175,6 +191,14 @@ class FeedbackStore:
         category = self.choice(body.get("category"), CATEGORIES, "category")
         content = self.text(body, "content", 4000, True)
         contact = self.text(body, "contact", 120)
+        notify_email = body.get("notify_email", False)
+        if type(notify_email) is not bool:
+            raise self.error(-32602, "邮箱通知选项无效")
+        contact_email = None
+        if notify_email:
+            if self.normalize_email is None:
+                raise self.error(-32602, "邮箱通知暂不可用")
+            contact_email = self.normalize_email(body.get("contact_email"))
         now, ip_hash = int(time.time()), self.ip_hash(ip)
         code = secrets.token_urlsafe(32) if owner_id is None else None
         digest = hashlib.sha256(code.encode()).hexdigest() if code else None
@@ -187,8 +211,8 @@ class FeedbackStore:
                 if identity is not None:
                     self._rate(conn, "feedback_messages", f"role='player' AND {column}=?", [identity], 20, 100, now)
             cursor = conn.execute("""INSERT INTO feedback_tickets
-                (owner_id,query_code_hash,ip_hash,category,content,contact,created_at_epoch)
-                VALUES (?,?,?,?,?,?,?)""", (owner_id, digest, ip_hash, category, content, contact, now))
+                (owner_id,query_code_hash,ip_hash,category,content,contact,contact_email,created_at_epoch)
+                VALUES (?,?,?,?,?,?,?,?)""", (owner_id, digest, ip_hash, category, content, contact, contact_email, now))
             ticket_id = cursor.lastrowid
             self._message(conn, ticket_id, "player", owner_id, content, now, ip_hash)
             return {"ok": True, "ticket_id": ticket_id, **({"query_code": code} if code else {})}
@@ -314,17 +338,19 @@ class FeedbackStore:
         if reply is not None and status not in (None, "processing", "closed"):
             raise self.error(-32602, "管理员回复后状态只能为 processing，或显式 closed 结单")
         now = int(time.time())
+        notice = None
         with closing(self._open()) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT id FROM feedback_tickets WHERE id=?", (ticket_id,)).fetchone()
+            row = conn.execute("SELECT id, status, contact_email FROM feedback_tickets WHERE id=?", (ticket_id,)).fetchone()
             if row is None:
                 self._missing()
             self._rate(conn, "feedback_review_limits", "admin_id=?", [admin["id"]], 120, 1000, now)
             conn.execute("DELETE FROM feedback_review_limits WHERE created_at_epoch < ?", (now-86400,))
             conn.execute("INSERT INTO feedback_review_limits VALUES (?,?)", (admin["id"],now))
             updates = {"reviewed_by": admin["id"], "updated_at_epoch": now}
+            message_id = None
             if reply is not None:
-                self._message(conn, ticket_id, "admin", admin["id"], reply, now)
+                message_id = self._message(conn, ticket_id, "admin", admin["id"], reply, now)
                 updates["status"] = "closed" if status == "closed" else "processing"
             elif status is not None:
                 updates["status"] = status
@@ -332,4 +358,38 @@ class FeedbackStore:
                 updates["internal_note"] = note
             conn.execute("UPDATE feedback_tickets SET " + ", ".join(f"{key}=?" for key in updates) +
                          " WHERE id=?", [*updates.values(), ticket_id])
+            closed = updates.get("status") == "closed"
+            closed_now = closed and row["status"] != "closed"
+            if row["contact_email"] and (reply is not None or closed_now):
+                event = conn.execute("""INSERT INTO feedback_email_events
+                    (ticket_id, admin_message_id, kind, status, created_at_epoch)
+                    VALUES (?,?,?,'sending',?)""",
+                    (ticket_id, message_id, "reply" if reply is not None else "closed", now))
+                notice = (event.lastrowid, row["contact_email"], ticket_id, reply, closed)
+        # The review is committed before network I/O. Mail failure never rolls it back.
+        if notice is not None:
+            self._deliver_email_notice(*notice)
         return {"ok": True}
+
+    def _deliver_email_notice(self, event_id, email, ticket_id, reply, closed):
+        status, reason = "sent", ""
+        try:
+            if self.send_email is None:
+                raise RuntimeError("mail sender missing")
+            self.send_email(email, ticket_id, reply, closed)
+        except Exception as exc:
+            status = "failed"
+            details = getattr(exc, "details", None)
+            reason = details.get("reason") if isinstance(details, dict) else None
+            if reason not in {"email_provider_not_configured", "email_provider_misconfigured",
+                              "email_delivery_unavailable"}:
+                reason = "email_delivery_unavailable"
+            logging.getLogger(__name__).warning("feedback email failed: event=%s reason=%s", event_id, reason)
+        try:
+            with closing(self.connect()) as conn, conn:
+                conn.execute("""UPDATE feedback_email_events
+                    SET status=?, error=?, finished_at_epoch=?
+                    WHERE id=? AND status='sending'""",
+                    (status, reason, int(time.time()), event_id))
+        except Exception:
+            logging.getLogger(__name__).warning("feedback email outcome not recorded: event=%s", event_id)

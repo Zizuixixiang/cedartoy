@@ -3,7 +3,7 @@ import concurrent.futures
 import sqlite3
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import server
 from tests_toy import test_account_security_round2 as fixtures
@@ -44,6 +44,216 @@ class AccountRecoveryTests(unittest.TestCase):
     def tokens(self):
         with self._connect() as conn:
             return [dict(r) for r in conn.execute("SELECT * FROM password_reset_tokens ORDER BY id")]
+
+    def ticket(self, tid):
+        with self._connect() as conn:
+            return dict(conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (tid,)).fetchone())
+
+    def test_notification_opt_in_is_contact_only_and_submission_never_sends(self):
+        with patch.object(server, "_send_recovery_email") as send:
+            plain, pid = self.submit(contact_email="ignored@example.invalid")
+            opted, tid = self.submit(notify_email=True, contact_email=" Contact@Example.invalid ")
+            self.assertIsNone(self.ticket(pid)["contact_email"])
+            self.assertEqual(self.ticket(pid)["email_status"], "not_requested")
+            self.assertEqual(self.ticket(tid)["contact_email"], "contact@example.invalid")
+            self.assertEqual(self.ticket(tid)["email_status"], "pending")
+            self.assertEqual(server._query_recovery_ticket(opted)["status"], "pending")
+            self.assertEqual(self.tokens(), [])
+            self.approve(pid, "rejected", "信息不足")
+            send.assert_not_called()
+        with self._connect() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM account_emails").fetchone()[0], 0)
+        for extra in ({"notify_email": "true"}, {"notify_email": 1},
+                      {"notify_email": True}, {"notify_email": True, "contact_email": "bad\r\nBcc: x@y.z"}):
+            with self.subTest(extra=extra), self.assertRaises(server._McpError):
+                self.submit(**extra)
+
+    def test_notification_cannot_bypass_identity_validation(self):
+        with patch.object(server, "_send_recovery_email") as send:
+            for account in (self.ai_id, 999999):
+                _, tid = self.submit(account=str(account), account_kind="id",
+                                     notify_email=True, contact_email="contact@example.invalid")
+                with self.assertRaises(server._McpError):
+                    self.approve(tid)
+                self.assertEqual(self.ticket(tid)["status"], "pending")
+            with self.assertRaises(server._McpError):
+                self.submit(machine="", notify_email=True, contact_email="contact@example.invalid")
+            send.assert_not_called()
+            self.assertEqual(self.tokens(), [])
+
+    def test_notification_and_query_share_one_24h_single_use_link(self):
+        for consume_from in ("email", "query"):
+            body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
+            def during_send(email, decision, note, url):
+                # A separate DB connection sees the committed review before SMTP.
+                self.assertEqual(self.ticket(tid)["status"], "approved")
+                self.assertEqual(self.ticket(tid)["email_status"], "sending")
+                self.assertEqual(server._query_recovery_ticket(body)["reset_url"], url)
+            with patch.object(server, "_send_recovery_email", side_effect=during_send) as send:
+                self.approve(tid)
+                with self.assertRaises(server._McpError):
+                    self.approve(tid)
+                send.assert_called_once()
+                url = send.call_args.args[3]
+            result = server._query_recovery_ticket(body)
+            self.assertEqual(result["reset_url"], url)
+            self.assertAlmostEqual(result["expires_at_epoch"] - time.time(), 86400, delta=3)
+            ticket = self.ticket(tid)
+            self.assertEqual(ticket["email_status"], "sent")
+            self.assertGreaterEqual(ticket["email_finished_at_epoch"], ticket["email_attempted_at_epoch"])
+            token = url.split("=", 1)[1]
+            with self._connect() as conn:
+                dump = "\n".join(conn.iterdump())
+                self.assertNotIn(token, dump)
+                self.assertNotIn(body["query_code"].replace("-", ""), dump)
+            used_url = url if consume_from == "email" else result["reset_url"]
+            server._reset_password_by_token(used_url.split("=", 1)[1], "email-link-pass")
+            self.assertEqual(server._query_recovery_ticket(body)["status"], "completed")
+            with self.assertRaises(server._McpError):
+                server._reset_password_by_token(token, "reuse-pass")
+
+    def test_notification_expiry_reissues_only_after_expiry_within_claim_window(self):
+        body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
+        with patch.object(server, "_send_recovery_email") as send:
+            self.approve(tid)
+            url = send.call_args.args[3]
+            with self._connect() as conn:
+                conn.execute("UPDATE password_reset_tokens SET expires_at=datetime('now')")
+            with self.assertRaises(server._McpError):
+                server._reset_password_by_token(url.split("=", 1)[1], "expired-pass")
+            fresh = server._query_recovery_ticket(body)
+            self.assertNotEqual(fresh["reset_url"], url)
+            self.assertEqual(server._query_recovery_ticket(body), fresh)
+            with self._connect() as conn:
+                conn.execute("UPDATE account_recovery_tickets SET claim_until_epoch=0")
+            self.assertEqual(server._query_recovery_ticket(body), fresh | {"claim_until_epoch": 0})
+            with self._connect() as conn:
+                conn.execute("UPDATE password_reset_tokens SET expires_at=datetime('now')")
+            self.assertEqual(server._query_recovery_ticket(body)["status"], "expired")
+            send.assert_called_once()
+
+    def test_notification_smtp_success_failure_and_rejection_content(self):
+        for decision, failure in (("approved", False), ("approved", True), ("rejected", False), ("rejected", True)):
+            body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
+            client = MagicMock()
+            client.__enter__.return_value = client
+            if failure:
+                client.send_message.side_effect = server.smtplib.SMTPException("private-token-and-provider-response")
+            with patch.object(server.smtplib, "SMTP", return_value=client), patch.object(server, "logger") as log:
+                self.assertEqual(self.approve(tid, decision, "公开备注"), {"ok": True})
+                client.starttls.assert_called_once()
+                client.send_message.assert_called_once()
+                message = client.send_message.call_args.args[0]
+                self.assertEqual(message["To"], "contact@example.invalid")
+                content = message.get_content()
+                self.assertNotIn("private-token-and-provider-response", str(log.mock_calls))
+                self.assertNotIn("contact@example.invalid", str(log.mock_calls))
+                self.assertNotIn("Machine / 3", content)
+                self.assertNotIn("记不清日期", content)
+                if decision == "approved":
+                    url = server._query_recovery_ticket(body)["reset_url"]
+                    self.assertEqual(content.count(url), 1)
+                    self.assertIn("24 小时", content)
+                    self.assertNotIn(url.split("=", 1)[1], str(log.mock_calls))
+                else:
+                    self.assertIn("公开备注", content)
+                    self.assertNotIn("reset_token", content)
+                    self.assertIsNone(self.ticket(tid)["reset_token_id"])
+            row = self.ticket(tid)
+            self.assertEqual(row["status"], decision)
+            self.assertEqual(row["email_status"], "failed" if failure else "sent")
+            self.assertEqual(row["email_error"], "email_delivery_unavailable" if failure else "")
+
+    def test_notification_configuration_failure_preserves_review_and_fallback(self):
+        for config in (None, "none"):
+            body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
+            config_patch = (patch.object(server, "_smtp_config", side_effect=self.real_smtp_config)
+                            if config is None else patch.object(server, "_smtp_config", return_value={"security": "none"}))
+            with patch.dict(server.os.environ, {}, clear=True), config_patch, patch.object(server.smtplib, "SMTP") as smtp:
+                self.assertEqual(self.approve(tid), {"ok": True})
+                smtp.assert_not_called()
+            row = self.ticket(tid)
+            self.assertEqual(row["status"], "approved")
+            self.assertEqual(row["email_status"], "failed")
+            self.assertEqual(row["email_error"], "email_provider_not_configured" if config is None else "email_provider_misconfigured")
+            token = server._query_recovery_ticket(body)["reset_url"].split("=", 1)[1]
+            server._reset_password_by_token(token, "fallback-pass")
+
+    def test_parallel_notification_reviews_only_send_once(self):
+        _, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
+        def review(_):
+            try:
+                self.approve(tid)
+                return True
+            except server._McpError:
+                return False
+        with patch.object(server, "_send_recovery_email") as send:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                self.assertEqual(sum(executor.map(review, range(2))), 1)
+            send.assert_called_once()
+        self.assertEqual(len(self.tokens()), 1)
+
+    def test_notification_outcome_write_failure_does_not_undo_review_or_retry(self):
+        body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
+        connect = server._db_connect
+        calls = 0
+        def fail_outcome_write():
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise sqlite3.OperationalError("private database error")
+            return connect()
+        with patch.object(server, "_db_connect", side_effect=fail_outcome_write), \
+                patch.object(server, "_send_recovery_email") as send, patch.object(server, "logger") as log:
+            self.assertEqual(self.approve(tid), {"ok": True})
+            with self.assertRaises(server._McpError):
+                self.approve(tid)
+            send.assert_called_once()
+            self.assertNotIn("private database error", str(log.mock_calls))
+        self.assertEqual(self.ticket(tid)["email_status"], "sending")
+        self.assertEqual(server._query_recovery_ticket(body)["status"], "approved")
+
+    def test_notification_ssl_and_existing_verification_share_transport(self):
+        config = {"host": "smtp.invalid", "port": 465, "sender": "sender@example.invalid",
+                  "username": "test-user", "password": "test-password", "security": "ssl"}
+        client = MagicMock()
+        client.__enter__.return_value = client
+        with patch.object(server, "_smtp_config", return_value=config), \
+                patch.object(server.smtplib, "SMTP_SSL", return_value=client) as smtp:
+            server._send_recovery_email("contact@example.invalid", "approved", "", "https://toy.cedarstar.org/?reset_token=fixture")
+            self.assertEqual(smtp.call_args.kwargs["timeout"], 10)
+            self.assertIsNotNone(smtp.call_args.kwargs["context"])
+            client.login.assert_called_once_with("test-user", "test-password")
+            client.starttls.assert_not_called()
+            server.account_email._send_verification_email(
+                "bound@example.invalid", "123456", "bind", config,
+                EMAIL_PROVIDER_ERROR_CODE=server.EMAIL_PROVIDER_ERROR_CODE,
+                EmailMessage=server.EmailMessage, _McpError=server._McpError,
+                logger=server.logger, smtplib=server.smtplib, ssl=server.ssl,
+            )
+            self.assertEqual(client.send_message.call_count, 2)
+            self.assertIn("123456", client.send_message.call_args.args[0].get_content())
+
+    def test_email_schema_migration_preserves_legacy_link_on_consistent_snapshot(self):
+        body, tid = self.submit()
+        self.approve(tid)
+        result = server._query_recovery_ticket(body)
+        with self._connect() as source, sqlite3.connect(":memory:") as snapshot:
+            source.backup(snapshot)
+            added = ("contact_email", "email_status", "email_error", "email_attempted_at_epoch",
+                     "email_finished_at_epoch", "reset_token_version")
+            for column in added:
+                snapshot.execute(f"ALTER TABLE account_recovery_tickets DROP COLUMN {column}")
+            old_columns = [row[1] for row in snapshot.execute("PRAGMA table_info(account_recovery_tickets)")]
+            before = snapshot.execute("SELECT * FROM account_recovery_tickets").fetchall()
+            server._init_account_recovery_table(snapshot)
+            first = list(snapshot.iterdump())
+            server._init_account_recovery_table(snapshot)
+            self.assertEqual(list(snapshot.iterdump()), first)
+            self.assertEqual(snapshot.execute("SELECT " + ",".join(old_columns) + " FROM account_recovery_tickets").fetchall(), before)
+            self.assertEqual(snapshot.execute("SELECT email_status, reset_token_version FROM account_recovery_tickets").fetchone(), ("not_requested", 1))
+            self.assertEqual(snapshot.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        self.assertEqual(server._query_recovery_ticket(body), result)
 
     def test_schema_is_idempotent_and_does_not_rewrite_existing_data(self):
         body, _ = self.submit()

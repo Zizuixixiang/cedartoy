@@ -89,6 +89,15 @@ finally: case.doCleanups()
       const nav = page.locator(".bottom-nav .nav-label");
       assert.deepEqual(await nav.allTextContents(), ["反馈", "排行榜", "历史", "我的"]);
       await page.locator('[data-bottom-action="feedback"]').click();
+      const notify = page.locator("#feedbackNotifyEmail"), email = page.locator("#feedbackContactEmail");
+      assert.equal(await notify.isChecked(), false);
+      assert.equal(await email.isVisible(), false);
+      await notify.check();
+      assert.equal(await email.isVisible(), true);
+      await email.fill("nanshan2368@gmail.com");
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await notify.uncheck();
+      assert.equal(await email.isVisible(), false);
       await page.locator("#feedbackContent").fill('界面反馈 <img src=x onerror="window.feedbackXss=1">');
       if (screenshots) await page.screenshot({path: path.join(screenshots, `feedback-form-${width}.png`)});
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

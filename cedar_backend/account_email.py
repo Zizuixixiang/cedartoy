@@ -132,6 +132,62 @@ def _send_verification_email(email, code, purpose, smtp_config, *,
         f"验证码用于{label}，10 分钟内有效。\n"
         "如果不是你本人操作，请忽略这封邮件。"
     )
+    _send_email_message(message, smtp_config,
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE, _McpError=_McpError,
+        logger=logger, smtplib=smtplib, ssl=ssl)
+
+
+def _send_recovery_email(email, decision, note, reset_url, smtp_config, *,
+    EMAIL_PROVIDER_ERROR_CODE, EmailMessage, _McpError, logger, smtplib, ssl,
+):
+    if smtp_config["security"] not in {"starttls", "ssl"}:
+        raise _McpError(EMAIL_PROVIDER_ERROR_CODE, "找回通知需要加密邮件连接",
+                        {"reason": "email_provider_misconfigured"})
+    message = EmailMessage()
+    message["Subject"] = "CedarToy 账号找回审核结果"
+    message["From"] = smtp_config["sender"]
+    message["To"] = email
+    if decision == "approved":
+        content = (
+            "你的账号找回申请已通过人工审核。\n\n"
+            f"请使用此链接设置新密码：\n{reset_url}\n\n"
+            "链接 24 小时内有效，仅可使用一次，请勿转发。\n"
+            "过期后可凭查询码重新领取。\n"
+        )
+    else:
+        # admin_note is the same public note returned by the query-code path.
+        content = "你的账号找回申请未通过审核。\n" + (f"管理员公开备注：{note}\n" if note else "")
+    message.set_content(content + "\n如果不是你本人申请，请忽略这封邮件。")
+    _send_email_message(message, smtp_config,
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE, _McpError=_McpError,
+        logger=logger, smtplib=smtplib, ssl=ssl)
+
+
+def _send_feedback_email(email, ticket_id, reply, closed, smtp_config, *,
+    EMAIL_PROVIDER_ERROR_CODE, EmailMessage, _McpError, logger, smtplib, ssl,
+):
+    if smtp_config["security"] not in {"starttls", "ssl"}:
+        raise _McpError(EMAIL_PROVIDER_ERROR_CODE, "反馈通知需要加密邮件连接",
+                        {"reason": "email_provider_misconfigured"})
+    message = EmailMessage()
+    message["Subject"] = f"CedarToy 反馈 #{ticket_id} 通知"
+    message["From"] = smtp_config["sender"]
+    message["To"] = email
+    if reply is not None:
+        content = f"你的反馈 #{ticket_id} 收到管理员回复：\n\n{reply}\n\n"
+        if closed:
+            content += "这条反馈已结束。\n"
+    else:
+        content = f"你的反馈 #{ticket_id} 已结束。\n"
+    message.set_content(content + "\n可在 4399「反馈」中查看详情。\n")
+    _send_email_message(message, smtp_config,
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE, _McpError=_McpError,
+        logger=logger, smtplib=smtplib, ssl=ssl)
+
+
+def _send_email_message(message, smtp_config, *,
+    EMAIL_PROVIDER_ERROR_CODE, _McpError, logger, smtplib, ssl,
+):
     try:
         if smtp_config["security"] == "ssl":
             client = smtplib.SMTP_SSL(

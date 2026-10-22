@@ -1149,6 +1149,10 @@
 
 
     #forgotPasswordModal .modal-box { max-height: calc(100dvh - 36px); overflow-y: auto; }
+    #forgotPasswordModal .checkbox-field { min-height: 44px; }
+    #recoveryContactEmail:focus-visible, #recoveryNotifyEmail:focus-visible {
+      outline: 2px solid var(--purple-darker); outline-offset: 3px;
+    }
     .recovery-modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .recovery-modes button { flex: 1; padding: 8px 4px; font-size: 11px; }
     #forgotPasswordModal textarea, #forgotPasswordModal select {
@@ -3466,6 +3470,15 @@
         <label class="field"><span class="field-label">分类</span><select id="feedbackCategory"><option value="bug">问题 / Bug</option><option value="suggestion">功能建议</option><option value="account">账号相关</option><option value="other">其他</option></select></label>
         <label class="field"><span class="field-label">反馈内容（必填）</span><textarea id="feedbackContent" maxlength="4000" rows="4" required placeholder="发生了什么，或你希望怎样改进？请勿填写密码或 Token。"></textarea><span class="field-hint">最多 4000 字</span></label>
         <label class="field"><span class="field-label">自己的 4399 账号或小机 ID（选填）</span><input id="feedbackContact" maxlength="120" autocomplete="off"><span class="field-hint">仅供联系与排障参考，不用于验证身份。</span></label>
+        <label class="checkbox-field">
+          <input id="feedbackNotifyEmail" type="checkbox" aria-controls="feedbackContactEmailField">
+          <span>邮箱通知（选填）</span>
+        </label>
+        <label class="field" id="feedbackContactEmailField" hidden>
+          <span class="field-label">联系邮箱</span>
+          <input id="feedbackContactEmail" type="email" maxlength="254" autocomplete="email" aria-describedby="feedbackEmailHint" disabled>
+          <span class="field-hint" id="feedbackEmailHint">收到公开回复或结单时通知你。</span>
+        </label>
       </form>
       <section id="feedbackReceipt" hidden aria-label="提交成功">
         <p class="modal-hint">反馈已提交。请立即保存私密查询码；关闭页面后无法重新获取。持码人可查看并继续回复这条反馈，请勿公开分享。</p>
@@ -3584,6 +3597,15 @@
             <label class="field"><span class="field-label">大概注册时间</span><input id="recoveryRegistered" maxlength="100" placeholder="例如 2026 年 8 月，记不清请注明"></label>
             <label class="field"><span class="field-label">玩过的游戏</span><input id="recoveryGames" maxlength="500" placeholder="尽量填写记得的游戏名称"></label>
             <label class="field"><span class="field-label">补充说明（选填）</span><textarea id="recoveryExplanation" maxlength="2000" rows="3" placeholder="请勿填写密码等敏感信息"></textarea></label>
+            <label class="checkbox-field">
+              <input id="recoveryNotifyEmail" type="checkbox" aria-controls="recoveryContactEmailField">
+              <span>邮箱通知（选填）</span>
+            </label>
+            <label class="field" id="recoveryContactEmailField" hidden>
+              <span class="field-label">联系邮箱</span>
+              <input id="recoveryContactEmail" type="email" maxlength="254" autocomplete="email" aria-describedby="recoveryContactEmailHint" disabled>
+              <span class="field-hint" id="recoveryContactEmailHint">审核通过后发重置链接，请保留查询码。</span>
+            </label>
           </div>
           <label class="field" id="recoveryQueryField" hidden><span class="field-label">查询码</span>
             <input id="recoveryQueryCode" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="XXXX-XXXX-XXXX">
@@ -8383,6 +8405,9 @@
       recoveryMode = "apply";
       $("recoveryAccountKind").value = "";
       $("recoveryAccount").value = "";
+      $("recoveryNotifyEmail").checked = false;
+      $("recoveryContactEmail").value = "";
+      syncRecoveryEmail();
       $("recoveryQueryCode").value = "";
       clearRecoveryResult();
       document.querySelectorAll("[data-recovery-mode]").forEach(button => {
@@ -8470,6 +8495,13 @@
       $("recoveryResultPanel").focus();
     }
 
+    function syncRecoveryEmail() {
+      const enabled = $("recoveryNotifyEmail").checked;
+      $("recoveryContactEmailField").hidden = !enabled;
+      $("recoveryContactEmail").disabled = !enabled;
+      $("recoveryContactEmail").required = enabled;
+    }
+
     async function submitRecovery() {
       const message = $("forgotPasswordMsg");
       const mode = recoveryMode;
@@ -8491,6 +8523,16 @@
           games: $("recoveryGames").value.trim(), explanation: $("recoveryExplanation").value.trim()});
         if (!body.machine || !body.registered_about || !body.games) {
           message.textContent = "请填写绑定小机、大概注册时间和玩过的游戏；记不清可注明。"; return;
+        }
+        if ($("recoveryNotifyEmail").checked) {
+          const emailInput = $("recoveryContactEmail");
+          emailInput.value = emailInput.value.trim();
+          if (!emailInput.value || !emailInput.checkValidity()) {
+            message.textContent = "请填写有效的联系邮箱";
+            emailInput.focus();
+            return;
+          }
+          Object.assign(body, {notify_email: true, contact_email: emailInput.value});
         }
       }
       recoveryBusy = true;
@@ -9004,6 +9046,12 @@
       document.querySelectorAll("[data-feedback-inert]").forEach(el => { el.inert = false; delete el.dataset.feedbackInert; });
       if (feedbackReturnFocus?.isConnected) feedbackReturnFocus.focus();
     }
+    function syncFeedbackEmail() {
+      const enabled = $("feedbackNotifyEmail").checked;
+      $("feedbackContactEmailField").hidden = !enabled;
+      $("feedbackContactEmail").disabled = !enabled;
+      $("feedbackContactEmail").required = enabled;
+    }
     function setFeedbackMode(mode) {
       if (feedbackBusy) return;
       feedbackVersion++;
@@ -9195,9 +9243,23 @@
     $("feedbackForm").addEventListener("submit", event => {
       event.preventDefault();
       feedbackRun(async current => {
-        const data = await feedbackRequest("submit", {category: $("feedbackCategory").value, content: $("feedbackContent").value, contact: $("feedbackContact").value});
+        const body = {category: $("feedbackCategory").value, content: $("feedbackContent").value, contact: $("feedbackContact").value};
+        if ($("feedbackNotifyEmail").checked) {
+          const emailInput = $("feedbackContactEmail");
+          emailInput.value = emailInput.value.trim();
+          if (!emailInput.value || !emailInput.checkValidity()) {
+            $("feedbackMessage").textContent = "请填写有效的联系邮箱";
+            emailInput.focus();
+            return;
+          }
+          Object.assign(body, {notify_email: true, contact_email: emailInput.value});
+        }
+        const data = await feedbackRequest("submit", body);
         if (!current()) return;
         $("feedbackContent").value = "";
+        $("feedbackNotifyEmail").checked = false;
+        $("feedbackContactEmail").value = "";
+        syncFeedbackEmail();
         if (data.query_code) {
           feedbackReceipt = data;
           $("feedbackReceiptCode").value = data.query_code;
@@ -9232,6 +9294,7 @@
       try { await navigator.clipboard.writeText($("feedbackReceiptCode").value); $("feedbackMessage").textContent = "查询码已复制，请妥善保存。"; }
       catch (_) { $("feedbackReceiptCode").select(); $("feedbackMessage").textContent = "请长按或选中查询码复制保存。"; }
     };
+    $("feedbackNotifyEmail").addEventListener("change", syncFeedbackEmail);
     document.querySelectorAll("[data-feedback-mode]").forEach(button => button.onclick = () => setFeedbackMode(button.dataset.feedbackMode));
     $("feedbackPrev").onclick = () => { if (!feedbackBusy && feedbackPage > 1) { feedbackPage--; loadFeedbackList(); } };
     $("feedbackNext").onclick = () => { if (!feedbackBusy && feedbackPage * 20 < feedbackTotal) { feedbackPage++; loadFeedbackList(); } };
@@ -10360,6 +10423,7 @@
     });
     $("recoveryAccount").addEventListener("input", clearRecoveryQueryCode);
     $("recoveryAccountKind").addEventListener("change", clearRecoveryQueryCode);
+    $("recoveryNotifyEmail").addEventListener("change", syncRecoveryEmail);
     $("recoveryQueryCode").addEventListener("input", () => {
       recoveryViewVersion++;
       clearRecoveryResult();

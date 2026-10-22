@@ -23,7 +23,9 @@ async function checkForgotPassword(emailEnabled) {
         const body = options.body ? JSON.parse(options.body) : {};
         calls.push({url, body});
         if (url === "/api/auth/recovery/submit") {
-          assert.deepEqual(Object.keys(body).sort(), ["account", "account_kind", "explanation", "games", "machine", "registered_about"]);
+          assert.deepEqual(Object.keys(body).sort(), ["account", "account_kind", "explanation", "games", "machine", "registered_about",
+            ...(body.notify_email ? ["notify_email", "contact_email"] : [])].sort());
+          if (body.notify_email) assert.equal(body.contact_email, "contact@example.invalid");
           return reply({ticket_id: 17, query_code: secret, message: "请保存查询码，用于查看审核结果；一般会在48小时内完成审核"});
         }
         if (url === "/api/auth/recovery/query") {
@@ -49,7 +51,7 @@ async function checkForgotPassword(emailEnabled) {
       assert.equal($("recoveryQueryField").hidden, mode !== "query");
       const visibleFields = [...$("recoveryFields").querySelectorAll("input, select, textarea")].filter(el => !el.closest("[hidden]"));
       assert.deepEqual(visibleFields.map(el => el.id), mode === "query" ? ["recoveryQueryCode"] :
-        ["recoveryAccountKind", "recoveryAccount", "recoveryMachine", "recoveryRegistered", "recoveryGames", "recoveryExplanation"]);
+        ["recoveryAccountKind", "recoveryAccount", "recoveryMachine", "recoveryRegistered", "recoveryGames", "recoveryExplanation", "recoveryNotifyEmail"]);
       if (mode === "query") {
         assert.equal(w.getComputedStyle($("recoveryApplyFields")).display, "none");
         assert.ok($("recoveryAccount").closest("[hidden]"));
@@ -96,6 +98,9 @@ async function checkForgotPassword(emailEnabled) {
     assert.deepEqual(tabs.map(tab => tab.dataset.recoveryMode), ["apply", "query"]);
     assert.deepEqual(tabs.map(tab => tab.textContent), ["申请找回", "查询进度"]);
     assertMode("apply"); assertBlank();
+    assert.equal($("recoveryNotifyEmail").checked, false);
+    assert.equal($("recoveryContactEmailField").hidden, true);
+    assert.equal($("recoveryContactEmail").disabled, true);
     const accountRow = $("recoveryAccountKind").parentElement;
     assert.equal(accountRow, $("recoveryAccount").parentElement);
     assert.equal(w.getComputedStyle(accountRow).gridTemplateColumns, "minmax(0, 104px) minmax(0, 1fr)");
@@ -191,6 +196,31 @@ async function checkForgotPassword(emailEnabled) {
     assert.equal(countCalls("/api/auth/recovery/query"), before + successfulQueries);
     w.closeModals(); w.openForgotPasswordModal();
     assertMode("apply"); assertBlank();
+    fillApplication();
+    $("recoveryNotifyEmail").click();
+    assert.equal($("recoveryContactEmailField").hidden, false);
+    assert.equal($("recoveryContactEmail").required, true);
+    assert.equal($("recoveryContactEmail").disabled, false);
+    const emailSubmits = countCalls("/api/auth/recovery/submit");
+    for (const invalidEmail of ["", "bad-address"]) {
+      $("recoveryContactEmail").value = invalidEmail;
+      await w.submitForgotPassword();
+      assert.match($("forgotPasswordMsg").textContent, /有效的联系邮箱/);
+      assert.equal(countCalls("/api/auth/recovery/submit"), emailSubmits);
+    }
+    $("recoveryContactEmail").value = "contact@example.invalid";
+    $("recoveryNotifyEmail").click();
+    assert.equal($("recoveryContactEmailField").hidden, true);
+    assert.equal($("recoveryContactEmail").required, false);
+    $("recoveryNotifyEmail").click();
+    await w.submitForgotPassword();
+    assert.equal(countCalls("/api/auth/recovery/submit"), emailSubmits + 1);
+    assert.equal(calls.filter(c => c.url === "/api/auth/recovery/submit").at(-1).body.notify_email, true);
+    assertSuccess(); assertHandoff();
+    w.closeModals(); w.openForgotPasswordModal();
+    assert.equal($("recoveryNotifyEmail").checked, false);
+    assert.equal($("recoveryContactEmail").value, "");
+    assert.equal($("recoveryContactEmailField").hidden, true);
     // Blocked storage must not break submission or the one-time handoff, including numeric IDs.
     const setItem = w.Storage.prototype.setItem, getItem = w.Storage.prototype.getItem;
     try {

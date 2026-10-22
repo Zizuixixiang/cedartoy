@@ -1099,6 +1099,24 @@ def _send_verification_email(email, code, purpose, smtp_config):
     )
 
 
+def _send_recovery_email(email, decision, note, reset_url):
+    return account_email._send_recovery_email(
+        email, decision, note, reset_url, _smtp_config(),
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE,
+        EmailMessage=EmailMessage, _McpError=_McpError,
+        logger=logger, smtplib=smtplib, ssl=ssl,
+    )
+
+
+def _send_feedback_email(email, ticket_id, reply, closed):
+    return account_email._send_feedback_email(
+        email, ticket_id, reply, closed, _smtp_config(),
+        EMAIL_PROVIDER_ERROR_CODE=EMAIL_PROVIDER_ERROR_CODE,
+        EmailMessage=EmailMessage, _McpError=_McpError,
+        logger=logger, smtplib=smtplib, ssl=ssl,
+    )
+
+
 def _b64url_encode(raw):
     return auth._b64url_encode(
         raw,
@@ -2029,6 +2047,7 @@ def _submit_recovery_ticket(body, client_ip):
         _RECOVERY_CODE_ALPHABET=_RECOVERY_CODE_ALPHABET,
         _RECOVERY_SUBMITTED=_RECOVERY_SUBMITTED,
         _db_connect=_db_connect,
+        _normalize_email=_normalize_email,
         _recovery_identity=_recovery_identity,
         _recovery_query_hash=_recovery_query_hash,
         _recovery_text=_recovery_text,
@@ -2057,6 +2076,7 @@ def _query_recovery_ticket(body):
         _email_hmac=_email_hmac,
         _normalize_recovery_code=_normalize_recovery_code,
         _recovery_query_hash=_recovery_query_hash,
+        _recovery_reset_token=_recovery_reset_token,
         _reset_url=_reset_url,
         _row_dict=_row_dict,
         hmac=hmac,
@@ -2066,9 +2086,22 @@ def _query_recovery_ticket(body):
     )
 
 
+def _recovery_reset_token(ticket, code=None):
+    return account_recovery._recovery_reset_token(ticket, code, _email_hmac=_email_hmac)
+
+
+def _deliver_recovery_notification(ticket_id, email, decision, note, reset_url):
+    return account_recovery._deliver_recovery_notification(
+        ticket_id, email, decision, note, reset_url,
+        _db_connect=_db_connect, _send_recovery_email=_send_recovery_email,
+        logger=logger, time=time,
+    )
+
+
 def _feedback_store():
     return feedback_tickets.FeedbackStore(
-        _db_connect, _McpError, lambda ip: _email_hmac("feedback-ip-v1", ip))
+        _db_connect, _McpError, lambda ip: _email_hmac("feedback-ip-v1", ip),
+        normalize_email=_normalize_email, send_email=_send_feedback_email)
 
 
 def _account_feedback(arguments, raw_token):
@@ -2117,8 +2150,13 @@ def _review_recovery_ticket(ticket_id, body, admin):
     return admin_accounts._review_recovery_ticket(
         ticket_id, body, admin,
         _McpError=_McpError,
+        _create_reset_token=_create_reset_token,
         _db_connect=_db_connect,
+        _deliver_recovery_notification=_deliver_recovery_notification,
+        _recovery_reset_token=_recovery_reset_token,
         _recovery_text=_recovery_text,
+        _reset_url=_reset_url,
+        secrets=secrets,
         time=time,
     )
 

@@ -119,6 +119,7 @@ def _submit_recovery_ticket(body, client_ip, *,
     _RECOVERY_CODE_ALPHABET,
     _RECOVERY_SUBMITTED,
     _db_connect,
+    _normalize_email,
     _recovery_identity,
     _recovery_query_hash,
     _recovery_text,
@@ -129,6 +130,11 @@ def _submit_recovery_ticket(body, client_ip, *,
     kind, account = _recovery_identity(body)
     fields = [_recovery_text(body, k, n, optional=(k == "explanation")) for k, n in (
         ("machine", 100), ("registered_about", 100), ("games", 500), ("explanation", 2000))]
+    notify_email = body.get("notify_email", False)
+    if not isinstance(notify_email, bool):
+        raise _McpError(-32602, "邮箱通知选项必须为布尔值")
+    # A contact address is never an account binding or evidence of ownership.
+    contact_email = _normalize_email(body.get("contact_email")) if notify_email else None
     now = int(time.time())
     ip_hash = _reset_token_hash(str(client_ip))
     with _db_connect() as conn:
@@ -157,8 +163,10 @@ def _submit_recovery_ticket(body, client_ip, *,
         cursor = conn.execute(
             """INSERT INTO account_recovery_tickets
                (account_kind, account, machine, registered_about, games, explanation,
-                query_code_hash, ip_hash, created_at_epoch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (kind, account, *fields, query_hash, ip_hash, now),
+                query_code_hash, ip_hash, created_at_epoch, contact_email, email_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (kind, account, *fields, query_hash, ip_hash, now, contact_email,
+             "pending" if notify_email else "not_requested"),
         )
         conn.commit()
     return {"ok": True, "message": _RECOVERY_SUBMITTED, "ticket_id": cursor.lastrowid, "query_code": query_code}
@@ -188,6 +196,7 @@ def _query_recovery_ticket(body, *,
     _email_hmac,
     _normalize_recovery_code,
     _recovery_query_hash,
+    _recovery_reset_token,
     _reset_url,
     _row_dict,
     hmac,
@@ -246,17 +255,56 @@ def _query_recovery_ticket(body, *,
             if ticket["reset_token_id"]:
                 conn.execute("UPDATE password_reset_tokens SET used=1 WHERE id=?", (ticket["reset_token_id"],))
             ticket["reset_nonce"] = secrets.token_urlsafe(32)
-            token = _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
+            token = _recovery_reset_token(ticket, code)
             _, token_id, expires_at = _create_reset_token(conn, ticket["user_id"], lifetime_seconds=86400, token=token)
             conn.execute(
                 "UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
                 (token_id, ticket["reset_nonce"], ticket["id"]),
             )
         # Reconstruct only after query-code verification; neither credential is stored in plaintext.
-        token = _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
+        token = _recovery_reset_token(ticket, code)
         conn.commit()
         return {**result, "reset_url": _reset_url(token), "expires_at_epoch": expires_at,
                 "claim_until_epoch": ticket["claim_until_epoch"]}
+
+
+def _recovery_reset_token(ticket, code=None, *, _email_hmac):
+    # v2 can be reconstructed after approval without storing the query code or
+    # raw reset token. The application secret remains outside the database.
+    if ticket["reset_token_version"] == 2:
+        return _email_hmac("recovery-reset-v2", ticket["id"], ticket["reset_nonce"])
+    return _email_hmac("recovery-reset-v1", code, ticket["reset_nonce"])
+
+
+def _deliver_recovery_notification(ticket_id, email, decision, note, reset_url, *,
+    _db_connect, _send_recovery_email, logger, time,
+):
+    # Approval and the one-shot send reservation are already committed. SMTP
+    # cannot be exactly-once: a crash/timeout may leave delivery uncertain, so
+    # never automatically retry; the query code remains the fallback.
+    status, error = "sent", ""
+    try:
+        _send_recovery_email(email, decision, note, reset_url)
+    except Exception as exc:
+        status = "failed"
+        reason = getattr(exc, "details", {}).get("reason")
+        error = reason if reason in {
+            "email_provider_not_configured", "email_provider_misconfigured",
+            "email_delivery_unavailable",
+        } else "email_delivery_unavailable"
+        logger.warning("recovery email failed: ticket=%s reason=%s", ticket_id, error)
+    try:
+        with _db_connect() as conn:
+            conn.execute(
+                """UPDATE account_recovery_tickets SET email_status=?, email_error=?,
+                   email_finished_at_epoch=? WHERE id=? AND email_status='sending'""",
+                (status, error, int(time.time()), ticket_id),
+            )
+            conn.commit()
+    except Exception:
+        # Keep 'sending' as an uncertain outcome; never turn a committed review
+        # into an apparent failure or log exception text containing credentials.
+        logger.warning("recovery email outcome not recorded: ticket=%s", ticket_id)
 
 
 def _reset_machine_password(raw_token, ai_user_id, new_password, *,
@@ -581,5 +629,15 @@ def _init_account_recovery_table(conn):
     columns = {row[1] for row in conn.execute("PRAGMA table_info(account_recovery_tickets)")}
     if "access_hash" in columns and "query_code_hash" not in columns:
         conn.execute("ALTER TABLE account_recovery_tickets RENAME COLUMN access_hash TO query_code_hash")
+    for name, definition in (
+        ("contact_email", "TEXT"),
+        ("email_status", "TEXT NOT NULL DEFAULT 'not_requested'"),
+        ("email_error", "TEXT NOT NULL DEFAULT ''"),
+        ("email_attempted_at_epoch", "INTEGER"),
+        ("email_finished_at_epoch", "INTEGER"),
+        ("reset_token_version", "INTEGER NOT NULL DEFAULT 1"),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE account_recovery_tickets ADD COLUMN {name} {definition}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recovery_status ON account_recovery_tickets(status, id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recovery_ip ON account_recovery_tickets(ip_hash, created_at_epoch)")

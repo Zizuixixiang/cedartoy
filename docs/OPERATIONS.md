@@ -40,6 +40,16 @@ supervisorctl -c /etc/supervisor/supervisord.conf restart cedartoy
 
 存档导入导出按所支持的槽位独立执行：通用 vendor、fishing、workkk、garden_cat 使用 JSON（多文件游戏可为文件名到内容的对象），eco/ciyuwu 使用 base64。花园便签不随存档导入导出。支持的游戏/动作以 `server.py` 的 play schema 与相应 adapter 为准，不推断所有新游戏都支持五槽或导入导出。
 
+## 人工找回的可选邮件通知
+
+找回申请默认不发邮件；勾选邮箱通知后填写的 `contact_email` 只作联系地址，不写入账号邮箱绑定，也不作为所有权凭证。仍按原信息人工核验，一般 48 小时内审核。提交申请不生成重置链接；管理员通过时才生成并发送 24 小时、一次性链接。查询码可领取同一条有效链接；过期后可在通过后的 7 天窗口内领取新链接，不重新发邮件。未勾选仍保持首次查询时生成链接。拒绝邮件只包含结果与查询页面同样可见的 `admin_note`，不包含核验资料或管理员内部身份。
+
+复用主服务环境变量 `CEDARTOY_SMTP_HOST`、`CEDARTOY_SMTP_FROM`，以及按服务商要求成对配置的 `CEDARTOY_SMTP_USERNAME`、`CEDARTOY_SMTP_PASSWORD`；密钥只放受保护的服务环境配置。`CEDARTOY_SMTP_SECURITY` 默认 `starttls`（默认端口 587），也可设 `ssl`（默认 465）；`CEDARTOY_SMTP_PORT` 可覆盖端口。找回通知拒绝 `none` 明文连接。部署前核实主进程实际环境，SMTP 超时为 10 秒；配置缺失或投递失败不回滚审批。
+
+账号库 `account_recovery_tickets`（管理员工单查询 API 也返回）记录 `email_status`：`not_requested` 未选择、`pending` 待审核、`sending` 已预留发送、`sent` SMTP 已接受（不保证进收件箱）、`failed` 失败。另有 `email_attempted_at_epoch`、`email_finished_at_epoch` 和固定错误码 `email_error`，不保存 SMTP 原始响应或链接明文。审核与发送预留在同一事务提交，随后才发信；重复审核不会再次发送。进程中断或投递结果写库失败可能留下 `sending`，超时也可能已被服务商接收，因此不自动重试或通过重复审批补发，使用查询码备用路径并核对邮件服务商投递记录。排查勿输出查询码、完整链接或 Token。表结构初始化会幂等补列，旧工单及已发链接保持兼容。
+
+普通反馈同样默认不发邮件。勾选后，管理员公开回复或首次结单才发送通知；内部备注及仅改处理中不发信。`feedback_tickets.contact_email` 只作通知地址；`feedback_email_events` 记录每次发送的 `sending/sent/failed` 状态。发送失败不回滚工单回复，不自动重试，用户仍可在站内查看。
+
 ## 公告与投票
 
 实现与唯一 DDL 位于 `announcements.py`。命令行必须与服务使用相同 `SESSIONS_DB`；默认 `/opt/cedartoy/data/sessions.db`。不要手写 INSERT 或复制 DDL。

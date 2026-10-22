@@ -218,7 +218,8 @@ def _admin_recovery_tickets(view, page, *,
         total = conn.execute(f"SELECT COUNT(*) FROM account_recovery_tickets WHERE {clause}").fetchone()[0]
         rows = conn.execute(
             f"""SELECT id, account_kind, account, machine, registered_about, games, explanation,
-                       status, admin_note, user_id, created_at_epoch, reviewed_at_epoch, claim_until_epoch
+                       status, admin_note, user_id, created_at_epoch, reviewed_at_epoch, claim_until_epoch,
+                       contact_email, email_status, email_error, email_attempted_at_epoch, email_finished_at_epoch
                 FROM account_recovery_tickets WHERE {clause} ORDER BY id DESC LIMIT 20 OFFSET ?""",
             ((page - 1) * 20,),
         ).fetchall()
@@ -227,14 +228,20 @@ def _admin_recovery_tickets(view, page, *,
 
 def _review_recovery_ticket(ticket_id, body, admin, *,
     _McpError,
+    _create_reset_token,
     _db_connect,
+    _deliver_recovery_notification,
+    _recovery_reset_token,
     _recovery_text,
+    _reset_url,
+    secrets,
     time,
 ):
     decision = body.get("decision")
     if decision not in ("approved", "rejected"):
         raise _McpError(-32602, "请选择通过或不通过")
     note = _recovery_text(body, "admin_note", 2000, optional=decision == "approved")
+    reset_url = None
     with _db_connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         ticket = conn.execute("SELECT * FROM account_recovery_tickets WHERE id=?", (ticket_id,)).fetchone()
@@ -255,7 +262,23 @@ def _review_recovery_ticket(ticket_id, body, admin, *,
                reviewed_at_epoch=?, claim_until_epoch=? WHERE id=?""",
             (decision, note, user_id, admin["id"], now, now + 7 * 86400 if user_id else None, ticket_id),
         )
+        if ticket["contact_email"]:
+            if decision == "approved":
+                nonce = secrets.token_urlsafe(32)
+                token = _recovery_reset_token({"id": ticket_id, "reset_nonce": nonce, "reset_token_version": 2})
+                _, token_id, _ = _create_reset_token(conn, user_id, lifetime_seconds=86400, token=token)
+                conn.execute(
+                    """UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=?,
+                       reset_token_version=2 WHERE id=?""", (token_id, nonce, ticket_id),
+                )
+                reset_url = _reset_url(token)
+            conn.execute(
+                """UPDATE account_recovery_tickets SET email_status='sending',
+                   email_attempted_at_epoch=? WHERE id=?""", (now, ticket_id),
+            )
         conn.commit()
+    if ticket["contact_email"]:
+        _deliver_recovery_notification(ticket_id, ticket["contact_email"], decision, note, reset_url)
     return {"ok": True}
 
 
