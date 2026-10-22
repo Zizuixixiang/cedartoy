@@ -1211,6 +1211,14 @@
       return `<div class="recovery-fact${wide ? " recovery-fact-wide" : ""}"><dt>${label}</dt><dd${time ? ' class="recovery-time"' : ""}>${escapeHtml(String(value ?? "").trim() || "—")}</dd></div>`;
     }
 
+    function recoveryEmailFacts(ticket) {
+      const email = String(ticket.contact_email ?? "").trim();
+      if (!email) return recoveryFact("邮件通知", "未启用");
+      const labels = {pending: "待发送", sending: "发送中", sent: "已发送", failed: "发送失败"};
+      const status = Object.hasOwn(labels, ticket.email_status) ? labels[ticket.email_status] : "未知状态";
+      return recoveryFact("通知邮箱", email) + recoveryFact("邮件状态", status);
+    }
+
     function recoveryVerificationText(ticket) {
       return `工单 ID：${ticket.id}\n账号${ticket.account_kind === "id" ? " ID" : "名"}：${ticket.account}\n绑定小机：${ticket.machine}\n约注册时间：${ticket.registered_about}\n玩过游戏：${ticket.games}\n补充说明：${ticket.explanation || "无"}\n提交时间：${formatEpoch(ticket.created_at_epoch)}`;
     }
@@ -1241,6 +1249,7 @@
               ${recoveryFact("约注册时间", ticket.registered_about)}
               ${recoveryFact("玩过游戏", ticket.games)}
               ${recoveryFact("补充说明", ticket.explanation, true)}
+              ${recoveryEmailFacts(ticket)}
               ${recoveryFact("提交时间", ticket.created_at_epoch ? formatEpoch(ticket.created_at_epoch) : "", true, true)}
               ${ticket.status !== "pending" ? `${recoveryFact("管理员备注", ticket.admin_note, true)}${recoveryFact("审核时间", ticket.reviewed_at_epoch ? formatEpoch(ticket.reviewed_at_epoch) : "", true, true)}` : ""}
             </dl>

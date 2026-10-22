@@ -356,7 +356,7 @@ async function checkAdmin() {
     assert.equal(card.querySelector(".recovery-pill").textContent, "审批中");
     assert.doesNotMatch(card.textContent, /pending/);
     assert.equal(card.querySelector("pre, img"), null, "facts are structured and submitted text is escaped");
-    assert.deepEqual([...card.querySelectorAll("dt")].map(el => el.textContent), ["账号名", "绑定小机", "约注册时间", "玩过游戏", "补充说明", "提交时间"]);
+    assert.deepEqual([...card.querySelectorAll("dt")].map(el => el.textContent), ["账号名", "绑定小机", "约注册时间", "玩过游戏", "补充说明", "邮件通知", "提交时间"]);
     for (const value of card.querySelectorAll("dd")) assert.equal(style(value).fontSize, "14px");
     assert.equal(style(card.querySelector(".recovery-pill")).fontSize, "12px");
     assert.equal(style(card.querySelector(".recovery-pill")).fontWeight, "700");
@@ -443,7 +443,32 @@ async function checkAdmin() {
     assert.deepEqual(calls.filter(c => c.url === "/api/admin/recovery/review").at(-1).body, {ticket_id: 7, decision: "rejected", admin_note: "请补充资料"});
     tickets = [{id: 99, status: "pending"}]; total = 1;
     await refresh();
-    assert.ok([...$("recoveryTickets").querySelectorAll("dd")].every(el => el.textContent === "—"));
+    assert.ok([...$("recoveryTickets").querySelectorAll("dd")].every(el => el.textContent === "—" || el.textContent === "未启用"));
+    // Exercise the actual list renderer for pending and processed tickets with mixed mail states.
+    const emailCases = [
+      ["pending", "待发送"], ["sending", "发送中"], ["sent", "已发送"], ["failed", "发送失败"],
+      ["future-status", "未知状态"], ["", "未知状态"], [null, "未知状态"], [undefined, "未知状态"],
+      ["__proto__", "未知状态"], ["constructor", "未知状态"], ['<img src=x onerror=alert(1)>', "未知状态"],
+    ];
+    const email = 'long.notification.address+'.repeat(4) + '<img src=x onerror=alert(1)>@example.invalid';
+    for (const view of ["pending", "processed"]) {
+      tickets = emailCases.map(([email_status], i) => ({...pending, id: i + 100,
+        status: view === "pending" ? "pending" : "approved", contact_email: email, email_status}));
+      tickets.push(...[undefined, null, "", "   "].map((contact_email, i) => ({...pending, id: i + 200,
+        status: view === "pending" ? "pending" : "approved", contact_email, email_status: "sent"})));
+      total = tickets.length;
+      await filter(view);
+      [...$("recoveryTickets").children].forEach((item, i) => {
+        const facts = Object.fromEntries([...item.querySelectorAll(".recovery-fact")].map(el =>
+          [el.querySelector("dt").textContent, el.querySelector("dd").textContent]));
+        assert.equal(facts["通知邮箱"], i < emailCases.length ? email : undefined);
+        assert.equal(facts["邮件状态"], emailCases[i]?.[1]);
+        assert.equal(facts["邮件通知"], i < emailCases.length ? undefined : "未启用");
+        assert.equal(item.querySelector("img, script"), null, "email and status must not inject markup");
+      });
+      d.querySelector('[data-recovery-action="copy"]').click(); await tick();
+      assert.doesNotMatch(clipboard.at(-1), /通知邮箱|邮件状态|example\.invalid/);
+    }
     listError = true; await refresh();
     assertCount("0", true);
     assert.equal($("recoveryStatus").textContent, "加载失败");
