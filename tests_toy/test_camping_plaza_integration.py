@@ -123,9 +123,9 @@ class CampingPlazaCedarToyTests(unittest.TestCase):
         game_schema = play_tool["inputSchema"]["properties"]["game"]
         self.assertEqual(game_schema.get("type"), "string")
         self.assertNotIn("enum", game_schema)
-        self.assertIn("list_games", game_schema.get("description", ""))
+        self.assertEqual(game_schema.get("description"), "游戏名。")
         action_desc = play_tool["inputSchema"]["properties"]["action"].get("description", "")
-        self.assertIn("camping_plaza", action_desc)
+        self.assertEqual(action_desc, "操作名；按 get_guide(game) 返回的说明填写。")
 
     def test_proxy_policy_excludes_native_mcp_and_internal_admin(self):
         self.assertTrue(server._camping_plaza_proxy_allowed("GET", "/"))

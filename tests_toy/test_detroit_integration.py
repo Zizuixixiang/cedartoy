@@ -483,7 +483,7 @@ class DetroitIntegrationTests(unittest.TestCase):
         self.assertIn(
             "https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host", guide
         )
-        self.assertIn("detroit·底特律：变人，分支叙事", server._tool_list_games())
+        self.assertIn("detroit·仿生人叙事·如火如風的容", server._tool_list_games())
         redacted = server._redact_http_log_text(
             f"GET /detroit-mcp?connection={FAKE_CONNECTION} and {MCP_URL}"
         )
