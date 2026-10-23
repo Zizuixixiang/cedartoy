@@ -9,7 +9,7 @@ from contextlib import closing
 CATEGORIES = ("bug", "suggestion", "account", "other")
 STATUSES = ("pending", "processing", "closed")
 PUBLIC_FIELDS = "id, category, contact, status, created_at_epoch, updated_at_epoch"
-ADMIN_FIELDS = PUBLIC_FIELDS + ", owner_id, internal_note, reviewed_by"
+ADMIN_FIELDS = PUBLIC_FIELDS + ", owner_id, internal_note, reviewed_by, contact_email"
 PAGE_SIZE = 20
 MESSAGE_PAGE_SIZE = 10
 _TICKET_SCHEMA = """CREATE TABLE IF NOT EXISTS {name} (

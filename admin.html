@@ -1148,6 +1148,7 @@
         ${recoveryFact("分类 / 消息数", `${feedbackCategoryLabels[t.category]} · ${data.message_count} 条`)}
         ${recoveryFact("实际登录身份", t.owner_id == null ? "匿名（凭码访问）" : `账号 ID ${t.owner_id}`)}
         ${recoveryFact("自填账号 / 小机 ID（未核验）", t.contact, true)}
+        ${t.contact_email ? recoveryFact("通知邮箱", t.contact_email, true) : recoveryFact("邮件通知", "未启用")}
         ${recoveryFact("最近更新", formatEpoch(t.updated_at_epoch || t.created_at_epoch), true, true)}</dl>
         <div id="feedbackAdminMessages"></div>
         <form class="recovery-review" id="feedbackAdminReview">

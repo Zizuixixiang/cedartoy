@@ -24,6 +24,36 @@ class FeedbackEmailTests(unittest.TestCase):
                 (ticket_id,),
             )]
 
+    def test_contact_email_only_in_admin_detail(self):
+        email = "feedback-contact@example.invalid"
+        for owner, token in ((None, None), (self.human_id, self.human_token), (self.ai_id, self.ai_token)):
+            with self.subTest(owner=owner):
+                receipt = self.submit(owner, notify_email=True, contact_email=email)
+                tid = receipt["ticket_id"]
+                status, detail = self.http("detail", {"ticket_id": tid}, self.admin_token, admin=True)
+                self.assertEqual(status, 200)
+                self.assertEqual(detail["ticket"]["contact_email"], email)
+                self.assertEqual(self.call("admin_feedback_detail", ticket_id=tid)["ticket"]["contact_email"], email)
+                for denied_token, expected in ((None, 401), (self.human_token, 403), (self.ai_token, 403)):
+                    self.assertEqual(self.http("detail", {"ticket_id": tid}, denied_token, admin=True)[0], expected)
+
+                public_results = [receipt]
+                requests = [("query", {"query_code": receipt["query_code"]})] if owner is None else [
+                    ("list", {}), ("detail", {"ticket_id": tid})]
+                for operation, body in requests:
+                    status, public = self.http(operation, body, token)
+                    self.assertEqual(status, 200)
+                    public_results.append(public)
+                if owner is not None:
+                    public_results.extend((self.call("feedback_list", token=token),
+                                           self.call("feedback_detail", token=token, ticket_id=tid)))
+                for public in public_results:
+                    self.assertNotIn("contact_email", str(public))
+                    self.assertNotIn(email, str(public))
+
+        tid = self.submit()["ticket_id"]
+        self.assertIsNone(self.call("admin_feedback_detail", ticket_id=tid)["ticket"]["contact_email"])
+
     def test_opt_in_only_public_reply_or_new_closure(self):
         with patch.object(server, "_send_feedback_email") as send:
             self.store = server._feedback_store()

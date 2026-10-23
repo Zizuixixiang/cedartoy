@@ -64,6 +64,18 @@ exports.run = async ({backend, fixture, root}) => {
     assert.equal(A("feedbackAdminDetail").hidden, false);
     assert.match(A("feedbackAdminDetail").textContent, /匿名/);
     assert.equal(A("feedbackAdminDetail").querySelectorAll("img").length, 0);
+    const originalDetail = a.eval("feedbackAdminConversation");
+    const longEmail = "a".repeat(64) + "@" + "b".repeat(63) + "." + "c".repeat(63) + ".invalid";
+    for (const email of ["notice@example.invalid", longEmail, '<img src=x onerror="window.feedbackXss=1">&\'@example.invalid', "", null, undefined]) {
+      a.renderAdminFeedbackDetail({...originalDetail, ticket: {...originalDetail.ticket, contact_email: email}});
+      const facts = [...A("feedbackAdminDetail").querySelectorAll(".recovery-fact")];
+      const fact = facts.find(el => el.querySelector("dt").textContent === (email ? "通知邮箱" : "邮件通知"));
+      assert.ok(fact);
+      assert.equal(fact.querySelector("dd").textContent, email || "未启用");
+      assert.equal(A("feedbackAdminDetail").querySelectorAll("img,script").length, 0);
+      assert.equal(a.feedbackXss, undefined);
+    }
+    a.renderAdminFeedbackDetail(originalDetail);
     const reply = async text => {
       A("feedbackAdminReply").value = text;
       A("feedbackAdminReview").dispatchEvent(new a.Event("submit", {bubbles: true, cancelable: true}));
