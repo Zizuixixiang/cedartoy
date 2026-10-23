@@ -165,6 +165,89 @@ class FeedbackTests(unittest.TestCase):
         for content in ("", " ", 123, "x"*4001):
             self.assertEqual(self.http("message", {"ticket_id": owned, "content": content}, self.human_token)[0], 400)
 
+    def test_owner_close_pending_processing_idempotent_and_followup_reopens(self):
+        for state in ("pending", "processing"):
+            tid = self.submit(self.human_id)["ticket_id"]
+            if state == "processing":
+                self.call("admin_feedback_review", ticket_id=tid, status=state, confirm=True)
+            before = self.store.detail(tid, self.human_id)
+            body = {"ticket_id": tid, "confirm": True}
+            status, result = self.http("close", body, self.human_token)
+            self.assertEqual(status, 200)
+            self.assertEqual(result["status"], "closed")
+            after = self.store.detail(tid, self.human_id)
+            self.assertEqual(after["messages"], before["messages"])
+            self.assertEqual(after["ticket"]["status"], "closed")
+            self.assertEqual(self.store.listing(self.human_id)["tickets"][0]["status"], "closed")
+            with patch.object(feedback_tickets.time, "time", return_value=time.time() + 60):
+                self.assertEqual(self.http("close", body, self.human_token), (200, result))
+            self.assertEqual(self.http("message", {"ticket_id": tid, "content": "继续追问"}, self.human_token)[0], 200)
+            reopened = self.store.detail(tid, self.human_id)
+            self.assertEqual(reopened["ticket"]["status"], "pending")
+            self.assertEqual(reopened["messages"][:-1], before["messages"])
+
+    def test_owner_close_rejects_foreign_bound_forged_and_unconfirmed_requests(self):
+        tid = self.submit(self.human_id)["ticket_id"]
+        body = {"ticket_id": tid, "confirm": True}
+        for token, expected in ((None, 401), ("invalid", 401), (self.ai_token, 404),
+                                (self.other_human_token, 404), (self.admin_token, 404)):
+            self.assertEqual(self.http("close", body, token)[0], expected)
+        for confirm in (None, False, 1, "true"):
+            self.assertEqual(self.http("close", {**body, "confirm": confirm}, self.human_token)[0], 400)
+        self.assertEqual(self.http("close", {"ticket_id": tid}, self.human_token)[0], 400)
+        for key in ("owner_id", "user_id", "player_id", "actor_id", "status", "reply"):
+            self.assertEqual(self.http("close", {**body, key: self.human_id}, self.human_token)[0], 400)
+        for bad_id, expected in ((True, 400), (str(tid), 400), (0, 400), (2**63, 400), (999999, 404)):
+            self.assertEqual(self.http("close", {**body, "ticket_id": bad_id}, self.human_token)[0], expected)
+        self.assertEqual(self.http("close", body, self.human_token, rate=False)[0], 429)
+        self.assertEqual(self.store.detail(tid, self.human_id)["ticket"]["status"], "pending")
+
+    def test_anonymous_close_requires_original_code_and_exact_ticket(self):
+        receipt, other = self.submit(), self.submit(ip="192.0.2.2")
+        owned = self.submit(self.human_id)["ticket_id"]
+        body = {"ticket_id": receipt["ticket_id"], "confirm": True, "query_code": receipt["query_code"]}
+        for bad in (None, "", "x" * 43, other["query_code"], [receipt["query_code"]]):
+            self.assertEqual(self.http("close", {**body, "query_code": bad}, self.human_token)[0], 404)
+        self.assertEqual(self.http("close", {**body, "ticket_id": owned}, self.human_token)[0], 404)
+        self.assertEqual(self.http("close", {"ticket_id": receipt["ticket_id"], "confirm": True}, self.human_token)[0], 404)
+        for token in (None, "expired", self.other_human_token):
+            self.assertEqual(self.http("close", body, token)[0], 200)
+        self.assertEqual(self.store.query(receipt["query_code"])["ticket"]["status"], "closed")
+        self.assertEqual(self.store.query(other["query_code"])["ticket"]["status"], "pending")
+        self.assertEqual(self.http("message", {"ticket_id": receipt["ticket_id"],
+            "query_code": receipt["query_code"], "content": "持码重开"})[0], 200)
+        self.assertEqual(self.store.query(receipt["query_code"])["ticket"]["status"], "pending")
+
+    def test_owner_close_concurrent_keeps_history_review_and_notifications_unchanged(self):
+        with patch.object(server, "_send_feedback_email") as send:
+            self.store = server._feedback_store()
+            tid = self.submit(self.ai_id, notify_email=True, contact_email="test@example.invalid")["ticket_id"]
+            self.call("admin_feedback_review", ticket_id=tid, reply="已有答复", internal_note="保留备注", confirm=True)
+            send.reset_mock()
+            def snapshot():
+                with self._connect() as conn:
+                    return {table: [tuple(row) for row in conn.execute("SELECT * FROM " + table)] for table in (
+                        "feedback_messages", "feedback_email_events", "feedback_review_limits", "feedback_read_cursors")}
+            before = snapshot()
+            unread = self.store.unread(self.ai_id)
+            body = {"ticket_id": tid, "confirm": True}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                results = list(executor.map(lambda _: self.store.close(body, self.ai_id), range(6)))
+            self.assertTrue(all(result == results[0] for result in results))
+            self.assertEqual(snapshot(), before)
+            self.assertEqual(self.store.unread(self.ai_id), unread)
+            ticket = self.store.detail(tid, admin=True)["ticket"]
+            self.assertEqual(ticket["reviewed_by"], self.admin_id)
+            self.assertEqual(ticket["internal_note"], "保留备注")
+            send.assert_not_called()
+            # Closing an unread answer doesn't consume it; closing a read one creates no reminder.
+            self.assertTrue(self.store.claim_notification(self.ai_id))
+            self.store.detail(tid, self.ai_id)
+            self.http("message", {"ticket_id": tid, "content": "再次追问"}, self.ai_token)
+            self.assertEqual(self.http("close", body, self.ai_token)[0], 200)
+            self.assertFalse(self.store.claim_notification(self.ai_id))
+            self.assertEqual(self.store.unread(self.ai_id)["unread_count"], 0)
+
     def test_message_cursor_pagination_survives_new_messages(self):
         receipt = self.submit()
         tid = receipt["ticket_id"]

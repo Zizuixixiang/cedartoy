@@ -5,9 +5,9 @@
 ## 会话与权限
 
 - 实际 `TURTLE_SOUP_DB` 账号库中的 `feedback_tickets` 保存工单，`feedback_messages` 追加 QA 消息。首次提交是第一条玩家消息，后续玩家追问和管理员答复均追加，不修改/删除旧消息。每条记录保存角色、实际写入账号（匿名为空）、正文、Unix时间；按服务端消息ID顺序展示，同秒并发也有确定顺序。
-- 三种状态：玩家发起或追问 → `pending`（待处理）；管理员回复 → `processing`（处理中）；管理员结单 → `closed`（已结束）。已结束的玩家追问会自动重新打开；已结束后管理员继续答复会转处理中。只有管理员能设置状态；玩家没有结单或改状态接口。
+- 三种状态：玩家发起或追问 → `pending`（待处理）；管理员回复 → `processing`（处理中）；管理员或实际发起者结单 → `closed`（已结束）。发起者可直接结束待处理/处理中工单，不要求管理员先回复；详情外层最底部左侧「结束工单」二次确认后执行，右侧仍为「关闭」。已结束不可重复点击；结束保留历史和追问草稿，不追加管理员消息或发送管理员答复/结单通知。已结束的玩家追问仍会自动重新打开；已结束后管理员继续答复会转处理中。玩家不能任意设置状态。
 - 网页沿用 `cedartoy_token` → `Authorization: Bearer …`。登录归属只取 `_current_account` 的实际账号ID；绑定关系、自填contact和自报ID不能赋予权限。携带失效token不能静默降为匿名提交。
-- 匿名提交一次性返回 `secrets.token_urlsafe(32)`（256位随机性）查询码；服务端只存SHA-256哈希。原码可查该单、追加消息，追加时必须同时匹配单号和原码，不能转向其他工单。凭码操作不依赖登录状态；没有匿名列表。码不进入URL、日志或浏览器持久存储，持码人可读写该单，遗失无法重新获取。
+- 匿名提交一次性返回 `secrets.token_urlsafe(32)`（256位随机性）查询码；服务端只存SHA-256哈希。原码可查该单、追加消息和结束工单；追加/结束时必须同时匹配单号和原码，不能转向其他工单。凭码操作不依赖登录状态；没有匿名列表。码不进入URL、日志或浏览器持久存储，持码人可读写该单，遗失无法重新获取。
 - 分类 `bug/suggestion/account/other`；每条消息必填、最多4000字，自填账号参考最多120字。没有附件、截图或文件存储。
 - `reply` 在管理员请求中代表**追加**的对外消息；`internal_note` 是独立内部备注，仅管理员可见，不进入消息历史。备注省略保留、空串清除；不能通过空reply清除历史答复。
 - 列表每页20条，页码1–1000000；每项只有最多80字初始问题摘要、分类、状态、更新时间、消息数、末条说话方，按更新时间倒序。管理端待处理且末条为玩家时显示「玩家新留言」。默认不展开任何工单，只打开选中会话；返回/分页重载摘要，清除原选中状态。
@@ -42,6 +42,7 @@
 | `/api/feedback/detail` | ticket_id、可选before_id；必须登录，仅本人 |
 | `/api/feedback/query` | query_code、可选before_id；仅持码单条 |
 | `/api/feedback/message` | ticket_id、content、可选query_code；实际owner或匹配原码的匿名单；拒绝额外字段 |
+| `/api/feedback/close` | ticket_id、confirm=true、可选query_code；服务端校验实际owner或匹配原码的匿名单，拒绝额外字段；重复结束幂等，不扩展公共MCP schema |
 | `/api/admin/feedback/list` | 可选status（含all）、page；管理员 |
 | `/api/admin/feedback/detail` | ticket_id、可选before_id；管理员 |
 | `/api/admin/feedback/review` | ticket_id、confirm=true；reply/internal_note/status至少一项；管理员 |
@@ -61,6 +62,8 @@
 ```sh
 python3 -m unittest tests_toy.test_feedback tests_toy.test_feedback_unread tests_toy.test_mcp_schema_selection tests_toy.test_mcp_module_compat tests_toy.test_root_mcp_protocol.RootMcpProtocolTests.test_root_schemas_keep_gemini_numeric_enum_compatibility
 node scripts/check_feedback_browser.js
+# 仅发起者结束工单（临时库、真实浏览器）：
+FEEDBACK_CLOSE_ONLY=1 node scripts/check_feedback_browser.js
 # DOM功能检查不代替视觉验收：
 FEEDBACK_DOM_ONLY=1 node scripts/check_feedback_browser.js
 node scripts/check_account_recovery_ui.js

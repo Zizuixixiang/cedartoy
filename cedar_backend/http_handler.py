@@ -169,7 +169,7 @@ def do_POST(
         self._handle_api_account_email_confirm()
         return
 
-    if path in {"/api/feedback/submit", "/api/feedback/query", "/api/feedback/list", "/api/feedback/detail", "/api/feedback/message", "/api/feedback/unread",
+    if path in {"/api/feedback/submit", "/api/feedback/query", "/api/feedback/list", "/api/feedback/detail", "/api/feedback/message", "/api/feedback/unread", "/api/feedback/close",
                 "/api/admin/feedback/list", "/api/admin/feedback/detail", "/api/admin/feedback/review"}:
         self._handle_feedback(path)
         return

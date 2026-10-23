@@ -6085,8 +6085,8 @@ a{{color:#c9afff}}
                 store = _feedback_store()
                 if operation == "query":
                     result = store.query(body.get("query_code"), before_id=body.get("before_id"))
-                elif operation == "message" and "query_code" in body:
-                    result = store.append(body, None, self._client_ip())
+                elif operation in {"message", "close"} and "query_code" in body:
+                    result = store.close(body, None) if operation == "close" else store.append(body, None, self._client_ip())
                 else:
                     # Invalid/expired supplied credentials must never silently become anonymous.
                     user = _current_account(raw_token) if raw_token else None
@@ -6097,6 +6097,8 @@ a{{color:#c9afff}}
                         result = store.listing(owner_id, page=body.get("page", 1))
                     elif operation == "unread":
                         result = store.unread(owner_id)
+                    elif operation == "close":
+                        result = store.close(body, owner_id)
                     else:
                         result = store.append(body, owner_id, self._client_ip()) if operation == "message" else store.detail(
                             body.get("ticket_id"), owner_id, before_id=body.get("before_id"))

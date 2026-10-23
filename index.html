@@ -3516,6 +3516,7 @@
       <p class="modal-msg" id="feedbackMessage" role="status" aria-live="polite"></p>
       <div class="modal-actions feedback-actions">
         <button class="pixel-btn" id="feedbackSubmit" type="submit" form="feedbackForm">提交反馈</button>
+        <button class="pixel-btn secondary" id="feedbackCloseTicket" type="button" hidden>结束工单</button>
         <button class="pixel-btn secondary" data-close-modal type="button">关闭</button>
       </div>
     </div>
@@ -7490,6 +7491,20 @@
             slots: Array.isArray(slots) ? slots : [],
           };
         });
+        const selectMachine = (machine) => {
+          if (machine.slots.length <= 1) {
+            const slot = Number(machine.slots[0]?.slot) || 1;
+            closeBankPicker();
+            watchCurrentGame(machine.aiUserId, slot);
+            return;
+          }
+          renderWorkkkSlotPicker(machine);
+        };
+        if (machines.length === 1) {
+          if (!$("bankPicker").classList.contains("show") || currentGame().id !== "workkk") return;
+          selectMachine(machines[0]);
+          return;
+        }
         const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
         $("bankPickerOptions").innerHTML = machines.map((machine) => `
           <button class="bank-picker-option" data-workkk-machine-option="${escapeHtml(machine.aiUserId)}" type="button">${escapeHtml(machine.machineName)}</button>
@@ -7498,13 +7513,7 @@
           option.addEventListener("click", () => {
             const machine = machinesById.get(option.dataset.workkkMachineOption);
             if (!machine) return;
-            if (machine.slots.length <= 1) {
-              const slot = Number(machine.slots[0]?.slot) || 1;
-              closeBankPicker();
-              watchCurrentGame(machine.aiUserId, slot);
-              return;
-            }
-            renderWorkkkSlotPicker(machine);
+            selectMachine(machine);
           });
         });
       } catch (err) {
@@ -8177,6 +8186,10 @@
       }
       if (currentGame().id === "detroit") {
         await openDetroitPicker(bindings);
+        return;
+      }
+      if (currentGame().id === "workkk") {
+        await openWorkkkPicker(bindings);
         return;
       }
       if (bindings.length === 1) {
@@ -9033,6 +9046,7 @@
     }
     function feedbackResetResults() {
       feedbackConversation = null;
+      syncFeedbackCloseTicket();
       $("feedbackList").replaceChildren();
       $("feedbackDetail").replaceChildren();
       $("feedbackDetail").hidden = true;
@@ -9131,6 +9145,7 @@
       } finally {
         controls.forEach((el, index) => el.disabled = states[index]);
         feedbackBusy = false;
+        syncFeedbackCloseTicket();
         if (feedbackMode === "list") updateFeedbackPagination();
         if (identity !== token()) {
           updateFeedbackModeVisibility();
@@ -9144,6 +9159,25 @@
       }
     }
     let feedbackConversation = null;
+    function syncFeedbackCloseTicket() {
+      $("feedbackCloseTicket").hidden = !feedbackConversation;
+      $("feedbackCloseTicket").disabled = feedbackBusy || feedbackConversation?.ticket.status === "closed";
+    }
+    $("feedbackCloseTicket").onclick = () => {
+      const conversation = feedbackConversation;
+      if (feedbackBusy || !conversation || conversation.ticket.status === "closed") return;
+      if (!window.confirm("确定结束这条工单吗？历史消息会保留，之后继续追问会重新打开为待处理。")) return;
+      feedbackRun(async current => {
+        const data = await feedbackRequest("close", {ticket_id: conversation.ticket.id, confirm: true,
+          ...(conversation.code ? {query_code: conversation.code} : {})});
+        if (!current() || conversation !== feedbackConversation) return;
+        const draft = $("feedbackFollowupContent").value;
+        renderFeedbackDetail({...conversation, ticket: {...conversation.ticket,
+          status: data.status, updated_at_epoch: data.updated_at_epoch}}, conversation.code);
+        $("feedbackFollowupContent").value = draft;
+        $("feedbackMessage").textContent = "工单已结束。";
+      });
+    };
     function feedbackConversationBody(extra = {}) {
       return {...(feedbackConversation.code ? {query_code: feedbackConversation.code} : {ticket_id: feedbackConversation.ticket.id}), ...extra};
     }
@@ -9185,6 +9219,7 @@
     }
     function renderFeedbackDetail(data, code = null) {
       feedbackConversation = {...data, code};
+      syncFeedbackCloseTicket();
       const ticket = data.ticket, panel = $("feedbackDetail"); panel.replaceChildren();
       const title = document.createElement("h3"); title.className = "feedback-ticket-heading";
       const name = document.createElement("span"); name.textContent = `反馈 #${ticket.id}`;
@@ -9204,7 +9239,7 @@
       const back = document.createElement("button"); back.type = "button"; back.className = "pixel-btn secondary"; back.textContent = "收起对话";
       back.onclick = () => {
         if (feedbackBusy) return;
-        feedbackConversation = null; panel.replaceChildren(); panel.hidden = true;
+        feedbackResetResults();
         if (feedbackMode === "list") { loadFeedbackList()?.then(() => $("feedbackList").querySelector("button")?.focus()); }
         else $("feedbackQueryCode").focus();
       };
@@ -9293,8 +9328,7 @@
     });
     $("feedbackQueryForm").addEventListener("submit", event => {
       event.preventDefault();
-      feedbackConversation = null;
-      $("feedbackDetail").replaceChildren(); $("feedbackDetail").hidden = true;
+      feedbackResetResults();
       const code = $("feedbackQueryCode").value.trim();
       feedbackRun(async current => {
         const data = await feedbackRequest("query", {query_code: code});
@@ -9303,7 +9337,7 @@
     });
     $("feedbackQueryCode").addEventListener("input", () => {
       if (feedbackBusy) return;
-      feedbackConversation = null; $("feedbackDetail").replaceChildren(); $("feedbackDetail").hidden = true;
+      feedbackResetResults();
     });
     $("feedbackNew").onclick = () => {
       $("feedbackQueryCode").value = feedbackReceipt.query_code;

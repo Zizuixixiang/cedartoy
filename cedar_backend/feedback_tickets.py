@@ -328,6 +328,23 @@ class FeedbackStore:
             conn.execute("UPDATE feedback_tickets SET status='pending', updated_at_epoch=? WHERE id=?", (now,ticket_id))
         return {"ok": True, "ticket_id": ticket_id, "message_id": message_id, "status": "pending"}
 
+    def close(self, body, owner_id):
+        if set(body) - {"ticket_id", "confirm", "query_code"}:
+            raise self.error(-32602, "结束工单仅接受 ticket_id、confirm 和可选 query_code")
+        if body.get("confirm") is not True:
+            raise self.error(-32602, "结束工单需要 confirm=true")
+        ticket_id = self.integer(body.get("ticket_id"), "ticket_id")
+        with closing(self._open()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if "query_code" in body:
+                self._code_hash(body["query_code"])
+            self._owned(conn, ticket_id, owner_id, body.get("query_code"))
+            # A repeated close is a no-op, including timestamps and notifications.
+            conn.execute("""UPDATE feedback_tickets SET status='closed', updated_at_epoch=?
+                            WHERE id=? AND status!='closed'""", (int(time.time()), ticket_id))
+            row = conn.execute("SELECT updated_at_epoch FROM feedback_tickets WHERE id=?", (ticket_id,)).fetchone()
+        return {"ok": True, "ticket_id": ticket_id, "status": "closed", "updated_at_epoch": row[0]}
+
     def review(self, body, admin):
         ticket_id = self.integer(body.get("ticket_id"), "ticket_id")
         status = self.choice(body["status"], STATUSES, "status") if "status" in body else None
