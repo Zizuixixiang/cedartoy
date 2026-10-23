@@ -243,6 +243,9 @@ class FeedbackStore:
             clauses.append("status=?")
             values.append(status)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        order = "coalesce(updated_at_epoch,created_at_epoch) DESC,id DESC"
+        if status == "all":
+            order = "CASE status WHEN 'pending' THEN 0 WHEN 'processing' THEN 1 WHEN 'closed' THEN 2 END," + order
         with closing(self._open()) as conn, conn:
             conn.execute("BEGIN")
             total = conn.execute("SELECT count(*) FROM feedback_tickets" + where, values).fetchone()[0]
@@ -251,7 +254,7 @@ class FeedbackStore:
                 (SELECT count(*) FROM feedback_messages m WHERE m.ticket_id=t.id) AS message_count,
                 (SELECT role FROM feedback_messages m WHERE m.ticket_id=t.id ORDER BY id DESC LIMIT 1) AS last_message_role
                 FROM feedback_tickets t""" + where +
-                " ORDER BY coalesce(updated_at_epoch,created_at_epoch) DESC,id DESC LIMIT ? OFFSET ?",
+                " ORDER BY " + order + " LIMIT ? OFFSET ?",
                 values + [PAGE_SIZE, (page-1)*PAGE_SIZE]).fetchall()
             unread_ids = {row["id"] for row in self._unread_rows(conn, owner_id)} if not admin else set()
         return {"tickets": [dict(row) if admin else {**dict(row), "unread": row["id"] in unread_ids} for row in rows],

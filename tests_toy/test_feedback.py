@@ -52,6 +52,60 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(args.kwargs["extra_headers"]["Cache-Control"], "no-store")
         return args.kwargs.get("status", 200), args.args[0]
 
+    def test_listing_status_priority_and_recent_update_order(self):
+        expected = {status: [] for status in ("pending", "processing", "closed")}
+        with self._connect() as conn:
+            feedback_tickets.init_schema(conn)
+            # Closed tickets are newer overall; creation order mixes all statuses.
+            for created, updated in ((100, 300), (200, None), (150, 300)):
+                for status, offset in (("closed", 2000), ("pending", 0), ("processing", 1000)):
+                    tid = conn.execute("""INSERT INTO feedback_tickets
+                        (owner_id,ip_hash,category,content,status,created_at_epoch,updated_at_epoch)
+                        VALUES (?,'test','bug','ordering',?,?,?)""",
+                        (self.human_id, status, created + offset,
+                         updated + offset if updated is not None else None)).lastrowid
+                    expected[status].append(tid)
+        # Updated time wins over creation time; equal effective times use descending ID.
+        expected = {status: [ids[2], ids[0], ids[1]] for status, ids in expected.items()}
+        all_ids = [tid for ids in expected.values() for tid in ids]
+        for admin, token in ((False, self.human_token), (True, self.admin_token)):
+            for body in ({}, {"status": "all"}):
+                with self.subTest(admin=admin, body=body):
+                    code, result = self.http("list", body, token, admin=admin)
+                    self.assertEqual(code, 200)
+                    self.assertEqual([t["id"] for t in result["tickets"]], all_ids)
+                    self.assertEqual((result["total"], result["page"], result["page_size"]),
+                                     (9, 1, feedback_tickets.PAGE_SIZE))
+            for status, ids in expected.items():
+                with self.subTest(admin=admin, status=status):
+                    result = self.store.listing(self.human_id, admin=admin, status=status)
+                    self.assertEqual([t["id"] for t in result["tickets"]], ids)
+                    self.assertEqual(result["total"], 3)
+
+    def test_listing_pagination_keeps_closed_after_all_active_tickets(self):
+        pending, processing, closed = [], [], []
+        with self._connect() as conn:
+            feedback_tickets.init_schema(conn)
+            for i in range(feedback_tickets.PAGE_SIZE + 3):
+                status = "closed" if i >= feedback_tickets.PAGE_SIZE + 1 else (
+                    "pending" if i % 2 == 0 else "processing")
+                tid = conn.execute("""INSERT INTO feedback_tickets
+                    (owner_id,ip_hash,category,content,status,created_at_epoch,updated_at_epoch)
+                    VALUES (?,'test','bug','pagination',?,100,?)""",
+                    (self.human_id, status, 200 + i)).lastrowid
+                {"pending": pending, "processing": processing, "closed": closed}[status].append(tid)
+        expected = pending[::-1] + processing[::-1] + closed[::-1]
+        for admin, token in ((False, self.human_token), (True, self.admin_token)):
+            for page in (1, 2, 3):
+                with self.subTest(admin=admin, page=page):
+                    code, result = self.http("list", {"page": page}, token, admin=admin)
+                    self.assertEqual(code, 200)
+                    self.assertEqual((result["total"], result["page"], result["page_size"]),
+                                     (len(expected), page, feedback_tickets.PAGE_SIZE))
+                    start = (page - 1) * feedback_tickets.PAGE_SIZE
+                    self.assertEqual([t["id"] for t in result["tickets"]],
+                                     expected[start:start + feedback_tickets.PAGE_SIZE])
+
     def test_auto_close_seven_day_boundary_and_idempotence(self):
         replied_at = 1800000000
         for elapsed in (7 * 86400 - 1, 7 * 86400, 7 * 86400 + 1):
@@ -277,7 +331,8 @@ class FeedbackTests(unittest.TestCase):
             after = self.store.detail(tid, self.human_id)
             self.assertEqual(after["messages"], before["messages"])
             self.assertEqual(after["ticket"]["status"], "closed")
-            self.assertEqual(self.store.listing(self.human_id)["tickets"][0]["status"], "closed")
+            statuses = {t["id"]: t["status"] for t in self.store.listing(self.human_id)["tickets"]}
+            self.assertEqual(statuses[tid], "closed")
             with patch.object(feedback_tickets.time, "time", return_value=time.time() + 60):
                 self.assertEqual(self.http("close", body, self.human_token), (200, result))
             self.assertEqual(self.http("message", {"ticket_id": tid, "content": "继续追问"}, self.human_token)[0], 200)

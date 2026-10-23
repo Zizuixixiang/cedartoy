@@ -90,10 +90,13 @@ const dom = new JSDOM(html, {
     {game_type: "gem_merchant", rooms: 7},
     {game_type: "monopoly_plus", rooms: 3},
     {game_type: "gomoku", rooms: 2},
+    {game_type: "four_color_qunhu", rooms: 2},
+    {game_type: "four_color_tenhu", rooms: 1},
+    {game_type: "four_color_jiuzhi", rooms: 1},
     {game_type: "future_game", rooms: 1},
   ];
   const snapshot = JSON.stringify(distribution);
-  const labels = ["宝石商人", "大富翁·改", "五子棋", "未知游戏"];
+  const labels = ["宝石商人", "大富翁·改", "五子棋", "四色牌·群胡", "四色牌·十胡", "四色牌·九支十仔", "未知游戏"];
   window.renderDuel({ok: true, range: {game_distribution: distribution}}, "1h");
   const bars = Array.from(document.querySelectorAll("#duelContent .bar-row"));
   assert.deepEqual(bars.map(bar => bar.querySelector(".bar-label").textContent), labels);

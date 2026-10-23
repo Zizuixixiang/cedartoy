@@ -31,6 +31,9 @@ const html = fs.readFileSync(path.join(__dirname, "../admin.html"), "utf8");
           {game_type: "gem_merchant", rooms: 7},
           {game_type: "monopoly_plus", rooms: 3},
           {game_type: "uno", rooms: 2},
+          {game_type: "four_color_qunhu", rooms: 2},
+          {game_type: "four_color_tenhu", rooms: 1},
+          {game_type: "four_color_jiuzhi", rooms: 1},
         ]}}, turtle: {ok: true},
       }});
       return route.abort();
@@ -69,7 +72,7 @@ const html = fs.readFileSync(path.join(__dirname, "../admin.html"), "utf8");
           assert.ok(cells.some(cell => cell.text === "宝石商人"));
           assert.ok(cells.some(cell => cell.text === "记忆车站"));
           assert.ok(cells.some(cell => cell.text === "深聊问答（旧记录未细分）"));
-          assert.deepEqual(await page.locator("#duelContent .bar-label").allTextContents(), ["宝石商人", "大富翁·改", "优诺牌"]);
+          assert.deepEqual(await page.locator("#duelContent .bar-label").allTextContents(), ["宝石商人", "大富翁·改", "优诺牌", "四色牌·群胡", "四色牌·十胡", "四色牌·九支十仔"]);
           assert.equal(await page.locator("#duelContent .bar-row").first().getAttribute("title"), "宝石商人: 7");
           assert.doesNotMatch(await page.locator("#dashboardPanel").innerText(), /gem_merchant|monopoly_plus|UNO|Memoria|DeepTalk/);
         }
