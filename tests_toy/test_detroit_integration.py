@@ -182,7 +182,7 @@ class DetroitIntegrationTests(unittest.TestCase):
             server, "_bound_ai_slot_target_for_user",
             return_value={"player": "42:3", "ai_user_id": 42, "machine_name": "小机", "slot": 3},
         ):
-            _token, target = handler._detroit_human_target()
+            _token, target = handler._detroit_human_target(requested_player="42:3")
         self.assertEqual(target["player"], captured["player_id"])
 
     def test_human_entry_redirect_sets_browser_session_and_protects_api(self):
@@ -230,10 +230,11 @@ class DetroitIntegrationTests(unittest.TestCase):
                 with opener.open(http_entry) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("底特律盲玩主持台", response.read().decode("utf-8"))
-                self.assertEqual({cookie.name for cookie in jar}, {"detroit_token", "detroit_player"})
+                self.assertEqual({cookie.name for cookie in jar}, {"detroit_token"})
+                self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(response.url).query), {"player": ["42:3"]})
                 self.assertTrue(all(not cookie.secure for cookie in jar))
 
-                with opener.open(f"{base}/detroit/api/sessions") as response:
+                with opener.open(f"{base}/detroit/api/sessions?player=42%3A3") as response:
                     self.assertEqual(json.loads(response.read())["sessions"][0]["name"], "已有第一局")
                 browser_api.assert_called_once_with("42:3", "GET", "sessions", query={}, payload=None)
 
@@ -263,7 +264,7 @@ class DetroitIntegrationTests(unittest.TestCase):
                 finally:
                     https_proxy.close()
                 self.assertEqual(secure_response.status, 303)
-                self.assertEqual(len(secure_cookies), 2)
+                self.assertEqual(len(secure_cookies), 1)
                 self.assertTrue(all("; Secure" in cookie for cookie in secure_cookies))
                 self.assertEqual(browser_api.call_count, 1)
             finally:

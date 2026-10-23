@@ -4948,7 +4948,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
 
     def _detroit_human_target(self, token="", requested_player=""):
         raw_token = token or self._detroit_cookie_value("detroit_token") or _extract_bearer(self.headers)
-        player = requested_player or self._detroit_cookie_value("detroit_player")
+        player = requested_player
         try:
             user = _current_account(raw_token)
         except _McpError as exc:
@@ -5025,8 +5025,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
         token_values = params.get("token") or []
         player_values = params.get("player") or []
-        if token_values or player_values:
-            if len(token_values) != 1 or len(player_values) != 1:
+        if len(player_values) != 1 or not player_values[0] or len(token_values) > 1:
+            self._send_json({"error": "请从首页重新选择小机和存档槽位"}, status=400)
+            return
+        if token_values:
+            if not token_values[0]:
                 self._send_json({"error": "需要唯一的网页登录凭据和槽位"}, status=400)
                 return
             try:
@@ -5037,14 +5040,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             forwarded_proto = self.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
             secure = "; Secure" if forwarded_proto == "https" else ""
             self.send_response(303)
-            self.send_header("Location", "/detroit/")
+            self.send_header("Location", "/detroit/?" + urllib.parse.urlencode({"player": target["player"]}))
             self.send_header(
                 "Set-Cookie",
                 f"detroit_token={urllib.parse.quote(raw_token, safe='')}; Path=/detroit; HttpOnly; SameSite=Lax{secure}; Max-Age={HUMAN_TOKEN_SECONDS}",
-            )
-            self.send_header(
-                "Set-Cookie",
-                f"detroit_player={urllib.parse.quote(target['player'], safe='')}; Path=/detroit; HttpOnly; SameSite=Lax{secure}; Max-Age={HUMAN_TOKEN_SECONDS}",
             )
             self.send_header("Cache-Control", "no-store")
             self.send_header("Referrer-Policy", "no-referrer")
@@ -5052,7 +5051,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         try:
-            self._detroit_human_target()
+            self._detroit_human_target(requested_player=player_values[0])
             status, content_type, body = detroit_adapter.fetch_public("host")
             if status < 400:
                 body = detroit_adapter.rewrite_public("host", body)
@@ -5081,10 +5080,18 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, status=404)
             return
         try:
-            _token, target = self._detroit_human_target()
+            if params is None:
+                params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True)
+            players = params.get("player", [])
+            # Authenticate even legacy/malformed requests; never select by cookie.
+            _token, target = self._detroit_human_target(
+                requested_player=players[0] if len(players) == 1 else ""
+            )
             payload = self._read_json_body() if method == "POST" else None
             flat_query = {}
             for key, values in (params or {}).items():
+                if key == "player":
+                    continue  # Platform routing must not reach the author's API.
                 if len(values) != 1:
                     raise detroit_adapter.DetroitError("查询参数必须唯一")
                 flat_query[key] = values[0]
@@ -8435,11 +8442,11 @@ a{{color:#c9afff}}
             except _McpError:
                 self._send_json({"error": "未登录，请先在首页登录", "code": 401}, status=401)
                 return
-            requested_player = (
-                (params.get("player") or [None])[0]
-                or self._camping_plaza_cookie("camping_plaza_player")
-                or ""
-            )
+            players = params.get("player", [])
+            if len(players) != 1 or not players[0]:
+                self._send_json({"error": "请从首页重新选择小机和存档槽位", "code": 403}, status=403)
+                return
+            requested_player = players[0]
             target = self._garden_cat_bound_target(user, requested_player)
             if not target:
                 self._send_json({"error": "你没有绑定这只小机或槽位无效", "code": 403}, status=403)
@@ -8447,7 +8454,6 @@ a{{color:#c9afff}}
             if token_from_query:
                 set_cookies.extend([
                     f"camping_plaza_token={token_from_query}; Path=/camping-plaza; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
-                    f"camping_plaza_player={urllib.parse.quote(requested_player)}; Path=/camping-plaza; HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}",
                 ])
 
         self._proxy_to_camping_plaza(

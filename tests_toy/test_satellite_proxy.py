@@ -11,6 +11,7 @@ from tests_toy.tarot_server_test_bootstrap import install_missing_optional_game_
 
 install_missing_optional_game_stubs()
 import server
+from cedar_backend.web.slot_context import page_slot_script
 
 
 TARGET = {"player": "42:3", "owner_name": "阿橘", "slot": 3}
@@ -140,7 +141,7 @@ class SatelliteProxyTests(unittest.TestCase):
             handler._handle_camping_plaza_proxy("GET")
         handler._send_json.assert_called_once_with({"error": "fixture maintenance", "maintenance": True}, status=503)
 
-    def test_token_precedence_cookie_attributes_player_fallback_and_path_mapping(self):
+    def test_token_precedence_cookie_attributes_and_explicit_player_routing(self):
         for game in ("garden_cat", "camping_plaza"):
             prefix = "/" + game.replace("_", "-")
             for query, cookie, expected_token in (
@@ -162,7 +163,7 @@ class SatelliteProxyTests(unittest.TestCase):
                 if expected_token == "query":
                     self.assertEqual(cookies[0], f"{game}_token=query; Path={prefix}; HttpOnly; SameSite=Lax; Max-Age=123")
                     if game == "camping_plaza":
-                        self.assertEqual(cookies[1], "camping_plaza_player=42%3A3; Path=/camping-plaza; HttpOnly; SameSite=Lax; Max-Age=123")
+                        self.assertEqual(len(cookies), 1)
                 else:
                     self.assertEqual(cookies, [None])
             handler = self.handler([("Cookie", game + "_player=42%3A3")])
@@ -170,7 +171,12 @@ class SatelliteProxyTests(unittest.TestCase):
             setattr(handler, "_proxy_to_" + game, Mock())
             with patch.object(server, "_current_account", return_value=USER):
                 getattr(handler, "_handle_" + game + "_proxy")("GET")
-            handler._garden_cat_bound_target.assert_called_once_with(USER, "42:3" if game == "camping_plaza" else "")
+            if game == "camping_plaza":
+                handler._garden_cat_bound_target.assert_not_called()
+                handler._send_json.assert_called_once_with(
+                    {"error": "请从首页重新选择小机和存档槽位", "code": 403}, status=403)
+            else:
+                handler._garden_cat_bound_target.assert_called_once_with(USER, "")
 
     def test_forwarding_filters_untrusted_identity_and_preserves_transport(self):
         headers = [("hOsT", "bad"), ("aUtHoRiZaTiOn", "bad"), ("cOoKiE", "bad"),
@@ -242,7 +248,7 @@ class SatelliteProxyTests(unittest.TestCase):
             else:
                 self.assertEqual(body, html)
             handler, _ = self.forward("camping_plaza", "/scripts/overview.js", raw=js, status=status)
-            self.assertEqual(handler.wfile.getvalue(), expected_js if status < 400 else js)
+            self.assertEqual(handler.wfile.getvalue(), page_slot_script("/camping-plaza") + expected_js if status < 400 else js)
         for path in ("/scripts/other.js", "/styles/main.css", "/assets/a.png", "/api/state"):
             handler, _ = self.forward("camping_plaza", path, raw=html + js)
             self.assertEqual(handler.wfile.getvalue(), html + js)

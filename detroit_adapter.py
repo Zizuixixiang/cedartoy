@@ -23,6 +23,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
+from cedar_backend.web.slot_context import page_slot_script
+
 
 REMOTE_BASE = os.getenv(
     "DETROIT_REMOTE_BASE",
@@ -841,6 +843,12 @@ def rewrite_public(path: str, body: bytes) -> bytes:
         text = text.replace("`/api/", "`/detroit/api/")
         text = text.replace("'/downloads/", "'/detroit/downloads/").replace('"/downloads/', '"/detroit/downloads/')
         text = text.replace("`/downloads/", "`/detroit/downloads/")
+        # The author's export/backup buttons navigate directly instead of fetch.
+        text = re.sub(
+            r"window\.location\.href = (`/detroit/api/[^`]+`)",
+            r"window.location.href = cedarPageSlotUrl(\1)",
+            text,
+        )
         replacement = '''async function showMcpSetup() {
   const existingFallback = document.querySelector('#copy-fallback');
   if (existingFallback) existingFallback.remove();
@@ -908,5 +916,5 @@ function showDeleteDialog'''
 
 showCedarToyInitialSave().catch(error => { app.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`; });'''
         text = text.replace(original_bootstrap, cedartoy_bootstrap, 1)
-        return text.encode("utf-8")
+        return page_slot_script("/detroit") + text.encode("utf-8")
     return body

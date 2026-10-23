@@ -7,6 +7,8 @@ server-level patches remain effective. This module never imports server.
 
 import urllib.parse
 
+from cedar_backend.web.slot_context import page_slot_script
+
 
 GARDEN_CAT_PROXY_GET_PATHS = frozenset({"/", "/api/catalog", "/web/status", "/web/notes"})
 GARDEN_CAT_PROXY_POST_PATHS = frozenset({
@@ -167,4 +169,5 @@ def rewrite_camping_plaza_response(raw, upstream_path, status):
         raw = raw.replace(b'"/api/', b'"/camping-plaza/api/')
         raw = raw.replace(b"'assets/", b"'/camping-plaza/assets/")
         raw = raw.replace(b'"assets/', b'"/camping-plaza/assets/')
+        raw = page_slot_script("/camping-plaza") + raw
     return raw
