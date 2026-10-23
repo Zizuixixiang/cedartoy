@@ -122,6 +122,10 @@
     #feedbackAdminTickets { display: grid; gap: 12px; }
     #feedbackQueue .feedback-ticket-summary { height: auto; display: grid; gap: 6px; width: 100%; text-align: left; justify-content: stretch; padding: 12px; white-space: normal; overflow-wrap: anywhere; }
     #feedbackQueue .feedback-ticket-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #feedbackQueue .feedback-ticket-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    #feedbackQueue .feedback-status { display: inline-flex; align-items: center; flex: none; gap: 4px; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 999px; background: #edf4f4; color: var(--accent-dark); font-size: 12px; font-weight: 700; line-height: 1.5; white-space: nowrap; }
+    #feedbackQueue .feedback-status[data-status="pending"] { color: #795619; border-color: #9b742d; background: #fff9e8; }
+    #feedbackQueue .feedback-status[data-status="closed"] { color: #355c43; border-color: #527a62; background: #f1faf3; }
     #feedbackQueue .feedback-message-meta { font-size: 12px; line-height: 1.5; color: var(--muted); }
     #feedbackQueue .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--line); background: #fff; }
     #feedbackQueue .feedback-message[data-role="admin"] { border-left-color: var(--accent); }
@@ -1041,6 +1045,15 @@
     let ticketKind = "recovery", feedbackAdminPage = 1, feedbackAdminTotal = 0, feedbackAdminBusy = false;
     let feedbackAdminVersion = 0;
     const feedbackStatusLabels = {pending: "待处理", processing: "处理中", closed: "已结束"};
+    function adminFeedbackStatus(status) {
+      const known = Object.prototype.hasOwnProperty.call(feedbackStatusLabels, status);
+      const badge = document.createElement("span"); badge.className = "feedback-status";
+      badge.dataset.status = known ? status : "unknown";
+      const icon = document.createElement("span"); icon.setAttribute("aria-hidden", "true");
+      icon.textContent = known ? {pending: "◷", processing: "↻", closed: "✓"}[status] : "?";
+      const label = document.createElement("span"); label.textContent = known ? feedbackStatusLabels[status] : "状态未知";
+      badge.append(icon, label); return badge;
+    }
     const feedbackCategoryLabels = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
     function switchTicketKind(kind) {
       if (feedbackAdminBusy || recoveryReviewBusy) return;
@@ -1101,9 +1114,11 @@
           const title = document.createElement("span"); title.className = "feedback-ticket-title";
           title.textContent = `${feedbackCategoryLabels[ticket.category]} · ${ticket.preview}`;
           const meta = document.createElement("span"); meta.className = "feedback-message-meta";
-          meta.textContent = `${feedbackStatusLabels[ticket.status]}${ticket.status === "pending" && ticket.last_message_role === "player" ? " · 玩家新留言" : ""} · ${ticket.message_count} 条消息 · ${formatEpoch(ticket.updated_at_epoch || ticket.created_at_epoch)}`;
+          meta.textContent = `${ticket.status === "pending" && ticket.last_message_role === "player" ? "玩家新留言 · " : ""}${ticket.message_count} 条消息 · ${formatEpoch(ticket.updated_at_epoch || ticket.created_at_epoch)}`;
+          const row = document.createElement("span"); row.className = "feedback-ticket-meta";
+          row.append(adminFeedbackStatus(ticket.status), meta);
           card.onclick = () => openAdminFeedback(ticket.id);
-          card.append(title, meta); $("feedbackAdminTickets").append(card);
+          card.append(title, row); $("feedbackAdminTickets").append(card);
         }
         if (!data.total) $("feedbackAdminTickets").textContent = "暂无反馈";
       });
@@ -1143,7 +1158,7 @@
     function renderAdminFeedbackDetail(data) {
       feedbackAdminConversation = data;
       const t = data.ticket, panel = $("feedbackAdminDetail");
-      panel.innerHTML = `<div class="recovery-card-header"><h3>反馈 #${escapeHtml(t.id)} · ${feedbackStatusLabels[t.status]}</h3><button type="button" id="feedbackAdminBack">收起对话</button></div>
+      panel.innerHTML = `<div class="recovery-card-header"><div class="recovery-card-heading"><h3>反馈 #${escapeHtml(t.id)}</h3></div><button type="button" id="feedbackAdminBack">收起对话</button></div>
         <dl class="recovery-facts">
         ${recoveryFact("分类 / 消息数", `${feedbackCategoryLabels[t.category]} · ${data.message_count} 条`)}
         ${recoveryFact("实际登录身份", t.owner_id == null ? "匿名（凭码访问）" : `账号 ID ${t.owner_id}`)}
@@ -1155,6 +1170,7 @@
         <label for="feedbackAdminReply">追加答复（玩家可见，不覆盖旧消息）</label><textarea id="feedbackAdminReply" maxlength="4000" rows="3"></textarea>
         <label for="feedbackAdminNote">内部备注（仅管理员可见，不进入对话）</label><textarea id="feedbackAdminNote" maxlength="4000" rows="2">${escapeHtml(t.internal_note)}</textarea>
         <div class="feedback-admin-actions"><button class="primary" type="submit">发送回复</button><button id="feedbackAdminSaveNote" type="button">保存备注</button><button id="feedbackAdminProcessing" type="button">标记处理中</button><button id="feedbackAdminClose" type="button"${t.status === "closed" ? " disabled" : ""}>结束工单</button></div></form>`;
+      panel.querySelector(".recovery-card-heading").append(adminFeedbackStatus(t.status));
       $("feedbackAdminTickets").hidden = true; $("feedbackAdminPagination").hidden = true;
       renderAdminFeedbackMessages(); panel.hidden = false; panel.focus();
       $("feedbackAdminBack").onclick = loadAdminFeedback;

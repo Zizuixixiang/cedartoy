@@ -12,6 +12,7 @@ PUBLIC_FIELDS = "id, category, contact, status, created_at_epoch, updated_at_epo
 ADMIN_FIELDS = PUBLIC_FIELDS + ", owner_id, internal_note, reviewed_by, contact_email"
 PAGE_SIZE = 20
 MESSAGE_PAGE_SIZE = 10
+AUTO_CLOSE_AFTER = 7 * 24 * 60 * 60
 _TICKET_SCHEMA = """CREATE TABLE IF NOT EXISTS {name} (
     id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER,
     query_code_hash TEXT UNIQUE, ip_hash TEXT NOT NULL,
@@ -117,11 +118,23 @@ class FeedbackStore:
         try:
             conn.execute("BEGIN IMMEDIATE")
             init_schema(conn)
+            self._close_expired(conn, int(time.time()))
             conn.commit()
         except Exception:
             conn.close()
             raise
         return conn
+
+    def _close_expired(self, conn, now):
+        # The latest appended public message defines who we are waiting for.
+        # Notes/status edits must not restart the clock. Keep this atomic with
+        # concurrent replies, and bypass review() so no message or mail is added.
+        conn.execute("""UPDATE feedback_tickets SET status='closed', updated_at_epoch=?
+            WHERE status='processing' AND id IN (
+                SELECT t.id FROM feedback_tickets t JOIN feedback_messages m ON m.id=(
+                    SELECT id FROM feedback_messages WHERE ticket_id=t.id ORDER BY id DESC LIMIT 1)
+                WHERE t.status='processing' AND m.role='admin' AND m.created_at_epoch <= ?
+            )""", (now, now - AUTO_CLOSE_AFTER))
 
     def integer(self, value, name, maximum=2**63 - 1):
         if type(value) is not int or not 1 <= value <= maximum:

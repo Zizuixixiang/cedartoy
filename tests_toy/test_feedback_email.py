@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 import server
-from cedar_backend import account_email
+from cedar_backend import account_email, feedback_tickets
 from tests_toy import test_feedback as fixtures
 
 
@@ -23,6 +23,32 @@ class FeedbackEmailTests(unittest.TestCase):
                 "SELECT kind,status,error FROM feedback_email_events WHERE ticket_id=? ORDER BY id",
                 (ticket_id,),
             )]
+
+    def test_auto_close_preserves_contact_and_never_creates_mail_event(self):
+        started = 1800000000
+        email = "contact@example.invalid"
+        with patch.object(server, "_send_feedback_email") as send:
+            self.store = server._feedback_store()
+            with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
+                receipt = self.submit(notify_email=True, contact_email=email)
+                tid = receipt["ticket_id"]
+                self.call("admin_feedback_review", ticket_id=tid, reply="请再试试", confirm=True)
+                before = self.store.detail(tid, admin=True)
+            send.assert_called_once_with(email, tid, "请再试试", False)
+            events = self._events(tid)
+            send.reset_mock()
+            for elapsed in (7 * 86400, 9 * 86400):
+                with patch.object(feedback_tickets, "time", **{"time.return_value": started + elapsed}):
+                    public = self.store.query(receipt["query_code"])
+                    detail = self.store.detail(tid, admin=True)
+                    self.store.listing(admin=True)
+                self.assertEqual(detail["ticket"]["status"], "closed")
+                self.assertEqual(detail["ticket"]["contact_email"], email)
+                self.assertNotIn("contact_email", public["ticket"])
+                self.assertEqual(detail["messages"], before["messages"])
+                self.assertEqual(detail["message_count"], before["message_count"])
+                self.assertEqual(self._events(tid), events)
+                send.assert_not_called()
 
     def test_contact_email_only_in_admin_detail(self):
         email = "feedback-contact@example.invalid"

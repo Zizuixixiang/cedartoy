@@ -52,6 +52,105 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(args.kwargs["extra_headers"]["Cache-Control"], "no-store")
         return args.kwargs.get("status", 200), args.args[0]
 
+    def test_auto_close_seven_day_boundary_and_idempotence(self):
+        replied_at = 1800000000
+        for elapsed in (7 * 86400 - 1, 7 * 86400, 7 * 86400 + 1):
+            with self.subTest(elapsed=elapsed):
+                with patch.object(feedback_tickets, "time", **{"time.return_value": replied_at}):
+                    receipt = self.submit()
+                    tid = receipt["ticket_id"]
+                    self.call("admin_feedback_review", ticket_id=tid, reply="请再试试", confirm=True)
+                    before = self.store.query(receipt["query_code"])
+                with patch.object(feedback_tickets, "time", **{"time.return_value": replied_at + elapsed}):
+                    after = self.store.query(receipt["query_code"])
+                closed = elapsed >= 7 * 86400
+                self.assertEqual(after["ticket"]["status"], "closed" if closed else "processing")
+                self.assertEqual(after["ticket"]["updated_at_epoch"], replied_at + elapsed if closed else replied_at)
+                self.assertEqual(after["messages"], before["messages"])
+                self.assertEqual(after["message_count"], before["message_count"])
+                if closed:
+                    with patch.object(feedback_tickets, "time", **{"time.return_value": replied_at + elapsed + 100}):
+                        self.assertEqual(self.store.query(receipt["query_code"]), after)
+                        self.store.append({"ticket_id": tid, "query_code": receipt["query_code"], "content": "仍有问题"}, None, "192.0.2.2")
+                        reopened = self.store.query(receipt["query_code"])
+                    self.assertEqual(reopened["ticket"]["status"], "pending")
+                    self.assertEqual(reopened["messages"][:-1], before["messages"])
+                    self.assertEqual(reopened["message_count"], before["message_count"] + 1)
+
+    def test_auto_close_only_processing_with_latest_public_admin_message(self):
+        started = 1800000000
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
+            pending = self.submit()["ticket_id"]
+            manual = self.submit()["ticket_id"]
+            pending_reply = self.submit()["ticket_id"]
+            receipt = self.submit()
+            player_last = receipt["ticket_id"]
+            self.call("admin_feedback_review", ticket_id=manual, status="processing", confirm=True)
+            for tid in (pending_reply, player_last):
+                self.call("admin_feedback_review", ticket_id=tid, reply="答复", confirm=True)
+            self.call("admin_feedback_review", ticket_id=pending_reply, status="pending", confirm=True)
+            # A player follow-up normally reopens; a subsequent manual status edit
+            # must still not make the old admin reply eligible for expiration.
+            self.store.append({"ticket_id": player_last, "query_code": receipt["query_code"], "content": "追问"}, None, "192.0.2.2")
+            self.call("admin_feedback_review", ticket_id=player_last, status="processing", confirm=True)
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started + 30 * 86400}):
+            statuses = {t["id"]: t["status"] for t in self.store.listing(admin=True)["tickets"]}
+        self.assertEqual(statuses, {pending: "pending", manual: "processing", pending_reply: "pending",
+                                    player_last: "processing"})
+
+    def test_auto_close_uses_latest_reply_not_note_or_status_edit_time(self):
+        started = 1800000000
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
+            tid = self.submit(self.human_id)["ticket_id"]
+            self.call("admin_feedback_review", ticket_id=tid, reply="第一次回复", confirm=True)
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started + 86400}):
+            self.call("admin_feedback_review", ticket_id=tid, reply="补充回复", confirm=True)
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started + 7 * 86400}):
+            self.call("admin_feedback_review", ticket_id=tid, internal_note="新备注", status="processing", confirm=True)
+            self.assertEqual(self.store.detail(tid, admin=True)["ticket"]["status"], "processing")
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started + 8 * 86400}):
+            detail = self.store.detail(tid, admin=True)
+        self.assertEqual(detail["ticket"]["status"], "closed")
+        self.assertEqual(detail["ticket"]["internal_note"], "新备注")
+        self.assertEqual(detail["ticket"]["reviewed_by"], self.admin_id)
+        self.assertEqual(detail["message_count"], 3)
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started + 9 * 86400}):
+            self.store.append({"ticket_id": tid, "content": "还有问题"}, self.human_id, "192.0.2.2")
+            reopened = self.store.detail(tid, self.human_id)
+        self.assertEqual(reopened["ticket"]["status"], "pending")
+        self.assertEqual(reopened["messages"][:-1], detail["messages"])
+
+    def test_auto_close_normalized_by_all_status_reads_and_unread(self):
+        started = 1800000000
+        with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
+            tid = self.submit(self.human_id)["ticket_id"]
+            self.call("admin_feedback_review", ticket_id=tid, reply="答复", confirm=True)
+        reads = {
+            "admin_list": lambda: self.store.listing(admin=True, status="processing"),
+            "player_list": lambda: self.store.listing(self.human_id),
+            "admin_detail": lambda: self.store.detail(tid, admin=True),
+            "unread": lambda: self.store.unread(self.human_id),
+            "player_detail": lambda: self.store.detail(tid, self.human_id),
+        }
+        for name, read in reads.items():
+            with self.subTest(entry=name):
+                with self._connect() as conn:
+                    conn.execute("UPDATE feedback_tickets SET status='processing', updated_at_epoch=? WHERE id=?", (started, tid))
+                with patch.object(feedback_tickets, "time", **{"time.return_value": started + 7 * 86400}):
+                    result = read()
+                    with self._connect() as conn:
+                        self.assertEqual(conn.execute("SELECT status FROM feedback_tickets WHERE id=?", (tid,)).fetchone()[0], "closed")
+                    self.assertEqual(self.store.listing(admin=True, status="closed")["total"], 1)
+                if name == "admin_list":
+                    self.assertEqual(result["total"], 0)
+                elif name == "player_list":
+                    self.assertEqual(result["tickets"][0]["status"], "closed")
+                    self.assertEqual(result["unread_count"], 1)
+                elif "detail" in name:
+                    self.assertEqual(result["ticket"]["status"], "closed")
+                else:
+                    self.assertEqual(result["unread_count"], 1)  # Closure must not acknowledge the reply.
+
     def test_actual_login_ownership_ignores_self_report_and_binding(self):
         status, a = self.http("submit", {"category": "account", "content": "A", "contact": "B", "user_id": self.other_human_id,
                                       "owner_id": self.other_human_id, "player_id": str(self.ai_id)}, self.human_token)
@@ -404,7 +503,10 @@ class FeedbackTests(unittest.TestCase):
             self.assertNotIn('reply', {row[1] for row in snapshot.execute("PRAGMA table_info(feedback_tickets)")})
             with self.assertRaises(sqlite3.IntegrityError): snapshot.execute("UPDATE feedback_tickets SET status='replied'")
         for i, code in enumerate(codes):
-            data = self.store.query(code)
+            # Isolate migration from the age policy; these legacy fixtures are
+            # deliberately old, but migration itself must preserve their state.
+            with patch.object(feedback_tickets, "time", **{"time.return_value": 1700000002}):
+                data = self.store.query(code)
             self.assertEqual(data["ticket"]["id"], i+1)
             self.assertEqual(data["ticket"]["status"], ("pending", "processing", "processing", "closed")[i])
             self.assertEqual([m["content"] for m in data["messages"]], ["原问题", "原回答"] if i else ["原问题"])
