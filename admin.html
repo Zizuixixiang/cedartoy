@@ -302,6 +302,7 @@
     #costPurposes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-bottom: 8px; }
     .cost-purpose { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
     .cost-purpose strong { font-size: 12px; font-weight: 400; color: var(--muted); }
+    .cost-purpose small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
     .cost-row { min-width: 0; border-top: 1px solid var(--line); }
     .cost-row > summary { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 0; cursor: pointer; list-style: none; }
     .cost-row > summary::-webkit-details-marker { display: none; }
@@ -313,7 +314,7 @@
     .cost-row[open] .cost-identity :is(strong, .cost-model) { white-space: normal; overflow-wrap: anywhere; }
     .cost-amount { min-width: 0; max-width: 42%; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
     .cost-amount small { display: block; color: var(--muted); font-size: 12px; }
-    .cost-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; margin: 4px 0 12px; }
+    .cost-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 4px 0 12px; }
     .cost-facts dt { color: var(--muted); font-size: 12px; }
     .cost-facts dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     #costNewPrice > summary { cursor: pointer; min-height: 36px; padding: 7px 0; color: var(--accent-dark); }
@@ -324,7 +325,6 @@
     .cost-model-field { grid-column: 1 / -1; }
     .cost-form .status { font-size: 13px; }
     @media (max-width: 600px) {
-      .cost-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
       .cost-form { grid-template-columns: minmax(0, 1fr); }
     }
     .tab-panel[hidden] { display: none; }
@@ -1732,14 +1732,13 @@
     function knownCost(row) {
       return row.requests > 0 && row.unknown === row.requests ? "待核算" : money(row.cost);
     }
+    function tokenCount(value) {
+      return Number(value || 0).toLocaleString("zh-CN");
+    }
     function costFacts(row) {
       return `<dl class="cost-facts">
-        <div><dt>请求 · 成功 / 失败</dt><dd>${row.requests} · ${row.success} / ${row.failed}</dd></div>
-        <div><dt>输入 / 输出 token</dt><dd>${row.input_tokens} / ${row.output_tokens}</dd></div>
-        <div><dt>缓存 token（输入内）</dt><dd>${row.cache_tokens}</dd></div>
-        <div><dt>推理 token（输出内）</dt><dd>${row.reasoning_tokens}</dd></div>
-        <div><dt>待核算 / 估算</dt><dd>${row.unknown} / ${row.estimated} 次</dd></div>
-        <div><dt>缺少用量</dt><dd>${row.missing_usage} 次</dd></div>
+        <div><dt>调用次数</dt><dd>${tokenCount(row.requests)} 次</dd></div>
+        <div><dt>Token · 输入 / 输出</dt><dd>${tokenCount(row.input_tokens)} / ${tokenCount(row.output_tokens)}</dd></div>
       </dl>`;
     }
     function costIdentity(row) {
@@ -1780,8 +1779,8 @@
     }
     function renderCosts(data) {
       $("costTotal").textContent = knownCost(data.total);
-      $("costTotalDetail").textContent = [data.total.unknown && data.total.unknown < data.total.requests ? "部分待核算" : "", data.total.estimated ? "含估算" : ""].filter(Boolean).join(" · ");
-      $("costPurposes").innerHTML = data.purposes.filter(row => row.purpose !== "test").map(row => `<div class="cost-purpose"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(knownCost(row))}</span></div>`).join("");
+      $("costTotalDetail").textContent = `${tokenCount(data.total.requests)} 次调用 · Token 输入 ${tokenCount(data.total.input_tokens)} / 输出 ${tokenCount(data.total.output_tokens)}`;
+      $("costPurposes").innerHTML = data.purposes.filter(row => row.purpose !== "test").map(row => `<div class="cost-purpose"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(knownCost(row))}</span><small>${tokenCount(row.requests)} 次调用</small><small>入 ${tokenCount(row.input_tokens)}</small><small>出 ${tokenCount(row.output_tokens)}</small></div>`).join("");
       $("costChannels").innerHTML = data.channels.filter(row => row.requests > 0).map(renderCostChannel).join("") || '<p class="dashboard-empty">所选时段暂无调用</p>';
       $("costPriceList").innerHTML = data.prices.map(renderPrice).join("") || '<p class="dashboard-empty">暂无模型价格</p>';
       $("costNewPriceForm").innerHTML = data.configs.length ? priceForm(null, "new") : '<p class="dashboard-empty">暂无渠道配置</p>';
