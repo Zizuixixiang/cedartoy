@@ -178,6 +178,10 @@ def do_POST(
         self._handle_api_recovery(path)
         return
 
+    if path == "/api/admin/api-costs/prices":
+        self._handle_admin_api_costs(save=True)
+        return
+
     if path == "/api/admin/recovery/review":
         self._handle_admin_recovery(review=True)
         return
@@ -581,6 +585,10 @@ def do_GET(
 
     if path == "/api/candle/feedback":
         self._handle_candle_feedback(params)
+        return
+
+    if path == "/api/admin/api-costs":
+        self._handle_admin_api_costs(params)
         return
 
     if path == "/api/admin/activity":

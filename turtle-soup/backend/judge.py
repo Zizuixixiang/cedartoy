@@ -6,6 +6,7 @@ import math
 import os
 import re
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -14,6 +15,7 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import httpx
+import api_costs
 from fastapi import HTTPException
 
 from database import DEFAULT_SETTINGS, fetch_all, fetch_one
@@ -24,6 +26,8 @@ from provider_daily_calls import (
 )
 from utils import ANSWER_LIMIT, SURFACE_LIMIT, TITLE_LIMIT
 
+
+_cost_pool = ContextVar("api_cost_pool", default="judge")
 
 NPC_POOL_NAMES = ("npc_decision", "npc_speech")
 SOUP_DUEL_POOL_NAMES = ("judge", "hint", *NPC_POOL_NAMES)
@@ -534,20 +538,149 @@ async def _post_chat_completion(
     timeout: float,
 ) -> httpx.Response:
     async with httpx.AsyncClient(timeout=_request_timeout(cfg, timeout)) as client:
-        return await _send_chat_completion(client, cfg["api_url"], cfg["api_key"], payload)
+        return await _send_chat_completion(client, cfg["api_url"], cfg["api_key"], payload, cfg=cfg, pool=_cost_pool.get())
+
+
+def _requires_chenmo_sse(api_url: str, model: Any) -> bool:
+    # Match the provider AND exact model, including admin drafts without an ID.
+    return (
+        urlsplit(api_url).hostname == "api.chenmoai.com"
+        and model == "[正向量3]deepseek-v4.1-flash"
+    )
+
+
+def _merge_chenmo_completion(response: httpx.Response) -> httpx.Response:
+    """Normalize this channel's buffered SSE before callers and cost collection.
+
+    HTTPX buffers the wire chunks (including split UTF-8) for client.post. Usage
+    chunks are cumulative snapshots, not increments; never sum cached tokens.
+    Invalid/unfinished streams raise before the response is recorded as success.
+    """
+    if response.is_error:
+        return response
+    if "text/event-stream" not in response.headers.get("content-type", "").lower():
+        raw = response.json()
+    else:
+        parts: list[str] = []
+        usage: dict[str, Any] = {}
+        finish = None
+        done = False
+        data_lines: list[str] = []
+        event = ""
+
+        def consume() -> None:
+            nonlocal finish, done
+            if event == "error":
+                raise RuntimeError("upstream SSE error")
+            if not data_lines:
+                return
+            data = "\n".join(data_lines).strip()
+            if done:
+                raise RuntimeError("unexpected SSE data after DONE")
+            if data == "[DONE]":
+                done = True
+                return
+            try:
+                chunk = json.loads(data)
+            except ValueError:
+                raise RuntimeError("invalid SSE JSON") from None
+            if not isinstance(chunk, dict) or "error" in chunk:
+                raise RuntimeError("invalid or error SSE chunk")
+            chunk_usage = chunk.get("usage")
+            if chunk_usage is not None:
+                if not isinstance(chunk_usage, dict):
+                    raise RuntimeError("invalid SSE usage")
+                for key, value in chunk_usage.items():
+                    if isinstance(value, dict) and isinstance(usage.get(key), dict):
+                        usage[key] = {**usage[key], **value}
+                    else:
+                        usage[key] = value
+            choices = chunk.get("choices", [])
+            if not isinstance(choices, list):
+                raise RuntimeError("invalid SSE choices")
+            for choice in choices:
+                if not isinstance(choice, dict) or choice.get("index", 0) != 0:
+                    raise RuntimeError("invalid SSE choice")
+                delta = choice.get("delta", {})
+                if not isinstance(delta, dict):
+                    raise RuntimeError("invalid SSE delta")
+                content = delta.get("content")
+                if content is not None:
+                    if not isinstance(content, str) or (finish is not None and content):
+                        raise RuntimeError("invalid SSE content")
+                    parts.append(content)
+                reason = choice.get("finish_reason")
+                if reason is not None:
+                    if finish is not None and reason != finish:
+                        raise RuntimeError("conflicting SSE finish reason")
+                    finish = reason
+
+        for line in response.iter_lines():
+            if not line:
+                consume()
+                data_lines = []
+                event = ""
+            elif not line.startswith(":"):
+                field, _, value = line.partition(":")
+                value = value.removeprefix(" ")
+                if field == "data":
+                    data_lines.append(value)
+                elif field == "event":
+                    event = value
+        consume()
+        raw = {"choices": [{"message": {"role": "assistant", "content": "".join(parts)},
+                            "finish_reason": finish}], "usage": usage}
+    # Also validate a JSON fallback: admin's generic reply extractor is lenient.
+    if not isinstance(raw, dict) or "error" in raw:
+        raise RuntimeError("invalid or error completion")
+    choices = raw.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else None
+    if not isinstance(choice, dict) or choice.get("finish_reason") != "stop":
+        raise RuntimeError("incomplete completion or non-stop finish reason")
+    message = choice.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("empty response content")
+    headers = {key: value for key, value in response.headers.items()
+               if key not in {"content-type", "content-length", "content-encoding"}}
+    return httpx.Response(response.status_code, json=raw, headers=headers,
+                          request=response.request)
 
 
 async def _send_chat_completion(
-    client: httpx.AsyncClient, api_url: str, api_key: str, payload: dict[str, Any]
+    client: httpx.AsyncClient, api_url: str, api_key: str, payload: dict[str, Any],
+    *, cfg: dict[str, Any] | None = None, pool: str = "judge",
 ) -> httpx.Response:
     endpoint = _endpoint(api_url)
     headers = {"Authorization": f"Bearer {api_key}"}
-    if not is_official_deepseek_endpoint(endpoint):
-        return await client.post(endpoint, headers=headers, json=payload)
-    # Build/serialize first: local preparation failures must not consume quota.
-    request = client.build_request("POST", endpoint, headers=headers, json=payload)
-    reserve_deepseek_call(str(request.url), api_key)
-    return await client.send(request)
+    chenmo_sse = _requires_chenmo_sse(api_url, payload.get("model"))
+    if chenmo_sse:
+        payload = {**payload, "stream": True, "stream_options": {"include_usage": True}}
+    official = is_official_deepseek_endpoint(endpoint)
+    if official:
+        # Preparation/quota rejection is not an actual HTTP attempt.
+        request = client.build_request("POST", endpoint, headers=headers, json=payload)
+        reserve_deepseek_call(str(request.url), api_key)
+    started = time.time()
+    response = None
+    try:
+        if official:
+            response = await client.send(request)
+        elif chenmo_sse:
+            response = _merge_chenmo_completion(
+                await client.post(endpoint, headers=headers, json=payload)
+            )
+        else:
+            response = await client.post(endpoint, headers=headers, json=payload)
+        return response
+    finally:
+        # Includes HTTP errors, transport failures and cancellation. Never store
+        # headers, bodies, errors or identities; telemetry cannot break the call.
+        try:
+            if cfg is not None:
+                api_costs.record(cfg, pool, started, response)
+        except Exception:
+            logger.warning("API cost collection unavailable")
 
 
 async def _layer_start(pool: str, priority: int, size: int) -> int:
@@ -682,6 +815,7 @@ async def _chat_from_pool(
     pool: str,
     model: str | None = None,
 ) -> str | dict[str, str]:
+    _cost_pool.set(pool)
     errors: list[str] = []
     available = await _configs(pool, model=model)
     if not available:
@@ -1014,7 +1148,7 @@ async def test_config(cfg: dict[str, Any]) -> dict[str, Any]:
                     "messages": messages,
                     "temperature": 0.1,
                     "max_tokens": 32,
-                },
+                }, cfg=cfg, pool="test",
             )
             try:
                 raw = resp.json()

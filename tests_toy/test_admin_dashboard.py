@@ -564,7 +564,8 @@ class AdminDashboardFixtureTests(unittest.TestCase):
         self.assertNotIn("近10分钟实时", html)
         self.assertNotIn("function renderRealtime", html)
         self.assertNotIn('id="chipsDashboard"', html)
-        self.assertEqual(html.count('<section class="panel dashboard-section"'), 3)
+        dashboard_html = html.split('id="dashboardPanel"', 1)[1].split("</main>", 1)[0]
+        self.assertEqual(dashboard_html.count('<section class="panel dashboard-section"'), 3)
 
         duel_section = re.search(
             r'<section class="panel dashboard-section" id="duelDashboard".*?</section>',

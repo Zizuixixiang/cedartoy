@@ -614,6 +614,16 @@ class AdminApiConfigRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         judge.reset_fail_counts()
 
+    async def test_draft_accounting_keeps_id_only_for_same_channel(self):
+        for override, expected_id in [({}, CONFIG["id"]), ({"api_url": "https://other.test/v1"}, 0),
+                                      ({"api_key": "another-test-key"}, 0)]:
+            body = admin_router.ApiTestBody(config_id=CONFIG["id"], **override)
+            test = AsyncMock(return_value={"success": False})
+            with patch.object(admin_router, "fetch_one", AsyncMock(return_value=CONFIG)), \
+                 patch.object(admin_router, "test_config", test):
+                await admin_router.test_api_config_draft(body, admin={"id": 1})
+            self.assertEqual(test.call_args.args[0]["id"], expected_id)
+
     async def test_api_configs_masks_key_and_adds_runtime_fields(self):
         rows = [
             {

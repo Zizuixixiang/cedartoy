@@ -1,4 +1,5 @@
 import json
+from importlib import import_module
 import base64
 import copy
 import hashlib
@@ -42,6 +43,9 @@ from deeptalk import catalog as deeptalk_catalog
 from deeptalk.catalog import DeeptalkError, GUIDE as DEEPTALK_GUIDE
 from deeptalk.store import Store as DeeptalkStore
 import game_activity
+
+# Shared accounting implementation also imported by the standalone soup service.
+api_costs = import_module("turtle-soup.backend.api_costs")
 from admin_dashboard import build_activity_dashboard, _read_only_connect
 
 try:
@@ -6668,6 +6672,23 @@ a{{color:#c9afff}}
             self._send_json({"error": "分页参数无效"}, status=400, extra_headers=headers)
         except sqlite3.Error:
             self._send_json({"error": "反馈暂时不可用"}, status=503, extra_headers=headers)
+
+    def _handle_admin_api_costs(self, params=None, save=False):
+        headers = {"Cache-Control": "no-store"}
+        try:
+            _require_admin_account(_extract_bearer(self.headers))
+            configs = api_costs.read_configs(TURTLE_DB_PATH)
+            if save:
+                result = api_costs.save_price(self._read_json_body(), configs)
+            else:
+                result = api_costs.report(((params or {}).get("range") or ["today"])[0], configs)
+            self._send_json(result, extra_headers=headers)
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=self._admin_error_status(exc), extra_headers=headers)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400, extra_headers=headers)
+        except Exception:
+            self._send_json({"error": "费用统计暂时不可用，请稍后重试"}, status=503, extra_headers=headers)
 
     def _handle_admin_activity(self, params=None):
         try:

@@ -115,7 +115,7 @@
     #recoveryPage, .recovery-empty { color: var(--muted); font-size: 13px; }
     .recovery-empty { margin: 0; padding: 16px; text-align: center; }
     #recoveryTab { position: relative; }
-    .recovery-count { position: absolute; top: -12px; right: 0; min-width: 20px; padding: 0 4px; border-radius: 999px; background: #c63737; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; pointer-events: none; }
+    .recovery-count { flex: none; min-width: 20px; padding: 0 4px; border-radius: 999px; background: #c63737; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; pointer-events: none; }
     .recovery-count[hidden] { display: none; }
     .ticket-kind-switch { display: flex; gap: 8px; margin-bottom: 12px; }
     #recoveryQueue[hidden], #feedbackQueue[hidden], #feedbackQueue [hidden] { display: none; }
@@ -265,6 +265,9 @@
       text-align: center;
     }
     .admin-tabs {
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: auto;
       display: flex;
       gap: 6px;
       padding: 6px;
@@ -273,7 +276,7 @@
       border-radius: 8px;
     }
     .admin-tabs button {
-      flex: 0 1 180px;
+      flex: 0 0 180px;
       background: transparent;
       border-color: transparent;
       font-weight: 700;
@@ -283,6 +286,34 @@
       border-color: var(--line);
       color: var(--accent-dark);
       box-shadow: 0 1px 3px rgba(39, 35, 31, .08);
+    }
+    .cost-content { display: grid; gap: 14px; min-width: 0; }
+    #costsPanel [hidden] { display: none; }
+    #costsPanel { font-size: 14px; line-height: 1.5; }
+    #costsPanel :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cost-total { font-size: 24px; font-weight: 700; overflow-wrap: anywhere; }
+    .cost-purpose { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); }
+    .cost-purpose strong { min-width: 4em; }
+    .cost-channel { padding: 14px 0; border-top: 1px solid var(--line); min-width: 0; }
+    .cost-channel:first-child { border-top: 0; padding-top: 0; }
+    .cost-channel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .cost-channel h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+    .cost-channel .badge { flex: none; }
+    .cost-model { margin: 4px 0 12px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .cost-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 8px; }
+    .cost-facts dt { color: var(--muted); font-size: 12px; }
+    .cost-facts dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .cost-editor summary, .cost-inactive > summary { cursor: pointer; min-height: 36px; padding: 7px 0; color: var(--accent-dark); }
+    .cost-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+    .cost-form label { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
+    .cost-form input, .cost-form select { width: 100%; min-width: 0; font-size: 14px; }
+    .cost-form select { min-height: 38px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); padding: 6px 9px; }
+    .cost-model-field { grid-column: 1 / -1; }
+    .cost-form .status { font-size: 13px; }
+    @media (max-width: 600px) {
+      .cost-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .cost-form { grid-template-columns: minmax(0, 1fr); }
+      .cost-purpose .section-note { flex-basis: 100%; }
     }
     .tab-panel[hidden] { display: none; }
     .tab-panel {
@@ -615,7 +646,7 @@
       .toolbar { display: grid; grid-template-columns: 1fr 1fr; }
       .toolbar .search, .toolbar .count, .toolbar button { width: 100%; margin-left: 0; }
       .admin-tabs { gap: 4px; padding: 4px; }
-      .admin-tabs button { flex: 1 1 0; min-width: 0; min-height: 34px; padding: 5px 7px; font-size: 14px; }
+      .admin-tabs button { flex: 1 0 88px; min-width: 88px; min-height: 34px; padding: 5px 7px; font-size: 14px; }
       .recovery-card { padding: 12px; }
       .recovery-facts { grid-template-columns: minmax(0, 1fr); }
       .tab-panel { gap: 10px; }
@@ -711,6 +742,7 @@
       <button id="usersTab" type="button" role="tab" aria-selected="true" aria-controls="usersPanel">用户管理</button>
       <button id="recoveryTab" type="button" role="tab" aria-selected="false" aria-controls="recoveryPanel">工单<span class="recovery-count" id="recoveryCount" hidden></span></button>
       <button id="dashboardTab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">运营看板</button>
+      <button id="costsTab" type="button" role="tab" aria-selected="false" aria-controls="costsPanel">API 费用</button>
     </nav>
 
     <div class="tab-panel" id="usersPanel" role="tabpanel" aria-labelledby="usersTab">
@@ -776,6 +808,23 @@
         <div id="feedbackAdminTickets"></div>
         <nav class="recovery-pagination" id="feedbackAdminPagination" aria-label="反馈分页" hidden><button id="feedbackAdminPrev" type="button">上一页</button><span id="feedbackAdminPage"></span><button id="feedbackAdminNext" type="button">下一页</button></nav>
       </section>
+    </div>
+
+    <div class="tab-panel" id="costsPanel" role="tabpanel" aria-labelledby="costsTab" hidden>
+      <section class="panel dashboard-toolbar" aria-label="API 费用统计范围">
+        <label class="dashboard-control">统计范围<select id="costRange"><option value="today">今日</option><option value="7d">近7天</option><option value="30d">近30天</option></select></label>
+        <button id="costRefresh" type="button">刷新</button>
+      </section>
+      <p class="status" id="costStatus" role="status"></p>
+      <div class="cost-content" id="costContent" hidden>
+        <section class="panel dashboard-section" aria-label="费用汇总">
+          <div><span class="section-note">总费用 · 人民币（已知费用与估算）</span><div class="cost-total" id="costTotal"></div><p class="section-note" id="costTotalDetail"></p></div>
+          <div id="costPurposes"></div>
+          <p class="section-note">按北京时间统计。费用未知的调用未计入总额；成功/失败按 HTTP 状态统计，重试及备用渠道分别计数。统计异步写入，可能短暂延迟。真实扣款以渠道账单为准。</p>
+          <p class="section-note" id="costSince"></p>
+        </section>
+        <section class="panel dashboard-section" aria-label="渠道费用与价格"><div class="section-head"><h2>渠道费用</h2></div><div id="costChannels"></div></section>
+      </div>
     </div>
 
     <div class="tab-panel" id="dashboardPanel" role="tabpanel" aria-labelledby="dashboardTab" hidden>
@@ -1647,9 +1696,135 @@
       }, DASHBOARD_REFRESH_MS);
     }
 
+    let costData = null;
+    let costLoadVersion = 0;
+    let costSaving = false;
+    function costStatus(text, error = false) {
+      $("costStatus").textContent = text;
+      $("costStatus").classList.toggle("error", error);
+    }
+    function money(value) {
+      const raw = String(value || "0");
+      // Keep decimal strings intact: a tiny nonzero fee must not round to ¥0.
+      return "¥" + (raw.includes(".") ? raw.replace(/0+$/, "").replace(/\.$/, "") : raw);
+    }
+    function knownCost(row) {
+      return row.requests > 0 && row.unknown === row.requests ? "待核算" : money(row.cost);
+    }
+    function costFacts(row) {
+      return `<dl class="cost-facts">
+        <div><dt>已知费用（含估算）</dt><dd>${escapeHtml(knownCost(row))}</dd></div>
+        <div><dt>请求 · 成功 / 失败</dt><dd>${row.requests} · ${row.success} / ${row.failed}</dd></div>
+        <div><dt>输入 / 输出 token</dt><dd>${row.input_tokens} / ${row.output_tokens}</dd></div>
+        <div><dt>缓存 token（输入内）</dt><dd>${row.cache_tokens}</dd></div>
+        <div><dt>费用未知 / 估算</dt><dd>${row.unknown} / ${row.estimated} 次</dd></div>
+        <div><dt>缺少用量</dt><dd>${row.missing_usage} 次</dd></div>
+      </dl>`;
+    }
+    function renderCostChannel(row, index) {
+      const price = row.price;
+      const tariff = !price ? "待定价" : price.mode === "request" ? `${money(price.per_request)}/次` : "按量计费";
+      return `<section class="cost-channel" data-cost-index="${index}">
+        <div class="cost-channel-head"><h3>${escapeHtml(row.name || (row.config_id ? "未命名渠道" : "未保存的测试渠道"))}</h3><span class="badge ${price ? "off" : "warn"}">${escapeHtml(tariff)}</span></div>
+        <p class="cost-model">${escapeHtml(row.model)}${row.current ? (row.enabled ? "" : " · 已停用") : " · 历史模型"}</p>
+        ${costFacts(row)}
+        <details class="cost-editor"><summary>${row.config_id ? "编辑价格" : "测试调用 · 无渠道价格"}</summary>
+          <form data-cost-form="${index}" class="cost-form">
+            <label class="cost-model-field">匹配模型字符串<input name="model" maxlength="200" required value="${escapeHtml(row.model)}" list="cost-models-${index}"></label>
+            <datalist id="cost-models-${index}">${row.rules.map(rule => `<option value="${escapeHtml(rule.model)}"></option>`).join("")}</datalist>
+            <label>计费模式<select name="mode"><option value="request" ${price?.mode === "request" ? "selected" : ""}>按次</option><option value="tokens" ${price?.mode !== "request" ? "selected" : ""}>按量</option></select></label>
+            ${[["per_request", "人民币元 / 次"], ["input", "输入 · 元 / 百万 token"], ["output", "输出 · 元 / 百万 token"], ["cache", "缓存 · 元 / 百万 token"]].map(([key, label]) => `<label data-price-field="${key}">${label}<input name="${key}" inputmode="decimal" required pattern="[0-9]{1,9}([.][0-9]{1,12})?" value="${escapeHtml(price?.[key] || "")}" placeholder="0"></label>`).join("")}
+            <p class="section-note cost-model-field">仅对该渠道及精确模型名生效，不会更换上游模型；保存后只影响新请求。缓存价替代对应输入价。</p>
+            <div class="row-actions cost-model-field"><button class="primary" type="submit" ${row.config_id ? "" : "disabled"}>保存价格</button><span class="status" role="status"></span></div>
+          </form>
+        </details>
+      </section>`;
+    }
+    function setPriceMode(form) {
+      for (const label of form.querySelectorAll("[data-price-field]")) {
+        const visible = (label.dataset.priceField === "per_request") === (form.elements.mode.value === "request");
+        label.hidden = !visible;
+        label.querySelector("input").disabled = !visible;
+      }
+    }
+    function renderCosts(data) {
+      $("costTotal").textContent = knownCost(data.total);
+      $("costTotalDetail").textContent = `${data.total.requests} 次请求 · 费用未知 ${data.total.unknown} 次 · 估算 ${data.total.estimated} 次`;
+      $("costSince").textContent = data.since ? `仅统计上线后调用，历史用量无法精确回填。最早记录：${new Date(data.since * 1000).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"})}（北京时间）` : "上线后开始记录，历史用量无法精确回填。";
+      $("costPurposes").innerHTML = data.purposes.map(row => `<div class="cost-purpose"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(knownCost(row))}</span><span class="section-note">${row.requests} 次 · 未知 ${row.unknown} · 估算 ${row.estimated}</span></div>`).join("");
+      const active = [], inactive = [];
+      data.channels.forEach((row, i) => (row.enabled || row.requests ? active : inactive).push(renderCostChannel(row, i)));
+      $("costChannels").innerHTML = (!data.total.requests ? '<p class="dashboard-empty">所选时段暂无调用记录，可先配置渠道价格。</p>' : '') + active.join("") + (inactive.length ? `<details class="cost-inactive"><summary>未调用的停用渠道（${inactive.length}）</summary>${inactive.join("")}</details>` : '') + (!data.channels.length ? '<p class="dashboard-empty">暂无渠道配置。</p>' : '');
+      for (const form of $("costChannels").querySelectorAll("form")) setPriceMode(form);
+    }
+    async function loadCosts() {
+      const version = ++costLoadVersion;
+      costStatus("加载中…");
+      $("costRefresh").disabled = true;
+      try {
+        const data = await request(`/api/admin/api-costs?range=${encodeURIComponent($("costRange").value)}`, {cache: "no-store"});
+        if (version !== costLoadVersion) return false;
+        costData = data;
+        renderCosts(data);
+        $("costContent").hidden = false;
+        costStatus("");
+        return true;
+      } catch (error) {
+        if (version !== costLoadVersion) return false;
+        $("costContent").hidden = true;
+        costStatus(error.message + "，可点击刷新重试。", true);
+        return false;
+      } finally {
+        if (version === costLoadVersion) $("costRefresh").disabled = false;
+      }
+    }
+    $("costChannels").addEventListener("change", event => {
+      const form = event.target.closest("form");
+      if (!form) return;
+      if (event.target.name === "model") {
+        const rule = costData.channels[Number(form.dataset.costForm)].rules.find(rule => rule.model === form.elements.model.value);
+        form.elements.mode.value = rule?.mode || "tokens";
+        for (const key of ["per_request", "input", "output", "cache"]) form.elements[key].value = rule?.[key] || "";
+      }
+      setPriceMode(form);
+    });
+    $("costChannels").addEventListener("submit", async event => {
+      const form = event.target.closest("form");
+      if (!form) return;
+      event.preventDefault();
+      if (costSaving) return;
+      costSaving = true;
+      const row = costData.channels[Number(form.dataset.costForm)];
+      const body = {config_id: row.config_id, ...Object.fromEntries(new FormData(form))};
+      const status = form.querySelector(".status");
+      const button = form.querySelector("button");
+      button.disabled = true;
+      $("costRange").disabled = true;
+      $("costRefresh").disabled = true;
+      status.classList.remove("error");
+      status.textContent = "保存中…";
+      try {
+        await request("/api/admin/api-costs/prices", {method: "POST", body: JSON.stringify(body)});
+        const refreshed = await loadCosts();
+        costStatus(refreshed ? "价格已保存，仅对新请求生效。" : "价格已保存，但列表刷新失败，请重试刷新。", !refreshed);
+        $("costRefresh").focus();
+      } catch (error) {
+        status.classList.add("error");
+        status.textContent = error.message;
+      } finally {
+        costSaving = false;
+        button.disabled = false;
+        $("costRange").disabled = false;
+        $("costRefresh").disabled = false;
+      }
+    });
+    $("costRange").addEventListener("change", loadCosts);
+    $("costRefresh").addEventListener("click", loadCosts);
+    $("costsTab").addEventListener("click", () => switchTab("costs"));
+
     function switchTab(tab) {
-      activeTab = ["users", "recovery", "dashboard"].includes(tab) ? tab : "users";
-      for (const name of ["users", "recovery", "dashboard"]) {
+      activeTab = ["users", "recovery", "dashboard", "costs"].includes(tab) ? tab : "users";
+      for (const name of ["users", "recovery", "dashboard", "costs"]) {
         $(name + "Panel").hidden = activeTab !== name;
         $(name + "Tab").setAttribute("aria-selected", String(activeTab === name));
       }
@@ -1658,6 +1833,8 @@
         if (!dashboardData || Date.now() - dashboardLastLoadedAt >= DASHBOARD_REFRESH_MS) loadDashboard();
       } else if (activeTab === "recovery") {
         if (ticketKind === "feedback") loadAdminFeedback(); else loadRecoveryTickets();
+      } else if (activeTab === "costs") {
+        if (!costSaving) loadCosts();
       } else if (!usersLoaded) {
         loadUsers();
       }

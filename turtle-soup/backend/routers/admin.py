@@ -616,6 +616,8 @@ async def test_api_config_draft(body: ApiTestBody, admin: dict = Depends(admin_p
         "api_key": body.api_key.strip() or (existing["api_key"] if existing else ""),
         "model": body.model.strip() or (existing["model"] if existing else ""),
     }
+    # Drafts using another endpoint/credential must not inherit this channel's tariff.
+    cfg["id"] = body.config_id if existing and cfg["api_url"] == existing["api_url"] and cfg["api_key"] == existing["api_key"] else 0
     result = await test_config(cfg)
     if result.get("success") and body.config_id:
         mark_config_success(body.config_id)
