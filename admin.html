@@ -297,12 +297,17 @@
     .cost-overview { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .cost-overview > div:first-child { min-width: 0; }
     .cost-overview .dashboard-control { flex: none; }
-    .cost-total { font-size: 24px; font-weight: 700; overflow-wrap: anywhere; }
-    #costTotalDetail { margin: 0; }
-    #costPurposes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-bottom: 8px; }
-    .cost-purpose { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-    .cost-purpose strong { font-size: 12px; font-weight: 400; color: var(--muted); }
-    .cost-purpose small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    .cost-eyebrow { display: block; font-size: 12px; color: var(--muted); }
+    .cost-total { font-size: 26px; font-weight: 700; line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    #costTotalDetail { margin: 3px 0 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    #costPurposes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .cost-purpose { min-width: 0; display: grid; align-content: start; gap: 5px; }
+    .cost-purpose + .cost-purpose { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--line); }
+    .cost-purpose-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 3px 8px; }
+    .cost-purpose-head strong { font-size: 14px; font-weight: 650; }
+    .cost-purpose-value { min-width: 0; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .cost-purpose-meta { font-size: 12px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+    .cost-section-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--accent-dark); }
     .cost-row { min-width: 0; border-top: 1px solid var(--line); }
     .cost-row > summary { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 0; cursor: pointer; list-style: none; }
     .cost-row > summary::-webkit-details-marker { display: none; }
@@ -312,11 +317,16 @@
     .cost-identity strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cost-model { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cost-row[open] .cost-identity :is(strong, .cost-model) { white-space: normal; overflow-wrap: anywhere; }
-    .cost-amount { min-width: 0; max-width: 42%; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-    .cost-amount small { display: block; color: var(--muted); font-size: 12px; }
-    .cost-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 4px 0 12px; }
+    .cost-amount { min-width: 0; max-width: 42%; text-align: right; overflow-wrap: anywhere; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .cost-amount small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .cost-details { padding-bottom: 12px; }
+    .cost-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 2px 0 14px; padding: 10px 12px; border-radius: 6px; background: var(--bg); }
     .cost-facts dt { color: var(--muted); font-size: 12px; }
     .cost-facts dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .cost-breakdown { margin-top: 6px; }
+    .cost-breakdown-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; font-size: 13px; }
+    .cost-breakdown-line span { color: var(--muted); }
+    .cost-breakdown-line strong { min-width: 0; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
     #costNewPrice > summary { cursor: pointer; min-height: 36px; padding: 7px 0; color: var(--accent-dark); }
     .cost-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 8px 0 14px; }
     .cost-form label { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
@@ -325,6 +335,10 @@
     .cost-model-field { grid-column: 1 / -1; }
     .cost-form .status { font-size: 13px; }
     @media (max-width: 600px) {
+      #costPurposes { grid-template-columns: minmax(0, 1fr); padding: 0; }
+      .cost-purpose { padding: 10px 0; }
+      .cost-purpose + .cost-purpose { margin-left: 0; padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+      .cost-purpose-head { flex-wrap: nowrap; }
       .cost-form { grid-template-columns: minmax(0, 1fr); }
     }
     .tab-panel[hidden] { display: none; }
@@ -834,10 +848,11 @@
       <div class="cost-content" id="costContent" hidden>
         <section class="panel dashboard-section" id="costStats" aria-label="费用统计">
           <div class="cost-overview">
-            <div><div class="cost-total" id="costTotal" aria-label="总金额"></div><p class="section-note" id="costTotalDetail"></p></div>
+            <div><span class="cost-eyebrow">总费用</span><div class="cost-total" id="costTotal" aria-label="总金额"></div><p id="costTotalDetail"></p></div>
             <div class="dashboard-control"><select id="costRange" aria-label="统计范围"><option value="today">今日</option><option value="7d">7天</option><option value="30d">30天</option></select></div>
           </div>
           <div id="costPurposes"></div>
+          <h3 class="cost-section-title">渠道明细</h3>
           <div id="costChannels" aria-label="渠道与模型费用"></div>
         </section>
         <section class="panel dashboard-section" id="costPrices" aria-label="模型价格" hidden>
@@ -1747,7 +1762,12 @@
     }
     function renderCostChannel(row) {
       const state = row.unknown && row.unknown < row.requests ? "部分待核算" : row.estimated ? "含估算" : "";
-      return `<details class="cost-row"><summary>${costIdentity(row)}<span class="cost-amount">${escapeHtml(knownCost(row))}${state ? `<small>${state}</small>` : ""}</span></summary>${costFacts(row)}</details>`;
+      const business = (row.purposes || []).filter(item => item.purpose !== "test");
+      return `<details class="cost-row"><summary>${costIdentity(row)}<span class="cost-amount">${escapeHtml(knownCost(row))}${state ? `<small>${state}</small>` : ""}</span></summary>
+        <div class="cost-details">${costFacts(row)}
+          <h4 class="cost-section-title">用途费用</h4>
+          <div class="cost-breakdown">${business.map(item => `<div class="cost-breakdown-line"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(knownCost(item))}</strong></div>`).join("")}</div>
+        </div></details>`;
     }
     function priceForm(row, index) {
       const price = row?.price;
@@ -1780,7 +1800,7 @@
     function renderCosts(data) {
       $("costTotal").textContent = knownCost(data.total);
       $("costTotalDetail").textContent = `${tokenCount(data.total.requests)} 次调用 · Token 输入 ${tokenCount(data.total.input_tokens)} / 输出 ${tokenCount(data.total.output_tokens)}`;
-      $("costPurposes").innerHTML = data.purposes.filter(row => row.purpose !== "test").map(row => `<div class="cost-purpose"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(knownCost(row))}</span><small>${tokenCount(row.requests)} 次调用</small><small>入 ${tokenCount(row.input_tokens)}</small><small>出 ${tokenCount(row.output_tokens)}</small></div>`).join("");
+      $("costPurposes").innerHTML = data.purposes.filter(row => row.purpose !== "test").map(row => `<div class="cost-purpose"><div class="cost-purpose-head"><strong>${escapeHtml(row.label)}</strong><span class="cost-purpose-value">${escapeHtml(knownCost(row))}</span></div><div class="cost-purpose-meta">${tokenCount(row.requests)} 次调用 · 输入 ${tokenCount(row.input_tokens)} / 输出 ${tokenCount(row.output_tokens)}</div></div>`).join("");
       $("costChannels").innerHTML = data.channels.filter(row => row.requests > 0).map(renderCostChannel).join("") || '<p class="dashboard-empty">所选时段暂无调用</p>';
       $("costPriceList").innerHTML = data.prices.map(renderPrice).join("") || '<p class="dashboard-empty">暂无模型价格</p>';
       $("costNewPriceForm").innerHTML = data.configs.length ? priceForm(null, "new") : '<p class="dashboard-empty">暂无渠道配置</p>';

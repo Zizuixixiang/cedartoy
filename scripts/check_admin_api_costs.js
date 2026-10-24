@@ -11,12 +11,20 @@ function fixture() {
   const price = {mode: 'tokens', input: '0.10', output: '0.60', cache: '0.01'};
   const used = {...zero, requests: 12, success: 11, failed: 1, input_tokens: 8100, output_tokens: 1400,
     cache_tokens: 2100, reasoning_tokens: 700, unknown: 1, cost: '0.001461'};
+  const byPurpose = (soup, npc, tarot) => [
+    {...zero, purpose: 'soup', label: '海龟汤', ...soup},
+    {...zero, purpose: 'npc', label: 'NPC', ...npc},
+    {...zero, purpose: 'tarot', label: '塔罗', ...tarot},
+  ];
   const channels = [
-    {...used, config_id: 31, name: '巧克力 · NPC', model: 'gemini-3.1-flash-lite', current: true, enabled: true, price},
+    {...used, config_id: 31, name: '巧克力 · NPC', model: 'gemini-3.1-flash-lite', current: true, enabled: true, price,
+      purposes: byPurpose({requests: 5, success: 5, input_tokens: 3500, output_tokens: 600, cost: '0.0004'},
+        {requests: 7, success: 6, failed: 1, unknown: 1, input_tokens: 4600, output_tokens: 800, cost: '0.001061'}, {})},
     {...zero, requests: 1, unknown: 1, failed: 1, config_id: 11, name: '小鸡农场', model: 'new-model-without-price',
-      current: true, enabled: true, price: null},
+      current: true, enabled: true, price: null, purposes: byPurpose({}, {requests: 1, unknown: 1, failed: 1}, {})},
     {...zero, requests: 1, success: 1, config_id: 28, name: '沉默 · 塔罗', model: '[anti量]gemini-3.8-flash',
-      current: true, enabled: true, cost: '0.003', price},
+      current: true, enabled: true, cost: '0.003', price,
+      purposes: byPurpose({}, {}, {requests: 1, success: 1, cost: '0.003'})},
   ];
   const prices = channels.map(({config_id, name, model, price}) => ({config_id, name, model, price}));
   prices.push({config_id: 31, name: '巧克力 · NPC', model: 'historical-model-outside-30-days', price: null},
@@ -25,8 +33,9 @@ function fixture() {
   const configs = channels.map(c => ({id: c.config_id, name: c.name, model: c.model, enabled: true}));
   configs.push({id: 80, name: '新渠道（尚未调用）', model: 'fresh-model', enabled: true});
   const data = {range: 'today', total: {...used, requests: 14, success: 12, failed: 2, unknown: 2, cost: '0.004461'},
-    purposes: [{...zero, purpose: 'soup', label: '海龟汤'}, {...used, purpose: 'npc', label: 'NPC'},
-      {...zero, requests: 1, success: 1, cost: '0.003', purpose: 'tarot', label: '塔罗'}], channels, prices, configs};
+    purposes: byPurpose({requests: 5, success: 5, input_tokens: 3500, output_tokens: 600, cost: '0.0004'},
+      {requests: 8, success: 6, failed: 2, unknown: 2, input_tokens: 4600, output_tokens: 800, cost: '0.001061'},
+      {requests: 1, success: 1, cost: '0.003'}), channels, prices, configs};
   const state = {data, requests: [], fail: false, failSave: false};
   state.fetch = async (url, options = {}) => {
     state.requests.push({url, options});
@@ -80,18 +89,29 @@ async function checkDOM() {
     assert.equal($('costTotal').textContent, '¥0.004461');
     assert.equal($('costTotalDetail').textContent, '14 次调用 · Token 输入 8,100 / 输出 1,400');
     assert.equal($('costPurposes').children.length, 3);
-    assert.match($('costPurposes').children[0].textContent, /海龟汤.*0 次调用.*入 0.*出 0/s);
-    assert.match($('costPurposes').children[1].textContent, /NPC.*12 次调用.*入 8,100.*出 1,400/s);
-    assert.match($('costPurposes').children[2].textContent, /塔罗.*1 次调用.*入 0.*出 0/s);
+    assert.match($('costPurposes').children[0].textContent, /海龟汤.*¥0.0004.*5 次调用.*输入 3,500.*输出 600/s);
+    assert.match($('costPurposes').children[1].textContent, /NPC.*¥0.001061.*8 次调用.*输入 4,600.*输出 800/s);
+    assert.match($('costPurposes').children[2].textContent, /塔罗.*¥0.003.*1 次调用.*输入 0.*输出 0/s);
+    assert.ok($('costStats').querySelector('.cost-eyebrow'));
+    assert.ok($('costStats').querySelector('.cost-section-title'));
     assert.doesNotMatch($('costPurposes').textContent, /请求|估算|未知/);
     assert.equal(w.money('0.0000000000001'), '¥0.0000000000001');
     assert.equal(w.money('0.001000'), '¥0.001');
     assert.equal(d.querySelectorAll('#costChannels > details').length, 3);
+    assert.match($('costStats').textContent, /渠道明细/);
     const stats = d.querySelector('#costChannels .cost-facts');
     assert.equal(stats.querySelectorAll('dt').length, 2);
     assert.match(stats.textContent, /调用次数12 次/);
     assert.match(stats.textContent, /Token · 输入 \/ 输出8,100 \/ 1,400/);
     assert.doesNotMatch(stats.textContent, /缓存|推理|待核算|估算|缺少用量|成功|失败/);
+    const business = d.querySelector('#costChannels .cost-details .cost-breakdown');
+    assert.ok(business);
+    assert.equal(business.querySelectorAll('.cost-breakdown-line').length, 3);
+    assert.deepEqual([...business.querySelectorAll('.cost-breakdown-line')].map(el => el.textContent.trim()),
+      ['海龟汤¥0.0004', 'NPC¥0.001061', '塔罗¥0']);
+    const unpricedBusiness = d.querySelectorAll('#costChannels .cost-breakdown')[1];
+    assert.match(unpricedBusiness.textContent, /NPC待核算/);
+    assert.deepEqual([...d.querySelectorAll('#costChannels .cost-breakdown')].map(el => el.children.length), [3, 3, 3]);
     assert.equal(d.querySelectorAll('#costChannels details[open], .cost-editor[open]').length, 0);
     assert.equal($('costChannels').querySelectorAll('form').length, 0);
     assert.doesNotMatch($('costChannels').textContent, /尚未调用|historical-model/);

@@ -289,6 +289,9 @@ def report(range_name, configs, path=None, now=None):
                     enabled=bool(cfg and cfg['enabled']), deleted=cfg is None,
                     price=rules.get(key))
     channels = {}
+    # Keep each channel+exact-model split by business without changing the
+    # existing aggregate totals or the append-only event/price snapshots.
+    channel_purposes = ('soup', 'npc', 'tarot')
     def add(target, row):
         for key in _empty():
             target[key] = format(Decimal(target[key])+Decimal(row[key]), 'f') if key == 'cost' else target[key]+row[key]
@@ -297,8 +300,16 @@ def report(range_name, configs, path=None, now=None):
         add(purposes[row['purpose']], row)
         key = (row['config_id'], row['model'])
         if key not in channels:
-            channels[key] = dict(**identity(key, row['name']), **_empty())
+            channels[key] = dict(
+                **identity(key, row['name']), **_empty(),
+                purposes={purpose: dict(purpose=purpose, label=PURPOSES[purpose], **_empty())
+                          for purpose in channel_purposes},
+            )
         add(channels[key], row)
+        if row['purpose'] in channel_purposes:
+            add(channels[key]['purposes'][row['purpose']], row)
+    for channel in channels.values():
+        channel['purposes'] = [channel['purposes'][purpose] for purpose in channel_purposes]
     prices = [identity(key, observed.get(key, '')) for key in sorted(observed.keys() | manual)]
     return {'range': range_name, 'since': first, 'total': total,
             'purposes': [v for k,v in purposes.items() if k != 'test' or v['requests']],

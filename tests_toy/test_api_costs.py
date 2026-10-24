@@ -138,6 +138,33 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
             self.assertNotIn('PRIVATE', json.dumps(report))
         self.assertEqual(self.rows(), before)
 
+    def test_model_channel_has_three_business_costs_from_recorded_events(self):
+        # Same exact channel/model may have calls in all three business areas.
+        # The sub-totals must be stored-price snapshots, not a reprice.
+        for pool in ('judge', 'npc_speech', 'tarot'):
+            costs.write_event(costs.make_event(CFG, pool, time.time(), response()), self.path)
+        other = dict(CFG, model='older-unpriced-model')
+        costs.write_event(costs.make_event(other, 'tarot', time.time(), response()), self.path)
+        report = costs.report('today', [CFG, other], self.path)
+        channels = {(r['config_id'], r['model']): r for r in report['channels']}
+        first = channels[(CFG['id'], CFG['model'])]
+        self.assertEqual(first['requests'], 3)
+        self.assertEqual([r['purpose'] for r in first['purposes']], ['soup', 'npc', 'tarot'])
+        self.assertEqual([r['requests'] for r in first['purposes']], [1, 1, 1])
+        self.assertEqual([r['cost'] for r in first['purposes']], ['0.000184'] * 3)
+        self.assertEqual(first['cost'], '0.000552')
+        self.assertEqual(sum(r['requests'] for r in first['purposes']), first['requests'])
+        self.assertEqual(sum(costs.Decimal(r['cost']) for r in first['purposes']), costs.Decimal(first['cost']))
+        self.assertEqual([r['input_tokens'] for r in first['purposes']], [1000, 1000, 1000])
+        self.assertEqual([r['output_tokens'] for r in first['purposes']], [200, 200, 200])
+        second = channels[(other['id'], other['model'])]
+        self.assertEqual([r['requests'] for r in second['purposes']], [0, 0, 1])
+        self.assertEqual([r['unknown'] for r in second['purposes']], [0, 0, 1])
+        self.assertEqual(second['cost'], '0')
+        self.assertEqual(second['unknown'], 1)
+        self.assertEqual([r['cost'] for r in second['purposes']], ['0', '0', '0'])
+        self.assertEqual(report['total']['requests'], 4)
+
     def test_new_channel_multiple_models_and_deleted_channel_validation(self):
         cfg = dict(CFG, id=80, name='新渠道', model='model-a')
         body = dict(config_id=80, model='model-a', mode='request', per_request='0.01')
