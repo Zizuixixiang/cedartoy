@@ -108,9 +108,11 @@ async function checkDOM() {
     assert.ok(business);
     assert.equal(business.querySelectorAll('.cost-breakdown-line').length, 3);
     assert.deepEqual([...business.querySelectorAll('.cost-breakdown-line')].map(el => el.textContent.trim()),
-      ['海龟汤¥0.0004', 'NPC¥0.001061', '塔罗¥0']);
+      ['海龟汤5 次¥0.0004', 'NPC7 次¥0.001061', '塔罗0 次¥0']);
     const unpricedBusiness = d.querySelectorAll('#costChannels .cost-breakdown')[1];
-    assert.match(unpricedBusiness.textContent, /NPC待核算/);
+    assert.match(unpricedBusiness.textContent, /NPC1 次待核算/);
+    assert.match(d.querySelectorAll('#costChannels .cost-breakdown')[2].textContent, /塔罗1 次¥0.003/);
+    assert.equal(business.querySelectorAll('.cost-breakdown-name small').length, 3);
     assert.deepEqual([...d.querySelectorAll('#costChannels .cost-breakdown')].map(el => el.children.length), [3, 3, 3]);
     assert.equal(d.querySelectorAll('#costChannels details[open], .cost-editor[open]').length, 0);
     assert.equal($('costChannels').querySelectorAll('form').length, 0);

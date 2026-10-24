@@ -325,7 +325,8 @@
     .cost-facts dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .cost-breakdown { margin-top: 6px; }
     .cost-breakdown-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; font-size: 13px; }
-    .cost-breakdown-line span { color: var(--muted); }
+    .cost-breakdown-line .cost-breakdown-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+    .cost-breakdown-name small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
     .cost-breakdown-line strong { min-width: 0; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
     #costNewPrice > summary { cursor: pointer; min-height: 36px; padding: 7px 0; color: var(--accent-dark); }
     .cost-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 8px 0 14px; }
@@ -1766,7 +1767,7 @@
       return `<details class="cost-row"><summary>${costIdentity(row)}<span class="cost-amount">${escapeHtml(knownCost(row))}${state ? `<small>${state}</small>` : ""}</span></summary>
         <div class="cost-details">${costFacts(row)}
           <h4 class="cost-section-title">用途费用</h4>
-          <div class="cost-breakdown">${business.map(item => `<div class="cost-breakdown-line"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(knownCost(item))}</strong></div>`).join("")}</div>
+          <div class="cost-breakdown">${business.map(item => `<div class="cost-breakdown-line"><span class="cost-breakdown-name">${escapeHtml(item.label)}<small>${tokenCount(item.requests)} 次</small></span><strong>${escapeHtml(knownCost(item))}</strong></div>`).join("")}</div>
         </div></details>`;
     }
     function priceForm(row, index) {
