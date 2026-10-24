@@ -287,24 +287,37 @@
       color: var(--accent-dark);
       box-shadow: 0 1px 3px rgba(39, 35, 31, .08);
     }
-    .cost-content { display: grid; gap: 14px; min-width: 0; }
+    .cost-content { min-width: 0; }
     #costsPanel [hidden] { display: none; }
     #costsPanel { font-size: 14px; line-height: 1.5; }
     #costsPanel :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cost-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .cost-toolbar .ticket-kind-switch { margin: 0; }
+    #costRefresh { margin-left: auto; }
+    .cost-overview { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .cost-overview > div:first-child { min-width: 0; }
+    .cost-overview .dashboard-control { flex: none; }
     .cost-total { font-size: 24px; font-weight: 700; overflow-wrap: anywhere; }
-    .cost-purpose { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); }
-    .cost-purpose strong { min-width: 4em; }
-    .cost-channel { padding: 14px 0; border-top: 1px solid var(--line); min-width: 0; }
-    .cost-channel:first-child { border-top: 0; padding-top: 0; }
-    .cost-channel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .cost-channel h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
-    .cost-channel .badge { flex: none; }
-    .cost-model { margin: 4px 0 12px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-    .cost-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; margin: 0 0 8px; }
+    #costTotalDetail { margin: 0; }
+    #costPurposes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-bottom: 8px; }
+    .cost-purpose { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+    .cost-purpose strong { font-size: 12px; font-weight: 400; color: var(--muted); }
+    .cost-row { min-width: 0; border-top: 1px solid var(--line); }
+    .cost-row > summary { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 0; cursor: pointer; list-style: none; }
+    .cost-row > summary::-webkit-details-marker { display: none; }
+    .cost-row > summary::after { content: "›"; flex: none; color: var(--muted); }
+    .cost-row[open] > summary::after { transform: rotate(90deg); }
+    .cost-identity { display: grid; gap: 2px; min-width: 0; flex: 1; }
+    .cost-identity strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cost-model { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cost-row[open] .cost-identity :is(strong, .cost-model) { white-space: normal; overflow-wrap: anywhere; }
+    .cost-amount { min-width: 0; max-width: 42%; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .cost-amount small { display: block; color: var(--muted); font-size: 12px; }
+    .cost-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; margin: 4px 0 12px; }
     .cost-facts dt { color: var(--muted); font-size: 12px; }
-    .cost-facts dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .cost-editor summary, .cost-inactive > summary { cursor: pointer; min-height: 36px; padding: 7px 0; color: var(--accent-dark); }
-    .cost-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+    .cost-facts dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    #costNewPrice > summary { cursor: pointer; min-height: 36px; padding: 7px 0; color: var(--accent-dark); }
+    .cost-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 8px 0 14px; }
     .cost-form label { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
     .cost-form input, .cost-form select { width: 100%; min-width: 0; font-size: 14px; }
     .cost-form select { min-height: 38px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); padding: 6px 9px; }
@@ -313,7 +326,6 @@
     @media (max-width: 600px) {
       .cost-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
       .cost-form { grid-template-columns: minmax(0, 1fr); }
-      .cost-purpose .section-note { flex-basis: 100%; }
     }
     .tab-panel[hidden] { display: none; }
     .tab-panel {
@@ -811,19 +823,28 @@
     </div>
 
     <div class="tab-panel" id="costsPanel" role="tabpanel" aria-labelledby="costsTab" hidden>
-      <section class="panel dashboard-toolbar" aria-label="API 费用统计范围">
-        <label class="dashboard-control">统计范围<select id="costRange"><option value="today">今日</option><option value="7d">近7天</option><option value="30d">近30天</option></select></label>
+      <div class="cost-toolbar">
+        <div class="ticket-kind-switch" aria-label="费用视图">
+          <button class="primary" type="button" data-cost-view="stats" aria-pressed="true" aria-controls="costStats">统计</button>
+          <button type="button" data-cost-view="prices" aria-pressed="false" aria-controls="costPrices">模型价格</button>
+        </div>
         <button id="costRefresh" type="button">刷新</button>
-      </section>
+      </div>
       <p class="status" id="costStatus" role="status"></p>
       <div class="cost-content" id="costContent" hidden>
-        <section class="panel dashboard-section" aria-label="费用汇总">
-          <div><span class="section-note">总费用 · 人民币（已知费用与估算）</span><div class="cost-total" id="costTotal"></div><p class="section-note" id="costTotalDetail"></p></div>
+        <section class="panel dashboard-section" id="costStats" aria-label="费用统计">
+          <div class="cost-overview">
+            <div><div class="cost-total" id="costTotal" aria-label="总金额"></div><p class="section-note" id="costTotalDetail"></p></div>
+            <div class="dashboard-control"><select id="costRange" aria-label="统计范围"><option value="today">今日</option><option value="7d">7天</option><option value="30d">30天</option></select></div>
+          </div>
           <div id="costPurposes"></div>
-          <p class="section-note">按北京时间统计。费用未知的调用未计入总额；成功/失败按 HTTP 状态统计，重试及备用渠道分别计数。统计异步写入，可能短暂延迟。真实扣款以渠道账单为准。</p>
-          <p class="section-note" id="costSince"></p>
+          <div id="costChannels" aria-label="渠道与模型费用"></div>
         </section>
-        <section class="panel dashboard-section" aria-label="渠道费用与价格"><div class="section-head"><h2>渠道费用</h2></div><div id="costChannels"></div></section>
+        <section class="panel dashboard-section" id="costPrices" aria-label="模型价格" hidden>
+          <span class="section-note">改价仅影响新请求</span>
+          <details id="costNewPrice"><summary>新增价格</summary><div id="costNewPriceForm"></div></details>
+          <div id="costPriceList"></div>
+        </section>
       </div>
     </div>
 
@@ -1713,32 +1734,36 @@
     }
     function costFacts(row) {
       return `<dl class="cost-facts">
-        <div><dt>已知费用（含估算）</dt><dd>${escapeHtml(knownCost(row))}</dd></div>
         <div><dt>请求 · 成功 / 失败</dt><dd>${row.requests} · ${row.success} / ${row.failed}</dd></div>
         <div><dt>输入 / 输出 token</dt><dd>${row.input_tokens} / ${row.output_tokens}</dd></div>
         <div><dt>缓存 token（输入内）</dt><dd>${row.cache_tokens}</dd></div>
-        <div><dt>费用未知 / 估算</dt><dd>${row.unknown} / ${row.estimated} 次</dd></div>
+        <div><dt>推理 token（输出内）</dt><dd>${row.reasoning_tokens}</dd></div>
+        <div><dt>待核算 / 估算</dt><dd>${row.unknown} / ${row.estimated} 次</dd></div>
         <div><dt>缺少用量</dt><dd>${row.missing_usage} 次</dd></div>
       </dl>`;
     }
-    function renderCostChannel(row, index) {
+    function costIdentity(row) {
+      const name = row.name || (row.deleted && row.config_id ? "已删除渠道" : row.config_id ? "未命名渠道" : "未保存的测试渠道");
+      return `<span class="cost-identity"><strong>${escapeHtml(name)}</strong><span class="cost-model">${escapeHtml(row.model)}</span></span>`;
+    }
+    function renderCostChannel(row) {
+      const state = row.unknown && row.unknown < row.requests ? "部分待核算" : row.estimated ? "含估算" : "";
+      return `<details class="cost-row"><summary>${costIdentity(row)}<span class="cost-amount">${escapeHtml(knownCost(row))}${state ? `<small>${state}</small>` : ""}</span></summary>${costFacts(row)}</details>`;
+    }
+    function priceForm(row, index) {
+      const price = row?.price;
+      return `<form data-cost-form="${index}" class="cost-form">
+        ${row ? "" : `<label class="cost-model-field">渠道<select name="config_id" required>${costData.configs.map(cfg => `<option value="${cfg.id}">${escapeHtml(cfg.name || "未命名渠道")}${cfg.enabled ? "" : " · 已停用"}</option>`).join("")}</select></label>
+          <label class="cost-model-field">精确模型名<input name="model" maxlength="200" required value="${escapeHtml(costData.configs[0]?.model || "")}"></label>`}
+        <label>计费模式<select name="mode"><option value="request" ${price?.mode === "request" ? "selected" : ""}>按次</option><option value="tokens" ${price?.mode !== "request" ? "selected" : ""}>按量</option></select></label>
+        ${[["per_request", "元 / 次"], ["input", "输入 · 元 / 百万 token"], ["output", "输出 · 元 / 百万 token"], ["cache", "缓存（替代输入）· 元 / 百万 token"]].map(([key, label]) => `<label data-price-field="${key}">${label}<input name="${key}" inputmode="decimal" required pattern="[0-9]{1,9}([.][0-9]{1,12})?" value="${escapeHtml(price?.[key] ?? "")}" placeholder="0"></label>`).join("")}
+        <div class="row-actions cost-model-field"><button class="primary" type="submit">保存价格</button><span class="status" role="status"></span></div>
+      </form>`;
+    }
+    function renderPrice(row, index) {
       const price = row.price;
-      const tariff = !price ? "待定价" : price.mode === "request" ? `${money(price.per_request)}/次` : "按量计费";
-      return `<section class="cost-channel" data-cost-index="${index}">
-        <div class="cost-channel-head"><h3>${escapeHtml(row.name || (row.config_id ? "未命名渠道" : "未保存的测试渠道"))}</h3><span class="badge ${price ? "off" : "warn"}">${escapeHtml(tariff)}</span></div>
-        <p class="cost-model">${escapeHtml(row.model)}${row.current ? (row.enabled ? "" : " · 已停用") : " · 历史模型"}</p>
-        ${costFacts(row)}
-        <details class="cost-editor"><summary>${row.config_id ? "编辑价格" : "测试调用 · 无渠道价格"}</summary>
-          <form data-cost-form="${index}" class="cost-form">
-            <label class="cost-model-field">匹配模型字符串<input name="model" maxlength="200" required value="${escapeHtml(row.model)}" list="cost-models-${index}"></label>
-            <datalist id="cost-models-${index}">${row.rules.map(rule => `<option value="${escapeHtml(rule.model)}"></option>`).join("")}</datalist>
-            <label>计费模式<select name="mode"><option value="request" ${price?.mode === "request" ? "selected" : ""}>按次</option><option value="tokens" ${price?.mode !== "request" ? "selected" : ""}>按量</option></select></label>
-            ${[["per_request", "人民币元 / 次"], ["input", "输入 · 元 / 百万 token"], ["output", "输出 · 元 / 百万 token"], ["cache", "缓存 · 元 / 百万 token"]].map(([key, label]) => `<label data-price-field="${key}">${label}<input name="${key}" inputmode="decimal" required pattern="[0-9]{1,9}([.][0-9]{1,12})?" value="${escapeHtml(price?.[key] || "")}" placeholder="0"></label>`).join("")}
-            <p class="section-note cost-model-field">仅对该渠道及精确模型名生效，不会更换上游模型；保存后只影响新请求。缓存价替代对应输入价。</p>
-            <div class="row-actions cost-model-field"><button class="primary" type="submit" ${row.config_id ? "" : "disabled"}>保存价格</button><span class="status" role="status"></span></div>
-          </form>
-        </details>
-      </section>`;
+      const tariff = !price ? '¥0<small>未设置</small>' : price.mode === "request" ? `${escapeHtml(money(price.per_request))}/次` : '按量<small>已设置</small>';
+      return `<details class="cost-row cost-editor" data-price-index="${index}"><summary>${costIdentity(row)}<span class="cost-amount">${tariff}</span></summary>${priceForm(row, index)}</details>`;
     }
     function setPriceMode(form) {
       for (const label of form.querySelectorAll("[data-price-field]")) {
@@ -1747,15 +1772,23 @@
         label.querySelector("input").disabled = !visible;
       }
     }
+    function matchNewPrice(form) {
+      const rule = costData.prices.find(row => row.config_id === Number(form.elements.config_id.value) && row.model === form.elements.model.value)?.price;
+      form.elements.mode.value = rule?.mode || "tokens";
+      for (const key of ["per_request", "input", "output", "cache"]) form.elements[key].value = rule?.[key] ?? "";
+      setPriceMode(form);
+    }
     function renderCosts(data) {
       $("costTotal").textContent = knownCost(data.total);
-      $("costTotalDetail").textContent = `${data.total.requests} 次请求 · 费用未知 ${data.total.unknown} 次 · 估算 ${data.total.estimated} 次`;
-      $("costSince").textContent = data.since ? `仅统计上线后调用，历史用量无法精确回填。最早记录：${new Date(data.since * 1000).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"})}（北京时间）` : "上线后开始记录，历史用量无法精确回填。";
-      $("costPurposes").innerHTML = data.purposes.map(row => `<div class="cost-purpose"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(knownCost(row))}</span><span class="section-note">${row.requests} 次 · 未知 ${row.unknown} · 估算 ${row.estimated}</span></div>`).join("");
-      const active = [], inactive = [];
-      data.channels.forEach((row, i) => (row.enabled || row.requests ? active : inactive).push(renderCostChannel(row, i)));
-      $("costChannels").innerHTML = (!data.total.requests ? '<p class="dashboard-empty">所选时段暂无调用记录，可先配置渠道价格。</p>' : '') + active.join("") + (inactive.length ? `<details class="cost-inactive"><summary>未调用的停用渠道（${inactive.length}）</summary>${inactive.join("")}</details>` : '') + (!data.channels.length ? '<p class="dashboard-empty">暂无渠道配置。</p>' : '');
-      for (const form of $("costChannels").querySelectorAll("form")) setPriceMode(form);
+      $("costTotalDetail").textContent = [data.total.unknown && data.total.unknown < data.total.requests ? "部分待核算" : "", data.total.estimated ? "含估算" : ""].filter(Boolean).join(" · ");
+      $("costPurposes").innerHTML = data.purposes.filter(row => row.purpose !== "test").map(row => `<div class="cost-purpose"><strong>${escapeHtml(row.label)}</strong><span>${escapeHtml(knownCost(row))}</span></div>`).join("");
+      $("costChannels").innerHTML = data.channels.filter(row => row.requests > 0).map(renderCostChannel).join("") || '<p class="dashboard-empty">所选时段暂无调用</p>';
+      $("costPriceList").innerHTML = data.prices.map(renderPrice).join("") || '<p class="dashboard-empty">暂无模型价格</p>';
+      $("costNewPriceForm").innerHTML = data.configs.length ? priceForm(null, "new") : '<p class="dashboard-empty">暂无渠道配置</p>';
+      $("costNewPrice").open = false;
+      for (const form of $("costPrices").querySelectorAll("form")) setPriceMode(form);
+      const newForm = $("costNewPriceForm").querySelector("form");
+      if (newForm) matchNewPrice(newForm);
     }
     async function loadCosts() {
       const version = ++costLoadVersion;
@@ -1778,24 +1811,24 @@
         if (version === costLoadVersion) $("costRefresh").disabled = false;
       }
     }
-    $("costChannels").addEventListener("change", event => {
+    $("costPrices").addEventListener("change", event => {
       const form = event.target.closest("form");
       if (!form) return;
-      if (event.target.name === "model") {
-        const rule = costData.channels[Number(form.dataset.costForm)].rules.find(rule => rule.model === form.elements.model.value);
-        form.elements.mode.value = rule?.mode || "tokens";
-        for (const key of ["per_request", "input", "output", "cache"]) form.elements[key].value = rule?.[key] || "";
+      if (form.dataset.costForm === "new" && ["config_id", "model"].includes(event.target.name)) {
+        if (event.target.name === "config_id") form.elements.model.value = costData.configs.find(cfg => cfg.id === Number(event.target.value))?.model || "";
+        matchNewPrice(form);
       }
       setPriceMode(form);
     });
-    $("costChannels").addEventListener("submit", async event => {
+    $("costPrices").addEventListener("submit", async event => {
       const form = event.target.closest("form");
       if (!form) return;
       event.preventDefault();
-      if (costSaving) return;
+      if (costSaving || !form.reportValidity()) return;
       costSaving = true;
-      const row = costData.channels[Number(form.dataset.costForm)];
-      const body = {config_id: row.config_id, ...Object.fromEntries(new FormData(form))};
+      const row = costData.prices[Number(form.dataset.costForm)];
+      const fields = Object.fromEntries(new FormData(form));
+      const body = {...fields, config_id: row ? row.config_id : Number(fields.config_id), model: row ? row.model : fields.model};
       const status = form.querySelector(".status");
       const button = form.querySelector("button");
       button.disabled = true;
@@ -1806,8 +1839,10 @@
       try {
         await request("/api/admin/api-costs/prices", {method: "POST", body: JSON.stringify(body)});
         const refreshed = await loadCosts();
-        costStatus(refreshed ? "价格已保存，仅对新请求生效。" : "价格已保存，但列表刷新失败，请重试刷新。", !refreshed);
-        $("costRefresh").focus();
+        costStatus(refreshed ? "价格已保存" : "价格已保存，刷新失败，请重试", !refreshed);
+        const index = costData.prices.findIndex(item => item.config_id === body.config_id && item.model === body.model);
+        const target = refreshed && $("costPriceList").querySelector(`[data-price-index="${index}"] > summary`);
+        (target || $("costRefresh")).focus();
       } catch (error) {
         status.classList.add("error");
         status.textContent = error.message;
@@ -1818,6 +1853,16 @@
         $("costRefresh").disabled = false;
       }
     });
+    document.querySelectorAll("[data-cost-view]").forEach(button => button.addEventListener("click", () => {
+      const prices = button.dataset.costView === "prices";
+      $("costStats").hidden = prices;
+      $("costPrices").hidden = !prices;
+      document.querySelectorAll("[data-cost-view]").forEach(item => {
+        const selected = item === button;
+        item.classList.toggle("primary", selected);
+        item.setAttribute("aria-pressed", String(selected));
+      });
+    }));
     $("costRange").addEventListener("change", loadCosts);
     $("costRefresh").addEventListener("click", loadCosts);
     $("costsTab").addEventListener("click", () => switchTab("costs"));

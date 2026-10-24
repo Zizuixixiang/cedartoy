@@ -104,10 +104,16 @@ def seed(db, configs):
 
 def save_price(body, configs, path=None):
     cid, model, rule = validate_rule(body)
-    if cid not in {c['id'] for c in configs}:
-        raise ValueError('渠道不存在，请刷新后重试')
     initialize(path)
     with closing(connect(path)) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        # Deleted channels need ledger evidence. An already saved manual rule
+        # remains editable even if that channel was deleted before its first call.
+        if (cid not in {c['id'] for c in configs}
+                and not db.execute('SELECT 1 FROM events WHERE config_id=? LIMIT 1', (cid,)).fetchone()
+                and not db.execute("SELECT 1 FROM prices WHERE config_id=? AND model=? AND source='user' LIMIT 1",
+                                   (cid, model)).fetchone()):
+            raise ValueError('渠道不存在且无历史记录，请刷新后重试')
         # Preserve default history before recording the first manual override.
         seed(db, configs)
         db.execute('INSERT INTO prices(config_id,model,effective,source,rule) VALUES (?,?,?,\'user\',?)',
@@ -259,14 +265,30 @@ def report(range_name, configs, path=None, now=None):
             SUM(input_tokens IS NULL OR output_tokens IS NULL) AS missing_usage,decimal_sum(cost) AS cost
             FROM events WHERE started>=? AND started<=? GROUP BY config_id,model,purpose''',
             (start.timestamp(), now.timestamp()))]
-        rules = {}
+        rules, manual = {}, set()
         for r in db.execute('SELECT * FROM prices ORDER BY effective,id'):
-            rules[(r['config_id'], r['model'])] = json.loads(r['rule'])
+            key = (r['config_id'], r['model'])
+            rules[key] = json.loads(r['rule'])
+            if r['source'] == 'user':
+                manual.add(key)
+        # The catalog is independent of the report window and current model.
+        # Failed/retried attempts count as evidence too; unsaved test IDs do not.
+        observed = {(r['config_id'], r['model']): r['name'] for r in db.execute('''
+            SELECT config_id,model,MAX(name) AS name FROM events
+            WHERE config_id>0 GROUP BY config_id,model''')}
         first = db.execute('SELECT MIN(started) FROM events').fetchone()[0]
     total = _empty()
     purposes = {key: dict(purpose=key, label=label, **_empty()) for key,label in PURPOSES.items()}
-    channels = {(c['id'], c['model']): dict(config_id=c['id'], name=c['name'], model=c['model'],
-                current=True, enabled=bool(c['enabled']), **_empty()) for c in configs}
+    config_map = {c['id']: c for c in configs}
+    historical_names = {cid: name for (cid, _model), name in observed.items()}
+    def identity(key, name=''):
+        cid, model = key
+        cfg = config_map.get(cid)
+        return dict(config_id=cid, name=cfg['name'] if cfg else name or historical_names.get(cid, ''), model=model,
+                    current=bool(cfg and cfg['model'] == model),
+                    enabled=bool(cfg and cfg['enabled']), deleted=cfg is None,
+                    price=rules.get(key))
+    channels = {}
     def add(target, row):
         for key in _empty():
             target[key] = format(Decimal(target[key])+Decimal(row[key]), 'f') if key == 'cost' else target[key]+row[key]
@@ -275,11 +297,11 @@ def report(range_name, configs, path=None, now=None):
         add(purposes[row['purpose']], row)
         key = (row['config_id'], row['model'])
         if key not in channels:
-            channels[key] = dict(config_id=row['config_id'], name=row['name'], model=row['model'], current=False, enabled=False, **_empty())
+            channels[key] = dict(**identity(key, row['name']), **_empty())
         add(channels[key], row)
-    for key, channel in channels.items():
-        channel['price'] = rules.get(key)
-        channel['rules'] = [dict(model=model, **rule) for (cid,model),rule in rules.items() if cid == key[0]]
+    prices = [identity(key, observed.get(key, '')) for key in sorted(observed.keys() | manual)]
     return {'range': range_name, 'since': first, 'total': total,
             'purposes': [v for k,v in purposes.items() if k != 'test' or v['requests']],
+            'prices': prices,
+            'configs': [{k: c[k] for k in ('id', 'name', 'model', 'enabled')} for c in configs],
             'channels': sorted(channels.values(), key=lambda c: (-c['requests'], not c['enabled'], c['config_id'], c['model']))}

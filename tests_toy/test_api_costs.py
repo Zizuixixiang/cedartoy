@@ -103,11 +103,81 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
                                   ((31, 32, 33), '巧克力', 'gemini-3.1-flash-lite')]:
             for cid in ids:
                 configs.append(dict(CFG, id=cid, name=name, model=model))
+        for cfg in configs:
+            self.event(cfg)
         report = costs.report('today', configs, self.path)
         self.assertTrue(all(c['price'] for c in report['channels']))
         self.assertEqual(len(report['channels']), 9)
         configs[0]['model'] = 'new-model'
-        self.assertIsNone(costs.report('today', configs, self.path)['channels'][0]['price'])
+        self.event(configs[0])
+        self.assertIsNone(next(c for c in costs.report('today', configs, self.path)['prices']
+                               if c['model'] == 'new-model')['price'])
+
+    def test_catalog_all_history_and_manual_rules_independent_of_range(self):
+        now = datetime(2026, 10, 24, 12, tzinfo=costs.BEIJING)
+        old = now.replace(month=8).timestamp()
+        self.event(started=old)
+        self.event(dict(CFG, model='old-unpriced'), status=500, started=old + 1)
+        # Different purposes and retries deduplicate by config ID + exact model.
+        event = costs.make_event(CFG, 'tarot', old + 2, response())
+        costs.write_event(event, self.path)
+        self.event(dict(CFG, id=90, name='已删除渠道', model='retired'), started=old)
+        self.event(dict(CFG, id=32), started=now.timestamp())
+        configs = [dict(CFG, model='current-model', enabled=0), dict(CFG, id=32),
+                   dict(CFG, id=80, name='新渠道', model='never-called')]
+        costs.save_price(dict(config_id=31, model='manual-only', mode='request', per_request='0'), configs, self.path)
+        expected = {(31, CFG['model']), (31, 'old-unpriced'), (31, 'manual-only'),
+                    (32, CFG['model']), (90, 'retired')}
+        before = self.rows()
+        for range_name in ('today', '7d', '30d'):
+            report = costs.report(range_name, configs, self.path, now)
+            self.assertEqual({(r['config_id'], r['model']) for r in report['prices']}, expected)
+            self.assertEqual([(r['config_id'], r['requests']) for r in report['channels']], [(32, 1)])
+            self.assertEqual(report['total']['requests'], 1)
+            self.assertEqual(len(report['configs']), 3)
+            self.assertNotIn('PRIVATE', json.dumps(report))
+        self.assertEqual(self.rows(), before)
+
+    def test_new_channel_multiple_models_and_deleted_channel_validation(self):
+        cfg = dict(CFG, id=80, name='新渠道', model='model-a')
+        body = dict(config_id=80, model='model-a', mode='request', per_request='0.01')
+        costs.save_price(body, [cfg], self.path)
+        costs.save_price(dict(body, model='model-b', per_request='0.02'), [cfg], self.path)
+        costs.save_price(dict(body, per_request='0.03'), [cfg], self.path)
+        report = costs.report('today', [cfg], self.path)
+        self.assertEqual(report['channels'], [])
+        self.assertEqual([(r['model'], r['price']['per_request']) for r in report['prices']],
+                         [('model-a', '0.03'), ('model-b', '0.02')])
+        # A previously saved exact rule remains editable even without calls.
+        costs.save_price(dict(body, per_request='0.04'), [], self.path)
+        with self.assertRaises(ValueError):
+            costs.save_price(dict(body, model='invented'), [], self.path)
+        self.event(cfg, status=500)
+        before = self.rows()
+        # Recorded attempts authorize the deleted ID, never arbitrary IDs.
+        costs.save_price(dict(body, model='model-c', per_request='0.05'), [], self.path)
+        with self.assertRaises(ValueError):
+            costs.save_price(dict(body, config_id=999), [], self.path)
+        report = costs.report('today', [], self.path)
+        self.assertEqual(len(report['prices']), 3)
+        self.assertTrue(all(r['deleted'] for r in report['prices']))
+        self.assertTrue(all(r['name'] == '新渠道' for r in report['prices']))
+        self.assertEqual(self.rows(), before)
+
+    def test_unset_price_is_not_free_and_saving_does_not_reprice_events(self):
+        cfg = dict(CFG, id=80, name='新渠道', model='unpriced')
+        self.event(cfg)
+        before = self.rows()
+        report = costs.report('today', [cfg], self.path)
+        self.assertIsNone(report['prices'][0]['price'])
+        self.assertEqual(report['total']['cost'], '0')
+        self.assertEqual(report['total']['unknown'], 1)
+        self.assertIsNone(before[0]['cost'])
+        costs.save_price(dict(config_id=80, model='unpriced', mode='request', per_request='0'), [cfg], self.path)
+        self.assertEqual(self.rows(), before)
+        self.event(cfg)
+        self.assertEqual([(r['cost'], r['cost_state']) for r in self.rows()], [(None, 'unknown'), ('0', 'known')])
+        self.assertEqual(costs.report('today', [cfg], self.path)['prices'][0]['price']['per_request'], '0')
 
     def test_token_cache_reasoning_and_precision(self):
         self.event()
@@ -227,6 +297,21 @@ class CallChainTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([e['purpose'] for e in events], ['npc', 'tarot', 'test'])
         self.assertTrue(all(e['counts'][:2] == (None, None) for e in events))
 
+    async def test_hint_failure_and_fallback_remain_soup_attempts(self):
+        j = self.judge
+        events = []
+        responses = [response(status=500), response(content='【提示】请留意故事发生时周围的环境')]
+        backup = dict(CFG, id=32, priority=1)
+        with patch.object(j, '_configs', AsyncMock(return_value=[CFG, backup])), \
+             patch.object(j, '_get_judge_prompt_hint', AsyncMock(return_value='fixture')), \
+             patch.object(httpx.AsyncClient, 'post', AsyncMock(side_effect=responses)), \
+             patch.object(costs, 'record', side_effect=lambda *args: events.append(costs.make_event(*args))):
+            result = await j.generate_hint('fixture', 'fixture', [])
+        self.assertEqual(result, '请留意故事发生时周围的环境')
+        self.assertEqual([e['status'] for e in events], ['failed', 'success'])
+        self.assertEqual([e['purpose'] for e in events], ['soup', 'soup'])
+        self.assertEqual([e['config_id'] for e in events], [31, 32])
+
     async def test_timeout_cancel_and_collector_failure_isolated(self):
         j = self.judge
         for failure in (httpx.ReadTimeout('PRIVATE'), asyncio.CancelledError()):
@@ -293,6 +378,9 @@ class AdminCostTests(unittest.TestCase):
                 self.assertEqual(call(admin)[2]['extra_headers']['Cache-Control'], 'no-store')
                 self.assertEqual(call(admin, range_name='all')[0], 400)
                 self.assertEqual(call(admin, True, dict(config_id=31, model='new-model', mode='request', per_request='0.001'))[0], 200)
+                self.assertEqual(call(admin, True, dict(config_id=31, model='another-model', mode='request', per_request='0.002'))[0], 200)
+                self.assertEqual({r['model'] for r in call(admin)[1]['prices']}, {'new-model', 'another-model'})
+                self.assertEqual(call(admin)[1]['channels'], [])
                 with sqlite3.connect(account) as db:
                     self.assertEqual(db.execute('SELECT model FROM judge_api_configs').fetchone()[0], CFG['model'])
 
