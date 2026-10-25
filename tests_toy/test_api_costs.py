@@ -226,6 +226,19 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
         self.assertEqual([(r['cost'], r['cost_state']) for r in self.rows()],
                          [('0.001', 'known'), ('0.001', 'estimated'), (None, 'unknown'), (None, 'unknown')])
 
+    def test_http200_invalid_answer_is_failed_but_keeps_billable_usage(self):
+        cfg = dict(CFG, id=11, name='小鸡农场', model='[反重力][自营][次][假流] gemini-3.1-flash-lite')
+        rejected = response(content='Sorry, I cannot process this request.')
+        rejected.extensions['completion_invalid'] = True
+        event = costs.make_event(cfg, 'judge', time.time(), rejected)
+        costs.write_event(event, self.path)
+        row = self.rows()[0]
+        self.assertEqual((row['status'], row['http_status']), ('failed', 200))
+        self.assertEqual((row['input_tokens'], row['output_tokens']), (1000, 200))
+        self.assertEqual((row['cost'], row['cost_state']), ('0.001', 'known'))
+        totals = costs.report('today', [cfg], self.path)['total']
+        self.assertEqual((totals['requests'], totals['success'], totals['failed']), (1, 0, 1))
+
     def test_model_switch_and_provider_identity(self):
         self.event()
         self.event(dict(CFG, model='gemini-new'))
@@ -298,17 +311,18 @@ class CallChainTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retry_and_fallback_each_attempt_once(self):
         j = self.judge
-        backup = dict(CFG, id=32, name='巧克力 · 塔罗解读', priority=1)
+        backup = dict(CFG, id=32, api_url='https://backup.test/v1', priority=1)
+        last = dict(CFG, id=33, api_url='https://last.test/v1', priority=2)
         events = []
         responses = [response(status=500), response(content='bad'), response(content='good')]
         async def send(*args, **kwargs): return responses.pop(0)
-        with patch.object(j, '_configs', AsyncMock(return_value=[CFG, backup])), \
+        with patch.object(j, '_configs', AsyncMock(return_value=[CFG, backup, last])), \
              patch.object(httpx.AsyncClient, 'post', send), \
              patch.object(costs, 'record', side_effect=lambda *args: events.append(costs.make_event(*args))):
-            result = await j._chat_validated([{'role': 'user', 'content': 'PRIVATE_PROMPT'}], lambda s: s == 'good', max_retry=2)
+            result = await j._chat_validated([{'role': 'user', 'content': 'PRIVATE_PROMPT'}], lambda s: s == 'good')
         self.assertEqual(result, 'good')
-        self.assertEqual([e['config_id'] for e in events], [31, 32, 31])
-        self.assertEqual([e['status'] for e in events], ['failed', 'success', 'success'])
+        self.assertEqual([e['config_id'] for e in events], [31, 32, 33])
+        self.assertEqual([e['status'] for e in events], ['failed', 'failed', 'success'])
         self.assertEqual([e['purpose'] for e in events], ['soup']*3)
         self.assertNotIn('PRIVATE', json.dumps(events))
 
@@ -328,7 +342,7 @@ class CallChainTests(unittest.IsolatedAsyncioTestCase):
         j = self.judge
         events = []
         responses = [response(status=500), response(content='【提示】请留意故事发生时周围的环境')]
-        backup = dict(CFG, id=32, priority=1)
+        backup = dict(CFG, id=32, api_url='https://backup.test/v1', priority=1)
         with patch.object(j, '_configs', AsyncMock(return_value=[CFG, backup])), \
              patch.object(j, '_get_judge_prompt_hint', AsyncMock(return_value='fixture')), \
              patch.object(httpx.AsyncClient, 'post', AsyncMock(side_effect=responses)), \

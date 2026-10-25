@@ -165,7 +165,8 @@ def make_event(cfg, pool, started, response=None):
     return {'id': uuid.uuid4().hex, 'started': started, 'config_id': int(cfg.get('id') or 0),
             'name': str(cfg.get('name') or '')[:200], 'model': str(cfg.get('model') or ''),
             'purpose': 'npc' if pool.startswith('npc') else pool if pool in ('tarot', 'test') else 'soup',
-            'status': 'success' if response is not None and 200 <= response.status_code < 300 else 'failed',
+            'status': 'success' if response is not None and 200 <= response.status_code < 300
+                      and not response.extensions.get('completion_invalid') else 'failed',
             'http_status': response.status_code if response is not None else None,
             'counts': usage_counts(usage)}
 
@@ -177,7 +178,9 @@ def write_event(event, path=None):
             ORDER BY effective DESC,id DESC LIMIT 1''',
             (event['config_id'], event['model'], event['started'])).fetchone()
         snapshot = price['rule'] if price else None
-        cost, state = calculate(json.loads(snapshot) if snapshot else None, event['counts'], event['status'] == 'success')
+        # A rejected task answer can still consume billable upstream tokens.
+        cost, state = calculate(json.loads(snapshot) if snapshot else None, event['counts'],
+                                event['http_status'] is not None and 200 <= event['http_status'] < 300)
         db.execute('INSERT OR IGNORE INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                    tuple(event[k] for k in ('id','started','config_id','name','model','purpose','status','http_status'))
                    + tuple(event['counts']) + (snapshot, cost, state))

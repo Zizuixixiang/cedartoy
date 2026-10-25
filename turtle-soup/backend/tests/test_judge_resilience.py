@@ -954,7 +954,7 @@ class NpcPoolTests(unittest.IsolatedAsyncioTestCase):
         started, release = asyncio.Event(), asyncio.Event()
         calls = []
 
-        async def post(cfg, payload, timeout):
+        async def post(cfg, payload, timeout, **kwargs):
             calls.append(cfg["id"])
             started.set()
             await release.wait()

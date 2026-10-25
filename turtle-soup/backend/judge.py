@@ -49,6 +49,7 @@ _config_node_keys: dict[int, str] = {}
 _config_lock_keys: dict[int, str] = {}
 _guess_lock = asyncio.Lock()
 FAIL_LIMIT = 3
+MAX_COMPLETION_ATTEMPTS = 8
 COOLDOWN_SECONDS = (60, 120, 300, 600, 1800, 3600, 7200)
 RATE_LIMIT_COOLDOWN_SECONDS = (30, *COOLDOWN_SECONDS)
 DEEPSEEK_V4_NODE_TIMEOUT = 30.0
@@ -536,9 +537,84 @@ async def _post_chat_completion(
     cfg: dict[str, Any],
     payload: dict[str, Any],
     timeout: float,
+    *, validator: Callable[[str], bool] | None = None,
 ) -> httpx.Response:
     async with httpx.AsyncClient(timeout=_request_timeout(cfg, timeout)) as client:
-        return await _send_chat_completion(client, cfg["api_url"], cfg["api_key"], payload, cfg=cfg, pool=_cost_pool.get())
+        return await _send_chat_completion(
+            client, cfg["api_url"], cfg["api_key"], payload, cfg=cfg, pool=_cost_pool.get(),
+            validate=lambda response: _completion_text(response, validator),
+        )
+
+
+class CompletionRejected(RuntimeError):
+    """Request-specific rejection, not evidence that a node is unhealthy."""
+
+    def __init__(self, reason: str, text: str | None):
+        super().__init__(reason)  # Never put model/user content in exception logs.
+        self.text = text
+
+
+class CompletionValidationExhausted(HTTPException):
+    def __init__(self, detail: str, last_response: str | None):
+        super().__init__(status_code=503, detail=detail)
+        self.last_response = last_response
+
+
+def _is_refusal(text: str) -> bool:
+    """Recognize service refusals, not apologies spoken by game characters.
+
+    Anchor to the response opening; quoted dialogue, JSON, hints and ordinary
+    prose mentioning policies/apologies must remain valid task answers.
+    """
+    opening = text.strip().replace("’", "'")[:600]
+    if re.match(r"The prompt could not be submitted\b", opening, re.I):
+        return True
+    if re.fullmatch(r"(?:sorry|I'm sorry|I apologize|抱歉|很抱歉|对不起)[.!！。\s]*", opening, re.I):
+        return True
+    if re.fullmatch(
+        r"(?:(?:I'm |I am )?sorry[,!.\s]*(?:but\s+)?)?I (?:cannot|can't) "
+        r"(?:help|assist) with (?:this|that)[.!\s]*", opening, re.I,
+    ):
+        return True
+    english = (
+        r"^(?:(?:I'm |I am )?sorry[,!.\s]*|I apologize[,!.\s]*)?"
+        r"(?:but\s+)?I\s+(?:cannot|can't|am unable to|won't|will not)\s+"
+        r"(?:assist|help|comply|process|fulfill|respond|provide|generate)\b"
+        r"[^\n.!?]{0,180}\b(?:request|prompt|content|assistance|response|policy|policies|guidelines)\b"
+    )
+    chinese = (
+        r"^(?:(?:非常|很|十分)?抱歉|对不起)?[，,。！!\s]*"
+        r"(?:但[是，,\s]*)?(?:我|本模型|作为(?:一个|一名)?AI(?:助手|语言模型)?[，,\s]*我?)?"
+        r"(?:目前|暂时|恐怕)?(?:不能|无法|不可以)"
+        r"(?:帮助|协助|处理|回答|满足|响应|提供|生成|执行)"
+        r"[^\n。！!？?]{0,100}(?:请求|提示词|此类内容|这类内容|该内容|这种内容|违规内容|安全政策|安全策略|内容政策|(?:这个|该|你的|您的)问题)"
+    )
+    policy = (
+        r"^(?:(?:非常|很)?抱歉[，,。\s]*)?(?:由于|根据|出于)"
+        r"[^\n。]{0,50}(?:安全政策|安全策略|内容政策|安全准则)"
+        r"[^\n。]{0,80}(?:无法|不能|不允许)"
+    )
+    return any(re.match(pattern, opening, re.I) for pattern in (english, chinese, policy))
+
+
+def _completion_text(
+    response: httpx.Response, validator: Callable[[str], bool] | None = None,
+) -> str:
+    response.raise_for_status()
+    choice = response.json()["choices"][0]
+    message = choice.get("message") or {}
+    text = message.get("content")
+    if choice.get("finish_reason") in {"content_filter", "safety"} or message.get("refusal"):
+        raise CompletionRejected("upstream_refusal", text if isinstance(text, str) else None)
+    if choice.get("finish_reason") == "length":
+        raise RuntimeError("response truncated due to max_tokens")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("empty response content")
+    if _is_refusal(text):
+        raise CompletionRejected("refusal_text", text)
+    if validator is not None and not validator(text):
+        raise CompletionRejected("invalid_task_format", text)
+    return text.strip()
 
 
 def _requires_chenmo_sse(api_url: str, model: Any) -> bool:
@@ -635,11 +711,15 @@ def _merge_chenmo_completion(response: httpx.Response) -> httpx.Response:
         raise RuntimeError("invalid or error completion")
     choices = raw.get("choices")
     choice = choices[0] if isinstance(choices, list) and choices else None
-    if not isinstance(choice, dict) or choice.get("finish_reason") != "stop":
+    if not isinstance(choice, dict) or choice.get("finish_reason") not in {"stop", "content_filter", "safety"}:
         raise RuntimeError("incomplete completion or non-stop finish reason")
     message = choice.get("message")
     content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, str) or not content.strip():
+    # Normalize explicit policy stops too; the caller rejects them before
+    # recording success while retaining their HTTP status/usage for billing.
+    policy_stop = (choice.get("finish_reason") in {"content_filter", "safety"}
+                   or isinstance(message, dict) and bool(message.get("refusal")))
+    if not policy_stop and (not isinstance(content, str) or not content.strip()):
         raise RuntimeError("empty response content")
     headers = {key: value for key, value in response.headers.items()
                if key not in {"content-type", "content-length", "content-encoding"}}
@@ -650,6 +730,7 @@ def _merge_chenmo_completion(response: httpx.Response) -> httpx.Response:
 async def _send_chat_completion(
     client: httpx.AsyncClient, api_url: str, api_key: str, payload: dict[str, Any],
     *, cfg: dict[str, Any] | None = None, pool: str = "judge",
+    validate: Callable[[httpx.Response], Any] | None = None,
 ) -> httpx.Response:
     endpoint = _endpoint(api_url)
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -672,6 +753,14 @@ async def _send_chat_completion(
             )
         else:
             response = await client.post(endpoint, headers=headers, json=payload)
+        if validate is not None or (chenmo_sse and not response.is_error):
+            try:
+                (validate or _completion_text)(response)
+            except Exception:
+                # Keep HTTP status/usage for billing, but never count an invalid
+                # HTTP 200 completion as a successful business response.
+                response.extensions["completion_invalid"] = True
+                raise
         return response
     finally:
         # Includes HTTP errors, transport failures and cancellation. Never store
@@ -735,6 +824,7 @@ async def _chat(
     max_tokens: int | None = None,
     pool: str = "judge",
     model: str | None = None,
+    validator: Callable[[str], bool] | None = None,
 ) -> str | dict[str, str]:
     global _npc_active, _npc_waiting, _tarot_active, _tarot_waiting, _priority_waiters
     pool = _pool_name(pool)
@@ -762,6 +852,7 @@ async def _chat(
                 max_tokens=max_tokens,
                 pool=pool,
                 model=model,
+                validator=validator,
             )
         finally:
             _npc_active -= 1
@@ -787,6 +878,7 @@ async def _chat(
                 max_tokens=max_tokens,
                 pool=pool,
                 model=model,
+                validator=validator,
             )
         finally:
             _tarot_active -= 1
@@ -801,6 +893,7 @@ async def _chat(
             max_tokens=max_tokens,
             pool=pool,
             model=model,
+            validator=validator,
         )
     finally:
         _priority_waiters -= 1
@@ -814,9 +907,12 @@ async def _chat_from_pool(
     max_tokens: int | None,
     pool: str,
     model: str | None = None,
+    validator: Callable[[str], bool] | None = None,
 ) -> str | dict[str, str]:
     _cost_pool.set(pool)
     errors: list[str] = []
+    attempted_nodes: set[str] = set()
+    last_rejection: CompletionRejected | None = None
     available = await _configs(pool, model=model)
     if not available:
         matching = await _matching_configs(pool, model=model)
@@ -836,10 +932,17 @@ async def _chat_from_pool(
         layers.setdefault(int(cfg.get("priority") or 0), []).append(cfg)
 
     for priority, candidates in layers.items():
+        if len(attempted_nodes) >= MAX_COMPLETION_ATTEMPTS:
+            break
         start = await _layer_start(pool, priority, len(candidates))
         for i in range(len(candidates)):
+            if len(attempted_nodes) >= MAX_COMPLETION_ATTEMPTS:
+                break
             cfg = candidates[(start + i) % len(candidates)]
             cid = int(cfg["id"])
+            node = _node_key(cfg)
+            if node in attempted_nodes:
+                continue
             config_lock = _config_lock(cfg)
             # NPC work never queues behind a busy shared node and never starts
             # while a judge/hint request is trying to acquire capacity. A
@@ -852,6 +955,7 @@ async def _chat_from_pool(
                 is_probe = _claim_attempt(cid)
                 if is_probe is None:
                     continue
+                attempted_nodes.add(node)
                 try:
                     payload: dict[str, Any] = {
                         "model": cfg["model"],
@@ -863,25 +967,22 @@ async def _chat_from_pool(
                     request_max_tokens = _request_max_tokens(cfg, max_tokens)
                     if request_max_tokens is not None:
                         payload["max_tokens"] = request_max_tokens
-                    request = _post_chat_completion(cfg, payload, timeout)
-                    if _is_official_deepseek_v4(cfg):
-                        resp = await asyncio.wait_for(
-                            request,
-                            timeout=DEEPSEEK_V4_NODE_TIMEOUT,
-                        )
-                    else:
-                        resp = await request
-                    resp.raise_for_status()
-                    data = resp.json()
-                    choice = data["choices"][0]
-                    if choice.get("finish_reason") == "length":
-                        raise RuntimeError("response truncated due to max_tokens")
-                    text = choice["message"]["content"]
-                    if not isinstance(text, str) or not text.strip():
-                        raise RuntimeError("empty response content")
+                    request = _post_chat_completion(cfg, payload, timeout, validator=validator)
+                    node_timeout = DEEPSEEK_V4_NODE_TIMEOUT if _is_official_deepseek_v4(cfg) else timeout
+                    resp = await asyncio.wait_for(request, timeout=node_timeout)
+                    text = _completion_text(resp, validator)
                 except asyncio.CancelledError:
                     _release_probe(cid)
                     raise
+                except CompletionRejected as exc:
+                    # Do not clear an existing cooldown/failure history or mark
+                    # success. A content-specific refusal only excludes this
+                    # physical node for this request, including alias rows.
+                    _release_probe(cid)
+                    last_rejection = exc
+                    errors.append(f"config_id={cid}: {exc}")
+                    logger.warning("%s completion rejected config_id=%s reason=%s; trying fallback", pool, cid, exc)
+                    continue
                 except ProviderDailyCallsUnavailable as exc:
                     _release_probe(cid)
                     errors.append(str(exc))
@@ -894,7 +995,8 @@ async def _chat_from_pool(
                 if pool == TAROT_POOL_NAME:
                     return {"content": text.strip(), "model": cfg["model"]}
                 return text.strip()
-    logger.warning("%s chat failed across configs: %s", pool, "; ".join(errors))
+    logger.warning("%s chat failed across configs (attempts=%s limit=%s): %s",
+                   pool, len(attempted_nodes), MAX_COMPLETION_ATTEMPTS, "; ".join(errors))
     detail = (
         "NPC 通道繁忙，请稍后再试"
         if pool in NPC_POOL_NAMES
@@ -902,6 +1004,8 @@ async def _chat_from_pool(
         if pool == TAROT_POOL_NAME
         else "裁判暂时不可用，请稍后再试"
     )
+    if last_rejection is not None:
+        raise CompletionValidationExhausted(detail, last_rejection.text)
     raise HTTPException(status_code=503, detail=detail)
 
 
@@ -1089,22 +1193,12 @@ async def list_models(cfg: dict[str, Any]) -> dict[str, Any]:
 async def _chat_validated(
     messages: list[dict[str, str]],
     validator: Callable[[str], bool],
-    max_retry: int = 3,
-    log_label: str = "chat",
     **chat_kwargs: Any,
 ) -> str | None:
-    retry_messages = messages
-    for _ in range(max_retry):
-        text = await _chat(retry_messages, **chat_kwargs)
-        if validator(text):
-            return text
-        logger.warning("%s response failed validation: %r", log_label, text[:300])
-        repair_prompt = "上次回复为空或格式错误，请重新生成，并严格遵守本次任务的输出格式。"
-        retry_messages = retry_messages + [
-            {"role": "assistant", "content": text},
-            {"role": "user", "content": repair_prompt},
-        ]
-    return None
+    try:
+        return await _chat(messages, validator=validator, **chat_kwargs)
+    except CompletionValidationExhausted:
+        return None
 
 
 def _extract_reply(raw: Any) -> str:
@@ -1149,6 +1243,7 @@ async def test_config(cfg: dict[str, Any]) -> dict[str, Any]:
                     "temperature": 0.1,
                     "max_tokens": 32,
                 }, cfg=cfg, pool="test",
+                validate=lambda response: None if response.is_error else _completion_text(response),
             )
             try:
                 raw = resp.json()
@@ -1514,15 +1609,17 @@ async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
     ]
     raw_text = None
     async with _guess_lock:
-        for _ in range(3):
-            raw_text = await _chat(messages)
+        try:
+            raw_text = await _chat(messages, validator=lambda value: _parse_guess_json(value) is not None)
+        except CompletionValidationExhausted as exc:
+            raw_text = exc.last_response
+        else:
             parsed = _parse_guess_json(raw_text)
             if parsed is not None:
                 return parsed | {
                     "raw_response": raw_text,
                     "request_messages": messages,
                 }
-            logger.warning("judge_guess response failed validation: %r", raw_text[:300])
     return {
         "success": False,
         "score": 0,
@@ -1604,8 +1701,6 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
     text = await _chat_validated(
         messages,
         _valid_hint_response,
-        max_retry=5,
-        log_label="generate_hint",
         timeout=12,
         max_tokens=1024,
         pool="hint",
