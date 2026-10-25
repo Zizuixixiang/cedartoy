@@ -150,7 +150,11 @@ async function checkDOM() {
     assert.equal(w.knownCost({...zero, requests: 3, unknown: 3}), '¥0');
     assert.equal($('costSince'), null);
     assert.doesNotMatch($('costStats').textContent, /待核算|部分待核算/);
-    assert.match($('costStats').textContent, /未计价部分按 ¥0 展示.*不代表实际扣费/);
+    assert.match($('costStats').textContent, /历史未计价调用按现有单价参考估算.*无法估算的部分显示 ¥0.*不代表实际扣费/);
+    // The displayed order groups models under one merchant; fully priced
+    // merchants lead, followed by mixed merchants and finally unset-only.
+    assert.deepEqual([...d.querySelectorAll('#costPriceList > details')]
+      .map(el => Number(el.dataset.priceIndex)), [2, 6, 0, 5, 3, 1, 4, 7]);
     for (const [range, amount] of [['7d', '¥0.1'], ['30d', '¥0.2'], ['today', '¥0.004461']]) {
       await change($('costRange'), range);
       assert.equal($('costTotal').textContent, amount);

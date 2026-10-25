@@ -321,6 +321,33 @@ def report(range_name, configs, path=None, now=None):
             FROM events WHERE started>=? AND started<=? GROUP BY config_id,model,purpose''',
             (start.timestamp(), now.timestamp()))]
         latest, manual = _latest_prices(db), set()
+        # A tariff may be entered after earlier requests were logged. Estimate
+        # those billable HTTP 2xx attempts for display only; never rewrite an
+        # immutable event, its missing price snapshot, or the original unknown
+        # audit state. Unpriced requests and incomplete usage still show ¥0.
+        retrospective = {}
+        for event in db.execute('''SELECT config_id,model,purpose,input_tokens,
+                output_tokens,cache_tokens,reasoning_tokens FROM events
+                WHERE started>=? AND started<=? AND cost_state='unknown'
+                  AND price_snapshot IS NULL AND http_status BETWEEN 200 AND 299
+                  AND input_tokens IS NOT NULL AND output_tokens IS NOT NULL
+                  AND cache_tokens IS NOT NULL''', (start.timestamp(), now.timestamp())):
+            rule = latest.get((event['config_id'], event['model']), (0, None))[1]
+            if not rule:
+                continue
+            cost, _ = calculate(rule, (event['input_tokens'], event['output_tokens'],
+                                       event['cache_tokens'], event['reasoning_tokens']), True)
+            if cost is None:
+                continue
+            key = (event['config_id'], event['model'], event['purpose'])
+            previous, count = retrospective.get(key, (Decimal(0), 0))
+            retrospective[key] = (previous + Decimal(cost), count + 1)
+        for row in rows:
+            amount, count = retrospective.get((row['config_id'], row['model'], row['purpose']),
+                                               (Decimal(0), 0))
+            if count:
+                row['cost'] = format(Decimal(row['cost']) + amount, 'f')
+                row['estimated'] += count
         for r in db.execute('SELECT * FROM prices ORDER BY effective,id'):
             key = (r['config_id'], r['model'])
             if r['source'] == 'user':

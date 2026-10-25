@@ -852,7 +852,7 @@
             <div><span class="cost-eyebrow">总费用</span><div class="cost-total" id="costTotal" aria-label="总金额"></div><p id="costTotalDetail"></p></div>
             <div class="dashboard-control"><select id="costRange" aria-label="统计范围"><option value="today">今日</option><option value="7d">7天</option><option value="30d">30天</option></select></div>
           </div>
-          <p class="section-note">未计价部分按 ¥0 展示，统计金额不代表实际扣费。</p>
+          <p class="section-note">历史未计价调用按现有单价参考估算；无法估算的部分显示 ¥0，金额不代表实际扣费。</p>
           <div id="costPurposes"></div>
           <h3 class="cost-section-title">渠道明细</h3>
           <div id="costChannels" aria-label="渠道与模型费用"></div>
@@ -1814,12 +1814,35 @@
       form.querySelector("button").textContent = cfg?.config_ids?.length > 1 ? "统一保存价格" : "保存价格";
       setPriceMode(form);
     }
+    function orderedPriceEntries(rows) {
+      // One merchant stays together. Fully-priced merchants lead, mixed ones
+      // follow, and entirely unconfigured merchants stay at the end.
+      const groups = new Map();
+      const entries = rows.map((row, index) => {
+        const group = (row.config_ids?.length ? row.config_ids : [row.config_id]).join(",");
+        const priced = Boolean(row.price || (row.price_variants || []).some(item => item.price));
+        if (!groups.has(group)) groups.set(group, {first: index, priced: false, unset: false});
+        const info = groups.get(group);
+        if (priced) info.priced = true;
+        else info.unset = true;
+        return {row, index, group, priced};
+      });
+      const groupRank = group => {
+        const state = groups.get(group);
+        return !state.priced ? 2 : state.unset ? 1 : 0;
+      };
+      return entries.sort((a, b) => groupRank(a.group) - groupRank(b.group)
+        || groups.get(a.group).first - groups.get(b.group).first
+        || Number(b.priced) - Number(a.priced)
+        || Number(Boolean(b.row.current && b.row.enabled)) - Number(Boolean(a.row.current && a.row.enabled))
+        || a.index - b.index);
+    }
     function renderCosts(data) {
       $("costTotal").textContent = knownCost(data.total);
       $("costTotalDetail").textContent = `${data.total.estimated ? "含参考估算 · " : ""}${tokenCount(data.total.requests)} 次调用 · Token 输入 ${tokenCount(data.total.input_tokens)} / 输出 ${tokenCount(data.total.output_tokens)}`;
       $("costPurposes").innerHTML = data.purposes.map(row => `<div class="cost-purpose"><div class="cost-purpose-head"><strong>${escapeHtml(row.label)}</strong><span class="cost-purpose-value">${escapeHtml(knownCost(row))}</span></div><div class="cost-purpose-meta">${row.estimated ? "含参考估算 · " : ""}${tokenCount(row.requests)} 次调用 · 输入 ${tokenCount(row.input_tokens)} / 输出 ${tokenCount(row.output_tokens)}</div></div>`).join("");
       $("costChannels").innerHTML = data.channels.filter(row => row.requests > 0).map(renderCostChannel).join("") || '<p class="dashboard-empty">所选时段暂无调用</p>';
-      $("costPriceList").innerHTML = data.prices.map(renderPrice).join("") || '<p class="dashboard-empty">暂无模型价格</p>';
+      $("costPriceList").innerHTML = orderedPriceEntries(data.prices).map(({row, index}) => renderPrice(row, index)).join("") || '<p class="dashboard-empty">暂无模型价格</p>';
       $("costNewPriceForm").innerHTML = data.configs.length ? priceForm(null, "new") : '<p class="dashboard-empty">暂无渠道配置</p>';
       $("costNewPrice").open = false;
       for (const form of $("costPrices").querySelectorAll("form")) setPriceMode(form);

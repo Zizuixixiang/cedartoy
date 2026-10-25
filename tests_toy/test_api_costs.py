@@ -282,12 +282,66 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
         self.assertEqual([(r['id'], r['cost'], r['price_snapshot']) for r in self.rows()], snapshots)
         report = costs.report('today', configs, self.path)
         self.assertEqual(len(report['prices']), 2)
-        self.assertEqual(report['total']['estimated'], 3)
+        # Three originally estimated events plus two pre-tariff requests now
+        # shown as retrospective estimates, without editing their audit state.
+        self.assertEqual(report['total']['estimated'], 5)
         self.assertEqual(report['total']['unknown'], 2)
         grouped = next(r for r in report['prices'] if r['model'] == glm)
         self.assertTrue(grouped['price_conflict'])
         self.assertIsNone(grouped['price'])
         self.assertEqual(next(v for v in grouped['price_variants'] if v['config_id'] == 29)['price']['input'], '0.064')
+
+    def test_pre_tariff_usage_gets_reference_estimate_without_database_backfill(self):
+        model = '[正向量3]deepseek-v4.1-flash'
+        configs = [dict(CFG, id=cid, name=name, model=model, purpose=purpose)
+                   for cid, name, purpose in ((28, '沉默', 'both'),
+                                               (29, '沉默 · NPC', 'npc'),
+                                               (30, '沉默 · 塔罗解读', 'tarot'))]
+        sample = ((configs[0], 'judge', 7867, 4),
+                  (configs[1], 'npc_speech', 18, 1),
+                  (configs[2], 'tarot', 21, 26))
+        started = time.time() - 30
+        for cfg, pool, inp, out in sample:
+            usage = dict(prompt_tokens=inp, completion_tokens=out,
+                         prompt_tokens_details={'cached_tokens': 0})
+            event = costs.make_event(cfg, pool, started, response(usage))
+            costs.write_event(event, self.path)
+        # No HTTP success => no billable estimate even if usage is present.
+        costs.write_event(costs.make_event(configs[0], 'judge', started,
+                          response(status=500)), self.path)
+        # Missing usage and no exact-model rule cannot be fabricated.
+        costs.write_event(costs.make_event(configs[0], 'judge', started,
+                          response(usage=None)), self.path)
+        another = dict(configs[0], model='unknown-free-rate')
+        costs.write_event(costs.make_event(another, 'judge', started, response()), self.path)
+        immutable = self.rows()
+        for cfg in configs:
+            costs.save_price(dict(config_id=cfg['id'], model=model, mode='tokens',
+                                  input='0.100', output='0.400', cache='0.0020',
+                                  reference_only=True), configs, self.path)
+        report = costs.report('today', configs, self.path)
+        target = next(c for c in report['channels'] if c['model'] == model)
+        from decimal import Decimal
+        self.assertEqual(Decimal(target['cost']), Decimal('0.000803'))
+        self.assertEqual(target['estimated'], 3)
+        self.assertEqual(target['unknown'], 5)
+        self.assertEqual([(p['label'], Decimal(p['cost'])) for p in target['purposes'][:3]],
+                         [('海龟汤', Decimal('0.0007883')),
+                          ('NPC', Decimal('0.0000022')),
+                          ('塔罗', Decimal('0.0000125'))])
+        self.assertEqual(Decimal(report['total']['cost']), Decimal('0.000803'))
+        self.assertEqual(next(c for c in report['channels'] if c['model'] ==
+                              'unknown-free-rate')['cost'], '0')
+        self.assertEqual(self.rows(), immutable)  # no retroactive snapshots
+        self.assertTrue(all(r['cost_state'] == 'unknown' and r['price_snapshot'] is None
+                            for r in self.rows()))
+        # A new request uses its own saved price snapshot and must not be
+        # counted again as a retrospective estimate.
+        self.event(configs[0], usage=dict(prompt_tokens=1000, completion_tokens=0))
+        after = costs.report('today', configs, self.path)
+        target = next(c for c in after['channels'] if c['model'] == model)
+        self.assertEqual(Decimal(target['cost']), Decimal('0.000903'))
+        self.assertEqual(target['estimated'], 4)
 
     def merchant_configs(self):
         return [dict(CFG, id=cid, name=name, purpose=purpose, model='exact-model')
