@@ -107,7 +107,8 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
             self.event(cfg)
         report = costs.report('today', configs, self.path)
         self.assertTrue(all(c['price'] for c in report['channels']))
-        self.assertEqual(len(report['channels']), 9)
+        self.assertEqual(len(report['channels']), 3)
+        self.assertEqual(sorted(len(c['config_ids']) for c in report['channels']), [3, 3, 3])
         configs[0]['model'] = 'new-model'
         self.event(configs[0])
         self.assertIsNone(next(c for c in costs.report('today', configs, self.path)['prices']
@@ -127,14 +128,14 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
                    dict(CFG, id=80, name='新渠道', model='never-called')]
         costs.save_price(dict(config_id=31, model='manual-only', mode='request', per_request='0'), configs, self.path)
         expected = {(31, CFG['model']), (31, 'old-unpriced'), (31, 'manual-only'),
-                    (32, CFG['model']), (90, 'retired')}
+                    (31, 'current-model'), (80, 'never-called'), (90, 'retired')}
         before = self.rows()
         for range_name in ('today', '7d', '30d'):
             report = costs.report(range_name, configs, self.path, now)
             self.assertEqual({(r['config_id'], r['model']) for r in report['prices']}, expected)
-            self.assertEqual([(r['config_id'], r['requests']) for r in report['channels']], [(32, 1)])
+            self.assertEqual([(r['config_id'], r['requests']) for r in report['channels']], [(31, 1)])
             self.assertEqual(report['total']['requests'], 1)
-            self.assertEqual(len(report['configs']), 3)
+            self.assertEqual(len(report['configs']), 2)
             self.assertNotIn('PRIVATE', json.dumps(report))
         self.assertEqual(self.rows(), before)
 
@@ -249,6 +250,144 @@ print(json.dumps({'enqueue_seconds_with_db_locked': elapsed}))
         self.assertEqual([r['cost_state'] for r in self.rows()], ['known', 'unknown', 'unknown', 'unknown'])
         report = costs.report('today', [dict(CFG, model='gemini-new')], self.path)
         self.assertIsNone(next(c for c in report['channels'] if c['current'])['price'])
+
+    def test_glm_and_deepseek_prices_are_versioned_per_exact_model_and_channel(self):
+        glm, deepseek = '[按量1]glm-5.3-flash', '[正向量3]deepseek-v4.1-flash'
+        configs = [dict(CFG, id=cid, name='沉默', model=deepseek) for cid in (28, 29, 30)]
+        rates = {glm: dict(input='0.064', output='0.224', cache='0.0184'),
+                 deepseek: dict(input='0.100', output='0.400', cache='0.0020', reference_only=True)}
+        old = time.time() - 30
+        early = costs.make_event(configs[0], 'judge', old, response())
+        costs.write_event(early, self.path)
+        for cfg in configs:
+            for model, rate in rates.items():
+                self.assertIsNone(costs.default_rule(dict(cfg, model=model)))
+                costs.save_price(dict(config_id=cfg['id'], model=model, mode='tokens', **rate), configs, self.path)
+        usage = dict(prompt_tokens=1000000, completion_tokens=500000,
+                     prompt_tokens_details={'cached_tokens': 200000})
+        for cfg in configs:
+            for model in rates:
+                costs.write_event(costs.make_event(dict(cfg, model=model), 'judge', time.time(), response(usage)), self.path)
+        # An old attempt flushed after the rule was saved must not use new prices.
+        delayed = costs.make_event(configs[0], 'judge', old+1, response())
+        costs.write_event(delayed, self.path)
+        rows = self.rows()
+        self.assertEqual([(r['cost'], r['price_snapshot']) for r in rows[:2]], [(None, None)]*2)
+        from decimal import Decimal
+        for r in rows[2:]:
+            expected = ('0.16688', 'known') if r['model'] == glm else ('0.2804', 'estimated')
+            self.assertEqual((Decimal(r['cost']), r['cost_state']), (Decimal(expected[0]), expected[1]))
+        snapshots = [(r['id'], r['cost'], r['price_snapshot']) for r in rows]
+        costs.save_price(dict(config_id=28, model=glm, mode='tokens', input='1', output='2', cache='0.3'), configs, self.path)
+        self.assertEqual([(r['id'], r['cost'], r['price_snapshot']) for r in self.rows()], snapshots)
+        report = costs.report('today', configs, self.path)
+        self.assertEqual(len(report['prices']), 2)
+        self.assertEqual(report['total']['estimated'], 3)
+        self.assertEqual(report['total']['unknown'], 2)
+        grouped = next(r for r in report['prices'] if r['model'] == glm)
+        self.assertTrue(grouped['price_conflict'])
+        self.assertIsNone(grouped['price'])
+        self.assertEqual(next(v for v in grouped['price_variants'] if v['config_id'] == 29)['price']['input'], '0.064')
+
+    def merchant_configs(self):
+        return [dict(CFG, id=cid, name=name, purpose=purpose, model='exact-model')
+                for cid, name, purpose in [(28, '沉默', 'both'), (29, '沉默 · NPC', 'npc'),
+                                           (30, '沉默 · 塔罗解读', 'tarot')]]
+
+    def group_body(self, configs, model='exact-model', **rate):
+        row = next(r for r in costs.report('today', configs, self.path)['prices']
+                   if r['model'] == model and r['config_id'] == 28)
+        return dict(config_id=28, config_ids=row['config_ids'], price_versions=row['price_versions'],
+                    model=model, mode='request', per_request='0.01', **rate)
+
+    def test_merchant_model_totals_equal_children_without_repricing(self):
+        configs = self.merchant_configs()
+        others = [dict(configs[0], id=80, name='另一商家'),
+                  dict(configs[0], id=81, api_url='https://different-endpoint.test/v1')]
+        for cfg in configs:
+            costs.save_price(dict(config_id=cfg['id'], model='exact-model', mode='request',
+                                 per_request='0.01'), configs, self.path)
+            for pool in ('judge', 'npc_speech', 'tarot'):
+                costs.write_event(costs.make_event(cfg, pool, time.time(), response()), self.path)
+        # An actual admin test must be visible as a child too, not hidden from sums.
+        costs.write_event(costs.make_event(configs[0], 'test', time.time(), response()), self.path)
+        for cfg in [dict(configs[0], model='second-exact-model'), *others]:
+            self.event(cfg)
+        before = self.rows()
+        report = costs.report('today', configs+others, self.path)
+        self.assertEqual(len(report['channels']), 4)
+        primary = report['channels'][0]
+        self.assertEqual((primary['name'], primary['config_ids'], primary['requests']), ('沉默', [28,29,30], 10))
+        self.assertEqual([p['requests'] for p in primary['purposes']], [3,3,3,1])
+        for parent, children in [(primary, primary['purposes']), (report['total'], report['channels'])]:
+            for key in costs._empty():
+                self.assertEqual(costs.Decimal(parent[key]), sum(costs.Decimal(c[key]) for c in children), key)
+        self.assertEqual(report['total']['unknown'], 3)
+        self.assertEqual(costs.Decimal(report['total']['cost']), costs.Decimal('0.10'))
+        self.assertNotIn('api_url', json.dumps(report))
+        self.assertNotIn('PRIVATE', json.dumps(report))
+        self.assertEqual(self.rows(), before)
+
+    def test_group_save_atomic_conflicts_and_stale_edit_protection(self):
+        configs = self.merchant_configs()
+        for cfg, price in zip(configs[:2], ['0.01', '0.02']):
+            costs.save_price(dict(config_id=cfg['id'], model='exact-model', mode='request', per_request=price), configs, self.path)
+        self.event(configs[0])
+        self.event(configs[2])  # unknown audit state must survive saving prices
+        before = self.rows()
+        report = costs.report('today', configs, self.path)
+        row = report['prices'][0]
+        self.assertTrue(row['price_conflict'])
+        self.assertIsNone(row['price'])
+        self.assertEqual([r['label'] for r in row['price_variants']], ['海龟汤', 'NPC', '塔罗'])
+        self.assertIsNone(row['price_variants'][2]['price'])
+        body = self.group_body(configs)
+        # Inject a failure on the second insert, prove the first is rolled back.
+        with costs.connect(self.path) as db:
+            db.execute("CREATE TRIGGER reject_group BEFORE INSERT ON prices WHEN NEW.config_id=29 BEGIN SELECT RAISE(ABORT,'fixture'); END")
+        with self.assertRaises(sqlite3.IntegrityError):
+            costs.save_price(body, configs, self.path)
+        self.assertEqual(self.group_body(configs), body)
+        with costs.connect(self.path) as db:
+            db.execute('DROP TRIGGER reject_group')
+        costs.save_price(body, configs, self.path)
+        unified = costs.report('today', configs, self.path)['prices'][0]
+        self.assertFalse(unified['price_conflict'])
+        self.assertTrue(all(v['price']['per_request'] == '0.01' for v in unified['price_variants']))
+        with costs.connect(self.path) as db:
+            versions = db.execute('SELECT effective FROM prices ORDER BY id DESC LIMIT 3').fetchall()
+        self.assertEqual(len({r['effective'] for r in versions}), 1)
+        with self.assertRaisesRegex(ValueError, '价格已变化'):
+            costs.save_price(body, configs, self.path)
+        latest = self.group_body(configs)
+        for ids in ([28], [28,29,30,80], [28,29,29,30], [True,29,30]):
+            with self.subTest(ids=ids), self.assertRaisesRegex(ValueError, '渠道分组'):
+                costs.save_price(dict(latest, config_ids=ids), configs, self.path)
+        with self.assertRaisesRegex(ValueError, '价格已变化'):
+            costs.save_price(dict(latest, price_versions={}), configs, self.path)
+        self.assertEqual(self.rows(), before)
+        self.assertEqual(self.rows()[1]['cost_state'], 'unknown')
+
+    def test_equivalent_rates_and_reference_flag_in_conflict_detection(self):
+        configs = self.merchant_configs()
+        for cfg, value in zip(configs, ['0.1', '0.10', '0.100']):
+            costs.save_price(dict(config_id=cfg['id'], model='exact-model', mode='tokens',
+                                 input=value, output='0.4', cache='0.002'), configs, self.path)
+        self.assertFalse(costs.report('today', configs, self.path)['prices'][0]['price_conflict'])
+        costs.save_price(dict(config_id=30, model='exact-model', mode='tokens', input='0.1',
+                             output='0.4', cache='0.002', reference_only=True), configs, self.path)
+        self.assertTrue(costs.report('today', configs, self.path)['prices'][0]['price_conflict'])
+
+    def test_reference_only_rule_validation(self):
+        base = dict(config_id=28, model='[正向量3]deepseek-v4.1-flash', mode='tokens', input='0.1', output='0.4', cache='0.002')
+        for flag in ('true', 1, None, {}, []):
+            with self.subTest(flag=flag), self.assertRaises(ValueError):
+                costs.validate_rule(dict(base, reference_only=flag))
+        with self.assertRaises(ValueError):
+            costs.validate_rule(dict(base, mode='request', per_request='0.1', reference_only=True))
+        rule = costs.validate_rule(dict(base, reference_only=True))[2]
+        self.assertEqual(costs.calculate(rule, (None, 20, 0, 0), True), (None, 'unknown'))
+        self.assertNotIn('reference_only', costs.validate_rule(dict(base, reference_only=False))[2])
 
     def test_snapshot_delayed_write_and_user_rule_not_overwritten(self):
         earlier = time.time() - 10
@@ -399,8 +538,8 @@ class AdminCostTests(unittest.TestCase):
                 db.executescript('''CREATE TABLE toy_users(id INTEGER PRIMARY KEY,username TEXT,is_ai INTEGER,
                     is_admin INTEGER,ai_token_version INTEGER DEFAULT 0,deleted_at TEXT,last_active_at TEXT);
                     INSERT INTO toy_users(id,username,is_ai,is_admin) VALUES (1,'admin',0,1),(2,'reader',0,0);
-                    CREATE TABLE judge_api_configs(id INTEGER,name TEXT,model TEXT,purpose TEXT,enabled INTEGER);
-                    INSERT INTO judge_api_configs VALUES (31,'巧克力 · NPC','gemini-3.1-flash-lite','npc',1);''')
+                    CREATE TABLE judge_api_configs(id INTEGER,name TEXT,model TEXT,purpose TEXT,enabled INTEGER,api_url TEXT);
+                    INSERT INTO judge_api_configs VALUES (31,'巧克力 · NPC','gemini-3.1-flash-lite','npc',1,'https://fixture.test/v1');''')
             def call(token, save=False, body=None, range_name='today'):
                 handler = object.__new__(server.CedarToyHandler)
                 handler.headers = {'Authorization': 'Bearer '+token} if token else {}
@@ -420,8 +559,22 @@ class AdminCostTests(unittest.TestCase):
                 self.assertEqual(call(admin, range_name='all')[0], 400)
                 self.assertEqual(call(admin, True, dict(config_id=31, model='new-model', mode='request', per_request='0.001'))[0], 200)
                 self.assertEqual(call(admin, True, dict(config_id=31, model='another-model', mode='request', per_request='0.002'))[0], 200)
-                self.assertEqual({r['model'] for r in call(admin)[1]['prices']}, {'new-model', 'another-model'})
+                self.assertEqual({r['model'] for r in call(admin)[1]['prices']}, {'new-model', 'another-model', CFG['model']})
                 self.assertEqual(call(admin)[1]['channels'], [])
+                with sqlite3.connect(account) as db:
+                    db.executemany('INSERT INTO judge_api_configs VALUES (?,?,?,?,?,?)', [
+                        (32, '巧克力 · 塔罗解读', CFG['model'], 'tarot', 1, CFG['api_url']),
+                        (33, '巧克力 · 海龟汤判题与提示', CFG['model'], 'both', 1, CFG['api_url'])])
+                grouped = next(r for r in call(admin)[1]['prices'] if r['model'] == CFG['model'])
+                batch = dict(config_id=31, config_ids=grouped['config_ids'], model=CFG['model'],
+                             price_versions=grouped['price_versions'], mode='tokens', input='0.1', output='0.6', cache='0.01')
+                self.assertEqual(batch['config_ids'], [31,32,33])
+                self.assertEqual(call(admin, True, batch)[0], 200)
+                self.assertEqual(call(admin, True, batch)[0], 400)  # stale whole-group save
+                refreshed = next(r for r in call(admin)[1]['prices'] if r['model'] == CFG['model'])
+                self.assertFalse(refreshed['price_conflict'])
+                self.assertTrue(all(v['price']['cache'] == '0.01' for v in refreshed['price_variants']))
+                self.assertNotIn('api_url', json.dumps(call(admin)[1]))
                 with sqlite3.connect(account) as db:
                     self.assertEqual(db.execute('SELECT model FROM judge_api_configs').fetchone()[0], CFG['model'])
 
