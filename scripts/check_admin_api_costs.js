@@ -116,7 +116,7 @@ async function checkDOM() {
     assert.equal($('costContent').hidden, false);
     assert.equal($('costPrices').hidden, true);
     assert.equal($('costTotal').textContent, '¥0.004461');
-    assert.equal($('costTotalDetail').textContent, '含参考估算 · 16 次调用 · Token 输入 8,400 / 输出 1,460');
+    assert.equal($('costTotalDetail').textContent, '16 次调用 · Token 输入 8,400 / 输出 1,460');
     assert.equal($('costPurposes').children.length, 3);
     assert.match($('costPurposes').children[0].textContent, /海龟汤.*¥0.0004.*7 次调用.*输入 3,800.*输出 660/s);
     assert.match($('costPurposes').children[1].textContent, /NPC.*¥0.000877.*7 次调用.*输入 3,600.*输出 600/s);
@@ -141,7 +141,7 @@ async function checkDOM() {
       ['海龟汤5 次 · 输入 3,500 / 输出 600¥0.0004', 'NPC6 次 · 输入 3,600 / 输出 600¥0.000877', '塔罗1 次 · 输入 1,000 / 输出 200¥0.000184']);
     const unpricedBusiness = d.querySelectorAll('#costChannels .cost-breakdown')[1];
     assert.match(unpricedBusiness.textContent, /NPC1 次 · 输入 0 \/ 输出 0¥0/);
-    assert.match(d.querySelectorAll('#costChannels .cost-breakdown')[2].textContent, /塔罗1 次 · 输入 0 \/ 输出 0 · 含参考估算¥0.003/);
+    assert.match(d.querySelectorAll('#costChannels .cost-breakdown')[2].textContent, /塔罗1 次 · 输入 0 \/ 输出 0¥0.003/);
     assert.equal(business.querySelectorAll('.cost-breakdown-name small').length, 3);
     assert.deepEqual([...d.querySelectorAll('#costChannels .cost-breakdown')].map(el => el.children.length), [3, 3, 3, 3]);
     assert.equal(d.querySelectorAll('#costChannels details[open], .cost-editor[open]').length, 0);
@@ -150,7 +150,7 @@ async function checkDOM() {
     assert.equal(w.knownCost({...zero, requests: 3, unknown: 3}), '¥0');
     assert.equal($('costSince'), null);
     assert.doesNotMatch($('costStats').textContent, /待核算|部分待核算/);
-    assert.match($('costStats').textContent, /历史未计价调用按现有单价参考估算.*无法估算的部分显示 ¥0.*不代表实际扣费/);
+    assert.match($('costStats').textContent, /费用按已设单价和实际用量计算.*未计价部分显示 ¥0.*不代表实际扣费/);
     // The displayed order groups models under one merchant; fully priced
     // merchants lead, followed by mixed merchants and finally unset-only.
     assert.deepEqual([...d.querySelectorAll('#costPriceList > details')]
@@ -188,21 +188,20 @@ async function checkDOM() {
     assert.deepEqual(savedGroup().config_ids, [31,32,33]);
     assert.deepEqual(savedGroup().price_versions, {'31': 1, '32': 1, '33': 1});
     assert.equal(d.activeElement, d.querySelector('[data-price-index="0"] summary'));
-    // Dynamic base tariffs remain reference estimates through edit/save/reload.
-    assert.match($('costTotalDetail').textContent, /含参考估算/);
-    assert.match($('costPurposes').textContent, /含参考估算/);
-    assert.match(d.querySelectorAll('#costChannels summary')[2].textContent, /含参考估算/);
-    assert.match(d.querySelector('[data-price-index="2"] summary').textContent, /参考估算/);
+    // All fees use the same calculated-cost UI; legacy reference flags do
+    // not create a separate customer-facing pricing tier or badge.
+    assert.doesNotMatch($('costContent').textContent, /参考估算|含估算/);
+    assert.match(d.querySelector('[data-price-index="2"] summary').textContent, /按量已设置/);
     form = d.querySelector('[data-cost-form="2"]');
-    assert.equal(form.elements.mode.value, 'tokens_reference');
+    assert.equal(form.elements.mode.value, 'tokens');
     assert.equal(form.elements.cache.value, '0.0020');
     assert.equal(form.elements.cache.disabled, false);
     await submit(form);
-    assert.deepEqual(savedBody(), {config_id: 28, model: '[正向量3]deepseek-v4.1-flash', mode: 'tokens', reference_only: true,
+    assert.deepEqual(savedBody(), {config_id: 28, model: '[正向量3]deepseek-v4.1-flash', mode: 'tokens',
       input: '0.100', output: '0.400', cache: '0.0020'});
     form = d.querySelector('[data-cost-form="new"]');
     await change(form.elements.config_id, '28');
-    assert.equal(form.elements.mode.value, 'tokens_reference');
+    assert.equal(form.elements.mode.value, 'tokens');
     await change(form.elements.model, '[按量1]glm-5.3-flash');
     assert.equal(form.elements.mode.value, 'tokens');
     assert.equal(form.elements.cache.value, '');
@@ -227,7 +226,7 @@ async function checkDOM() {
     assert.deepEqual(savedGroup().config_ids, [28,29,30]);
     assert.equal(state.data.prices[6].price_conflict, false);
     assert.ok(state.data.prices[6].price_variants.every(v => v.price.input === '0.064' && v.price.cache === '0.0184'));
-    assert.equal(state.data.prices[2].price.reference_only, true);
+    assert.equal(state.data.prices[2].price.reference_only, undefined);
     assert.equal($('costTotal').textContent, '¥0.004461');
     // Both historical and deleted-channel prices are directly editable.
     for (const index of [3, 4]) {
@@ -345,12 +344,12 @@ async function checkBrowser() {
       await shot(`api-costs-prices-${width}`);
       await page.locator('[data-price-index="2"] summary').click();
       const referenceForm = page.locator('[data-cost-form="2"]');
-      assert.equal(await referenceForm.locator('[name="mode"]').inputValue(), 'tokens_reference');
+      assert.equal(await referenceForm.locator('[name="mode"]').inputValue(), 'tokens');
       assert.equal(await referenceForm.locator('[name="cache"]').inputValue(), '0.0020');
       await shot(`api-costs-reference-${width}`);
       await referenceForm.locator('button').click();
       await page.getByText('价格已保存', {exact: true}).waitFor();
-      assert.equal(state.data.prices[2].price.reference_only, true);
+      assert.equal(state.data.prices[2].price.reference_only, undefined);
       await page.locator('[data-price-index="6"] summary').click();
       const conflictForm = page.locator('[data-cost-form="6"]');
       assert.match(await conflictForm.locator('[data-price-scope]').textContent(), /价格不一致.*0.064.*0.080.*未设置/);

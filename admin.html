@@ -852,7 +852,7 @@
             <div><span class="cost-eyebrow">总费用</span><div class="cost-total" id="costTotal" aria-label="总金额"></div><p id="costTotalDetail"></p></div>
             <div class="dashboard-control"><select id="costRange" aria-label="统计范围"><option value="today">今日</option><option value="7d">7天</option><option value="30d">30天</option></select></div>
           </div>
-          <p class="section-note">历史未计价调用按现有单价参考估算；无法估算的部分显示 ¥0，金额不代表实际扣费。</p>
+          <p class="section-note">费用按已设单价和实际用量计算；未计价部分显示 ¥0，金额不代表实际扣费。</p>
           <div id="costPurposes"></div>
           <h3 class="cost-section-title">渠道明细</h3>
           <div id="costChannels" aria-label="渠道与模型费用"></div>
@@ -1763,12 +1763,11 @@
       return `<span class="cost-identity"><strong>${escapeHtml(name)}</strong><span class="cost-model">${escapeHtml(row.model)}</span></span>`;
     }
     function renderCostChannel(row) {
-      const state = row.estimated ? "含参考估算" : "";
       const business = row.purposes || [];
-      return `<details class="cost-row"><summary>${costIdentity(row)}<span class="cost-amount">${escapeHtml(knownCost(row))}${state ? `<small>${state}</small>` : ""}</span></summary>
+      return `<details class="cost-row"><summary>${costIdentity(row)}<span class="cost-amount">${escapeHtml(knownCost(row))}</span></summary>
         <div class="cost-details">${costFacts(row)}
           <h4 class="cost-section-title">用途费用</h4>
-          <div class="cost-breakdown">${business.map(item => `<div class="cost-breakdown-line"><span class="cost-breakdown-name">${escapeHtml(item.label)}<small>${tokenCount(item.requests)} 次 · 输入 ${tokenCount(item.input_tokens)} / 输出 ${tokenCount(item.output_tokens)}${item.estimated ? " · 含参考估算" : ""}</small></span><strong>${escapeHtml(knownCost(item))}</strong></div>`).join("")}</div>
+          <div class="cost-breakdown">${business.map(item => `<div class="cost-breakdown-line"><span class="cost-breakdown-name">${escapeHtml(item.label)}<small>${tokenCount(item.requests)} 次 · 输入 ${tokenCount(item.input_tokens)} / 输出 ${tokenCount(item.output_tokens)}</small></span><strong>${escapeHtml(knownCost(item))}</strong></div>`).join("")}</div>
         </div></details>`;
     }
     function priceForm(row, index) {
@@ -1777,7 +1776,7 @@
         ${row ? "" : `<label class="cost-model-field">渠道<select name="config_id" required>${costData.configs.map(cfg => `<option value="${cfg.id}">${escapeHtml(cfg.name || "未命名渠道")}${cfg.enabled ? "" : " · 已停用"}</option>`).join("")}</select></label>
           <label class="cost-model-field">精确模型名<input name="model" maxlength="200" required value="${escapeHtml(costData.configs[0]?.model || "")}"></label>`}
         <p class="section-note cost-model-field" data-price-scope ${row?.config_ids?.length > 1 ? "" : "hidden"}>${escapeHtml(priceScope(row))}</p>
-        <label>计费模式<select name="mode"><option value="request" ${price?.mode === "request" ? "selected" : ""}>按次</option><option value="tokens" ${price?.mode !== "request" && !price?.reference_only ? "selected" : ""}>按量</option><option value="tokens_reference" ${price?.reference_only ? "selected" : ""}>按量（参考估算）</option></select></label>
+        <label>计费模式<select name="mode"><option value="request" ${price?.mode === "request" ? "selected" : ""}>按次</option><option value="tokens" ${price?.mode !== "request" ? "selected" : ""}>按量</option></select></label>
         ${[["per_request", "元 / 次"], ["input", "输入 · 元 / 百万 token"], ["output", "输出 · 元 / 百万 token"], ["cache", "缓存（替代输入）· 元 / 百万 token"]].map(([key, label]) => `<label data-price-field="${key}">${label}<input name="${key}" inputmode="decimal" required pattern="[0-9]{1,9}([.][0-9]{1,12})?" value="${escapeHtml(price?.[key] ?? "")}" placeholder="0"></label>`).join("")}
         <div class="row-actions cost-model-field"><button class="primary" type="submit">${row?.config_ids?.length > 1 ? "统一保存价格" : "保存价格"}</button><span class="status" role="status"></span></div>
       </form>`;
@@ -1786,13 +1785,13 @@
       if (!row || row.config_ids?.length < 2) return "";
       if (!row.price_conflict) return "同一商家下各用途统一保存。";
       const describe = price => !price ? "未设置" : price.mode === "request" ? `${money(price.per_request)}/次` :
-        `输入 ${price.input} / 输出 ${price.output} / 缓存 ${price.cache} 元/百万 token${price.reference_only ? "（参考估算）" : ""}`;
+        `输入 ${price.input} / 输出 ${price.output} / 缓存 ${price.cache} 元/百万 token`;
       return "价格不一致，请填写要统一使用的新价格。现有价格：" +
         row.price_variants.map(item => `${item.label}：${describe(item.price)}`).join("；") + "。";
     }
     function renderPrice(row, index) {
       const price = row.price;
-      const tariff = row.price_conflict ? '价格不一致' : !price ? '未设置' : price.mode === "request" ? `${escapeHtml(money(price.per_request))}/次` : price.reference_only ? '按量<small>参考估算</small>' : '按量<small>已设置</small>';
+      const tariff = row.price_conflict ? '价格不一致' : !price ? '未设置' : price.mode === "request" ? `${escapeHtml(money(price.per_request))}/次` : '按量<small>已设置</small>';
       return `<details class="cost-row cost-editor" data-price-index="${index}"><summary>${costIdentity(row)}<span class="cost-amount">${tariff}</span></summary>${priceForm(row, index)}</details>`;
     }
     function setPriceMode(form) {
@@ -1806,7 +1805,7 @@
       const cfg = costData.configs.find(cfg => cfg.id === Number(form.elements.config_id.value));
       const row = costData.prices.find(row => row.config_id === cfg?.id && row.model === form.elements.model.value);
       const rule = row?.price;
-      form.elements.mode.value = rule?.reference_only ? "tokens_reference" : rule?.mode || "tokens";
+      form.elements.mode.value = rule?.mode || "tokens";
       for (const key of ["per_request", "input", "output", "cache"]) form.elements[key].value = rule?.[key] ?? "";
       const scope = form.querySelector("[data-price-scope]");
       scope.textContent = priceScope(row || cfg);
@@ -1839,8 +1838,8 @@
     }
     function renderCosts(data) {
       $("costTotal").textContent = knownCost(data.total);
-      $("costTotalDetail").textContent = `${data.total.estimated ? "含参考估算 · " : ""}${tokenCount(data.total.requests)} 次调用 · Token 输入 ${tokenCount(data.total.input_tokens)} / 输出 ${tokenCount(data.total.output_tokens)}`;
-      $("costPurposes").innerHTML = data.purposes.map(row => `<div class="cost-purpose"><div class="cost-purpose-head"><strong>${escapeHtml(row.label)}</strong><span class="cost-purpose-value">${escapeHtml(knownCost(row))}</span></div><div class="cost-purpose-meta">${row.estimated ? "含参考估算 · " : ""}${tokenCount(row.requests)} 次调用 · 输入 ${tokenCount(row.input_tokens)} / 输出 ${tokenCount(row.output_tokens)}</div></div>`).join("");
+      $("costTotalDetail").textContent = `${tokenCount(data.total.requests)} 次调用 · Token 输入 ${tokenCount(data.total.input_tokens)} / 输出 ${tokenCount(data.total.output_tokens)}`;
+      $("costPurposes").innerHTML = data.purposes.map(row => `<div class="cost-purpose"><div class="cost-purpose-head"><strong>${escapeHtml(row.label)}</strong><span class="cost-purpose-value">${escapeHtml(knownCost(row))}</span></div><div class="cost-purpose-meta">${tokenCount(row.requests)} 次调用 · 输入 ${tokenCount(row.input_tokens)} / 输出 ${tokenCount(row.output_tokens)}</div></div>`).join("");
       $("costChannels").innerHTML = data.channels.filter(row => row.requests > 0).map(renderCostChannel).join("") || '<p class="dashboard-empty">所选时段暂无调用</p>';
       $("costPriceList").innerHTML = orderedPriceEntries(data.prices).map(({row, index}) => renderPrice(row, index)).join("") || '<p class="dashboard-empty">暂无模型价格</p>';
       $("costNewPriceForm").innerHTML = data.configs.length ? priceForm(null, "new") : '<p class="dashboard-empty">暂无渠道配置</p>';
@@ -1892,10 +1891,6 @@
       const existing = row || costData.prices.find(item => item.config_id === body.config_id && item.model === body.model);
       body.config_ids = existing?.config_ids || cfg?.config_ids || [body.config_id];
       body.price_versions = existing?.price_versions || Object.fromEntries(body.config_ids.map(id => [id, 0]));
-      if (body.mode === "tokens_reference") {
-        body.mode = "tokens";
-        body.reference_only = true;
-      }
       const status = form.querySelector(".status");
       const button = form.querySelector("button");
       button.disabled = true;
