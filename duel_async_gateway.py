@@ -7,6 +7,7 @@ while the potentially long request goes directly from this ASGI process to Duel.
 
 import asyncio
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -21,9 +22,12 @@ DUEL_ORIGIN = os.getenv("DUEL_GATEWAY_DUEL_ORIGIN", "http://127.0.0.1:8772")
 SHARED_SECRET = os.getenv("DUEL_GATEWAY_SHARED_SECRET", "")
 PREPARE_TIMEOUT_SECONDS = 5.0
 DUEL_TIMEOUT_SECONDS = 55.0
-PROXY_TIMEOUT_SECONDS = 65.0
+# Covers CedarToy queue wait plus slow game backend calls.
+PROXY_TIMEOUT_SECONDS = 95.0
 MAX_INTERNAL_CONCURRENCY = 40
 MAX_CEDARTOY_CONNECTIONS = 80
+
+logger = logging.getLogger(__name__)
 
 
 def _bounded_int_env(name, default, minimum, maximum):
@@ -744,6 +748,8 @@ def create_app(
             try:
                 return await _proxy_to_cedartoy(request, raw_body)
             except httpx.HTTPError as exc:
+                # Never log the request path: it can hold a bearer token.
+                logger.warning("non-duel MCP proxy error=%s", type(exc).__name__)
                 return _json_response(
                     {"error": "CedarToy proxy failed", "detail": str(exc)},
                     502,

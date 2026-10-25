@@ -1041,6 +1041,7 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
                 content_type=request.headers.get("content-type"),
                 authorization=request.headers.get("authorization"),
                 custom=request.headers.get("x-custom"),
+                proxy_read_timeout=request.extensions["timeout"]["read"],
             )
             return httpx.Response(
                 207,
@@ -1080,11 +1081,38 @@ class DuelAsyncGatewayTests(unittest.IsolatedAsyncioTestCase):
             "content_type": "application/vnd.mcp+json",
             "authorization": "Bearer preserved",
             "custom": "yes",
+            "proxy_read_timeout": duel_async_gateway.PROXY_TIMEOUT_SECONDS,
         })
+        self.assertGreaterEqual(captured["proxy_read_timeout"], server.QUEUE_TIMEOUT_SECONDS + 75)
         self.assertEqual(response.status_code, 207)
         self.assertEqual(response.content, b"\x00unchanged")
         self.assertEqual(response.headers["content-type"], "application/x-test")
         self.assertEqual(response.headers["x-upstream"], "kept")
+
+    async def test_non_duel_proxy_timeout_does_not_log_sensitive_path(self):
+        private_path = "opaque-fake-auth-path"
+
+        async def upstream(request):
+            raise httpx.ReadTimeout("test timeout", request=request)
+
+        upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        app = duel_async_gateway.create_app(
+            http_client=upstream_client, shared_secret="secret"
+        )
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://gateway.test",
+        )
+        try:
+            with self.assertLogs("duel_async_gateway", level="WARNING") as entries:
+                response = await client.post("/" + private_path,
+                                             json={"method": "tools/list", "id": 1})
+        finally:
+            await client.aclose()
+            await upstream_client.aclose()
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("ReadTimeout", entries.output[0])
+        self.assertNotIn(private_path, "".join(entries.output))
 
     async def test_backend_timeout_is_finalized_as_compatible_tool_error(self):
         completion_seen = {}
