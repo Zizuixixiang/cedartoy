@@ -8,7 +8,9 @@ import os
 import re
 import sqlite3
 import stat
+import threading
 import time
+from collections import OrderedDict
 from contextlib import closing
 
 from .errors import _McpError
@@ -241,21 +243,28 @@ def _vendor_save_stats(
     return {"save_count": len(player_dirs), "file_count": file_count}
 
 
-def _count_shared_craft_saves(*, data_dir, strict=False):
-    """Count creative rooms, once per human room, without loading the engine.
+# Cache validated metadata signatures, never private content. Every request
+# still opens and checks each file; only changed saves require JSON decoding.
+# Bounding the cache per root also prevents a process from retaining old test
+# fixtures and transient workspaces indefinitely.
+_CRAFT_COUNT_LOCK = threading.Lock()
+_CRAFT_FILE_CACHE = OrderedDict()
+_CRAFT_FILE_LIMIT = 2 * 1024**2
+_CRAFT_BYTE_BUDGET = 64 * 1024**2
+_CRAFT_ENTRY_LIMIT = 2048
 
-    Evidence: canvas strokes, beads actually placed, or gallery metadata.
-    Empty boards/visits, participants, PNGs, locks and backups do not count.
-    Atomic JSON replacement allows read-only snapshots without creating locks.
-    This is an aggregate observation, not a transaction across all rooms.
-    Missing storage is 0 (unknown in strict mode); unreadable/invalid/over-budget
-    storage is always unknown. Never expose partial counts or repair files.
+
+def _count_shared_craft_saves(*, data_dir, strict=False):
+    """Count rooms with real craft progress, not empty visits or participants.
+
+    Read-only and fail-closed: no partial counts on invalid, missing-budget or
+    unreadable storage. Atomic replacement changes the inode/mtime signature;
+    revalidate only changed JSON files. No player content is retained in RAM.
     """
     root = data_dir / "rooms"
-    # Bound each request rather than walking arbitrary trees or reading images.
-    file_limit, byte_budget, entry_limit = 2 * 1024**2, 16 * 1024**2, 2048
-    deadline = time.monotonic() + (0.1 if strict else 0.25)
-    total_bytes = count = 0
+    deadline = time.monotonic() + (0.1 if strict else 2.0)
+    if not _CRAFT_COUNT_LOCK.acquire(timeout=0.05 if strict else 2.0):
+        return None
     try:
         if root.is_symlink():
             return None
@@ -263,15 +272,19 @@ def _count_shared_craft_saves(*, data_dir, strict=False):
             entries = os.scandir(root)
         except FileNotFoundError:
             return None if strict else 0
+        key = str(root.absolute())
+        previous = _CRAFT_FILE_CACHE.get(key, {})
+        fresh = {}
+        total_bytes = count = 0
         with entries:
             for number, entry in enumerate(entries, 1):
-                if number > entry_limit or time.monotonic() > deadline:
+                if number > _CRAFT_ENTRY_LIMIT or time.monotonic() > deadline:
                     return None
-                # Room IDs come from the human account, never from each AI.
                 if not re.fullmatch(r"[1-9][0-9]*", entry.name) or not entry.is_dir(follow_symlinks=False):
                     continue
                 active = False
                 for name, field in (("canvas", "strokes"), ("beads", "boards"), ("gallery", "items")):
+                    relative = (entry.name, name)
                     try:
                         fd = os.open(root / entry.name / (name + ".json"),
                                      os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -279,38 +292,55 @@ def _count_shared_craft_saves(*, data_dir, strict=False):
                         continue
                     with os.fdopen(fd, "rb") as stream:
                         info = os.fstat(stream.fileno())
-                        if (not stat.S_ISREG(info.st_mode) or info.st_size > file_limit
-                                or total_bytes + info.st_size > byte_budget):
+                        total_bytes += info.st_size
+                        if (not stat.S_ISREG(info.st_mode) or info.st_size > _CRAFT_FILE_LIMIT
+                                or total_bytes > _CRAFT_BYTE_BUDGET):
                             return None
-                        raw = stream.read(min(file_limit, byte_budget - total_bytes) + 1)
-                    total_bytes += len(raw)
-                    if len(raw) > file_limit or total_bytes > byte_budget:
-                        return None
-                    data = json.loads(raw)
-                    if not isinstance(data, dict) or not isinstance(data.get(field), list):
-                        return None
-                    for item in data[field]:
-                        if not isinstance(item, dict):
-                            return None
-                        if name == "canvas":
-                            if not isinstance(item.get("points"), list) or not isinstance(item.get("actor"), str):
-                                return None
-                            active |= bool(item["points"])
-                        elif name == "beads":
-                            if (not isinstance(item.get("cells"), dict) or not isinstance(item.get("id"), str)
-                                    or item.get("mode") not in ("together", "separate", "gift")):
-                                return None
-                            active |= bool(item["cells"])
+                        signature = (info.st_dev, info.st_ino, info.st_size,
+                                     info.st_mtime_ns, info.st_ctime_ns)
+                        cached = previous.get(relative)
+                        if cached and cached[0] == signature:
+                            file_active = cached[1]
                         else:
-                            if not isinstance(item.get("id"), str) or not isinstance(item.get("authors"), list):
+                            raw = stream.read(_CRAFT_FILE_LIMIT + 1)
+                            if len(raw) > _CRAFT_FILE_LIMIT:
                                 return None
-                            active = True
+                            data = json.loads(raw)
+                            if not isinstance(data, dict) or not isinstance(data.get(field), list):
+                                return None
+                            file_active = False
+                            for item in data[field]:
+                                if not isinstance(item, dict):
+                                    return None
+                                if name == "canvas":
+                                    if not isinstance(item.get("points"), list) or not isinstance(item.get("actor"), str):
+                                        return None
+                                    file_active |= bool(item["points"])
+                                elif name == "beads":
+                                    if (not isinstance(item.get("cells"), dict) or not isinstance(item.get("id"), str)
+                                            or item.get("mode") not in ("together", "separate", "gift")):
+                                        return None
+                                    file_active |= bool(item["cells"])
+                                else:
+                                    if not isinstance(item.get("id"), str) or not isinstance(item.get("authors"), list):
+                                        return None
+                                    file_active = True
+                        fresh[relative] = (signature, file_active)
+                        active |= file_active
                     if time.monotonic() > deadline:
                         return None
                 count += int(active)
+        # Publish only a fully validated snapshot. Deleted rooms/files disappear
+        # from the next cache, so metrics cannot remain stale after deletion.
+        _CRAFT_FILE_CACHE[key] = fresh
+        _CRAFT_FILE_CACHE.move_to_end(key)
+        if len(_CRAFT_FILE_CACHE) > 8:
+            _CRAFT_FILE_CACHE.popitem(last=False)
         return count
     except (OSError, ValueError, RecursionError):
         return None
+    finally:
+        _CRAFT_COUNT_LOCK.release()
 
 
 def _activity_catalog(

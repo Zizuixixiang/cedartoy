@@ -217,18 +217,36 @@ class SharedCraftSaveCountTests(unittest.TestCase):
         target.symlink_to(self.root / "rooms" / "1" / "gallery.json")
         self.assertIsNone(self.count(), "do not follow metadata symlinks")
 
+    def test_large_room_catalog_counts_cold_then_reuses_validated_metadata(self):
+        # Real production has 200+ rooms and more than 13MB of JSON. That was
+        # repeatedly hitting the original 0.25s/16MB limits, yielding "--".
+        extra = "x" * (96 * 1024)
+        for room in range(1, 228):
+            self.save(room, "canvas", {"strokes": [{"actor": "human", "points": [{"x": 1, "y": 1}]}],
+                                        "padding": extra})
+        self.assertEqual(self.count(), 227)
+        with patch.object(server.public_stats.json, "loads", side_effect=AssertionError("cached JSON reread")):
+            self.assertEqual(self.count(strict=True), 227)
+        # One edited and one deleted file must immediately update the metric;
+        # no player content should survive in the count cache.
+        self.save(2, "canvas", {"strokes": []})
+        self.assertEqual(self.count(strict=True), 226)
+        (self.root / "rooms" / "3" / "canvas.json").unlink()
+        self.assertEqual(self.count(strict=True), 225)
+
     def test_scan_budgets_return_unknown(self):
         target = self.save(1, "canvas", {"strokes": []})
         with target.open("wb") as stream:
             stream.truncate(2 * 1024**2 + 1)
         self.assertIsNone(self.count())
         target.write_text('{"strokes":[]}')
-        with patch.object(server.public_stats.time, "monotonic", side_effect=[0, 1]):
+        with patch.object(server.public_stats.time, "monotonic", side_effect=[0, 3]):
             self.assertIsNone(self.count())
         payload = {"strokes": [], "padding": " " * (1024**2)}
         for room in range(1, 18):
             self.save(room, "canvas", payload)
-        with patch.object(server.public_stats.time, "monotonic", return_value=0):
+        with (patch.object(server.public_stats, "_CRAFT_BYTE_BUDGET", 16 * 1024**2),
+              patch.object(server.public_stats.time, "monotonic", return_value=0)):
             self.assertIsNone(self.count(), "total byte budget")
         for room in range(1, 18):
             (self.root / "rooms" / str(room) / "canvas.json").unlink()
