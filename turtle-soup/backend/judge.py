@@ -625,6 +625,30 @@ def _requires_chenmo_sse(api_url: str, model: Any) -> bool:
     )
 
 
+def _chenmo_glm_payload(api_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """This exact non-streaming channel ignores separately supplied system roles.
+
+    Keep every original role/content and its order in an escaped transcript,
+    but deliver it inside one user message. Never mutate the shared messages:
+    fallback providers must receive their original role hierarchy.
+    """
+    if (_endpoint(api_url) != "https://api.chenmoai.com/v1/chat/completions"
+            or payload.get("model") != "[按量1]glm-5.3-flash"):
+        return payload
+    messages = payload["messages"]
+    instruction = (
+        "执行下面消息记录中的任务。system 是任务规则，user 是任务数据，"
+        "assistant 是历史回复。按原顺序理解上下文，只回答最后一条 user 请求。"
+        "严格遵守 system 中的输出格式和示例，不添加格式之外的解释。\n"
+    )
+    adapted = {**payload, "stream": False, "messages": [{
+        "role": "user",
+        "content": instruction + json.dumps(messages, ensure_ascii=False, separators=(",", ":")),
+    }]}
+    adapted.pop("stream_options", None)
+    return adapted
+
+
 def _merge_chenmo_completion(response: httpx.Response) -> httpx.Response:
     """Normalize this channel's buffered SSE before callers and cost collection.
 
@@ -734,6 +758,7 @@ async def _send_chat_completion(
 ) -> httpx.Response:
     endpoint = _endpoint(api_url)
     headers = {"Authorization": f"Bearer {api_key}"}
+    payload = _chenmo_glm_payload(api_url, payload)
     chenmo_sse = _requires_chenmo_sse(api_url, payload.get("model"))
     if chenmo_sse:
         payload = {**payload, "stream": True, "stream_options": {"include_usage": True}}
