@@ -50,6 +50,7 @@ def observe_scenario(scenario, implementation=None):
         }
         for name, value in dependencies.items():
             stack.enter_context(patch.object(server, name, value))
+        stack.enter_context(patch.object(server, "_feedback_unread_reminder", return_value=""))
         stack.enter_context(patch.object(server.game_activity, "record", callback("activity")))
         # Resolve after patches, also allowing a pre-extraction source comparison.
         handler = implementation() if implementation else server._handle_root_mcp
@@ -66,14 +67,14 @@ def observe_scenario(scenario, implementation=None):
 class McpDispatchOrderTests(unittest.TestCase):
     def test_canonical_identity_and_finalization_order(self):
         prefixes = {
-            "account": ["root_identity", "duel_reminder", "account", "legacy_migration", "anti_context", "preflight"],
-            "guest": ["root_identity", "duel_reminder", "tombstone:guest:other", "anti_context", "preflight"],
+            "account": ["root_identity", "account", "legacy_migration", "anti_context", "preflight"],
+            "guest": ["root_identity", "tombstone:guest:other", "anti_context", "preflight"],
         }
         for scenario in ("account", "guest", "game_error", "blocked", "claimed_guest"):
             with self.subTest(scenario=scenario):
                 response, events, dispatched = observe_scenario(scenario)
                 if scenario == "claimed_guest":
-                    self.assertEqual(events, ["root_identity", "duel_reminder", "tombstone:guest:other", "forced_announcement"])
+                    self.assertEqual(events, ["root_identity", "tombstone:guest:other", "forced_announcement"])
                     self.assertTrue(response["result"]["isError"])
                     self.assertEqual(dispatched, [])
                     continue

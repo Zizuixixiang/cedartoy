@@ -413,7 +413,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                     ).fetchone()[0]
                 self.assertEqual(unread, 3)
 
-    def test_next_authenticated_non_duel_tool_call_appends_duel_reminder(self):
+    def test_non_duel_tools_never_append_duel_reminder(self):
         payload = {
             "jsonrpc": "2.0",
             "id": 91,
@@ -427,7 +427,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                 server,
                 "_duel_unread_request_reminder",
                 return_value="pull-time duel reminder",
-            ),
+            ) as reminder,
         ):
             result = server._handle_root_mcp(payload, path_token="trusted")
             error_result = server._handle_root_mcp(
@@ -441,13 +441,34 @@ class DuelRoomsPlatformTests(unittest.TestCase):
 
         self.assertEqual(
             [item["text"] for item in result["result"]["content"]],
-            ["games", "pull-time duel reminder"],
+            ["games"],
         )
         self.assertTrue(error_result["result"]["isError"])
-        self.assertEqual(
-            error_result["result"]["content"][-1]["text"],
-            "pull-time duel reminder",
-        )
+        self.assertNotIn("pull-time duel reminder", json.dumps(error_result))
+        reminder.assert_not_called()
+
+    def test_direct_duel_reminder_only_for_state_not_rooms(self):
+        def call(action):
+            return server._handle_root_mcp({
+                "jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                "params": {"name": "play", "arguments": {"game": "duel", "action": action}},
+            }, path_token="trusted")
+
+        with (
+            patch.object(server, "_authenticated_ai_player_id", return_value="42"),
+            patch.object(server, "_duel_unread_request_reminder", return_value="duel hint") as reminder,
+            patch.object(server, "_mcp_forced_announcement", return_value=None),
+            patch.object(server, "_feedback_unread_reminder", return_value=""),
+            patch.object(server, "_tool_play", return_value="room state"),
+        ):
+            state = call("state")
+            self.assertEqual([item["text"] for item in state["result"]["content"]],
+                             ["room state", "duel hint"])
+            reminder.assert_called_once_with("42")
+            rooms = call("rooms")
+            self.assertEqual([item["text"] for item in rooms["result"]["content"]],
+                             ["room state"])
+            reminder.assert_called_once_with("42")
 
     def test_human_context_uses_account_avatars_and_shared_fallbacks(self):
         class FakeConnection:

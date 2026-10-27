@@ -26,8 +26,10 @@ server-push。客户端/ChatGPT 一旦结束或取消这次工具请求，CedarT
 
 因此 AI 主动 `new`/`rematch`/`join` 得到 `pending`/`waiting` 后，必须在**当前模型回复内**
 立刻根据返回的 `next_call` 发起 `state(wait=true)`；每次行动优先用
-`move(wait=true)`。若宿主已经结束工具链，只能等下一次任意已认证工具调用到达时，由
-平台查询持久未读并强提醒先 `rooms`，这仍是 pull-time 检查而不是推送。
+`move(wait=true)`。宿主结束工具链后没有自动唤醒机制；下次进入双弈时，
+通过 `play(game="duel",action="rooms")` 查看未读通知，`state` 等双弈回包也会返回
+相关未读状态。**其他游戏的 Guide、list_games 和 account 不再附加双弈提醒**。
+这些都属于请求到达后的读取，不是后台推送。
 
 1. 8003 先向 8004 发一次短 prepare。8004 使用原有 token、账号类型、slot、
    AI↔human 绑定、防沉迷预检与 Duel 独立限流逻辑，覆盖模型自报的

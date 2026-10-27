@@ -82,8 +82,10 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                 if name == "play" and isinstance(arguments, dict)
                 else None
             )
+            # Only direct Duel calls may show this reminder; the normal async
+            # Duel backend returns its own unread state, and rooms consumes it.
             duel_reminder = ""
-            if not is_duel_call:
+            if is_duel_call and arguments.get("action") != "rooms":
                 duel_reminder = _duel_unread_request_reminder(ai_player_id)
             def append_feedback_reminder(content):
                 # JSON-RPC notifications have no response in which to deliver a hint.

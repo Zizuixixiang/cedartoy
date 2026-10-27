@@ -75,7 +75,7 @@ class McpSchemaSelectionTests(unittest.TestCase):
                         ) as tool:
                             result = self.post(path + mode, "Kelivo/1.3.1", payload, bearer)["result"]
                             self.assertEqual(result, {"isError": False, "content": [
-                                {"type": "text", "text": text} for text in ("body", "notice", "reminder")
+                                {"type": "text", "text": text} for text in ("body", "notice")
                             ]})
                             identity.assert_called_with(token)
                             if name == "get_guide":
