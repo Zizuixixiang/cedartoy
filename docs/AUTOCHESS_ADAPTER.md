@@ -280,7 +280,7 @@ AUTOCHESS_TEST_NODE=/path/to/node22 PLAYWRIGHT_MODULE=/path/to/playwright PLAYWR
 - HTTPS `/autochess/`、新版哈希 JS/CSS 返回 HTTP 200，内网游戏卫星 `economy=true`；公网内部接口保持 404，主站/异步网关未重启。原有 12 间房间仍在，钱包 `PRAGMA quick_check=ok`。测试临时构建、截图、浏览器缓存和日志按原要求已清理，只有精确的旧 HTML 和旧错误处理代码供回滚。
 - 真机 Android 拖拽、系统浏览器实际安全区、横屏与后续心悟/宝箱的完整对局仍需玩家实测；本次 Chromium 截图与测试不冒充真机验证。没有发公告或联系作者。
 
-## 2026-10-28 三项紧急纠错（本轮工作树，未发布）
+## 2026-10-28 三项紧急纠错（已部署）
 
 本轮由 Codex 单独修改和验证，未部署、重启生产、commit/push、联系作者或发布公告。开始时记录两仓状态并备份目标文件；仅撤销 `admin.html` 中上轮误加的 129 行弈间模块，保留该文件原有后台和其他任务修改。首页使用开始时已有的弹窗移除稿，本轮没有覆盖其余首页导航改动。
 
@@ -308,3 +308,15 @@ AUTOCHESS_TEST_NODE=/path/to/node22 PLAYWRIGHT_MODULE=/path/to/playwright PLAYWR
 - 两仓 `git diff --check`、独立后台隔离静态检查及完整 vendor 补丁反向校验通过。`admin.html` 已恢复本轮前错误草稿之前的内容；`index.html` 与本轮开始时逐字节相同，保留已有的旧弹窗删除和导航改动。原 3D renderer、经济、账号 store 未在本轮修改。
 
 少量截图、测量 JSON、测试摘要见 [本轮验收证据](../artifacts/autochess-corrections-20261028/README.md)。图片仅含隔离测试角色；测试资金来自 fixture，不是生产钱包或经济规则变更。仍需按上文进行真机及长期多人验收。
+
+收尾：既有首页 `check_shared_craft_author_ui.js`（DOM）和 `check_home_stats_ui.js` 回归均通过。本轮 `/tmp/yijian-fixes-review` 的浏览器、依赖、截图缓存、日志和测试构建，以及已确认归属的中断 fixture `/tmp/cedar-autochess-test-wv_kxhi3` 已清理；只保留约 1.8 MB 验收证据，磁盘可用约 8.4 GB。未清理生产目录或其他任务文件。
+
+共享仓库状态提醒：收尾只读检查发现 04:32:16 新增提交 `409cbaf`，包含上述改动。这不是本轮 Codex 工具调用产生的提交；Codex 没有执行 commit/push、部署或生产重启，也未回退该提交。已重新核对验收记录中的源码 SHA256 一致，当前 Git 状态不能再描述为“本轮所有主仓库改动均未提交”。
+
+### 本轮生产上线及任务超时的说明
+
+- 主助手在全部定向测试完成后独立检查了浏览器结果（`ok=true`、`errors=[]`，27 场景、5 个横屏视口）、TS 38/38、Python 20/20、Node v22 类型检查及 Vite Cedar 构建。正式源码补丁反向校验通过，且 `/admin` 没有《弈间》专属授权入口或越权 API。
+- 实际由主助手提交并推送 `409cbaf`；只提交本任务 7 个文件，没有包含其他任务脏改或 vendor 指针。Codex 自身的工作任务最后因超过 3600 秒上限而超时，**不是 Codex 向用户报告成功，也不代表测试失败**。主助手已独立完成生产部署与健康验证。
+- 升级前关停独立游戏卫星后对完整房间/钱包目录做一致性压缩备份（`backups/yijian-before-bound-ai-autostart-20261028.tar.gz`，0600），旧 HTML 入口单独保留（`backups/yijian-index-before-autostart-20261028.html`）；旧静态 hash 文件原位保留。只重启 CedarToy 主站和独立游戏卫星，不重启双弈或网关，最后原子替换 `/autochess/` 的 HTML。
+- 线上 HTTPS `/`、`/admin`、`/autochess/`、新 JS/CSS 均 HTTP 200；全站 `/admin` 仍有双弈/海龟汤运营模块但未新增《弈间》授权，旧首页统计弹窗已移除；游戏专属管理入口只在已授权的人类《弈间》“我的”视图中。公网 `/autochess/account` 和内部网关路径保持 404。正式 13 间房间仍保留，钱包 `quick_check=ok`，卫星 `economy=true`。本机实际 4399 MCP `get_guide(autochess)` 和获本游戏授权身份的 `play(stats,1h)` 均通过。
+- 已删除独立发布时的临时构建、Codex 测试目录的 Chromium/依赖/大截图/缓存和过时的本地 UI 测试；保留少量脱敏验收证据供追踪，不删除生产存档、R2 或其他任务文件。最终 Android 横屏、系统安全区和真人/绑定机长期实战仍以真实用户体验为准。未发公告也未联系作者。
