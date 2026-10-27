@@ -154,7 +154,7 @@ AUTOCHESS_TEST_NODE=/path/to/node22 PLAYWRIGHT_MODULE=/path/to/playwright PLAYWR
 
 注意：以上线上 HTTP/MCP 与之前的隔离浏览器测试，**不能替代真人手机拖棋、装备、完整对局以及实际 Gemini/Kelivo 交互验收**。试玩阶段仍使用站内原入口，不另设测试页，不发布公告。
 
-## 局外经济恢复（2026-10-27，工作树待审，未发布）
+## 局外经济恢复（2026-10-27，已上线，仍待用户真机验收）
 
 ### 实际完成
 
@@ -196,4 +196,14 @@ AUTOCHESS_TEST_NODE=/path/to/node22 PLAYWRIGHT_MODULE=/path/to/playwright PLAYWR
 3. 审核使用同一个 CHESS_ROOM_DATA、原 secret、Node ≥22.13 和 `CHESS_CEDAR_MODE=platform`；其他路由、4399 认证和作者 allowlist 不扩大。发布主站/网关的局外桥与新静态构建、专用卫星后，在授权范围内核验私房、真实结算、装备、禁用路由及首份每日 R2 包。**不能直接运行原站服务器或用 CHESS_SLIM=0 暴露原站。**
 4. 回滚优先关闭平台经济模式并恢复旧静态构建/代码；完整保留 `economy/accounts.db` 和 receipts，不删除钱包，也不将新账本替换为空库。旧 slim 模式中新完成的局仍不发局外币；重新启用时这些历史 guest 局不追补。需要回滚数据时从同一归档恢复整套房间+钱包并先在副本核验，不能只回滚钱包导致重复奖励。
 
-本轮未部署/重启任何正在运行的服务，未 commit/push，未联系作者、发布公告或操作生产/R2 数据。
+经济代码已在生产启用并提交推送；未联系作者、未发布公告，未手动操作 R2。真实手机/小机实机长期验收仍待完成。
+
+### 经济版本上线核验（2026-10-27）
+
+- Git 提交 `76b9f71` 只含《弈间》经济相关改动，历史清理和其他任务工作树修改未混入提交。 vendor 仍保持作者独立源仓，修改以 `docs/patches/autochess-cedartoy.patch` 保留。
+- 升级前已停独立游戏进程并对全部现有房间制作权限 0600 的回滚包：`/opt/cedartoy/backups/autochess-before-economy-20261027.tar.gz`；原静态构建保留在 `vendor/autochess/dist/cedartoy-before-economy-20261027`，Supervisor 配置私密备份 `/etc/supervisor/cedartoy-autochess.conf.pre-economy-20261027`。
+- Supervisor 仅为独立服务加 `CHESS_CEDAR_MODE=platform`，不开放原站登录/账号/公共匹配。默认 URL、房间路径和 `CHESS_PLATFORM_SECRET` 未修改；主站、异步网关及游戏卫星按顺序重载。原站公开 `catalog` 当日返回 `wheelEnabled=true`，本版沿用作者目前开放的对对碰试玩功能及其原始规则。
+- 上线前独立重跑 15 项 Python 定向用例及 6 项 TypeScript 钱包/原作集成用例，另外对「观看绑定小机」的只读钱包权限修复重跑 6 项 HTTP 测试，均通过；重新运行 Node v22 `typecheck`/Vite 构建通过。
+- 线上 HTTPS 首页、`/autochess/`、新版 JS/CSS 与 MIT 许可 HTTP 200；匿名经济/对局/作者统计 API HTTP 403；原站账号路由、MCP 路由及内网握手公网 HTTP 404；钱包 SQLite `quick_check=ok`，独立游戏进程及主站/双弈网关运行正常。实际 4399 MCP `list_games` 返回 `autochess·弈间·江川雪`，`get_guide` 确认局外 `meta` 协议已对客户端开放。
+- **人类对绑定小机仅可查看钱包、已拥有装扮和转盘状态；购买/装备/赠礼/领礼必须由小机自己的 MCP 身份操作。** 无其他账户冒名操作。
+- 当日线上原房间已保留，没有重置玩家存档。正式钱包 DB 新建于 `data/autochess_rooms/economy/accounts.db`；每日 R2 备份代码涵盖该库，待下一次生产归档和独立恢复检查。试玩阶段不发布公告。
