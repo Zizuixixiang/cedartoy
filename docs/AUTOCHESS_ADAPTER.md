@@ -330,11 +330,18 @@ AUTOCHESS_TEST_NODE=/path/to/node22 PLAYWRIGHT_MODULE=/path/to/playwright PLAYWR
 - Android 真机旋转/安全区、所有晚期选择与原作宽屏体验仍以实机为准；此处浏览器验证不是手机实拍。本轮未发公告或联系作者，临时浏览器、构建、日志应在部署核验后删除。
 
 
-## 2026-10-28 私人房生命周期（仅工作树，未部署）
+## 2026-10-28 私人房生命周期（已部署）
 
 - 对照 `vendor/duel/app/framework.py` 的 `STALE_ROOM_DAYS=7`、`TERMINAL_RETENTION_DAYS=7`；不修改双弈或邀请 confirmation 的 24 小时规则。只处理 `platformCreate` 私人房：`lastActionAt` 满 7 天无有效操作时标记 `finished / draw / idle`，不认输、不新增经济结算/罚款或正常完成统计。开房、首次有效入座、房主开始和成功的棋局操作刷新活动时钟；幂等重试、查询/轮询、会话在线、网页进出和弹幕均不刷新。
 - 所有终态在实际结束时固定 `terminalAt`，满 7 天只删除对应房间 JSON 及内存索引；原钱包 SQLite、帐本与已经发生的结算不回滚，其他文件/游戏/R2 不动。 未完成的经济结算凭据（`payment=pending`）即使满 7 天也暂缓删除，待安全入账后再按保留规则清理。只读取存档中的 `preserved: true` 可阻止终态删除，无新增 UI、工具字段或管理授权。写归档失败保留旧内存/盘状态，删除先成功移除文件再移除索引，缺失文件重试幂等。
 - 旧档缺失、无效或时间顺序矛盾时，结合可信 `updatedAt`、创建/开始/完成时间和棋手活动时间保守回填，至少给予从首次加载起完整 7 天宽限，未来时间也保留；回填只持久化一次，后续读取/冷启动不续期。历史已结束房不恢复、不撤销旧结算。永久房间历史及永久聚合统计不在本次范围。
 - 单例 satellite `RoomStore` 首次加载、私人房列表及房间读取会维护；服务 `listening` 后挂载 20 分钟 `unref` 定时器，`close` 回收，无请求也能归档/删除。实际执行可晚于截止时间最多一个维护周期；进程停机期间不运行，下次启动继续维护，闲置归档后从实际归档时起再保留 7 天。
 - 测试使用 TS 临时目录与可控时间，覆盖两棋谱×两模式、6 天 23 小时 59 分/7 天边界、真实落子与 start、终局留存、跨进程迁移和持久化、失败重试、定时器挂载、长轮询唤醒及真实钱包/帐本文件逐字节不变。复现：在 vendor 运行 Node ≥22.13 的 `node --import tsx test/cedartoy-lifecycle.test.ts` 和 `npm run typecheck`；根仓运行 `AUTOCHESS_TEST_NODE=/path/to/node22 python3 scripts/persistence_check.py --autochess`。
-- 本次实测：11 项生命周期用例、7 个既有平台 TS 测试文件、15 项原作单元测试、typecheck、9 项 Python adapter/async-edge 用例，以及定向跨进程持久化检查通过；完整补丁反向检查与两仓 diff 空白检查通过。当前沙箱禁止创建/绑定 loopback socket（EPERM），3 项 Python 作者统计与 1 项绑定自动开始 HTTP 用例在 fixture 初始化时受阻，不计通过；定时器通过派发真实 server 的 listening/close 事件检查挂载与实际回调，不声称完成真实监听或等待 20 分钟。未跑 3D Playwright，未提交、部署、生产重启或发公告，未读取/清理生产历史房间。
+- 本次实测：11 项生命周期用例、7 个既有平台 TS 测试文件、15 项原作单元测试、typecheck、9 项 Python adapter/async-edge 用例，以及定向跨进程持久化检查通过；完整补丁反向检查与两仓 diff 空白检查通过。当前沙箱禁止创建/绑定 loopback socket（EPERM），3 项 Python 作者统计与 1 项绑定自动开始 HTTP 用例在 fixture 初始化时受阻，不计通过；定时器通过派发真实 server 的 listening/close 事件检查挂载与实际回调，不声称完成真实监听或等待 20 分钟。未跑 3D Playwright；上述为 Codex 开发阶段的原始验收记录，当时未提交、部署、生产重启或发公告，未读取/清理生产历史房间。主助手的独立线上验证见下。
+
+### 本轮生产发布验证（2026-10-28）
+
+- 主助手独立复测并补充安全守卫：尚有钱包未完成结算凭据的房间，终态满 7 天也不删除，避免丢失后续入账依据；结算解决后按原保留期限清理。最终 Node v22 类型检查、51 项 TS 全量测试、17 项 Python 游戏 Web/adapter 真实 loopback 测试通过，其中 12 项生命周期测试涵盖上述结算异常。补丁反向校验与两仓 `diff --check` 通过。
+- 仅改完整上游适配补丁和本专题文档，提交并推送 `5a8cd5f`；不推作者仓库、不提交 vendor 指针、不包含其他任务的脏改。
+- 在停独立游戏卫星后，安全备份所有房间 JSON 与经济 SQLite 到 `backups/yijian-before-seven-day-retention-20261028.tar.gz`（0600，约 380KB）；只重启 `cedartoy-autochess`，没有重启主站、双弈或双弈网关。带真实服务间认证的卫星 `/health` 返回 HTTP 200、`economy=true`，全部 16 间房间仍在，钱包 SQLite `PRAGMA quick_check=ok`，老房间的 `lastActionAt` 与 `terminalAt` 已按宽限规则填充，未立刻清任何历史房。
+- 真实已连接的 4399 MCP `get_guide(autochess)`、本游戏只读聚合 `play(stats,1h)`、`play(rooms)` 均正常；客户端网页版本与 UI 未修改，未新增权限。服务现在每 20 分钟无请求也清理到期数据（故到期时间可能稍后处理），不主动删除 R2 或备份历史。无公告、未联系作者。
