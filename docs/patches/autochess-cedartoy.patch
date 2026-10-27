@@ -1,5 +1,5 @@
 diff --git a/components/autochess/arena-3d.tsx b/components/autochess/arena-3d.tsx
-index 616fe85..ada8db5 100644
+index 616fe85..a27b34a 100644
 --- a/components/autochess/arena-3d.tsx
 +++ b/components/autochess/arena-3d.tsx
 @@ -24,11 +24,13 @@ type Props = {
@@ -12,11 +12,20 @@ index 616fe85..ada8db5 100644
    onDismiss:()=>void; onInspect:()=>void; shopOpen:boolean; shopEnabled:boolean; onShopToggle:()=>void;
  };
  export default function Arena3D(props: Props) {
-+  const [inventoryOpen,setInventoryOpen]=useState(true);
-+  useEffect(()=>{const mobile=matchMedia('(max-width:768px)');const update=()=>setInventoryOpen(!mobile.matches);update();mobile.addEventListener('change',update);return()=>mobile.removeEventListener('change',update);},[]);
++  const [inventoryOpen,setInventoryOpen]=useState(false);
++  useEffect(()=>{setInventoryOpen(!matchMedia('(max-width:768px), (orientation:landscape) and (max-height:600px)').matches);},[]);
    const host = useRef<HTMLDivElement>(null);
    const trash = useRef<HTMLDivElement>(null);
    const [detailedBoard,setDetailedBoard]=useState(false);
+@@ -80,7 +82,7 @@ export default function Arena3D(props: Props) {
+      <div className="peach-arena-stage">
+        <div ref={host} className="peach-arena-scene" aria-label={`${selectedScene.name}棋盘`} />
+        <div className="peach-camera peach-camera-overlay" aria-label="棋盘视角控制">
+-         <button type="button" className="peach-fullscreen" onClick={()=>void toggleFullscreen()}>{fullscreen?'退出全屏':'全屏'}</button>
++         <button type="button" className="peach-fullscreen" aria-pressed={fullscreen} onClick={()=>void toggleFullscreen()}>{fullscreen?'退出全屏':'全屏'}</button>
+          {!selectedScene.artwork&&props.boardModel?<button type="button" onClick={()=>setDetailedBoard(v=>!v)}>{detailedBoard?'切回轻量庭院':'加载精细地形'}</button>:null}
+          {!selectedScene.artwork?<><button type="button" aria-label="向左转动视角" title="向左旋转视角" onClick={()=>api.current?.rotateCamera(-1)}>↶</button>
+          <button type="button" aria-label="向右转动视角" title="向右旋转视角" onClick={()=>api.current?.rotateCamera(1)}>↷</button></>:null}
 @@ -101,7 +103,7 @@ export default function Arena3D(props: Props) {
          <div className="peach-round-controls">{props.controls}</div>
          <button className="peach-shop-toggle" disabled={!props.shopEnabled} aria-label={props.terms.level.shop} aria-expanded={props.shopOpen} onClick={()=>{setInspectedId(null);props.onShopToggle()}}><Store size={24}/><span>{props.terms.level.shop}</span></button>
@@ -585,7 +594,7 @@ index 79cd593..2744c7f 100644
        </section>
      </dialog>
 diff --git a/components/autochess/room-ui.css b/components/autochess/room-ui.css
-index 74b167b..1f98326 100644
+index 74b167b..fb0e8d1 100644
 --- a/components/autochess/room-ui.css
 +++ b/components/autochess/room-ui.css
 @@ -1200,12 +1200,14 @@
@@ -627,7 +636,7 @@ index 74b167b..1f98326 100644
    overflow-y: auto;
    pointer-events: none;
  }
-@@ -1431,11 +1435,58 @@
+@@ -1431,11 +1435,63 @@
    pointer-events: auto;
  }
  
@@ -635,30 +644,33 @@ index 74b167b..1f98326 100644
 -  .room-offer-overlay {
 -    top: 8px;
 -    width: calc(100vw - 16px);
-+/* Portrait room controls share explicit top/bottom lanes. Keep original desktop
-+   cards and art; no narrow-column text or overlap with start/ready and safe areas. */
++/* Portrait keeps the same compact floating controls as landscape. Reserve only
++   the control lanes; the painted board fits its playable area between them. */
 +@media (max-width: 768px) and (orientation: portrait) {
 +  .room-versus-hud {
-+    top: max(8px, env(safe-area-inset-top)); left:8px; transform:none;
-+    width:calc(100% - 68px); max-width:none; padding:7px 10px; border-radius:20px;
-+    display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:5px 12px;
++    top:calc(6px + env(safe-area-inset-top)); left:8px; transform:none;
++    width:calc(100% - 60px); max-width:none; padding:4px 7px; border-radius:999px;
++    display:flex; gap:5px;
    }
-+  .versus-side { gap:6px; }
-+  .versus-side > :not(.versus-meta) { flex-shrink:0; }
-+  .versus-side.enemy { grid-column:2; grid-row:1; justify-content:flex-end; }
++  .versus-side { flex:1; gap:4px; overflow:hidden; }
++  .versus-side .lobby-avatar { width:24px !important; height:24px !important; }
++  .versus-side.enemy { justify-content:flex-end; }
 +  .versus-meta { flex:1; }
-+  .versus-name { font-size:12px; }
-+  .versus-sub, .stage-star { display:none; }
-+  .versus-stage-badge { grid-column:1 / -1; grid-row:2; justify-self:center; padding:3px 10px; gap:6px; white-space:nowrap; font-size:12px; }
-+  .room-float { top:max(8px, env(safe-area-inset-top)); right:8px; }
-+  .room-float > summary { width:44px; height:44px; }
-+  .room-float > .room-actions { top:calc(60px + env(safe-area-inset-top)); max-height:calc(100dvh - 80px - env(safe-area-inset-top)); overflow-y:auto; }
-+  .room-panel-toggle { top:calc(90px + env(safe-area-inset-top)); min-height:44px; }
-+  .peach-camera-overlay { top:calc(90px + env(safe-area-inset-top)); right:8px; left:94px; max-width:none; justify-content:flex-start; flex-wrap:nowrap; overflow-x:auto; gap:2px; padding:2px; }
-+  .peach-camera-overlay button { width:44px; height:44px; flex-shrink:0; }
-+  .peach-camera-overlay button:not([aria-label]) { width:auto; min-width:76px; font-size:11px; padding:0 4px; white-space:nowrap; }
-+  .peach-camera-overlay select { min-height:44px; }
-+  .room-offer-overlay { top:calc(148px + env(safe-area-inset-top)); width:calc(100% - 16px); max-height:calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overscroll-behavior:contain; scrollbar-gutter:stable; border-radius:18px; }
++  .versus-name { font-size:11px; }
++  .versus-sub, .versus-stage-badge .stage-star, .versus-stage-badge .stage-vs { display:none; }
++  .versus-stage-badge { flex-shrink:0; padding:3px 5px; gap:0; white-space:nowrap; font-size:10px; }
++  .room-float { top:calc(5px + env(safe-area-inset-top)); right:8px; }
++  .room-float > summary { width:36px; height:36px; }
++  .room-float > .room-actions { top:calc(88px + env(safe-area-inset-top)); max-height:calc(100dvh - 200px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y:auto; }
++  .room-panel-toggle { top:calc(48px + env(safe-area-inset-top)); min-height:36px; white-space:nowrap; }
++  .peach-camera-overlay { top:calc(48px + env(safe-area-inset-top)); right:8px; left:auto; max-width:calc(100% - 94px); flex-wrap:wrap; justify-content:flex-end; gap:3px; padding:2px; }
++  .peach-camera-overlay button { width:32px; height:32px; flex-shrink:0; }
++  .peach-camera-overlay button:not([aria-label]) { width:auto; min-width:56px; font-size:11px; padding:0 5px; white-space:nowrap; }
++  .peach-enemy-bench { top:calc(90px + env(safe-area-inset-top)); padding:4px 8px; }
++  .peach-enemy-bench summary { min-height:24px; display:flex; align-items:center; }
++  .room-board-layout.show-panels > .room-ranking, .room-board-layout.show-panels > .room-sidepanel { top:calc(126px + env(safe-area-inset-top)); }
++  .peach-arena-scene.is-artwork { padding-top:calc(122px + env(safe-area-inset-top)); padding-bottom:calc(110px + env(safe-area-inset-bottom)); }
++  .room-offer-overlay { top:calc(126px + env(safe-area-inset-top)); width:calc(100% - 16px); max-height:calc(100dvh - 238px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overscroll-behavior:contain; scrollbar-gutter:stable; border-radius:18px; }
 +  .room-offer-overlay > section { flex-shrink:0; }
 +  .codex-offer-card { padding:12px; border-radius:18px; }
 +  .codex-offer-header { margin-bottom:10px; padding-bottom:8px; }
@@ -672,25 +684,27 @@ index 74b167b..1f98326 100644
 +  .codex-choice-card > strong { margin:0; font-size:15px; line-height:1.5; }
 +  .codex-choice-card > p { margin:0; font-size:12px; line-height:1.65; overflow-wrap:break-word; }
 +  .codex-choice-card:hover:not(:disabled) { transform:none; }
-+  .peach-popover:has(.peach-shop) { top:calc(148px + env(safe-area-inset-top)); width:calc(100% - 16px); max-height:calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding:12px; overscroll-behavior:contain; }
++  .peach-popover:has(.peach-shop) { top:calc(126px + env(safe-area-inset-top)); width:calc(100% - 16px); max-height:calc(100dvh - 238px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding:12px; overscroll-behavior:contain; }
 +  .peach-shop > header { display:flex; flex-direction:column; align-items:stretch; gap:8px; margin-bottom:10px; padding-bottom:10px; }
 +  .peach-shop > header strong { font-size:16px; line-height:1.5; letter-spacing:.04em; }
 +  .peach-shop > header > span { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
 +  .peach-shop > header button { min-height:44px; padding:6px; border-radius:12px; line-height:1.5; }
-+  .peach-dock { bottom:max(8px, env(safe-area-inset-bottom)); display:grid; grid-template-columns:54px minmax(0,1fr) 54px; align-items:end; }
-+  .peach-round-controls { min-width:0; min-height:54px; justify-content:center; flex-wrap:wrap; gap:4px; padding:4px; text-align:center; line-height:1.5; }
-+  .peach-round-controls button { min-height:44px; max-width:100%; padding:7px 8px; font-size:12px; }
-+  .peach-inventory { left:8px; bottom:calc(78px + env(safe-area-inset-bottom)); width:184px; min-width:0; padding:0 10px; }
-+  .peach-inventory[open] { width:min(320px, calc(100vw - 16px)); }
-+  .peach-inventory > summary { min-height:44px; }
-+  .peach-inventory-content { max-height:26dvh; padding-bottom:8px; }
-+  .peach-inventory button { padding:7px 10px; font-size:13px; }
-+  .peach-inventory .peach-card-art { width:40px; height:40px; flex-basis:40px; }
-+  .room-error { top:calc(148px + env(safe-area-inset-top)); max-width:calc(100vw - 16px); }
++  .peach-dock { bottom:calc(8px + env(safe-area-inset-bottom)); align-items:center; gap:6px; }
++  .peach-dock .peach-trash, .peach-dock .peach-shop-toggle { width:80px; height:44px; flex-shrink:0; flex-direction:row; gap:3px; border-radius:10px; }
++  .peach-dock .peach-trash svg, .peach-dock .peach-shop-toggle svg { width:16px; height:16px; }
++  .peach-round-controls { min-width:0; max-width:calc(100% - 172px); min-height:44px; justify-content:center; flex-wrap:wrap; gap:4px; padding:3px; border-radius:10px; text-align:center; line-height:1.4; }
++  .peach-round-controls button { min-height:36px; max-width:100%; padding:6px 8px; font-size:12px; }
++  .peach-inventory { left:8px; bottom:calc(62px + env(safe-area-inset-bottom)); width:118px; min-width:0; padding:0 8px; border-radius:10px; }
++  .peach-inventory[open] { width:min(224px, calc(100vw - 16px)); }
++  .peach-inventory > summary { min-height:32px; }
++  .peach-inventory > summary strong { font-size:10px; letter-spacing:0; white-space:nowrap; margin-bottom:0; }
++  .peach-inventory-content { max-height:min(128px, 22dvh); padding-bottom:6px; }
++  .room-error { top:calc(126px + env(safe-area-inset-top)); max-width:calc(100vw - 16px); }
++
  }
  
  /* 查 IP 命中：桌宠式系统弹窗 */
-@@ -1662,3 +1713,13 @@
+@@ -1662,3 +1718,13 @@
  .lobby-avatar-upload, .lobby-wardrobe-switches { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
  .lobby-wardrobe-switches label { display:grid; gap:8px; flex:1; min-width:180px; }
  .lobby-wardrobe-switches select { width:100%; padding:10px; border:1px solid var(--codex-border); border-radius:10px; background:#fff; color:var(--codex-ink-main); }
@@ -3257,4 +3271,124 @@ index 0000000..83f5558
 +  assert(!existsSync(f.file(made.roomId))); assert(!existsSync(f.file(paid.roomId))); assert.equal(settlementCalls, 0);
 +  assert.deepEqual(snapshot(join(f.directory, 'economy')), protectedFiles);
 +  assert.equal(readFileSync(join(f.directory, 'other-game.json'), 'utf8'), 'do not touch');
++});
+diff --git a/lib/autochess/artwork-board.js b/lib/autochess/artwork-board.js
+index 599461c..a79912a 100644
+--- a/lib/autochess/artwork-board.js
++++ b/lib/autochess/artwork-board.js
+@@ -2,6 +2,28 @@ import * as T from 'three';
+ import { BOARD_ROWS, BOARD_COLS, BENCH_CAPACITY } from './constants';
+ import { makeCourtAmbience } from './board-ambience.js';
+ 
++/** Square art/canvas/labels share this viewport; only decorative margins may clip. */
++export function artworkViewport(w,h,data,zoom=1,insetTop=0,insetBottom=0) {
++  if(w<=768&&h>=w){
++    // Include reserves and space above pieces/labels, not just grid corners.
++    const points=[...data.corners,data.bench.first,data.bench.last];
++    const left=Math.min(...points.map(p=>p[0]))-56;
++    const right=Math.max(...points.map(p=>p[0]))+56;
++    const top=Math.min(...points.map(p=>p[1]))-96;
++    const bottom=Math.max(...points.map(p=>p[1]))+56;
++    const height=Math.max(1,h-insetTop-insetBottom);
++    const fit=Math.min(w*data.size/(right-left),height*data.size/(bottom-top));
++    // Zoom stops at the playable bounds instead of cutting off outer cells.
++    const size=Math.max(1,fit*Math.min(1,.9/Math.max(.78,zoom)));
++    return {size,left:w/2-(left+right)/2/data.size*size,
++      top:insetTop+height/2-(top+bottom)/2/data.size*size};
++  }
++  // Preserve the established landscape and desktop framing.
++  const landscape=w>h&&h<600,available=landscape?w-200:w;
++  const size=Math.max(1,Math.min(available,h*(landscape?1.16:1.04))/Math.min(1,Math.max(.78,zoom)));
++  return {size,left:(w-size)/2,top:(h-size)/2-(landscape?size*.045:0)};
++}
++
+ /** Fixed-view painted scenery with a shared projection for pieces and hit targets. */
+ export function makeArtworkBoard(host, canvas, labels, camera, scene, data) {
+   const frame = document.createElement('div'); frame.className = 'arena-art-frame';
+@@ -38,11 +60,11 @@ export function makeArtworkBoard(host, canvas, labels, camera, scene, data) {
+     },
+     benchPosition(index){return fromArt(...data.bench.first.map((v,axis)=>T.MathUtils.lerp(v,data.bench.last[axis],index/(BENCH_CAPACITY-1))));},
+     resize(zoom=1){
+-      const w=host.clientWidth,h=host.clientHeight,landscape=w>h&&h<600;
+-      const available=landscape?w-200:w;
+-      const size=Math.max(1,Math.min(available, h*(landscape?1.16:1.04))/Math.min(1,Math.max(.78,zoom)));
++      const style=getComputedStyle(host);
++      const {size,left,top}=artworkViewport(host.clientWidth,host.clientHeight,data,zoom,
++        parseFloat(style.paddingTop)||0,parseFloat(style.paddingBottom)||0);
+       frame.style.width=`${size}px`;frame.style.height=`${size}px`;
+-      frame.style.left=`${(w-size)/2}px`;frame.style.top=`${(h-size)/2-(landscape?size*.045:0)}px`;
++      frame.style.left=`${left}px`;frame.style.top=`${top}px`;
+       return size;
+     },
+     update(time,editable){grid.style.opacity=editable?'.8':'0';ambience.update(time,true);},
+diff --git a/test/artwork-viewport.test.ts b/test/artwork-viewport.test.ts
+new file mode 100644
+index 0000000..72a4618
+--- /dev/null
++++ b/test/artwork-viewport.test.ts
+@@ -0,0 +1,65 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++// The renderer's pinned Three.js package is JS-only (no bundled declarations).
++// @ts-expect-error Same runtime module used by arena-renderer.js.
++import * as T from 'three';
++import {artworkViewport} from '../lib/autochess/artwork-board.js';
++import {BOARD_SCENES} from '../lib/meta/board-scenes.js';
++import {BOARD_ROWS,BOARD_COLS} from '../lib/autochess/constants';
++
++const sizes=[[360,780],[390,844],[691,1536]];
++test('portrait framing keeps every painted grid and reserve inside control lanes at each zoom',()=>{
++  for(const scene of BOARD_SCENES){
++    const art=scene.artwork;
++    if(!art)continue;
++    for(const [w,h] of sizes)for(const zoom of [1,.9,.78])for(const safe of [0,24]){
++      const insetTop=122+safe,insetBottom=110+safe;
++      const view=artworkViewport(w,h,art,zoom,insetTop,insetBottom);
++      const points=[...art.corners,art.bench.first,art.bench.last];
++      for(const [x,y] of points){
++        const px=view.left+x/art.size*view.size,py=view.top+y/art.size*view.size;
++        assert(px>=0&&px<=w,`${scene.id}: horizontal cell/reserve clipping`);
++        assert(py>=insetTop&&py<=h-insetBottom,`${scene.id}: cell/reserve under controls`);
++      }
++      // Even the least zoomed portrait view gives the grid more space than the
++      // former screen-width square, without stretching either axis.
++      assert(view.size>w,`${scene.id}: unused portrait space`);
++    }
++  }
++});
++
++test('shared square projection round-trips every cell center after portrait resize',()=>{
++  const camera=new T.PerspectiveCamera(42,1,.1,100);
++  camera.position.set(0,14,12);camera.lookAt(0,0,0);camera.updateMatrixWorld();
++  const ray=new T.Raycaster(),floor=new T.Plane(new T.Vector3(0,1,0),0);
++  for(const scene of BOARD_SCENES){
++    const art=scene.artwork;
++    if(!art)continue;
++    for(const [w,h] of sizes){
++      const view=artworkViewport(w,h,art,1,122,110);
++      const [tl,tr,br,bl]=art.corners;
++      for(let r=0;r<BOARD_ROWS;r++)for(let c=0;c<BOARD_COLS;c++){
++        const t=(r+.5)/BOARD_ROWS,s=(c+.5)/BOARD_COLS;
++        const x=T.MathUtils.lerp(T.MathUtils.lerp(tl[0],bl[0],t),T.MathUtils.lerp(tr[0],br[0],t),s);
++        const y=T.MathUtils.lerp(tl[1],bl[1],t);
++        const px=view.left+x/art.size*view.size,py=view.top+y/art.size*view.size;
++        ray.setFromCamera(new T.Vector2((px-view.left)/view.size*2-1,1-(py-view.top)/view.size*2),camera);
++        const world=ray.ray.intersectPlane(floor,new T.Vector3());
++        assert(world);
++        const projected=world.project(camera);
++        assert(Math.abs(view.left+(projected.x+1)/2*view.size-px)<1e-6);
++        assert(Math.abs(view.top+(1-projected.y)/2*view.size-py)<1e-6);
++      }
++    }
++  }
++});
++
++test('compact landscape and desktop keep their existing square frame',()=>{
++  for(const [w,h] of [[740,345],[844,390],[1440,900]])for(const zoom of [1,.78]){
++    const landscape=w>h&&h<600;
++    const size=Math.min(landscape?w-200:w,h*(landscape?1.16:1.04))/zoom;
++    assert.deepEqual(artworkViewport(w,h,BOARD_SCENES[0].artwork,zoom),{
++      size,left:(w-size)/2,top:(h-size)/2-(landscape?size*.045:0),
++    });
++  }
 +});
