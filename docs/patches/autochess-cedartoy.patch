@@ -36,10 +36,10 @@ index 616fe85..a27b34a 100644
    </section>;
  }
 diff --git a/components/autochess/artwork-arena.css b/components/autochess/artwork-arena.css
-index ed2ad84..74826f2 100644
+index ed2ad84..1fc5edd 100644
 --- a/components/autochess/artwork-arena.css
 +++ b/components/autochess/artwork-arena.css
-@@ -26,40 +26,41 @@
+@@ -26,40 +26,39 @@
  @keyframes art-mist{from{transform:translateX(-2%);opacity:.5}to{transform:translateX(3%);opacity:.9}}
  @keyframes art-petal{0%{transform:translate(0,0) rotate(0);opacity:0}10%{opacity:.55}85%{opacity:.45}100%{transform:translate(35px,850px) rotate(260deg);opacity:0}}
  @media(max-width:768px){
@@ -107,8 +107,6 @@ index ed2ad84..74826f2 100644
 + .room-table .room-draft .board-grid{height:calc(100dvh - 84px);min-height:245px;gap:4px}.room-table .room-draft .board-tile{padding:3px 7px;border-radius:7px;justify-content:center}.room-table .room-draft .board-tile strong{font-size:11px}.room-table .room-draft .tile-number{display:none}.room-table .room-draft .board-tile small{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 + .room-table .room-draft .board-center{padding:6px 12px;min-height:0;overflow:auto;gap:2px}.room-table .room-draft .board-center h3{font-size:15px;margin:0}.room-table .room-draft .board-center p,.room-table .room-draft-state{font-size:11px;margin:0}.room-table .room-dice-face{font-size:16px}.room-table .room-draft-primary{margin-top:4px}
 + .room-table .room-float{top:6px;right:8px}.room-table .room-offer-overlay{top:4px;max-height:calc(100dvh - 8px)}.room-table .codex-offer-header{padding:8px}.room-table .codex-choice-card{padding:10px}
-+ /* Keep the original menu width; reserve the existing right controls when open. */
-+ .room-table .room-float>.room-actions{top:50px;right:calc(126px + env(safe-area-inset-right));left:auto;max-height:calc(100dvh - 58px)}
 + .room-table .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.room-table .danmaku-composer{display:flex;position:fixed;left:208px;right:auto;top:73px;bottom:auto;width:118px;gap:2px;padding:4px}.room-table .danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.room-table .danmaku-composer button{font-size:10px;padding:3px}
  }
  @media(prefers-reduced-motion:reduce){.arena-art-frame,.arena-art-mist,.arena-art-petals i{animation:none}.arena-art-petals{display:none}}
