@@ -1,0 +1,22 @@
+# Review-only additions to the existing CedarToy server{}; NOT installed.
+# Keep existing root/path-token MCP POST routing to the async gateway.
+# Verify the actual main-service port before using these examples.
+# Public clients must never reach the private prepare/finalize handshake.
+location ^~ /_internal/autochess-gateway/ { return 404; }
+
+# This is the CedarToy identity/asset handler, never the upstream Node/Next server.
+location = /autochess { return 308 /autochess/; }
+location ^~ /autochess/ {
+    client_max_body_size 64k;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-CedarToy-Gateway-Secret "";
+    proxy_set_header X-Autochess-Platform-Secret "";
+    proxy_pass http://127.0.0.1:8002;
+}
+# Do NOT publish /platform/* or port 8791. Do NOT proxy /api/autochess/* to upstream.
+# Existing candidate MCP POST locations must retain proxy_buffering off, gzip off,
+# and a read timeout >=35s; the edge sends whitespace heartbeats while waiting.

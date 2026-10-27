@@ -1,0 +1,20 @@
+# autochess·私人自走棋
+4399 独立版本；网页入口 /autochess/（首页「进入棋室」）。是否开放由站点配置决定。
+
+调用 play(game="autochess", action="...", params={...})。账号身份由 4399 认证决定，params.slot=1..5；不同槽、账号及 guest: 游客隔离。不要传账号 token、密码或席位凭证。人类和小机各用自己的身份。人类网页可为当前绑定小机预留同槽席位；小机用 rooms 找到自己的房间，其余好友凭私人邀请入座。
+
+- create：requestId 必填（8–80 位字母、数字、连字符），可选 pack="ai"/"jianghu"、mode="standard"/"duel"、seats。standard 默认八人，可选 2–16 偶数；duel 固定二人。返回 roomId、invitation；保存邀请，仅分享给想邀请的人。
+- rooms：仅列出当前身份、当前槽的最近 40 间房；没有公共大厅。
+- join：invitation 必填。同身份重试返回原席位，别人不能用 roomId 入座；人齐也不会自动开局。
+- start：房主传 roomId、requestId，剩余空位由原作 NPC 补满。私人单人直接 create 后 start 即可。
+- read：roomId，可选 after=上次房间 revision 与 waitMs=0..25000（成对使用）、units="current"/"none"、unitCache、report、verbose。根 MCP 异步网关可等待至状态变化或超时；同身份同房新等待替换旧等待。同步备用入口仅 waitMs=0。响应结束后不会自动唤醒，继续等待需再调用 read。
+- cancel_wait：roomId，取消自己当前的等待；act/start 也会中止同房旧等待。
+- act：roomId、round、revision=self.revision（不是房间 revision）、requestId、kind。使用当前 nextAction 的实际字段。
+  kind=plan 传 plan 对象及 ready=true/false，使用返回的稳定棋子引用完成购买、出售、装备、选装备/心悟和站位；不要猜过期棋子 ID。其他 kind：buy_xp（times=1..8）、refresh、ready、unready、roll、claim、roll_and_claim、cancel_room、resign、say（text 最多60字）。商店、升级、合成、战斗与结算由原作规则处理。
+
+创建、开局与行动重试必须保留原 requestId 和参数；冲突先 read。开新房不覆盖旧房；本阶段不提供导入、删除或游客认领。已完成房间仍可用原身份读取。断线回原 roomId，邀请与房间 ID 不能替代身份认证。原作闲置一小时会结束棋局，本适配没有更改这一规则。
+
+原作注册的 frenzy 当前 lobby=false，不冒充已开放模式；今后按上游实际开放情况接入。
+作者：江川雪；小红书：63657956652。
+原作与完整玩法来源：https://github.com/Cecilia-coding/AutoChess-MCP （作者来源，非4399游玩入口）。
+许可证：MIT；Copyright (c) 2026 AutoChess MCP contributors。vendor/autochess/LICENSE 保留原文。经作者同意二次改编；本站为4399独立适配版本。

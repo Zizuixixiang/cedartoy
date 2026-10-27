@@ -122,6 +122,8 @@ from nowhere_adapter import web as nowhere_web
 from links import AUTHORS
 from vendor_cmd_adapter import white_room as white_room_adapter
 from vendor_cmd_adapter.base import VendorCmdError, parse_import_save_data
+import autochess_adapter
+from autochess_adapter import web as autochess_web, gateway as autochess_gateway
 from cedar_backend import guides as mcp_guides
 from cedar_backend import mcp_schema
 from cedar_backend import human_tests
@@ -2974,7 +2976,7 @@ def _human_test_action(game, action, raw_token, body):
 GUEST_PREFIX = "guest:"
 PLAIN_PLAYER_ID_RE = re.compile(r"^[a-zA-Z0-9]{1,64}$")
 # 按 player_id 记档、需要身份管控的游戏（turtle_soup 自己处理 path_token，不在此列）。
-IDENTITY_GAMES = frozenset({"deeptalk", "puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
+IDENTITY_GAMES = frozenset({"autochess", "deeptalk", "puzzle_box", "mbti", "enneagram", "dnd", "love", "ecr", "humanity", "sins_virtues", "bdsmtest", "eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat", "camping_plaza", "detroit", "duel", "tarot"})
 # 有长期存档、值得给游客发认领码的游戏。
 PERSISTENT_SAVE_GAMES = frozenset({"eco", "ciyuwu", "ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "workkk", "garden_cat", "camping_plaza", "detroit"})
 VENDOR_GAMES = ("ai_life", "bar", "leek", "delve", "travel", "nowhere", "arcade", "burger", "crucible_echoes", "fishing", "forest", "moonlit", "imitator_td", "memoria", "white_room", "candle", "market", "garden_cat", "detroit")
@@ -3563,6 +3565,8 @@ def _tool_list_games(path_token=None):
         f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | shared_craft·共同手作·嘞噫黎 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
+    if autochess_adapter.enabled():
+        games += " | autochess·私人自走棋·江川雪"
     extra = " | ".join(f"{game}·{research_scales.RESEARCH_TITLES[game]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
     return ("玩法见 get_guide(game)\n" + deeptalk_catalog.discovery()
             + "\n测试: " + tests + (" | " + extra if extra else "")
@@ -3593,6 +3597,9 @@ def _game_maintenance(game):
 
 def _tool_get_guide(arguments, *, path_token=None):
     game = arguments.get("game")
+    if game == "autochess":
+        guide = (Path(__file__).resolve().parent / "autochess_adapter/guide.txt").read_text()
+        return json.dumps({"game": game, "guide": guide}, ensure_ascii=False)
     if game == "shared_craft":
         folder = Path(__file__).resolve().parent / "shared_craft_adapter"
         guide = (folder / "guide.txt").read_text()
@@ -4693,6 +4700,10 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_POST(self):
+        if self.path.startswith("/_internal/autochess-gateway/"):
+            return autochess_gateway.serve(self, sys.modules[__name__])
+        if self.path.split("?", 1)[0] == "/autochess" or self.path.startswith("/autochess/"):
+            return autochess_web.serve(self, sys.modules[__name__])
         if self.path.split("?", 1)[0] == "/shared-craft" or self.path.startswith("/shared-craft/"):
             return shared_craft_web.serve(self, sys.modules[__name__])
         return http_handler.do_POST(
@@ -4723,6 +4734,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         )
 
     def do_GET(self):
+        if self.path.split("?", 1)[0] == "/autochess" or self.path.startswith("/autochess/"):
+            return autochess_web.serve(self, sys.modules[__name__])
         if self.path.split("?", 1)[0] == "/shared-craft" or self.path.startswith("/shared-craft/"):
             return shared_craft_web.serve(self, sys.modules[__name__])
         return http_handler.do_GET(

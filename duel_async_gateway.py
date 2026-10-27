@@ -9,6 +9,8 @@ import asyncio
 import json
 import logging
 import os
+import sys
+from autochess_adapter import async_edge as autochess_edge
 from contextlib import asynccontextmanager
 
 import anyio
@@ -74,6 +76,7 @@ RESERVED_SINGLE_SEGMENT_PATHS = {
     "/humanity",
     "/sins_virtues",
     "/duel",
+    "/autochess",
     "/workkk",
     "/garden-cat",
     "/camping-plaza",
@@ -708,9 +711,13 @@ def create_app(
                     max_keepalive_connections=40,
                 ),
             )
+        if application.state.autochess_client is None:
+            application.state.autochess_client = httpx.AsyncClient(trust_env=False, limits=httpx.Limits(max_connections=112, max_keepalive_connections=24))
         try:
             yield
         finally:
+            if http_client is None:
+                await application.state.autochess_client.aclose()
             if (
                 owns_cedartoy_client
                 and application.state.cedartoy_client is not None
@@ -727,6 +734,8 @@ def create_app(
         lifespan=lifespan,
     )
     application.state.cedartoy_client = cedartoy_client
+    application.state.autochess_client = http_client
+    application.state.autochess_slots = asyncio.Semaphore(80)
     application.state.duel_client = duel_client
     application.state.shared_secret = configured_secret
     application.state.max_wait_seconds = configured_max_wait
@@ -743,6 +752,9 @@ def create_app(
     async def gateway_post(request: Request, path: str):
         del path
         raw_body = await request.body()
+        auto_payload = autochess_edge.candidate(raw_body, request.url.path, sys.modules[__name__])
+        if auto_payload is not None:
+            return await autochess_edge.handle(request, auto_payload, sys.modules[__name__])
         duel_payload = _duel_rpc_payload(raw_body, request.url.path)
         if duel_payload is None:
             try:

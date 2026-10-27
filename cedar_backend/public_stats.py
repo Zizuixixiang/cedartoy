@@ -362,6 +362,7 @@ def _activity_catalog(
             names[{"soup": "turtle_soup"}.get(game.group(1), game.group(1))] = name.group(1)
     names.setdefault("tarot", ritual_display_name)
     names.setdefault("bdsmtest", "BDSM倾向测试")
+    names.setdefault("autochess", "私人自走棋")
     # These enabled packages are appended with games.push on the homepage.
     names.update({game: RESEARCH_TITLES[game] for game in SCALES})
     names.update({game: DEEPTALK_TITLES[topic] for game, topic in DEEPTALK_ALIASES.items()})

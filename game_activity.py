@@ -109,6 +109,10 @@ def business_action(game, action, params=None):
         return None  # Raw JSON-RPC passthrough is not a gameplay action.
     action = str(action or "").strip()
     local = action.removeprefix(game + "_")
+    if game == "autochess":
+        if action == "act" and params.get("kind") == "say":
+            return None
+        return action if action in {"create", "join", "start", "act"} else None
     if game == "deeptalk" or game.startswith("dt_"):
         return local if local in {"create", "answer", "submit"} else None
     if local in READ_ACTIONS or local.startswith(("get_", "query_", "read_", "list_")):

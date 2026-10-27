@@ -1,0 +1,1060 @@
+diff --git a/components/autochess/room-app.tsx b/components/autochess/room-app.tsx
+index 410ef60..a476d3d 100644
+--- a/components/autochess/room-app.tsx
++++ b/components/autochess/room-app.tsx
+@@ -51,7 +51,7 @@ class RoomCrashFence extends Component<{children: ReactNode}, {message: string}>
+ async function request<T = RoomView>(op:string, args:object={}): Promise<T> {
+   return roomRequest<T>(op, args);
+ }
+-function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: RoomCredentials|null|undefined;onSessionChange:(next:RoomCredentials|null)=>void}) {
++export function RoomApp({initialCredentials,onSessionChange,cedar=false}: {cedar?:boolean;initialCredentials: RoomCredentials|null|undefined;onSessionChange:(next:RoomCredentials|null)=>void}) {
+   const [connection,setConnection]=useState<{cursorEnabled:boolean;mcpUrl:string;packs:PackSummary[]}>({cursorEnabled:false,mcpUrl:'',packs:[]});
+   const [configLoaded,setConfigLoaded]=useState(false);
+   const [configError,setConfigError]=useState('');
+@@ -119,7 +119,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   useEffect(()=>{
+     if(!credentials || !view?.self || view.seatIndex!==0)return;
+     void request<{invitation:string;watchToken:string}>('invite',credentials).then(info=>{
+-      setInvitation(info.invitation);setWatchLink(`${location.origin}/autochess/room?room=${credentials.roomId}#watch=${info.watchToken}`);
++      setInvitation(info.invitation);if(!cedar)setWatchLink(`${location.origin}/autochess/room?room=${credentials.roomId}#watch=${info.watchToken}`);
+     }).catch(()=>{});
+   },[credentials,view?.seatIndex]);
+   useEffect(()=>{
+@@ -199,6 +199,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   const closeShop=()=>{setShopOpen(false);if(view?.self?.draft)setDraftOpen(true);};
+   /** 人退出房间 = 认输：清掉本机会话回大厅，并向旧房间发送认输。机不走这条。 */
+   const leaveRoom=async()=>{
++    if(cedar){onSessionChange(null);return;}
+     if(busyRef.current)return;
+     busyRef.current=true;
+     const state=latestView.current;
+@@ -214,7 +215,8 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   const replay=useMemo(()=>replayBattle?roomPlayback(replayBattle,viewerSeat):null,[replayBattle,viewerSeat]);
+   const statsBattle=playback?.battle??view?.battle;
+   const statsReplay=useMemo(()=>statsBattle?roomPlayback(statsBattle,viewerSeat):null,[statsBattle,viewerSeat]);
+-  const startSolo=async()=>{if(!credentials||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('start',credentials));setError('');setNotice('已补路人机，开始布阵');}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
++  const startId=useRef(crypto.randomUUID());
++  const startSolo=async()=>{if(!credentials||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('start',cedar?{...credentials,requestId:startId.current}:credentials));setError('');setNotice('已补路人机，开始布阵');}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
+   if(!credentials)return <div className="lobby-viewport"><div role={error?'alert':undefined}>{error}</div>{savedSession?<div className="lobby-saved-session"><span className="saved-icon">✦</span><span>检测到未完成棋局</span><button className="btn-resume" type="button" onClick={()=>setCredentials(savedSession)}>重连席位</button><button className="btn-clear" type="button" onClick={()=>{try{localStorage.removeItem(SESSION);}catch{}setSavedSession(null);}}>清除存档</button></div>:null}<Lobby packs={connection.packs} packsLoading={!configLoaded} packsError={configError} mcpUrl={connection.mcpUrl} onRefreshPacks={refreshConfig} onPacksChanged={packs=>{configRequest.current++;setConnection(current=>({...current,packs}));setConfigError('');}} onCreate={(packId,mode)=>void create(packId,mode)}             onJoin={(invitation,joinKey)=>void joinRoom(invitation,joinKey)} onEnterRoom={(roomId,token)=>setCredentials({roomId,token})} busy={busy}/></div>;
+   if(!view)return <main className="p-6"><p>{error||'正在恢复棋局…'}</p><p className="my-2 text-sm">席位还在。不要急着清掉本机凭证；连上后会自己同步。</p><button onClick={()=>{try{localStorage.removeItem(SESSION);}catch{}onSessionChange(null);}}>返回棋室入口</button></main>;
+   const displayed=previewRoomMove(view,movePreview);
+@@ -233,6 +235,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   const finish=()=>{setPlayback(null);setShopOpen(true);};
+    const move=(piece:string,row:number,col:number)=>{void action({kind:'move',piece,row,col});setSelected(undefined);};
+    const backToLobby=()=>{
++     if(cedar){onSessionChange(null);return;}
+      if(watching){
+        window.history.replaceState(null,'','/autochess/room');
+        try{const saved=localStorage.getItem(SESSION);setSavedSession(saved?JSON.parse(saved) as RoomCredentials:null);}catch{setSavedSession(null);}
+@@ -254,12 +257,13 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+    return <main className="room-table autochess-table mx-auto max-w-[1500px] px-3 py-3 text-[var(--ink)]">
+        {!watching?<details className="autochess-companion room-float"><summary aria-label="房间菜单">☰</summary><div className="room-actions rounded-xl border bg-white p-3 text-sm">
+         <button className="room-menu-close" type="button" onClick={event=>event.currentTarget.closest('details')?.removeAttribute('open')}>收起房间菜单</button>
+-        <Feedback roomId={view.id} />
+-        <p>{`${modePack(view.mode).name} · `}房间 {view.id} · {enemy?`对局中 · ${enemy.name}`:`等待棋友（${view.seats.length}/${view.seatCount}）`}</p>
+-        {view.seatIndex===0&&enemy?<><button type="button" disabled={busy||view.phase!=='prepare'||enemy.ready} onClick={async()=>{try{adopt(await request('poke',credentials!));setNotice('催促已登记；需客户端正在监听，30秒内重复点击会合并。');}catch(e){setError((e as Error).message);}}}>踹醒它</button><p role="status">{view.wake?.status} · 自动续聊需要客户端适配器正在等待</p></>:null}
+-        {view.seatIndex===0?<><MachineInvitePanel credentials={credentials} mcpUrl={playerUrl} canInvite={view.phase==='waiting'&&view.seats.length<(view.seatCount??2)} onNotice={setNotice}/><button className="m-1 rounded border p-2" disabled={!invitation||!playerUrl} onClick={()=>copy(inviteText,'邀请词抄好了，发给它就行')}>复制普通邀请</button><button className="m-1 rounded border p-2" disabled={!playerUrl} onClick={()=>copy(playerUrl,'MCP 地址抄好了')}>复制 MCP 地址</button><button className="m-1 rounded border p-2" disabled={!watchLink} onClick={()=>copy(watchLink,'观战链接抄好了')}>复制观战链接</button><p className="break-all">给机的 MCP：{playerUrl||'加载中…'}</p></>:null}
+-        {view.phase!=='finished'&&self&&self.hp>0?<button className="m-1 rounded border p-2" onClick={()=>action({kind:'resign'})}>认输结束</button>:<button className="m-1 rounded border p-2" onClick={backToLobby}>新建一局</button>}
+-        <button className="m-1 rounded border p-2" type="button" onClick={()=>void leaveRoom()}>退出房间（自动认输）</button>
++        {!cedar?<Feedback roomId={view.id} />:null}
++        <p>{`${modePack(view.mode).name} · `}{cedar?'私人棋局':`房间 ${view.id}`} · {enemy?`对局中 · ${enemy.name}`:`等待棋友（${view.seats.length}/${view.seatCount}）`}</p>
++        {!cedar&&view.seatIndex===0&&enemy?<><button type="button" disabled={busy||view.phase!=='prepare'||enemy.ready} onClick={async()=>{try{adopt(await request('poke',credentials!));setNotice('催促已登记；需客户端正在监听，30秒内重复点击会合并。');}catch(e){setError((e as Error).message);}}}>踹醒它</button><p role="status">{view.wake?.status} · 自动续聊需要客户端适配器正在等待</p></>:null}
++        {!cedar&&view.seatIndex===0?<><MachineInvitePanel credentials={credentials} mcpUrl={playerUrl} canInvite={view.phase==='waiting'&&view.seats.length<(view.seatCount??2)} onNotice={setNotice}/><button className="m-1 rounded border p-2" disabled={!invitation||!playerUrl} onClick={()=>copy(inviteText,'邀请词抄好了，发给它就行')}>复制普通邀请</button><button className="m-1 rounded border p-2" disabled={!playerUrl} onClick={()=>copy(playerUrl,'MCP 地址抄好了')}>复制 MCP 地址</button><button className="m-1 rounded border p-2" disabled={!watchLink} onClick={()=>copy(watchLink,'观战链接抄好了')}>复制观战链接</button><p className="break-all">给机的 MCP：{playerUrl||'加载中…'}</p></>:null}
++        {cedar&&!watching&&view.seatIndex===0&&view.phase==='waiting'?<button disabled={!invitation} onClick={()=>copy(`${location.origin}/autochess/#invite=${encodeURIComponent(invitation)}`,'好友邀请链接已复制')}>复制好友邀请</button>:null}
++        {view.phase!=='finished'&&self&&self.hp>0?<button className="m-1 rounded border p-2" onClick={()=>{if(!cedar||confirm('确认认输结束自己的对局？'))void action({kind:'resign'});}}>认输结束</button>:<button className="m-1 rounded border p-2" onClick={backToLobby}>新建一局</button>}
++        <button className="m-1 rounded border p-2" type="button" onClick={()=>void leaveRoom()}>{cedar?'返回棋室（保留席位）':'退出房间（自动认输）'}</button>
+        </div></details>:null}
+      <section className={`danmaku-strip ${shopOpen?'is-covered':''}`} aria-label="弹幕">
+       <DanmakuStream key={view.id} messages={view.danmaku??[]} playbackRound={playback?.battle.round} covered={shopOpen} />
+@@ -277,7 +281,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+      </dialog></div>:null}
+     {self?.bounty?.bank?<p className="px-2">连败赏金 {goldAmount(terms, self.bounty.bank)} · 取胜领取，淘汰清零</p>:null}
+     {playback?<output>正在回放第 {playback.battle.round} 轮 · 棋友可同时准备下一轮</output>:null}
+-    {self?.result?<RoomResult key={view.id} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
++    {self?.result?<RoomResult key={view.id} cedar={cedar} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
+     {draftOpen&&draft&&!self?.result&&!playback?<section className="room-draft" aria-label="旅途选秀">
+       <header className="room-draft-header"><div><span className="room-draft-kicker">autochess · 一掷定缘</span><h2>旅途选秀</h2><p>每轮一次，落点已保存。领取后回到棋盘。</p></div><button onClick={()=>setDraftOpen(false)}>暂回棋盘</button></header>
+       <div className="board-grid">{boardTiles.map((tile,i)=><article key={tile.id} className={`board-tile ${tile.type} ${(draft.landing??draft.position)===i?'active':''}`} style={{gridRow:tile.coordinate[0],gridColumn:tile.coordinate[1]}}><span className="tile-number">{String(i+1).padStart(2,'0')}</span><strong>{tile.name}</strong><small title={draft.track[i]?.detail}>{draft.track[i]?.label}</small></article>)}
+@@ -339,7 +343,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+       onBench={id=>{if(editable)setSelected(id);}} onWithdraw={()=>{if(editable&&selected)void action({kind:'withdraw',piece:selected});}}
+       onDrop={(source,target)=>{if(!editable)return;if(target.kind==='cell')move(source.id,target.row,target.col);else void action({kind:target.kind==='sell'?'sell':'withdraw',piece:source.id});}}
+       notice={notice} onInspect={()=>setShopOpen(false)} onDismiss={()=>setShopOpen(false)} shopOpen={shopOpen&&!!self&&!playback} shopEnabled={!!self&&!playback&&view.phase!=='finished'} onShopToggle={()=>shopOpen?closeShop():setShopOpen(true)}
+-      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>返回大厅</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>返回大厅</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
++      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
+       inventory={<><strong>装备背包 · {self?.inventory?.length??0}</strong>{self?.inventory?.map((id,i)=><button key={`${id}-${i}`} title={itemHint(id)} disabled={!editable||!selected} onClick={()=>selected&&action({kind:'equip',piece:selected,item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/>{equipment(id)}</button>)}{!self?.inventory?.length?<p>{watching?'仅棋手可见':'暂无待装配装备'}</p>:null}</>}
+       inspectorActions={piece=>editable&&[...self!.board,...self!.bench!].some(p=>p.id===piece.id)?<><button onClick={()=>setSelected(piece.id)}>选中棋子</button>{self!.board.some(p=>p.id===piece.id)?<button onClick={()=>action({kind:'withdraw',piece:piece.id})}>下场</button>:null}{self!.inventory!.map((id,i)=><button key={`${id}-${i}`} disabled={piece.itemIds.length>=2||piece.itemIds.includes(id)} onClick={()=>action({kind:'equip',piece:piece.id,item:id})}>装上 {equipment(id)}</button>)}{self!.inventory!.map((id,i)=>consumeLabel(id)?<button key={`use-${id}-${i}`} onClick={()=>action({kind:'consume',piece:piece.id,item:id})}>{consumeLabel(id)} {equipment(id)}</button>:null)}{piece.itemIds.map(id=><button key={id} onClick={()=>action({kind:'unequip',piece:piece.id,item:id})}>卸下 {equipment(id)}</button>)}<button onClick={()=>action({kind:'sell',piece:piece.id})}>出售</button></>:null}
+        topPanel={shopOpen&&self&&!playback&&view.phase!=='finished'?<div className="peach-shop" role="dialog" aria-label={`房间战后${terms.level.shop}`}><header><strong>战后{terms.level.shop} · {terms.gold.name} {self.gold}{self.shopBanUntil&&self.shopBanUntil>=view.round?' · 养精蓄锐，不能买棋':''}</strong><span><button disabled={!editable||self.gold!<XP_BUY_COST||xpToNext(self.level??START_LEVEL)===null} onClick={()=>action({kind:'buy_xp'})}>{terms.level.upgrade} · {goldAmount(terms, XP_BUY_COST)}</button><button disabled={!editable||self.gold!<refreshPrice||!self.shop.length} onClick={()=>action({kind:'refresh'})}>{terms.reroll.name} · {goldAmount(terms, refreshPrice)}</button><button onClick={closeShop}>收起{terms.level.shop}</button></span></header><div className="peach-shop-cards">{self.shop.map((id,i)=>{if(!id)return null;const unit=findUnit(id);if(!unit)return <span key={`${view.round}-${i}`}>{id}</span>;const locked=!!self.shopBanUntil&&self.shopBanUntil>=view.round;return <button key={`${view.round}-${i}`} disabled={!editable||locked||self.gold!<roomShopPrice(self,unit)} onClick={()=>action({kind:'buy',index:i})}><img className="peach-card-art" src={itemImage(unit.id,{label:unit.name})} alt=""/><span>{goldAmount(terms, roomShopPrice(self,unit))}</span><strong>{unit.name}</strong><p className="peach-card-tag">{unitSkill(unit.id)?.name ?? ''}</p></button>;})}{!self.shop.length?<p>第一轮战斗结束后开放{terms.level.shop}。</p>:null}</div></div>:null}/>
+diff --git a/components/autochess/room-result.tsx b/components/autochess/room-result.tsx
+index 79cd593..2744c7f 100644
+--- a/components/autochess/room-result.tsx
++++ b/components/autochess/room-result.tsx
+@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
+ import type { RoomSelf } from '@/lib/autochess/room-types';
+ import { CURRENCY } from '@/lib/meta/economy';
+ 
+-export default function RoomResult({ result, finished, show, onReturn }: {
+-  result: NonNullable<RoomSelf['result']>; finished: boolean; show: boolean; onReturn: () => void;
++export default function RoomResult({ result, finished, show, onReturn, cedar=false }: {
++  cedar?: boolean; result: NonNullable<RoomSelf['result']>; finished: boolean; show: boolean; onReturn: () => void;
+ }) {
+   const dialog = useRef<HTMLDialogElement>(null);
+   const [dismissed, setDismissed] = useState(false);
+@@ -17,7 +17,7 @@ export default function RoomResult({ result, finished, show, onReturn }: {
+   }, [show, dismissed]);
+   const reward = result.payment === 'pending' ? '奖励正在到账…' : result.reward
+     ? `${result.reward.delta >= 0 ? '+' : ''}${result.reward.delta} ${CURRENCY[result.reward.currency].name}${result.reward.reason === 'short' ? ' · 本局未达奖励轮数' : result.reward.reason === 'cap' ? ' · 今日奖励已领完' : result.reward.reason === 'legacy' ? ' · 已结算' : ''}`
+-    : '本局为游客对局';
++    : cedar?'棋局已保存':'本局为游客对局';
+   return <>
+     {show && dismissed ? <button className="room-result-reopen" onClick={() => setDismissed(false)}>查看本局结算</button> : null}
+     <dialog ref={dialog} className="room-result-dialog" aria-labelledby="room-result-title" onCancel={() => setDismissed(true)}>
+@@ -28,7 +28,7 @@ export default function RoomResult({ result, finished, show, onReturn }: {
+         <small>{finished ? '全场结束' : '你的对局已结束，可以留下看他们打完。'}</small>
+         <div className="room-result-actions">
+           <button onClick={() => setDismissed(true)}>{finished ? '看看棋盘' : '继续观战'}</button>
+-          <button onClick={onReturn}>返回大厅</button>
++          <button onClick={onReturn}>{cedar?'返回棋室':'返回大厅'}</button>
+         </div>
+       </section>
+     </dialog>
+diff --git a/lib/autochess/platform-adapter.ts b/lib/autochess/platform-adapter.ts
+index 1531f25..ec41263 100644
+--- a/lib/autochess/platform-adapter.ts
++++ b/lib/autochess/platform-adapter.ts
+@@ -9,6 +9,7 @@ export type PlatformIdentityInput = {
+   provider?: string;
+   playerId: string;
+   displayName?: string;
++  actorType?: 'human' | 'ai' | 'guest';
+ };
+ 
+ export type PlatformIdentity = PlatformIdentityInput & {
+@@ -19,7 +20,7 @@ export type PlatformIdentity = PlatformIdentityInput & {
+ 
+ type Params = Record<string, unknown>;
+ 
+-const requestIdPattern = /^[A-Za-z0-9_-]{8,80}$/;
++const requestIdPattern = /^[A-Za-z0-9-]{8,80}$/;
+ const roomIdPattern = /^[a-f0-9]{12}$/;
+ 
+ const fail = (message: string): never => { throw new Error(message); };
+@@ -73,14 +74,15 @@ export function platformIdentity(input: PlatformIdentityInput): PlatformIdentity
+   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(provider)) fail('平台标识无效');
+   const playerId = text(input.playerId, 'X-Player-Id', 128);
+   if (/\p{Cc}/u.test(playerId)) fail('X-Player-Id 无效');
+-  const fallbackName = playerId.startsWith('guest:') ? 'CEDAR 游客' : `CEDAR 棋手 ${playerId.slice(-12)}`;
++  const fallbackName = playerId.startsWith('guest:') ? 'CEDAR 游客' : 'CEDAR 棋手';
+   const displayName = (input.displayName?.trim().replace(/\s+/g, ' ').slice(0, 49) || fallbackName);
+   const digest = createHash('sha256').update(`${provider}\0${playerId}`).digest('hex').slice(0, 32);
+   return {
+     provider,
+     playerId,
+     displayName,
+-    owner: { accountId: `platform:${provider}:${digest}`, accountName: displayName },
++    owner: { accountId: `platform:${provider}:${digest}`, accountName: displayName, actorType: input.actorType ?? 'guest',
++      actorKey: createHash('sha256').update(`${provider}\0actor\0${playerId.startsWith('guest:') ? playerId : playerId.split(':')[0]}`).digest('hex').slice(0,32) },
+   };
+ }
+ 
+@@ -136,7 +138,7 @@ function rewriteHint(value: unknown, roomId: string): unknown {
+   const source = value as Record<string, unknown>;
+   const out: Record<string, unknown> = {};
+   for (const [key, entry] of Object.entries(source)) {
+-    if (['token', 'accountToken', 'watchToken', 'password', 'optionalAction', 'feedbackAction', 'echoGuide', 'giftHistoryGuide', 'giftGuide', 'matchGuide'].includes(key)) continue;
++    if (['token', 'accountToken', 'watchToken', 'password', 'accountId', 'actorKey', 'actorType', 'activeAt', 'accountName', 'optionalAction', 'feedbackAction', 'echoGuide', 'giftHistoryGuide', 'giftGuide', 'matchGuide'].includes(key)) continue;
+     if (key === 'fill' && Array.isArray(entry)) {
+       out.fill = entry.filter(item => item !== 'token' && item !== 'accountToken' && item !== 'roomId')
+         .map(item => typeof item === 'string' ? `params.${item}` : item);
+@@ -144,6 +146,9 @@ function rewriteHint(value: unknown, roomId: string): unknown {
+     }
+     out[key] = rewriteHint(entry, roomId);
+   }
++  if (source.tool === 'wait') {
++    out.reason = '等待仅在当前请求内有效；不能在请求结束后唤醒客户端。使用 fallback 读取变化。';
++  }
+   if (typeof source.tool === 'string' && ['join_room', 'read_turn', 'wait_turn', 'act'].includes(source.tool)) {
+     const action = source.tool === 'join_room' ? 'join' : source.tool === 'act' ? 'act' : 'read';
+     const priorArgs = source.args && typeof source.args === 'object' && !Array.isArray(source.args)
+@@ -163,26 +168,38 @@ export class PlatformRoomAdapter {
+     return this.store.accountSeat(roomId, identity.owner.accountId) ?? fail('你没有这间房的席位；先 join');
+   }
+ 
+-  async play(identity: PlatformIdentity, rawAction: unknown, rawParams?: unknown): Promise<unknown> {
++  async play(identity: PlatformIdentity, rawAction: unknown, rawParams?: unknown, signal?: AbortSignal): Promise<unknown> {
+     const action = text(rawAction, 'action', 32);
+     const params = paramsOf(rawParams);
+     // CEDAR may inject player_id into params for older adapters. It is deliberately ignored;
+     // only the authenticated X-Player-Id header supplied by the platform selects a seat.
+     if (['token', 'accountToken', 'password'].some(key => params[key] !== undefined)) fail('平台入口不接收账号或席位凭证');
+ 
++    if (action === 'rooms') return {rooms:this.store.platformRooms(identity.owner.accountId)};
++
+     if (action === 'create' || action === 'create_room') {
+       const requestId = requestIdOf(params);
+       const pack = params.pack === undefined ? undefined : text(params.pack, 'pack', 40);
+-      const seat = this.store.createForMachine(identity.owner, requestId, pack);
+-      const current = playerRoomReply(this.store.view(seat), readOptions(params, true));
+-      return rewriteHint({ roomId: seat.roomId, invitation: seat.invitation, current }, seat.roomId);
++      const mode = params.mode === undefined ? 'standard' : text(params.mode, 'mode', 32);
++      const seats = params.seats === undefined ? undefined : integer(params.seats, 'seats', 2, 16);
++      const seat = this.store.createForPlatform(identity.owner, requestId, pack, mode, seats);
++      const current = playerRoomReply(this.store.view(this.credentials(identity, seat.roomId)), readOptions(params, true));
++      return rewriteHint({ roomId: seat.roomId, invitation: seat.invitation, current, duplicate: seat.duplicate === true }, seat.roomId);
+     }
+ 
+     if (action === 'join' || action === 'join_room') {
+       const invitation = text(params.invitation, 'invitation', 100);
+-      const seat = this.store.joinForAccount(invitation, identity.owner);
++      const seat = this.store.joinForPlatform(invitation, identity.owner);
+       const current = playerRoomReply(this.store.view(seat), readOptions(params, true));
+-      return rewriteHint({ roomId: seat.roomId, current }, seat.roomId);
++      return rewriteHint({ roomId: seat.roomId, current, duplicate: seat.duplicate === true }, seat.roomId);
++    }
++
++    if (action === 'start') {
++      const roomId = roomIdOf(params);
++      const credentials = this.credentials(identity, roomId);
++      const before = this.store.view(credentials);
++      const view = this.store.start(credentials, requestIdOf(params));
++      return rewriteHint({ ...playerRoomReply(view, readOptions(params, true)), duplicate: before.revision === view.revision }, roomId);
+     }
+ 
+     if (action === 'read' || action === 'read_turn' || action === 'wait') {
+@@ -195,7 +212,7 @@ export class PlatformRoomAdapter {
+       const waitMs = waitRaw === undefined ? undefined : integer(waitRaw, 'waitMs', 0, 25_000);
+       if (waitMs !== undefined && after === undefined) fail('waitMs 须配 after');
+       if (after !== undefined && after > initial.revision) fail('after 超出当前房间 revision');
+-      const view = waitMs && initial.revision === after ? await this.store.wait(credentials, after, waitMs) : initial;
++      const view = waitMs && initial.revision === after ? await this.store.wait(credentials, after, waitMs, signal) : initial;
+       return rewriteHint(playerRoomReply(view, readOptions(params)), roomId);
+     }
+ 
+@@ -203,13 +220,14 @@ export class PlatformRoomAdapter {
+       const roomId = roomIdOf(params);
+       const credentials = this.credentials(identity, roomId);
+       const before = this.store.view(credentials);
++      if (before.phase === 'waiting' && !['say', 'cancel_room'].includes(String(params.kind))) fail('请先由房主 start');
+       const round = integer(params.round, 'round', 1);
+       const revision = integer(params.revision, 'revision');
+       const requestId = requestIdOf(params);
+       const view = this.store.mutate({ ...credentials, round, revision, requestId, action: actionOf(params, before.battle?.round) });
+-      return rewriteHint(playerRoomMutationReply(before, view, { ...readOptions(params), round, revision }), roomId);
++      return rewriteHint({ ...playerRoomMutationReply(before, view, { ...readOptions(params), round, revision }), duplicate: before.revision === view.revision }, roomId);
+     }
+ 
+-    fail('未知 action；可用 create、join、read、act');
++    fail('未知 action；可用 create、join、start、read、act');
+   }
+ }
+diff --git a/lib/autochess/room-store.ts b/lib/autochess/room-store.ts
+index 9d8e918..596b89f 100644
+--- a/lib/autochess/room-store.ts
++++ b/lib/autochess/room-store.ts
+@@ -5,7 +5,7 @@ import { BENCH_CAPACITY } from './constants';
+ import { botField, botBuyOrder, botStrength } from './room-bot';
+ import { roomShopPrice, roomRefreshPrice } from './room-economy';
+ import { randomBytes, randomInt, createHash } from 'node:crypto';
+-import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
++import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync, openSync, fsyncSync, closeSync, unlinkSync } from 'node:fs';
+ import { join } from 'node:path';
+ import { compactHex, hexPickRarity, makeHexOffer, withHexes, getHex, immediateHexGold, pickBestHex, shopBanFromHex, shopBanned, delayedGoldBonus, winGoldPerStreak, deathGoldChance, freeRefreshGrant, grantUnitFromNote } from '../../content/autochess/hexes';
+ import { drawSwords, swordTierForRound } from '../../content/autochess/items';
+@@ -36,7 +36,7 @@ import { DANMAKU_STYLES } from './room-types';
+ const BOT_NAMES = ['路人甲','路人乙','路人丙','路人丁','路人戊','路人己','路人庚','路人辛','路人壬','路人癸','路人子','路人丑','路人寅','路人卯'];
+ /** 房间闲置上限：超过这段时间没有任何操作就自动结束（掉线判负），不留下隔夜还在打的局。 */
+ const ROOM_IDLE_KILL_MS = 60 * 60 * 1000;
+-type Seat = RoomSelf & { token: string; say: string; bot?: boolean; accountId?: string; accountName?: string; skinId?: string; frame?: string };
++type Seat = RoomSelf & { actorType?: 'human' | 'ai' | 'guest'; actorKey?: string; activeAt?: number; token: string; say: string; bot?: boolean; accountId?: string; accountName?: string; skinId?: string; frame?: string };
+ type Room = { version: 1; id: string; invite: string; watch: string; seed: number; revision: number; round: number;
+   /** 最后一次落子/操作时间；超过闲置上限的房间会被自动结束（掉线判负）。 */
+   updatedAt?: number;
+@@ -46,6 +46,10 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
+   telemetrySource?: 'lab';
+   /** 机开房请求的幂等键；断线重试返回原房间与原席位。 */
+   machineCreate?: { accountId: string; requestId: string };
++  /** Cedar private rooms wait for the host; upstream room semantics stay unchanged. */
++  platformCreate?: { accountId: string; requestId: string; signature: string };
++  platformStart?: string;
++  platformTimes?: { created: number; started?: number; finished?: number };
+   wake?: {round:number;sequence:number;requestedAt:number;receivedId?:string;receivedAt?:number};
+   phase: RoomView['phase']; seats: Seat[]; finalBattles?: Record<number, RoomBattle>; battle?: RoomBattle; battleAt?: number; winner?: RoomView['winner']; log: string[];
+   receipts: Record<string, string>; joinKey?: string; joinKeys: Record<string, number>; cursor: { enabled: boolean; status: string };
+@@ -54,7 +58,7 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
+   settled?: number; finishReason?: 'idle' | 'cancelled' };
+ /** 局外结算回调：淘汰时逐席位提交，传完整参赛账号判定陪伴关系。 */
+ export type RoomRecorder = { settle(input: MatchSettlementInput): ReturnType<AccountStore['settleMatch']> | void };
+-export type SeatOwner = { accountId: string; accountName: string; skinId?: string; frame?: string };
++export type SeatOwner = { actorType?: 'human' | 'ai' | 'guest'; actorKey?: string; accountId: string; accountName: string; skinId?: string; frame?: string };
+ const secret = () => randomBytes(18).toString('hex');
+ const fail = (message: string): never => { throw new Error(message); };
+ export class RoomStore {
+@@ -182,10 +186,18 @@ export class RoomStore {
+ 
+   private persist(room: Room) {
+     room.updatedAt = Date.now();
++    if (room.platformTimes && room.phase === 'finished' && !room.finishReason) room.platformTimes.finished ??= room.updatedAt;
+     for (const seat of room.seats) ensureRoomPieceRefs(seat);
+     const file = join(this.directory, `${room.id}.json`);
+-    writeFileSync(`${file}.pending`, JSON.stringify(room), { encoding: 'utf8', mode: 0o600 });
+-    renameSync(`${file}.pending`, file);
++    try {
++      writeFileSync(`${file}.pending`, JSON.stringify(room), { encoding: 'utf8', mode: 0o600 });
++      const fd = openSync(`${file}.pending`, 'r');
++      try { fsyncSync(fd); } finally { closeSync(fd); }
++      renameSync(`${file}.pending`, file);
++    } catch (error) {
++      try { unlinkSync(`${file}.pending`); } catch { /* Keep the original save. */ }
++      throw error;
++    }
+     this.rooms.set(room.id, room);
+     if (room.battle && room.battleAt && room.battleAt >= this.telemetry.startedAt) {
+       try { this.telemetry.recordBattle({ pack: room.pack, mode: room.mode!, battle: room.battle, botSeats: room.seats.map(seat => !!seat.bot), at: room.battleAt, source: room.telemetrySource ?? 'live' }); }
+@@ -374,7 +386,7 @@ export class RoomStore {
+       level: START_LEVEL, xp: 0, winStreak: 0, capacity: fieldCapacityForLevel(START_LEVEL),
+       swordOffer: this.openingOffer(room, index, room.round),
+       token: secret(), revision: 0, ready: false, shop: [], say: '',
+-      ...(owner ? { accountId: owner.accountId, accountName: owner.accountName, ...(owner.skinId ? { skinId: owner.skinId } : {}), ...(owner.frame ? { frame: owner.frame } : {}) } : {}) };
++      ...(owner ? { actorType: owner.actorType, actorKey: owner.actorKey, activeAt: Date.now(), accountId: owner.accountId, accountName: owner.accountName, ...(owner.skinId ? { skinId: owner.skinId } : {}), ...(owner.frame ? { frame: owner.frame } : {}) } : {}) };
+   }
+   private newRoom(pack?: string, seats?: number, mode = 'standard'): Room {
+     const packId = parsePackId(pack ?? process.env.CHESS_PACK);
+@@ -405,6 +417,69 @@ export class RoomStore {
+     this.persist(room);
+     return { roomId: room.id, token: room.seats[0]!.token, invitation: `${room.id}.${room.invite}`, watchToken: room.watch };
+   }
++  /** Trusted platform only: request keys survive restart and never coalesce distinct creates. */
++  createForPlatform(owner: SeatOwner, requestId: string, pack?: string, mode = 'standard', seats?: number, household: SeatOwner[] = []) {
++    if (!/^[a-zA-Z0-9-]{8,80}$/.test(requestId)) fail('操作编号无效');
++    if (!isLobbyMode(mode)) fail('未知或未开放的对局模式');
++    if (seats !== undefined && (!Number.isInteger(seats) || seats < 2 || seats > 16 || seats % 2 !== 0)) fail('人数须为 2–16 的偶数');
++    if (mode === 'duel' && seats !== undefined && seats !== 2) fail('弈决固定双人');
++    const packId = parsePackId(pack ?? DEFAULT_PACK_ID);
++    const count = matchRules(mode, seats).seatCount;
++    if (household.length >= count || new Set([owner.accountId,...household.map(person=>person.accountId)]).size !== household.length+1) fail('家庭席位重复或超出房间人数');
++    const signature = JSON.stringify([packId, mode, count, ...household.map(person=>person.accountId).sort()]);
++    const repeated = [...this.rooms.values()].find(room => room.platformCreate?.accountId === owner.accountId && room.platformCreate.requestId === requestId);
++    if (repeated && repeated.platformCreate!.signature !== signature) fail('操作编号已用于不同开房参数');
++    if (repeated) return { roomId: repeated.id, invitation: `${repeated.id}.${repeated.invite}`, duplicate: true };
++    const room = this.newRoom(packId, count, mode);
++    room.platformCreate = { accountId: owner.accountId, requestId, signature };
++    room.platformTimes = { created: Date.now() };
++    room.seats.push(this.makeSeat(room, 0, owner.accountName, owner));
++    for (const person of household) {
++      const seat = this.makeSeat(room,room.seats.length,person.accountName,person);
++      delete seat.activeAt; // Reserving a bound AI seat is not evidence that the AI played.
++      room.seats.push(seat);
++    }
++    this.persist(room);
++    return { roomId: room.id, invitation: `${room.id}.${room.invite}` };
++  }
++  /** Only the platform asks for this caller's own rooms. Never returns a public directory. */
++  platformRooms(accountId: string) {
++    return [...this.rooms.values()].filter(room=>room.platformCreate && room.seats.some(seat=>seat.accountId===accountId))
++      .sort((a,b)=>(b.updatedAt??0)-(a.updatedAt??0)).slice(0,40)
++      .map(room=>({roomId:room.id,pack:room.pack,packName:packMeta(room.pack).name,mode:room.mode,
++        phase:room.phase,round:room.round,seats:room.seats.length,capacity:room.seatCount,updatedAt:room.updatedAt}));
++  }
++  /** Read-only aggregation. No room ids, names, invitations or per-room rows leave this method. */
++  platformStats(since: number, until = Date.now()) {
++    const humans=new Set<string>(), ais=new Set<string>();
++    let created=0,started=0,finished=0;
++    const inside=(at?:number)=>at!==undefined && at>=since && at<until;
++    for(const room of this.rooms.values()) {
++      if(!room.platformTimes) continue;
++      created+=Number(inside(room.platformTimes.created));started+=Number(inside(room.platformTimes.started));finished+=Number(inside(room.platformTimes.finished));
++      for(const seat of room.seats) if(inside(seat.activeAt)&&seat.actorKey) {
++        if(seat.actorType==='human') humans.add(seat.actorKey);
++        if(seat.actorType==='ai') ais.add(seat.actorKey);
++      }
++    }
++    return {active_humans:humans.size,active_machines:ais.size,created,started,finished};
++  }
++  /** Invitation possession grants a seat, never host powers. No automatic start or public lookup. */
++  joinForPlatform(invitation: string, owner: SeatOwner) {
++    const info = this.invitationRoom(invitation);
++    const original = this.load(info.roomId);
++    if (!original.platformCreate) fail('不是平台私人房间');
++    const existing = original.seats.find(seat => seat.accountId === owner.accountId);
++    if (existing) return { roomId: original.id, token: existing.token, duplicate: true };
++    if (original.phase !== 'waiting' || original.seats.length >= original.seatCount) fail('房间已开局或满员');
++    const room = structuredClone(original);
++    const index = room.seats.length;
++    const seat = this.makeSeat(room, index, owner.accountName, owner);
++    room.seats.push(seat);
++    room.revision++; room.log.push(`${seat.name} 已入座。`);
++    this.persist(room);
++    return { roomId: room.id, token: seat.token };
++  }
+   /** Matchmaking seats both people in one write. The server's bystanders fill the other slots. */
+   createMatched(requestKey: string, people: SeatOwner[], pack?: string, seats?: number) {
+     const existing = [...this.rooms.values()].find(room => room.matchKind === 'queue' && room.matchKey === requestKey);
+@@ -524,10 +599,19 @@ export class RoomStore {
+     return { roomId: room.id, token: room.seats[1]!.token };
+   }
+   /** 单人开局：把剩余席位补成路人机并进入备战（房主不想等人时用）。 */
+-  start(credentials: RoomCredentials) {
++  start(credentials: RoomCredentials, platformRequestId?: string) {
+     const room = structuredClone(this.load(credentials.roomId));
+     if (this.auth(room, credentials.token) !== 0) fail('只有房主可以开局');
++    if (room.platformCreate) {
++      if (!platformRequestId || !/^[a-zA-Z0-9-]{8,80}$/.test(platformRequestId)) fail('平台开局需要操作编号');
++      if (room.platformStart === platformRequestId) return this.view(credentials);
++    }
+     if (room.phase !== 'waiting') fail('已经开局了');
++    if (room.platformCreate) {
++      room.platformStart = platformRequestId;
++      if (room.platformTimes) room.platformTimes.started = Date.now();
++      room.seats[0]!.activeAt = Date.now();
++    }
+     while (room.seats.length < room.seatCount) {
+       const index = room.seats.length;
+       const bot = this.makeSeat(room, index, BOT_NAMES[index - 1] ?? `棋手${index + 1}`);
+@@ -698,6 +782,7 @@ export class RoomStore {
+     }
+     if (original.phase === 'finished' && input.action.kind !== 'danmaku') fail('棋局已经结束');
+     const room = structuredClone(original); const seat = room.seats[index]!;
++    if (input.action.kind !== 'danmaku') seat.activeAt = Date.now();
+     if (input.action.kind === 'danmaku') {
+       this.postDanmaku(room, index, input.action);
+       room.revision++; room.receipts[key] = signature;
+@@ -1267,12 +1352,12 @@ export class RoomStore {
+     if (this.livingSeats(room).length <= rules.finishWhenLiving && this.maybeFinish(room)) return;
+     if (this.livingSeats(room).every(seat => seat.bot && seat.ready)) this.battle(room);
+   }
+-  async wait(credentials: RoomCredentials, after: number, ms = 25_000) {
+-    if (this.view(credentials).revision > after) return this.view(credentials);
++  async wait(credentials: RoomCredentials, after: number, ms = 25_000, signal?: AbortSignal) {
++    if (signal?.aborted || this.view(credentials).revision > after) return this.view(credentials);
+     await new Promise<void>(resolve => {
+-      const finish = () => { clearTimeout(timer); this.listeners.delete(check); resolve(); };
++      const finish = () => { clearTimeout(timer); this.listeners.delete(check); signal?.removeEventListener('abort', finish); resolve(); };
+       const check = () => { if (this.load(credentials.roomId).revision > after) finish(); };
+-      const timer = setTimeout(finish, Math.min(25_000, Math.max(0, ms))); this.listeners.add(check); check();
++      const timer = setTimeout(finish, Math.min(25_000, Math.max(0, ms))); this.listeners.add(check); signal?.addEventListener('abort', finish, {once:true}); check();
+     });
+     return this.view(credentials);
+   }
+diff --git a/cedartoy/image.tsx b/cedartoy/image.tsx
+new file mode 100644
+index 0000000..fb6d465
+--- /dev/null
++++ b/cedartoy/image.tsx
+@@ -0,0 +1,3 @@
++import React from 'react';
++/** Static client build: upstream inspector images need no Next image service. */
++export default function Image({src,alt,fill,unoptimized,priority,quality,loader,...props}:any){return <img src={typeof src==='string'?src:src.src} alt={alt||''} {...props}/>;}
+diff --git a/cedartoy/index.html b/cedartoy/index.html
+new file mode 100644
+index 0000000..c765988
+--- /dev/null
++++ b/cedartoy/index.html
+@@ -0,0 +1 @@
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>私人自走棋 · 4399</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
+diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
+new file mode 100644
+index 0000000..5fcb6ed
+--- /dev/null
++++ b/cedartoy/main.tsx
+@@ -0,0 +1,43 @@
++import '../app/globals.css';
++import React,{useEffect,useRef,useState} from 'react';
++import {createRoot} from 'react-dom/client';
++import {RoomApp} from '../components/autochess/room-app';
++import {cedarRequest,roomRequest,setScope} from './transport';
++import './style.css';
++type Room={roomId:string;packName:string;mode:string;phase:string;round:number;seats:number;capacity:number};
++function App(){
++ const [config,setConfig]=useState<any>();const [error,setError]=useState('');const [busy,setBusy]=useState(false);
++ const [slot,setSlot]=useState(1);const [ai,setAI]=useState('');const [selected,setSelected]=useState<string[]>([]);
++ const [pack,setPack]=useState('ai');const [mode,setMode]=useState('standard');const [seats,setSeats]=useState(8);
++ const [room,setRoom]=useState('');const [watch,setWatch]=useState(false);
++ const [invitation,setInvitation]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('invite')||'');
++ const [stats,setStats]=useState<any>();const [range,setRange]=useState('1h');const createAttempt=useRef<{signature:string;id:string}|undefined>(undefined);
++ const configSequence=useRef(0);
++ const refresh=async()=>{const sequence=++configSequence.current;setScope({slot,ai_id:ai||undefined});try{const next=await cedarRequest('bootstrap');if(sequence===configSequence.current){setConfig(next);setError('');}}catch(e){if(sequence===configSequence.current)setError((e as Error).message);}};
++ useEffect(()=>{setConfig(undefined);setSelected([]);void refresh();},[slot,ai]);
++ useEffect(()=>{let previous=localStorage.getItem('cedartoy_token');const changed=()=>{const next=localStorage.getItem('cedartoy_token');if(next!==previous){previous=next;setRoom('');setConfig(undefined);setSelected([]);setAI('');setScope({slot});void refresh();}};window.addEventListener('storage',changed);document.addEventListener('visibilitychange',changed);return()=>{window.removeEventListener('storage',changed);document.removeEventListener('visibilitychange',changed);};},[slot,ai]);
++ const enter=(id:string,observe=false)=>{setScope({slot,ai_id:ai||undefined,watch:observe||!!ai});setWatch(observe||!!ai);setRoom(id);};
++ const run=async(fn:()=>Promise<void>)=>{if(busy)return;setBusy(true);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
++ const create=()=>run(async()=>{
++  const signature=JSON.stringify([slot,pack,mode,seats,selected]);
++  if(createAttempt.current?.signature!==signature)createAttempt.current={signature,id:crypto.randomUUID()};
++  const result=await roomRequest('create',{pack,mode,seats:mode==='duel'?2:seats,ai_ids:selected,requestId:createAttempt.current!.id});
++  createAttempt.current=undefined;enter(result.roomId);
++ });
++ return <>{!room?<header className="cedar-top"><a href="/">← 4399</a><strong>私人自走棋</strong><span>{config?.name}</span>{room?<button onClick={()=>{setRoom('');setWatch(false);void refresh();}}>返回棋室</button>:null}</header>:null}
++ {room?<RoomApp key={`${room}:${slot}:${ai}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{setRoom('');void refresh();}}/>:<main className="cedar-room">
++ <h1>自己的棋室</h1><p className="cedar-muted">一人也能开局，空位由 NPC 补齐。也可以带上自家小机，或邀请好友入座后再开始。</p>
++ {error?<p role="alert" className="cedar-error">{error}</p>:null}
++ {!config?<><a className="cedar-button" href="/" target="_blank" rel="noopener">去 4399 登录</a><button disabled={busy} onClick={()=>void refresh()}>重新连接</button></>:<>
++ <div className="cedar-fields"><label>存档槽<select aria-label="存档槽" value={slot} onChange={e=>setSlot(Number(e.target.value))}>{[1,2,3,4,5].map(x=><option key={x}>{x}</option>)}</select></label><label>棋局归属<select aria-label="棋局归属" value={ai} onChange={e=>setAI(e.target.value)}><option value="">我的棋局</option>{config.machines.map((x:any)=><option key={x.id} value={x.id}>观看 {x.name}</option>)}</select></label></div>
++ {!ai?<section aria-labelledby="create-title"><h2 id="create-title">开一间私人房</h2><div className="cedar-fields"><label>棋谱<select aria-label="棋谱" value={pack} onChange={e=>setPack(e.target.value)}>{config.packs.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>模式<select aria-label="模式" value={mode} onChange={e=>setMode(e.target.value)}>{config.modes.map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>{mode==='standard'?<label>总席位<select aria-label="总席位" value={seats} onChange={e=>setSeats(Number(e.target.value))}>{[2,4,6,8,10,12,14,16].map(n=><option key={n}>{n}</option>)}</select></label>:null}</div>
++ {config.machines.length?<fieldset><legend>带上自家小机</legend>{config.machines.map((m:any)=><label className="cedar-check" key={m.id}><input type="checkbox" checked={selected.includes(m.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,m.id]:old.filter(x=>x!==m.id))}/>{m.name}</label>)}<p className="cedar-muted">小机使用同一存档槽，从根 MCP 的 rooms 找到席位后行动；这里不会自动唤醒它。</p></fieldset>:null}
++ <button className="cedar-primary" disabled={busy||selected.length>=(mode==='duel'?2:seats)} onClick={create}>创建私人房</button><p className="cedar-muted">进入棋盘后，由房主点「补路人机，直接开局」。开始前可继续邀请好友。</p>
++ <form onSubmit={e=>{e.preventDefault();void run(async()=>{const result=await roomRequest('join',{invitation});history.replaceState(null,'','/autochess/');enter(result.roomId);});}}><label>好友邀请<input value={invitation} onChange={e=>setInvitation(e.target.value)} placeholder="粘贴邀请码" required/></label><button disabled={busy||!invitation}>加入私人房</button></form></section>:null}
++ <section><h2>{ai?'小机的棋局':'我的棋局'}</h2>{config.rooms.length?config.rooms.map((r:Room)=><div className="cedar-saved" key={r.roomId}><div><strong>{r.packName} · {r.mode==='duel'?'双人':'标准'}</strong><small>{r.phase==='waiting'?`等待开局 · ${r.seats}/${r.capacity} 席`:r.phase==='finished'?'已结束 · 可查看棋盘':`第 ${r.round} 轮`}</small></div>{!ai?<button onClick={()=>enter(r.roomId)}>回到棋盘</button>:null}<button onClick={()=>enter(r.roomId,true)}>观看</button></div>):<p className="cedar-muted">此存档槽还没有棋局。</p>}</section>
++ {config.author_stats?<section><h2>作品统计 · 仅本人可见</h2><label>时间区间<select value={range} onChange={e=>{setRange(e.target.value);setStats(undefined);}}>{['10m','1h','6h','12h','24h'].map(x=><option key={x}>{x}</option>)}</select></label><button onClick={()=>void run(async()=>setStats(await cedarRequest('stats',{range})))}>查看聚合</button>{stats?<dl>{[['活跃人类','active_humans'],['活跃小机','active_machines'],['开房','created'],['开始','started'],['完成','finished']].map(([label,key])=><div key={key}><dt>{label}</dt><dd>{stats[key]??0}</dd></div>)}</dl>:null}<p className="cedar-muted">只含本游戏聚合计数；活跃按自行入座及游戏行动记录；预留小机席位与 NPC 不计入。</p></section>:null}
++ </>}
++ <footer>原作：江川雪 · 小红书 63657956652 · <a href="https://github.com/Cecilia-coding/AutoChess-MCP" target="_blank" rel="noopener noreferrer">AutoChess-MCP</a> · <a href="/autochess/static/LICENSE.txt">MIT 许可证</a></footer>
++ </main>}</>;
++}
++createRoot(document.getElementById('root')!).render(<App/>);
+diff --git a/cedartoy/style.css b/cedartoy/style.css
+new file mode 100644
+index 0000000..9d4da0c
+--- /dev/null
++++ b/cedartoy/style.css
+@@ -0,0 +1,12 @@
++/* The private entry uses CedarToy's pale pink, lavender controls and dark outlines.
++   The original room-ui.css retains ownership of the game board and overlays. */
++body{margin:0;background:#fdf6f7;color:#29232f;font-family:system-ui,"PingFang SC",sans-serif;font-size:14px;line-height:1.6}
++.cedar-top{display:flex;align-items:center;gap:16px;min-height:58px;padding:10px 24px;border-bottom:3px solid #29232f;background:#fff;flex-wrap:wrap}
++.cedar-top strong{font-size:17px}.cedar-top span{margin-left:auto;font-size:12px}.cedar-top a,.cedar-room a{text-decoration:underline;text-underline-offset:3px}
++.cedar-room{max-width:800px;margin:24px auto;padding:0 20px}.cedar-room h1{font-size:24px;font-weight:700}.cedar-room h2{font-size:18px;font-weight:700;margin:0 0 12px}.cedar-room section{padding:20px 0;border-top:2px solid #d8cfdc;margin-top:20px}.cedar-muted{font-size:12px;color:#685e70;margin:8px 0 14px}
++.cedar-room button,.cedar-top button,.cedar-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border:2px solid #29232f;border-radius:8px;background:#fff;padding:8px 14px;font-size:14px;cursor:pointer;margin:4px 8px 4px 0}.cedar-room .cedar-primary{background:#beb1d1;box-shadow:3px 3px 0 #29232f;font-weight:700}.cedar-room button:disabled{opacity:.5;cursor:default}
++.cedar-fields{display:flex;gap:16px;flex-wrap:wrap}.cedar-room label{display:flex;flex-direction:column;gap:5px;flex:1;min-width:120px}.cedar-room input:not([type=checkbox]),.cedar-room select{min-height:44px;padding:8px;border:2px solid #aa9db4;border-radius:6px;background:white;color:inherit;font-size:14px;max-width:100%;width:100%}.cedar-room form{display:flex;align-items:end;gap:12px;margin:16px 0}.cedar-room form button{flex-shrink:0;margin:0}.cedar-room fieldset{border:0;margin:14px 0;padding:0}.cedar-room label.cedar-check{display:inline-flex;flex-direction:row;align-items:center;min-height:44px;gap:8px;margin-right:14px}.cedar-check input{width:18px;height:18px;accent-color:#75608b}
++.cedar-saved{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #d8cfdc;flex-wrap:wrap}.cedar-saved>div{flex:1;min-width:150px}.cedar-saved small{display:block;font-size:12px;color:#685e70}.cedar-room footer{font-size:12px;margin:24px 0;color:#685e70}.cedar-error{padding:12px;border:2px solid #af5663;background:#fff1f3;overflow-wrap:anywhere}.cedar-room dl{display:flex;gap:24px;flex-wrap:wrap}.cedar-room dd{font-size:20px;font-weight:700}.cedar-room :focus-visible,.cedar-top :focus-visible{outline:3px solid #75608b;outline-offset:3px}
++/* Keep the original floating menu clear of the full-screen/zoom toolbar. */
++@media(min-width:761px){.room-float{right:224px}}
++@media(max-width:480px){.cedar-top{padding:10px 14px;gap:10px}.cedar-top span{max-width:100px;overflow-wrap:anywhere}.cedar-room{margin:18px auto;padding:0 16px}.cedar-fields{gap:12px}.cedar-room form{align-items:stretch;flex-direction:column}.cedar-room form button{align-self:start}.cedar-saved button{padding:8px 10px}.cedar-room section{padding:16px 0}}
+diff --git a/cedartoy/transport.ts b/cedartoy/transport.ts
+new file mode 100644
+index 0000000..94b4453
+--- /dev/null
++++ b/cedartoy/transport.ts
+@@ -0,0 +1,18 @@
++export type Scope={slot:number;ai_id?:string;watch?:boolean};
++let scope:Scope={slot:1};
++export const setScope=(next:Scope)=>{scope={...next};};
++export async function cedarRequest<T=any>(path:string,body:object={}):Promise<T>{
++ const token=localStorage.getItem('cedartoy_token');
++ if(!token)throw Error('请先在 4399 首页登录人类账号，再返回棋室');
++ let response:Response;
++ try{response=await fetch('/autochess/api/'+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({...body,...scope}),signal:AbortSignal.timeout(8000),cache:'no-store'});}
++ catch{throw Error('网络中断，棋局仍保留。恢复后可以重连或重试刚才操作。');}
++ const result=await response.json();if(!response.ok)throw Error(result.error||'请求失败');return result;
++}
++export function roomRequest<T=any>(op:string,args:object={}):Promise<T>{
++ // Original components accept RoomCredentials. Remove their compatibility placeholder here.
++ const {token,accountToken,...game}=args as Record<string,unknown>;
++ return cedarRequest('room',{...game,op});
++}
++export async function accountRequest<T=any>():Promise<T>{throw Error('请使用 4399 账号');}
++export async function metaRequest<T=any>():Promise<T>{throw Error('精简模式不提供局外经济');}
+diff --git a/lib/autochess/cedartoy-web.ts b/lib/autochess/cedartoy-web.ts
+new file mode 100644
+index 0000000..2458e72
+--- /dev/null
++++ b/lib/autochess/cedartoy-web.ts
+@@ -0,0 +1,55 @@
++import { type PlatformIdentity } from './platform-adapter';
++import type { RoomStore, SeatOwner } from './room-store';
++import type { RoomAction } from './room-types';
++import { PACK_SUMMARIES } from '../../packs/registry';
++import { LOBBY_MODES } from '../../packs/modes/registry';
++
++const fail=(message:string):never=>{throw Error(message);};
++const clean=(value:unknown):any=>Array.isArray(value)?value.map(clean):value&&typeof value==='object'?
++  Object.fromEntries(Object.entries(value).filter(([key])=>!['token','watchToken','accountId','actorKey','actorType','activeAt','accountName'].includes(key)).map(([key,v])=>[key,clean(v)])):value;
++const text=(value:unknown)=>typeof value==='string'?value:fail('参数必须是文字');
++function action(raw:unknown):RoomAction {
++  if(!raw||typeof raw!=='object'||Array.isArray(raw)) fail('无效操作');
++  const a=raw as Record<string,unknown>;
++  const spec:Record<string,string[]>={buy:['index'],sell:['piece'],move:['piece','row','col'],withdraw:['piece'],equip:['piece','item'],unequip:['piece','item'],consume:['piece','item'],pick_hex:['hex'],pick_item:['item'],pick_sword:['item'],buy_xp:['times'],refresh:[],ready:[],unready:[],roll:[],claim:[],roll_and_claim:[],cancel_room:[],resign:[],danmaku:['text','style','battleRound']};
++  const kind=text(a.kind);if(!Object.hasOwn(spec,kind)) fail('未知棋局操作');
++  const result:Record<string,unknown>={kind};
++  for(const key of spec[kind]!) {
++    if(a[key]===undefined && ['times','style','battleRound'].includes(key)) continue;
++    if(['index','row','col','times','battleRound'].includes(key)) {
++      if(!Number.isInteger(a[key]) || (a[key] as number)<0 || (a[key] as number)>100) fail('数值参数无效');
++    } else if(typeof a[key]!=='string'||(a[key] as string).length>160) fail('文字参数无效');
++    result[key]=a[key];
++  }
++  return result as RoomAction;
++}
++export async function cedarWeb(store:RoomStore, identity:PlatformIdentity, op:unknown, p:Record<string,unknown>, household:SeatOwner[]=[]) {
++  if(op==='config') return {slim:true,cursorEnabled:false,mcpUrl:'',packs:PACK_SUMMARIES,modes:LOBBY_MODES.map(mode=>({id:mode.id,name:mode.name})),rooms:store.platformRooms(identity.owner.accountId)};
++  if(op==='create') {
++    // Validate through the same store; names and household come only from trusted platform context.
++    return store.createForPlatform(identity.owner,text(p.requestId),p.pack===undefined?undefined:text(p.pack),p.mode===undefined?'standard':text(p.mode),p.seats as number|undefined,household);
++  }
++  if(op==='join') {
++    const seat=store.joinForPlatform(text(p.invitation),identity.owner);
++    return {roomId:seat.roomId,duplicate:seat.duplicate===true};
++  }
++  const roomId=text(p.roomId);
++  if(!/^[a-f0-9]{12}$/.test(roomId)) fail('房间编号无效');
++  const credentials=store.accountSeat(roomId,identity.owner.accountId)??fail('你没有这间房的席位');
++  if(op==='state') {
++    const view=store.view(credentials);
++    if(p.watch===true) delete view.self;
++    return clean(view);
++  }
++  if(p.watch===true) fail('围观只能读取');
++  if(op==='invite') return {invitation:store.invite(credentials).invitation};
++  if(op==='start') return clean(store.start(credentials,text(p.requestId)));
++  if(op==='action') {
++    const command=action(p.action);
++    if(!Number.isInteger(p.round)||!Number.isInteger(p.revision)) fail('需要当前 round/revision');
++    const before=store.view(credentials);
++    if(before.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)) fail('请先由房主开始');
++    return clean(store.mutate({...credentials,round:p.round as number,revision:p.revision as number,requestId:text(p.requestId),action:command}));
++  }
++  fail('未知网页操作');
++}
+diff --git a/public/LICENSE.txt b/public/LICENSE.txt
+new file mode 100644
+index 0000000..1b5efa1
+--- /dev/null
++++ b/public/LICENSE.txt
+@@ -0,0 +1,21 @@
++MIT License
++
++Copyright (c) 2026 AutoChess MCP contributors
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
+diff --git a/scripts/cedartoy-server.ts b/scripts/cedartoy-server.ts
+new file mode 100644
+index 0000000..2c0468a
+--- /dev/null
++++ b/scripts/cedartoy-server.ts
+@@ -0,0 +1,94 @@
++/** Cedar-only satellite. Deliberately does not import the upstream HTTP/account/Cursor server. */
++import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
++import { isAbsolute } from 'node:path';
++import { RoomStore } from '../lib/autochess/room-store';
++import { PlatformRoomAdapter, platformIdentity, verifyPlatformSecret, decodePlatformDisplayName } from '../lib/autochess/platform-adapter';
++import { cedarWeb } from '../lib/autochess/cedartoy-web';
++
++export function cedarServer(store: RoomStore, secret: string) {
++  if (!/^[a-f0-9]{64}$/.test(secret)) throw Error('CHESS_PLATFORM_SECRET must be 32 random bytes encoded as lowercase hex');
++  const adapter = new PlatformRoomAdapter(store);
++  let active = 0;
++  const waiting = new Map<string, AbortController>();
++  const send = (res: ServerResponse, status: number, data: unknown) => {
++    if (res.destroyed) return;
++    res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
++    res.end(JSON.stringify(data));
++  };
++  const header = (req: IncomingMessage, name: string) => typeof req.headers[name] === 'string' ? req.headers[name] as string : '';
++  const server = createServer(async (req, res) => {
++    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') ||
++        req.headers.origin || req.headers.authorization || req.headers.cookie ||
++        !verifyPlatformSecret(secret, header(req, 'x-autochess-platform-secret'))) {
++      send(res,403,{error:'Forbidden'}); return;
++    }
++    if (req.method === 'GET' && req.url === '/health') { send(res,200,{ok:true,slim:true}); return; }
++    if (req.method !== 'POST' || !['/platform/autochess','/platform/web','/platform/stats'].includes(req.url ?? '')) { send(res,404,{error:'Not found'}); return; }
++    if (active >= 128) { send(res,503,{error:'Busy'}); return; }
++    active++;
++    let waitKey = '';
++    let waitController: AbortController | undefined;
++    try {
++      if (!header(req,'content-type').startsWith('application/json')) { send(res,415,{error:'JSON required'}); return; }
++      const parts: Buffer[] = []; let size = 0;
++      for await (const part of req) {
++        size += part.length;
++        if (size > 65536) { send(res,413,{error:'Payload too large'}); return; }
++        parts.push(part);
++      }
++      const body = JSON.parse(Buffer.concat(parts).toString('utf8'));
++      const role=header(req,'x-player-type') || 'guest';
++      if(!['human','ai','guest'].includes(role)) throw Error('Invalid player type');
++      const identity = platformIdentity({playerId:header(req,'x-player-id'),provider:'cedartoy',
++        displayName:decodePlatformDisplayName(header(req,'x-player-name')),actorType:role as 'human'|'ai'|'guest'});
++      if(req.url==='/platform/stats') {
++        const windows:Record<string,number>={'10m':600,'1h':3600,'6h':21600,'12h':43200,'24h':86400};
++        const seconds=windows[body?.range];if(!seconds) throw Error('Invalid range');
++        const now=Date.now();send(res,200,{range:body.range,generated_at:new Date(now).toISOString(),...store.platformStats(now-seconds*1000,now)});return;
++      }
++      if(req.url==='/platform/web') {
++        if(role!=='human' && body?.op!=='state' && body?.op!=='config') throw Error('Human session required');
++        const household=(Array.isArray(body?.household)?body.household:[]).map((person:any)=>platformIdentity({playerId:person.playerId,displayName:person.name,actorType:'ai'}).owner);
++        send(res,200,await cedarWeb(store,identity,body?.op,body?.params??{},household));return;
++      }
++      const roomId=body?.params?.roomId ?? body?.params?.room_id;
++      const key=`${identity.owner.accountId}:${roomId}`;
++      if(body?.action==='cancel_wait') {
++        await adapter.play(identity,'read',{roomId});
++        waiting.get(key)?.abort();send(res,200,{status:'wait_cancelled',roomId});return;
++      }
++      if(['act','start'].includes(body?.action)) waiting.get(key)?.abort();
++      if (body?.params?.waitMs || body?.params?.wait_ms) {
++        if(waiting.size>=96 && !waiting.has(key)) {send(res,429,{error:'Wait capacity reached'});return;}
++        waiting.get(key)?.abort();waitKey=key;waitController=new AbortController();waiting.set(key,waitController);
++      }
++      // No upstream credentials or canonical IDs are echoed. Raw headers are never logged.
++      const abort = waitController ?? new AbortController();
++      const disconnected = () => abort.abort();
++      res.once('close', disconnected);
++      let reply: unknown;
++      try { reply = await adapter.play(identity,body?.action,body?.params,abort.signal); }
++      finally { res.removeListener('close', disconnected); }
++      send(res,200,abort.signal.aborted ? {status:'wait_cancelled',roomId} : reply);
++    } catch (error) {
++      // Filesystem exceptions can contain private paths. Do not forward them to clients.
++      const code = (error as NodeJS.ErrnoException)?.code;
++      send(res,code ? 503 : 400,{error:code ? 'Room storage unavailable' : error instanceof Error ? error.message : 'Invalid request'});
++    } finally {
++      active--; if (waitKey && waiting.get(waitKey)===waitController) waiting.delete(waitKey);
++    }
++  });
++  server.requestTimeout = 10000;
++  server.headersTimeout = 10000;
++  return server;
++}
++
++if (process.argv[1]?.endsWith('/cedartoy-server.ts')) {
++  if ((process.env.CHESS_SLIM ?? '1') !== '1') throw Error('Cedar requires CHESS_SLIM=1');
++  const directory = process.env.CHESS_ROOM_DATA ?? '';
++  if (!isAbsolute(directory)) throw Error('CHESS_ROOM_DATA must be an absolute private data directory');
++  const port = Number(process.env.CHESS_ROOM_PORT ?? 8791);
++  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw Error('Invalid CHESS_ROOM_PORT');
++  // The launcher holds an exclusive OS lock for this directory for the entire process lifetime.
++  cedarServer(new RoomStore(directory), process.env.CHESS_PLATFORM_SECRET ?? '').listen(port,'127.0.0.1');
++}
+diff --git a/test/cedartoy-http.test.ts b/test/cedartoy-http.test.ts
+new file mode 100644
+index 0000000..a7da857
+--- /dev/null
++++ b/test/cedartoy-http.test.ts
+@@ -0,0 +1,31 @@
++import assert from 'node:assert/strict';
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { test } from 'node:test';
++import { cedarServer } from '../scripts/cedartoy-server';
++import { RoomStore } from '../lib/autochess/room-store';
++
++test('private HTTP listener denies original routes, foreign origins, cookies and forged secrets', async t => {
++  const dir=mkdtempSync(join(tmpdir(),'autochess-http-'));
++  t.after(()=>rmSync(dir,{recursive:true,force:true}));
++  const secret='a'.repeat(64);
++  const server=cedarServer(new RoomStore(dir),secret);
++  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
++  t.after(()=>new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());}));
++  const port=(server.address() as any).port;
++  const url=`http://127.0.0.1:${port}`;
++  const headers={'X-Autochess-Platform-Secret':secret,'X-Player-Id':'42','Content-Type':'application/json'};
++  for(const path of ['/room','/account','/mcp','/player','/match','/feedback','/platform/autochess?x=1']) {
++    const response=await fetch(url+path,{method:'POST',headers,body:'{}'});
++    assert.equal(response.status,404);
++  }
++  for(const extra of <Record<string,string>[]>[{'X-Autochess-Platform-Secret':'wrong'}, {'Origin':'https://toy.cedarstar.org'}, {'Cookie':'token=secret'}, {'Authorization':'Bearer secret'}]) {
++    assert.equal((await fetch(url+'/platform/autochess',{method:'POST',headers:{...headers,...extra},body:'{}'})).status,403);
++  }
++  const response=await fetch(url+'/platform/autochess',{method:'POST',headers,body:JSON.stringify({action:'create',params:{requestId:'http-create-1'}})});
++  assert.equal(response.status,200);
++  const room:any=await response.json();
++  const other=await fetch(url+'/platform/autochess',{method:'POST',headers:{...headers,'X-Player-Id':'43'},body:JSON.stringify({action:'read',params:{roomId:room.roomId,player_id:'42'}})});
++  assert.equal(other.status,400);
++});
+diff --git a/test/cedartoy-persistence.ts b/test/cedartoy-persistence.ts
+new file mode 100644
+index 0000000..a34f24a
+--- /dev/null
++++ b/test/cedartoy-persistence.ts
+@@ -0,0 +1,40 @@
++/** Three separate processes, temporary saves only. Works with `node --import tsx`. */
++import assert from 'node:assert/strict';
++import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { spawnSync } from 'node:child_process';
++import { fileURLToPath } from 'node:url';
++import { RoomStore } from '../lib/autochess/room-store';
++
++const [step, directory] = process.argv.slice(2);
++const owner={accountId:'platform:test:guest-regcheck',accountName:'临时验证'};
++if(step) {
++  const store=new RoomStore(directory!);
++  if(step==='create') {
++    const room=store.createForPlatform(owner,'persist-create-1','jianghu','standard',8);
++    writeFileSync(join(directory!,'fixture.json'),JSON.stringify(room));
++  } else {
++    const room=JSON.parse(readFileSync(join(directory!,'fixture.json'),'utf8'));
++    const credentials=store.accountSeat(room.roomId,owner.accountId)!;
++    if(step==='mutate') {
++      const view=store.start(credentials,'persist-start-1');
++      store.mutate({...credentials,round:view.round,revision:view.self!.revision,requestId:'persist-action-1',action:{kind:'danmaku',text:'冷启动后仍存在'}});
++    } else if(step==='read') {
++      const view=store.view(credentials);
++      assert.equal(view.pack,'jianghu');assert.equal(view.phase,'prepare');assert.equal(view.seats.filter(s=>s.bot).length,7);
++      assert.equal(view.danmaku!.filter(m=>m.text==='冷启动后仍存在').length,1);
++      assert.equal(store.createForPlatform(owner,'persist-create-1','jianghu','standard',8).roomId,room.roomId);
++      assert.equal(store.start(credentials,'persist-start-1').revision,view.revision);
++    } else throw Error('Unknown step');
++  }
++} else {
++  const dir=mkdtempSync(join(tmpdir(),'autochess-persist-'));
++  try {
++    for(const phase of ['create','mutate','read']) {
++      const child=spawnSync(process.execPath,[...process.execArgv,fileURLToPath(import.meta.url),phase,dir],{encoding:'utf8',timeout:60000});
++      assert.equal(child.status,0,`${phase}: ${child.stderr}\n${child.stdout}`);
++    }
++    console.log('PASS: create -> independent mutate -> independent read; NPCs, identity, replay message and receipts persisted');
++  } finally {rmSync(dir,{recursive:true,force:true});}
++}
+diff --git a/test/cedartoy-private.test.ts b/test/cedartoy-private.test.ts
+new file mode 100644
+index 0000000..f0c7259
+--- /dev/null
++++ b/test/cedartoy-private.test.ts
+@@ -0,0 +1,100 @@
++import assert from 'node:assert/strict';
++import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { test } from 'node:test';
++import { RoomStore } from '../lib/autochess/room-store';
++import { platformIdentity, PlatformRoomAdapter } from '../lib/autochess/platform-adapter';
++
++const owner = (id: string) => platformIdentity({playerId:id}).owner;
++const fixture = (t: any) => { const dir=mkdtempSync(join(tmpdir(),'cedar-chess-')); t.after(()=>rmSync(dir,{recursive:true,force:true})); return dir; };
++
++test('private invitation keeps eight human seats waiting; only host can fill and start', async t => {
++  const store=new RoomStore(fixture(t));
++  const host=owner('42');
++  const room=store.createForPlatform(host,'create-eight-1','ai','standard',8);
++  for(let i=1;i<8;i++) {
++    const guest=owner(String(100+i));
++    const seat=store.joinForPlatform(room.invitation,guest);
++    assert.equal(store.view(seat).seatIndex,i);
++    assert.equal(store.view(seat).phase,'waiting');
++    assert.throws(()=>store.start(seat,'start-eight-1'),/房主/);
++  }
++  assert.throws(()=>store.joinForPlatform(room.invitation,owner('999')),/满员/);
++  assert.throws(()=>store.joinForPlatform(room.roomId,owner('999')),/邀请/);
++  const credentials=store.accountSeat(room.roomId,host.accountId)!;
++  const start=store.start(credentials,'start-eight-1');
++  assert.equal(start.seats.filter(s=>s.bot).length,0);
++  assert.equal(start.phase,'prepare');
++  assert.equal(store.start(credentials,'start-eight-1').revision,start.revision);
++});
++
++test('solo NPC fill preserves both packs, available modes and configurable even capacities', t => {
++  const store=new RoomStore(fixture(t));
++  for(const pack of ['ai','jianghu']) for(const [mode,count] of [['duel',2],['standard',8],['standard',4],['standard',16]] as const) {
++    const host=owner(`guest:${pack}-${mode}-${count}`);
++    const room=store.createForPlatform(host,`create-${pack}-${mode}-${count}`,pack,mode,count);
++    const view=store.start(store.accountSeat(room.roomId,host.accountId)!,`start-${pack}-${mode}-${count}`);
++    assert.equal(view.mode,mode); assert.equal(view.pack,pack); assert.equal(view.seats.length,count);
++    assert.equal(view.seats.filter(s=>s.bot).length,count-1);
++  }
++  assert.throws(()=>store.createForPlatform(owner('1'),'invalid-mode','ai','frenzy'),/未开放/);
++  assert.throws(()=>store.createForPlatform(owner('1'),'invalid-size','ai','duel',8),/固定/);
++  assert.throws(()=>store.createForPlatform(owner('1'),'invalid-odd1','ai','standard',3),/偶数/);
++});
++
++test('concurrent retries and cold restore retain seats, receipts and identity isolation', async t => {
++  const directory=fixture(t); let store=new RoomStore(directory); let adapter=new PlatformRoomAdapter(store);
++  const host=platformIdentity({playerId:'42'});
++  const created:any[]=await Promise.all(Array.from({length:10},()=>adapter.play(host,'create',{requestId:'same-create-1',pack:'jianghu',mode:'standard',seats:4}))) as any[];
++  assert.equal(new Set(created.map(r=>r.roomId)).size,1);
++  const roomId=created[0].roomId;
++  await assert.rejects(adapter.play(host,'create',{requestId:'same-create-1',pack:'ai'}),/不同开房/);
++  for(const id of ['43','42:2','guest:42']) {
++    const identity=platformIdentity({playerId:id});
++    await assert.rejects(adapter.play(identity,'read',{roomId,player_id:'42'}),/没有/);
++    await adapter.play(identity,'join',{invitation:created[0].invitation});
++  }
++  await adapter.play(host,'start',{roomId,requestId:'same-start-1'});
++  const view:any=await adapter.play(host,'read',{roomId});
++  const params={roomId,round:view.round,revision:view.self.revision,requestId:'same-action-1',kind:'say',text:'跨进程保留'};
++  await Promise.all(Array.from({length:10},()=>adapter.play(host,'act',params)));
++  store=new RoomStore(directory);adapter=new PlatformRoomAdapter(store);
++  const restored:any=await adapter.play(host,'read',{roomId});
++  assert.equal(restored.seatIndex,0);
++  const raw=JSON.parse(readFileSync(join(directory,roomId+'.json'),'utf8'));
++  assert.equal(raw.danmaku.length,1);
++  assert.equal(raw.seats.length,4);
++  await adapter.play(host,'act',params);
++  const reply=JSON.stringify(await adapter.play(host,'start',{roomId,requestId:'same-start-1'}));
++  assert.ok(!/"(?:token|watchToken|accountToken|accountId)"/.test(reply));
++  assert.equal((await adapter.play(platformIdentity({playerId:'42:2'}),'read',{roomId}) as any).seatIndex,2);
++});
++
++test('bad saves fail closed without overwriting the original', t => {
++  const directory=fixture(t);const file=join(directory,'abcdef123456.json');
++  writeFileSync(file,'broken-json');assert.throws(()=>new RoomStore(directory));
++  assert.equal(readFileSync(file,'utf8'),'broken-json');
++  assert.ok(!readdirSync(directory).some(name=>name.endsWith('.pending')));
++});
++
++test('failed atomic rename reports an error and preserves both prior disk and in-memory state', async t => {
++  const fs = (await import('node:fs')).default;
++  const { syncBuiltinESMExports } = await import('node:module');
++  const { mock } = await import('node:test');
++  const directory=fixture(t);const store=new RoomStore(directory);const host=owner('42');
++  const room=store.createForPlatform(host,'failure-create-1');
++  const credentials=store.accountSeat(room.roomId,host.accountId)!;
++  const before=store.view(credentials);const file=join(directory,room.roomId+'.json');
++  const saved=readFileSync(file,'utf8');
++  const rename=mock.method(fs,'renameSync',()=>{throw Object.assign(new Error('disk unavailable'),{code:'EIO'});});
++  syncBuiltinESMExports();
++  try {
++    assert.throws(()=>store.start(credentials,'failure-start-1'),/disk unavailable/);
++    assert.equal(readFileSync(file,'utf8'),saved);
++    assert.equal(store.view(credentials).revision,before.revision);
++    assert.equal(store.view(credentials).phase,'waiting');
++    assert.ok(!readdirSync(directory).some(name=>name.endsWith('.pending')));
++  } finally { rename.mock.restore(); syncBuiltinESMExports(); }
++  assert.equal(store.start(credentials,'failure-start-1').phase,'prepare');
++});
+diff --git a/test/cedartoy-routes.test.ts b/test/cedartoy-routes.test.ts
+new file mode 100644
+index 0000000..22b422b
+--- /dev/null
++++ b/test/cedartoy-routes.test.ts
+@@ -0,0 +1,44 @@
++import assert from 'node:assert/strict';
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { Readable } from 'node:stream';
++import { EventEmitter } from 'node:events';
++import { test } from 'node:test';
++import { cedarServer } from '../scripts/cedartoy-server';
++import { RoomStore } from '../lib/autochess/room-store';
++import { PlatformRoomAdapter, platformIdentity } from '../lib/autochess/platform-adapter';
++
++test('route handler is fail-closed without depending on UI or listening sockets', async t => {
++  const dir=mkdtempSync(join(tmpdir(),'autochess-routes-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
++  const server=cedarServer(new RoomStore(dir),'a'.repeat(64));
++  const handler=server.listeners('request')[0]!;
++  const headers={'x-autochess-platform-secret':'a'.repeat(64),'x-player-id':'42','content-type':'application/json'};
++  async function call(url:string, body:any={}, extra:Record<string,string>={}, address='127.0.0.1') {
++    const req=Readable.from([Buffer.from(JSON.stringify(body))]) as any;
++    Object.assign(req,{method:'POST',url,headers:{...headers,...extra},socket:{remoteAddress:address}});
++    const res=new EventEmitter() as any;
++    res.writeHead=(status:number)=>{res.status=status;};res.end=(raw:string)=>{res.body=JSON.parse(raw);};
++    await handler.call(server,req,res);
++    return res;
++  }
++  for(const url of ['/room','/account','/mcp','/player','/match','/feedback','/platform/autochess?x=1']) assert.equal((await call(url)).status,404);
++  for(const extra of <Record<string,string>[]>[{'x-autochess-platform-secret':'bad'},{origin:'https://toy.cedarstar.org'},{cookie:'session=x'},{authorization:'Bearer x'}]) assert.equal((await call('/platform/autochess',{},extra)).status,403);
++  assert.equal((await call('/platform/autochess',{}, {}, '203.0.113.1')).status,403);
++  assert.equal((await call('/platform/autochess',{big:'a'.repeat(65536)})).status,413);
++  const created=await call('/platform/autochess',{action:'create',params:{requestId:'route-create-1'}});
++  assert.equal(created.status,200);
++  assert.equal((await call('/platform/autochess',{action:'read',params:{roomId:created.body.roomId,player_id:'42'}},{'x-player-id':'43'})).status,400);
++  assert.equal((await call('/platform/autochess',{action:'login',params:{}})).status,400);
++});
++
++test('satellite wait yields to another request and disconnect cancels it', async t => {
++  const dir=mkdtempSync(join(tmpdir(),'autochess-wait-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
++  const adapter=new PlatformRoomAdapter(new RoomStore(dir));const host=platformIdentity({playerId:'42'});
++  const created:any=await adapter.play(host,'create',{requestId:'wait-create-1'});
++  const controller=new AbortController();const began=Date.now();
++  const pending=adapter.play(host,'read',{roomId:created.roomId,after:created.current.revision,waitMs:25000},controller.signal);
++  const read:any=await adapter.play(host,'read',{roomId:created.roomId});
++  assert.equal(read.phase,'waiting');
++  controller.abort();await pending;assert.ok(Date.now()-began<1000);
++});
+diff --git a/test/cedartoy-web.test.ts b/test/cedartoy-web.test.ts
+new file mode 100644
+index 0000000..bc790d8
+--- /dev/null
++++ b/test/cedartoy-web.test.ts
+@@ -0,0 +1,59 @@
++import assert from 'node:assert/strict';
++import {test} from 'node:test';
++import {mkdtempSync,rmSync} from 'node:fs';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {RoomStore} from '../lib/autochess/room-store';
++import {platformIdentity,PlatformRoomAdapter} from '../lib/autochess/platform-adapter';
++import {cedarWeb} from '../lib/autochess/cedartoy-web';
++
++test('private Web household, invitations, owner start, spectating and durable aggregate isolation',async t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-web-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
++ const store=new RoomStore(dir),host=platformIdentity({playerId:'41:2',actorType:'human'}),ai=platformIdentity({playerId:'42:2',actorType:'ai'}),friend=platformIdentity({playerId:'43',actorType:'human'});
++ const call=(who:any,op:string,p:any={})=>cedarWeb(store,who,op,p);
++ const created:any=await cedarWeb(store,host,'create',{requestId:'web-create-123',pack:'jianghu',mode:'standard',seats:8},[ai.owner]);
++ assert.equal((await call(host,'config')).rooms.length,1);assert.equal((await call(platformIdentity({playerId:'41'}),'config')).rooms.length,0);
++ assert.equal((await call(ai,'config')).rooms.length,1);
++ await assert.rejects(call(friend,'state',{roomId:created.roomId}));
++ const joined=await call(friend,'join',{invitation:created.invitation});assert.equal(joined.roomId,created.roomId);
++ await assert.rejects(call(friend,'start',{roomId:created.roomId,requestId:'friend-start-123'}));
++ const params={roomId:created.roomId,requestId:'host-start-123'};
++ const [started,retried]:any[]=await Promise.all([call(host,'start',params),call(host,'start',params)]);
++ assert.equal(started.phase,'prepare');assert.equal(started.seats.length,8);assert.equal(started.seats.filter((s:any)=>s.bot).length,5);assert.equal(started.revision,retried.revision);
++ for(const name of ['token','accountId','actorKey','watchToken'])assert(!JSON.stringify(started).includes('"'+name+'"'));
++ const watch:any=await call(ai,'state',{roomId:created.roomId,watch:true});assert(!watch.self);assert.equal(watch.seatIndex,1);
++ await assert.rejects(call(ai,'action',{roomId:created.roomId,watch:true}));
++ const resumed=new RoomStore(dir);assert.equal(resumed.platformRooms(ai.owner.accountId)[0]!.roomId,created.roomId);
++ const stats=resumed.platformStats(Date.now()-3600000,Date.now()+1);assert.deepEqual(stats,{active_humans:2,active_machines:0,created:1,started:1,finished:0});
++ const mcp=new PlatformRoomAdapter(resumed);assert.equal((await mcp.play(ai,'rooms',{}) as any).rooms.length,1);
++});
++
++test('original web actions work through cleaned transport and retries do not repeat mutations',async t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-web-actions-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
++ const store=new RoomStore(dir),host=platformIdentity({playerId:'81',actorType:'human'});
++ for(const pack of ['ai','jianghu']){
++  const made:any=await cedarWeb(store,host,'create',{pack,mode:'duel',requestId:'actions-create-'+pack});
++  let view:any=await cedarWeb(store,host,'start',{roomId:made.roomId,requestId:'actions-start-'+pack});
++  if(view.self.swordOffer)view=await cedarWeb(store,host,'action',{roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-sword-'+pack,action:{kind:'pick_sword',item:view.self.swordOffer.choices[0]}});
++  if(view.self.hexOffer)view=await cedarWeb(store,host,'action',{roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-hex-'+pack,action:{kind:'pick_hex',hex:view.self.hexOffer.choices[0].id}});
++  if(!view.self.board.length)view=await cedarWeb(store,host,'action',{roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-move-'+pack,action:{kind:'move',piece:view.self.bench[0].id,row:0,col:0}});
++  const p={roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-ready-'+pack,action:{kind:'ready'}};
++  const result:any=await cedarWeb(store,host,'action',p);const retry:any=await cedarWeb(store,host,'action',p);
++  assert.equal(result.revision,retry.revision);assert(result.battle);assert(result.self.shop.length>0);
++ }
++});
++
++
++test('aggregate completion excludes cancelled rooms and retries; slots deduplicate actors',async t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-stats-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
++ const store=new RoomStore(dir),host=platformIdentity({playerId:'91',actorType:'human'}),slot=platformIdentity({playerId:'91:2',actorType:'human'});
++ const made:any=await cedarWeb(store,host,'create',{mode:'duel',requestId:'stats-create-1'});
++ const view:any=await cedarWeb(store,host,'start',{roomId:made.roomId,requestId:'stats-start-1'});
++ const action={roomId:made.roomId,round:view.round,revision:view.self.revision,requestId:'stats-resign-1',action:{kind:'resign'}};
++ await cedarWeb(store,host,'action',action);await cedarWeb(store,host,'action',action);
++ const other:any=await cedarWeb(store,slot,'create',{mode:'duel',requestId:'stats-create-2'});
++ const waiting:any=await cedarWeb(store,slot,'state',{roomId:other.roomId});
++ await cedarWeb(store,slot,'action',{roomId:other.roomId,round:waiting.round,revision:waiting.self.revision,requestId:'stats-cancel-2',action:{kind:'cancel_room'}});
++ assert.deepEqual(store.platformStats(Date.now()-3600000,Date.now()+1),{active_humans:1,active_machines:0,created:2,started:1,finished:1});
++ assert.deepEqual(store.platformStats(Date.now()+10,Date.now()+20),{active_humans:0,active_machines:0,created:0,started:0,finished:0});
++});
+diff --git a/vite.cedar.config.ts b/vite.cedar.config.ts
+new file mode 100644
+index 0000000..dd29c9c
+--- /dev/null
++++ b/vite.cedar.config.ts
+@@ -0,0 +1,19 @@
++import {defineConfig} from 'vite';
++import react from '@vitejs/plugin-react';
++import tailwindcss from '@tailwindcss/postcss';
++import {fileURLToPath} from 'node:url';
++const root=fileURLToPath(new URL('.',import.meta.url));
++export default defineConfig({
++ root,
++ base:'/autochess/static/',
++ plugins:[{name:'cedar-transport',enforce:'pre',resolveId(source,importer){
++  if(importer&&source==='./room-request')return root+'cedartoy/transport.ts';
++ },transform(code,id){
++  if(id.endsWith('/lib/meta/board-scenes.js')||id.endsWith('/lib/meta/cosmetics.ts'))
++    return code.replace(/(['"])\/(boards|frames)\//g, '$1/autochess/static/$2/');
++ }},react()],
++ resolve:{alias:{'@':root,'next/image':root+'cedartoy/image.tsx'}},
++ define:{'process.env.CHESS_SLIM':'"1"'},
++ css:{postcss:{plugins:[tailwindcss()]}},
++ build:{outDir:'dist/cedartoy',emptyOutDir:true,rollupOptions:{input:root+'cedartoy/index.html'}},
++});

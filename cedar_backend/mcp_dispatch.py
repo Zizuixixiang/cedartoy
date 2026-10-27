@@ -4,7 +4,7 @@ Dependencies are explicit keyword-only arguments supplied by server wrappers at
 call time. Nested calls therefore retain the existing server patch points.
 Database paths, mutable state and configuration remain owned by the caller.
 """
-
+import autochess_adapter
 
 from shared_craft_adapter.client import ContentResult
 
@@ -510,6 +510,19 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
         # human; the machine may propose the question, while browser consent
         # gates spread/draw/reveal/read actions.
         response = _play_tarot(merged_arguments, account_user)
+    elif game == "autochess":
+        identity = dict(player_id=account_player_id or guest_player_id,
+                        actor_type=('ai' if account_user.get('is_ai') else 'human') if account_user else 'guest',
+                        display_name=account_user.get('username') if account_user else None)
+        if defer_duel:
+            return _DeferredDuelCall(
+                backend_payload=autochess_adapter.prepare(merged_arguments, **identity, allow_wait=True),
+                game=game, action=action,
+                account_user=({'id': account_user['id'], 'is_ai': account_user.get('is_ai', False)} if account_user else None),
+                account_player_id=account_player_id, guest_player_id=guest_player_id, slot=slot,
+                anti_context=anti_context, announce_player_id=announce_player_id,
+            )
+        response = autochess_adapter.play(merged_arguments, **identity)
     elif game == "duel":
         # Duel 是独立 loopback 进程（8772）。账号 player_id 已在上方被强制
         # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。

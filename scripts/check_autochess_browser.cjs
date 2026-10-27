@@ -1,0 +1,164 @@
+// Only use disposable accounts and a loopback fixture. Never a production token.
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+(async()=>{
+ fs.mkdirSync('artifacts/autochess-stage2',{recursive:true});
+ fs.rmSync('artifacts/autochess-stage2/browser-result.json',{force:true});
+ const origin=process.env.AUTOCHESS_BROWSER_ORIGIN;
+ assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(origin));
+ const browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader']});
+ const errors=[],requests=[];
+ try{
+ const homeContext=await browser.newContext();
+ const home=await homeContext.newPage();
+ await homeContext.addInitScript(token=>{if(location.hostname==='127.0.0.1')localStorage.setItem('cedartoy_token',token);},process.env.AUTOCHESS_BROWSER_TOKEN);
+ home.on('pageerror',e=>errors.push(e.message));
+ await home.route('**/*',route=>{
+   const path=new URL(route.request().url()).pathname;
+   if(path==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync('index.html','utf8')});
+   if(path.startsWith('/assets/') || path==='/autochess/api/stats')return route.continue();
+   if(path==='/api/auth/me')return route.fulfill({json:{user:{id:101,username:'临时棋手',is_ai:false,avatar:{type:'emoji',value:'🙂'}},bindings:[]}});
+   return route.fulfill({json:{}});
+ });
+ await home.goto(origin+'/');
+ await home.locator('.game-card[data-game="autochess"]').hover();
+ const entry=()=>home.locator('[data-autochess-stats]:visible');
+ const counts=()=>home.locator('#autochessStatsContent strong');
+ const waitCounts=()=>counts().first().waitFor();
+ await entry().waitFor(); await entry().click(); await waitCounts();
+ assert.deepEqual(await counts().allTextContents(),['0','0','0','0','0'],'empty real aggregate stays zero');
+ for(const range of ['10m','1h','6h','12h','24h']){
+   await home.locator(`[data-autochess-range="${range}"]`).click(); await waitCounts();
+   assert.equal(await home.locator(`[data-autochess-range="${range}"]`).getAttribute('aria-pressed'),'true');
+ }
+ for(const width of [360,430,1440]){
+   await home.setViewportSize({width,height:900});
+   await home.screenshot({path:`artifacts/autochess-stage2/home-stats-${width}.png`,fullPage:true});
+   assert(await home.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'stats overflow '+width);
+ }
+ // Same real loopback API; intercept only failures/delivery timing, deliberately ignore abort
+ // in held responses to exercise stale-result guards independently of network cancellation.
+ await home.evaluate(()=>{
+   const original=window.fetch;
+   window.statsFixture={fail:false,hold:'',release:null,token:localStorage.getItem('cedartoy_token')};
+   window.fetch=async(url,options={})=>{
+     if(url!=='/autochess/api/stats')return original(url,options);
+     const f=window.statsFixture,kind=JSON.parse(options.body).op==='access'?'access':'read';
+     if(f.fail && kind==='read'){const status=f.fail;f.fail=false;return new Response('{}',{status});}
+     if(f.hold===kind){
+       f.hold='';let response=await original(url,{...options,signal:undefined});
+       if(kind==='read')response=new Response(JSON.stringify({...await response.json(),active_humans:999}));
+       return new Promise(resolve=>{f.release=()=>{f.release=null;resolve(response);};});
+     }
+     return original(url,options);
+   };
+ });
+ await home.evaluate(()=>{statsFixture.fail=503;});
+ await home.locator('[data-autochess-range="1h"]').click();
+ await home.locator('#autochessStatsRetry').waitFor(); assert.equal(await counts().count(),0);
+ await home.locator('#autochessStatsRetry').click(); await waitCounts();
+ await home.evaluate(()=>{statsFixture.hold='read';});
+ await home.locator('[data-autochess-range="10m"]').click();
+ await home.waitForFunction(()=>!!statsFixture.release);
+ await home.locator('[data-autochess-range="6h"]').click();await waitCounts();
+ await home.evaluate(()=>statsFixture.release());
+ await home.waitForTimeout(50);
+ assert.deepEqual(await counts().allTextContents(),['0','0','0','0','0'],'older range must not overwrite newer data');
+ assert.equal(await home.locator('[data-autochess-range="6h"]').getAttribute('aria-pressed'),'true');
+ for(const transition of ['close','game','account']){
+   await home.evaluate(()=>{statsFixture.hold='read';});
+   await home.locator('[data-autochess-range="12h"]').click();
+   await home.waitForFunction(()=>!!statsFixture.release);
+   if(transition==='close')await home.locator('#autochessStatsClose').click();
+   if(transition==='game')await home.evaluate(()=>selectGame('duel',false));
+   if(transition==='account')await home.evaluate(()=>{localStorage.setItem('cedartoy_token','unauthorized-fixture');window.dispatchEvent(new StorageEvent('storage',{key:TOKEN_KEY}));});
+   await home.evaluate(()=>statsFixture.release());
+   await home.waitForTimeout(50);
+   assert.equal(await counts().count(),0,transition+' clears counts');
+   assert.equal(await home.locator('#autochessStatsModal').isVisible(),false);
+   if(transition!=='close')assert.equal(await entry().count(),0,transition+' hides entry');
+   await home.evaluate(()=>{localStorage.setItem('cedartoy_token',statsFixture.token);selectGame('autochess',false);});
+   await entry().waitFor(); await entry().click(); await waitCounts();
+ }
+ await home.evaluate(()=>{statsFixture.fail=403;});
+ await home.locator('[data-autochess-range="24h"]').click();
+ await home.waitForFunction(()=>!document.querySelector('#autochessStatsModal').classList.contains('show'));
+ assert.equal(await counts().count(),0); assert.equal(await entry().count(),0,'revoked grant hides entry');
+ await home.evaluate(()=>refreshAutochessStatsAccess());
+ await entry().waitFor();await entry().click();await waitCounts();
+ // Close/Escape/backdrop, access race across game selection, and mobile drawer entry.
+ await home.keyboard.press('Escape');
+ await home.evaluate(()=>{statsFixture.hold='access';refreshAutochessStatsAccess();});
+ await home.waitForFunction(()=>!!statsFixture.release);
+ await home.evaluate(()=>{selectGame('duel',false);statsFixture.release();});
+ await home.waitForTimeout(50); assert.equal(await entry().count(),0);
+ await home.setViewportSize({width:360,height:900});
+ await home.locator('.game-card[data-game="autochess"]').click();
+ await entry().waitFor(); await entry().click(); await waitCounts();
+ await home.locator('#autochessStatsModal').click({position:{x:2,y:2}});
+ assert.equal(await counts().count(),0);
+ await home.setViewportSize({width:1440,height:900});await home.evaluate(()=>closeDrawers());
+ assert.equal(await home.locator('#enterButton').textContent(),'作者原版 ↗');
+ assert.equal(await home.locator('#detailDesc a').getAttribute('href'),'https://github.com/Cecilia-coding/AutoChess-MCP');
+ assert.match(await home.locator('#detailDesc').textContent(),/MIT/);
+ assert.equal(await home.locator('#watchButton').textContent(),'进入棋室 →');
+ // Abort navigation to the author site: verify URL and absence of credentials without contacting it.
+ let sourceRequest;
+ await home.route('https://play.ceciliaceci.me/**',route=>{sourceRequest=route.request();return route.abort();});
+ await home.locator('#enterButton').click();
+ await home.waitForTimeout(100);
+ assert.equal(sourceRequest?.url(),'https://play.ceciliaceci.me/');
+ assert.equal(sourceRequest.headers().authorization,undefined);
+ await home.goto(origin+'/');await home.locator('.game-card[data-game="autochess"]').hover();
+ await home.locator('#watchButton').click();await home.waitForURL(origin+'/autochess/');
+ await homeContext.close();
+ const context=await browser.newContext();
+ await context.addInitScript(token=>localStorage.setItem('cedartoy_token',token),process.env.AUTOCHESS_BROWSER_TOKEN);
+ const page=await context.newPage();
+ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push({url:r.url(),method:r.method()}));
+ await page.goto(origin+'/autochess/');await page.getByRole('button',{name:'创建私人房',exact:true}).waitFor();
+ for(const width of [360,430,1440]){
+  await page.setViewportSize({width,height:900});await page.screenshot({path:`artifacts/autochess-stage2/entry-${width}.png`,fullPage:true});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'entry overflow '+width);
+ }
+ await page.setViewportSize({width:1440,height:1000});
+ await page.getByLabel('模式',{exact:true}).selectOption('duel');
+ await page.getByRole('button',{name:'创建私人房',exact:true}).click();
+ await page.getByRole('button',{name:'补路人机，直接开局',exact:true}).waitFor({timeout:15000});
+ await page.screenshot({path:'artifacts/autochess-stage2/waiting-desktop.png',fullPage:true});
+ await page.getByRole('button',{name:'补路人机，直接开局',exact:true}).click();
+ await page.waitForTimeout(3000);
+ for(const width of [360,430,1440]){
+  await page.setViewportSize({width,height:1000});await page.waitForTimeout(600);
+  await page.screenshot({path:`artifacts/autochess-stage2/board-${width}.png`,fullPage:true});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'board overflow '+width);
+ }
+ // Choose original opening equipment with the visible UI. Seed a legal position via the
+ // authenticated game API; pointer-based canvas dragging still needs a real-device check.
+ await page.locator('.codex-choice-card').first().click();
+ await page.evaluate(async()=>{
+  const post=async(body)=>{const r=await fetch('/autochess/api/room',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('cedartoy_token')},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error);return v;};
+  const cfg=await post({op:'config'});let v=await post({op:'state',roomId:cfg.rooms[0].roomId});
+  if(!v.self.board.length)v=await post({op:'action',roomId:v.id,round:v.round,revision:v.self.revision,requestId:crypto.randomUUID(),action:{kind:'move',piece:v.self.bench[0].id,row:0,col:0}});
+ });
+ await page.getByRole('button',{name:'就绪开战',exact:true}).click();
+ await page.getByRole('button',{name:'跳过战斗',exact:true}).waitFor({timeout:15000});
+ await page.screenshot({path:'artifacts/autochess-stage2/replay-desktop.png',fullPage:true});
+ // The replay may finish while software rendering captures the screenshot.
+ await page.locator('.peach-shop').waitFor({timeout:30000});
+ await page.screenshot({path:'artifacts/autochess-stage2/shop-desktop.png',fullPage:true});
+ await page.reload();await page.getByRole('button',{name:'回到棋盘',exact:true}).first().click();
+ await page.waitForTimeout(2000);assert(await page.locator('canvas').count()>0,'original WebGL canvas');
+ await context.setOffline(true);await page.waitForTimeout(2500);assert(await page.getByText(/网络中断/).count()>0);
+ await context.setOffline(false);await page.waitForTimeout(3000);
+ await page.getByLabel('房间菜单',{exact:true}).click();
+ await page.getByRole('button',{name:'返回棋室（保留席位）',exact:true}).click();
+ await page.getByRole('button',{name:'观看',exact:true}).first().click();await page.waitForTimeout(2000);
+ assert.equal(await page.getByRole('button',{name:'就绪开战',exact:true}).count(),0);
+ await page.screenshot({path:'artifacts/autochess-stage2/own-spectator-desktop.png',fullPage:true});
+ const forbidden=requests.filter(r=>!r.url.startsWith(origin+'/autochess/')&&!r.url.startsWith('data:')&&!r.url.startsWith('blob:'));
+ assert.deepEqual(forbidden,[],'no original/external endpoints');assert.deepEqual(errors,[],'browser errors');
+ fs.writeFileSync('artifacts/autochess-stage2/browser-result.json',JSON.stringify({ok:true,completedAt:new Date().toISOString(),widths:[360,430,1440],requestCount:requests.length,errors},null,2));
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});
