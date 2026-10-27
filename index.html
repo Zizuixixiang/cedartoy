@@ -2594,25 +2594,25 @@
       line-height: 1.55;
     }
 
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) { z-index: 51; }
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) .modal-box {
+    :is(#candleFeedbackModal,#craftAuthorModal) { z-index: 51; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .modal-box {
       width: min(560px, 100%);
       display: flex;
       flex-direction: column;
     }
     #candleFeedbackModal .modal-box { height: min(680px, calc(100dvh - 102px - var(--safe-bottom))); }
-    :is(#craftAuthorModal,#autochessStatsModal) .modal-box { max-height: min(680px, calc(100dvh - 102px - var(--safe-bottom))); }
+    #craftAuthorModal .modal-box { max-height: min(680px, calc(100dvh - 102px - var(--safe-bottom))); }
     #craftAuthorContent { flex: 0 1 auto; }
     #craftAuthorContent img { display: block; max-width: 100%; max-height: 230px; width: auto; height: auto; margin: 8px auto; }
     .candle-feedback-head, .candle-feedback-pages {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
       flex-shrink: 0;
     }
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) .modal-title { margin: 0; }
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) .pixel-btn { min-height: 36px; padding: 6px 10px; font-size: 11px; }
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) .pixel-btn:disabled { opacity: 0.5; cursor: default; }
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) .pixel-btn, :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) .modal-msg { color: var(--text); }
-    :is(#candleFeedbackContent,#craftAuthorContent,#autochessStatsContent) { margin-top: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .modal-title { margin: 0; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn { min-height: 36px; padding: 6px 10px; font-size: 11px; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn:disabled { opacity: 0.5; cursor: default; }
+    :is(#candleFeedbackModal,#craftAuthorModal) .pixel-btn, :is(#candleFeedbackModal,#craftAuthorModal) .modal-msg { color: var(--text); }
+    :is(#candleFeedbackContent,#craftAuthorContent) { margin-top: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
     #candleFeedbackContent { flex: 1; }
     .candle-feedback-row { border-bottom: 1px solid var(--purple-light); }
     .candle-feedback-line {
@@ -2628,13 +2628,13 @@
     .candle-feedback-line span { white-space: nowrap; }
     .candle-feedback-line > span::before { content: "｜"; margin-right: 4px; color: var(--purple-dark); }
     .candle-feedback-view { margin-left: 4px; text-decoration: underline; }
-    :is(#candleFeedbackContent,#craftAuthorContent,#autochessStatsContent) p {
+    :is(#candleFeedbackContent,#craftAuthorContent) p {
       margin: 0; padding: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere;
       color: var(--text); font-size: 12px; line-height: 1.7;
     }
     .candle-feedback-pages { margin-top: 12px; color: var(--text); font-size: 11px; flex-wrap: wrap; }
-    :is(#candleFeedbackRetry,#craftAuthorRetry,#autochessStatsRetry) { align-self: flex-start; margin-top: 8px; }
-    :is(#candleFeedbackModal,#craftAuthorModal,#autochessStatsModal) [hidden] { display: none; }
+    :is(#candleFeedbackRetry,#craftAuthorRetry) { align-self: flex-start; margin-top: 8px; }
+    :is(#candleFeedbackModal,#craftAuthorModal) [hidden] { display: none; }
 
     .history-card-row {
       display: grid;
@@ -3437,9 +3437,6 @@
                     <ol class="rank-list" id="rankList"></ol>
                   </div>
                   <div class="arcade-bank" data-bank-scope="screen"></div>
-                  <div class="modal-actions" data-autochess-stats-entry style="display:none">
-                    <button class="pixel-btn watch-btn secondary" data-autochess-stats type="button">查看游玩统计</button>
-                  </div>
                   <div class="modal-actions" data-craft-author-entry style="display:none">
                     <button class="pixel-btn watch-btn secondary" data-craft-author type="button">查看已分享作品</button>
                   </div>
@@ -3930,26 +3927,6 @@
       </nav>
     </div>
   </div>
-  <div class="modal" id="autochessStatsModal" role="dialog" aria-modal="true" aria-labelledby="autochessStatsTitle">
-    <div class="modal-box">
-      <div class="candle-feedback-head">
-        <h2 class="modal-title" id="autochessStatsTitle">弈间 · 游玩统计</h2>
-        <button class="pixel-btn secondary" id="autochessStatsClose" data-close-modal type="button">关闭</button>
-      </div>
-      <p class="modal-msg">仅本游戏的时段活跃与对局计数，活跃人数不是当前在线人数。</p>
-      <div class="candle-feedback-pages" role="group" aria-label="统计时段">
-        <button class="pixel-btn secondary" data-autochess-range="10m" type="button" aria-pressed="false">最近 10 分钟</button>
-        <button class="pixel-btn" data-autochess-range="1h" type="button" aria-pressed="true">1 小时</button>
-        <button class="pixel-btn secondary" data-autochess-range="6h" type="button" aria-pressed="false">6 小时</button>
-        <button class="pixel-btn secondary" data-autochess-range="12h" type="button" aria-pressed="false">12 小时</button>
-        <button class="pixel-btn secondary" data-autochess-range="24h" type="button" aria-pressed="false">24 小时</button>
-      </div>
-      <div class="modal-msg" id="autochessStatsMsg" role="status" aria-live="polite"></div>
-      <div id="autochessStatsContent" aria-label="游玩统计"></div>
-      <button class="pixel-btn secondary" id="autochessStatsRetry" type="button" hidden>重试</button>
-    </div>
-  </div>
-
   <div class="modal" id="craftAuthorModal" role="dialog" aria-modal="true" aria-labelledby="craftAuthorTitle">
     <div class="modal-box">
       <div class="candle-feedback-head">
@@ -4006,9 +3983,6 @@
       <div class="drawer-actions">
         <button class="pixel-btn watch-btn" id="drawerWatchButton" type="button" style="display:none">围观大屏 →</button>
         <button class="pixel-btn" id="drawerEnter" type="button">ENTER →</button>
-      </div>
-      <div class="modal-actions" data-autochess-stats-entry style="display:none">
-        <button class="pixel-btn watch-btn secondary" data-autochess-stats type="button">查看游玩统计</button>
       </div>
       <div class="modal-actions" data-craft-author-entry style="display:none">
         <button class="pixel-btn watch-btn secondary" data-craft-author type="button">查看已分享作品</button>
@@ -6962,7 +6936,6 @@
       [$("enterButton"), guideEnter, drawerEnter].forEach((button) => {
         if (button) button.style.visibility = game.id === "candle" ? "hidden" : "";
       });
-      refreshAutochessStatsAccess();
       refreshCandleFeedbackAccess();
       refreshCraftAuthorAccess();
       const watchLabel = game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →");
@@ -7067,92 +7040,6 @@
       } catch (error) { showToast(error.message); }
       finally { craftRoomBusy = false; }
     }
-    const autochessStats = {identity: "", allowed: false, access: null, request: null, range: "1h", focus: null};
-    function renderAutochessStatsEntry() {
-      const visible = currentGame().id === "autochess" && autochessStats.allowed && autochessStats.identity === candleIdentity();
-      document.querySelectorAll("[data-autochess-stats-entry]").forEach(entry => { entry.style.display = visible ? "" : "none"; });
-    }
-    function clearAutochessStats() {
-      autochessStats.access?.abort(); autochessStats.request?.abort();
-      Object.assign(autochessStats, {identity: "", allowed: false, access: null, request: null, range: "1h"});
-      $("autochessStatsContent").replaceChildren();
-      $("autochessStatsContent").removeAttribute("aria-busy");
-      $("autochessStatsMsg").textContent = "";
-      $("autochessStatsRetry").hidden = true;
-      $("autochessStatsModal").classList.remove("show");
-      renderAutochessStatsEntry();
-    }
-    async function refreshAutochessStatsAccess() {
-      const identity = candleIdentity();
-      if (identity === autochessStats.identity && currentGame().id === "autochess" && $("autochessStatsModal").classList.contains("show")) return;
-      clearAutochessStats();
-      if (!identity || currentGame().id !== "autochess") return;
-      autochessStats.identity = identity;
-      const controller = new AbortController(); autochessStats.access = controller;
-      try {
-        const response = await fetch("/autochess/api/stats", {method: "POST", headers: headers(true), cache: "no-store", signal: controller.signal, body: JSON.stringify({op: "access"})});
-        const data = response.ok ? await response.json() : {};
-        if (controller.signal.aborted || autochessStats.access !== controller || identity !== candleIdentity() || currentGame().id !== "autochess") return;
-        autochessStats.allowed = data.allowed === true;
-        renderAutochessStatsEntry();
-      } catch (_) {
-        // No permission is assumed on failure. Selecting the game again retries access.
-        if (!controller.signal.aborted && identity === candleIdentity()) renderAutochessStatsEntry();
-      }
-    }
-    function openAutochessStats() {
-      if (currentGame().id !== "autochess" || !autochessStats.allowed || autochessStats.identity !== candleIdentity()) return;
-      autochessStats.focus = document.activeElement;
-      openModal("autochessStatsModal"); $("autochessStatsClose").focus();
-      loadAutochessStats("1h");
-    }
-    async function loadAutochessStats(range) {
-      if (currentGame().id !== "autochess" || !autochessStats.allowed || autochessStats.identity !== candleIdentity() || !$("autochessStatsModal").classList.contains("show")) return;
-      autochessStats.request?.abort();
-      const controller = new AbortController(), identity = candleIdentity();
-      autochessStats.request = controller; autochessStats.range = range;
-      const active = () => !controller.signal.aborted && autochessStats.request === controller && identity === candleIdentity() && currentGame().id === "autochess" && $("autochessStatsModal").classList.contains("show");
-      const content = $("autochessStatsContent");
-      content.replaceChildren(); content.setAttribute("aria-busy", "true");
-      $("autochessStatsMsg").textContent = "正在读取…";
-      $("autochessStatsRetry").hidden = true;
-      document.querySelectorAll("[data-autochess-range]").forEach(button => {
-        const selected = button.dataset.autochessRange === range;
-        button.setAttribute("aria-pressed", String(selected)); button.classList.toggle("secondary", !selected);
-      });
-      try {
-        const response = await fetch("/autochess/api/stats", {method: "POST", headers: headers(true), cache: "no-store", signal: controller.signal, body: JSON.stringify({range})});
-        if (!active()) return;
-        if (response.status === 401 || response.status === 403) {
-          clearAutochessStats(); showToast("当前账号无权查看本游戏统计，请确认登录状态与作者权限。"); return;
-        }
-        if (!response.ok) throw new Error("stats unavailable");
-        const data = await response.json();
-        if (!active()) return;
-        const fields = [["active_humans", "活跃人类"], ["active_machines", "活跃小机"], ["created", "开房"], ["started", "开始"], ["finished", "完成"]];
-        if (data.range !== range || fields.some(([key]) => !Number.isSafeInteger(data[key]) || data[key] < 0)) throw new Error("invalid stats");
-        fields.forEach(([key, label]) => {
-          const row = document.createElement("div"); row.className = "candle-feedback-row candle-feedback-line";
-          const name = document.createElement("div"); name.textContent = label;
-          const count = document.createElement("strong"); count.textContent = String(data[key]);
-          row.append(name, count); content.append(row);
-        });
-        $("autochessStatsMsg").textContent = "";
-      } catch (_) {
-        if (!active()) return;
-        content.replaceChildren(); $("autochessStatsMsg").textContent = "统计暂时无法读取，请重试。"; $("autochessStatsRetry").hidden = false;
-      } finally { if (active()) content.removeAttribute("aria-busy"); }
-    }
-    document.querySelectorAll("[data-autochess-stats]").forEach(button => button.addEventListener("click", openAutochessStats));
-    document.querySelectorAll("[data-autochess-range]").forEach(button => button.addEventListener("click", () => loadAutochessStats(button.dataset.autochessRange)));
-    $("autochessStatsRetry").addEventListener("click", () => loadAutochessStats(autochessStats.range));
-    $("autochessStatsModal").addEventListener("keydown", event => {
-      if (event.key !== "Tab") return;
-      const controls = [...$("autochessStatsModal").querySelectorAll("button")].filter(button => !button.disabled && button.offsetParent !== null);
-      if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1).focus(); }
-      else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
-    });
-
     let craftAuthorIdentity = "", craftAuthorAllowed = false, craftAuthorPage = 1;
     let craftAuthorController = null, craftAuthorFocus = null;
     let craftAuthorAccessController = null;
@@ -9489,7 +9376,6 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
-        refreshAutochessStatsAccess();
         refreshCraftAuthorAccess();
         refreshFeedbackUnread();
         updateFeedbackModeVisibility();
@@ -9512,7 +9398,7 @@
     }
 
     function openModal(id) {
-      if (id === "loginModal") { clearAutochessStats(); clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); }
+      if (id === "loginModal") { clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); }
       if (id === "loginModal") resetLoginModal();
       if (id === "avatarModal") resetAvatarModal();
       if (id === "forgotPasswordModal") resetForgotPasswordModal();
@@ -9531,8 +9417,6 @@
     function closeModals() {
       if ($("feedbackModal").classList.contains("show") && feedbackBusy) return;
       craftRoomPending = false;
-      const autochessWasOpen = $("autochessStatsModal").classList.contains("show");
-      clearAutochessStats();
       const candleWasOpen = $("candleFeedbackModal").classList.contains("show");
       const craftWasOpen = $("craftAuthorModal").classList.contains("show");
       clearCraftAuthor();
@@ -9558,12 +9442,6 @@
       resetPasswordVisibility();
       if (candleWasOpen) candleFeedbackFocus?.focus();
       if (craftWasOpen) craftAuthorFocus?.focus();
-      if (currentGame().id === "autochess") {
-        const identity = candleIdentity(), focus = autochessStats.focus;
-        refreshAutochessStatsAccess().then(() => {
-          if (autochessWasOpen && identity === candleIdentity() && focus?.offsetParent && !$("autochessStatsModal").classList.contains("show")) focus.focus();
-        });
-      }
     }
 
     function renderAuth() {

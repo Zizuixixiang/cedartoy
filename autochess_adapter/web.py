@@ -57,7 +57,13 @@ def api(handler, server, body, path):
         result = request(identity, '/platform/web', {'op': 'config', 'params': {}})
         return {**result, 'name': context['human_name'], 'machines': context['machines'], 'author_stats': author_allowed(owner)}
     if path.endswith('/stats'):
-        return request(identity, '/platform/stats', {'range': body.get('range', '1h')})
+        view = body.get('view')
+        if view not in (None, 'breakdown'):
+            raise _McpError(-32602, '未知的统计视图')
+        period = body.get('range', '1h')
+        if view == 'breakdown' and period not in ('1h', '24h', '7d', '14d', '30d', 'all'):
+            raise _McpError(-32602, '未知的统计范围')
+        return request(identity, '/platform/stats', {'range': period, **({'view': 'breakdown'} if view else {})})
     op = body.get('op')
     if op not in _OPS or (watched and op not in ('config', 'state')):
         raise _McpError(-32001, '此视角不允许该操作')

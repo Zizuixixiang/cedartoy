@@ -27,10 +27,10 @@ index 616fe85..ada8db5 100644
    </section>;
  }
 diff --git a/components/autochess/artwork-arena.css b/components/autochess/artwork-arena.css
-index ed2ad84..7163adf 100644
+index ed2ad84..bebf5cf 100644
 --- a/components/autochess/artwork-arena.css
 +++ b/components/autochess/artwork-arena.css
-@@ -26,15 +26,10 @@
+@@ -26,40 +26,9 @@
  @keyframes art-mist{from{transform:translateX(-2%);opacity:.5}to{transform:translateX(3%);opacity:.9}}
  @keyframes art-petal{0%{transform:translate(0,0) rotate(0);opacity:0}10%{opacity:.55}85%{opacity:.45}100%{transform:translate(35px,850px) rotate(260deg);opacity:0}}
  @media(max-width:768px){
@@ -43,12 +43,37 @@ index ed2ad84..7163adf 100644
 - .peach-camera-overlay{top:63px;right:8px;max-width:calc(100% - 100px)}
 - .peach-enemy-bench{top:111px;right:8px;max-width:150px;font-size:10px}
 - .peach-inventory:has(>p){max-height:45px;overflow:hidden}
+-}
+-@media(orientation:landscape) and (max-height:600px){
+- .room-table.autochess-table{height:100dvh!important;min-height:100dvh!important;padding:0!important}
+- .room-versus-hud{top:4px;width:auto;max-width:calc(100% - 280px);left:50%;transform:translateX(-50%);padding:3px 9px;gap:8px}
+- .versus-side{gap:5px}.versus-side img,.versus-side>div:first-child:not(.versus-meta){max-width:23px;max-height:23px}.versus-sub,.stage-star{display:none}.versus-stage-badge{padding:2px 6px;gap:4px}.versus-name,.stage-text{font-size:10px}
+- .peach-camera-overlay{top:8px;left:max(8px,env(safe-area-inset-left));right:auto;width:118px;max-width:118px;gap:3px;padding:3px}
+- .peach-camera-overlay select{max-width:none;width:100%}.peach-camera-overlay .peach-fullscreen{width:100%;height:27px}.peach-camera-overlay button{width:33px;height:26px}
+- .peach-enemy-bench{left:8px;right:auto;top:111px;width:118px;font-size:10px;padding:6px}
+- .room-panel-toggle{display:block;position:absolute;top:151px;left:8px;z-index:38;padding:6px 9px;background:#eee5e4;border:1px solid #ac949466;border-radius:7px;color:#453742;font-size:10px}
+- .room-board-layout:not(.show-panels)>.room-ranking,.room-board-layout:not(.show-panels)>.room-sidepanel{display:none}
+- .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:43px;z-index:39;max-height:calc(100dvh - 60px);width:150px;overflow:auto}
+- .room-board-layout.show-panels>.room-ranking{left:133px}.room-board-layout.show-panels>.room-sidepanel{right:115px}
+- .peach-dock{left:auto;right:max(8px,env(safe-area-inset-right));top:76px;bottom:8px;width:100px;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:7px}
+- .peach-dock .peach-trash,.peach-dock .peach-shop-toggle{width:100%;height:42px;flex-direction:row;font-size:11px;border-radius:10px}
+- .peach-dock .peach-trash svg,.peach-dock .peach-shop-toggle svg{width:18px;height:18px}.peach-round-controls{padding:5px;flex-wrap:wrap;gap:4px;border-radius:10px}.peach-round-controls button{width:100%;padding:8px 3px;font-size:11px}
+- .peach-inventory{left:8px;bottom:8px;max-width:118px;max-height:100px;padding:5px;font-size:10px}.peach-inventory button{font-size:9px;padding:3px}.peach-inventory .peach-card-art{width:28px;height:28px}
+- .peach-popover{top:42px;bottom:auto;height:auto;max-height:calc(100dvh - 50px);overflow:auto;width:calc(100% - 32px);left:16px;right:16px;transform:none;animation:none}
+- .peach-popover.peach-inspect{width:min(560px,calc(100% - 32px));left:50%;right:auto;transform:translateX(-50%);padding:14px 18px}
+- .peach-inspect header{margin-bottom:8px;padding-bottom:8px}.peach-inspect header strong{font-size:16px}.peach-inspect p{font-size:12px;line-height:1.6}
+- .peach-shop-cards{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.peach-shop-cards .peach-card-art{height:45px}.peach-shop-cards button{padding:6px}.peach-shop header{padding:5px;gap:5px}.peach-shop header button{padding:5px;font-size:11px}
+- .room-draft{inset:6px;padding:8px 12px;max-height:calc(100dvh - 12px);border-radius:16px}
+- .room-draft-header{margin-bottom:6px;padding-bottom:4px;gap:8px}.room-draft-header h2{font-size:16px}.room-draft-kicker{font-size:10px}.room-draft-header p{display:none}.room-draft button{padding:5px 12px;font-size:11px}
+- .room-draft .board-grid{height:calc(100dvh - 84px);min-height:245px;gap:4px}.room-draft .board-tile{padding:3px 7px;border-radius:7px;justify-content:center}.room-draft .board-tile strong{font-size:11px}.room-draft .tile-number{display:none}.room-draft .board-tile small{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+- .room-draft .board-center{padding:6px 12px;min-height:0;overflow:auto;gap:2px}.room-draft .board-center h3{font-size:15px;margin:0}.room-draft .board-center p,.room-draft-state{font-size:11px;margin:0}.room-dice-face{font-size:16px}.room-draft-primary{margin-top:4px}
+- .room-float{top:6px;right:8px}.room-offer-overlay{top:4px;max-height:calc(100dvh - 8px)}.codex-offer-header{padding:8px}.codex-choice-card{padding:10px}
+- .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.danmaku-composer{display:flex;position:fixed;left:8px;right:auto;top:auto;bottom:116px;width:118px;gap:2px;padding:4px}.danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.danmaku-composer button{font-size:10px;padding:3px}
 + .room-panel-toggle{display:block;position:absolute;left:8px;z-index:37;padding:7px 9px;border:1px solid #ac949466;background:#eee5e4;color:#453742;border-radius:8px;font-size:11px}
 + .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:150px;z-index:38;max-height:55dvh}
 + .peach-enemy-bench{top:150px;right:8px;max-width:150px;font-size:10px}
  }
- @media(orientation:landscape) and (max-height:600px){
-  .room-table.autochess-table{height:100dvh!important;min-height:100dvh!important;padding:0!important}
+ @media(prefers-reduced-motion:reduce){.arena-art-frame,.arena-art-mist,.arena-art-petals i{animation:none}.arena-art-petals{display:none}}
 diff --git a/components/autochess/feedback.tsx b/components/autochess/feedback.tsx
 index 33736be..687340c 100644
 --- a/components/autochess/feedback.tsx
@@ -302,7 +327,7 @@ index 400ef7c..3bc1d69 100644
 +</>;
 +}
 diff --git a/components/autochess/room-app.tsx b/components/autochess/room-app.tsx
-index 410ef60..c1503a1 100644
+index 410ef60..9883f88 100644
 --- a/components/autochess/room-app.tsx
 +++ b/components/autochess/room-app.tsx
 @@ -1,4 +1,5 @@
@@ -344,7 +369,7 @@ index 410ef60..c1503a1 100644
 -    if(!credentials||!state?.self||busyRef.current)return;busyRef.current=true;setBusy(true);
 -    const payload={...credentials,round:state.round,revision:state.self.revision,requestId:crypto.randomUUID(),action:command};pending.current=payload;
 +    if(!credentials||!state?.self||busyRef.current)return;
-+    if(state.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)){pending.current=null;setError(waitingStartHint(state.seatIndex===0));return;}
++    if(state.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)){pending.current=null;setError(waitingStartHint(state.seatIndex===0,state.seats.length<(state.seatCount??2)));return;}
 +    busyRef.current=true;setBusy(true);
 +    const payload={...credentials,round:state.round,revision:state.self.revision,requestId:newRequestId(),action:command};pending.current=payload;
      if(command.kind==='move'){setMovePreview({roomId:state.id,round:state.round,revision:state.self.revision,action:command});setNotice('正在保存站位…');}
@@ -391,7 +416,7 @@ index 410ef60..c1503a1 100644
    const statsReplay=useMemo(()=>statsBattle?roomPlayback(statsBattle,viewerSeat):null,[statsBattle,viewerSeat]);
 -  const startSolo=async()=>{if(!credentials||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('start',credentials));setError('');setNotice('已补路人机，开始布阵');}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
 +  const startId=useRef(newRequestId());
-+  const startSolo=async()=>{if(!credentials||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('start',cedar?{...credentials,requestId:startId.current}:credentials));setError('');setNotice('已补路人机，开始布阵');}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
++  const startSolo=async()=>{if(!credentials||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('start',cedar?{...credentials,requestId:startId.current}:credentials));setError('');setNotice('棋局已开始，准备布阵');}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
    if(!credentials)return <div className="lobby-viewport"><div role={error?'alert':undefined}>{error}</div>{savedSession?<div className="lobby-saved-session"><span className="saved-icon">✦</span><span>检测到未完成棋局</span><button className="btn-resume" type="button" onClick={()=>setCredentials(savedSession)}>重连席位</button><button className="btn-clear" type="button" onClick={()=>{try{localStorage.removeItem(SESSION);}catch{}setSavedSession(null);}}>清除存档</button></div>:null}<Lobby packs={connection.packs} packsLoading={!configLoaded} packsError={configError} mcpUrl={connection.mcpUrl} onRefreshPacks={refreshConfig} onPacksChanged={packs=>{configRequest.current++;setConnection(current=>({...current,packs}));setConfigError('');}} onCreate={(packId,mode)=>void create(packId,mode)}             onJoin={(invitation,joinKey)=>void joinRoom(invitation,joinKey)} onEnterRoom={(roomId,token)=>setCredentials({roomId,token})} busy={busy}/></div>;
    if(!view)return <main className="p-6"><p>{error||'正在恢复棋局…'}</p><p className="my-2 text-sm">席位还在。不要急着清掉本机凭证；连上后会自己同步。</p><button onClick={()=>{try{localStorage.removeItem(SESSION);}catch{}onSessionChange(null);}}>返回棋室入口</button></main>;
    const displayed=previewRoomMove(view,movePreview);
@@ -411,8 +436,20 @@ index 410ef60..c1503a1 100644
       if(watching){
         window.history.replaceState(null,'','/autochess/room');
         try{const saved=localStorage.getItem(SESSION);setSavedSession(saved?JSON.parse(saved) as RoomCredentials:null);}catch{setSavedSession(null);}
-@@ -254,12 +262,13 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
-    return <main className="room-table autochess-table mx-auto max-w-[1500px] px-3 py-3 text-[var(--ink)]">
+@@ -251,15 +259,24 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   const consumeLabel=(id:string)=>items.find(x=>x.id===id)?.consume?.label;
+   const playerUrl=playerMcpUrl(connection.mcpUrl);
+   const inviteText=machineInvite(playerUrl,invitation);
+-   return <main className="room-table autochess-table mx-auto max-w-[1500px] px-3 py-3 text-[var(--ink)]">
++   return <main className="room-table autochess-table mx-auto max-w-[1500px] px-3 py-3 text-[var(--ink)]" onClickCapture={event=>{
++     const target=event.target as Element;
++     const control=target.closest('summary,.room-panel-toggle,.peach-shop-toggle');
++     if(!control)return;
++     const own=control.closest('details');
++     event.currentTarget.querySelectorAll<HTMLDetailsElement>('details[open]').forEach(detail=>{if(detail!==own)detail.open=false;});
++     if(!control.matches('.room-panel-toggle'))setPanelsOpen(false);
++     if(!control.matches('.peach-shop-toggle'))setShopOpen(false);
++   }}>
         {!watching?<details className="autochess-companion room-float"><summary aria-label="房间菜单">☰</summary><div className="room-actions rounded-xl border bg-white p-3 text-sm">
          <button className="room-menu-close" type="button" onClick={event=>event.currentTarget.closest('details')?.removeAttribute('open')}>收起房间菜单</button>
 -        <Feedback roomId={view.id} />
@@ -431,13 +468,13 @@ index 410ef60..c1503a1 100644
         </div></details>:null}
       <section className={`danmaku-strip ${shopOpen?'is-covered':''}`} aria-label="弹幕">
        <DanmakuStream key={view.id} messages={view.danmaku??[]} playbackRound={playback?.battle.round} covered={shopOpen} />
-@@ -277,14 +286,14 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -277,14 +294,14 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
       </dialog></div>:null}
      {self?.bounty?.bank?<p className="px-2">连败赏金 {goldAmount(terms, self.bounty.bank)} · 取胜领取，淘汰清零</p>:null}
      {playback?<output>正在回放第 {playback.battle.round} 轮 · 棋友可同时准备下一轮</output>:null}
 -    {self?.result?<RoomResult key={view.id} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
 -    {draftOpen&&draft&&!self?.result&&!playback?<section className="room-draft" aria-label="旅途选秀">
-+    {self?.result?<RoomResult key={view.id} cedar={cedar} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
++    {self?.result&&view.phase!=='waiting'?<RoomResult key={view.id} cedar={cedar} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
 +    {preparation.offers&&draftOpen&&draft?<section className="room-draft" aria-label="旅途选秀">
        <header className="room-draft-header"><div><span className="room-draft-kicker">autochess · 一掷定缘</span><h2>旅途选秀</h2><p>每轮一次，落点已保存。领取后回到棋盘。</p></div><button onClick={()=>setDraftOpen(false)}>暂回棋盘</button></header>
        <div className="board-grid">{boardTiles.map((tile,i)=><article key={tile.id} className={`board-tile ${tile.type} ${(draft.landing??draft.position)===i?'active':''}`} style={{gridRow:tile.coordinate[0],gridColumn:tile.coordinate[1]}}><span className="tile-number">{String(i+1).padStart(2,'0')}</span><strong>{tile.name}</strong><small title={draft.track[i]?.detail}>{draft.track[i]?.label}</small></article>)}
@@ -449,7 +486,7 @@ index 410ef60..c1503a1 100644
      {self?.swordOffer?<section className="codex-offer-card" aria-label={`开局${self.swordOffer.label}三选一`}>
        <header className="codex-offer-header"><span className="codex-offer-badge">✦ 一掷定剑 · 命途初现 ✦</span><h2 className="font-heading text-xl">开局{self.swordOffer.label} · 三选一</h2><p className="text-sm">选一件进装备背包，选完方可就绪布阵。</p></header>
        <div className="codex-offer-grid">{self.swordOffer.choices.map(id=><button key={id} disabled={!editable} className="codex-choice-card" onClick={()=>void action({kind:'pick_sword',item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/><strong>{equipment(id)}</strong><p className="text-sm">{itemHint(id)}</p><span className="card-fleuron-corner">✦</span></button>)}</div>
-@@ -307,7 +316,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -307,21 +324,21 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
          <div className="versus-side own">
            <Avatar id={own?.accountId ?? own?.id ?? 'self'} frame={own?.frame} size={30} />
            <div className="versus-meta">
@@ -458,7 +495,14 @@ index 410ef60..c1503a1 100644
              <span className="versus-sub">{modePack(view.mode).showHpInVersus&&own ? `${own.hp} / ${view.maxHp??modePack(view.mode).rules.startHp} 血` : watching ? '观测者' : '执子在下方'}</span>
            </div>
          </div>
-@@ -321,7 +330,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+         <div className="versus-stage-badge">
+           <span className="stage-star">✦</span>
+           <span className="stage-text">
+-             {playback ? `第 ${playback.battle.round} 轮 · 对局回放` : view.phase === 'prepare' ? `第 ${view.round} 轮 · 备战排布` : '棋局待启'}
++             {playback ? `第 ${playback.battle.round} 轮 · 对局回放` : view.phase === 'prepare' ? `第 ${view.round} 轮 · 备战排布` : view.phase==='finished' ? '棋局已结束' : '棋局待启'}
+           </span>
+           <span className="stage-vs">VS</span>
+           <span className="stage-star">✦</span>
          </div>
          <div className="versus-side enemy">
            <div className="versus-meta text-right">
@@ -467,7 +511,7 @@ index 410ef60..c1503a1 100644
                {shownEnemy?.name ?? (view.phase === 'waiting' ? '等待棋友' : '本轮轮空')}
                {shownEnemy?.bot ? <span className="versus-tag-bot">机</span> : null}
                {replay?.ghost ? <span className="versus-tag-ghost">镜像</span> : null}
-@@ -338,11 +347,11 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -338,11 +355,11 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
        selectedId={selected} onCell={(row,col)=>{if(!editable)return;if(selected)move(selected,row,col);else setSelected(board.find(p=>p.localRow===row&&p.localCol===col)?.id);}}
        onBench={id=>{if(editable)setSelected(id);}} onWithdraw={()=>{if(editable&&selected)void action({kind:'withdraw',piece:selected});}}
        onDrop={(source,target)=>{if(!editable)return;if(target.kind==='cell')move(source.id,target.row,target.col);else void action({kind:target.kind==='sell'?'sell':'withdraw',piece:source.id});}}
@@ -475,7 +519,7 @@ index 410ef60..c1503a1 100644
 -      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>返回大厅</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>返回大厅</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
 -      inventory={<><strong>装备背包 · {self?.inventory?.length??0}</strong>{self?.inventory?.map((id,i)=><button key={`${id}-${i}`} title={itemHint(id)} disabled={!editable||!selected} onClick={()=>selected&&action({kind:'equip',piece:selected,item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/>{equipment(id)}</button>)}{!self?.inventory?.length?<p>{watching?'仅棋手可见':'暂无待装配装备'}</p>:null}</>}
 +      notice={notice} onInspect={()=>setShopOpen(false)} onDismiss={()=>setShopOpen(false)} shopOpen={shopOpen&&preparation.shop} shopEnabled={preparation.shop} onShopToggle={()=>shopOpen?closeShop():setShopOpen(true)}
-+      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button title="可先从房间菜单邀请好友；准备好后手动开始，空位补 NPC" disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
++      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button title="可先从房间菜单邀请好友；准备好后手动开始，空位补 NPC" disabled={busy} onClick={()=>void startSolo()}>{view.seats.length<(view.seatCount??2)?'补路人机，直接开局':'开始棋局'}</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
 +      inventoryLabel={`装备背包 · ${self?.inventory?.length??0}`} inventory={<>{self?.inventory?.map((id,i)=><button key={`${id}-${i}`} title={itemHint(id)} disabled={!editable||!selected} onClick={()=>selected&&action({kind:'equip',piece:selected,item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/>{equipment(id)}</button>)}{!self?.inventory?.length?<p>{watching?'仅棋手可见':'暂无待装配装备'}</p>:null}</>}
        inspectorActions={piece=>editable&&[...self!.board,...self!.bench!].some(p=>p.id===piece.id)?<><button onClick={()=>setSelected(piece.id)}>选中棋子</button>{self!.board.some(p=>p.id===piece.id)?<button onClick={()=>action({kind:'withdraw',piece:piece.id})}>下场</button>:null}{self!.inventory!.map((id,i)=><button key={`${id}-${i}`} disabled={piece.itemIds.length>=2||piece.itemIds.includes(id)} onClick={()=>action({kind:'equip',piece:piece.id,item:id})}>装上 {equipment(id)}</button>)}{self!.inventory!.map((id,i)=>consumeLabel(id)?<button key={`use-${id}-${i}`} onClick={()=>action({kind:'consume',piece:piece.id,item:id})}>{consumeLabel(id)} {equipment(id)}</button>:null)}{piece.itemIds.map(id=><button key={id} onClick={()=>action({kind:'unequip',piece:piece.id,item:id})}>卸下 {equipment(id)}</button>)}<button onClick={()=>action({kind:'sell',piece:piece.id})}>出售</button></>:null}
 -       topPanel={shopOpen&&self&&!playback&&view.phase!=='finished'?<div className="peach-shop" role="dialog" aria-label={`房间战后${terms.level.shop}`}><header><strong>战后{terms.level.shop} · {terms.gold.name} {self.gold}{self.shopBanUntil&&self.shopBanUntil>=view.round?' · 养精蓄锐，不能买棋':''}</strong><span><button disabled={!editable||self.gold!<XP_BUY_COST||xpToNext(self.level??START_LEVEL)===null} onClick={()=>action({kind:'buy_xp'})}>{terms.level.upgrade} · {goldAmount(terms, XP_BUY_COST)}</button><button disabled={!editable||self.gold!<refreshPrice||!self.shop.length} onClick={()=>action({kind:'refresh'})}>{terms.reroll.name} · {goldAmount(terms, refreshPrice)}</button><button onClick={closeShop}>收起{terms.level.shop}</button></span></header><div className="peach-shop-cards">{self.shop.map((id,i)=>{if(!id)return null;const unit=findUnit(id);if(!unit)return <span key={`${view.round}-${i}`}>{id}</span>;const locked=!!self.shopBanUntil&&self.shopBanUntil>=view.round;return <button key={`${view.round}-${i}`} disabled={!editable||locked||self.gold!<roomShopPrice(self,unit)} onClick={()=>action({kind:'buy',index:i})}><img className="peach-card-art" src={itemImage(unit.id,{label:unit.name})} alt=""/><span>{goldAmount(terms, roomShopPrice(self,unit))}</span><strong>{unit.name}</strong><p className="peach-card-tag">{unitSkill(unit.id)?.name ?? ''}</p></button>;})}{!self.shop.length?<p>第一轮战斗结束后开放{terms.level.shop}。</p>:null}</div></div>:null}/>
@@ -517,7 +561,7 @@ index 79cd593..2744c7f 100644
        </section>
      </dialog>
 diff --git a/components/autochess/room-ui.css b/components/autochess/room-ui.css
-index 74b167b..7901f20 100644
+index 74b167b..b628029 100644
 --- a/components/autochess/room-ui.css
 +++ b/components/autochess/room-ui.css
 @@ -1200,12 +1200,14 @@
@@ -622,6 +666,50 @@ index 74b167b..7901f20 100644
  }
  
  /* 查 IP 命中：桌宠式系统弹窗 */
+@@ -1662,3 +1713,43 @@
+ .lobby-avatar-upload, .lobby-wardrobe-switches { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+ .lobby-wardrobe-switches label { display:grid; gap:8px; flex:1; min-width:180px; }
+ .lobby-wardrobe-switches select { width:100%; padding:10px; border:1px solid var(--codex-border); border-radius:10px; background:#fff; color:var(--codex-ink-main); }
++
++/* Landscape: two utility rails, a centered HUD and a scrollable board overlay.
++   Replaces the old artwork-arena landscape offsets rather than stacking them. */
++@media (orientation:landscape) and (max-height:700px) {
++ .room-table.autochess-table{--room-side:164px;--room-left:max(8px,env(safe-area-inset-left));--room-right:max(8px,env(safe-area-inset-right));--room-top:max(8px,env(safe-area-inset-top));--room-bottom:max(8px,env(safe-area-inset-bottom))}
++ .room-versus-hud{top:var(--room-top);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);transform:none;width:auto;max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:5px 10px;gap:3px 8px;border-radius:18px}
++ .versus-side{gap:6px}.versus-meta{flex:1}.versus-side>:not(.versus-meta){flex-shrink:0}.versus-side.enemy{grid-column:2;grid-row:1;justify-content:flex-end}.versus-name{font-size:12px}.versus-sub,.stage-star{display:none}
++ .versus-stage-badge{grid-row:2;grid-column:1/-1;justify-self:center;padding:2px 8px;gap:5px;font-size:11px;white-space:nowrap}
++ .peach-camera-overlay{top:var(--room-top);left:var(--room-left);right:auto;width:var(--room-side);max-width:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;max-height:100px;overflow:auto}
++ .peach-camera-overlay button{width:100%;height:44px;min-height:44px;padding:2px;font-size:12px}
++ .peach-camera-overlay button:not([aria-label]){grid-column:1/-1;width:100%;min-width:0;white-space:nowrap}
++ .peach-enemy-bench{top:calc(var(--room-top) + 104px);left:var(--room-left);right:auto;width:var(--room-side);max-width:none;padding:0 8px;font-size:12px}
++ .peach-enemy-bench summary{display:flex;align-items:center;min-height:44px;cursor:pointer}
++ .peach-enemy-bench>div{position:fixed;top:calc(var(--room-top) + 76px);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);max-height:calc(100dvh - 104px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;margin:0;padding:12px;background:#251d2bf5;border:1px solid #c6a0a455;border-radius:12px}
++ .peach-enemy-bench button{min-height:44px;font-size:12px;padding:8px}
++ .room-panel-toggle{display:block;position:absolute;top:calc(var(--room-top) + 156px);left:var(--room-left);width:var(--room-side);height:44px;z-index:37;border:1px solid var(--skin-border);border-radius:8px;background:var(--skin-surface-glass);color:var(--skin-ink-main);font-size:12px}
++ .room-board-layout:not(.show-panels)>.room-ranking,.room-board-layout:not(.show-panels)>.room-sidepanel{display:none}
++ .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:calc(var(--room-top) + 76px);bottom:auto;max-height:calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));width:calc((100% - 384px - env(safe-area-inset-left) - env(safe-area-inset-right))/2);overflow:auto;z-index:38}
++ .room-board-layout.show-panels>.room-ranking{left:calc(var(--room-left) + 176px)}.room-board-layout.show-panels>.room-sidepanel{right:calc(var(--room-right) + 176px)}
++ .peach-inventory{left:var(--room-left);bottom:var(--room-bottom);width:var(--room-side);min-width:0;max-width:var(--room-side);padding:0 8px}
++ .peach-inventory>summary{min-height:44px}.peach-inventory-content{max-height:calc(100dvh - 288px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding-bottom:6px}.peach-inventory button{min-height:44px;padding:5px;font-size:12px}.peach-inventory .peach-card-art{width:28px;height:28px;flex-basis:28px}
++ .peach-dock{left:auto;right:var(--room-right);top:auto;bottom:var(--room-bottom);width:var(--room-side);display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end}
++ .peach-round-controls{grid-column:1/-1;grid-row:1;min-width:0;min-height:50px;padding:3px;gap:3px;flex-wrap:wrap;justify-content:center;text-align:center;font-size:12px;line-height:1.5}
++ .peach-round-controls button{min-height:44px;max-width:100%;padding:7px;font-size:12px}
++ .peach-dock .peach-trash,.peach-dock .peach-shop-toggle{width:100%;height:52px;min-width:0;border-radius:12px;font-size:11px}
++ .room-table .room-float{top:var(--room-top);right:var(--room-right);left:auto}.room-float>summary{width:44px;height:44px}
++ .room-float>.room-actions{top:calc(var(--room-top) + 76px);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);width:auto;max-height:calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;padding:12px;overscroll-behavior:contain}
++ .room-actions button{min-height:44px}.room-actions p{font-size:12px;line-height:1.5;overflow-wrap:break-word}
++ .room-offer-overlay,.peach-popover{top:calc(var(--room-top) + 76px);left:50%;right:auto;transform:translateX(-50%);width:min(840px,calc(100% - 368px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-height:calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:12px;overflow:auto;overscroll-behavior:contain}
++ .room-offer-overlay{padding:0}.room-offer-overlay>section{flex-shrink:0}.codex-offer-card{padding:12px}.codex-offer-header{padding-bottom:8px;margin-bottom:8px}.codex-offer-header h2{font-size:17px}.codex-offer-header p{font-size:12px}
++ .peach-shop>header{flex-wrap:wrap;gap:8px}.peach-shop>header strong{font-size:16px}.peach-shop>header>span{display:flex;flex-wrap:wrap;gap:6px}.peach-shop>header button{min-height:44px;padding:6px;font-size:12px}
++ .peach-shop-cards{gap:8px}.peach-shop-cards .peach-card-art{height:48px}
++ .room-result-reopen{top:calc(var(--room-top) + 52px);bottom:auto;left:auto;right:var(--room-right);transform:none;max-width:var(--room-side);min-height:44px;font-size:12px}
++ .room-table .room-error{top:calc(var(--room-top) + 76px);max-width:calc(100% - 368px)}
++ .danmaku-strip{top:calc(var(--room-top) + 76px);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);width:auto;max-height:48px}.danmaku-composer{position:fixed;top:calc(var(--room-top) + 106px);right:var(--room-right);bottom:auto;left:auto;width:var(--room-side);padding:4px;gap:3px;display:flex}.danmaku-composer input{min-width:0;width:100%;font-size:12px}.danmaku-composer button{flex:0 0 44px;padding:4px;font-size:12px;min-height:44px;white-space:nowrap}
++}
++@media (orientation:landscape) and (max-height:700px) and (max-width:1100px){
++ .peach-shop-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
++ .codex-offer-grid{grid-template-columns:minmax(0,1fr);gap:8px}.codex-choice-card{padding:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:5px 10px}.codex-choice-card:has(>img){grid-template-columns:40px minmax(0,1fr)}.codex-choice-card>img{width:40px;height:40px;grid-row:1/3}.codex-choice-card strong{margin:0;font-size:14px}.codex-choice-card p{margin:0;font-size:12px;line-height:1.6}
++}
 diff --git a/components/autochess/theme-revival.css b/components/autochess/theme-revival.css
 index 5761654..33554b5 100644
 --- a/components/autochess/theme-revival.css
@@ -990,10 +1078,15 @@ index 1531f25..ec41263 100644
    }
  }
 diff --git a/lib/autochess/room-store.ts b/lib/autochess/room-store.ts
-index 9d8e918..6429481 100644
+index 9d8e918..bf826a6 100644
 --- a/lib/autochess/room-store.ts
 +++ b/lib/autochess/room-store.ts
-@@ -5,7 +5,7 @@ import { BENCH_CAPACITY } from './constants';
+@@ -1,3 +1,4 @@
++import { LOBBY_MODES } from '../../packs/modes/registry';
+ import { placementOutcome } from '../meta/economy';
+ import type { MatchSettlementInput, AccountStore } from '../accounts/account-store';
+ import { isLobbyMode } from '../../packs/modes/registry';
+@@ -5,7 +6,7 @@ import { BENCH_CAPACITY } from './constants';
  import { botField, botBuyOrder, botStrength } from './room-bot';
  import { roomShopPrice, roomRefreshPrice } from './room-economy';
  import { randomBytes, randomInt, createHash } from 'node:crypto';
@@ -1002,7 +1095,16 @@ index 9d8e918..6429481 100644
  import { join } from 'node:path';
  import { compactHex, hexPickRarity, makeHexOffer, withHexes, getHex, immediateHexGold, pickBestHex, shopBanFromHex, shopBanned, delayedGoldBonus, winGoldPerStreak, deathGoldChance, freeRefreshGrant, grantUnitFromNote } from '../../content/autochess/hexes';
  import { drawSwords, swordTierForRound } from '../../content/autochess/items';
-@@ -36,7 +36,7 @@ import { DANMAKU_STYLES } from './room-types';
+@@ -19,7 +20,7 @@ import { settleLossBounty } from './loss-bounty';
+ import { battleHpLoss } from './round-settlement';
+ import { addAndMerge, deliverUnitToRoster, equipFromRoster, makeDraftTrack, makeInitialPieces, makePiece, nextStar, replaceFromBench, rollDraft, sellFromRoster, shouldDraft, skillDraftDue, unequipFromRoster } from './core';
+ import { MAX_LEVEL, START_LEVEL, XP_BUY_AMOUNT, XP_BUY_COST, XP_PER_ROUND, addXp, fieldCapacityForLevel, stageOfRound, winStreakGold } from './level';
+-import { DEFAULT_PACK_ID, packHexes, packItems, packKitItems, packMeta, packOpening, packRoster, parsePackId, type PackId } from '../../packs/registry';
++import { DEFAULT_PACK_ID, PACK_LIST, packHexes, packItems, packKitItems, packMeta, packOpening, packRoster, parsePackId, type PackId } from '../../packs/registry';
+ import { boardSkinId, matchRules, parseMatchMode, type MatchModeId } from './match-rules';
+ import { createRng, hash32, hashString } from './rng';
+ import { recurringGrantPool, type RecurringRosterUnit } from './hex-recurring';
+@@ -36,7 +37,7 @@ import { DANMAKU_STYLES } from './room-types';
  const BOT_NAMES = ['路人甲','路人乙','路人丙','路人丁','路人戊','路人己','路人庚','路人辛','路人壬','路人癸','路人子','路人丑','路人寅','路人卯'];
  /** 房间闲置上限：超过这段时间没有任何操作就自动结束（掉线判负），不留下隔夜还在打的局。 */
  const ROOM_IDLE_KILL_MS = 60 * 60 * 1000;
@@ -1011,7 +1113,7 @@ index 9d8e918..6429481 100644
  type Room = { version: 1; id: string; invite: string; watch: string; seed: number; revision: number; round: number;
    /** 最后一次落子/操作时间；超过闲置上限的房间会被自动结束（掉线判负）。 */
    updatedAt?: number;
-@@ -46,6 +46,10 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
+@@ -46,6 +47,10 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
    telemetrySource?: 'lab';
    /** 机开房请求的幂等键；断线重试返回原房间与原席位。 */
    machineCreate?: { accountId: string; requestId: string };
@@ -1022,7 +1124,7 @@ index 9d8e918..6429481 100644
    wake?: {round:number;sequence:number;requestedAt:number;receivedId?:string;receivedAt?:number};
    phase: RoomView['phase']; seats: Seat[]; finalBattles?: Record<number, RoomBattle>; battle?: RoomBattle; battleAt?: number; winner?: RoomView['winner']; log: string[];
    receipts: Record<string, string>; joinKey?: string; joinKeys: Record<string, number>; cursor: { enabled: boolean; status: string };
-@@ -54,7 +58,7 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
+@@ -54,7 +59,7 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
    settled?: number; finishReason?: 'idle' | 'cancelled' };
  /** 局外结算回调：淘汰时逐席位提交，传完整参赛账号判定陪伴关系。 */
  export type RoomRecorder = { settle(input: MatchSettlementInput): ReturnType<AccountStore['settleMatch']> | void };
@@ -1031,7 +1133,7 @@ index 9d8e918..6429481 100644
  const secret = () => randomBytes(18).toString('hex');
  const fail = (message: string): never => { throw new Error(message); };
  export class RoomStore {
-@@ -62,7 +66,7 @@ export class RoomStore {
+@@ -62,7 +67,7 @@ export class RoomStore {
    private seen = new Map<string, number>();
    private listeners = new Set<() => void>();
    private telemetry: BalanceTelemetryStore;
@@ -1040,7 +1142,7 @@ index 9d8e918..6429481 100644
      mkdirSync(directory, { recursive: true });
      this.telemetry = new BalanceTelemetryStore(directory);
      for (const file of readdirSync(directory).filter(x => /^[a-f0-9]{12}\.json$/.test(x))) {
-@@ -160,7 +164,7 @@ export class RoomStore {
+@@ -160,7 +165,7 @@ export class RoomStore {
        const place = i + 1;
        seat.result = { place, participants: room.seats.length, round: room.round,
          outcome: room.finishReason === 'idle' ? (room.winner === 'draw' ? 'draw' : room.seats.indexOf(seat) === room.winner ? 'win' : 'loss') : placementOutcome(place, room.seats.length),
@@ -1049,7 +1151,7 @@ index 9d8e918..6429481 100644
        seat.ready = true;
      });
    }
-@@ -182,10 +186,18 @@ export class RoomStore {
+@@ -182,10 +187,18 @@ export class RoomStore {
  
    private persist(room: Room) {
      room.updatedAt = Date.now();
@@ -1070,7 +1172,7 @@ index 9d8e918..6429481 100644
      this.rooms.set(room.id, room);
      if (room.battle && room.battleAt && room.battleAt >= this.telemetry.startedAt) {
        try { this.telemetry.recordBattle({ pack: room.pack, mode: room.mode!, battle: room.battle, botSeats: room.seats.map(seat => !!seat.bot), at: room.battleAt, source: room.telemetrySource ?? 'live' }); }
-@@ -374,7 +386,7 @@ export class RoomStore {
+@@ -374,7 +387,7 @@ export class RoomStore {
        level: START_LEVEL, xp: 0, winStreak: 0, capacity: fieldCapacityForLevel(START_LEVEL),
        swordOffer: this.openingOffer(room, index, room.round),
        token: secret(), revision: 0, ready: false, shop: [], say: '',
@@ -1079,7 +1181,7 @@ index 9d8e918..6429481 100644
    }
    private newRoom(pack?: string, seats?: number, mode = 'standard'): Room {
      const packId = parsePackId(pack ?? process.env.CHESS_PACK);
-@@ -405,6 +417,69 @@ export class RoomStore {
+@@ -405,6 +418,99 @@ export class RoomStore {
      this.persist(room);
      return { roomId: room.id, token: room.seats[0]!.token, invitation: `${room.id}.${room.invite}`, watchToken: room.watch };
    }
@@ -1095,7 +1197,15 @@ index 9d8e918..6429481 100644
 +    const signature = JSON.stringify([packId, mode, count, ...household.map(person=>person.accountId).sort()]);
 +    const repeated = [...this.rooms.values()].find(room => room.platformCreate?.accountId === owner.accountId && room.platformCreate.requestId === requestId);
 +    if (repeated && repeated.platformCreate!.signature !== signature) fail('操作编号已用于不同开房参数');
-+    if (repeated) return { roomId: repeated.id, invitation: `${repeated.id}.${repeated.invite}`, duplicate: true };
++    const startHouseholdDuel = (room: Room) => {
++      if (owner.actorType !== 'human' || mode !== 'duel' || household.length !== 1 || household[0]!.actorType !== 'ai'
++        || room.seatCount !== 2 || room.seats.length !== 2 || room.phase !== 'waiting') return;
++      // The platform revalidates the binding on every create/retry. This reserves a
++      // bound AI seat; it does not connect or wake the AI's MCP client.
++      const startId = 'household-' + createHash('sha256').update(requestId).digest('hex');
++      this.start({roomId:room.id,token:room.seats[0]!.token},startId);
++    };
++    if (repeated) { startHouseholdDuel(repeated); return { roomId: repeated.id, invitation: `${repeated.id}.${repeated.invite}`, duplicate: true }; }
 +    const room = this.newRoom(packId, count, mode);
 +    room.platformCreate = { accountId: owner.accountId, requestId, signature };
 +    room.platformTimes = { created: Date.now() };
@@ -1106,6 +1216,7 @@ index 9d8e918..6429481 100644
 +      room.seats.push(seat);
 +    }
 +    this.persist(room);
++    startHouseholdDuel(room);
 +    return { roomId: room.id, invitation: `${room.id}.${room.invite}` };
 +  }
 +  /** Only the platform asks for this caller's own rooms. Never returns a public directory. */
@@ -1130,6 +1241,27 @@ index 9d8e918..6429481 100644
 +    }
 +    return {active_humans:humans.size,active_machines:ais.size,created,started,finished};
 +  }
++  /** Management dashboard only: counts of actually started private games by published
++   * pack and mode. No account ids, room ids, invitations or spectator details. */
++  platformPlayBreakdown(since: number, until = Date.now()) {
++    const modes = LOBBY_MODES.map(mode => ({id: mode.id, name: mode.name}));
++    const packs = PACK_LIST.map(pack => ({
++      id: pack.id, name: pack.displayName, started: 0,
++      by_mode: Object.fromEntries(modes.map(mode => [mode.id, 0])) as Record<string, number>,
++    }));
++    const packMap = new Map(packs.map(pack => [pack.id, pack]));
++    const modeIds: Set<string> = new Set(modes.map(mode => mode.id));
++    let started = 0;
++    for (const room of this.rooms.values()) {
++      const at = room.platformTimes?.started;
++      if (at === undefined || at < since || at >= until) continue;
++      const row = packMap.get(room.pack);
++      const mode = room.mode ?? 'standard';
++      if (!row || !modeIds.has(mode)) continue;
++      row.started++; row.by_mode[mode] = (row.by_mode[mode] ?? 0) + 1; started++;
++    }
++    return {started, modes, packs};
++  }
 +  /** Invitation possession grants a seat, never host powers. No automatic start or public lookup. */
 +  joinForPlatform(invitation: string, owner: SeatOwner) {
 +    const info = this.invitationRoom(invitation);
@@ -1149,7 +1281,7 @@ index 9d8e918..6429481 100644
    /** Matchmaking seats both people in one write. The server's bystanders fill the other slots. */
    createMatched(requestKey: string, people: SeatOwner[], pack?: string, seats?: number) {
      const existing = [...this.rooms.values()].find(room => room.matchKind === 'queue' && room.matchKey === requestKey);
-@@ -524,10 +599,19 @@ export class RoomStore {
+@@ -524,17 +630,27 @@ export class RoomStore {
      return { roomId: room.id, token: room.seats[1]!.token };
    }
    /** 单人开局：把剩余席位补成路人机并进入备战（房主不想等人时用）。 */
@@ -1167,10 +1299,19 @@ index 9d8e918..6429481 100644
 +      if (room.platformTimes) room.platformTimes.started = Date.now();
 +      room.seats[0]!.activeAt = Date.now();
 +    }
++    const missing = room.seatCount - room.seats.length;
      while (room.seats.length < room.seatCount) {
        const index = room.seats.length;
        const bot = this.makeSeat(room, index, BOT_NAMES[index - 1] ?? `棋手${index + 1}`);
-@@ -550,7 +634,7 @@ export class RoomStore {
+       bot.bot = true; room.seats.push(bot);
+     }
+     room.phase = 'prepare'; this.pairRound(room); this.autoReadyBots(room);
+-    room.revision++; room.log.push(`房主开局，补位至 ${room.seatCount} 人（其余为路人机）。`);
++    room.revision++; room.log.push(missing?`房主开局，补位至 ${room.seatCount} 人（其余为路人机）。`:'房主开局，已入座的棋友开始备战。');
+     this.persist(room);
+     return this.view(credentials);
+   }
+@@ -550,7 +666,7 @@ export class RoomStore {
        mode: room.mode ?? 'standard', maxHp: matchRules(room.mode).startHp, pack: room.pack, packName: packMeta(room.pack).name, seatCount: room.seatCount, opponentIndex: venue?.opponent, venue,
        wake:{requestedAt:room.wake?.requestedAt,receivedAt:room.wake?.receivedAt,status:room.phase==='finished'?'棋局结束':room.seats[1]?.ready?'机已就绪':room.wake?.round===room.round?(room.wake.receivedAt?'客户端已收到，等待机落子':'催促已登记，等待客户端接收'):'等待轮次事件'},
        seats: room.seats.map((seat, i) => ({ id: seat.id, name: seat.name, hp: seat.hp, board: withHexes(seat.board, seat.hexes), bench: withHexes(seat.bench ?? [], seat.hexes),
@@ -1179,7 +1320,7 @@ index 9d8e918..6429481 100644
        ...(index === undefined ? {} : { seatIndex: index, self: this.privateSeat(room.seats[index]!) }),
        battle: battle ? { ...battle, output: { ...(fight?.output ?? battle.output), seed: 0 } } : undefined, winner: room.winner, log: room.log.slice(-15), cursor: room.cursor,
        danmaku: room.danmaku ?? [] });
-@@ -698,6 +782,7 @@ export class RoomStore {
+@@ -698,6 +814,7 @@ export class RoomStore {
      }
      if (original.phase === 'finished' && input.action.kind !== 'danmaku') fail('棋局已经结束');
      const room = structuredClone(original); const seat = room.seats[index]!;
@@ -1187,7 +1328,7 @@ index 9d8e918..6429481 100644
      if (input.action.kind === 'danmaku') {
        this.postDanmaku(room, index, input.action);
        room.revision++; room.receipts[key] = signature;
-@@ -1267,12 +1352,12 @@ export class RoomStore {
+@@ -1267,12 +1384,12 @@ export class RoomStore {
      if (this.livingSeats(room).length <= rules.finishWhenLiving && this.maybeFinish(room)) return;
      if (this.livingSeats(room).every(seat => seat.bot && seat.ready)) this.battle(room);
    }
@@ -1268,6 +1409,70 @@ index 0000000..246412b
 +  </>}
 + </div>;
 +}
+diff --git a/cedartoy/game-stats.css b/cedartoy/game-stats.css
+new file mode 100644
+index 0000000..a9404b5
+--- /dev/null
++++ b/cedartoy/game-stats.css
+@@ -0,0 +1,19 @@
++/* Scoped reuse of admin.html's operations panel tokens; no site-admin shell. */
++.yijian-management{--bg:#f6f2ee;--panel:#fffdf9;--line:#ddd4ca;--text:#27231f;--muted:#746b62;--accent:#2f6f73;min-height:100dvh;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;line-height:1.5;padding:24px 16px}
++.yijian-management .management-shell{max-width:880px;margin:auto}
++.yijian-management .management-head,.yijian-management .section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
++.yijian-management .management-head{margin-bottom:16px}
++.yijian-management h1{font-size:21px;margin:0;font-weight:700;letter-spacing:normal}
++.yijian-management h2{font-size:19px;margin:0;font-weight:700}
++.yijian-management .management-panel{padding:14px;display:grid;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
++.yijian-management .dashboard-control{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700}
++.yijian-management button,.yijian-management select{min-height:36px;border:1px solid var(--line);border-radius:6px;padding:6px 9px;background:#fff;color:var(--text);font:400 14px/1.5 ui-sans-serif,system-ui,sans-serif;cursor:pointer}
++.yijian-management :is(button,select):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
++.yijian-management .game-overview{width:100%;border:2px solid var(--text);border-collapse:collapse;table-layout:fixed;font-size:13px;font-variant-numeric:tabular-nums}
++.yijian-management caption{text-align:left;color:var(--muted);font-size:12px;padding-bottom:8px}
++.yijian-management :is(th,td){padding:8px 4px;border-bottom:1px solid #ddd;text-align:right;overflow-wrap:break-word;font-weight:400}
++.yijian-management th:first-child{text-align:left;width:30%}
++.yijian-management thead{background:#f2eedf}
++.yijian-management thead th,.yijian-management tfoot :is(th,td){font-weight:700}
++.yijian-management .section-note{margin:0;font-size:13px;color:var(--muted)}
++@media(max-width:520px){.yijian-management{padding:16px 12px}.yijian-management h1{font-size:19px}.yijian-management .management-panel{padding:12px}.yijian-management button,.yijian-management select{min-height:44px}}
+diff --git a/cedartoy/game-stats.tsx b/cedartoy/game-stats.tsx
+new file mode 100644
+index 0000000..38a145e
+--- /dev/null
++++ b/cedartoy/game-stats.tsx
+@@ -0,0 +1,33 @@
++import React,{useEffect,useState} from 'react';
++import {cedarRequest} from './transport';
++import './game-stats.css';
++const RANGES=[['1h','1小时'],['24h','24小时'],['7d','7天'],['14d','14天'],['30d','30天'],['all','全部记录']];
++type Report={range:string;generated_at:string;started:number;modes:{id:string;name:string}[];packs:{id:string;name:string;started:number;by_mode:Record<string,number>}[]};
++function validate(data:Report,range:string){
++ const count=(n:number)=>Number.isSafeInteger(n)&&n>=0;
++ if(data.range!==range||!count(data.started)||data.modes?.map(m=>m.id).join(',')!=='standard,duel'||data.packs?.map(p=>p.id).join(',')!=='ai,jianghu'||
++  data.packs.some(p=>!count(p.started)||data.modes.some(m=>!count(p.by_mode?.[m.id]))||data.modes.reduce((n,m)=>n+p.by_mode[m.id],0)!==p.started)||data.packs.reduce((n,p)=>n+p.started,0)!==data.started)throw Error('统计结果格式无效');
++ return data;
++}
++export default function GameStats({onBack,onDenied}:{onBack:()=>void;onDenied:()=>void}){
++ const [range,setRange]=useState('7d'),[attempt,setAttempt]=useState(0),[report,setReport]=useState<Report>(),[error,setError]=useState('');
++ useEffect(()=>{
++  let active=true;setReport(undefined);setError('');
++  void cedarRequest<Report>('stats',{view:'breakdown',range}).then(data=>{if(active)setReport(validate(data,range));}).catch(e=>{
++   if(!active)return;
++   if(e.status===403){onDenied();return;}setError(e.message||'统计暂时不可用');
++  });
++  return()=>{active=false;};
++ },[range,attempt]);
++ return <main className="yijian-management" aria-label="弈间独立统计">
++  <div className="management-shell"><header className="management-head"><h1>弈间 · 游玩统计</h1><button onClick={onBack}>返回棋室</button></header>
++   <section className="management-panel" aria-busy={!report&&!error}>
++    <div className="section-head"><h2>已开始棋局</h2><label className="dashboard-control">范围 <select aria-label="统计范围" value={range} onChange={e=>{setReport(undefined);setError('');setRange(e.target.value);}}>{RANGES.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label></div>
++    {error?<p role="alert">{error} <button onClick={()=>setAttempt(n=>n+1)}>重试</button></p>:!report?<p role="status">正在读取…</p>:<>
++     <table className="game-overview"><caption>按棋谱与模式统计，单位：场</caption><thead><tr><th scope="col">棋谱</th>{report.modes.map(m=><th key={m.id} scope="col">{m.name}</th>)}<th scope="col">合计</th></tr></thead><tbody>{report.packs.map(p=><tr key={p.id}><th scope="row">{p.name}</th>{report.modes.map(m=><td key={m.id}>{p.by_mode[m.id]}</td>)}<td>{p.started}</td></tr>)}</tbody><tfoot><tr><th scope="row">合计</th>{report.modes.map(m=><td key={m.id}>{report.packs.reduce((n,p)=>n+p.by_mode[m.id],0)}</td>)}<td>{report.started}</td></tr></tfoot></table>
++     <p className="section-note">{report.started?'只计已开始的本游戏棋局，不含等待开局的房间。':'所选范围暂无已开始的棋局。'}{range==='all'?' 全部仅指仍保留的本游戏房间存档。':''}</p>
++    </>}
++   </section>
++  </div>
++ </main>;
++}
 diff --git a/cedartoy/image.tsx b/cedartoy/image.tsx
 new file mode 100644
 index 0000000..fb6d465
@@ -1286,10 +1491,10 @@ index 0000000..6bae111
 +<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
-index 0000000..adc0b60
+index 0000000..3f81912
 --- /dev/null
 +++ b/cedartoy/main.tsx
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,84 @@
 +import {newRequestId} from '../components/autochess/request-id';
 +import '../app/globals.css';
 +import React,{useEffect,useRef,useState} from 'react';
@@ -1301,6 +1506,7 @@ index 0000000..adc0b60
 +import type {SelfAccount} from '../lib/accounts/account-store';
 +import {cedarRequest,metaRequest,roomRequest,setScope} from './transport';
 +import Economy from './economy';
++import GameStats from './game-stats';
 +import './style.css';
 +
 +type Tab='start'|'shop'|'me'|'wheel';
@@ -1323,8 +1529,8 @@ index 0000000..adc0b60
 + const [selected,setSelected]=useState<string[]>([]),[pack,setPack]=useState('ai'),[mode,setMode]=useState<MatchModeId>('standard'),[seats,setSeats]=useState(8);
 + const [profile,setProfile]=useState<SelfAccount>(),[room,setRoom]=useState(''),[watch,setWatch]=useState(false);
 + const [invitation,setInvitation]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('invite')||'');
-+ const [stats,setStats]=useState<Record<string,number>>(),[range,setRange]=useState('1h');
-+ const alive=useRef(true),locked=useRef(false),sequence=useRef(0),statsSequence=useRef(0);
++ const [management,setManagement]=useState(false);
++ const alive=useRef(true),locked=useRef(false),sequence=useRef(0);
 + const createAttempt=useRef<{signature:string;id:string}|undefined>(undefined);
 + const resetRoomScope=()=>setScope({slot,ai_id:ai||undefined});
 + const refresh=async()=>{const id=++sequence.current;try{const next=await cedarRequest<Config>('bootstrap');if(alive.current&&id===sequence.current){setConfig(next);setError('');}}catch(e){if(alive.current&&id===sequence.current)setError((e as Error).message);}};
@@ -1338,9 +1544,10 @@ index 0000000..adc0b60
 +  if(alive.current){createAttempt.current=undefined;enter(result.roomId);}
 + });
 + const join=()=>run(async()=>{let code=invitation.trim();try{code=new URLSearchParams(new URL(code).hash.slice(1)).get('invite')||code;}catch{/* A raw private invitation is also accepted. */}const result=await roomRequest('join',{invitation:code});if(alive.current){history.replaceState(null,'','/autochess/');enter(result.roomId);}});
-+ const navigate=(next:Tab)=>{statsSequence.current++;setStats(undefined);setTab(next);};
++ const navigate=(next:Tab)=>{setManagement(false);setTab(next);};
 + const modes=config?LOBBY_MODES.filter(m=>config.modes.some(x=>x.id===m.id)):LOBBY_MODES;
 + const tabs=TABS.filter(t=>(config?.economy!==false||!['shop','wheel'].includes(t.id))&&(!ai||t.id!=='wheel'));
++ if(management&&config?.author_stats&&!ai)return <GameStats onBack={()=>setManagement(false)} onDenied={()=>{setManagement(false);setConfig(old=>old?{...old,author_stats:false}:old);setError('未获本游戏统计查看授权');}}/>;
 + if(room)return <RoomApp key={`${room}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{resetRoomScope();setRoom('');setWatch(false);void refresh();void metaRequest<{self:SelfAccount}>('profile').then(p=>{if(alive.current)setProfile(p.self);}).catch(()=>{});}}/>;
 + return <div className="lobby-viewport"><main className="lobby cedar-lobby">
 +  <div className="celestial-astrolabe-bg" aria-hidden="true"/>
@@ -1365,7 +1572,7 @@ index 0000000..adc0b60
 +   {config?<><h3>{ai?'自家机的棋局':'我的棋局'}</h3>{config.rooms.length?config.rooms.map(r=><div className="lobby-row cedar-saved" key={r.roomId}><span className="lobby-queue"><strong>{r.packName} · {modePack(r.mode).name}</strong><small>{r.phase==='waiting'?`等待开局 · ${r.seats}/${r.capacity} 席`:r.phase==='finished'?'已结束 · 可查看棋盘':`第 ${r.round} 轮`}</small></span>{!ai?<button onClick={()=>enter(r.roomId)}>回到棋盘</button>:null}<button onClick={()=>enter(r.roomId,true)}>观看</button></div>):<p className="lobby-hint">此存档槽还没有棋局。</p>}</>:null}
 +  </section>:null}
 +  {tab==='me'&&config?<section className="lobby-panel"><h2>我的棋室</h2><div className="lobby-row cedar-scope"><label>存档槽 <select aria-label="存档槽" value={slot} onChange={e=>changeScope(Number(e.target.value),ai)}>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select></label><label>棋局归属 <select aria-label="棋局归属" value={ai} onChange={e=>changeScope(slot,e.target.value)}><option value="">我的棋局</option>{config.machines.map(m=><option key={m.id} value={m.id}>{m.name} · 只读</option>)}</select></label></div>
-+   {config.author_stats?<details className="lobby-machine-legacy"><summary>弈间 · 游玩统计</summary><div className="lobby-row"><select aria-label="统计时段" value={range} onChange={e=>{statsSequence.current++;setRange(e.target.value);setStats(undefined);}}>{['10m','1h','6h','12h','24h'].map(r=><option key={r}>{r}</option>)}</select><button disabled={busy} onClick={()=>void run(async()=>{const id=++statsSequence.current;const result=await cedarRequest('stats',{range});if(alive.current&&id===statsSequence.current)setStats(result);})}>查看聚合</button></div>{stats?<dl className="cedar-stats">{[['活跃人类','active_humans'],['活跃小机','active_machines'],['开房','created'],['开始','started'],['完成','finished']].map(([label,key])=><div key={key}><dt>{label}</dt><dd>{stats[key]??0}</dd></div>)}</dl>:null}<p className="lobby-hint">时段活跃，非在线人数。只含本游戏聚合；预留小机席位与 NPC 不计入。</p></details>:null}
++   {config.author_stats&&!ai?<button type="button" onClick={()=>setManagement(true)}>弈间 · 游玩统计</button>:null}
 +  </section>:null}
 +  {tab!=='start'&&config?.economy?<Economy tab={tab} onTab={navigate} readOnly={!!ai} onProfile={setProfile}/>:null}
 +  <footer className="cedar-attribution">原作：江川雪 · 小红书 63657956652 · <a href="https://play.ceciliaceci.me/" target="_blank" rel="noopener noreferrer">作者原版 ↗</a> · <a href="https://github.com/Cecilia-coding/AutoChess-MCP" target="_blank" rel="noopener noreferrer">AutoChess-MCP</a> · <a href="/autochess/static/LICENSE.txt">MIT 许可证</a></footer>
@@ -1374,10 +1581,10 @@ index 0000000..adc0b60
 +createRoot(document.getElementById('root')!).render(<App/>);
 diff --git a/cedartoy/style.css b/cedartoy/style.css
 new file mode 100644
-index 0000000..85edb97
+index 0000000..4101310
 --- /dev/null
 +++ b/cedartoy/style.css
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,15 @@
 +/* The original lobby, theme-revival and room-ui styles own the visual system.
 +   These scoped rules only lay out private account settings and attribution. */
 +.cedar-lobby>.lobby-panel+.cedar-economy{margin-top:24px}
@@ -1386,8 +1593,6 @@ index 0000000..85edb97
 +.cedar-lobby .cedar-scope select{min-width:0;max-width:100%}
 +.cedar-lobby .cedar-saved .lobby-queue{flex:1;min-width:160px}
 +.cedar-lobby .cedar-saved small{display:block;font-size:12px;font-weight:400}
-+.cedar-lobby .cedar-stats{display:flex;flex-wrap:wrap;gap:20px;font-size:13px}
-+.cedar-lobby .cedar-stats dd{margin:4px 0;font-size:18px}
 +.cedar-lobby .cedar-attribution{margin-top:28px;color:#7c718a;font-size:12px;line-height:1.8;text-align:center;overflow-wrap:anywhere}
 +.cedar-lobby .cedar-attribution a{text-decoration:underline;text-underline-offset:3px}
 +.cedar-lobby .room-error{overflow-wrap:anywhere}
@@ -1397,7 +1602,7 @@ index 0000000..85edb97
 +@media(max-width:520px){.cedar-lobby .cedar-scope label{width:100%}.cedar-lobby .cedar-scope select{flex:1}}
 diff --git a/cedartoy/transport.ts b/cedartoy/transport.ts
 new file mode 100644
-index 0000000..f9a2513
+index 0000000..8814324
 --- /dev/null
 +++ b/cedartoy/transport.ts
 @@ -0,0 +1,29 @@
@@ -1415,7 +1620,7 @@ index 0000000..f9a2513
 + catch{throw Error('网络中断，棋局仍保留。恢复后可以重连或重试刚才操作。');}
 + const result=await response.json();
 + if(token!==localStorage.getItem('cedartoy_token')||identityScope!==scopeKey())throw Error('账号或存档槽已切换，请重新打开');
-+ if(!response.ok)throw Object.assign(Error(result.error||'请求失败'),{retryable:response.status!==403&&!/^(你是房主，请先点|请等待房主开始)/.test(result.error||'')});return result;
++ if(!response.ok)throw Object.assign(Error(result.error||'请求失败'),{status:response.status,retryable:response.status!==403&&!/^(你是房主，请先点|请等待房主开始)/.test(result.error||'')});return result;
 +}
 +export function roomRequest<T=any>(op:string,args:object={}):Promise<T>{
 + // Original components accept RoomCredentials. Remove their compatibility placeholder here.
@@ -1452,14 +1657,14 @@ index 0000000..8ed5a80
 +}
 diff --git a/components/autochess/room-ui-state.ts b/components/autochess/room-ui-state.ts
 new file mode 100644
-index 0000000..4087ea1
+index 0000000..c2a033e
 --- /dev/null
 +++ b/components/autochess/room-ui-state.ts
 @@ -0,0 +1,11 @@
 +import type {RoomView} from '../../lib/autochess/room-types';
 +
-+export function waitingStartHint(host:boolean){
-+ return host?'你是房主，请先点「补路人机，直接开局」；也可先邀请好友入座。':'请等待房主开始；开局后再选择装备或操作棋子。';
++export function waitingStartHint(host:boolean,hasEmptySeats=true){
++ return host?(hasEmptySeats?'你是房主，请先点「补路人机，直接开局」；也可先邀请好友入座。':'你是房主，请先点「开始棋局」。'):'请等待房主开始；开局后再选择装备或操作棋子。';
 +}
 +/** Only preparation exposes game mutations. A waiting seat already has offers in
 + * its snapshot, but these are not actionable until the host explicitly starts. */
@@ -1591,7 +1796,7 @@ index 0000000..665ce11
 +}
 diff --git a/lib/autochess/cedartoy-web.ts b/lib/autochess/cedartoy-web.ts
 new file mode 100644
-index 0000000..a9edca0
+index 0000000..4001d6a
 --- /dev/null
 +++ b/lib/autochess/cedartoy-web.ts
 @@ -0,0 +1,55 @@
@@ -1645,7 +1850,7 @@ index 0000000..a9edca0
 +    const command=action(p.action);
 +    if(!Number.isInteger(p.round)||!Number.isInteger(p.revision)) fail('需要当前 round/revision');
 +    const before=store.view(credentials);
-+    if(before.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)) fail(before.seatIndex===0?'你是房主，请先点「补路人机，直接开局」；也可先邀请好友入座。':'请等待房主开始；开局后再选择装备或操作棋子。');
++    if(before.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)) fail(before.seatIndex===0?(before.seats.length<(before.seatCount??2)?'你是房主，请先点「补路人机，直接开局」；也可先邀请好友入座。':'你是房主，请先点「开始棋局」。'):'请等待房主开始；开局后再选择装备或操作棋子。');
 +    return clean(store.mutate({...credentials,round:p.round as number,revision:p.revision as number,requestId:text(p.requestId),action:command}));
 +  }
 +  fail('未知网页操作');
@@ -1679,10 +1884,10 @@ index 0000000..1b5efa1
 +SOFTWARE.
 diff --git a/scripts/cedartoy-server.ts b/scripts/cedartoy-server.ts
 new file mode 100644
-index 0000000..85d2680
+index 0000000..f594be4
 --- /dev/null
 +++ b/scripts/cedartoy-server.ts
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,112 @@
 +/** Cedar-only satellite. Deliberately does not import the upstream HTTP/account/Cursor server. */
 +import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 +import { isAbsolute } from 'node:path';
@@ -1729,9 +1934,13 @@ index 0000000..85d2680
 +      const identity = platformIdentity({playerId:header(req,'x-player-id'),provider:'cedartoy',
 +        displayName:decodePlatformDisplayName(header(req,'x-player-name')),actorType:role as 'human'|'ai'|'guest'});
 +      if(req.url==='/platform/stats') {
-+        const windows:Record<string,number>={'10m':600,'1h':3600,'6h':21600,'12h':43200,'24h':86400};
-+        const seconds=windows[body?.range];if(!seconds) throw Error('Invalid range');
-+        const now=Date.now();send(res,200,{range:body.range,generated_at:new Date(now).toISOString(),...store.platformStats(now-seconds*1000,now)});return;
++        const windows:Record<string,number>={'10m':600,'1h':3600,'6h':21600,'12h':43200,'24h':86400,'7d':604800,'14d':1209600,'30d':2592000};
++        const period=body?.range;
++        if(period!=='all' && (!Object.hasOwn(windows,period)||!Number.isInteger(windows[period]))) throw Error('Invalid range');
++        if(body?.view!==undefined && body.view!=='breakdown') throw Error('Invalid stats view');
++        const now=Date.now(),since=period==='all'?0:now-windows[period]*1000;
++        const data=body?.view==='breakdown'?store.platformPlayBreakdown(since,now):store.platformStats(since,now);
++        send(res,200,{range:period,generated_at:new Date(now).toISOString(),...data});return;
 +      }
 +      if(req.url==='/platform/economy'||(req.url==='/platform/autochess'&&body?.action==='meta')) {
 +        if(!economy)throw Error('旧精简模式未启用局外功能');
@@ -1829,6 +2038,99 @@ index 0000000..4b04155
 +  withBrowserCrypto(undefined, () => {
 +    assert.throws(() => newRequestId(), /不支持安全随机数/);
 +  });
++});
+diff --git a/test/cedartoy-admin-dashboard.test.ts b/test/cedartoy-admin-dashboard.test.ts
+new file mode 100644
+index 0000000..2375881
+--- /dev/null
++++ b/test/cedartoy-admin-dashboard.test.ts
+@@ -0,0 +1,36 @@
++import assert from 'node:assert/strict';
++import {test} from 'node:test';
++import {mkdtempSync,rmSync} from 'node:fs';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {RoomStore} from '../lib/autochess/room-store';
++import {platformIdentity} from '../lib/autochess/platform-adapter';
++
++test('Yijian management uses real started rooms grouped by pack and mode, not invitations', t => {
++  const dir = mkdtempSync(join(tmpdir(),'yijian-admin-counts-'));
++  t.after(() => rmSync(dir,{recursive:true,force:true}));
++  const store = new RoomStore(dir);
++  const host = platformIdentity({playerId:'101',actorType:'human',displayName:'PRIVATE_TEST_NAME'});
++  const counts = [['ai','standard'],['ai','duel'],['jianghu','standard'],['jianghu','duel']] as const;
++  for (const [pack,mode] of counts) {
++    const made = store.createForPlatform(host.owner, 'dashboard-start-'+pack+'-'+mode, pack, mode);
++    const seat = store.accountSeat(made.roomId,host.owner.accountId)!;
++    store.start(seat,'dashboard-go-'+pack+'-'+mode);
++  }
++  store.createForPlatform(host.owner,'dashboard-unstarted','ai','standard');
++  const summary = store.platformPlayBreakdown(0,Date.now()+1000);
++  assert.equal(summary.started,4);
++  assert.deepEqual(summary.modes.map(mode=>mode.id),['standard','duel']);
++  assert.deepEqual(summary.packs.map(pack=>[pack.id,pack.started]),[['ai',2],['jianghu',2]]);
++  for(const pack of summary.packs) {
++    assert.equal(pack.by_mode.standard,1);
++    assert.equal(pack.by_mode.duel,1);
++  }
++  const text = JSON.stringify(summary);
++  assert(!text.includes('PRIVATE_TEST_NAME'));
++  assert(!text.includes('roomId'));
++  assert(!text.includes('accountId'));
++  assert(!text.includes('invitation'));
++  assert.equal(store.platformPlayBreakdown(Date.now()+5000,Date.now()+10000).started,0);
++  assert.deepEqual(new RoomStore(dir).platformPlayBreakdown(0,Date.now()+1000),summary);
++});
+diff --git a/test/cedartoy-household-start.test.ts b/test/cedartoy-household-start.test.ts
+new file mode 100644
+index 0000000..77581ed
+--- /dev/null
++++ b/test/cedartoy-household-start.test.ts
+@@ -0,0 +1,45 @@
++import assert from 'node:assert/strict';
++import {test} from 'node:test';
++import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {RoomStore} from '../lib/autochess/room-store';
++import {platformIdentity} from '../lib/autochess/platform-adapter';
++const person=(id:string,actorType:'human'|'ai'='human')=>platformIdentity({playerId:id,actorType}).owner;
++test('trusted one-human one-AI duels auto-start once; crash between create/start recovers on retry',t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-household-start-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
++ let store=new RoomStore(dir);const host=person('51:2'),ai=person('52:2','ai');
++ for(const pack of ['ai','jianghu']){
++  const key='auto-start-'+pack;
++  const made=store.createForPlatform(host,key,pack,'duel',2,[ai]);
++  const view=()=>store.view(store.accountSeat(made.roomId,host.accountId)!);
++  const initial=view();assert.equal(initial.phase,'prepare');assert.equal(initial.seats.length,2);assert.equal(initial.seats.filter(s=>s.bot).length,0);
++  const raw=JSON.parse(readFileSync(join(dir,made.roomId+'.json'),'utf8'));
++  assert.match(raw.platformStart,/^[a-zA-Z0-9-]{8,80}$/);assert.equal(raw.seats[1].activeAt,undefined);
++  for(let i=0;i<3;i++)assert.equal(store.createForPlatform(host,key,pack,'duel',2,[ai]).roomId,made.roomId);
++  assert.equal(view().revision,initial.revision);
++  store=new RoomStore(dir);assert.equal(store.createForPlatform(host,key,pack,'duel',2,[ai]).roomId,made.roomId);assert.equal(view().revision,initial.revision);
++  const cred=store.accountSeat(made.roomId,host.accountId)!;
++  const ended=store.mutate({...cred,round:view().round,revision:view().self!.revision,requestId:'finish-'+pack,action:{kind:'resign'}});
++  assert.equal(ended.phase,'finished');
++  assert.equal(store.createForPlatform(host,key,pack,'duel',2,[ai]).roomId,made.roomId);
++  assert.equal(view().phase,'finished');assert.equal(view().revision,ended.revision);assert.deepEqual(view().self!.result,ended.self!.result);
++ }
++ const start=store.start;store.start=()=>{throw Error('simulated interrupted start');};
++ assert.throws(()=>store.createForPlatform(host,'interrupted-create','ai','duel',2,[ai]),/interrupted/);
++ store.start=start;
++ const waiting=store.platformRooms(host.accountId).find(r=>r.phase==='waiting')!;assert(waiting);
++ store=new RoomStore(dir);
++ assert.equal(store.createForPlatform(host,'interrupted-create','ai','duel',2,[ai]).roomId,waiting.roomId);
++ assert.equal(store.view(store.accountSeat(waiting.roomId,host.accountId)!).phase,'prepare');
++ assert.equal(store.platformPlayBreakdown(0,Date.now()+1).started,3);
++ assert.equal(store.platformRooms(person('51').accountId).length,0);
++});
++test('solo, friend invitations and other full households keep manual starts',t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-manual-start-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
++ const store=new RoomStore(dir),host=person('61'),ai=person('62','ai');
++ for(const [key,mode,seats,household] of [['solo-duel','duel',2,[]],['full-standard','standard',2,[ai]],['partial-standard','standard',8,[ai]],['human-duel','duel',2,[person('63')]]] as const){
++  const made=store.createForPlatform(host,key,'ai',mode,seats,[...household]);assert.equal(store.view(store.accountSeat(made.roomId,host.accountId)!).phase,'waiting');
++  if(key==='solo-duel'){store.joinForPlatform(made.invitation,person('64'));assert.equal(store.view(store.accountSeat(made.roomId,host.accountId)!).phase,'waiting');}
++ }
 +});
 diff --git a/test/cedartoy-http.test.ts b/test/cedartoy-http.test.ts
 new file mode 100644
@@ -2154,7 +2456,7 @@ index 0000000..0617153
 +});
 diff --git a/test/cedartoy-web.test.ts b/test/cedartoy-web.test.ts
 new file mode 100644
-index 0000000..a388874
+index 0000000..57e9610
 --- /dev/null
 +++ b/test/cedartoy-web.test.ts
 @@ -0,0 +1,231 @@
@@ -2377,7 +2679,7 @@ index 0000000..a388874
 + const store=new RoomStore(dir),host=platformIdentity({playerId:'951',actorType:'human'}),guest=platformIdentity({playerId:'952',actorType:'human'});
 + const made:any=await cedarWeb(store,host,'create',{pack:'ai',mode:'duel',requestId:'waiting-create-123'});
 + await cedarWeb(store,guest,'join',{invitation:made.invitation});
-+ for(const [who,message] of [[host,/你是房主.*补路人机/],[guest,/请等待房主开始/]] as const){
++ for(const [who,message] of [[host,/你是房主.*开始棋局/],[guest,/请等待房主开始/]] as const){
 +  const before:any=await cedarWeb(store,who,'state',{roomId:made.roomId});
 +  assert(before.self.swordOffer);
 +  for(const kind of ['pick_sword','pick_hex','pick_item','move','equip','ready','buy','resign']){
@@ -2391,10 +2693,10 @@ index 0000000..a388874
 +});
 diff --git a/test/room-ui-state.test.ts b/test/room-ui-state.test.ts
 new file mode 100644
-index 0000000..c096e97
+index 0000000..91bc026
 --- /dev/null
 +++ b/test/room-ui-state.test.ts
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,20 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
 +import {roomPreparationUI,waitingStartHint} from '../components/autochess/room-ui-state';
@@ -2412,6 +2714,8 @@ index 0000000..c096e97
 + view.phase='prepare';delete view.self;assert.deepEqual(roomPreparationUI(view,false,false),closed);
 + assert.match(waitingStartHint(true),/你是房主.*补路人机/);
 + assert.match(waitingStartHint(false),/请等待房主开始/);
++ assert.match(waitingStartHint(true,false),/你是房主.*开始棋局/);
++ assert.doesNotMatch(waitingStartHint(true,false),/补路人机/);
 +});
 diff --git a/vite.cedar.config.ts b/vite.cedar.config.ts
 new file mode 100644

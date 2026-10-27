@@ -19,93 +19,17 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  await home.route('**/*',route=>{
    const path=new URL(route.request().url()).pathname;
    if(path==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync('index.html','utf8')});
-   if(path.startsWith('/assets/') || path==='/autochess/api/stats')return route.continue();
+   if(path.startsWith('/assets/'))return route.continue();
    if(path==='/api/auth/me')return route.fulfill({json:{user:{id:101,username:'临时棋手',is_ai:false,avatar:{type:'emoji',value:'🙂'}},bindings:[]}});
    return route.fulfill({json:{}});
  });
  await home.goto(origin+'/');
  await home.locator('.game-card[data-game="autochess"]').hover();
- const entry=()=>home.locator('[data-autochess-stats]:visible');
- const counts=()=>home.locator('#autochessStatsContent strong');
- const waitCounts=()=>counts().first().waitFor();
- await entry().waitFor(); await entry().click(); await waitCounts();
- assert.deepEqual(await counts().allTextContents(),['0','0','0','0','0'],'empty real aggregate stays zero');
- for(const range of ['10m','1h','6h','12h','24h']){
-   await home.locator(`[data-autochess-range="${range}"]`).click(); await waitCounts();
-   assert.equal(await home.locator(`[data-autochess-range="${range}"]`).getAttribute('aria-pressed'),'true');
- }
- for(const width of [360,430,1440]){
-   await home.setViewportSize({width,height:900});
-   await home.screenshot({path:`${output}/home-stats-${width}.png`,fullPage:true});
-   assert(await home.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'stats overflow '+width);
- }
- // Same real loopback API; intercept only failures/delivery timing, deliberately ignore abort
- // in held responses to exercise stale-result guards independently of network cancellation.
- await home.evaluate(()=>{
-   const original=window.fetch;
-   window.statsFixture={fail:false,hold:'',release:null,token:localStorage.getItem('cedartoy_token')};
-   window.fetch=async(url,options={})=>{
-     if(url!=='/autochess/api/stats')return original(url,options);
-     const f=window.statsFixture,kind=JSON.parse(options.body).op==='access'?'access':'read';
-     if(f.fail && kind==='read'){const status=f.fail;f.fail=false;return new Response('{}',{status});}
-     if(f.hold===kind){
-       f.hold='';let response=await original(url,{...options,signal:undefined});
-       if(kind==='read')response=new Response(JSON.stringify({...await response.json(),active_humans:999}));
-       return new Promise(resolve=>{f.release=()=>{f.release=null;resolve(response);};});
-     }
-     return original(url,options);
-   };
- });
- await home.evaluate(()=>{statsFixture.fail=503;});
- await home.locator('[data-autochess-range="1h"]').click();
- await home.locator('#autochessStatsRetry').waitFor(); assert.equal(await counts().count(),0);
- await home.locator('#autochessStatsRetry').click(); await waitCounts();
- await home.evaluate(()=>{statsFixture.hold='read';});
- await home.locator('[data-autochess-range="10m"]').click();
- await home.waitForFunction(()=>!!statsFixture.release);
- await home.locator('[data-autochess-range="6h"]').click();await waitCounts();
- await home.evaluate(()=>statsFixture.release());
- await home.waitForTimeout(50);
- assert.deepEqual(await counts().allTextContents(),['0','0','0','0','0'],'older range must not overwrite newer data');
- assert.equal(await home.locator('[data-autochess-range="6h"]').getAttribute('aria-pressed'),'true');
- for(const transition of ['close','game','account']){
-   await home.evaluate(()=>{statsFixture.hold='read';});
-   await home.locator('[data-autochess-range="12h"]').click();
-   await home.waitForFunction(()=>!!statsFixture.release);
-   if(transition==='close')await home.locator('#autochessStatsClose').click();
-   if(transition==='game')await home.evaluate(()=>selectGame('duel',false));
-   if(transition==='account')await home.evaluate(()=>{localStorage.setItem('cedartoy_token','unauthorized-fixture');window.dispatchEvent(new StorageEvent('storage',{key:TOKEN_KEY}));});
-   await home.evaluate(()=>statsFixture.release());
-   await home.waitForTimeout(50);
-   assert.equal(await counts().count(),0,transition+' clears counts');
-   assert.equal(await home.locator('#autochessStatsModal').isVisible(),false);
-   if(transition!=='close')assert.equal(await entry().count(),0,transition+' hides entry');
-   await home.evaluate(()=>{localStorage.setItem('cedartoy_token',statsFixture.token);selectGame('autochess',false);});
-   await entry().waitFor(); await entry().click(); await waitCounts();
- }
- await home.evaluate(()=>{statsFixture.fail=403;});
- await home.locator('[data-autochess-range="24h"]').click();
- await home.waitForFunction(()=>!document.querySelector('#autochessStatsModal').classList.contains('show'));
- assert.equal(await counts().count(),0); assert.equal(await entry().count(),0,'revoked grant hides entry');
- await home.evaluate(()=>refreshAutochessStatsAccess());
- await entry().waitFor();await entry().click();await waitCounts();
- // Close/Escape/backdrop, access race across game selection, and mobile drawer entry.
- await home.keyboard.press('Escape');
- await home.evaluate(()=>{statsFixture.hold='access';refreshAutochessStatsAccess();});
- await home.waitForFunction(()=>!!statsFixture.release);
- await home.evaluate(()=>{selectGame('duel',false);statsFixture.release();});
- await home.waitForTimeout(50); assert.equal(await entry().count(),0);
- await home.setViewportSize({width:360,height:900});
- await home.locator('.game-card[data-game="autochess"]').click();
- await entry().waitFor(); await entry().click(); await waitCounts();
- await home.locator('#autochessStatsModal').click({position:{x:2,y:2}});
- assert.equal(await counts().count(),0);
- await home.setViewportSize({width:1440,height:900});await home.evaluate(()=>closeDrawers());
+ assert.equal(await home.locator('#autochessStatsModal, [data-autochess-stats]').count(),0,'Legacy stats popup was removed from the home game card');
  assert.equal(await home.locator('#enterButton').textContent(),'作者原版 ↗');
  assert.equal(await home.locator('#detailDesc a').getAttribute('href'),'https://github.com/Cecilia-coding/AutoChess-MCP');
  assert.match(await home.locator('#detailDesc').textContent(),/MIT/);
  assert.equal(await home.locator('#watchButton').textContent(),'进入棋室 →');
- // Abort navigation to the author site: verify URL and absence of credentials without contacting it.
  let sourceRequest;
  await home.route('https://play.ceciliaceci.me/**',route=>{sourceRequest=route.request();return route.abort();});
  await home.locator('#enterButton').click();
@@ -120,7 +44,7 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  // Simulate mobile WebViews lacking randomUUID but with secure getRandomValues.
  await context.addInitScript(() => {Object.defineProperty(window.crypto, "randomUUID", {value:undefined, configurable:true});});
  await context.addInitScript(token=>localStorage.setItem('cedartoy_token',token),process.env.AUTOCHESS_BROWSER_TOKEN);
- const page=await context.newPage();
+ const page=await context.newPage();page.setDefaultTimeout(15000);
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push({url:r.url(),method:r.method()}));
  const nav=name=>page.locator('.lobby-tabs').getByRole('button',{name:new RegExp(name)});
  const create=()=>page.getByRole('button',{name:/✦ (辟立对弈棋局|开启弈决) ✦/});
@@ -130,6 +54,46 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
    await page.screenshot({path:`${output}/${name}-${width}.png`,fullPage});
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' overflow '+width);
   }
+ };
+ const landscapeSizes=[[740,345],[844,390],[960,430],[1024,480],[1536,690]];
+ const landscapeChecks=async(phase)=>{
+  const cdp=await context.newCDPSession(page);
+  for(const [width,height] of landscapeSizes){
+   await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:width===844?{top:0,left:24,right:24,bottom:16}:{top:0,left:0,right:0,bottom:0}});
+   console.log('LANDSCAPE',phase,width,height);await page.setViewportSize({width,height});await page.waitForTimeout(350);
+   await page.screenshot({path:`${output}/landscape-${phase}-base-${width}.png`});
+   // Native full-screen is exercised, with Chromium viewport emulation retained.
+   await page.locator('.peach-fullscreen').click();await page.waitForFunction(()=>!!document.fullscreenElement);
+
+   const fullscreenHits=await page.evaluate(()=>['.peach-fullscreen','.room-panel-toggle','.room-float>summary','.peach-inventory summary','.peach-shop-toggle'].map(selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {selector,ok:el===hit||el.contains(hit)};}));
+   assert(fullscreenHits.every(h=>h.ok),'fullscreen utility hits');roomMetrics.push({kind:'fullscreen',phase,width,height,hits:fullscreenHits});
+   if(width===740||width===1536)await page.screenshot({path:`${output}/fullscreen-${phase}-${width}.png`});
+   await page.locator('.peach-fullscreen').click();await page.waitForFunction(()=>!document.fullscreenElement);
+   await page.getByLabel('放大棋盘',{exact:true}).click();await page.getByLabel('重置视角',{exact:true}).click();
+   const measure=async()=>page.evaluate(()=>{
+    const selectors=['.peach-camera-overlay','.peach-enemy-bench','.room-panel-toggle','.peach-inventory','.peach-dock','.room-versus-hud','.room-float>summary'];
+    const boxes=selectors.map(selector=>{const e=document.querySelector(selector),r=e.getBoundingClientRect();return {selector,x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};});
+    const targets=['.peach-fullscreen','.room-panel-toggle','.peach-enemy-bench summary','.peach-inventory summary','.room-float>summary','.peach-shop-toggle','.peach-trash'];
+    return {boxes,hits:targets.map(selector=>{const e=document.querySelector(selector),r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {selector,ok:e===hit||e.contains(hit)};}),overflow:document.documentElement.scrollWidth-innerWidth};
+   });
+   const metric=await measure();roomMetrics.push({kind:'landscape',phase,width,height,safeArea:width===844?{left:24,right:24,bottom:16}:null,...metric});
+   if(width===844){assert(metric.boxes.every(b=>b.x>=24&&b.right<=width-24));assert(metric.boxes.find(b=>b.selector==='.peach-dock').bottom<=height-16);}
+   assert(metric.overflow<=1);assert(metric.hits.every(hit=>hit.ok),JSON.stringify(metric.hits));
+   for(let i=0;i<metric.boxes.length;i++)for(let j=i+1;j<metric.boxes.length;j++){
+    const a=metric.boxes[i],b=metric.boxes[j];assert(!(a.x<b.right&&a.right>b.x&&a.y<b.bottom&&a.bottom>b.y),`overlap ${width} ${a.selector} ${b.selector}`);
+   }
+   await page.getByLabel('房间菜单',{exact:true}).click();await page.getByRole('button',{name:'返回棋室（保留席位）',exact:true}).waitFor();
+   const open=await measure();assert(open.hits.every(hit=>hit.ok),'menu does not cover utility controls');
+   await page.screenshot({path:`${output}/landscape-${phase}-menu-${width}.png`});
+   await page.getByRole('button',{name:'收起房间菜单',exact:true}).click();
+   await page.locator('.peach-inventory summary').click();await page.screenshot({path:`${output}/landscape-${phase}-inventory-${width}.png`});
+   const inventory=await measure();assert(inventory.hits.every(hit=>hit.ok),'expanded inventory controls remain reachable');
+   await page.locator('.peach-enemy-bench summary').click();assert(!await page.locator('.peach-inventory').evaluate(el=>el.open),'utilities collapse each other');
+   await page.screenshot({path:`${output}/landscape-${phase}-enemy-${width}.png`});
+   await page.locator('.room-panel-toggle').click();assert(!await page.locator('.peach-enemy-bench').evaluate(el=>el.open));
+   await page.screenshot({path:`${output}/landscape-${phase}-info-${width}.png`});await page.locator('.room-panel-toggle').click();
+  }
+  await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:{top:0,left:0,right:0,bottom:0}});await cdp.detach();
  };
  const anon=await browser.newPage();
  await anon.goto(origin+'/autochess/');await anon.locator('.pack-tome').first().waitFor();
@@ -146,6 +110,47 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  assert.equal(await page.locator('.cedar-top').count(),0);
  assert.equal(await page.locator('.lobby-top').count(),1);assert.equal(await page.locator('.lobby-brand h1').textContent(),'弈间');
  assert.equal(await page.locator('.lobby-top').getByText('临时棋手').count(),0);
+ // Game-only management: actual six-range API, isolated UI, failures and account races.
+ await nav('我的').click();await page.getByRole('button',{name:'弈间 · 游玩统计',exact:true}).click();
+ await page.locator('.yijian-management tbody tr').first().waitFor();
+ assert.equal(await page.locator('.yijian-management tbody tr').count(),2);
+ assert.deepEqual(await page.getByLabel('统计范围').locator('option').evaluateAll(els=>els.map(e=>e.value)),['1h','24h','7d','14d','30d','all']);
+ for(const range of ['1h','24h','7d','14d','30d','all']){await page.getByLabel('统计范围').selectOption(range);await page.locator('.yijian-management tbody tr').first().waitFor();}
+ for(const width of [360,390,430,1440]){await page.setViewportSize({width,height:900});await page.screenshot({path:`${output}/game-stats-${width}.png`});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+ assert.equal(await page.locator('.yijian-management a[href="/admin"]').count(),0);
+ await page.route('**/autochess/api/stats',route=>route.fulfill({status:503,json:{error:'临时故障，请重试'}}),{times:1});
+ await page.getByLabel('统计范围').selectOption('1h');await page.getByRole('button',{name:'重试',exact:true}).click();await page.locator('.yijian-management tbody tr').first().waitFor();
+ let releaseStats;
+ await page.route('**/autochess/api/stats',async route=>{const response=await route.fetch();await new Promise(resolve=>{releaseStats=()=>route.fulfill({response}).then(resolve).catch(resolve);});},{times:1});
+ await page.getByLabel('统计范围').selectOption('24h');
+ while(!releaseStats)await page.waitForTimeout(20);
+ await page.evaluate(token=>{localStorage.setItem('cedartoy_token',token);window.dispatchEvent(new Event('storage'));},process.env.AUTOCHESS_BROWSER_FRIEND_TOKEN);
+ await create().waitFor();await releaseStats();
+ assert.equal(await page.locator('.yijian-management').count(),0);
+ await nav('我的').click();assert.equal(await page.getByRole('button',{name:'弈间 · 游玩统计',exact:true}).count(),0);
+ const forbiddenStats=await page.evaluate(async()=>{const r=await fetch('/autochess/api/stats',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('cedartoy_token')},body:JSON.stringify({view:'breakdown',range:'all'})});return r.status;});assert.equal(forbiddenStats,403);
+ await page.evaluate(token=>{localStorage.setItem('cedartoy_token',token);window.dispatchEvent(new Event('storage'));},process.env.AUTOCHESS_BROWSER_TOKEN);await create().waitFor();
+
+ await nav('我的').click();await page.getByRole('button',{name:'弈间 · 游玩统计',exact:true}).click();await page.locator('.yijian-management tbody tr').first().waitFor();
+ let releaseClosed;
+ await page.route('**/autochess/api/stats',async route=>{const response=await route.fetch();await new Promise(resolve=>{releaseClosed=()=>route.fulfill({response}).then(resolve).catch(resolve);});},{times:1});
+ await page.getByLabel('统计范围').selectOption('all');while(!releaseClosed)await page.waitForTimeout(20);
+ await page.getByRole('button',{name:'返回棋室',exact:true}).click();await releaseClosed();assert.equal(await page.locator('.yijian-management').count(),0);
+ await page.unrouteAll({behavior:'wait'}); // Finish held responses before injecting a new permission failure.
+ await page.route('**/autochess/api/stats',route=>route.fulfill({status:403,json:{error:'未获本游戏统计查看授权'}}),{times:1});
+ await page.getByRole('button',{name:'弈间 · 游玩统计',exact:true}).click();await page.getByRole('alert').filter({hasText:'未获本游戏统计查看授权'}).waitFor();
+ assert.equal(await page.locator('.yijian-management').count(),0);assert.equal(await page.getByRole('button',{name:'弈间 · 游玩统计',exact:true}).count(),0);
+ await page.reload();await create().waitFor();
+ // Admin.html is a static style reference only: no credentials or admin API request.
+ const reference=await browser.newPage();
+ await reference.setContent(fs.readFileSync('admin.html','utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,''));
+ await reference.evaluate(()=>{
+  const panel=document.querySelector('#duelDashboard');panel.querySelectorAll('.dashboard-content').forEach(el=>{el.innerHTML='<div class="game-overview"><div class="game-overview-row game-overview-header"><span>棋谱</span><span>多人对弈</span><span>弈决</span><span>合计</span></div><div class="game-overview-row"><span>参考样式</span><span>0</span><span>0</span><span>0</span></div></div>';});
+  const shell=document.createElement('div');shell.className='shell';shell.append(panel);document.body.replaceChildren(shell);
+ });
+ for(const width of [360,390,430,1440]){await reference.setViewportSize({width,height:900});await reference.bringToFront();await reference.waitForTimeout(150);await reference.screenshot({path:`${output}/admin-style-reference-${width}.png`});}
+ await reference.close();
+ console.log('PASS game-only stats / six ranges / failure retry / account race');
  assert.equal(await page.locator('.lobby-tabs button').count(),4);
  assert.equal(await page.locator('input[type=checkbox]').count(),0);
  assert.equal(await page.getByLabel('存档槽',{exact:true}).count(),0);
@@ -217,6 +222,7 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
   await page.setViewportSize({width,height:width===1440?1000:844});await page.waitForTimeout(300);
   await page.screenshot({path:`${output}/waiting-${width}.png`});
  }
+ await landscapeChecks('waiting');
  // Invite a friend via the private server-issued invitation, using the visible lobby join form.
  const roomInfo=await page.evaluate(async()=>{
   const post=async body=>{const r=await fetch('/autochess/api/room',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('cedartoy_token')},body:JSON.stringify(body)});return r.json();};
@@ -230,6 +236,7 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  assert.equal(await friend.locator('.room-offer-overlay').count(),0);
  assert.equal(await friend.getByRole('button',{name:'补路人机，直接开局',exact:true}).count(),0);
  await friend.getByText('等待房主开局',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'开始棋局',exact:true}).waitFor();
  await friend.setViewportSize({width:390,height:844});await friend.screenshot({path:`${output}/invited-guest-390.png`});
  // Re-enter after a real reload while still waiting; the invitation is not needed again.
  await friend.reload();await friend.getByRole('button',{name:'回到棋盘',exact:true}).click();
@@ -294,6 +301,15 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
   await page.screenshot({path:`${output}/inventory-${width}.png`});
  }
 
+ for(const [width,height] of landscapeSizes){
+  await page.setViewportSize({width,height});await page.waitForTimeout(350);
+  if(!await page.locator('.peach-inventory').evaluate(el=>el.open))await page.locator('.peach-inventory > summary').click();
+  const item=page.locator('.peach-inventory[open] button').first();await item.waitFor({state:'visible'});await item.scrollIntoViewIfNeeded();
+  const m=await item.evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {width:r.width,height:r.height,font:getComputedStyle(el).fontSize,hit:el===hit||el.contains(hit)};});
+  assert(m.width>=140&&m.height>=44&&m.hit,'readable landscape equipment '+JSON.stringify(m));roomMetrics.push({kind:'landscape-equipment',width,height,...m});
+  await page.screenshot({path:`${output}/landscape-equipment-${width}.png`});
+ }
+
  await page.evaluate(async()=>{
   const post=async(body)=>{const r=await fetch('/autochess/api/room',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('cedartoy_token')},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error);return v;};
   const cfg=await post({op:'config'});let v=await post({op:'state',roomId:cfg.rooms.find(r=>r.phase!=='waiting'&&r.phase!=='finished').roomId});
@@ -313,6 +329,8 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  await page.locator('.peach-inventory button').first().click();
  await page.locator('.peach-inventory summary').filter({hasText:'装备背包 · 0'}).waitFor();
  await page.screenshot({path:`${output}/equipped-390.png`});
+ await landscapeChecks('prepare');
+ await page.setViewportSize({width:390,height:844});
  await page.getByRole('button',{name:'就绪开战',exact:true}).click();
  await page.getByRole('button',{name:'跳过战斗',exact:true}).waitFor({timeout:15000});
  await page.screenshot({path:`${output}/replay-390.png`,fullPage:true});
@@ -330,6 +348,34 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
   }
  }
 
+ for(const [width,height] of landscapeSizes){
+  await page.setViewportSize({width,height});await page.waitForTimeout(300);
+  if(!await page.locator('.peach-shop').count())await page.locator('.peach-shop-toggle').click();
+  const layout=await page.evaluate(()=>{
+   const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom};};
+   const hits=[...document.querySelectorAll('.peach-shop header button,.peach-camera-overlay button,.peach-dock button')].map(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {text:el.textContent,ok:el===hit||el.contains(hit)};});
+   return {shop:rect('.peach-popover:has(.peach-shop)'),dock:rect('.peach-dock'),hits};
+  });
+  assert(layout.shop.right<layout.dock.x,'shop clears landscape action rail');assert(layout.hits.every(h=>h.ok),JSON.stringify(layout.hits));roomMetrics.push({kind:'landscape-shop',width,height,...layout});
+  await page.screenshot({path:`${output}/landscape-shop-${width}.png`});
+ }
+ // Buy a real market piece and sell it through the original canvas inspector in landscape.
+ await page.setViewportSize({width:740,height:345});
+ const stateSnapshot=()=>page.evaluate(async()=>{
+  const post=async body=>{const r=await fetch('/autochess/api/room',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('cedartoy_token')},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());return r.json();};
+  const cfg=await post({op:'config'});return post({op:'state',roomId:cfg.rooms.find(r=>r.phase==='prepare').roomId});
+ });
+ const beforeBuy=await stateSnapshot();await page.locator('.peach-shop-cards button:not([disabled])').first().click();
+ await page.waitForTimeout(1300);const afterBuy=await stateSnapshot();assert(afterBuy.self.bench.length>beforeBuy.self.bench.length);
+ await page.getByRole('button',{name:'收起模型市场',exact:true}).click();
+ if(await page.getByRole('button',{name:'暂回棋盘',exact:true}).count())await page.getByRole('button',{name:'暂回棋盘',exact:true}).click();
+ await page.locator('.peach-unit-labels .label:not(.red)').first().waitFor();
+ const benchLabel=await page.locator('.peach-unit-labels .label:not(.red)').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width};}).sort((a,b)=>b.y-a.y)[0]);assert(benchLabel);
+ for(const offset of [16,28,40,52]){await page.mouse.click(benchLabel.x+benchLabel.width/2,benchLabel.y+offset);await page.waitForTimeout(150);if(await page.getByRole('button',{name:'出售',exact:true}).count())break;}
+ await page.getByRole('button',{name:'出售',exact:true}).click();await page.waitForTimeout(1300);
+ const afterSale=await stateSnapshot();assert.equal(afterSale.self.bench.length,afterBuy.self.bench.length-1);assert(afterSale.self.gold>afterBuy.self.gold);
+ console.log('PASS landscape market purchase / canvas inspector sale');
+ await page.setViewportSize({width:1440,height:1000});
  await page.reload();await page.locator('.cedar-saved').filter({hasText:/第 \d+ 轮/}).getByRole('button',{name:'回到棋盘',exact:true}).click();
  await page.waitForTimeout(2000);assert(await page.locator('canvas').count()>0,'original WebGL canvas');
  await context.setOffline(true);await page.waitForTimeout(2500);assert(await page.getByText(/网络中断/).count()>0);
@@ -339,8 +385,39 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  await page.getByRole('button',{name:'观看',exact:true}).first().click();await page.waitForTimeout(2000);
  assert.equal(await page.getByRole('button',{name:'就绪开战',exact:true}).count(),0);
  await page.screenshot({path:`${output}/own-spectator-desktop.png`,fullPage:true});
+ await page.setViewportSize({width:740,height:345});
+ if(await page.getByRole('button',{name:'跳过战斗',exact:true}).count())await page.getByRole('button',{name:'跳过战斗',exact:true}).click();
+ assert.equal(await page.locator('.room-float').count(),0);assert(await page.locator('.peach-shop-toggle').isDisabled());
+ await page.locator('.peach-fullscreen').click();await page.waitForFunction(()=>!!document.fullscreenElement);await page.locator('.peach-fullscreen').click();await page.waitForFunction(()=>!document.fullscreenElement);
+ const watchHit=await page.getByRole('button',{name:'返回棋室',exact:true}).evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return el===hit||el.contains(hit);});assert(watchHit);
+ await page.screenshot({path:`${output}/own-spectator-740.png`});
+ await page.setViewportSize({width:1440,height:1000});
+
+ // Actual full household creation goes straight to preparation, without NPCs.
+ await page.getByRole('button',{name:'返回棋室',exact:true}).click();
+ await page.getByRole('button',{name:/弈决.*1v1/}).click();await page.locator('.cedar-table-settings summary').click();
+ await page.locator('.cedar-table-settings button').first().click();await create().click();
+ await page.getByText('第 1 轮 · 备战排布',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'补路人机，直接开局',exact:true}).count(),0);
+ await page.getByLabel('房间菜单',{exact:true}).click();page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'认输结束',exact:true}).click();
+ await page.getByRole('button',{name:'看看棋盘',exact:true}).click();
+ await page.getByText('棋局已结束',{exact:true}).waitFor();assert.equal(await page.getByText('棋局待启',{exact:true}).count(),0);
+ await page.getByRole('button',{name:'查看本局结算',exact:true}).waitFor();
+ for(const [width,height] of [[740,345],[1536,690]]){
+  await page.setViewportSize({width,height});const r=await page.locator('.room-result-reopen').boundingBox();assert(r.height>=44&&r.height<=60&&r.y<100);
+  await page.getByRole('button',{name:'查看本局结算',exact:true}).click();await page.getByRole('button',{name:'看看棋盘',exact:true}).click();
+  await page.screenshot({path:`${output}/finished-${width}.png`});
+ }
+ if(!await page.locator('.room-float').evaluate(el=>el.open))await page.getByLabel('房间菜单',{exact:true}).click();
+ await page.getByRole('button',{name:'返回棋室（保留席位）',exact:true}).click();
+ await nav('我的').click();await page.getByRole('button',{name:'弈间 · 游玩统计',exact:true}).click();await page.locator('.yijian-management tbody tr').first().waitFor();
+ assert(Number(await page.locator('.yijian-management tfoot td').last().textContent())>=2);
+ for(const width of [360,390,430,1440]){await page.setViewportSize({width,height:900});await page.screenshot({path:`${output}/game-stats-started-${width}.png`});}
+
  const forbidden=requests.filter(r=>!r.url.startsWith(origin+'/autochess/')&&!r.url.startsWith('data:')&&!r.url.startsWith('blob:'));
  assert.deepEqual(forbidden,[],'no original/external endpoints');assert.deepEqual(errors,[],'browser errors');
- fs.writeFileSync(`${output}/browser-result.json`,JSON.stringify({ok:true,completedAt:new Date().toISOString(),widths:[360,390,430,1440],roomMetrics,homepage:!process.env.AUTOCHESS_BROWSER_SKIP_HOME,scenarios:['anonymous','original-lobby','five-bound-AIs-eight-seats','invited-friend','waiting-reconnect','waiting-offers-hidden','long-nicknames','single-column-offers','backpack-equip','shop-mobile','solo-NPC','skin-in-3D','slot-switch','account-switch-late-response','AI-wallet-readonly-403','AI-spectator','wheel','reconnect','battle-replay'],requestCount:requests.length,errors},null,2));
+ fs.writeFileSync(`${output}/browser-result.json`,JSON.stringify({ok:true,completedAt:new Date().toISOString(),widths:[360,390,430,1440],landscapeViewports:landscapeSizes,roomMetrics,homepage:!process.env.AUTOCHESS_BROWSER_SKIP_HOME,scenarios:['game-only-management','six-range-grouped','stats-late-close','stats-revoked','full-duel-autostart','landscape-fullscreen','landscape-safearea','ended-stage-label','anonymous','original-lobby','five-bound-AIs-eight-seats','invited-friend','waiting-reconnect','waiting-offers-hidden','long-nicknames','single-column-offers','backpack-equip','shop-mobile','solo-NPC','skin-in-3D','slot-switch','account-switch-late-response','AI-wallet-readonly-403','AI-spectator','wheel','reconnect','battle-replay'],requestCount:requests.length,errors},null,2));
+ }catch(error){
+  for(const context of browser.contexts())for(const page of context.pages())if(page.url().includes('/autochess/')){await page.screenshot({path:`${output}/failure.png`}).catch(()=>{});console.error('Visible UI at failure:',await page.locator('body').innerText().catch(()=>''));}
+  throw error;
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

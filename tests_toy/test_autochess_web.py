@@ -1,6 +1,7 @@
 """Real loopback satellite + Cedar HTTP/auth; all account/game data is temporary."""
 import asyncio
 from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
 import json
 import os
@@ -126,6 +127,45 @@ class WebIntegration(unittest.TestCase):
         self.assertEqual(foreign.status_code,403)
         self.assertEqual(f.http.post(f.origin+'/_internal/autochess-gateway/prepare',json={}).status_code,404)
 
+    def test_bound_duel_autostart_retry_and_binding_revocation(self):
+        f=self.f
+        self.assertEqual(f.call('create',mode='duel',ai_ids=['404'],requestId='forged-household').status_code,403)
+        self.assertEqual(f.call('create',mode='duel',ai_ids=['202','202'],requestId='duplicate-household').status_code,400)
+        for pack in ('ai','jianghu'):
+            args=dict(slot=2,mode='duel',pack=pack,ai_ids=['202'],requestId='auto-http-'+pack)
+            made=f.call('create',**args).json()
+            view=f.call('state',slot=2,roomId=made['roomId']).json()
+            self.assertEqual(view['phase'],'prepare');self.assertEqual(len(view['seats']),2)
+            self.assertFalse(any(s.get('bot') for s in view['seats']))
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                retries=list(pool.map(lambda _:f.call('create',**args),range(3)))
+            for reply in retries:self.assertEqual(reply.json()['roomId'],made['roomId'])
+            self.assertEqual(f.call('state',slot=2,roomId=made['roomId']).json()['revision'],view['revision'])
+            self.assertEqual(f.call('state',slot=1,roomId=made['roomId']).status_code,400)
+        with server._db_connect() as conn:conn.execute('DELETE FROM user_bindings WHERE human_user_id=101 AND ai_user_id=202')
+        self.assertEqual(f.call('create',**args).status_code,403)
+
+    def test_create_start_interruption_recovers_across_processes(self):
+        f=self.f
+        f.stop_node()
+        seed=f.base/'interrupted.ts'
+        seed.write_text("import {RoomStore} from "+repr(str(ROOT/'vendor/autochess/lib/autochess/room-store.ts'))+";\n"+
+            "import {platformIdentity} from "+repr(str(ROOT/'vendor/autochess/lib/autochess/platform-adapter.ts'))+";\n"+
+            "const store=new RoomStore(process.argv[2]);store.start=()=>{throw Error('injected stop after create')};"+
+            "try{store.createForPlatform(platformIdentity({playerId:'101:2',actorType:'human'}).owner,'interrupted-http','ai','duel',2,[platformIdentity({playerId:'202:2',actorType:'ai'}).owner]);}catch(e){if(!String(e).includes('injected stop'))throw e;}")
+        subprocess.run([NODE,'--import','tsx',str(seed),str(f.base/'rooms')],cwd=ROOT/'vendor/autochess',check=True,stdout=subprocess.DEVNULL)
+        f.node=subprocess.Popen(['python3',str(ROOT/'scripts/run_autochess.py')],env={**os.environ,'PATH':str(Path(NODE).parent)+':'+os.environ['PATH']},stdout=f.log,stderr=f.log)
+        for _ in range(600):
+            try:
+                if f.http.get(os.environ['AUTOCHESS_ORIGIN']+'/health',headers={'X-Autochess-Platform-Secret':f.secret}).status_code==200:break
+            except httpx.HTTPError:pass
+            time.sleep(.05)
+        before=f.call('config',slot=2).json()['rooms'];self.assertEqual(len(before),1);self.assertEqual(before[0]['phase'],'waiting')
+        made=f.call('create',slot=2,mode='duel',pack='ai',ai_ids=['202'],requestId='interrupted-http').json()
+        self.assertEqual(made['roomId'],before[0]['roomId'])
+        self.assertEqual(f.call('state',slot=2,roomId=made['roomId']).json()['phase'],'prepare')
+        self.assertEqual(f.call('stats',view='breakdown',range='all').json()['started'],1)
+
     def test_waiting_preconditions_identify_host_and_guest(self):
         f=self.f
         made=f.call('create',requestId='waiting-ui-create',pack='ai',mode='duel').json()
@@ -138,7 +178,45 @@ class WebIntegration(unittest.TestCase):
             self.assertEqual(f.call('state',who,roomId=made['roomId']).json()['self'],view['self'])
         self.assertEqual(f.call('start',roomId=made['roomId'],requestId='waiting-ui-start').json()['phase'],'prepare')
 
-    def test_homepage_stats_access_and_ranges(self):
+    def test_game_only_grouped_play_counts_all_ranges_and_grant(self):
+        f = self.f
+        created = []
+        for name, pack, mode in [('one','ai','standard'),('two','jianghu','duel')]:
+            room = f.call('create', requestId='stats-dashboard-create-'+name, pack=pack, mode=mode).json()
+            self.assertIn('roomId', room)
+            started = f.call('start', roomId=room['roomId'], requestId='stats-dashboard-start-'+name).json()
+            self.assertEqual(started['phase'],'prepare')
+            created.append(room)
+        waiting = f.call('create', requestId='stats-dashboard-waiting', pack='ai', mode='duel').json()
+        self.assertIn('roomId', waiting)
+        for period in ('1h','24h','7d','14d','30d','all'):
+            with self.subTest(period=period):
+                reply = f.call('stats', view='breakdown', range=period)
+                self.assertEqual(reply.status_code,200,reply.text)
+                report = reply.json()
+                self.assertEqual(report['range'],period)
+                self.assertEqual(report['started'],2)
+                self.assertEqual([(row['id'],row['started']) for row in report['packs']], [('ai',1),('jianghu',1)])
+                self.assertEqual(report['packs'][0]['by_mode'], {'standard':1,'duel':0})
+                self.assertEqual(report['packs'][1]['by_mode'], {'standard':0,'duel':1})
+                for secret in ('roomId','accountId','playerId','invitation','SECRET_TOKEN'):
+                    self.assertNotIn(secret, reply.text)
+        self.assertEqual(f.call('stats', view='breakdown', range='unknown').status_code,400)
+        self.assertEqual(f.call('stats', view='not-authorized').status_code,400)
+        denied=f.http.get(f.origin+'/api/admin/activity?range=1h',headers={'Authorization':'Bearer '+f.tokens['101']})
+        self.assertEqual(denied.status_code,403)
+        with server._db_connect() as conn:self.assertEqual(conn.execute('SELECT is_admin FROM toy_users WHERE id=101').fetchone()[0],0)
+        self.assertEqual(f.call('stats',view='breakdown',range='10m').status_code,400)
+        self.assertEqual(f.call('stats','303',view='breakdown',range='all').status_code,403)
+        self.assertEqual(f.call('stats','202',view='breakdown',range='all').status_code,403)
+        self.assertEqual(f.http.post(f.origin+'/autochess/api/stats',json={'view':'breakdown','range':'all'}).status_code,403)
+        # Legacy short-form summary for authorized machine clients remains stable.
+        legacy = f.call('stats',range='1h').json()
+        self.assertEqual(set(legacy),{'range','generated_at','active_humans','active_machines','created','started','finished'})
+        with patch.dict(os.environ,{'AUTOCHESS_AUTHOR_USER_IDS':''}):
+            self.assertEqual(f.call('stats',view='breakdown',range='all').status_code,403)
+
+    def test_stats_access_and_legacy_ranges(self):
         f = self.f
         def access(who=None):
             headers = {'Authorization': 'Bearer ' + f.tokens[who]} if who else {}
