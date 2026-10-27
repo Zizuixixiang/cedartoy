@@ -111,3 +111,20 @@ def request(prepared, endpoint='/platform/autochess', body=None):
 
 def play(arguments, **identity):
     return request(prepare(arguments, **identity))
+
+
+def read_author_stats(account, range_key='1h'):
+    """Read only this game's aggregate stats for a server-authenticated grant.
+
+    The caller must supply the account obtained from the platform credential,
+    never a player ID from the model's action arguments.
+    """
+    from .web import author_allowed
+    if not account or not author_allowed(account.get('id')):
+        raise _McpError(-32001, '未获《弈间》管理统计查看授权')
+    if not isinstance(range_key, str) or range_key not in ('10m', '1h', '6h', '12h', '24h'):
+        raise _McpError(-32602, '统计时段仅支持 10m/1h/6h/12h/24h')
+    identity = prepare({'action': 'rooms'}, player_id=str(account['id']),
+                       actor_type='ai' if account.get('is_ai') else 'human',
+                       display_name=account.get('username'))
+    return request(identity, '/platform/stats', {'range': range_key})

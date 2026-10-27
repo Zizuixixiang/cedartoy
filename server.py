@@ -3599,6 +3599,15 @@ def _tool_get_guide(arguments, *, path_token=None):
     game = arguments.get("game")
     if game == "autochess":
         guide = (Path(__file__).resolve().parent / "autochess_adapter/guide.txt").read_text()
+        if path_token:
+            try:
+                user = _current_account(path_token)
+                if user and autochess_web.author_allowed(user["id"]):
+                    guide += ('\n\n【本作管理统计·只读】'
+                              'play(game="autochess", action="stats", params={"range":"1h"})；'
+                              '可选 10m/1h/6h/12h/24h，仅返回匿名聚合数据。')
+            except (_McpError, sqlite3.Error, OSError):
+                pass  # Keep the public Guide and never disclose privileged actions.
         return json.dumps({"game": game, "guide": guide}, ensure_ascii=False)
     if game == "shared_craft":
         folder = Path(__file__).resolve().parent / "shared_craft_adapter"

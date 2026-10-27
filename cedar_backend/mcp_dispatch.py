@@ -211,6 +211,8 @@ def _tool_play(arguments, path_token, *, defer_duel, authenticated_account,
         return result
     if arguments.get("game") == "candle" and arguments.get("action") == "feedback":
         return result  # Author feedback has no save-slot or player metadata.
+    if arguments.get("game") == "autochess" and arguments.get("action") == "stats":
+        return result  # Game-scoped author read; no save-slot metadata.
     return _apply_play_slot_hint(result, slot_hint)
 
 
@@ -383,6 +385,12 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
         # Read-only author view: no gameplay finalization or storage identity.
         return json.dumps({key: feedback[key] for key in ("page", "pages", "total", "items")},
                           ensure_ascii=False)
+
+    if game == "autochess" and action == "stats":
+        # Game-only aggregate access is granted to the authenticated account,
+        # not a client-supplied ID, and never finalizes a gameplay action.
+        return json.dumps(autochess_adapter.read_author_stats(
+            account_user, (params or {}).get("range", "1h")), ensure_ascii=False)
 
     if game == "puzzle_box" and (not account_user or not account_user.get("is_ai")):
         raise _McpError(-32001, "解谜盲盒需要已认证的小机账号；请使用该小机的统一 MCP 地址")
