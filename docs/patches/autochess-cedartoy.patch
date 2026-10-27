@@ -36,10 +36,10 @@ index 616fe85..a27b34a 100644
    </section>;
  }
 diff --git a/components/autochess/artwork-arena.css b/components/autochess/artwork-arena.css
-index ed2ad84..8fbf29a 100644
+index ed2ad84..74826f2 100644
 --- a/components/autochess/artwork-arena.css
 +++ b/components/autochess/artwork-arena.css
-@@ -26,40 +26,36 @@
+@@ -26,40 +26,41 @@
  @keyframes art-mist{from{transform:translateX(-2%);opacity:.5}to{transform:translateX(3%);opacity:.9}}
  @keyframes art-petal{0%{transform:translate(0,0) rotate(0);opacity:0}10%{opacity:.55}85%{opacity:.45}100%{transform:translate(35px,850px) rotate(260deg);opacity:0}}
  @media(max-width:768px){
@@ -56,7 +56,8 @@ index ed2ad84..8fbf29a 100644
 + .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:150px;z-index:38;max-height:55dvh}
 + .peach-enemy-bench{top:150px;right:8px;max-width:150px;font-size:10px}
  }
-+/* Scope keeps the compact author layout above later theme imports. */
++/* 7ad1c73 compact landscape geometry. Keep the scope: later theme imports
++   otherwise move the right dock left and override the compact HUD/camera. */
  @media(orientation:landscape) and (max-height:600px){
   .room-table.autochess-table{height:100dvh!important;min-height:100dvh!important;padding:0!important}
 - .room-versus-hud{top:4px;width:auto;max-width:calc(100% - 280px);left:50%;transform:translateX(-50%);padding:3px 9px;gap:8px}
@@ -82,19 +83,21 @@ index ed2ad84..8fbf29a 100644
 - .room-draft .board-center{padding:6px 12px;min-height:0;overflow:auto;gap:2px}.room-draft .board-center h3{font-size:15px;margin:0}.room-draft .board-center p,.room-draft-state{font-size:11px;margin:0}.room-dice-face{font-size:16px}.room-draft-primary{margin-top:4px}
 - .room-float{top:6px;right:8px}.room-offer-overlay{top:4px;max-height:calc(100dvh - 8px)}.codex-offer-header{padding:8px}.codex-choice-card{padding:10px}
 - .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.danmaku-composer{display:flex;position:fixed;left:8px;right:auto;top:auto;bottom:116px;width:118px;gap:2px;padding:4px}.danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.danmaku-composer button{font-size:10px;padding:3px}
-+ .room-table .room-versus-hud{top:4px;width:auto;max-width:calc(100% - 280px);left:50%;transform:translateX(-50%);padding:3px 9px;gap:8px}
++ .room-table .room-versus-hud{top:14px;width:min(50vw,422px);max-width:calc(100% - 280px);min-height:48px;left:50%;transform:translateX(-50%);padding:5px 9px;gap:6px}
 + .room-table .versus-side{gap:5px}.room-table .versus-side img,.room-table .versus-side>div:first-child:not(.versus-meta){max-width:23px;max-height:23px}.room-table .versus-sub,.room-table .stage-star{display:none}.room-table .versus-stage-badge{padding:2px 6px;gap:4px}.room-table .versus-name,.room-table .stage-text{font-size:10px}
 + .room-table .peach-camera-overlay{top:8px;left:max(8px,env(safe-area-inset-left));right:auto;width:118px;max-width:118px;gap:3px;padding:3px}
 + .room-table .peach-camera-overlay select{max-width:none;width:100%}.room-table .peach-camera-overlay .peach-fullscreen{width:100%;height:27px}.room-table .peach-camera-overlay button{width:33px;height:26px}
 + .room-table .peach-enemy-bench{left:8px;right:auto;top:111px;width:118px;font-size:10px;padding:6px}
++ .room-table .peach-enemy-bench>div{position:absolute;left:124px;top:0;width:150px;margin:0;padding:6px;background:inherit;border-radius:8px}
 + .room-table .room-panel-toggle{display:block;position:absolute;top:151px;left:8px;z-index:38;padding:6px 9px;background:#eee5e4;border:1px solid #ac949466;border-radius:7px;color:#453742;font-size:10px}
 + .room-table .room-board-layout:not(.show-panels)>.room-ranking,.room-table .room-board-layout:not(.show-panels)>.room-sidepanel{display:none}
 + .room-table .room-board-layout.show-panels>.room-ranking,.room-table .room-board-layout.show-panels>.room-sidepanel{top:43px;z-index:39;max-height:calc(100dvh - 60px);width:150px;overflow:auto}
 + .room-table .room-board-layout.show-panels>.room-ranking{left:133px}.room-table .room-board-layout.show-panels>.room-sidepanel{right:115px}
-+ .room-table .peach-dock{left:auto;right:max(8px,env(safe-area-inset-right));top:76px;bottom:8px;width:100px;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:7px}
++ .room-table .peach-dock{left:max(8px,env(safe-area-inset-left));right:auto;top:186px;bottom:auto;width:100px;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:4px}
 + .room-table .peach-dock .peach-trash,.room-table .peach-dock .peach-shop-toggle{width:100%;height:42px;flex-direction:row;font-size:11px;border-radius:10px}
-+ .room-table .peach-dock .peach-trash svg,.room-table .peach-dock .peach-shop-toggle svg{width:18px;height:18px}.room-table .peach-round-controls{padding:5px;flex-wrap:wrap;gap:4px;border-radius:10px}.room-table .peach-round-controls button{width:100%;padding:8px 3px;font-size:11px}
-+ .room-table .peach-inventory{left:8px;bottom:8px;max-width:118px;max-height:100px;padding:5px;font-size:10px}.room-table .peach-inventory button{font-size:9px;padding:3px}.room-table .peach-inventory .peach-card-art{width:28px;height:28px}
++ .room-table .peach-dock .peach-trash svg,.room-table .peach-dock .peach-shop-toggle svg{width:18px;height:18px}.room-table .peach-round-controls{padding:5px;flex-wrap:wrap;gap:4px;border-radius:10px}.room-table .peach-round-controls button{width:100%;padding:4px 2px;font-size:10px;line-height:1.3}
++ .room-table .peach-inventory{left:130px;bottom:8px;width:118px;min-width:0;max-width:118px;max-height:100px;padding:5px;font-size:10px}.room-table .peach-inventory button{font-size:9px;padding:3px}.room-table .peach-inventory .peach-card-art{width:28px;height:28px}
++ .room-table .peach-inventory-content{max-height:56px}
 + .room-table .peach-popover{top:42px;bottom:auto;height:auto;max-height:calc(100dvh - 50px);overflow:auto;width:calc(100% - 32px);left:16px;right:16px;transform:none;animation:none}
 + .room-table .peach-popover.peach-inspect{width:min(560px,calc(100% - 32px));left:50%;right:auto;transform:translateX(-50%);padding:14px 18px}
 + .room-table .peach-inspect header{margin-bottom:8px;padding-bottom:8px}.room-table .peach-inspect header strong{font-size:16px}.room-table .peach-inspect p{font-size:12px;line-height:1.6}
@@ -104,7 +107,9 @@ index ed2ad84..8fbf29a 100644
 + .room-table .room-draft .board-grid{height:calc(100dvh - 84px);min-height:245px;gap:4px}.room-table .room-draft .board-tile{padding:3px 7px;border-radius:7px;justify-content:center}.room-table .room-draft .board-tile strong{font-size:11px}.room-table .room-draft .tile-number{display:none}.room-table .room-draft .board-tile small{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 + .room-table .room-draft .board-center{padding:6px 12px;min-height:0;overflow:auto;gap:2px}.room-table .room-draft .board-center h3{font-size:15px;margin:0}.room-table .room-draft .board-center p,.room-table .room-draft-state{font-size:11px;margin:0}.room-table .room-dice-face{font-size:16px}.room-table .room-draft-primary{margin-top:4px}
 + .room-table .room-float{top:6px;right:8px}.room-table .room-offer-overlay{top:4px;max-height:calc(100dvh - 8px)}.room-table .codex-offer-header{padding:8px}.room-table .codex-choice-card{padding:10px}
-+ .room-table .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.room-table .danmaku-composer{display:flex;position:fixed;left:8px;right:auto;top:auto;bottom:116px;width:118px;gap:2px;padding:4px}.room-table .danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.room-table .danmaku-composer button{font-size:10px;padding:3px}
++ /* Keep the original menu width; reserve the existing right controls when open. */
++ .room-table .room-float>.room-actions{top:50px;right:calc(126px + env(safe-area-inset-right));left:auto;max-height:calc(100dvh - 58px)}
++ .room-table .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.room-table .danmaku-composer{display:flex;position:fixed;left:208px;right:auto;top:73px;bottom:auto;width:118px;gap:2px;padding:4px}.room-table .danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.room-table .danmaku-composer button{font-size:10px;padding:3px}
  }
  @media(prefers-reduced-motion:reduce){.arena-art-frame,.arena-art-mist,.arena-art-petals i{animation:none}.arena-art-petals{display:none}}
 diff --git a/components/autochess/feedback.tsx b/components/autochess/feedback.tsx
@@ -594,7 +599,7 @@ index 79cd593..2744c7f 100644
        </section>
      </dialog>
 diff --git a/components/autochess/room-ui.css b/components/autochess/room-ui.css
-index 74b167b..fb0e8d1 100644
+index 74b167b..01361ad 100644
 --- a/components/autochess/room-ui.css
 +++ b/components/autochess/room-ui.css
 @@ -1200,12 +1200,14 @@
@@ -704,20 +709,6 @@ index 74b167b..fb0e8d1 100644
  }
  
  /* 查 IP 命中：桌宠式系统弹窗 */
-@@ -1662,3 +1718,13 @@
- .lobby-avatar-upload, .lobby-wardrobe-switches { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
- .lobby-wardrobe-switches label { display:grid; gap:8px; flex:1; min-width:180px; }
- .lobby-wardrobe-switches select { width:100%; padding:10px; border:1px solid var(--codex-border); border-radius:10px; background:#fff; color:var(--codex-ink-main); }
-+
-+/* Keep the author's compact controls; only separate adjacent disclosures. */
-+@media (orientation:landscape) and (max-height:600px) {
-+ .room-table .peach-enemy-bench{top:80px}
-+ .room-table .peach-enemy-bench>div{position:absolute;left:124px;top:0;width:150px;margin:0;padding:6px;background:inherit;border-radius:8px}
-+ .room-table .room-panel-toggle{top:116px}
-+ .room-table .peach-inventory{width:118px;min-width:0}
-+ .room-table .peach-inventory-content{max-height:56px}
-+ .room-table .room-float>.room-actions{top:50px;right:calc(126px + env(safe-area-inset-right));left:auto;width:min(360px,calc(100% - 260px));max-height:calc(100dvh - 58px)}
-+}
 diff --git a/components/autochess/theme-revival.css b/components/autochess/theme-revival.css
 index 5761654..33554b5 100644
 --- a/components/autochess/theme-revival.css
