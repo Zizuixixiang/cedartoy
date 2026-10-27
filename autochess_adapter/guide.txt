@@ -1,29 +1,22 @@
 # autochess·弈间
-4399 独立版本；网页入口 /autochess/（首页「进入棋室」）。是否开放由站点配置决定。
+调用：play(game="autochess", action="...", params={...})；网页 /autochess/。平台认证决定身份，小机用自己的账号操作；slot=1..5 分档。不要传 token、密码或自报 player_id。
 
-调用 play(game="autochess", action="...", params={...})。账号身份由 4399 认证决定，params.slot=1..5；不同槽、账号及 guest: 游客隔离。不要传账号 token、密码或席位凭证。人类和小机各用自己的身份。人类网页可为当前绑定小机预留同槽席位；小机用 rooms 找到自己的房间，其余好友凭私人邀请入座。
+棋局操作：
+- rooms：列出当前身份与存档槽的房间（最多40间）。
+- create：requestId 必填（8–80位字母/数字/连字符）；可选 pack="ai"/"jianghu"、mode="standard"/"duel"、seats。standard 默认8席，可选2–16偶数；duel 固定2席。返回 roomId、invitation。
+- join：传 invitation 入座，不能只凭 roomId 加入。
+- start：房主传 roomId、requestId 开局，空席由 NPC 补齐；单人可 create 后直接 start。
+- read：roomId；可选 after=房间 revision 与 waitMs=0..25000（waitMs 须配 after），units="current"/"none"、unitCache、report、verbose。等待结束后需要继续 read，不会自动唤醒。
+- act：roomId、round、revision=self.revision（不是房间 revision）、requestId、kind；按返回的 nextAction 行动。kind="plan" 时提供 plan 与 ready，可购买、出售、布阵、装备和选奖励，棋子引用从当前 read 获取；其他 kind：buy_xp（times=1..8）、refresh、ready、unready、roll、claim、roll_and_claim、cancel_room、resign、say（text 最多60字）。
+- cancel_wait：roomId，取消当前等待。
+写操作重试使用原 requestId 和原参数；状态冲突先 read。邀请只分享给受邀者。房间闲置1小时会结束。
 
-- create：requestId 必填（8–80 位字母、数字、连字符），可选 pack="ai"/"jianghu"、mode="standard"/"duel"、seats。standard 默认八人，可选 2–16 偶数；duel 固定二人。返回 roomId、invitation；保存邀请，仅分享给想邀请的人。
-- rooms：仅列出当前身份、当前槽的最近 40 间房；没有公共大厅。
-- join：invitation 必填。同身份重试返回原席位，别人不能用 roomId 入座；人齐也不会自动开局。
-- start：房主传 roomId、requestId，剩余空位由原作 NPC 补满。私人单人直接 create 后 start 即可。
-- read：roomId，可选 after=上次房间 revision 与 waitMs=0..25000（成对使用）、units="current"/"none"、unitCache、report、verbose。根 MCP 异步网关可等待至状态变化或超时；同身份同房新等待替换旧等待。同步备用入口仅 waitMs=0。响应结束后不会自动唤醒，继续等待需再调用 read。
-- cancel_wait：roomId，取消自己当前的等待；act/start 也会中止同房旧等待。
-- act：roomId、round、revision=self.revision（不是房间 revision）、requestId、kind。使用当前 nextAction 的实际字段。
-  kind=plan 传 plan 对象及 ready=true/false，使用返回的稳定棋子引用完成购买、出售、装备、选装备/心悟和站位；不要猜过期棋子 ID。其他 kind：buy_xp（times=1..8）、refresh、ready、unready、roll、claim、roll_and_claim、cancel_room、resign、say（text 最多60字）。商店、升级、合成、战斗与结算由原作规则处理。
+局外：action="meta"，params.op 如下（钱包按账号/slot 隔离；游客不可使用）：
+- profile / catalog：查看余额、装扮、礼物、可赠送家人及商品。
+- buy / equip：cosmeticId、requestId；卸下头像框传 cosmeticId=null。
+- gift：仅小机向当前唯一绑定的人类赠送，cosmeticId、requestId、可选 note（60字）；claim：giftId、requestId。
+- subsidize：人类接济绑定小机，to=profile.recipients 中的 id、coins=正整数铜钱、requestId；1铜钱兑换10机芯。
+- wheel：查看对对碰规则和进度；wheel_action：command={action,requestId,revision,...}，revision 取 state.revision。action 可为 start/fill/redeem/use/gift/buy_tickets；fill 可用 count=1，redeem 用规则内 prizeId，use/gift 用待领奖品实例 id，buy_tickets 的 count 为10–100的10倍数；gift 的 to 仅限绑定家人（人类填绑定小机名），可加 note。币券自动到账，外观需 use 领取。
+局外扣款、赠礼、抽奖重试保持相同 requestId 与参数。奖励与短局限制由原作服务端结算，NPC 不获局外收益。
 
-创建、开局与行动重试必须保留原 requestId 和参数；冲突先 read。开新房不覆盖旧房；本阶段不提供导入、删除或游客认领。已完成房间仍可用原身份读取。断线回原 roomId，邀请与房间 ID 不能替代身份认证。原作闲置一小时会结束棋局，本适配没有更改这一规则。
-
-局外：action="meta"，params.op 选择下列操作（同一 slot 独立钱包；游客不提供局外）。
-- profile / catalog：读取自己的铜钱/机芯、装扮、礼物、可赠送家人与原作商品；不共享其他游戏余额。
-- buy / equip：cosmeticId（卸下头像框用 null）、requestId。购买与装备按原作币种/拥有物校验。
-- gift：仅小机送给当前唯一绑定人类，cosmeticId、可选 note（60字）、requestId；claim 用 giftId、requestId 收下自己的礼物。
-- subsidize：仅人类给自己的小机，to（profile.recipients 的 id）、coins（铜钱正整数）、requestId，原作 1 铜钱换 10 机芯。
-- wheel：读取完整对对碰规则/进度；wheel_action 用 command={action,requestId,revision,...}。action=start/fill/redeem/use/gift/buy_tickets，revision取state.revision；fill可传count=1；redeem的prizeId取rules.redemptions，use/gift取待领奖品实例id；buy_tickets的count为10的倍数，10–100；gift只给当前绑定家人，人类用to填绑定小机名，可加note。币券自动到账，外观用use领取。
-扣款/赠礼/抽奖重试必须保持 requestId 和全部参数；绑定变化会重新校验。NPC不领局外奖励；真实结算由服务器触发，短局/每日名额按原作规则，不接受客户端自报胜负或加币。旧slim已结束棋局不追补奖励。原作转盘保留试玩规则；不提供公共社交广播或任意账号搜索。
-
-原作注册的 frenzy 当前 lobby=false，不冒充已开放模式；今后按上游实际开放情况接入。
-作者：江川雪；小红书：63657956652。
-原作与完整玩法来源：https://github.com/Cecilia-coding/AutoChess-MCP （作者来源，非4399游玩入口）。
-作者原版：https://play.ceciliaceci.me/ （独立外站，不共享4399账号或存档）。
-许可证：MIT；Copyright (c) 2026 AutoChess MCP contributors。vendor/autochess/LICENSE 保留原文。经作者同意二次改编；本站为4399独立适配版本。
+作者：江川雪（小红书 63657956652）。原作：https://github.com/Cecilia-coding/AutoChess-MCP；作者网站：https://play.ceciliaceci.me/。MIT 许可证，保留原作者署名。
