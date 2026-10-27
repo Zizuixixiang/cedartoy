@@ -7,7 +7,7 @@
 - 作者：**江川雪**；小红书 **63657956652**；已获二次改编许可。
 - 原作与来源链接：https://github.com/Cecilia-coding/AutoChess-MCP 。MIT，保留 `vendor/autochess/LICENSE`，独立网页另提供同文许可证链接。
 - `vendor/autochess` 是独立 Git 仓库；origin 保留上述作者地址。基线 `7a21f63310e56fa1d9cdcf47921232ae2916aae2`。本轮 `git ls-remote origin HEAD` 成功，远端 HEAD 与该基线一致；未 fetch、合并或推送。
-- [本地完整补丁](patches/autochess-cedartoy.patch)包含两阶段及本轮局外经济恢复的 vendor 改动，只供 4399 使用。当前 vendor 已应用；干净基线先 `git apply --check` 后再应用，不要重复应用，也不要提交上层 vendor 指针。
+- [本地完整补丁](patches/autochess-cedartoy.patch)包含两阶段、局外经济恢复及大厅视觉复原的 vendor 改动，只供 4399 使用。当前 vendor 已应用；干净基线先 `git apply --check` 后再应用，不要重复应用，也不要提交上层 vendor 指针。
 - 已重新阅读原作 `docs/CEDARTOY_ADAPTER.md`、房间/平台/Web 实现及 4399 双弈认证、邀请、异步网关文档；原版 adapter 的确只创建 duel，本地新增薄入口保留原方法。
 
 ## 已实现
@@ -207,3 +207,47 @@ AUTOCHESS_TEST_NODE=/path/to/node22 PLAYWRIGHT_MODULE=/path/to/playwright PLAYWR
 - 线上 HTTPS 首页、`/autochess/`、新版 JS/CSS 与 MIT 许可 HTTP 200；匿名经济/对局/作者统计 API HTTP 403；原站账号路由、MCP 路由及内网握手公网 HTTP 404；钱包 SQLite `quick_check=ok`，独立游戏进程及主站/双弈网关运行正常。实际 4399 MCP `list_games` 返回 `autochess·弈间·江川雪`，`get_guide` 确认局外 `meta` 协议已对客户端开放。
 - **人类对绑定小机仅可查看钱包、已拥有装扮和转盘状态；购买/装备/赠礼/领礼必须由小机自己的 MCP 身份操作。** 无其他账户冒名操作。
 - 当日线上原房间已保留，没有重置玩家存档。正式钱包 DB 新建于 `data/autochess_rooms/economy/accounts.db`；每日 R2 备份代码涵盖该库，待下一次生产归档和独立恢复检查。试玩阶段不发布公告。
+
+### 大厅视觉复原（2026-10-27，已发布）
+
+本节是经济上线后的独立 UI 修复。Codex 开发阶段没有部署；经主助手审核后静态大厅已上线，无需重启服务，没有联系作者或公告，也未改账户映射、游戏规则、价格/奖励、房间路径、经济账本、MCP 或备份。其他任务的工作树改动均保留。
+
+**实际复用与交互**
+
+- 将作者 `lobby.tsx` 的品牌/导航/钱包头部和模式/棋谱卡片提取为纯展示组件 `LobbyHeader`、`LobbyPackCards`，作者原大厅与 Cedar 入口共用。仍使用 `room-ui.css` 引入的 `theme-revival.css`、`globals.css`、星盘/网格背景、`lobby-top`、`lobby-tabs`、`chamber-start` 四角饰与 `pack-tome` 卡片；没有另画大厅。
+- 删除旧 `cedar-top` 白色顶栏、顶置用户名、4399 返回按钮、“自己的棋室”大标题及首屏 select/五个 checkbox。唯一大厅导航为「开始 / 外观 / 我的 / 对对碰」。头像与用户名仅在「我的」钱包资料区；不展示胜率、胜负排行榜或个人胜负计数。
+- 「开始」沿用“天机开弈”、原版两种开放模式、棋谱摘要与执卷高亮、原生开局按钮。总席位和自家小机选择放进默认折叠的「同席设置」；存档槽与查看小机放在「我的」。保留私房列表、回到棋盘/观看、好友密函或完整邀请链接；单人入座后仍用原作「补路人机，直接开局」，不改开始规则。
+- 外观复用 `CosmeticCard`、头像复用 `Avatar`、礼函复用 `GiftReveal`，转盘复用 `WheelAccount` 及其 `wheel-page`。共用大厅导航，不再有独立经济大按钮或重复返回导航。转盘购券/领取后的钱包头部同步刷新。Vite 将原转盘 CSS 的 `:root` 变量限定到 `.wheel-page`，防止它覆盖大厅原版字体变量；不改原转盘规则或原站样式文件。
+- 人类查看绑定小机时：保留明确只读提示，购买/佩戴/赠礼/领取控件禁用，不挂载可操作的转盘；转盘限定外观按钮显示“仅供查看”。原有服务端所有小机钱包写操作的 403 保持不变；AI 自己的根 MCP 不受影响。
+- 账户变更重建会话，slot/AI 变更重建当前上下文并清除旧钱包、棋局、待执行操作和统计。transport 加入代次标记，防止 A→B→A 后旧请求回写；旧响应即使忽略网络取消也被拒绝。普通同范围刷新不会误取消其他读取。
+
+**渲染比对与残留差异**
+
+使用独立 Playwright 1.58.2/Chromium，实际访问 `https://play.ceciliaceci.me/`（跳转 `/autochess/room`），在 **360 / 430 / 1440px** 截图并读取 computed style，再与真实 loopback 新版逐屏比对。未向作者站发送平台凭据。已逐屏查看大厅、商城、钱包、五只小机设置、只读提示、转盘九格及 3D 截图，不只判断横向溢出。
+
+- 原作与新版大厅：正文 16px/24px；品牌标题 27px/40.5px、`Huiwen-Mincho, Songti SC, serif`；副标题 12px/18px；导航 13px，手机按钮 44px；大厅内边距 28px 20px 60px；头部内边距 12px 6px 24px；相同细边框、玫瑰色选中态、紫灰网格及卡片阴影。手机卡片纵排、桌面棋谱双列，首屏没有两排平台表单。
+- **不是作者线上版本的像素级复制**：作者线上当前有四套棋谱，本地锁定基线 `7a21f633` 实际仅有 `ai / jianghu`（AI 铲铲 / 夜航船），本轮不增删棋谱或打开未开放的 frenzy。作者线上公共匹配、回音树、排行、原站登录/反馈入口不挂载；对对碰并入单一导航，因此少了顶部快捷按钮，高度及 430px 导航换行与原站不同。
+- 私人席位、绑定小机、slot、只读提示、房间列表与来源署名是平台必要差异；保留作者原站、GitHub、小红书与 MIT。字体走原作现有 fallback，没有额外从外站加载字体。没有在作者站注册账号，因此原站登录后私有钱包数据不作为对照样本。
+
+**验证与复现**
+
+- Python 38 项通过：`tests_toy.test_autochess_web`、`test_autochess_adapter`、`test_mcp_schema_selection`、`test_root_mcp_protocol`、`test_autochess_async_edge`。包含真实 HTTP 的小机写入拒绝、解绑、slot/canonical 身份、作者授权隔离、禁用原站路由、异步等待，以及临时备份归档校验（R2_REMOTE 为空）。
+- TypeScript `test/*.test.ts` **30 项通过**：含原作棋谱/战斗、既有钱包/持久化/权限测试，以及新 transport 延迟响应在 scope/账号 A→B→A 下被拒绝的回归。`tsc --noEmit`、Vite build 通过；原 3D renderer 大 chunk 提示仍存在。
+- 既有 `scripts/check_autochess_browser.py/.cjs` 继续使用一次性数据库和真实 loopback 服务。扩充为五只绑定小机；验证未登录禁用开局、登录后两种原版模式卡、八席带五只小机的真实房间、夜航船选择、另一人凭邀请加入、自己的/小机的只读观战、切槽/切账号与延迟钱包响应、购买玫瑰古堡并进入原 3D、对对碰试玩/购券/补格与顶部扣币同步、NPC 开局、原装备/战斗回放/商店、刷新重入/断线重连。浏览器资金仅在临时 fixture 内准备；本轮 UI 检查打到实际 NPC 战斗与下一轮商店，不冒充真人完整长局。
+- 构建输出 `/tmp/yijian-lobby-review/build`，没有覆盖线上 `vendor/autochess/dist/cedartoy`。作者原版与新版截图及 computed style 已实际审查；临时截图、浏览器/依赖缓存、测试构建与本轮测试数据库在审查后已清理，项目仅保留正式源码、构建、回滚版本和本报告。最终包含首页的浏览器结果为 `ok=true`、`homepage=true`、`errors=[]`。主仓库/vendor 的 `git diff --check` 与完整补丁反向校验均通过。
+- 复现：在 vendor 用 Node ≥22.13 执行锁定依赖的 `tsc --noEmit`、`vite build --config vite.cedar.config.ts --outDir <独立临时构建目录>`。根目录设置 `AUTOCHESS_TEST_NODE`、`AUTOCHESS_TEST_DIST`、`PLAYWRIGHT_MODULE`、`PLAYWRIGHT_BROWSERS_PATH` 后运行 `python3 scripts/check_autochess_browser.py`；可用 `AUTOCHESS_BROWSER_OUTPUT` 指定证据目录，默认仍是既有 stage2 目录。`AUTOCHESS_BROWSER_SKIP_HOME=1` 仅用于独立调试大厅，最终验收须包含首页。
+
+**独立验收与发布注意**
+
+- 真机触控、iOS/Safari/Android 字体和 WebGL 性能、真实好友/小机长局仍需人工验收；这里的 360/430px 是 Chromium viewport，不称为手机实拍。3D 拖棋仍使用原组件；自动化用已认证 API 布置合法站位，不能替代触屏拖拽验收。
+- 本轮只有静态大厅和纯展示组件改动，**无数据迁移，也不需要为此重启卫星或钱包服务**。主助手已审查完整 vendor 补丁及主仓库差异并发布静态文件；不要提交 vendor 指针或其他任务改动。应用补丁前核对锁定基线并 `git apply --check`，不要对已应用工作树重复应用。
+- 发布前保留当前静态构建以便回滚；回滚本轮只恢复旧静态构建/相应 UI 源码，保留全部账户、房间与经济账本、服务密钥、platform 模式及原有只读权限。不要为回退 UI 重置钱包、房间或 R2。
+
+### 大厅线上发布与清理（2026-10-27 夜间）
+
+- 主助手复核作者官网与本地新版 **360px、1440px 实际渲染截图**（430px 由 Codex 同时核验）；作者原版的淡紫棋盘网格、品牌标题/副标题、天机开弈、模式/棋谱卡片及原版导航层级已复用，删去自造 4399 顶栏、顶置用户名、“自己的棋室”首屏大标题、大 select 表单及重复返回按钮。登录提示、暂无绑定小机提示与 HTML `<title>` 内的 4399 字样也一并清除，站内显示《弈间》，保留作者江川雪的署名和来源。
+- 本轮没有修改游戏规则、棋谱登记、钱包系统、NPC 填充或真人邀请；当前作者线上四套棋谱而本地作者基线两套，故未擅自增补。公共排名及公开匹配仍不接入。
+- 独立重跑 Python **38 项**、TypeScript **7 项定向复测**，TS `typecheck` 与 Node 22 Vite 构建通过。Codex 此前完成全量 TS **30 项**和真实 loopback browser `ok=true`（360/430/1440px），包括五机同席、邀请、单人 NPC、商店、皮肤、回放、转盘、只读 AI 钱包以及账号槽切换。并增加 HTML 标题及匿名登录提示的自动回归检查。
+- 新静态构建文件先复制到线上资源目录，最后通过原子替换首页 `index.html` 切换，保留旧哈希资源以免已经打开的棋室页面请求失败；旧完整生产静态构建单独保留在 `vendor/autochess/dist/cedartoy-before-lobby-20261027` 供回滚。无需重启主站、网关或游戏卫星，没有读写生产钱包/房间数据。
+- HTTPS `/autochess/`、新版 JS 和 CSS 均 HTTP 200；对外页面标题已为《弈间》，JS 包含“天机开弈”和“同席设置”，不再含旧“自己的棋室”或 `← 4399` 顶栏。相关进程均为 RUNNING。
+- 本任务的临时截图、浏览器/依赖缓存、测试日志及一次性构建已清理；保留必要的生产旧静态版本供回滚。**真实手机触屏、iOS/Safari/WebGL 及人类/小机真实长局仍待用户试玩验收**。未发布公告或联系作者。

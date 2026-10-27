@@ -1,8 +1,17 @@
 diff --git a/components/autochess/lobby.tsx b/components/autochess/lobby.tsx
-index 400ef7c..e0bc3ae 100644
+index 400ef7c..cfd4831 100644
 --- a/components/autochess/lobby.tsx
 +++ b/components/autochess/lobby.tsx
-@@ -267,50 +267,10 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
+@@ -3,7 +3,7 @@ import { LOBBY_MODES, DEFAULT_MODE, modePack, type MatchModeId } from '@/packs/m
+ import type { PackSummary } from '@/packs/registry';
+ import { CHESS_NAME } from '@/lib/meta/chess-brand';
+ import { enrollmentMcpUrl } from '@/lib/autochess/invite-copy';
+-import { useCallback, useEffect, useRef, useState } from 'react';
++import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+ import { avatarImage, cosmeticPrice, cosmeticById, cosmeticImage, frameImage, frameLayoutFor, frameArtTransform, isShopCosmetic, type Cosmetic, type CosmeticKind } from '@/lib/meta/cosmetics';
+ import { CURRENCY, EXCHANGE_BOT_PER_HUMAN, subsidyQuote, formatCoins, type CurrencyId, type Wallet } from '@/lib/meta/economy';
+ import { clearAccountToken, readAccountToken, writeAccountToken } from './account-session';
+@@ -267,72 +267,15 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
      finally { setPackPending(null); }
    };
  
@@ -57,12 +66,69 @@ index 400ef7c..e0bc3ae 100644
  
    return <main className="lobby">
      <div className="lobby-quick-actions">{catalog?.wheelEnabled ? <button type="button" className="lobby-wheel-entry" onClick={() => window.location.assign('/autochess/wheel')}><span aria-hidden="true">✦</span> 对对碰 <span className="lobby-wheel-tag">试玩</span><span aria-hidden="true">↗</span></button> : null}<Feedback /></div>
-@@ -546,3 +506,50 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
+     <div className="celestial-astrolabe-bg" aria-hidden="true" />
+-    <header className="lobby-top">
+-      <div className="lobby-brand">
+-        <div className="lobby-crest-icon">✦ ❖ ✦</div>
+-        <h1>{CHESS_NAME}</h1>
+-        <span className="lobby-sub">✦ 与人同席，与机对弈 ✦</span>
+-      </div>
+-      <nav className="lobby-tabs">{TABS.map(entry => <button key={entry.id} className={tab === entry.id ? 'is-active' : ''} onClick={() => setTab(entry.id)}>
+-        <span className="tab-fleuron">{tab === entry.id ? '✦' : '✧'}</span> {entry.label}
+-      </button>)}</nav>
+-      <div className="lobby-wallet">
+-        <div className="lobby-coin-pill human" title={CURRENCY.human.note}>
+-          <span className="coin-symbol">{CURRENCY.human.symbol} 铜钱</span>
+-          <span className="coin-val">{formatCoins(wallet.human)}</span>
+-        </div>
+-        <div className="lobby-coin-pill bot" title={CURRENCY.bot.note}>
+-          <span className="coin-symbol">{CURRENCY.bot.symbol} 机芯</span>
+-          <span className="coin-val">{formatCoins(wallet.bot)}</span>
+-        </div>
++    <LobbyHeader tabs={TABS} tab={tab} onTab={id=>setTab(id as typeof tab)} wallet={wallet}>
+         {self ? <button className="lobby-user" disabled={authBusy} title="退出登录" onClick={() => void logout()}>
+           <Avatar id={self.id} frame={self.frame} size={30} />
+           <div className="lobby-user-meta">
+@@ -340,8 +283,7 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
+             <span className="lobby-usertag">{self.isAi ? '✦ 智能机' : '✦ 弈客'}</span>
+           </div>
+         </button> : null}
+-      </div>
+-    </header>
++    </LobbyHeader>
+ 
+     {error ? <p className="room-error" role="alert">{error}</p> : null}
+     {notice ? <p className="lobby-notice" role="status">{notice}</p> : null}
+@@ -353,21 +295,8 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
+       <div className="panel-corner-fleuron br">❖</div>
+       <h2>天机开弈</h2>
+       <p className="lobby-hint">选定一套古籍棋谱以开局，复制密函邀棋友或智能体切磋；亦可步入天弈阵法中匹配对垒。</p>
+-      <h3>对局模式</h3>
+-      <div className="lobby-packs" aria-label="对局模式">
+-        {LOBBY_MODES.map(entry => <button key={entry.id} type="button" aria-pressed={mode===entry.id} className={`pack-tome ${mode===entry.id?'is-active':''}`} onClick={()=>setMode(entry.id)}><span className="pack-tome-icon">{entry.icon}</span><div className="pack-tome-meta"><strong>{entry.name}</strong><small>{entry.description}</small></div></button>)}
+-      </div>
+-      <h3>选定命途棋谱</h3>
+-      {packsLoading ? <p className="lobby-hint">正在翻开棋谱…</p> : packsError ? <p className="lobby-hint">棋谱暂时没取到。<button type="button" onClick={() => void onRefreshPacks()}>再试一次</button></p> : !packs.length ? <p className="lobby-hint">棋谱暂未开放。已有棋局可以照常入座。</p> : null}
+-      <div className="lobby-packs lobby-packs--rosters">{packs.map(item => <button key={item.id} aria-pressed={selectedPack === item.id} className={`pack-tome ${selectedPack === item.id ? 'is-active' : ''}`} onClick={() => setPack(item.id)}>
+-        <span className="pack-tome-icon">{item.icon}</span>
+-        <div className="pack-tome-meta">
+-          <strong>{item.name}</strong>
+-          <span className="pack-tome-description">{item.description}</span>
+-          <small>{item.units} 枚棋子入谱</small>
+-        </div>
+-        <span className="pack-tome-seal">{selectedPack === item.id ? '✦ 执卷' : '✧ 阅卷'}</span>
+-      </button>)}</div>
++      <LobbyPackCards packs={packs} selectedPack={selectedPack} onPack={setPack} mode={mode} onMode={setMode}
++        loading={packsLoading} error={packsError} onRetry={onRefreshPacks}/>
+       <div className="lobby-row">
+         <button className="lobby-primary" disabled={busy || packsLoading || !!packsError || !selectedPack} onClick={() => onCreate(selectedPack,mode)}>✦ {modePack(mode).createLabel} ✦</button>
+       </div>
+@@ -546,3 +475,95 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
        }} /> : null}
    </main>;
  }
 +
-+export function CosmeticCard({cosmetic,self,wheelEnabled,onEquip,onBuy,onGift,onWheel,disabled=false}:{cosmetic:Cosmetic;self:SelfAccount|null;wheelEnabled?:boolean;onEquip:()=>void;onBuy:()=>void;onGift:()=>void;onWheel:()=>void;disabled?:boolean}) {
++export function CosmeticCard({cosmetic,self,wheelEnabled,onEquip,onBuy,onGift,onWheel,disabled=false,readOnly=false}:{cosmetic:Cosmetic;self:SelfAccount|null;wheelEnabled?:boolean;onEquip:()=>void;onBuy:()=>void;onGift:()=>void;onWheel:()=>void;disabled?:boolean;readOnly?:boolean}) {
 +    const owned=new Set(self?.owned??[]);
 +    const balanceFor=(currency:CurrencyId)=>self?.coins[currency]??0;
 +    const inShop = isShopCosmetic(cosmetic);
@@ -103,11 +169,56 @@ index 400ef7c..e0bc3ae 100644
 +      <div className="lobby-card-actions">
 +        {has ? <button className={equipped ? 'btn-equipped' : 'btn-equip'} disabled={disabled || equipped || !self} onClick={onEquip}>{equipped ? '✦ 已佩戴入局' : '更替外观'}</button>
 +          : inShop ? <button className="btn-buy" disabled={disabled || !self || cosmeticPrice(cosmetic, currency) > balanceFor(currency)} onClick={onBuy}>奉纳购置</button>
-+          : <button className="btn-buy" disabled={!wheelEnabled} onClick={onWheel}>{wheelEnabled ? '去对对碰试试' : '转盘筹备中'}</button>}
++          : <button className="btn-buy" disabled={readOnly||!wheelEnabled} onClick={onWheel}>{readOnly ? '仅供查看' : wheelEnabled ? '去对对碰试试' : '转盘筹备中'}</button>}
 +        {self?.isAi && self.ownerName && (inShop || has) ? <button className="btn-gift" disabled={disabled} onClick={onGift}>送给你的人</button> : null}
 +      </div>
 +    </article>;
 +  };
++
++/** Shared original lobby chrome; platform callers supply only their supported navigation. */
++export function LobbyHeader({tabs,tab,onTab,wallet,children,name=CHESS_NAME}:{tabs:readonly {id:string;label:string}[];tab:string;onTab:(id:string)=>void;wallet?:Wallet;children?:ReactNode;name?:string}) {
++ return (    <header className="lobby-top">
++      <div className="lobby-brand">
++        <div className="lobby-crest-icon">✦ ❖ ✦</div>
++        <h1>{name}</h1>
++        <span className="lobby-sub">✦ 与人同席，与机对弈 ✦</span>
++      </div>
++      <nav className="lobby-tabs">{tabs.map(entry => <button key={entry.id} className={tab === entry.id ? 'is-active' : ''} onClick={() => onTab(entry.id)}>
++        <span className="tab-fleuron">{tab === entry.id ? '✦' : '✧'}</span> {entry.label}
++      </button>)}</nav>
++      {wallet?<div className="lobby-wallet">
++        <div className="lobby-coin-pill human" title={CURRENCY.human.note}>
++          <span className="coin-symbol">{CURRENCY.human.symbol} 铜钱</span>
++          <span className="coin-val">{formatCoins(wallet.human)}</span>
++        </div>
++        <div className="lobby-coin-pill bot" title={CURRENCY.bot.note}>
++          <span className="coin-symbol">{CURRENCY.bot.symbol} 机芯</span>
++          <span className="coin-val">{formatCoins(wallet.bot)}</span>
++        </div>
++{children}
++      </div>:null}
++    </header>);
++}
++
++/** Original mode and tome cards, shared without changing pack availability or game rules. */
++export function LobbyPackCards({packs,selectedPack,onPack,mode,onMode,modes=LOBBY_MODES,loading=false,error='',onRetry}:{packs:PackSummary[];selectedPack:string;onPack:(id:string)=>void;mode:MatchModeId;onMode:(id:MatchModeId)=>void;modes?:typeof LOBBY_MODES;loading?:boolean;error?:string;onRetry:()=>void}) {
++ return <>      <h3>对局模式</h3>
++      <div className="lobby-packs" aria-label="对局模式">
++        {modes.map(entry => <button key={entry.id} type="button" aria-pressed={mode===entry.id} className={`pack-tome ${mode===entry.id?'is-active':''}`} onClick={()=>onMode(entry.id)}><span className="pack-tome-icon">{entry.icon}</span><div className="pack-tome-meta"><strong>{entry.name}</strong><small>{entry.description}</small></div></button>)}
++      </div>
++      <h3>选定命途棋谱</h3>
++      {loading ? <p className="lobby-hint">正在翻开棋谱…</p> : error ? <p className="lobby-hint">棋谱暂时没取到。<button type="button" onClick={() => void onRetry()}>再试一次</button></p> : !packs.length ? <p className="lobby-hint">棋谱暂未开放。已有棋局可以照常入座。</p> : null}
++      <div className="lobby-packs lobby-packs--rosters">{packs.map(item => <button key={item.id} aria-pressed={selectedPack === item.id} className={`pack-tome ${selectedPack === item.id ? 'is-active' : ''}`} onClick={() => onPack(item.id)}>
++        <span className="pack-tome-icon">{item.icon}</span>
++        <div className="pack-tome-meta">
++          <strong>{item.name}</strong>
++          <span className="pack-tome-description">{item.description}</span>
++          <small>{item.units} 枚棋子入谱</small>
++        </div>
++        <span className="pack-tome-seal">{selectedPack === item.id ? '✦ 执卷' : '✧ 阅卷'}</span>
++      </button>)}</div>
++</>;
++}
 diff --git a/components/autochess/room-app.tsx b/components/autochess/room-app.tsx
 index 410ef60..a476d3d 100644
 --- a/components/autochess/room-app.tsx
@@ -228,7 +339,7 @@ index 79cd593..2744c7f 100644
        </section>
      </dialog>
 diff --git a/components/autochess/wheel.tsx b/components/autochess/wheel.tsx
-index a06b027..6118e63 100644
+index a06b027..37ffb94 100644
 --- a/components/autochess/wheel.tsx
 +++ b/components/autochess/wheel.tsx
 @@ -22,7 +22,7 @@ export default function Wheel() {
@@ -236,11 +347,19 @@ index a06b027..6118e63 100644
  }
  
 -function WheelAccount({token}:{token:string}) {
-+export function WheelAccount({token,cedar=false,onWardrobe}:{token:string;cedar?:boolean;onWardrobe?:()=>void}) {
++export function WheelAccount({token,cedar=false,onWardrobe,onWalletChange}:{token:string;cedar?:boolean;onWardrobe?:()=>void;onWalletChange?:()=>void}) {
    const [view,setView]=useState<WheelView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
    const [retry,setRetry]=useState<WheelCommand|null>(null),[to,setTo]=useState(''),[note,setNote]=useState('');
    const [giftId,setGiftId]=useState('');
-@@ -94,9 +94,9 @@ function WheelAccount({token}:{token:string}) {
+@@ -59,6 +59,7 @@ function WheelAccount({token}:{token:string}) {
+       const result=await accountRequest<WheelView>('wheel_action',{token,command});
+       if(!valid())return;
+       setRetry(null);
++      onWalletChange?.();
+       if(command.action==='gift')setGiftId('');
+       const frames=view&&!document.hidden?wheelFrames(view,result):[];
+       if(frames.length)playback.current=playWheelFrames(frames,(step,index)=>{
+@@ -94,9 +95,9 @@ function WheelAccount({token}:{token:string}) {
      if(!result||!wheelRewardWasClaimed(result,id))throw Error('暂未确认入账，请重试或刷新奖品箱。');
    };
    return <>
@@ -252,7 +371,7 @@ index a06b027..6118e63 100644
      {rules.preview?<p className="wheel-preview">抢先试玩 · 每个账号可领 {rules.starterTickets} 张体验券 · 购券只花游戏币</p>:null}
      {view.ticketShop?<section className="wheel-ticket-shop" id="wheel-tickets" tabIndex={-1} aria-label="购买抽奖券"><h2>添几张抽奖券</h2><p>余额：{view.ticketShop.balance} {view.ticketShop.currencyName} · 每 {view.ticketShop.ticketsPerPack} 张 {view.ticketShop.packPrice} {view.ticketShop.currencyName}</p><div className="wheel-controls">{[1,5,10].map(packs=>{const shop=view.ticketShop!,count=packs*shop.ticketsPerPack,cost=packs*shop.packPrice;return count<=shop.maxTickets?<button key={count} disabled={disabled||shop.balance<cost} onClick={()=>act('buy_tickets',{count})}>买 {count} 张 · {cost} {shop.currencyName}</button>:null;})}</div><p>购券后自己决定何时抽；概率见下方，券和游戏币没有现金兑换。</p>{view.receipt?.events.filter(e=>e.kind==='buy_tickets').map((e,i)=><output key={i}>已到账 {e.tickets} 张券，花费 {e.cost} {view.ticketShop!.currencyName}</output>)}</section>:null}
      <div className="wheel-play-area" id="wheel-draw" tabIndex={-1} ref={playArea}><div className="wheel-live">
-@@ -112,7 +112,7 @@ function WheelAccount({token}:{token:string}) {
+@@ -112,7 +113,7 @@ function WheelAccount({token}:{token:string}) {
      {!busy&&view.receipt?<div className="wheel-results" aria-live="polite">{view.receipt.events.filter(e=>e.refund!==undefined).map((e,i)=><span key={i}>{({pair:'两碰',triple:'三联',clear:'全清'} as Record<string,string>)[e.kind]} · 返 {e.refund} 券 / +{e.points} 分{e.multiplier!>1?` ✨ 幸运 ×${e.multiplier}`:''}</span>)}{wheelPrizeNotice(view)?<strong>{wheelPrizeNotice(view)} <a href="#wheel-prize-box">查看奖品</a></strong>:null}</div>:null}
      {error?<p role="alert">{error}</p>:null}
      {view.receipt?.events.some(e=>e.kind==='gift')?<output>礼物已送到对方的对对碰奖品箱。</output>:null}
@@ -261,7 +380,7 @@ index a06b027..6118e63 100644
      {retry?<div className="wheel-retry"><button disabled={busy} onClick={()=>void execute(retry)}>原单重试</button><button disabled={busy} onClick={()=>{setRetry(null);void refresh();}}>刷新进度</button><p>原单重试会取回同一次结果。</p></div>:null}
      <section className="wheel-section" id="wheel-exchange" tabIndex={-1}><h2>把积分换成心意</h2><p>小奖先到，积分也继续攒。达到门槛后自己选奖品，兑换后在待领奖品里选择自己用或赠送。</p><div className="wheel-prizes">{rules.redemptions.map(row=>{const prize=rules.prizes.find(p=>p.id===row.prizeId)!;return <article key={row.prizeId}><span>{prize.icon}</span><h3>{prize.name}</h3>{prize.reward.kind==='cosmetic'&&cosmeticById(prize.reward.cosmeticId)?.giftIntro?<p>{cosmeticById(prize.reward.cosmeticId)?.giftIntro}</p>:null}<button disabled={disabled||state.points<row.points} onClick={()=>act('redeem',{prizeId:row.prizeId})}>{row.points} 积分兑换</button></article>;})}</div></section>
      <section className="wheel-section" id="wheel-prize-box" ref={prizeBox} tabIndex={-1}>
-@@ -126,7 +126,7 @@ function WheelAccount({token}:{token:string}) {
+@@ -126,7 +127,7 @@ function WheelAccount({token}:{token:string}) {
            {prize.spec.giftable&&prize.spec.reward.kind==='cosmetic'?<button className="wheel-gift-select" aria-pressed={giftId===prize.id} disabled={disabled} onClick={()=>chooseGift(prize.id)}>{giftId===prize.id?'已选中这份':'选这份送礼'}</button>:null}
          </div>
        </article>)}</div>
@@ -270,7 +389,7 @@ index a06b027..6118e63 100644
        <div className="wheel-gift-form" ref={giftForm}>
          <h3>把好运送出去</h3>
          {view.receipt?.events.some(e=>e.kind==='gift')?<output>赠送成功，礼物已到对方的对对碰奖品箱。</output>:null}
-@@ -134,14 +134,14 @@ function WheelAccount({token}:{token:string}) {
+@@ -134,14 +135,14 @@ function WheelAccount({token}:{token:string}) {
          <div className="wheel-address">
            {machine?<p>送给你的人，收礼账号已绑定。</p>:<>
              {!!view.gifting?.recipients.length&&<div className="wheel-gift-recipients"><span>送给你的机</span>{view.gifting.recipients.map(peer=><button key={peer.id} aria-pressed={to===peer.username} disabled={disabled} onClick={()=>setTo(peer.username)}>{peer.username}</button>)}</div>}
@@ -712,21 +831,21 @@ index 9d8e918..6429481 100644
    }
 diff --git a/cedartoy/account-session.ts b/cedartoy/account-session.ts
 new file mode 100644
-index 0000000..4591757
+index 0000000..2a7c4f2
 --- /dev/null
 +++ b/cedartoy/account-session.ts
 @@ -0,0 +1,5 @@
 +import {scopeKey} from './transport';
 +// A local scope marker for original component race guards, never sent as a credential.
 +export function readAccountToken(){return (localStorage.getItem('cedartoy_token')??'')+scopeKey();}
-+export function writeAccountToken(){throw Error('请使用 4399 登录');}
++export function writeAccountToken(){throw Error('请先登录');}
 +export function clearAccountToken(){/* Original login is not mounted in Cedar. */}
 diff --git a/cedartoy/economy.tsx b/cedartoy/economy.tsx
 new file mode 100644
-index 0000000..7e09a84
+index 0000000..5e42307
 --- /dev/null
 +++ b/cedartoy/economy.tsx
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,46 @@
 +import {useEffect,useRef,useState} from 'react';
 +import {Avatar,CosmeticCard} from '../components/autochess/lobby';
 +import {WheelAccount} from '../components/autochess/wheel';
@@ -736,15 +855,15 @@ index 0000000..7e09a84
 +import {metaRequest} from './transport';
 +import {readAccountToken} from './account-session';
 +
-+export default function Economy({onBack,readOnly=false}:{onBack:()=>void;readOnly?:boolean}) {
++export default function Economy({tab,onTab,onProfile,readOnly=false}:{tab:'shop'|'me'|'wheel';onTab:(tab:'shop'|'me'|'wheel')=>void;onProfile:(self:SelfAccount)=>void;readOnly?:boolean}) {
 + const [profile,setProfile]=useState<{self:SelfAccount;recipients:{id:string;username:string}[]}>();
-+ const [catalog,setCatalog]=useState<Cosmetic[]>([]),[tab,setTab]=useState('shop'),[error,setError]=useState('');
++ const [catalog,setCatalog]=useState<Cosmetic[]>([]),[error,setError]=useState('');
 + const [busy,setBusy]=useState(false),[gift,setGift]=useState<SelfAccount['gifts'][number]>();
 + const [to,setTo]=useState(''),[coins,setCoins]=useState(1),[giftSkin,setGiftSkin]=useState(''),[note,setNote]=useState('');
 + const pending=useRef<{op:string;params:object;requestId:string}|null>(null),locked=useRef(false),alive=useRef(true);
 + const identity=useRef(readAccountToken());
 + const valid=()=>alive.current&&identity.current===readAccountToken();
-+ const refresh=async()=>{try{const [p,c]=await Promise.all([metaRequest<any>('profile'),metaRequest<any>('catalog')]);if(valid()){setProfile(p);setCatalog(c.cosmetics);setError('');}}catch(e){if(valid())setError((e as Error).message);}};
++ const refresh=async()=>{try{const [p,c]=await Promise.all([metaRequest<any>('profile'),metaRequest<any>('catalog')]);if(valid()){setProfile(p);onProfile(p.self);setCatalog(c.cosmetics);setError('');}}catch(e){if(valid())setError((e as Error).message);}};
 + useEffect(()=>{alive.current=true;void refresh();return()=>{alive.current=false;};},[]);
 + const run=async(op:string,params:object={})=>{
 +  if(locked.current||!valid())return;
@@ -757,19 +876,17 @@ index 0000000..7e09a84
 + };
 + const act=(op:string,params:object={})=>void run(op,params).catch(()=>{});
 + const self=profile?.self;
-+ if(!readOnly&&tab==='wheel')return <div className="wheel-page"><button onClick={onBack}>返回棋室</button><h1>对对碰</h1><WheelAccount token={identity.current} cedar onWardrobe={()=>{setTab('me');void refresh();}}/></div>;
-+ return <div className="lobby cedar-economy">
-+  {readOnly?<p role="status">小机钱包仅供查看。购买、领取和赠礼请由小机自行操作。</p>:null}
-+  <nav className="lobby-tabs" aria-label="局外功能"><button onClick={onBack}>返回棋室</button><button className={tab==='shop'?'is-active':''} onClick={()=>setTab('shop')} aria-pressed={tab==='shop'}>外观</button><button className={tab==='me'?'is-active':''} onClick={()=>setTab('me')} aria-pressed={tab==='me'}>装扮·礼物</button>{!readOnly?<button onClick={()=>setTab('wheel')}>对对碰</button>:null}</nav>
++ return <div className="cedar-economy">
 +  {error?<div className="lobby-panel" role="alert">{error} <button disabled={busy} onClick={()=>pending.current?act(pending.current.op,pending.current.params):void refresh()}>重试</button>{pending.current?<button disabled={busy} onClick={()=>{pending.current=null;void refresh();}}>刷新钱包</button>:null}</div>:null}
 +  {!self?<output>正在读取钱包…</output>:<>
-+   <section className="lobby-panel lobby-profile"><Avatar id={self.id} frame={self.frame} size={72}/><div><strong>{self.username}{self.isAi?' · 机':''}</strong><p>{self.coins.human} 铜钱 · {self.coins.bot} 机芯</p><p>{self.record.wins} 胜 / {self.record.games} 局</p></div></section>
-+   {tab==='shop'?<section className="lobby-panel"><h2>外观</h2>{(['board','frame'] as const).map(kind=><div key={kind}><h3>{kind==='board'?'棋盘皮肤':'头像框'}</h3><div className="lobby-grid">{catalog.filter(c=>c.kind===kind).map(c=><CosmeticCard key={c.id} cosmetic={c} self={self} wheelEnabled={!readOnly} disabled={readOnly||busy||!!pending.current}
-+     onBuy={()=>act('buy',{cosmeticId:c.id})} onEquip={()=>act('equip',{cosmeticId:c.id})} onGift={()=>{setGiftSkin(c.id);setTab('me');}} onWheel={()=>setTab('wheel')}/>)}</div></div>)}</section>:<section className="lobby-panel" id="wardrobe">
++
++   {tab==='wheel'?(!readOnly?<section className="wheel-page"><header><span>九枚小物，一场巧遇</span><h1>对对碰</h1><p>碰一碰，再把好运送给惦记的人。</p></header><WheelAccount token={identity.current} cedar onWalletChange={()=>void refresh()} onWardrobe={()=>{onTab('me');void refresh();}}/></section>:<p className="lobby-hint">小机钱包仅供查看，请由小机自行操作。</p>):tab==='shop'?<section className="lobby-panel"><h2>外观</h2>{(['board','frame'] as const).map(kind=><div key={kind}><h3>{kind==='board'?'棋盘皮肤':'头像框'}</h3><div className="lobby-grid">{catalog.filter(c=>c.kind===kind).map(c=><CosmeticCard key={c.id} cosmetic={c} self={self} readOnly={readOnly} wheelEnabled={!readOnly} disabled={readOnly||busy||!!pending.current}
++     onBuy={()=>act('buy',{cosmeticId:c.id})} onEquip={()=>act('equip',{cosmeticId:c.id})} onGift={()=>{setGiftSkin(c.id);onTab('me');}} onWheel={()=>onTab('wheel')}/>)}</div></div>)}</section>:<section className="lobby-panel" id="wardrobe">
++    <div className="lobby-profile"><Avatar id={self.id} frame={self.frame} size={72}/><div><strong>{self.username}{self.isAi?' · 机':''}</strong><p>{self.coins.human} 铜钱 · {self.coins.bot} 机芯</p></div></div>
 +    <h2>我的装扮</h2><div className="lobby-row">{self.owned.map(id=><button key={id} disabled={readOnly||busy||Object.values(self.equipped).includes(id)} onClick={()=>act('equip',{cosmeticId:id})}>{cosmeticById(id)?.name??id}{Object.values(self.equipped).includes(id)?' · 佩戴中':''}</button>)}{self.equipped.frame?<button disabled={readOnly||busy} onClick={()=>act('equip',{cosmeticId:null})}>卸下头像框</button>:null}</div>
-+    {!self.isAi&&profile.recipients.length?<><h3>接济自家小机</h3><div className="lobby-row"><label>小机<select value={to} onChange={e=>setTo(e.target.value)}><option value="">请选择</option>{profile.recipients.map(p=><option key={p.id} value={p.id}>{p.username}</option>)}</select></label><label>铜钱<input type="number" min={1} step={1} value={coins} onChange={e=>setCoins(Number(e.target.value))}/></label><button disabled={busy||!to||coins<1} onClick={()=>act('subsidize',{to,coins})}>接济 · 1 铜钱换 10 机芯</button></div></>:null}
-+    {self.isAi&&self.ownerName?<><h3>送给 {self.ownerName}</h3><div className="lobby-row"><select aria-label="赠送外观" value={giftSkin} onChange={e=>setGiftSkin(e.target.value)}><option value="">选一件外观</option>{[...new Set([...catalog.map(c=>c.id),...self.owned])].map(id=><option key={id} value={id}>{cosmeticById(id)?.name??id}</option>)}</select><input aria-label="附言" maxLength={60} value={note} onChange={e=>setNote(e.target.value)}/><button disabled={readOnly||busy||!giftSkin} onClick={()=>act('gift',{cosmeticId:giftSkin,note})}>确认赠送</button></div></>:null}
-+    <h3>礼物</h3>{self.giftHistory.length?self.giftHistory.map(g=><div className="lobby-row" key={g.id}><span>{g.fromName} · {cosmeticById(g.cosmeticId)?.name} · {g.claimedAt?'已收下':'待领取'}</span><button onClick={()=>setGift(g)}>查看礼函</button></div>):<p className="lobby-hint">还没有赠礼记录；转盘奖品在对对碰奖品箱领取。</p>}
++    {!readOnly&&!self.isAi&&profile.recipients.length?<><h3>接济自家小机</h3><div className="lobby-row"><label>小机<select value={to} onChange={e=>setTo(e.target.value)}><option value="">请选择</option>{profile.recipients.map(p=><option key={p.id} value={p.id}>{p.username}</option>)}</select></label><label>铜钱<input type="number" min={1} step={1} value={coins} onChange={e=>setCoins(Number(e.target.value))}/></label><button disabled={busy||!to||coins<1} onClick={()=>act('subsidize',{to,coins})}>接济 · 1 铜钱换 10 机芯</button></div></>:null}
++    {!readOnly&&self.isAi&&self.ownerName?<><h3>送给 {self.ownerName}</h3><div className="lobby-row"><select aria-label="赠送外观" value={giftSkin} onChange={e=>setGiftSkin(e.target.value)}><option value="">选一件外观</option>{[...new Set([...catalog.map(c=>c.id),...self.owned])].map(id=><option key={id} value={id}>{cosmeticById(id)?.name??id}</option>)}</select><input aria-label="附言" maxLength={60} value={note} onChange={e=>setNote(e.target.value)}/><button disabled={readOnly||busy||!giftSkin} onClick={()=>act('gift',{cosmeticId:giftSkin,note})}>确认赠送</button></div></>:null}
++    <h3>礼物</h3>{self.giftHistory.length?self.giftHistory.map(g=><div className="lobby-row" key={g.id}><span>{g.fromName} · {cosmeticById(g.cosmeticId)?.name} · {g.claimedAt?'已收下':'待领取'}</span><button disabled={readOnly} onClick={()=>setGift(g)}>查看礼函</button></div>):<p className="lobby-hint">还没有赠礼记录；转盘奖品在对对碰奖品箱领取。</p>}
 +   </section>}
 +   {gift&&!readOnly?<GiftReveal gift={gift} cosmetic={cosmeticById(gift.cosmeticId)??undefined} onClose={()=>setGift(undefined)} onClaim={id=>run('claim',{giftId:id})}/>:null}
 +  </>}
@@ -786,94 +903,137 @@ index 0000000..fb6d465
 +export default function Image({src,alt,fill,unoptimized,priority,quality,loader,...props}:any){return <img src={typeof src==='string'?src:src.src} alt={alt||''} {...props}/>;}
 diff --git a/cedartoy/index.html b/cedartoy/index.html
 new file mode 100644
-index 0000000..a86f170
+index 0000000..6be6fa0
 --- /dev/null
 +++ b/cedartoy/index.html
 @@ -0,0 +1 @@
-+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>弈间 · 4399</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
-index 0000000..e5c1621
+index 0000000..3208c87
 --- /dev/null
 +++ b/cedartoy/main.tsx
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,82 @@
 +import '../app/globals.css';
 +import React,{useEffect,useRef,useState} from 'react';
 +import {createRoot} from 'react-dom/client';
 +import {RoomApp} from '../components/autochess/room-app';
-+import {cedarRequest,roomRequest,setScope} from './transport';
-+import './style.css';
++import {LobbyHeader,LobbyPackCards} from '../components/autochess/lobby';
++import {LOBBY_MODES,modePack,type MatchModeId} from '../packs/modes/registry';
++import {PACK_SUMMARIES,type PackSummary} from '../packs/registry';
++import type {SelfAccount} from '../lib/accounts/account-store';
++import {cedarRequest,metaRequest,roomRequest,setScope} from './transport';
 +import Economy from './economy';
++import './style.css';
++
++type Tab='start'|'shop'|'me'|'wheel';
++type Machine={id:string;name:string};
 +type Room={roomId:string;packName:string;mode:string;phase:string;round:number;seats:number;capacity:number};
++type Config={name:string;machines:Machine[];packs:PackSummary[];modes:{id:string}[];rooms:Room[];economy:boolean;author_stats:boolean};
++const TABS=[{id:'start',label:'开始'},{id:'shop',label:'外观'},{id:'me',label:'我的'},{id:'wheel',label:'对对碰'}];
 +function App(){
-+ const [config,setConfig]=useState<any>();const [error,setError]=useState('');const [busy,setBusy]=useState(false);
-+ const [slot,setSlot]=useState(1);const [ai,setAI]=useState('');const [selected,setSelected]=useState<string[]>([]);
-+ const [pack,setPack]=useState('ai');const [mode,setMode]=useState('standard');const [seats,setSeats]=useState(8);
-+ const [economy,setEconomy]=useState(false);
-+ const [room,setRoom]=useState('');const [watch,setWatch]=useState(false);
++ const [token,setToken]=useState(()=>localStorage.getItem('cedartoy_token')||'');
++ useEffect(()=>{const changed=()=>{const next=localStorage.getItem('cedartoy_token')||'';if(next!==token){setScope({slot:1},true);setToken(next);}};window.addEventListener('storage',changed);window.addEventListener('focus',changed);document.addEventListener('visibilitychange',changed);return()=>{window.removeEventListener('storage',changed);window.removeEventListener('focus',changed);document.removeEventListener('visibilitychange',changed);};},[token]);
++ return <Session key={token} signedIn={!!token}/>;
++}
++function Session({signedIn}:{signedIn:boolean}){
++ const [slot,setSlot]=useState(1),[ai,setAI]=useState(''),[tab,setTab]=useState<Tab>('start');
++ const changeScope=(nextSlot:number,nextAI:string)=>{setScope({slot:nextSlot,ai_id:nextAI||undefined},true);setSlot(nextSlot);setAI(nextAI);};
++ return <Lobby key={`${slot}:${ai}`} signedIn={signedIn} slot={slot} ai={ai} changeScope={changeScope} tab={tab} setTab={setTab}/>;
++}
++function Lobby({signedIn,slot,ai,changeScope,tab,setTab}:{signedIn:boolean;slot:number;ai:string;changeScope:(slot:number,ai:string)=>void;tab:Tab;setTab:(tab:Tab)=>void}){
++ const [config,setConfig]=useState<Config>(),[error,setError]=useState(''),[busy,setBusy]=useState(false);
++ const [selected,setSelected]=useState<string[]>([]),[pack,setPack]=useState('ai'),[mode,setMode]=useState<MatchModeId>('standard'),[seats,setSeats]=useState(8);
++ const [profile,setProfile]=useState<SelfAccount>(),[room,setRoom]=useState(''),[watch,setWatch]=useState(false);
 + const [invitation,setInvitation]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('invite')||'');
-+ const [stats,setStats]=useState<any>();const [range,setRange]=useState('1h');const createAttempt=useRef<{signature:string;id:string}|undefined>(undefined);
-+ const configSequence=useRef(0);
-+ const refresh=async()=>{const sequence=++configSequence.current;setScope({slot,ai_id:ai||undefined});try{const next=await cedarRequest('bootstrap');if(sequence===configSequence.current){setConfig(next);setError('');}}catch(e){if(sequence===configSequence.current)setError((e as Error).message);}};
-+ useEffect(()=>{setEconomy(false);setStats(undefined);setConfig(undefined);setSelected([]);void refresh();},[slot,ai]);
-+ useEffect(()=>{let previous=localStorage.getItem('cedartoy_token');const changed=()=>{const next=localStorage.getItem('cedartoy_token');if(next!==previous){previous=next;setEconomy(false);setStats(undefined);setRoom('');setConfig(undefined);setSelected([]);setAI('');setScope({slot});void refresh();}};window.addEventListener('storage',changed);document.addEventListener('visibilitychange',changed);return()=>{window.removeEventListener('storage',changed);document.removeEventListener('visibilitychange',changed);};},[slot,ai]);
-+ const enter=(id:string,observe=false)=>{setScope({slot,ai_id:ai||undefined,watch:observe||!!ai});setWatch(observe||!!ai);setRoom(id);};
-+ const run=async(fn:()=>Promise<void>)=>{if(busy)return;setBusy(true);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
++ const [stats,setStats]=useState<Record<string,number>>(),[range,setRange]=useState('1h');
++ const alive=useRef(true),locked=useRef(false),sequence=useRef(0),statsSequence=useRef(0);
++ const createAttempt=useRef<{signature:string;id:string}|undefined>(undefined);
++ const resetRoomScope=()=>setScope({slot,ai_id:ai||undefined});
++ const refresh=async()=>{const id=++sequence.current;try{const next=await cedarRequest<Config>('bootstrap');if(alive.current&&id===sequence.current){setConfig(next);setError('');}}catch(e){if(alive.current&&id===sequence.current)setError((e as Error).message);}};
++ useEffect(()=>{alive.current=true;resetRoomScope();if(signedIn){void refresh();void metaRequest<{self:SelfAccount}>('profile').then(p=>{if(alive.current)setProfile(p.self);}).catch(()=>{});}return()=>{alive.current=false;};},[]);
++ const enter=(id:string,observe=false)=>{if(!alive.current)return;setScope({slot,ai_id:ai||undefined,watch:observe||!!ai});setWatch(observe||!!ai);setRoom(id);};
++ const run=async(fn:()=>Promise<void>)=>{if(locked.current)return;locked.current=true;setBusy(true);setError('');try{await fn();}catch(e){if(alive.current)setError((e as Error).message);}finally{locked.current=false;if(alive.current)setBusy(false);}};
 + const create=()=>run(async()=>{
 +  const signature=JSON.stringify([slot,pack,mode,seats,selected]);
 +  if(createAttempt.current?.signature!==signature)createAttempt.current={signature,id:crypto.randomUUID()};
-+  const result=await roomRequest('create',{pack,mode,seats:mode==='duel'?2:seats,ai_ids:selected,requestId:createAttempt.current!.id});
-+  createAttempt.current=undefined;enter(result.roomId);
++  const result=await roomRequest('create',{pack,mode,seats:mode==='duel'?2:seats,ai_ids:selected,requestId:createAttempt.current.id});
++  if(alive.current){createAttempt.current=undefined;enter(result.roomId);}
 + });
-+ return <>{!room?<header className="cedar-top"><a href="/">← 4399</a><strong>弈间</strong><span>{config?.name}</span>{room?<button onClick={()=>{setRoom('');setWatch(false);void refresh();}}>返回棋室</button>:null}</header>:null}
-+ {room?<RoomApp key={`${room}:${slot}:${ai}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{setRoom('');void refresh();}}/>:economy?<Economy key={`${slot}:${ai}`} readOnly={!!ai} onBack={()=>{setEconomy(false);void refresh();}}/>:<main className="cedar-room">
-+ <h1>自己的棋室</h1><p className="cedar-muted">一人也能开局，空位由 NPC 补齐。也可以带上自家小机，或邀请好友入座后再开始。</p>
-+ {error?<p role="alert" className="cedar-error">{error}</p>:null}
-+ {!config?<><a className="cedar-button" href="/" target="_blank" rel="noopener">去 4399 登录</a><button disabled={busy} onClick={()=>void refresh()}>重新连接</button></>:<>
-+ <div className="cedar-fields"><label>存档槽<select aria-label="存档槽" value={slot} onChange={e=>setSlot(Number(e.target.value))}>{[1,2,3,4,5].map(x=><option key={x}>{x}</option>)}</select></label><label>棋局归属<select aria-label="棋局归属" value={ai} onChange={e=>setAI(e.target.value)}><option value="">我的棋局</option>{config.machines.map((x:any)=><option key={x.id} value={x.id}>{x.name} · 棋局与装扮</option>)}</select></label></div>
-+ {config.economy?<button onClick={()=>setEconomy(true)}>外观 · 钱包 · 对对碰</button>:null}
-+ {!ai?<section aria-labelledby="create-title"><h2 id="create-title">开一间私人房</h2><div className="cedar-fields"><label>棋谱<select aria-label="棋谱" value={pack} onChange={e=>setPack(e.target.value)}>{config.packs.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>模式<select aria-label="模式" value={mode} onChange={e=>setMode(e.target.value)}>{config.modes.map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>{mode==='standard'?<label>总席位<select aria-label="总席位" value={seats} onChange={e=>setSeats(Number(e.target.value))}>{[2,4,6,8,10,12,14,16].map(n=><option key={n}>{n}</option>)}</select></label>:null}</div>
-+ {config.machines.length?<fieldset><legend>带上自家小机</legend>{config.machines.map((m:any)=><label className="cedar-check" key={m.id}><input type="checkbox" checked={selected.includes(m.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,m.id]:old.filter(x=>x!==m.id))}/>{m.name}</label>)}<p className="cedar-muted">小机使用同一存档槽，从根 MCP 的 rooms 找到席位后行动；这里不会自动唤醒它。</p></fieldset>:null}
-+ <button className="cedar-primary" disabled={busy||selected.length>=(mode==='duel'?2:seats)} onClick={create}>创建私人房</button><p className="cedar-muted">进入棋盘后，由房主点「补路人机，直接开局」。开始前可继续邀请好友。</p>
-+ <form onSubmit={e=>{e.preventDefault();void run(async()=>{const result=await roomRequest('join',{invitation});history.replaceState(null,'','/autochess/');enter(result.roomId);});}}><label>好友邀请<input value={invitation} onChange={e=>setInvitation(e.target.value)} placeholder="粘贴邀请码" required/></label><button disabled={busy||!invitation}>加入私人房</button></form></section>:null}
-+ <section><h2>{ai?'小机的棋局':'我的棋局'}</h2>{config.rooms.length?config.rooms.map((r:Room)=><div className="cedar-saved" key={r.roomId}><div><strong>{r.packName} · {r.mode==='duel'?'双人':'标准'}</strong><small>{r.phase==='waiting'?`等待开局 · ${r.seats}/${r.capacity} 席`:r.phase==='finished'?'已结束 · 可查看棋盘':`第 ${r.round} 轮`}</small></div>{!ai?<button onClick={()=>enter(r.roomId)}>回到棋盘</button>:null}<button onClick={()=>enter(r.roomId,true)}>观看</button></div>):<p className="cedar-muted">此存档槽还没有棋局。</p>}</section>
-+ {config.author_stats?<section><h2>作品统计 · 仅本人可见</h2><label>时间区间<select value={range} onChange={e=>{setRange(e.target.value);setStats(undefined);}}>{['10m','1h','6h','12h','24h'].map(x=><option key={x}>{x}</option>)}</select></label><button onClick={()=>void run(async()=>setStats(await cedarRequest('stats',{range})))}>查看聚合</button>{stats?<dl>{[['活跃人类','active_humans'],['活跃小机','active_machines'],['开房','created'],['开始','started'],['完成','finished']].map(([label,key])=><div key={key}><dt>{label}</dt><dd>{stats[key]??0}</dd></div>)}</dl>:null}<p className="cedar-muted">只含本游戏聚合计数；活跃按自行入座及游戏行动记录；预留小机席位与 NPC 不计入。</p></section>:null}
-+ </>}
-+ <footer>原作：江川雪 · 小红书 63657956652 · <a href="https://github.com/Cecilia-coding/AutoChess-MCP" target="_blank" rel="noopener noreferrer">AutoChess-MCP</a> · <a href="/autochess/static/LICENSE.txt">MIT 许可证</a></footer>
-+ </main>}</>;
++ const join=()=>run(async()=>{let code=invitation.trim();try{code=new URLSearchParams(new URL(code).hash.slice(1)).get('invite')||code;}catch{/* A raw private invitation is also accepted. */}const result=await roomRequest('join',{invitation:code});if(alive.current){history.replaceState(null,'','/autochess/');enter(result.roomId);}});
++ const navigate=(next:Tab)=>{statsSequence.current++;setStats(undefined);setTab(next);};
++ const modes=config?LOBBY_MODES.filter(m=>config.modes.some(x=>x.id===m.id)):LOBBY_MODES;
++ const tabs=TABS.filter(t=>(config?.economy!==false||!['shop','wheel'].includes(t.id))&&(!ai||t.id!=='wheel'));
++ if(room)return <RoomApp key={`${room}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{resetRoomScope();setRoom('');setWatch(false);void refresh();void metaRequest<{self:SelfAccount}>('profile').then(p=>{if(alive.current)setProfile(p.self);}).catch(()=>{});}}/>;
++ return <div className="lobby-viewport"><main className="lobby cedar-lobby">
++  <div className="celestial-astrolabe-bg" aria-hidden="true"/>
++  <LobbyHeader name="弈间" tabs={tabs} tab={tab} onTab={id=>navigate(id as Tab)} wallet={profile?.coins}/>
++  {error?<p role="alert" className="room-error">{error} <button disabled={busy} onClick={()=>void refresh()}>重新连接</button></p>:null}
++  {!signedIn?<p className="lobby-notice">请先登录，再回到棋室入座。<a href="/">前往登录</a></p>:!config&&!error?<p className="lobby-hint" role="status">正在翻开棋室…</p>:null}
++  {ai?<p className="lobby-notice" role="status">正在查看 {config?.machines.find(m=>m.id===ai)?.name||'自家小机'} · 存档槽 {slot}。钱包只读，购买、佩戴、领取与赠礼由小机自行操作。</p>:slot!==1?<p className="lobby-hint">存档槽 {slot} · 可在「我的」切换</p>:null}
++  {tab==='start'?<section className="lobby-panel chamber-start">
++   {['tl','tr','bl','br'].map(c=><div key={c} className={`panel-corner-fleuron ${c}`} aria-hidden="true">❖</div>)}
++   <h2>天机开弈</h2>
++   {!ai?<>
++    <p className="lobby-hint">选定一套古籍棋谱以开局。一人可补齐 NPC，也可邀好友与自家小机同席。</p>
++    <LobbyPackCards packs={config?.packs??PACK_SUMMARIES} selectedPack={pack} onPack={setPack} mode={mode} onMode={setMode} modes={modes} onRetry={()=>void refresh()}/>
++    <div className="lobby-row"><button className="lobby-primary" disabled={busy||!config||selected.length>=(mode==='duel'?2:seats)} onClick={create}>✦ {modePack(mode).createLabel} ✦</button></div>
++    <p className="lobby-hint">入座后点「补路人机，直接开局」即可单人游玩；开局前也可复制密函邀好友。</p>
++    {config?<details className="lobby-machine-legacy cedar-table-settings"><summary>同席设置 · {mode==='duel'?2:seats} 席{selected.length?` · 带上 ${selected.length} 只小机`:''}</summary>
++     {mode==='standard'?<div className="lobby-row"><label>总席位 <select aria-label="总席位" value={seats} onChange={e=>setSeats(Number(e.target.value))}>{[2,4,6,8,10,12,14,16].map(n=><option key={n}>{n}</option>)}</select></label></div>:null}
++     {config.machines.length?<><h3>带上自家小机</h3><div className="lobby-row">{config.machines.map(m=><button type="button" key={m.id} aria-pressed={selected.includes(m.id)} className={selected.includes(m.id)?'lobby-primary':''} onClick={()=>setSelected(old=>old.includes(m.id)?old.filter(id=>id!==m.id):[...old,m.id])}>{selected.includes(m.id)?'✦ ':'✧ '}{m.name}</button>)}</div><p className="lobby-hint">小机使用同一存档槽，从根 MCP 的 rooms 找到席位后行动；这里不会自动唤醒它。</p></>:<p className="lobby-hint">已绑定的小机会显示在这里。</p>}
++     {selected.length>=(mode==='duel'?2:seats)?<p className="room-error" role="alert">请为自己留一席，减少小机或增加席位。</p>:null}
++    </details>:null}
++    <h3>入座已知棋局</h3><form className="lobby-row" onSubmit={e=>{e.preventDefault();void join();}}><input aria-label="好友邀请" value={invitation} onChange={e=>setInvitation(e.target.value)} placeholder="粘贴好友的密函或邀请链接" required/><button disabled={busy||!config||!invitation.trim()}>入座登盘</button></form>
++   </>:null}
++   {config?<><h3>{ai?'自家机的棋局':'我的棋局'}</h3>{config.rooms.length?config.rooms.map(r=><div className="lobby-row cedar-saved" key={r.roomId}><span className="lobby-queue"><strong>{r.packName} · {modePack(r.mode).name}</strong><small>{r.phase==='waiting'?`等待开局 · ${r.seats}/${r.capacity} 席`:r.phase==='finished'?'已结束 · 可查看棋盘':`第 ${r.round} 轮`}</small></span>{!ai?<button onClick={()=>enter(r.roomId)}>回到棋盘</button>:null}<button onClick={()=>enter(r.roomId,true)}>观看</button></div>):<p className="lobby-hint">此存档槽还没有棋局。</p>}</>:null}
++  </section>:null}
++  {tab==='me'&&config?<section className="lobby-panel"><h2>我的棋室</h2><div className="lobby-row cedar-scope"><label>存档槽 <select aria-label="存档槽" value={slot} onChange={e=>changeScope(Number(e.target.value),ai)}>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select></label><label>棋局归属 <select aria-label="棋局归属" value={ai} onChange={e=>changeScope(slot,e.target.value)}><option value="">我的棋局</option>{config.machines.map(m=><option key={m.id} value={m.id}>{m.name} · 只读</option>)}</select></label></div><p className="lobby-hint">每个存档槽独立保存棋局与装扮。查看小机后，在「开始」观看它的棋局。</p>
++   {config.author_stats?<details className="lobby-machine-legacy"><summary>弈间 · 游玩统计</summary><div className="lobby-row"><select aria-label="统计时段" value={range} onChange={e=>{statsSequence.current++;setRange(e.target.value);setStats(undefined);}}>{['10m','1h','6h','12h','24h'].map(r=><option key={r}>{r}</option>)}</select><button disabled={busy} onClick={()=>void run(async()=>{const id=++statsSequence.current;const result=await cedarRequest('stats',{range});if(alive.current&&id===statsSequence.current)setStats(result);})}>查看聚合</button></div>{stats?<dl className="cedar-stats">{[['活跃人类','active_humans'],['活跃小机','active_machines'],['开房','created'],['开始','started'],['完成','finished']].map(([label,key])=><div key={key}><dt>{label}</dt><dd>{stats[key]??0}</dd></div>)}</dl>:null}<p className="lobby-hint">时段活跃，非在线人数。只含本游戏聚合；预留小机席位与 NPC 不计入。</p></details>:null}
++  </section>:null}
++  {tab!=='start'&&config?.economy?<Economy tab={tab} onTab={navigate} readOnly={!!ai} onProfile={setProfile}/>:null}
++  <footer className="cedar-attribution">原作：江川雪 · 小红书 63657956652 · <a href="https://play.ceciliaceci.me/" target="_blank" rel="noopener noreferrer">作者原版 ↗</a> · <a href="https://github.com/Cecilia-coding/AutoChess-MCP" target="_blank" rel="noopener noreferrer">AutoChess-MCP</a> · <a href="/autochess/static/LICENSE.txt">MIT 许可证</a></footer>
++ </main></div>;
 +}
 +createRoot(document.getElementById('root')!).render(<App/>);
 diff --git a/cedartoy/style.css b/cedartoy/style.css
 new file mode 100644
-index 0000000..9d4da0c
+index 0000000..85edb97
 --- /dev/null
 +++ b/cedartoy/style.css
-@@ -0,0 +1,12 @@
-+/* The private entry uses CedarToy's pale pink, lavender controls and dark outlines.
-+   The original room-ui.css retains ownership of the game board and overlays. */
-+body{margin:0;background:#fdf6f7;color:#29232f;font-family:system-ui,"PingFang SC",sans-serif;font-size:14px;line-height:1.6}
-+.cedar-top{display:flex;align-items:center;gap:16px;min-height:58px;padding:10px 24px;border-bottom:3px solid #29232f;background:#fff;flex-wrap:wrap}
-+.cedar-top strong{font-size:17px}.cedar-top span{margin-left:auto;font-size:12px}.cedar-top a,.cedar-room a{text-decoration:underline;text-underline-offset:3px}
-+.cedar-room{max-width:800px;margin:24px auto;padding:0 20px}.cedar-room h1{font-size:24px;font-weight:700}.cedar-room h2{font-size:18px;font-weight:700;margin:0 0 12px}.cedar-room section{padding:20px 0;border-top:2px solid #d8cfdc;margin-top:20px}.cedar-muted{font-size:12px;color:#685e70;margin:8px 0 14px}
-+.cedar-room button,.cedar-top button,.cedar-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border:2px solid #29232f;border-radius:8px;background:#fff;padding:8px 14px;font-size:14px;cursor:pointer;margin:4px 8px 4px 0}.cedar-room .cedar-primary{background:#beb1d1;box-shadow:3px 3px 0 #29232f;font-weight:700}.cedar-room button:disabled{opacity:.5;cursor:default}
-+.cedar-fields{display:flex;gap:16px;flex-wrap:wrap}.cedar-room label{display:flex;flex-direction:column;gap:5px;flex:1;min-width:120px}.cedar-room input:not([type=checkbox]),.cedar-room select{min-height:44px;padding:8px;border:2px solid #aa9db4;border-radius:6px;background:white;color:inherit;font-size:14px;max-width:100%;width:100%}.cedar-room form{display:flex;align-items:end;gap:12px;margin:16px 0}.cedar-room form button{flex-shrink:0;margin:0}.cedar-room fieldset{border:0;margin:14px 0;padding:0}.cedar-room label.cedar-check{display:inline-flex;flex-direction:row;align-items:center;min-height:44px;gap:8px;margin-right:14px}.cedar-check input{width:18px;height:18px;accent-color:#75608b}
-+.cedar-saved{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #d8cfdc;flex-wrap:wrap}.cedar-saved>div{flex:1;min-width:150px}.cedar-saved small{display:block;font-size:12px;color:#685e70}.cedar-room footer{font-size:12px;margin:24px 0;color:#685e70}.cedar-error{padding:12px;border:2px solid #af5663;background:#fff1f3;overflow-wrap:anywhere}.cedar-room dl{display:flex;gap:24px;flex-wrap:wrap}.cedar-room dd{font-size:20px;font-weight:700}.cedar-room :focus-visible,.cedar-top :focus-visible{outline:3px solid #75608b;outline-offset:3px}
-+/* Keep the original floating menu clear of the full-screen/zoom toolbar. */
+@@ -0,0 +1,17 @@
++/* The original lobby, theme-revival and room-ui styles own the visual system.
++   These scoped rules only lay out private account settings and attribution. */
++.cedar-lobby>.lobby-panel+.cedar-economy{margin-top:24px}
++.cedar-lobby .cedar-table-settings{margin:20px 0}
++.cedar-lobby .cedar-scope label{display:flex;align-items:center;gap:8px;min-width:0}
++.cedar-lobby .cedar-scope select{min-width:0;max-width:100%}
++.cedar-lobby .cedar-saved .lobby-queue{flex:1;min-width:160px}
++.cedar-lobby .cedar-saved small{display:block;font-size:12px;font-weight:400}
++.cedar-lobby .cedar-stats{display:flex;flex-wrap:wrap;gap:20px;font-size:13px}
++.cedar-lobby .cedar-stats dd{margin:4px 0;font-size:18px}
++.cedar-lobby .cedar-attribution{margin-top:28px;color:#7c718a;font-size:12px;line-height:1.8;text-align:center;overflow-wrap:anywhere}
++.cedar-lobby .cedar-attribution a{text-decoration:underline;text-underline-offset:3px}
++.cedar-lobby .room-error{overflow-wrap:anywhere}
++.cedar-lobby :focus-visible{outline:2px solid #856b9c;outline-offset:3px}
++/* Keep the existing floating menu clear of the full-screen/zoom toolbar. */
 +@media(min-width:761px){.room-float{right:224px}}
-+@media(max-width:480px){.cedar-top{padding:10px 14px;gap:10px}.cedar-top span{max-width:100px;overflow-wrap:anywhere}.cedar-room{margin:18px auto;padding:0 16px}.cedar-fields{gap:12px}.cedar-room form{align-items:stretch;flex-direction:column}.cedar-room form button{align-self:start}.cedar-saved button{padding:8px 10px}.cedar-room section{padding:16px 0}}
++@media(max-width:520px){.cedar-lobby .cedar-scope label{width:100%}.cedar-lobby .cedar-scope select{flex:1}}
 diff --git a/cedartoy/transport.ts b/cedartoy/transport.ts
 new file mode 100644
-index 0000000..6e4901f
+index 0000000..514322d
 --- /dev/null
 +++ b/cedartoy/transport.ts
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,29 @@
 +export type Scope={slot:number;ai_id?:string;watch?:boolean};
 +let scope:Scope={slot:1};
-+export const scopeKey=()=>JSON.stringify(scope);
-+export const setScope=(next:Scope)=>{scope={...next};};
++let generation=0;
++export const scopeKey=()=>generation+':'+JSON.stringify(scope);
++// A generation also rejects responses from A -> B -> A and account changes.
++export const setScope=(next:Scope,reset=false)=>{if(reset||JSON.stringify(next)!==JSON.stringify(scope))generation++;scope={...next};};
 +export async function cedarRequest<T=any>(path:string,body:object={}):Promise<T>{
 + const token=localStorage.getItem('cedartoy_token'),identityScope=scopeKey();
-+ if(!token)throw Error('请先在 4399 首页登录人类账号，再返回棋室');
++ if(!token)throw Error('请先登录人类账号，再返回棋室');
 + let response:Response;
 + try{response=await fetch('/autochess/api/'+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({...body,...scope}),signal:AbortSignal.timeout(8000),cache:'no-store'});}
 + catch{throw Error('网络中断，棋局仍保留。恢复后可以重连或重试刚才操作。');}
@@ -891,7 +1051,7 @@ index 0000000..6e4901f
 + return cedarRequest('economy',{...params,op});
 +}
 +export function accountRequest<T=any>(op:string,args:object={}):Promise<T>{
-+ if(!['wheel','wheel_action'].includes(op))throw Error('请使用 4399 账号');
++ if(!['wheel','wheel_action'].includes(op))throw Error('请使用当前账号');
 + return metaRequest(op,args);
 +}
 diff --git a/lib/accounts/cedartoy-economy.ts b/lib/accounts/cedartoy-economy.ts
@@ -1483,6 +1643,49 @@ index 0000000..22b422b
 +  assert.equal(read.phase,'waiting');
 +  controller.abort();await pending;assert.ok(Date.now()-began<1000);
 +});
+diff --git a/test/cedartoy-transport.test.ts b/test/cedartoy-transport.test.ts
+new file mode 100644
+index 0000000..b4b5663
+--- /dev/null
++++ b/test/cedartoy-transport.test.ts
+@@ -0,0 +1,37 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {cedarRequest,setScope} from '../cedartoy/transport';
++
++// Browser transport security: a delayed real request must not revive a previous
++// wallet/room after navigation, even when the user returns to the same scope.
++test('Cedar transport rejects late responses across scope and account generations',async()=>{
++ const savedFetch=globalThis.fetch;
++ const savedStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
++ let token='test-human';
++ Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>token}});
++ let release!:(response:Response)=>void;
++ let sent:Record<string,unknown>={};
++ globalThis.fetch=async(_url,options)=>{sent=JSON.parse(options!.body as string);return new Promise<Response>(resolve=>{release=resolve;});};
++ try{
++  setScope({slot:1},true);
++  const scopeRequest=cedarRequest('economy',{op:'profile',slot:5});
++  assert.equal(sent.slot,1,'caller cannot override the selected scope');
++  setScope({slot:2});setScope({slot:1});
++  release(Response.json({self:{coins:{human:999}}}));
++  await assert.rejects(scopeRequest,/已切换/);
++  const accountRequest=cedarRequest('bootstrap');
++  token='other-human';setScope({slot:1},true);
++  token='test-human';setScope({slot:1},true);
++  release(Response.json({rooms:[{roomId:'old-room'}]}));
++  await assert.rejects(accountRequest,/已切换/);
++  const fresh=cedarRequest('bootstrap');
++  setScope({slot:1}); // Normal same-scope refresh must not cancel unrelated reads.
++  release(Response.json({rooms:[]}));
++  assert.deepEqual(await fresh,{rooms:[]});
++ }finally{
++  globalThis.fetch=savedFetch;
++  if(savedStorage)Object.defineProperty(globalThis,'localStorage',savedStorage);
++  else Reflect.deleteProperty(globalThis,'localStorage');
++  setScope({slot:1},true);
++ }
++});
 diff --git a/test/cedartoy-web.test.ts b/test/cedartoy-web.test.ts
 new file mode 100644
 index 0000000..8727f98
@@ -1698,7 +1901,7 @@ index 0000000..8727f98
 +});
 diff --git a/vite.cedar.config.ts b/vite.cedar.config.ts
 new file mode 100644
-index 0000000..6d810e6
+index 0000000..202e949
 --- /dev/null
 +++ b/vite.cedar.config.ts
 @@ -0,0 +1,21 @@
@@ -1714,7 +1917,7 @@ index 0000000..6d810e6
 +  if(importer&&source==='./account-session')return root+'cedartoy/account-session.ts';
 +  if(importer&&source==='./room-request')return root+'cedartoy/transport.ts';
 + },transform(code,id){
-+  if(id.endsWith('/wheel.css'))return code.replace(/^@import url.*fonts\.googleapis.*$/gm,'');
++  if(id.endsWith('/wheel.css'))return code.replace(/^@import url.*fonts\.googleapis.*$/gm,'').replace(':root {','.wheel-page {');
 +  if(id.endsWith('/lib/meta/board-scenes.js')||id.endsWith('/lib/meta/cosmetics.ts'))
 +    return code.replace(/(['"])\/(boards|frames)\//g, '$1/autochess/static/$2/');
 + }},react()],

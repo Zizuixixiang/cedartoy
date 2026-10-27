@@ -6,9 +6,15 @@ import subprocess
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tests_toy.test_autochess_web import Fixture, NODE, ROOT
+import server
 
 if __name__ == '__main__':
     with Fixture() as fixture:
+        # Five bound AIs exercise the original lobby's compact secondary settings.
+        with server._db_connect() as conn:
+            for ai_id in range(205, 209):
+                conn.execute('INSERT INTO toy_users(id,username,is_ai) VALUES(?,?,1)', (ai_id, f'同席小机{ai_id-203}'))
+                conn.execute('INSERT INTO user_bindings VALUES(101,?)', (ai_id,))
         # Fixture-only funds for a visible purchase/equip -> actual 3D room check.
         # The separate engine test earns real solo-NPC rewards without this fixture.
         seed = fixture.base / 'seed-wallet.ts'
