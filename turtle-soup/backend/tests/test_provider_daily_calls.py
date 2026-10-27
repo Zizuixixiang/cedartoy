@@ -37,6 +37,8 @@ def reserve_in_worker(_):
 
 class ProviderDailyCallsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        # Importing fixtures does not run its setUpModule; isolate billing here too.
+        self.patch(patch.object(judge.api_costs, "record"))
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.db_path = Path(temp.name) / "accounts.db"

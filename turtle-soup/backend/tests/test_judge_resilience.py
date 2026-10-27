@@ -33,6 +33,14 @@ import judge  # noqa: E402
 from routers import admin as admin_router  # noqa: E402
 
 
+def setUpModule():
+    # Fake completions must never start the production cost writer. Patching
+    # database_stub.DB_PATH only isolates provider quotas, not api_costs.DB_PATH.
+    recorder = patch.object(judge.api_costs, "record")
+    recorder.start()
+    unittest.addModuleCleanup(recorder.stop)
+
+
 CONFIG = {
     "id": 7,
     "name": "primary",
