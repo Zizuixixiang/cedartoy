@@ -1,3 +1,54 @@
+diff --git a/components/autochess/arena-3d.tsx b/components/autochess/arena-3d.tsx
+index 616fe85..ada8db5 100644
+--- a/components/autochess/arena-3d.tsx
++++ b/components/autochess/arena-3d.tsx
+@@ -24,11 +24,13 @@ type Props = {
+   selectedId?: string;
+   onCell: (row:number,col:number)=>void; onBench:(id:string)=>void; onWithdraw:()=>void;
+   onDrop:(source:{kind:'board'|'bench';id:string},target:{kind:'cell';row:number;col:number}|{kind:'bench'|'sell'})=>void;
+-  controls:ReactNode; inventory:ReactNode; topPanel:ReactNode; notice:string;
++  controls:ReactNode; inventoryLabel?:string; inventory:ReactNode; topPanel:ReactNode; notice:string;
+   inspectorActions:(piece:Combatant)=>ReactNode;
+   onDismiss:()=>void; onInspect:()=>void; shopOpen:boolean; shopEnabled:boolean; onShopToggle:()=>void;
+ };
+ export default function Arena3D(props: Props) {
++  const [inventoryOpen,setInventoryOpen]=useState(true);
++  useEffect(()=>{const mobile=matchMedia('(max-width:768px)');const update=()=>setInventoryOpen(!mobile.matches);update();mobile.addEventListener('change',update);return()=>mobile.removeEventListener('change',update);},[]);
+   const host = useRef<HTMLDivElement>(null);
+   const trash = useRef<HTMLDivElement>(null);
+   const [detailedBoard,setDetailedBoard]=useState(false);
+@@ -101,7 +103,7 @@ export default function Arena3D(props: Props) {
+         <div className="peach-round-controls">{props.controls}</div>
+         <button className="peach-shop-toggle" disabled={!props.shopEnabled} aria-label={props.terms.level.shop} aria-expanded={props.shopOpen} onClick={()=>{setInspectedId(null);props.onShopToggle()}}><Store size={24}/><span>{props.terms.level.shop}</span></button>
+       </div>
+-      <div className="peach-inventory">{props.inventory}</div>
++      <details className="peach-inventory" open={inventoryOpen} onToggle={event=>setInventoryOpen(event.currentTarget.open)}><summary><strong>{props.inventoryLabel??'装备背包'}</strong></summary><div className="peach-inventory-content">{props.inventory}</div></details>
+     </div>
+   </section>;
+ }
+diff --git a/components/autochess/artwork-arena.css b/components/autochess/artwork-arena.css
+index ed2ad84..7163adf 100644
+--- a/components/autochess/artwork-arena.css
++++ b/components/autochess/artwork-arena.css
+@@ -26,15 +26,10 @@
+ @keyframes art-mist{from{transform:translateX(-2%);opacity:.5}to{transform:translateX(3%);opacity:.9}}
+ @keyframes art-petal{0%{transform:translate(0,0) rotate(0);opacity:0}10%{opacity:.55}85%{opacity:.45}100%{transform:translate(35px,850px) rotate(260deg);opacity:0}}
+ @media(max-width:768px){
+- .room-float{top:8px;right:8px}
+  .room-board-layout:not(.show-panels)>.room-ranking,.room-board-layout:not(.show-panels)>.room-sidepanel{display:none}
+- .room-panel-toggle{display:block;position:absolute;left:8px;top:65px;z-index:37;padding:7px 9px;border:1px solid #ac949466;background:#eee5e4;color:#453742;border-radius:8px;font-size:11px}
+- .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:106px;z-index:38;max-height:55dvh}
+- .room-versus-hud{top:7px;padding:5px 9px;gap:6px;width:calc(100% - 65px);left:8px;transform:none}
+- .versus-stage-badge{padding:3px 6px;gap:3px}.stage-star,.versus-sub{display:none}.versus-name{font-size:11px;max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stage-text{font-size:10px}
+- .peach-camera-overlay{top:63px;right:8px;max-width:calc(100% - 100px)}
+- .peach-enemy-bench{top:111px;right:8px;max-width:150px;font-size:10px}
+- .peach-inventory:has(>p){max-height:45px;overflow:hidden}
++ .room-panel-toggle{display:block;position:absolute;left:8px;z-index:37;padding:7px 9px;border:1px solid #ac949466;background:#eee5e4;color:#453742;border-radius:8px;font-size:11px}
++ .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:150px;z-index:38;max-height:55dvh}
++ .peach-enemy-bench{top:150px;right:8px;max-width:150px;font-size:10px}
+ }
+ @media(orientation:landscape) and (max-height:600px){
+  .room-table.autochess-table{height:100dvh!important;min-height:100dvh!important;padding:0!important}
 diff --git a/components/autochess/feedback.tsx b/components/autochess/feedback.tsx
 index 33736be..687340c 100644
 --- a/components/autochess/feedback.tsx
@@ -251,7 +302,7 @@ index 400ef7c..3bc1d69 100644
 +</>;
 +}
 diff --git a/components/autochess/room-app.tsx b/components/autochess/room-app.tsx
-index 410ef60..d705b5c 100644
+index 410ef60..c1503a1 100644
 --- a/components/autochess/room-app.tsx
 +++ b/components/autochess/room-app.tsx
 @@ -1,4 +1,5 @@
@@ -260,7 +311,15 @@ index 410ef60..d705b5c 100644
  import { Component, useCallback, useMemo, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
  import { modePack, DEFAULT_MODE, type MatchModeId } from '@/packs/modes/registry';
  import Arena3D from './arena-3d';
-@@ -51,7 +52,7 @@ class RoomCrashFence extends Component<{children: ReactNode}, {message: string}>
+@@ -30,6 +31,7 @@ import SocialInbox from './social-inbox';
+ import { readAccountToken } from './account-session';
+ import { roomRequest } from './room-request';
+ import Feedback from './feedback';
++import {roomPreparationUI,waitingStartHint} from './room-ui-state';
+ 
+ const SESSION = 'autochess-room-current-v1';
+ const OFFLINE = '网络中断，棋盘仍保留；连上后会自动同步';
+@@ -51,7 +53,7 @@ class RoomCrashFence extends Component<{children: ReactNode}, {message: string}>
  async function request<T = RoomView>(op:string, args:object={}): Promise<T> {
    return roomRequest<T>(op, args);
  }
@@ -269,7 +328,7 @@ index 410ef60..d705b5c 100644
    const [connection,setConnection]=useState<{cursorEnabled:boolean;mcpUrl:string;packs:PackSummary[]}>({cursorEnabled:false,mcpUrl:'',packs:[]});
    const [configLoaded,setConfigLoaded]=useState(false);
    const [configError,setConfigError]=useState('');
-@@ -119,7 +120,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -119,7 +121,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
    useEffect(()=>{
      if(!credentials || !view?.self || view.seatIndex!==0)return;
      void request<{invitation:string;watchToken:string}>('invite',credentials).then(info=>{
@@ -278,16 +337,31 @@ index 410ef60..d705b5c 100644
      }).catch(()=>{});
    },[credentials,view?.seatIndex]);
    useEffect(()=>{
-@@ -168,7 +169,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -167,8 +169,10 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   };
    const action=async(command:RoomAction)=>{
      const state=latestView.current;
-     if(!credentials||!state?.self||busyRef.current)return;busyRef.current=true;setBusy(true);
+-    if(!credentials||!state?.self||busyRef.current)return;busyRef.current=true;setBusy(true);
 -    const payload={...credentials,round:state.round,revision:state.self.revision,requestId:crypto.randomUUID(),action:command};pending.current=payload;
++    if(!credentials||!state?.self||busyRef.current)return;
++    if(state.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)){pending.current=null;setError(waitingStartHint(state.seatIndex===0));return;}
++    busyRef.current=true;setBusy(true);
 +    const payload={...credentials,round:state.round,revision:state.self.revision,requestId:newRequestId(),action:command};pending.current=payload;
      if(command.kind==='move'){setMovePreview({roomId:state.id,round:state.round,revision:state.self.revision,action:command});setNotice('正在保存站位…');}
      try {const next=await request('action',payload);adopt(next);pending.current=null;setError('');
        if(command.kind==='claim'){setDraftOpen(false);setNotice(next.self?.draftLabel??'奖励已入账');}
-@@ -193,12 +194,13 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -184,21 +188,22 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+           return `${findUnit(piece.templateId)?.name??piece.templateId} 合成升至 ${starLabel(terms, piece.star)}，保留 ${next.self!.pieceRefs?.[piece.id]??'原棋子'}${refs.length?`；${refs.join('、')} 已合入`:''}`;
+         }).join('；'));
+       }
+-    } catch(e) {setError((e as Error).message);if(command.kind==='move')setNotice('站位未确认，已恢复已知棋盘，请重试');}
++    } catch(e) {if((e as {retryable?:boolean}).retryable===false)pending.current=null;setError((e as Error).message);if(command.kind==='move')setNotice((e as {retryable?:boolean}).retryable===false?'当前状态不能移动，已恢复已知棋盘':'站位未确认，已恢复已知棋盘，请重试');}
+     finally{setMovePreview(null);busyRef.current=false;setBusy(false);}
+   };
+-  const retry=async()=>{if(!pending.current||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('action',pending.current));pending.current=null;setError('');setNotice('操作已确认');}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
++  const retry=async()=>{if(!pending.current||busyRef.current)return;busyRef.current=true;setBusy(true);try{adopt(await request('action',pending.current));pending.current=null;setError('');setNotice('操作已确认');}catch(e){if((e as {retryable?:boolean}).retryable===false)pending.current=null;setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}};
+ 
+   const copy=async(text:string,done='抄好了')=>{try{await navigator.clipboard.writeText(text);setNotice(done);}catch{setNotice(text);}};
    const [danmakuText,setDanmakuText]=useState('');
    const sayDanmaku=async()=>{
      const text=danmakuText.trim();if(!text||!credentials)return;setDanmakuText('');
@@ -302,7 +376,7 @@ index 410ef60..d705b5c 100644
      if(busyRef.current)return;
      busyRef.current=true;
      const state=latestView.current;
-@@ -206,7 +208,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -206,7 +211,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
      // 换房重建整个会话：旧请求只持有已卸载实例的状态 setter。
      onSessionChange(null);
      if(credentials&&state?.self&&state.self.hp>0&&state.phase!=='finished'){
@@ -311,7 +385,7 @@ index 410ef60..d705b5c 100644
      }
    };
    /** 单人开局：补路人机后进入备战。 */
-@@ -214,7 +216,8 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -214,7 +219,8 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
    const replay=useMemo(()=>replayBattle?roomPlayback(replayBattle,viewerSeat):null,[replayBattle,viewerSeat]);
    const statsBattle=playback?.battle??view?.battle;
    const statsReplay=useMemo(()=>statsBattle?roomPlayback(statsBattle,viewerSeat):null,[statsBattle,viewerSeat]);
@@ -321,7 +395,15 @@ index 410ef60..d705b5c 100644
    if(!credentials)return <div className="lobby-viewport"><div role={error?'alert':undefined}>{error}</div>{savedSession?<div className="lobby-saved-session"><span className="saved-icon">✦</span><span>检测到未完成棋局</span><button className="btn-resume" type="button" onClick={()=>setCredentials(savedSession)}>重连席位</button><button className="btn-clear" type="button" onClick={()=>{try{localStorage.removeItem(SESSION);}catch{}setSavedSession(null);}}>清除存档</button></div>:null}<Lobby packs={connection.packs} packsLoading={!configLoaded} packsError={configError} mcpUrl={connection.mcpUrl} onRefreshPacks={refreshConfig} onPacksChanged={packs=>{configRequest.current++;setConnection(current=>({...current,packs}));setConfigError('');}} onCreate={(packId,mode)=>void create(packId,mode)}             onJoin={(invitation,joinKey)=>void joinRoom(invitation,joinKey)} onEnterRoom={(roomId,token)=>setCredentials({roomId,token})} busy={busy}/></div>;
    if(!view)return <main className="p-6"><p>{error||'正在恢复棋局…'}</p><p className="my-2 text-sm">席位还在。不要急着清掉本机凭证；连上后会自己同步。</p><button onClick={()=>{try{localStorage.removeItem(SESSION);}catch{}onSessionChange(null);}}>返回棋室入口</button></main>;
    const displayed=previewRoomMove(view,movePreview);
-@@ -233,6 +236,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -227,12 +233,14 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+   const board=playback?playback.battle.boards[index]!:own?.board??[];
+   const bench=playback?playback.battle.benches[index]!:own?.bench??[];
+   const refreshPrice=self?roomRefreshPrice(self,view.round):0;
+-  const editable=!!self&&self.hp>0&&!self.ready&&!playback&&view.phase!=='finished'&&!busy;
++  const preparation=roomPreparationUI(displayed,!!playback,busy);
++  const editable=preparation.editable;
+   const draft=self?.draft;
+   const hexOffer=self?.hexOffer;
    const finish=()=>{setPlayback(null);setShopOpen(true);};
     const move=(piece:string,row:number,col:number)=>{void action({kind:'move',piece,row,col});setSelected(undefined);};
     const backToLobby=()=>{
@@ -329,7 +411,7 @@ index 410ef60..d705b5c 100644
       if(watching){
         window.history.replaceState(null,'','/autochess/room');
         try{const saved=localStorage.getItem(SESSION);setSavedSession(saved?JSON.parse(saved) as RoomCredentials:null);}catch{setSavedSession(null);}
-@@ -254,12 +258,13 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -254,12 +262,13 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
     return <main className="room-table autochess-table mx-auto max-w-[1500px] px-3 py-3 text-[var(--ink)]">
         {!watching?<details className="autochess-companion room-float"><summary aria-label="房间菜单">☰</summary><div className="room-actions rounded-xl border bg-white p-3 text-sm">
          <button className="room-menu-close" type="button" onClick={event=>event.currentTarget.closest('details')?.removeAttribute('open')}>收起房间菜单</button>
@@ -344,29 +426,63 @@ index 410ef60..d705b5c 100644
 +        {!cedar&&view.seatIndex===0&&enemy?<><button type="button" disabled={busy||view.phase!=='prepare'||enemy.ready} onClick={async()=>{try{adopt(await request('poke',credentials!));setNotice('催促已登记；需客户端正在监听，30秒内重复点击会合并。');}catch(e){setError((e as Error).message);}}}>踹醒它</button><p role="status">{view.wake?.status} · 自动续聊需要客户端适配器正在等待</p></>:null}
 +        {!cedar&&view.seatIndex===0?<><MachineInvitePanel credentials={credentials} mcpUrl={playerUrl} canInvite={view.phase==='waiting'&&view.seats.length<(view.seatCount??2)} onNotice={setNotice}/><button className="m-1 rounded border p-2" disabled={!invitation||!playerUrl} onClick={()=>copy(inviteText,'邀请词抄好了，发给它就行')}>复制普通邀请</button><button className="m-1 rounded border p-2" disabled={!playerUrl} onClick={()=>copy(playerUrl,'MCP 地址抄好了')}>复制 MCP 地址</button><button className="m-1 rounded border p-2" disabled={!watchLink} onClick={()=>copy(watchLink,'观战链接抄好了')}>复制观战链接</button><p className="break-all">给机的 MCP：{playerUrl||'加载中…'}</p></>:null}
 +        {cedar&&!watching&&view.seatIndex===0&&view.phase==='waiting'?<button disabled={!invitation} onClick={()=>copy(`${location.origin}/autochess/#invite=${encodeURIComponent(invitation)}`,'好友邀请链接已复制')}>复制好友邀请</button>:null}
-+        {view.phase!=='finished'&&self&&self.hp>0?<button className="m-1 rounded border p-2" onClick={()=>{if(!cedar||confirm('确认认输结束自己的对局？'))void action({kind:'resign'});}}>认输结束</button>:<button className="m-1 rounded border p-2" onClick={backToLobby}>新建一局</button>}
++        {view.phase!=='waiting'&&view.phase!=='finished'&&self&&self.hp>0?<button className="m-1 rounded border p-2" onClick={()=>{if(!cedar||confirm('确认认输结束自己的对局？'))void action({kind:'resign'});}}>认输结束</button>:view.phase==='waiting'?null:<button className="m-1 rounded border p-2" onClick={backToLobby}>新建一局</button>}
 +        <button className="m-1 rounded border p-2" type="button" onClick={()=>void leaveRoom()}>{cedar?'返回棋室（保留席位）':'退出房间（自动认输）'}</button>
         </div></details>:null}
       <section className={`danmaku-strip ${shopOpen?'is-covered':''}`} aria-label="弹幕">
        <DanmakuStream key={view.id} messages={view.danmaku??[]} playbackRound={playback?.battle.round} covered={shopOpen} />
-@@ -277,7 +282,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+@@ -277,14 +286,14 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
       </dialog></div>:null}
      {self?.bounty?.bank?<p className="px-2">连败赏金 {goldAmount(terms, self.bounty.bank)} · 取胜领取，淘汰清零</p>:null}
      {playback?<output>正在回放第 {playback.battle.round} 轮 · 棋友可同时准备下一轮</output>:null}
 -    {self?.result?<RoomResult key={view.id} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
+-    {draftOpen&&draft&&!self?.result&&!playback?<section className="room-draft" aria-label="旅途选秀">
 +    {self?.result?<RoomResult key={view.id} cedar={cedar} result={self.result} finished={view.phase==='finished'} show={!playback} onReturn={backToLobby}/>:view.phase==='finished'&&!playback?<p className="p-3 font-bold" role="status">{view.winner==='draw'?'平局':`${view.seats[view.winner??0]?.name??'对方'} 获胜`} · 棋局已保存</p>:null}
-     {draftOpen&&draft&&!self?.result&&!playback?<section className="room-draft" aria-label="旅途选秀">
++    {preparation.offers&&draftOpen&&draft?<section className="room-draft" aria-label="旅途选秀">
        <header className="room-draft-header"><div><span className="room-draft-kicker">autochess · 一掷定缘</span><h2>旅途选秀</h2><p>每轮一次，落点已保存。领取后回到棋盘。</p></div><button onClick={()=>setDraftOpen(false)}>暂回棋盘</button></header>
        <div className="board-grid">{boardTiles.map((tile,i)=><article key={tile.id} className={`board-tile ${tile.type} ${(draft.landing??draft.position)===i?'active':''}`} style={{gridRow:tile.coordinate[0],gridColumn:tile.coordinate[1]}}><span className="tile-number">{String(i+1).padStart(2,'0')}</span><strong>{tile.name}</strong><small title={draft.track[i]?.detail}>{draft.track[i]?.label}</small></article>)}
-@@ -339,7 +344,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+         <div className="board-center"><span className="room-draft-state">{draft.roll===undefined?'等待掷骰':'落点已锁定 · 待领取'}</span><div className="room-dice-face" aria-label={draft.roll===undefined?'骰子':`骰点 ${draft.roll}`}>{draft.roll??'?'}</div><h3>{draft.landing===undefined?'下一站，会遇见什么？':draft.track[draft.landing]?.label}</h3><p>{draft.landing===undefined?'装备、棋子、机缘或小小意外，都在这条旅途中。':draft.track[draft.landing]?.detail}</p><button className="room-draft-primary" disabled={busy} onClick={()=>action({kind:draft.roll===undefined?'roll':'claim'})}>{busy?'正在结算…':draft.roll===undefined?'掷骰子 · 出发':draft.track[draft.landing!]?.kind==='mishap'?'接受遭遇 · 返回棋盘':'领取奖励 · 返回棋盘'}</button></div>
+       </div></section>:
+     <>
+-    {(self?.swordOffer||self?.hexOffer||self?.itemOffer)&&!self?.result&&!playback?<div className="room-offer-overlay">
++    {preparation.offers&&(self?.swordOffer||self?.hexOffer||self?.itemOffer)?<div className="room-offer-overlay" role="region" aria-label="本轮选择" tabIndex={-1}>
+     {self?.swordOffer?<section className="codex-offer-card" aria-label={`开局${self.swordOffer.label}三选一`}>
+       <header className="codex-offer-header"><span className="codex-offer-badge">✦ 一掷定剑 · 命途初现 ✦</span><h2 className="font-heading text-xl">开局{self.swordOffer.label} · 三选一</h2><p className="text-sm">选一件进装备背包，选完方可就绪布阵。</p></header>
+       <div className="codex-offer-grid">{self.swordOffer.choices.map(id=><button key={id} disabled={!editable} className="codex-choice-card" onClick={()=>void action({kind:'pick_sword',item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/><strong>{equipment(id)}</strong><p className="text-sm">{itemHint(id)}</p><span className="card-fleuron-corner">✦</span></button>)}</div>
+@@ -307,7 +316,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+         <div className="versus-side own">
+           <Avatar id={own?.accountId ?? own?.id ?? 'self'} frame={own?.frame} size={30} />
+           <div className="versus-meta">
+-            <span className="versus-name">{watching ? '观战席' : (own?.name ?? '我方')}</span>
++            <span className="versus-name" title={own?.name}>{watching ? '观战席' : (own?.name ?? '我方')}</span>
+             <span className="versus-sub">{modePack(view.mode).showHpInVersus&&own ? `${own.hp} / ${view.maxHp??modePack(view.mode).rules.startHp} 血` : watching ? '观测者' : '执子在下方'}</span>
+           </div>
+         </div>
+@@ -321,7 +330,7 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+         </div>
+         <div className="versus-side enemy">
+           <div className="versus-meta text-right">
+-            <span className="versus-name">
++            <span className="versus-name" title={shownEnemy?.name}>
+               {shownEnemy?.name ?? (view.phase === 'waiting' ? '等待棋友' : '本轮轮空')}
+               {shownEnemy?.bot ? <span className="versus-tag-bot">机</span> : null}
+               {replay?.ghost ? <span className="versus-tag-ghost">镜像</span> : null}
+@@ -338,11 +347,11 @@ function RoomApp({initialCredentials,onSessionChange}: {initialCredentials: Room
+       selectedId={selected} onCell={(row,col)=>{if(!editable)return;if(selected)move(selected,row,col);else setSelected(board.find(p=>p.localRow===row&&p.localCol===col)?.id);}}
        onBench={id=>{if(editable)setSelected(id);}} onWithdraw={()=>{if(editable&&selected)void action({kind:'withdraw',piece:selected});}}
        onDrop={(source,target)=>{if(!editable)return;if(target.kind==='cell')move(source.id,target.row,target.col);else void action({kind:target.kind==='sell'?'sell':'withdraw',piece:source.id});}}
-       notice={notice} onInspect={()=>setShopOpen(false)} onDismiss={()=>setShopOpen(false)} shopOpen={shopOpen&&!!self&&!playback} shopEnabled={!!self&&!playback&&view.phase!=='finished'} onShopToggle={()=>shopOpen?closeShop():setShopOpen(true)}
+-      notice={notice} onInspect={()=>setShopOpen(false)} onDismiss={()=>setShopOpen(false)} shopOpen={shopOpen&&!!self&&!playback} shopEnabled={!!self&&!playback&&view.phase!=='finished'} onShopToggle={()=>shopOpen?closeShop():setShopOpen(true)}
 -      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>返回大厅</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>返回大厅</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
-+      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
-       inventory={<><strong>装备背包 · {self?.inventory?.length??0}</strong>{self?.inventory?.map((id,i)=><button key={`${id}-${i}`} title={itemHint(id)} disabled={!editable||!selected} onClick={()=>selected&&action({kind:'equip',piece:selected,item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/>{equipment(id)}</button>)}{!self?.inventory?.length?<p>{watching?'仅棋手可见':'暂无待装配装备'}</p>:null}</>}
+-      inventory={<><strong>装备背包 · {self?.inventory?.length??0}</strong>{self?.inventory?.map((id,i)=><button key={`${id}-${i}`} title={itemHint(id)} disabled={!editable||!selected} onClick={()=>selected&&action({kind:'equip',piece:selected,item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/>{equipment(id)}</button>)}{!self?.inventory?.length?<p>{watching?'仅棋手可见':'暂无待装配装备'}</p>:null}</>}
++      notice={notice} onInspect={()=>setShopOpen(false)} onDismiss={()=>setShopOpen(false)} shopOpen={shopOpen&&preparation.shop} shopEnabled={preparation.shop} onShopToggle={()=>shopOpen?closeShop():setShopOpen(true)}
++      controls={playback?<button onClick={finish}>跳过战斗</button>:watching?<><span>实时观战</span><button onClick={backToLobby}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='finished'||self?.hp===0?<><button onClick={backToLobby}>新建一局</button><button onClick={()=>void leaveRoom()}>{cedar?'返回棋室':'返回大厅'}</button></>:view.phase==='waiting'?<>{view.seatIndex===0?<button title="可先从房间菜单邀请好友；准备好后手动开始，空位补 NPC" disabled={busy} onClick={()=>void startSolo()}>补路人机，直接开局</button>:<span>等待房主开局</span>}</>:<>{draft?<button onClick={()=>{setDraftOpen(true);setShopOpen(false);}}>前往旅途选秀</button>:null}<button disabled={busy||!!playback||view.phase!=='prepare'||(!self.ready&&(!editable||!self.board.length||!!draft||!!self.swordOffer||!!self.hexOffer||!!self.itemOffer))} onClick={()=>action({kind:self.ready?'unready':'ready'})}>{self.swordOffer?`先选${self.swordOffer.label}`:self.hexOffer?'先选心悟':self.itemOffer?'先选宝箱':self.ready?'已就绪 · 撤回调整':'就绪开战'}</button></>}
++      inventoryLabel={`装备背包 · ${self?.inventory?.length??0}`} inventory={<>{self?.inventory?.map((id,i)=><button key={`${id}-${i}`} title={itemHint(id)} disabled={!editable||!selected} onClick={()=>selected&&action({kind:'equip',piece:selected,item:id})}><img className="peach-card-art" src={itemImage(id,{label:equipment(id)})} alt=""/>{equipment(id)}</button>)}{!self?.inventory?.length?<p>{watching?'仅棋手可见':'暂无待装配装备'}</p>:null}</>}
        inspectorActions={piece=>editable&&[...self!.board,...self!.bench!].some(p=>p.id===piece.id)?<><button onClick={()=>setSelected(piece.id)}>选中棋子</button>{self!.board.some(p=>p.id===piece.id)?<button onClick={()=>action({kind:'withdraw',piece:piece.id})}>下场</button>:null}{self!.inventory!.map((id,i)=><button key={`${id}-${i}`} disabled={piece.itemIds.length>=2||piece.itemIds.includes(id)} onClick={()=>action({kind:'equip',piece:piece.id,item:id})}>装上 {equipment(id)}</button>)}{self!.inventory!.map((id,i)=>consumeLabel(id)?<button key={`use-${id}-${i}`} onClick={()=>action({kind:'consume',piece:piece.id,item:id})}>{consumeLabel(id)} {equipment(id)}</button>:null)}{piece.itemIds.map(id=><button key={id} onClick={()=>action({kind:'unequip',piece:piece.id,item:id})}>卸下 {equipment(id)}</button>)}<button onClick={()=>action({kind:'sell',piece:piece.id})}>出售</button></>:null}
-        topPanel={shopOpen&&self&&!playback&&view.phase!=='finished'?<div className="peach-shop" role="dialog" aria-label={`房间战后${terms.level.shop}`}><header><strong>战后{terms.level.shop} · {terms.gold.name} {self.gold}{self.shopBanUntil&&self.shopBanUntil>=view.round?' · 养精蓄锐，不能买棋':''}</strong><span><button disabled={!editable||self.gold!<XP_BUY_COST||xpToNext(self.level??START_LEVEL)===null} onClick={()=>action({kind:'buy_xp'})}>{terms.level.upgrade} · {goldAmount(terms, XP_BUY_COST)}</button><button disabled={!editable||self.gold!<refreshPrice||!self.shop.length} onClick={()=>action({kind:'refresh'})}>{terms.reroll.name} · {goldAmount(terms, refreshPrice)}</button><button onClick={closeShop}>收起{terms.level.shop}</button></span></header><div className="peach-shop-cards">{self.shop.map((id,i)=>{if(!id)return null;const unit=findUnit(id);if(!unit)return <span key={`${view.round}-${i}`}>{id}</span>;const locked=!!self.shopBanUntil&&self.shopBanUntil>=view.round;return <button key={`${view.round}-${i}`} disabled={!editable||locked||self.gold!<roomShopPrice(self,unit)} onClick={()=>action({kind:'buy',index:i})}><img className="peach-card-art" src={itemImage(unit.id,{label:unit.name})} alt=""/><span>{goldAmount(terms, roomShopPrice(self,unit))}</span><strong>{unit.name}</strong><p className="peach-card-tag">{unitSkill(unit.id)?.name ?? ''}</p></button>;})}{!self.shop.length?<p>第一轮战斗结束后开放{terms.level.shop}。</p>:null}</div></div>:null}/>
+-       topPanel={shopOpen&&self&&!playback&&view.phase!=='finished'?<div className="peach-shop" role="dialog" aria-label={`房间战后${terms.level.shop}`}><header><strong>战后{terms.level.shop} · {terms.gold.name} {self.gold}{self.shopBanUntil&&self.shopBanUntil>=view.round?' · 养精蓄锐，不能买棋':''}</strong><span><button disabled={!editable||self.gold!<XP_BUY_COST||xpToNext(self.level??START_LEVEL)===null} onClick={()=>action({kind:'buy_xp'})}>{terms.level.upgrade} · {goldAmount(terms, XP_BUY_COST)}</button><button disabled={!editable||self.gold!<refreshPrice||!self.shop.length} onClick={()=>action({kind:'refresh'})}>{terms.reroll.name} · {goldAmount(terms, refreshPrice)}</button><button onClick={closeShop}>收起{terms.level.shop}</button></span></header><div className="peach-shop-cards">{self.shop.map((id,i)=>{if(!id)return null;const unit=findUnit(id);if(!unit)return <span key={`${view.round}-${i}`}>{id}</span>;const locked=!!self.shopBanUntil&&self.shopBanUntil>=view.round;return <button key={`${view.round}-${i}`} disabled={!editable||locked||self.gold!<roomShopPrice(self,unit)} onClick={()=>action({kind:'buy',index:i})}><img className="peach-card-art" src={itemImage(unit.id,{label:unit.name})} alt=""/><span>{goldAmount(terms, roomShopPrice(self,unit))}</span><strong>{unit.name}</strong><p className="peach-card-tag">{unitSkill(unit.id)?.name ?? ''}</p></button>;})}{!self.shop.length?<p>第一轮战斗结束后开放{terms.level.shop}。</p>:null}</div></div>:null}/>
++       topPanel={shopOpen&&self&&preparation.shop?<div className="peach-shop" role="dialog" aria-label={`房间战后${terms.level.shop}`}><header><strong>战后{terms.level.shop} · {terms.gold.name} {self.gold}{self.shopBanUntil&&self.shopBanUntil>=view.round?' · 养精蓄锐，不能买棋':''}</strong><span><button disabled={!editable||self.gold!<XP_BUY_COST||xpToNext(self.level??START_LEVEL)===null} onClick={()=>action({kind:'buy_xp'})}>{terms.level.upgrade} · {goldAmount(terms, XP_BUY_COST)}</button><button disabled={!editable||self.gold!<refreshPrice||!self.shop.length} onClick={()=>action({kind:'refresh'})}>{terms.reroll.name} · {goldAmount(terms, refreshPrice)}</button><button onClick={closeShop}>收起{terms.level.shop}</button></span></header><div className="peach-shop-cards">{self.shop.map((id,i)=>{if(!id)return null;const unit=findUnit(id);if(!unit)return <span key={`${view.round}-${i}`}>{id}</span>;const locked=!!self.shopBanUntil&&self.shopBanUntil>=view.round;return <button key={`${view.round}-${i}`} disabled={!editable||locked||self.gold!<roomShopPrice(self,unit)} onClick={()=>action({kind:'buy',index:i})}><img className="peach-card-art" src={itemImage(unit.id,{label:unit.name})} alt=""/><span>{goldAmount(terms, roomShopPrice(self,unit))}</span><strong>{unit.name}</strong><p className="peach-card-tag">{unitSkill(unit.id)?.name ?? ''}</p></button>;})}{!self.shop.length?<p>第一轮战斗结束后开放{terms.level.shop}。</p>:null}</div></div>:null}/>
+      </div>
+       <aside className="room-sidepanel" aria-label="棋局信息">
+        <div className="room-side-tabs"><button className={rightTab==='battle'?'is-active':''} onClick={()=>setRightTab('battle')}>战况</button><button className={rightTab==='traits'?'is-active':''} onClick={()=>setRightTab('traits')}>羁绊</button><button className={rightTab==='items'?'is-active':''} onClick={()=>setRightTab('items')}>装备</button><button className={rightTab==='status'?'is-active':''} onClick={()=>setRightTab('status')}>状态{statusEntries.length?` ${statusEntries.length}`:''}</button></div>
 diff --git a/components/autochess/room-result.tsx b/components/autochess/room-result.tsx
 index 79cd593..2744c7f 100644
 --- a/components/autochess/room-result.tsx
@@ -400,6 +516,182 @@ index 79cd593..2744c7f 100644
          </div>
        </section>
      </dialog>
+diff --git a/components/autochess/room-ui.css b/components/autochess/room-ui.css
+index 74b167b..7901f20 100644
+--- a/components/autochess/room-ui.css
++++ b/components/autochess/room-ui.css
+@@ -1200,12 +1200,14 @@
+ }
+ 
+ .versus-side {
++  min-width: 0;
+   display: flex;
+   align-items: center;
+   gap: 10px;
+ }
+ 
+ .versus-meta {
++  min-width: 0;
+   display: flex;
+   flex-direction: column;
+   line-height: 1.25;
+@@ -1221,9 +1223,11 @@
+   font-weight: 700;
+   letter-spacing: 0.04em;
+   color: var(--skin-ink-main);
+-  display: flex;
+-  align-items: center;
+-  gap: 5px;
++  display: block;
++  max-width: 180px;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
+ }
+ 
+ .versus-sub {
+@@ -1420,7 +1424,7 @@
+   flex-direction: column;
+   gap: 12px;
+   width: min(840px, calc(100vw - 24px));
+-  max-height: calc(100dvh - 28px);
++  max-height: calc(100dvh - 128px);
+   overflow-y: auto;
+   pointer-events: none;
+ }
+@@ -1431,11 +1435,58 @@
+   pointer-events: auto;
+ }
+ 
+-@media (max-width: 640px) {
+-  .room-offer-overlay {
+-    top: 8px;
+-    width: calc(100vw - 16px);
++/* Portrait room controls share explicit top/bottom lanes. Keep original desktop
++   cards and art; no narrow-column text or overlap with start/ready and safe areas. */
++@media (max-width: 768px) and (orientation: portrait) {
++  .room-versus-hud {
++    top: max(8px, env(safe-area-inset-top)); left:8px; transform:none;
++    width:calc(100% - 68px); max-width:none; padding:7px 10px; border-radius:20px;
++    display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:5px 12px;
+   }
++  .versus-side { gap:6px; }
++  .versus-side > :not(.versus-meta) { flex-shrink:0; }
++  .versus-side.enemy { grid-column:2; grid-row:1; justify-content:flex-end; }
++  .versus-meta { flex:1; }
++  .versus-name { font-size:12px; }
++  .versus-sub, .stage-star { display:none; }
++  .versus-stage-badge { grid-column:1 / -1; grid-row:2; justify-self:center; padding:3px 10px; gap:6px; white-space:nowrap; font-size:12px; }
++  .room-float { top:max(8px, env(safe-area-inset-top)); right:8px; }
++  .room-float > summary { width:44px; height:44px; }
++  .room-float > .room-actions { top:calc(60px + env(safe-area-inset-top)); max-height:calc(100dvh - 80px - env(safe-area-inset-top)); overflow-y:auto; }
++  .room-panel-toggle { top:calc(90px + env(safe-area-inset-top)); min-height:44px; }
++  .peach-camera-overlay { top:calc(90px + env(safe-area-inset-top)); right:8px; left:94px; max-width:none; justify-content:flex-start; flex-wrap:nowrap; overflow-x:auto; gap:2px; padding:2px; }
++  .peach-camera-overlay button { width:44px; height:44px; flex-shrink:0; }
++  .peach-camera-overlay button:not([aria-label]) { width:auto; min-width:76px; font-size:11px; padding:0 4px; white-space:nowrap; }
++  .peach-camera-overlay select { min-height:44px; }
++  .room-offer-overlay { top:calc(148px + env(safe-area-inset-top)); width:calc(100% - 16px); max-height:calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overscroll-behavior:contain; scrollbar-gutter:stable; border-radius:18px; }
++  .room-offer-overlay > section { flex-shrink:0; }
++  .codex-offer-card { padding:12px; border-radius:18px; }
++  .codex-offer-header { margin-bottom:10px; padding-bottom:8px; }
++  .codex-offer-header h2 { font-size:18px; }
++  .codex-offer-header p { font-size:12px; line-height:1.6; }
++  .codex-offer-badge { font-size:10px; letter-spacing:.08em; }
++  .codex-offer-grid { grid-template-columns:minmax(0,1fr); gap:8px; }
++  .codex-choice-card { display:grid; grid-template-columns:minmax(0,1fr); padding:12px; gap:4px 10px; border-radius:12px; min-height:64px; }
++  .codex-choice-card:has(>img) { grid-template-columns:48px minmax(0,1fr); }
++  .codex-choice-card > img { width:48px; height:48px; grid-column:1; grid-row:1 / 3; object-fit:contain; }
++  .codex-choice-card > strong { margin:0; font-size:15px; line-height:1.5; }
++  .codex-choice-card > p { margin:0; font-size:12px; line-height:1.65; overflow-wrap:break-word; }
++  .codex-choice-card:hover:not(:disabled) { transform:none; }
++  .peach-popover:has(.peach-shop) { top:calc(148px + env(safe-area-inset-top)); width:calc(100% - 16px); max-height:calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding:12px; overscroll-behavior:contain; }
++  .peach-shop > header { display:flex; flex-direction:column; align-items:stretch; gap:8px; margin-bottom:10px; padding-bottom:10px; }
++  .peach-shop > header strong { font-size:16px; line-height:1.5; letter-spacing:.04em; }
++  .peach-shop > header > span { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
++  .peach-shop > header button { min-height:44px; padding:6px; border-radius:12px; line-height:1.5; }
++  .peach-dock { bottom:max(8px, env(safe-area-inset-bottom)); display:grid; grid-template-columns:54px minmax(0,1fr) 54px; align-items:end; }
++  .peach-round-controls { min-width:0; min-height:54px; justify-content:center; flex-wrap:wrap; gap:4px; padding:4px; text-align:center; line-height:1.5; }
++  .peach-round-controls button { min-height:44px; max-width:100%; padding:7px 8px; font-size:12px; }
++  .peach-inventory { left:8px; bottom:calc(78px + env(safe-area-inset-bottom)); width:184px; min-width:0; padding:0 10px; }
++  .peach-inventory[open] { width:min(320px, calc(100vw - 16px)); }
++  .peach-inventory > summary { min-height:44px; }
++  .peach-inventory-content { max-height:26dvh; padding-bottom:8px; }
++  .peach-inventory button { padding:7px 10px; font-size:13px; }
++  .peach-inventory .peach-card-art { width:40px; height:40px; flex-basis:40px; }
++  .room-error { top:calc(148px + env(safe-area-inset-top)); max-width:calc(100vw - 16px); }
+ }
+ 
+ /* 查 IP 命中：桌宠式系统弹窗 */
+diff --git a/components/autochess/theme-revival.css b/components/autochess/theme-revival.css
+index 5761654..33554b5 100644
+--- a/components/autochess/theme-revival.css
++++ b/components/autochess/theme-revival.css
+@@ -647,14 +647,10 @@
+   left: 20px;
+   bottom: 98px;
+   z-index: 22;
+-  display: flex;
+-  flex-direction: column;
+-  gap: 6px;
+-  padding: 10px 12px;
+-  max-height: 200px;
++  padding: 6px 10px;
+   min-width: 140px;
+-  max-width: 190px;
+-  overflow-y: auto;
++  width: 190px;
++  max-width: calc(100vw - 16px);
+   border: 1px solid var(--skin-border);
+   border-radius: 16px;
+   background: var(--skin-surface-glass);
+@@ -663,6 +659,15 @@
+   box-shadow: var(--skin-shadow-floating), inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+ }
+ 
++/* The native disclosure keeps the board clear on phones; only contents scroll. */
++.peach-inventory > summary { display:flex; align-items:center; gap:8px; min-height:32px; cursor:pointer; list-style:none; }
++.peach-inventory > summary::-webkit-details-marker { display:none; }
++.peach-inventory > summary::after { content:'＋'; margin-left:auto; }
++.peach-inventory[open] > summary::after { content:'−'; }
++.peach-inventory-content { display:flex; flex-direction:column; gap:6px; max-height:164px; overflow-y:auto; overscroll-behavior:contain; }
++.peach-inventory .peach-card-art { width:36px; height:36px; flex:0 0 36px; object-fit:contain; }
++.peach-inventory p { margin:6px 0; font-size:12px; line-height:1.5; }
++
+ .peach-inventory strong {
+   display: block;
+   font-family: var(--skin-font-heading);
+@@ -678,6 +683,9 @@
+ }
+ 
+ .peach-inventory button {
++  min-height: 44px;
++  flex-shrink: 0;
++  overflow-wrap: break-word;
+   display: flex;
+   align-items: center;
+   gap: 6px;
+@@ -1208,21 +1216,7 @@
+     padding: 6px 8px;
+     font-size: 12px;
+   }
+-  .peach-inventory {
+-    left: 8px;
+-    bottom: 70px;
+-    max-width: 140px;
+-    max-height: 140px;
+-  }
+   .peach-shop-cards {
+     grid-template-columns: repeat(2, minmax(0, 1fr));
+   }
+-  .peach-camera-overlay {
+-    top: 8px;
+-    right: 8px;
+-  }
+-  .room-float {
+-    right: 8px;
+-    top: 56px;
+-  }
+ }
 diff --git a/components/autochess/wheel.tsx b/components/autochess/wheel.tsx
 index a06b027..c0dc323 100644
 --- a/components/autochess/wheel.tsx
@@ -987,11 +1279,11 @@ index 0000000..fb6d465
 +export default function Image({src,alt,fill,unoptimized,priority,quality,loader,...props}:any){return <img src={typeof src==='string'?src:src.src} alt={alt||''} {...props}/>;}
 diff --git a/cedartoy/index.html b/cedartoy/index.html
 new file mode 100644
-index 0000000..6be6fa0
+index 0000000..6bae111
 --- /dev/null
 +++ b/cedartoy/index.html
 @@ -0,0 +1 @@
-+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
 index 0000000..adc0b60
@@ -1105,7 +1397,7 @@ index 0000000..85edb97
 +@media(max-width:520px){.cedar-lobby .cedar-scope label{width:100%}.cedar-lobby .cedar-scope select{flex:1}}
 diff --git a/cedartoy/transport.ts b/cedartoy/transport.ts
 new file mode 100644
-index 0000000..514322d
+index 0000000..f9a2513
 --- /dev/null
 +++ b/cedartoy/transport.ts
 @@ -0,0 +1,29 @@
@@ -1123,7 +1415,7 @@ index 0000000..514322d
 + catch{throw Error('网络中断，棋局仍保留。恢复后可以重连或重试刚才操作。');}
 + const result=await response.json();
 + if(token!==localStorage.getItem('cedartoy_token')||identityScope!==scopeKey())throw Error('账号或存档槽已切换，请重新打开');
-+ if(!response.ok)throw Error(result.error||'请求失败');return result;
++ if(!response.ok)throw Object.assign(Error(result.error||'请求失败'),{retryable:response.status!==403&&!/^(你是房主，请先点|请等待房主开始)/.test(result.error||'')});return result;
 +}
 +export function roomRequest<T=any>(op:string,args:object={}):Promise<T>{
 + // Original components accept RoomCredentials. Remove their compatibility placeholder here.
@@ -1157,6 +1449,23 @@ index 0000000..8ed5a80
 +  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
 +  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 +  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
++}
+diff --git a/components/autochess/room-ui-state.ts b/components/autochess/room-ui-state.ts
+new file mode 100644
+index 0000000..4087ea1
+--- /dev/null
++++ b/components/autochess/room-ui-state.ts
+@@ -0,0 +1,11 @@
++import type {RoomView} from '../../lib/autochess/room-types';
++
++export function waitingStartHint(host:boolean){
++ return host?'你是房主，请先点「补路人机，直接开局」；也可先邀请好友入座。':'请等待房主开始；开局后再选择装备或操作棋子。';
++}
++/** Only preparation exposes game mutations. A waiting seat already has offers in
++ * its snapshot, but these are not actionable until the host explicitly starts. */
++export function roomPreparationUI(view:Pick<RoomView,'phase'|'self'>,playback:boolean,busy:boolean){
++ const preparing=view.phase==='prepare'&&!!view.self&&view.self.hp>0&&!view.self.result&&!playback;
++ return {editable:preparing&&!view.self!.ready&&!busy,offers:preparing,shop:preparing};
 +}
 diff --git a/lib/accounts/cedartoy-economy.ts b/lib/accounts/cedartoy-economy.ts
 new file mode 100644
@@ -1282,7 +1591,7 @@ index 0000000..665ce11
 +}
 diff --git a/lib/autochess/cedartoy-web.ts b/lib/autochess/cedartoy-web.ts
 new file mode 100644
-index 0000000..d6401ff
+index 0000000..a9edca0
 --- /dev/null
 +++ b/lib/autochess/cedartoy-web.ts
 @@ -0,0 +1,55 @@
@@ -1336,7 +1645,7 @@ index 0000000..d6401ff
 +    const command=action(p.action);
 +    if(!Number.isInteger(p.round)||!Number.isInteger(p.revision)) fail('需要当前 round/revision');
 +    const before=store.view(credentials);
-+    if(before.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)) fail('请先由房主开始');
++    if(before.phase==='waiting'&&!['danmaku','cancel_room'].includes(command.kind)) fail(before.seatIndex===0?'你是房主，请先点「补路人机，直接开局」；也可先邀请好友入座。':'请等待房主开始；开局后再选择装备或操作棋子。');
 +    return clean(store.mutate({...credentials,round:p.round as number,revision:p.revision as number,requestId:text(p.requestId),action:command}));
 +  }
 +  fail('未知网页操作');
@@ -1788,10 +2097,10 @@ index 0000000..22b422b
 +});
 diff --git a/test/cedartoy-transport.test.ts b/test/cedartoy-transport.test.ts
 new file mode 100644
-index 0000000..b4b5663
+index 0000000..0617153
 --- /dev/null
 +++ b/test/cedartoy-transport.test.ts
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,51 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
 +import {cedarRequest,setScope} from '../cedartoy/transport';
@@ -1829,12 +2138,26 @@ index 0000000..b4b5663
 +  setScope({slot:1},true);
 + }
 +});
++
++test('only known preconditions discard pending mutations; uncertain failures keep retry identity',async()=>{
++ const savedFetch=globalThis.fetch,savedStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
++ Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=> 'fixture-token'}});
++ try{
++  for(const [status,message,retryable] of [[400,'你是房主，请先点「补路人机，直接开局」',false],[400,'请等待房主开始；开局后再选择装备或操作棋子。',false],[403,'权限已撤销',false],[400,'上游暂时无法连接',true],[503,'保存结果未知',true]] as const){
++   globalThis.fetch=async()=>Response.json({error:message},{status});
++   await assert.rejects(cedarRequest('room'),(error:any)=>error.message===message&&error.retryable===retryable);
++  }
++ }finally{
++  globalThis.fetch=savedFetch;
++  if(savedStorage)Object.defineProperty(globalThis,'localStorage',savedStorage);else Reflect.deleteProperty(globalThis,'localStorage');
++ }
++});
 diff --git a/test/cedartoy-web.test.ts b/test/cedartoy-web.test.ts
 new file mode 100644
-index 0000000..8727f98
+index 0000000..a388874
 --- /dev/null
 +++ b/test/cedartoy-web.test.ts
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,231 @@
 +import assert from 'node:assert/strict';
 +import {test} from 'node:test';
 +import {mkdtempSync,rmSync} from 'node:fs';
@@ -1843,6 +2166,7 @@ index 0000000..8727f98
 +import {RoomStore} from '../lib/autochess/room-store';
 +import {platformIdentity,PlatformRoomAdapter} from '../lib/autochess/platform-adapter';
 +import {cedarWeb} from '../lib/autochess/cedartoy-web';
++import {roomPreparationUI} from '../components/autochess/room-ui-state';
 +
 +test('private Web household, invitations, owner start, spectating and durable aggregate isolation',async t=>{
 + const dir=mkdtempSync(join(tmpdir(),'cedar-web-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
@@ -1868,9 +2192,14 @@ index 0000000..8727f98
 +test('original web actions work through cleaned transport and retries do not repeat mutations',async t=>{
 + const dir=mkdtempSync(join(tmpdir(),'cedar-web-actions-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
 + const store=new RoomStore(dir),host=platformIdentity({playerId:'81',actorType:'human'});
-+ for(const pack of ['ai','jianghu']){
-+  const made:any=await cedarWeb(store,host,'create',{pack,mode:'duel',requestId:'actions-create-'+pack});
-+  let view:any=await cedarWeb(store,host,'start',{roomId:made.roomId,requestId:'actions-start-'+pack});
++ for(const pack of ['ai','jianghu']) for(const mode of ['standard','duel']){
++  const made:any=await cedarWeb(store,host,'create',{pack,mode,requestId:'actions-create-'+pack+'-'+mode});
++  const before:any=await cedarWeb(store,host,'state',{roomId:made.roomId});
++  assert.equal(before.phase,'waiting');assert.equal(before.pack,pack);assert.equal(before.mode,mode);
++  assert.equal(roomPreparationUI(before,false,false).offers,false);
++  await assert.rejects(cedarWeb(store,host,'action',{roomId:made.roomId,round:before.round,revision:before.self.revision,requestId:'actions-too-early-'+pack+'-'+mode,action:{kind:'ready'}}),/你是房主/);
++  let view:any=await cedarWeb(store,host,'start',{roomId:made.roomId,requestId:'actions-start-'+pack+'-'+mode});
++  assert.equal(view.phase,'prepare');assert.equal(view.seats.length,mode==='duel'?2:8);
 +  if(view.self.swordOffer)view=await cedarWeb(store,host,'action',{roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-sword-'+pack,action:{kind:'pick_sword',item:view.self.swordOffer.choices[0]}});
 +  if(view.self.hexOffer)view=await cedarWeb(store,host,'action',{roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-hex-'+pack,action:{kind:'pick_hex',hex:view.self.hexOffer.choices[0].id}});
 +  if(!view.self.board.length)view=await cedarWeb(store,host,'action',{roomId:view.id,round:view.round,revision:view.self.revision,requestId:'actions-move-'+pack,action:{kind:'move',piece:view.self.bench[0].id,row:0,col:0}});
@@ -2041,6 +2370,48 @@ index 0000000..8727f98
 + assert.equal(upgraded.view(lateCred).self!.result!.payment,'paid');
 + assert.equal((e.play(late,[{playerId:'502',name:'旧局回归玩家',actorType:'human'}],'profile',{}) as any).self.coins.human,original);
 + console.log('REAL NPC MATCH',JSON.stringify({round:v.round,outcome:v.self!.result!.outcome,reward:v.self!.result!.reward}));
++});
++
++test('waiting actions distinguish host from guest without changing offers or starting',async t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-waiting-'));t.after(()=>rmSync(dir,{force:true,recursive:true}));
++ const store=new RoomStore(dir),host=platformIdentity({playerId:'951',actorType:'human'}),guest=platformIdentity({playerId:'952',actorType:'human'});
++ const made:any=await cedarWeb(store,host,'create',{pack:'ai',mode:'duel',requestId:'waiting-create-123'});
++ await cedarWeb(store,guest,'join',{invitation:made.invitation});
++ for(const [who,message] of [[host,/你是房主.*补路人机/],[guest,/请等待房主开始/]] as const){
++  const before:any=await cedarWeb(store,who,'state',{roomId:made.roomId});
++  assert(before.self.swordOffer);
++  for(const kind of ['pick_sword','pick_hex','pick_item','move','equip','ready','buy','resign']){
++   await assert.rejects(cedarWeb(store,who,'action',{roomId:made.roomId,round:before.round,revision:before.self.revision,requestId:'waiting-action-'+kind,action:{kind,item:before.self.swordOffer.choices[0],hex:'test',piece:'test',row:0,col:0,index:0}}),message);
++  }
++  const after:any=await cedarWeb(store,who,'state',{roomId:made.roomId});
++  assert.equal(after.phase,'waiting');assert.deepEqual(after.self,before.self);
++ }
++ await assert.rejects(cedarWeb(store,guest,'start',{roomId:made.roomId,requestId:'waiting-guest-start'}));
++ assert.equal((await cedarWeb(store,host,'start',{roomId:made.roomId,requestId:'waiting-host-start'}) as any).phase,'prepare');
++});
+diff --git a/test/room-ui-state.test.ts b/test/room-ui-state.test.ts
+new file mode 100644
+index 0000000..c096e97
+--- /dev/null
++++ b/test/room-ui-state.test.ts
+@@ -0,0 +1,18 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {roomPreparationUI,waitingStartHint} from '../components/autochess/room-ui-state';
++import type {RoomView} from '../lib/autochess/room-types';
++
++test('opening choices, shop and editing only belong to live preparation',()=>{
++ const view={phase:'waiting',self:{hp:100,ready:false,swordOffer:{},hexOffer:{},itemOffer:{}}} as unknown as RoomView;
++ const closed={editable:false,offers:false,shop:false};
++ assert.deepEqual(roomPreparationUI(view,false,false),closed);
++ view.phase='prepare';assert.deepEqual(roomPreparationUI(view,false,false),{editable:true,offers:true,shop:true});
++ assert.equal(roomPreparationUI(view,false,true).editable,false);
++ view.self!.ready=true;assert.equal(roomPreparationUI(view,false,false).editable,false);
++ assert.deepEqual(roomPreparationUI(view,true,false),closed);
++ view.phase='finished';assert.deepEqual(roomPreparationUI(view,false,false),closed);
++ view.phase='prepare';delete view.self;assert.deepEqual(roomPreparationUI(view,false,false),closed);
++ assert.match(waitingStartHint(true),/你是房主.*补路人机/);
++ assert.match(waitingStartHint(false),/请等待房主开始/);
 +});
 diff --git a/vite.cedar.config.ts b/vite.cedar.config.ts
 new file mode 100644

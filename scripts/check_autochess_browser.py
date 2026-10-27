@@ -12,6 +12,7 @@ if __name__ == '__main__':
     with Fixture() as fixture:
         # Five bound AIs exercise the original lobby's compact secondary settings.
         with server._db_connect() as conn:
+            conn.execute("UPDATE toy_users SET username=username || '与好友一起慢慢下棋的很长昵称' WHERE id IN (101,303)")
             for ai_id in range(205, 209):
                 conn.execute('INSERT INTO toy_users(id,username,is_ai) VALUES(?,?,1)', (ai_id, f'同席小机{ai_id-203}'))
                 conn.execute('INSERT INTO user_bindings VALUES(101,?)', (ai_id,))

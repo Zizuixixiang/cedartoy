@@ -126,6 +126,18 @@ class WebIntegration(unittest.TestCase):
         self.assertEqual(foreign.status_code,403)
         self.assertEqual(f.http.post(f.origin+'/_internal/autochess-gateway/prepare',json={}).status_code,404)
 
+    def test_waiting_preconditions_identify_host_and_guest(self):
+        f=self.f
+        made=f.call('create',requestId='waiting-ui-create',pack='ai',mode='duel').json()
+        self.assertEqual(f.call('join','303',invitation=made['invitation']).status_code,200)
+        for who,hint in [('101','你是房主'),('303','请等待房主开始')]:
+            view=f.call('state',who,roomId=made['roomId']).json()
+            response=f.call('action',who,roomId=made['roomId'],round=view['round'],revision=view['self']['revision'],requestId='waiting-ui-'+who,action={'kind':'pick_sword','item':view['self']['swordOffer']['choices'][0]})
+            self.assertEqual(response.status_code,400)
+            self.assertIn(hint,response.json()['error'])
+            self.assertEqual(f.call('state',who,roomId=made['roomId']).json()['self'],view['self'])
+        self.assertEqual(f.call('start',roomId=made['roomId'],requestId='waiting-ui-start').json()['phase'],'prepare')
+
     def test_homepage_stats_access_and_ranges(self):
         f = self.f
         def access(who=None):
