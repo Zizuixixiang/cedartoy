@@ -117,6 +117,8 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  await homeContext.close();
  }
  const context=await browser.newContext();
+ // Simulate mobile WebViews lacking randomUUID but with secure getRandomValues.
+ await context.addInitScript(() => {Object.defineProperty(window.crypto, "randomUUID", {value:undefined, configurable:true});});
  await context.addInitScript(token=>localStorage.setItem('cedartoy_token',token),process.env.AUTOCHESS_BROWSER_TOKEN);
  const page=await context.newPage();
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push({url:r.url(),method:r.method()}));
@@ -138,6 +140,8 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  assert(await anon.getByRole('button',{name:/✦ 辟立/}).isDisabled());
  await anon.setViewportSize({width:360,height:900});await anon.screenshot({path:`${output}/logged-out-360.png`,fullPage:true});await anon.close();
  await page.goto(origin+'/autochess/');await page.waitForFunction(()=>!document.querySelector('.lobby-primary')?.disabled);
+ assert.equal(await page.evaluate(()=>typeof crypto.randomUUID), 'undefined');
+ assert.equal(await page.evaluate(()=>typeof crypto.getRandomValues), 'function');
  assert.equal(await page.title(),'弈间');
  assert.equal(await page.locator('.cedar-top').count(),0);
  assert.equal(await page.locator('.lobby-top').count(),1);assert.equal(await page.locator('.lobby-brand h1').textContent(),'弈间');
@@ -212,7 +216,7 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
   const cfg=await post({op:'config'});return post({op:'invite',roomId:cfg.rooms[0].roomId});
  });
  assert(roomInfo.invitation,'private room invitation');
- const friendContext=await browser.newContext();await friendContext.addInitScript(token=>localStorage.setItem('cedartoy_token',token),process.env.AUTOCHESS_BROWSER_FRIEND_TOKEN);
+ const friendContext=await browser.newContext();await friendContext.addInitScript(() => {Object.defineProperty(window.crypto, "randomUUID", {value:undefined, configurable:true});});await friendContext.addInitScript(token=>localStorage.setItem('cedartoy_token',token),process.env.AUTOCHESS_BROWSER_FRIEND_TOKEN);
  const friend=await friendContext.newPage();await friend.goto(origin+'/autochess/');
  await friend.getByLabel('好友邀请').fill(roomInfo.invitation);
  await friend.getByRole('button',{name:'入座登盘',exact:true}).click();await friend.locator('canvas').first().waitFor({timeout:15000});
@@ -251,7 +255,7 @@ const output=process.env.AUTOCHESS_BROWSER_OUTPUT||'artifacts/autochess-stage2';
  await page.evaluate(async()=>{
   const post=async(body)=>{const r=await fetch('/autochess/api/room',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('cedartoy_token')},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error);return v;};
   const cfg=await post({op:'config'});let v=await post({op:'state',roomId:cfg.rooms.find(r=>r.phase!=='waiting'&&r.phase!=='finished').roomId});
-  if(!v.self.board.length)v=await post({op:'action',roomId:v.id,round:v.round,revision:v.self.revision,requestId:crypto.randomUUID(),action:{kind:'move',piece:v.self.bench[0].id,row:0,col:0}});
+  if(!v.self.board.length)v=await post({op:'action',roomId:v.id,round:v.round,revision:v.self.revision,requestId:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,"0")).join(""),action:{kind:'move',piece:v.self.bench[0].id,row:0,col:0}});
  });
  await page.getByRole('button',{name:'就绪开战',exact:true}).click();
  await page.getByRole('button',{name:'跳过战斗',exact:true}).waitFor({timeout:15000});
