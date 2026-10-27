@@ -27,10 +27,10 @@ index 616fe85..ada8db5 100644
    </section>;
  }
 diff --git a/components/autochess/artwork-arena.css b/components/autochess/artwork-arena.css
-index ed2ad84..bebf5cf 100644
+index ed2ad84..8fbf29a 100644
 --- a/components/autochess/artwork-arena.css
 +++ b/components/autochess/artwork-arena.css
-@@ -26,40 +26,9 @@
+@@ -26,40 +26,36 @@
  @keyframes art-mist{from{transform:translateX(-2%);opacity:.5}to{transform:translateX(3%);opacity:.9}}
  @keyframes art-petal{0%{transform:translate(0,0) rotate(0);opacity:0}10%{opacity:.55}85%{opacity:.45}100%{transform:translate(35px,850px) rotate(260deg);opacity:0}}
  @media(max-width:768px){
@@ -43,9 +43,13 @@ index ed2ad84..bebf5cf 100644
 - .peach-camera-overlay{top:63px;right:8px;max-width:calc(100% - 100px)}
 - .peach-enemy-bench{top:111px;right:8px;max-width:150px;font-size:10px}
 - .peach-inventory:has(>p){max-height:45px;overflow:hidden}
--}
--@media(orientation:landscape) and (max-height:600px){
-- .room-table.autochess-table{height:100dvh!important;min-height:100dvh!important;padding:0!important}
++ .room-panel-toggle{display:block;position:absolute;left:8px;z-index:37;padding:7px 9px;border:1px solid #ac949466;background:#eee5e4;color:#453742;border-radius:8px;font-size:11px}
++ .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:150px;z-index:38;max-height:55dvh}
++ .peach-enemy-bench{top:150px;right:8px;max-width:150px;font-size:10px}
+ }
++/* Scope keeps the compact author layout above later theme imports. */
+ @media(orientation:landscape) and (max-height:600px){
+  .room-table.autochess-table{height:100dvh!important;min-height:100dvh!important;padding:0!important}
 - .room-versus-hud{top:4px;width:auto;max-width:calc(100% - 280px);left:50%;transform:translateX(-50%);padding:3px 9px;gap:8px}
 - .versus-side{gap:5px}.versus-side img,.versus-side>div:first-child:not(.versus-meta){max-width:23px;max-height:23px}.versus-sub,.stage-star{display:none}.versus-stage-badge{padding:2px 6px;gap:4px}.versus-name,.stage-text{font-size:10px}
 - .peach-camera-overlay{top:8px;left:max(8px,env(safe-area-inset-left));right:auto;width:118px;max-width:118px;gap:3px;padding:3px}
@@ -69,9 +73,29 @@ index ed2ad84..bebf5cf 100644
 - .room-draft .board-center{padding:6px 12px;min-height:0;overflow:auto;gap:2px}.room-draft .board-center h3{font-size:15px;margin:0}.room-draft .board-center p,.room-draft-state{font-size:11px;margin:0}.room-dice-face{font-size:16px}.room-draft-primary{margin-top:4px}
 - .room-float{top:6px;right:8px}.room-offer-overlay{top:4px;max-height:calc(100dvh - 8px)}.codex-offer-header{padding:8px}.codex-choice-card{padding:10px}
 - .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.danmaku-composer{display:flex;position:fixed;left:8px;right:auto;top:auto;bottom:116px;width:118px;gap:2px;padding:4px}.danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.danmaku-composer button{font-size:10px;padding:3px}
-+ .room-panel-toggle{display:block;position:absolute;left:8px;z-index:37;padding:7px 9px;border:1px solid #ac949466;background:#eee5e4;color:#453742;border-radius:8px;font-size:11px}
-+ .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:150px;z-index:38;max-height:55dvh}
-+ .peach-enemy-bench{top:150px;right:8px;max-width:150px;font-size:10px}
++ .room-table .room-versus-hud{top:4px;width:auto;max-width:calc(100% - 280px);left:50%;transform:translateX(-50%);padding:3px 9px;gap:8px}
++ .room-table .versus-side{gap:5px}.room-table .versus-side img,.room-table .versus-side>div:first-child:not(.versus-meta){max-width:23px;max-height:23px}.room-table .versus-sub,.room-table .stage-star{display:none}.room-table .versus-stage-badge{padding:2px 6px;gap:4px}.room-table .versus-name,.room-table .stage-text{font-size:10px}
++ .room-table .peach-camera-overlay{top:8px;left:max(8px,env(safe-area-inset-left));right:auto;width:118px;max-width:118px;gap:3px;padding:3px}
++ .room-table .peach-camera-overlay select{max-width:none;width:100%}.room-table .peach-camera-overlay .peach-fullscreen{width:100%;height:27px}.room-table .peach-camera-overlay button{width:33px;height:26px}
++ .room-table .peach-enemy-bench{left:8px;right:auto;top:111px;width:118px;font-size:10px;padding:6px}
++ .room-table .room-panel-toggle{display:block;position:absolute;top:151px;left:8px;z-index:38;padding:6px 9px;background:#eee5e4;border:1px solid #ac949466;border-radius:7px;color:#453742;font-size:10px}
++ .room-table .room-board-layout:not(.show-panels)>.room-ranking,.room-table .room-board-layout:not(.show-panels)>.room-sidepanel{display:none}
++ .room-table .room-board-layout.show-panels>.room-ranking,.room-table .room-board-layout.show-panels>.room-sidepanel{top:43px;z-index:39;max-height:calc(100dvh - 60px);width:150px;overflow:auto}
++ .room-table .room-board-layout.show-panels>.room-ranking{left:133px}.room-table .room-board-layout.show-panels>.room-sidepanel{right:115px}
++ .room-table .peach-dock{left:auto;right:max(8px,env(safe-area-inset-right));top:76px;bottom:8px;width:100px;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:7px}
++ .room-table .peach-dock .peach-trash,.room-table .peach-dock .peach-shop-toggle{width:100%;height:42px;flex-direction:row;font-size:11px;border-radius:10px}
++ .room-table .peach-dock .peach-trash svg,.room-table .peach-dock .peach-shop-toggle svg{width:18px;height:18px}.room-table .peach-round-controls{padding:5px;flex-wrap:wrap;gap:4px;border-radius:10px}.room-table .peach-round-controls button{width:100%;padding:8px 3px;font-size:11px}
++ .room-table .peach-inventory{left:8px;bottom:8px;max-width:118px;max-height:100px;padding:5px;font-size:10px}.room-table .peach-inventory button{font-size:9px;padding:3px}.room-table .peach-inventory .peach-card-art{width:28px;height:28px}
++ .room-table .peach-popover{top:42px;bottom:auto;height:auto;max-height:calc(100dvh - 50px);overflow:auto;width:calc(100% - 32px);left:16px;right:16px;transform:none;animation:none}
++ .room-table .peach-popover.peach-inspect{width:min(560px,calc(100% - 32px));left:50%;right:auto;transform:translateX(-50%);padding:14px 18px}
++ .room-table .peach-inspect header{margin-bottom:8px;padding-bottom:8px}.room-table .peach-inspect header strong{font-size:16px}.room-table .peach-inspect p{font-size:12px;line-height:1.6}
++ .room-table .peach-shop-cards{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.room-table .peach-shop-cards .peach-card-art{height:45px}.room-table .peach-shop-cards button{padding:6px}.room-table .peach-shop header{padding:5px;gap:5px}.room-table .peach-shop header button{padding:5px;font-size:11px}
++ .room-table .room-draft{inset:6px;padding:8px 12px;max-height:calc(100dvh - 12px);border-radius:16px}
++ .room-table .room-draft-header{margin-bottom:6px;padding-bottom:4px;gap:8px}.room-table .room-draft-header h2{font-size:16px}.room-table .room-draft-kicker{font-size:10px}.room-table .room-draft-header p{display:none}.room-table .room-draft button{padding:5px 12px;font-size:11px}
++ .room-table .room-draft .board-grid{height:calc(100dvh - 84px);min-height:245px;gap:4px}.room-table .room-draft .board-tile{padding:3px 7px;border-radius:7px;justify-content:center}.room-table .room-draft .board-tile strong{font-size:11px}.room-table .room-draft .tile-number{display:none}.room-table .room-draft .board-tile small{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++ .room-table .room-draft .board-center{padding:6px 12px;min-height:0;overflow:auto;gap:2px}.room-table .room-draft .board-center h3{font-size:15px;margin:0}.room-table .room-draft .board-center p,.room-table .room-draft-state{font-size:11px;margin:0}.room-table .room-dice-face{font-size:16px}.room-table .room-draft-primary{margin-top:4px}
++ .room-table .room-float{top:6px;right:8px}.room-table .room-offer-overlay{top:4px;max-height:calc(100dvh - 8px)}.room-table .codex-offer-header{padding:8px}.room-table .codex-choice-card{padding:10px}
++ .room-table .danmaku-strip{left:140px;right:120px;top:44px;width:auto;max-height:55px}.room-table .danmaku-composer{display:flex;position:fixed;left:8px;right:auto;top:auto;bottom:116px;width:118px;gap:2px;padding:4px}.room-table .danmaku-composer input{width:72px;min-width:0;font-size:10px;padding:3px}.room-table .danmaku-composer button{font-size:10px;padding:3px}
  }
  @media(prefers-reduced-motion:reduce){.arena-art-frame,.arena-art-mist,.arena-art-petals i{animation:none}.arena-art-petals{display:none}}
 diff --git a/components/autochess/feedback.tsx b/components/autochess/feedback.tsx
@@ -561,7 +585,7 @@ index 79cd593..2744c7f 100644
        </section>
      </dialog>
 diff --git a/components/autochess/room-ui.css b/components/autochess/room-ui.css
-index 74b167b..b628029 100644
+index 74b167b..1f98326 100644
 --- a/components/autochess/room-ui.css
 +++ b/components/autochess/room-ui.css
 @@ -1200,12 +1200,14 @@
@@ -666,49 +690,19 @@ index 74b167b..b628029 100644
  }
  
  /* 查 IP 命中：桌宠式系统弹窗 */
-@@ -1662,3 +1713,43 @@
+@@ -1662,3 +1713,13 @@
  .lobby-avatar-upload, .lobby-wardrobe-switches { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
  .lobby-wardrobe-switches label { display:grid; gap:8px; flex:1; min-width:180px; }
  .lobby-wardrobe-switches select { width:100%; padding:10px; border:1px solid var(--codex-border); border-radius:10px; background:#fff; color:var(--codex-ink-main); }
 +
-+/* Landscape: two utility rails, a centered HUD and a scrollable board overlay.
-+   Replaces the old artwork-arena landscape offsets rather than stacking them. */
-+@media (orientation:landscape) and (max-height:700px) {
-+ .room-table.autochess-table{--room-side:164px;--room-left:max(8px,env(safe-area-inset-left));--room-right:max(8px,env(safe-area-inset-right));--room-top:max(8px,env(safe-area-inset-top));--room-bottom:max(8px,env(safe-area-inset-bottom))}
-+ .room-versus-hud{top:var(--room-top);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);transform:none;width:auto;max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:5px 10px;gap:3px 8px;border-radius:18px}
-+ .versus-side{gap:6px}.versus-meta{flex:1}.versus-side>:not(.versus-meta){flex-shrink:0}.versus-side.enemy{grid-column:2;grid-row:1;justify-content:flex-end}.versus-name{font-size:12px}.versus-sub,.stage-star{display:none}
-+ .versus-stage-badge{grid-row:2;grid-column:1/-1;justify-self:center;padding:2px 8px;gap:5px;font-size:11px;white-space:nowrap}
-+ .peach-camera-overlay{top:var(--room-top);left:var(--room-left);right:auto;width:var(--room-side);max-width:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;max-height:100px;overflow:auto}
-+ .peach-camera-overlay button{width:100%;height:44px;min-height:44px;padding:2px;font-size:12px}
-+ .peach-camera-overlay button:not([aria-label]){grid-column:1/-1;width:100%;min-width:0;white-space:nowrap}
-+ .peach-enemy-bench{top:calc(var(--room-top) + 104px);left:var(--room-left);right:auto;width:var(--room-side);max-width:none;padding:0 8px;font-size:12px}
-+ .peach-enemy-bench summary{display:flex;align-items:center;min-height:44px;cursor:pointer}
-+ .peach-enemy-bench>div{position:fixed;top:calc(var(--room-top) + 76px);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);max-height:calc(100dvh - 104px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;margin:0;padding:12px;background:#251d2bf5;border:1px solid #c6a0a455;border-radius:12px}
-+ .peach-enemy-bench button{min-height:44px;font-size:12px;padding:8px}
-+ .room-panel-toggle{display:block;position:absolute;top:calc(var(--room-top) + 156px);left:var(--room-left);width:var(--room-side);height:44px;z-index:37;border:1px solid var(--skin-border);border-radius:8px;background:var(--skin-surface-glass);color:var(--skin-ink-main);font-size:12px}
-+ .room-board-layout:not(.show-panels)>.room-ranking,.room-board-layout:not(.show-panels)>.room-sidepanel{display:none}
-+ .room-board-layout.show-panels>.room-ranking,.room-board-layout.show-panels>.room-sidepanel{top:calc(var(--room-top) + 76px);bottom:auto;max-height:calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));width:calc((100% - 384px - env(safe-area-inset-left) - env(safe-area-inset-right))/2);overflow:auto;z-index:38}
-+ .room-board-layout.show-panels>.room-ranking{left:calc(var(--room-left) + 176px)}.room-board-layout.show-panels>.room-sidepanel{right:calc(var(--room-right) + 176px)}
-+ .peach-inventory{left:var(--room-left);bottom:var(--room-bottom);width:var(--room-side);min-width:0;max-width:var(--room-side);padding:0 8px}
-+ .peach-inventory>summary{min-height:44px}.peach-inventory-content{max-height:calc(100dvh - 288px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding-bottom:6px}.peach-inventory button{min-height:44px;padding:5px;font-size:12px}.peach-inventory .peach-card-art{width:28px;height:28px;flex-basis:28px}
-+ .peach-dock{left:auto;right:var(--room-right);top:auto;bottom:var(--room-bottom);width:var(--room-side);display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end}
-+ .peach-round-controls{grid-column:1/-1;grid-row:1;min-width:0;min-height:50px;padding:3px;gap:3px;flex-wrap:wrap;justify-content:center;text-align:center;font-size:12px;line-height:1.5}
-+ .peach-round-controls button{min-height:44px;max-width:100%;padding:7px;font-size:12px}
-+ .peach-dock .peach-trash,.peach-dock .peach-shop-toggle{width:100%;height:52px;min-width:0;border-radius:12px;font-size:11px}
-+ .room-table .room-float{top:var(--room-top);right:var(--room-right);left:auto}.room-float>summary{width:44px;height:44px}
-+ .room-float>.room-actions{top:calc(var(--room-top) + 76px);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);width:auto;max-height:calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;padding:12px;overscroll-behavior:contain}
-+ .room-actions button{min-height:44px}.room-actions p{font-size:12px;line-height:1.5;overflow-wrap:break-word}
-+ .room-offer-overlay,.peach-popover{top:calc(var(--room-top) + 76px);left:50%;right:auto;transform:translateX(-50%);width:min(840px,calc(100% - 368px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-height:calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:12px;overflow:auto;overscroll-behavior:contain}
-+ .room-offer-overlay{padding:0}.room-offer-overlay>section{flex-shrink:0}.codex-offer-card{padding:12px}.codex-offer-header{padding-bottom:8px;margin-bottom:8px}.codex-offer-header h2{font-size:17px}.codex-offer-header p{font-size:12px}
-+ .peach-shop>header{flex-wrap:wrap;gap:8px}.peach-shop>header strong{font-size:16px}.peach-shop>header>span{display:flex;flex-wrap:wrap;gap:6px}.peach-shop>header button{min-height:44px;padding:6px;font-size:12px}
-+ .peach-shop-cards{gap:8px}.peach-shop-cards .peach-card-art{height:48px}
-+ .room-result-reopen{top:calc(var(--room-top) + 52px);bottom:auto;left:auto;right:var(--room-right);transform:none;max-width:var(--room-side);min-height:44px;font-size:12px}
-+ .room-table .room-error{top:calc(var(--room-top) + 76px);max-width:calc(100% - 368px)}
-+ .danmaku-strip{top:calc(var(--room-top) + 76px);left:calc(var(--room-left) + 176px);right:calc(var(--room-right) + 176px);width:auto;max-height:48px}.danmaku-composer{position:fixed;top:calc(var(--room-top) + 106px);right:var(--room-right);bottom:auto;left:auto;width:var(--room-side);padding:4px;gap:3px;display:flex}.danmaku-composer input{min-width:0;width:100%;font-size:12px}.danmaku-composer button{flex:0 0 44px;padding:4px;font-size:12px;min-height:44px;white-space:nowrap}
-+}
-+@media (orientation:landscape) and (max-height:700px) and (max-width:1100px){
-+ .peach-shop-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
-+ .codex-offer-grid{grid-template-columns:minmax(0,1fr);gap:8px}.codex-choice-card{padding:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:5px 10px}.codex-choice-card:has(>img){grid-template-columns:40px minmax(0,1fr)}.codex-choice-card>img{width:40px;height:40px;grid-row:1/3}.codex-choice-card strong{margin:0;font-size:14px}.codex-choice-card p{margin:0;font-size:12px;line-height:1.6}
++/* Keep the author's compact controls; only separate adjacent disclosures. */
++@media (orientation:landscape) and (max-height:600px) {
++ .room-table .peach-enemy-bench{top:80px}
++ .room-table .peach-enemy-bench>div{position:absolute;left:124px;top:0;width:150px;margin:0;padding:6px;background:inherit;border-radius:8px}
++ .room-table .room-panel-toggle{top:116px}
++ .room-table .peach-inventory{width:118px;min-width:0}
++ .room-table .peach-inventory-content{max-height:56px}
++ .room-table .room-float>.room-actions{top:50px;right:calc(126px + env(safe-area-inset-right));left:auto;width:min(360px,calc(100% - 260px));max-height:calc(100dvh - 58px)}
 +}
 diff --git a/components/autochess/theme-revival.css b/components/autochess/theme-revival.css
 index 5761654..33554b5 100644
@@ -1078,7 +1072,7 @@ index 1531f25..ec41263 100644
    }
  }
 diff --git a/lib/autochess/room-store.ts b/lib/autochess/room-store.ts
-index 9d8e918..bf826a6 100644
+index 9d8e918..4a8156a 100644
 --- a/lib/autochess/room-store.ts
 +++ b/lib/autochess/room-store.ts
 @@ -1,3 +1,4 @@
@@ -1142,7 +1136,16 @@ index 9d8e918..bf826a6 100644
      mkdirSync(directory, { recursive: true });
      this.telemetry = new BalanceTelemetryStore(directory);
      for (const file of readdirSync(directory).filter(x => /^[a-f0-9]{12}\.json$/.test(x))) {
-@@ -160,7 +165,7 @@ export class RoomStore {
+@@ -126,6 +131,8 @@ export class RoomStore {
+       if (this.recordFinish(room)) this.persist(room);
+       return;
+     }
++    // Platform private seats survive closed browsers and long pauses, including cold restarts.
++    if (room.platformCreate) return;
+     if (Date.now() - (room.updatedAt ?? 0) < ROOM_IDLE_KILL_MS) return;
+     room.phase = 'finished';
+     room.finishReason = 'idle';
+@@ -160,7 +167,7 @@ export class RoomStore {
        const place = i + 1;
        seat.result = { place, participants: room.seats.length, round: room.round,
          outcome: room.finishReason === 'idle' ? (room.winner === 'draw' ? 'draw' : room.seats.indexOf(seat) === room.winner ? 'win' : 'loss') : placementOutcome(place, room.seats.length),
@@ -1151,7 +1154,7 @@ index 9d8e918..bf826a6 100644
        seat.ready = true;
      });
    }
-@@ -182,10 +187,18 @@ export class RoomStore {
+@@ -182,10 +189,18 @@ export class RoomStore {
  
    private persist(room: Room) {
      room.updatedAt = Date.now();
@@ -1172,7 +1175,7 @@ index 9d8e918..bf826a6 100644
      this.rooms.set(room.id, room);
      if (room.battle && room.battleAt && room.battleAt >= this.telemetry.startedAt) {
        try { this.telemetry.recordBattle({ pack: room.pack, mode: room.mode!, battle: room.battle, botSeats: room.seats.map(seat => !!seat.bot), at: room.battleAt, source: room.telemetrySource ?? 'live' }); }
-@@ -374,7 +387,7 @@ export class RoomStore {
+@@ -374,7 +389,7 @@ export class RoomStore {
        level: START_LEVEL, xp: 0, winStreak: 0, capacity: fieldCapacityForLevel(START_LEVEL),
        swordOffer: this.openingOffer(room, index, room.round),
        token: secret(), revision: 0, ready: false, shop: [], say: '',
@@ -1181,7 +1184,7 @@ index 9d8e918..bf826a6 100644
    }
    private newRoom(pack?: string, seats?: number, mode = 'standard'): Room {
      const packId = parsePackId(pack ?? process.env.CHESS_PACK);
-@@ -405,6 +418,99 @@ export class RoomStore {
+@@ -405,6 +420,99 @@ export class RoomStore {
      this.persist(room);
      return { roomId: room.id, token: room.seats[0]!.token, invitation: `${room.id}.${room.invite}`, watchToken: room.watch };
    }
@@ -1281,7 +1284,7 @@ index 9d8e918..bf826a6 100644
    /** Matchmaking seats both people in one write. The server's bystanders fill the other slots. */
    createMatched(requestKey: string, people: SeatOwner[], pack?: string, seats?: number) {
      const existing = [...this.rooms.values()].find(room => room.matchKind === 'queue' && room.matchKey === requestKey);
-@@ -524,17 +630,27 @@ export class RoomStore {
+@@ -524,17 +632,27 @@ export class RoomStore {
      return { roomId: room.id, token: room.seats[1]!.token };
    }
    /** 单人开局：把剩余席位补成路人机并进入备战（房主不想等人时用）。 */
@@ -1311,7 +1314,7 @@ index 9d8e918..bf826a6 100644
      this.persist(room);
      return this.view(credentials);
    }
-@@ -550,7 +666,7 @@ export class RoomStore {
+@@ -550,7 +668,7 @@ export class RoomStore {
        mode: room.mode ?? 'standard', maxHp: matchRules(room.mode).startHp, pack: room.pack, packName: packMeta(room.pack).name, seatCount: room.seatCount, opponentIndex: venue?.opponent, venue,
        wake:{requestedAt:room.wake?.requestedAt,receivedAt:room.wake?.receivedAt,status:room.phase==='finished'?'棋局结束':room.seats[1]?.ready?'机已就绪':room.wake?.round===room.round?(room.wake.receivedAt?'客户端已收到，等待机落子':'催促已登记，等待客户端接收'):'等待轮次事件'},
        seats: room.seats.map((seat, i) => ({ id: seat.id, name: seat.name, hp: seat.hp, board: withHexes(seat.board, seat.hexes), bench: withHexes(seat.bench ?? [], seat.hexes),
@@ -1320,7 +1323,7 @@ index 9d8e918..bf826a6 100644
        ...(index === undefined ? {} : { seatIndex: index, self: this.privateSeat(room.seats[index]!) }),
        battle: battle ? { ...battle, output: { ...(fight?.output ?? battle.output), seed: 0 } } : undefined, winner: room.winner, log: room.log.slice(-15), cursor: room.cursor,
        danmaku: room.danmaku ?? [] });
-@@ -698,6 +814,7 @@ export class RoomStore {
+@@ -698,6 +816,7 @@ export class RoomStore {
      }
      if (original.phase === 'finished' && input.action.kind !== 'danmaku') fail('棋局已经结束');
      const room = structuredClone(original); const seat = room.seats[index]!;
@@ -1328,7 +1331,7 @@ index 9d8e918..bf826a6 100644
      if (input.action.kind === 'danmaku') {
        this.postDanmaku(room, index, input.action);
        room.revision++; room.receipts[key] = signature;
-@@ -1267,12 +1384,12 @@ export class RoomStore {
+@@ -1267,12 +1386,12 @@ export class RoomStore {
      if (this.livingSeats(room).length <= rules.finishWhenLiving && this.maybeFinish(room)) return;
      if (this.livingSeats(room).every(seat => seat.bot && seat.ready)) this.battle(room);
    }
@@ -2743,4 +2746,98 @@ index 0000000..202e949
 + define:{'process.env.CHESS_SLIM':'"1"'},
 + css:{postcss:{plugins:[tailwindcss()]}},
 + build:{outDir:'dist/cedartoy',emptyOutDir:true,rollupOptions:{input:root+'cedartoy/index.html'}},
++});
+diff --git a/test/cedartoy-idle.test.ts b/test/cedartoy-idle.test.ts
+new file mode 100644
+index 0000000..acb4f72
+--- /dev/null
++++ b/test/cedartoy-idle.test.ts
+@@ -0,0 +1,88 @@
++import assert from 'node:assert/strict';
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { spawnSync } from 'node:child_process';
++import { test } from 'node:test';
++import { RoomStore } from '../lib/autochess/room-store';
++
++test('private waiting/prepare rooms survive idle reads and a cold process; upstream idle rules remain', t => {
++  const directory = mkdtempSync(join(tmpdir(), 'cedar-idle-'));
++  t.after(() => rmSync(directory, { recursive: true, force: true }));
++  let settlements = 0;
++  const store = new RoomStore(directory, { settle() { settlements++; } });
++  const host = { accountId: 'test:idle-host', accountName: '临时棋手' };
++  const peer = { accountId: 'test:idle-peer', accountName: '临时棋友' };
++  const cases: { roomId: string; token: string; phase: string; private: boolean; travel?: boolean; hp?: number[] }[] = [];
++  for (const phase of ['waiting', 'prepare']) {
++    const room = store.createForPlatform(host, `idle-${phase}`, 'ai', 'duel', 2);
++    const credentials = store.accountSeat(room.roomId, host.accountId)!;
++    if (phase === 'prepare') store.start(credentials, 'idle-start');
++    cases.push({ ...credentials, phase, private: true });
++    const upstream = store.create('原版', 'ai', 2, host, 'duel');
++    if (phase === 'prepare') store.start(upstream, 'upstream-start');
++    cases.push({ ...upstream, phase, private: false });
++  }
++  const queue = store.createMatched('idle-queue', [host, peer], 'ai', 2);
++  cases.push({ roomId: queue.roomId, token: queue.seats[0]!.token, phase: 'prepare', private: false });
++  const travel = store.create('远游', 'ai', 2, host, 'duel', 'travel');
++  store.start(travel, 'travel-start');
++  cases.push({ ...travel, phase: 'prepare', private: false, travel: true });
++
++  // Age persisted snapshots, then exercise the still-running store with the same elapsed time.
++  for (const item of cases) {
++    const file = join(directory, item.roomId + '.json');
++    const raw = JSON.parse(readFileSync(file, 'utf8'));
++    item.hp = raw.seats.map((seat: { hp: number }) => seat.hp);
++    raw.updatedAt = Date.now() - 61 * 60_000;
++    writeFileSync(file, JSON.stringify(raw));
++  }
++  const now = Date.now;
++  Date.now = () => now() + 61 * 60_000;
++  try {
++    for (const item of cases.filter(item => item.private)) {
++      const view = store.view(item);
++      assert.equal(view.phase, item.phase);
++      assert.equal(view.self?.hp, item.hp![0]);
++      assert.equal(view.self?.result, undefined);
++    }
++    assert.equal(settlements, 0);
++  } finally { Date.now = now; }
++
++  const code = `
++    import assert from 'node:assert/strict';
++    import {readFileSync} from 'node:fs';
++    import {join} from 'node:path';
++    import {RoomStore} from './lib/autochess/room-store.ts';
++    const directory=process.env.IDLE_DIRECTORY;
++    const cases=JSON.parse(process.env.IDLE_CASES);
++    const settled=[];
++    const store=new RoomStore(directory,{settle(input){settled.push(input);}});
++    for(const item of cases){
++      const view=store.view(item);
++      const raw=JSON.parse(readFileSync(join(directory,item.roomId+'.json'),'utf8'));
++      assert.equal(view.phase,item.private?item.phase:'finished');
++      assert.equal(raw.finishReason,item.private?undefined:'idle');
++      if(item.private){
++        assert.equal(raw.settled,undefined);
++        assert.equal(raw.platformTimes.finished,undefined);
++        assert(raw.seats.every(seat=>!seat.result));
++        assert.deepEqual(raw.seats.map(seat=>seat.hp),item.hp);
++        assert(!settled.some(input=>input.roomId===item.roomId));
++      }else{assert.equal(raw.winner,item.travel?1:'draw');}
++    }
++    assert(settled.some(input=>input.travelIdleLoss));
++    // Explicit cancellation and resignation still end private rooms after reconnection.
++    for(const item of cases.filter(item=>item.private)){
++      const view=store.view(item);
++      const result=store.mutate({...item,round:view.round,revision:view.self.revision,
++        requestId:'explicit-end',action:{kind:item.phase==='waiting'?'cancel_room':'resign'}});
++      assert.equal(result.phase,'finished');
++    }
++  `;
++  const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], {
++    cwd: new URL('..', import.meta.url), encoding: 'utf8', timeout: 30_000,
++    env: { ...process.env, IDLE_DIRECTORY: directory, IDLE_CASES: JSON.stringify(cases) },
++  });
++  assert.equal(child.status, 0, child.stderr || child.stdout);
 +});
