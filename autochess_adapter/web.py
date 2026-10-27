@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, unquote
 
 from cedar_backend.errors import _McpError
+from . import economy
 from . import enabled, prepare, request, _contains_credential
 
 DIST = Path(__file__).resolve().parents[1] / 'vendor/autochess/dist/cedartoy'
@@ -43,7 +44,15 @@ def api(handler, server, body, path):
         raise _McpError(-32001, '只能观看当前绑定小机的棋局')
     watched = machines.get(str(ai_id)) if ai_id is not None else None
     identity = prepare({'action': 'rooms'}, player_id=server._account_slot_player_id(watched['id'] if watched else owner, slot),
-                       actor_type='ai' if watched else 'human', display_name=watched['name'] if watched else context['human_name'])
+                       actor_type='ai' if watched else 'human', display_name=watched['name'] if watched else context['human_name'],
+                       context=economy.context(server._db_connect, {'id': watched['id'] if watched else owner, 'username': watched['name'] if watched else context['human_name'], 'is_ai': bool(watched)}, slot))
+    if path.endswith('/economy'):
+        params = economy.params(body)
+        if watched and params['op'] not in ('profile', 'catalog', 'wheel'):
+            raise _McpError(-32001, '小机钱包仅供查看，请由小机自行操作')
+        if _contains_credential(params):
+            raise _McpError(-32602, '局外参数不能包含凭据')
+        return request(identity, '/platform/economy', params)
     if path.endswith('/bootstrap'):
         result = request(identity, '/platform/web', {'op': 'config', 'params': {}})
         return {**result, 'name': context['human_name'], 'machines': context['machines'], 'author_stats': author_allowed(owner)}
@@ -100,7 +109,7 @@ def serve(handler, server):
         handler.end_headers()
         handler.wfile.write(data)
         return
-    if handler.command != 'POST' or path not in ('/autochess/api/bootstrap', '/autochess/api/room', '/autochess/api/stats'):
+    if handler.command != 'POST' or path not in ('/autochess/api/bootstrap', '/autochess/api/room', '/autochess/api/stats', '/autochess/api/economy'):
         return send_json({'error': 'not found'}, status=404)
     # Bearer auth, no Cookie or query fallback. Cross-origin browser traffic is refused.
     origin = handler.headers.get('Origin')

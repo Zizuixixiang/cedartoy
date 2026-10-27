@@ -1,6 +1,7 @@
 ; Review-only example. NOT installed. No secrets belong in this file.
 ; The supervisor environment must already contain CHESS_PLATFORM_SECRET (64 lowercase hex),
-; CHESS_ROOM_DATA=/absolute/private/autochess, CHESS_SLIM=1, CHESS_ROOM_PORT=8791,
+; CHESS_ROOM_DATA=/absolute/private/autochess, CHESS_CEDAR_MODE=platform, CHESS_ROOM_PORT=8791,
+; Omit CHESS_CEDAR_MODE and keep CHESS_SLIM=1 only for legacy rooms-only compatibility.
 ; and PATH selecting a pinned Node >=22.13. The launcher owns the data-directory flock.
 ; Use a dedicated unprivileged account with read access to vendor and write access only to its data.
 [program:cedartoy-autochess]

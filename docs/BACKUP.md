@@ -66,3 +66,13 @@ tar -xzf /home/backups/cedartoy/data_YYYYMMDD.tar.gz -C /tmp/restore
 # 拷回前停服务：supervisorctl -c /etc/supervisor/supervisord.conf stop cedartoy
 # 远端取档：rclone copy cloudflare_r2:cedarclio-backup/cedartoy-backups/data_YYYYMMDD.tar.gz /tmp/
 ```
+
+## 弈间局外钱包（工作树实现，2026-10-27）
+
+默认目录 `data/autochess_rooms/` 的房间 JSON，以及新 `economy/accounts.db` 中的钱包、装扮、赠礼/领取、转盘、结算和重试凭据，纳入同一每日归档；沿用该归档的既有 R2 推送与保留流程，不另建远端桶或凭据。`.pending` 与进程锁文件不备份。SQLite 的 WAL/SHM 不直接复制，以 `.backup` 的一致性快照为准。
+
+复制顺序必须保持「房间 JSON → SQLite 钱包快照」。运行时先提交钱包结算，再持久化房间 paid 标记，因此此顺序避免已备份的 paid 房间领先于钱包凭据；钱包领先的未付款房间重载时由原作结算账本去重。打包前检查房间版本和钱包 state/receipts；无效快照失败，不覆盖源档。跨游戏并不承诺同一时点的全站事务。若 `CHESS_ROOM_DATA` 改到该目录以外，必须另外明确加入归档与校验，不能因本段而认为自定义路径自动受覆盖。
+
+恢复应在获准停写后，从同一归档恢复整套《弈间》房间和钱包；先在副本核验 `integrity_check`、金额/拥有物/赠礼、重复结算不再发币，再替换。保留旧数据和失败快照；不要把独立房间回档与较旧的钱包拼接，更不能新建空钱包代替已有账本。旧 slim 数据没有钱包时按首次访问创建本游戏零余额，已结束且标为 guest 的旧局不追补发币。
+
+本轮用临时账户/房间/钱包跑实际 `backup_cedartoy.sh` 并解包校验通过，`BACKUP_APP_ROOT` 指向临时目录、`R2_REMOTE` 置空；没有运行生产备份、上传、删除或恢复 R2。每周恢复检查已有递归 SQLite 完整性检查，正式发布后仍需确认首份新钱包每日归档与远端对象并在副本演练恢复。

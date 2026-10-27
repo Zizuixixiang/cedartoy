@@ -60,8 +60,10 @@ class Fixture:
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         self.secret=secrets.token_hex(32)
-        env={'AUTOCHESS_ENABLED':'1','AUTOCHESS_ORIGIN':f'http://127.0.0.1:{port}','CHESS_PLATFORM_SECRET':self.secret,'CHESS_ROOM_DATA':str(self.base/'rooms'),'CHESS_ROOM_PORT':str(port),'CHESS_SLIM':'1','AUTOCHESS_AUTHOR_USER_IDS':'101'}
+        env={'AUTOCHESS_ENABLED':'1','AUTOCHESS_ORIGIN':f'http://127.0.0.1:{port}','CHESS_PLATFORM_SECRET':self.secret,'CHESS_ROOM_DATA':str(self.base/'rooms'),'CHESS_ROOM_PORT':str(port),'CHESS_SLIM':'1','CHESS_CEDAR_MODE':'platform','AUTOCHESS_AUTHOR_USER_IDS':'101'}
         self.stack.enter_context(patch.dict(os.environ,env))
+        if os.environ.get('AUTOCHESS_TEST_DIST'):
+            self.stack.enter_context(patch.object(server.autochess_web,'DIST',Path(os.environ['AUTOCHESS_TEST_DIST'])))
         launch_env={**os.environ,'PATH':str(Path(NODE).parent)+':'+os.environ['PATH']}
         self.log=self.stack.enter_context(open(self.base/'node.log','w+'))
         self.node=subprocess.Popen(['python3',str(ROOT/'scripts/run_autochess.py')],env=launch_env,stdout=self.log,stderr=self.log)
@@ -88,7 +90,7 @@ class Fixture:
         self.web.shutdown();self.web.server_close();self.thread.join()
     def __exit__(self,*args):self.stack.__exit__(*args)
     def call(self,op,who='101',**body):
-        path=op if op in ('bootstrap','stats') else 'room'
+        path=op if op in ('bootstrap','stats','economy') else 'room'
         return self.http.post(self.origin+'/autochess/api/'+path,headers={'Authorization':'Bearer '+self.tokens[who]},json={'op':op,**body})
 
 @unittest.skipUnless(NODE_OK and (ROOT/'vendor/autochess/node_modules/tsx').exists(),'requires locked AutoChess dependencies and AUTOCHESS_TEST_NODE')
@@ -149,13 +151,75 @@ class WebIntegration(unittest.TestCase):
             self.assertEqual(f.call('stats', '303').status_code, 403)
         self.assertEqual(f.http.get(f.origin + '/autochess/api/stats?op=access').status_code, 404)
 
+    def test_economy_identity_slots_binding_and_root_mcp(self):
+        from concurrent.futures import ThreadPoolExecutor
+        f = self.f
+        def meta(op, who='101', **params):
+            return f.http.post(f.origin+'/autochess/api/economy', headers={'Authorization':'Bearer '+f.tokens[who]}, json={'op':op, **params})
+        self.assertTrue(f.call('bootstrap').json()['economy'])
+        first = meta('profile', player_id='303').json()['self']
+        self.assertEqual(first['coins'], {'human':0, 'bot':0})
+        self.assertNotEqual(first['id'], meta('profile', slot=2).json()['self']['id'])
+        self.assertNotEqual(first['id'], meta('profile', '303').json()['self']['id'])
+        self.assertEqual(meta('profile', '202').status_code, 403)  # AI uses root MCP
+        self.assertEqual(meta('profile', ai_id='404').status_code, 403)
+        self.assertEqual(meta('grantCoins', amount=100000).status_code, 400)
+        root = server._tool_play({'game':'autochess','action':'meta','params':{'op':'profile'}},path_token=f.tokens['202'])
+        root = json.loads(root) if isinstance(root,str) else root
+        self.assertTrue(root['self']['isAi']);self.assertEqual(root['self']['ownerName'], '临时棋手')
+        command = {'action':'start','requestId':'web-wheel-start','revision':0}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _:meta('wheel_action', command=command).json(), range(2)))
+        self.assertEqual(results[0], results[1]);self.assertEqual(results[0]['state']['tickets'],30)
+        self.assertEqual(meta('wheel', slot=2).json()['state']['tickets'],0)
+        self.assertEqual(meta('wheel_action',command={**command,'action':'buy_tickets','count':10,'requestId':'no-money-tickets','revision':1}).status_code,400)
+        machine = meta('profile', ai_id='202').json()['self'];self.assertTrue(machine['isAi'])
+        self.assertNotEqual(machine['id'], first['id'])
+        self.assertEqual(meta('wheel', ai_id='202').status_code, 200)
+        for op, args in [('buy', {'cosmeticId':'skin-rose-court','requestId':'owner-buy-for-ai'}), ('equip', {'cosmeticId':'skin-revival','requestId':'owner-equip-ai'}), ('claim', {'requestId':'owner-claim-ai'}), ('wheel_action', {'command': {'action':'start','revision':0,'requestId':'owner-wheel-ai'}})]:
+            self.assertEqual(meta(op, ai_id='202', **args).status_code, 403, op)
+        with server._db_connect() as conn:conn.execute('DELETE FROM user_bindings')
+        self.assertEqual(meta('profile', ai_id='202').status_code,403)
+        root = server._tool_play({'game':'autochess','action':'meta','params':{'op':'profile'}},path_token=f.tokens['202'])
+        root = json.loads(root) if isinstance(root,str) else root
+        self.assertNotIn('ownerName',root['self'])
+        self.assertEqual(root['recipients'],[])
+
+    def test_wallet_in_daily_backup_archive_without_r2_upload(self):
+        import sqlite3
+        import tarfile
+        f = self.f
+        made=f.call('create',requestId='backup-room-test').json()
+        source=f.base/'rooms'
+        root=f.base/'backup-root';rooms=root/'data/autochess_rooms';rooms.mkdir(parents=True)
+        shutil.copy2(source/(made['roomId']+'.json'),rooms/(made['roomId']+'.json'))
+        relative='data/autochess_rooms/economy/accounts.db'
+        (root/relative).parent.mkdir(parents=True)
+        with sqlite3.connect('file:'+str(source/'economy/accounts.db')+'?mode=ro',uri=True) as original, sqlite3.connect(root/relative) as copy:
+            original.backup(copy)
+        for rel in ('turtle-soup/backend/turtle_soup.db','toy-platform/toy_accounts.db','vendor/duel/data/duel.db'):
+            target=root/rel;target.parent.mkdir(parents=True,exist_ok=True)
+            with sqlite3.connect(target) as db:db.execute('CREATE TABLE fixture(id INTEGER)')
+        output=f.base/'backup-output'
+        result=subprocess.run(['bash',str(ROOT/'scripts/backup_cedartoy.sh')],env={**os.environ,'BACKUP_APP_ROOT':str(root),'BACKUP_ROOT':str(output),'R2_REMOTE':'','RETRY_DELAY_SECONDS':'0'},capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        restore=f.base/'restore';restore.mkdir()
+        with tarfile.open(next(output.glob('data_*.tar.gz'))) as archive:
+            archive.extractall(restore)
+        with sqlite3.connect(restore/relative) as db:
+            self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
+            state=json.loads(db.execute('SELECT body FROM state').fetchone()[0])
+            self.assertEqual(state['version'],1);self.assertEqual(state['sessions'],{})
+            db.execute('SELECT COUNT(*) FROM receipts').fetchone()
+        self.assertTrue((restore/'data/autochess_rooms'/(made['roomId']+'.json')).is_file())
+
     def test_launcher_refuses_double_writer_and_non_slim(self):
         env={**os.environ,'PATH':str(Path(NODE).parent)+':'+os.environ['PATH']}
         command=['python3',str(ROOT/'scripts/run_autochess.py')]
         locked=subprocess.run(command,env=env,capture_output=True,text=True,timeout=5)
         self.assertNotEqual(locked.returncode,0)
         self.assertIn('already in use',locked.stderr)
-        wrong=subprocess.run(command,env={**env,'CHESS_SLIM':'0'},capture_output=True,text=True,timeout=5)
+        wrong=subprocess.run(command,env={**env,'CHESS_SLIM':'0','CHESS_CEDAR_MODE':''},capture_output=True,text=True,timeout=5)
         self.assertNotEqual(wrong.returncode,0)
         self.assertIn('CHESS_SLIM=1',wrong.stderr)
 

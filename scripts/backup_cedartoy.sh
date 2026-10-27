@@ -88,6 +88,7 @@ backup_once() {
       --warning=no-file-changed \
       --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
       --exclude='data/vendor_saves/*/*/.view/*.html' \
+      --exclude='data/autochess_rooms/*.pending' --exclude='data/autochess_rooms/.cedartoy.lock' \
       -cf - data | tar -C "$STAGE" -xf -
   copy_status=("${PIPESTATUS[@]}")
   source_tar_status="${copy_status[0]}"
@@ -120,6 +121,30 @@ backup_once() {
 
   if [[ "$snap_fail" -ne 0 ]]; then
     log "Failed: one or more sqlite snapshots failed"
+    return 1
+  fi
+
+  # AutoChess: JSON rooms are copied BEFORE the wallet snapshot. A copied paid
+  # result therefore cannot be newer than its wallet receipt. Keep both together.
+  if ! python3 - "$APP_ROOT" "$STAGE" <<'PY_CHECK'
+import json, re, sqlite3, sys
+from pathlib import Path
+source, stage = map(Path, sys.argv[1:])
+rooms = stage / 'data/autochess_rooms'
+for room in rooms.glob('*.json'):
+    if re.fullmatch(r'[a-f0-9]{12}\.json', room.name):
+        if json.loads(room.read_text()).get('version') != 1:
+            raise ValueError('Unsupported AutoChess room snapshot')
+wallet = Path('data/autochess_rooms/economy/accounts.db')
+if (source / wallet).is_file():
+    with sqlite3.connect((stage / wallet).as_uri() + '?mode=ro', uri=True) as db:
+        for (body,) in db.execute('SELECT body FROM state'):
+            if json.loads(body).get('version') != 1:
+                raise ValueError('Unsupported AutoChess wallet snapshot')
+        db.execute('SELECT COUNT(*) FROM receipts').fetchone()
+PY_CHECK
+  then
+    log "Failed: AutoChess rooms/wallet snapshot validation"
     return 1
   fi
 

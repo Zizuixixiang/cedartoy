@@ -243,6 +243,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     _McpError,
     _account_announcement_identity,
     _account_slot_player_id,
+    _autochess_context,
     _anti_addiction_context,
     _anti_addiction_preflight,
     _anti_addiction_rest,
@@ -513,7 +514,8 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     elif game == "autochess":
         identity = dict(player_id=account_player_id or guest_player_id,
                         actor_type=('ai' if account_user.get('is_ai') else 'human') if account_user else 'guest',
-                        display_name=account_user.get('username') if account_user else None)
+                        display_name=account_user.get('username') if account_user else None,
+                        context=_autochess_context(account_user, slot))
         if defer_duel:
             return _DeferredDuelCall(
                 backend_payload=autochess_adapter.prepare(merged_arguments, **identity, allow_wait=True),

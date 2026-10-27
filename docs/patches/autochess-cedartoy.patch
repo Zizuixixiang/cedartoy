@@ -1,3 +1,113 @@
+diff --git a/components/autochess/lobby.tsx b/components/autochess/lobby.tsx
+index 400ef7c..e0bc3ae 100644
+--- a/components/autochess/lobby.tsx
++++ b/components/autochess/lobby.tsx
+@@ -267,50 +267,10 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
+     finally { setPackPending(null); }
+   };
+ 
+-  const cosmeticCard = (cosmetic: Cosmetic) => {
+-    const inShop = isShopCosmetic(cosmetic);
+-    const has = owned.has(cosmetic.id);
+-    const equipped = self?.equipped[cosmetic.kind] === cosmetic.id;
+-    const currency = self?.isAi ? 'bot' : 'human';
+-    const rarityLabel = cosmetic.rarity === 'epic' ? '✦✦✦✦✦ MYTHIC · 神话' : cosmetic.rarity === 'rare' ? '❖❖❖❖ EPIC · 史诗' : '✧✧ CLASSIC · 经典';
+-    const isFrame = cosmetic.kind === 'frame';
+-    return <article key={cosmetic.id} className={`lobby-card rarity-${cosmetic.rarity} ${equipped ? 'is-equipped' : ''}`}>
+-      <div className="card-fleuron-tl">✦</div>
+-      <div className="card-fleuron-tr">✦</div>
+-      <div className="lobby-card-header-bar">
+-        <span className="lobby-card-kind">{isFrame ? '【冠位 · 头像框】' : '【棋坪 · 空间投影】'}</span>
+-        <span className="lobby-card-badge">{rarityLabel}</span>
+-      </div>
+-      {isFrame && cosmetic.frameAsset ? <div className="lobby-card-art-box lobby-card-art-box--frame-asset" aria-label={`${cosmetic.name}佩戴预览`}>
+-        <Avatar id="preview" frame={cosmetic.id} size={132} />
+-      </div> : <div className="lobby-card-art-box">
+-        <img className="lobby-card-art" src={cosmeticImage(cosmetic.id)} alt={cosmetic.name} />
+-        {isFrame ? <div className="lobby-card-frame-preview" title="实机佩戴预览">
+-          <div className="frame-astrolabe-ring" />
+-          <Avatar id="preview" frame={cosmetic.id} size={52} />
+-          <span className="frame-preview-tag">✦ 虚仪试戴 ✦</span>
+-        </div> : <div className="lobby-card-board-palette" title="地貌天象配色">
+-          <span className="palette-chip" style={{ background: cosmetic.palette?.sky ?? '#d6e6c8' }} />
+-          <span className="palette-chip" style={{ background: cosmetic.palette?.outer ?? '#7fa06a' }} />
+-          <span className="palette-chip" style={{ background: cosmetic.palette?.inner ?? '#e8f0da' }} />
+-        </div>}
+-      </div>
+-      }
+-      <div className="lobby-card-body">
+-        <div className="lobby-card-title-row">
+-          <strong>{cosmetic.art} {cosmetic.name}</strong>
+-          <span className="lobby-price">{!inShop ? '✦ 转盘限定' : cosmeticPrice(cosmetic, currency) === 0 ? '✦ 迎新赠物' : `${cosmeticPrice(cosmetic, currency)} ${CURRENCY[currency].name}`}</span>
+-        </div>
+-        <small className="lobby-card-tagline">“{cosmetic.tagline}”</small>
+-      </div>
+-      <div className="lobby-card-actions">
+-        {has ? <button className={equipped ? 'btn-equipped' : 'btn-equip'} disabled={equipped || !self} onClick={() => void run(() => metaRequest('equip', { token, cosmeticId: cosmetic.id }), '已更换外观').then(() => refreshSelf())}>{equipped ? '✦ 已佩戴入局' : '更替外观'}</button>
+-          : inShop ? <button className="btn-buy" disabled={!self || cosmeticPrice(cosmetic, currency) > balanceFor(currency)} onClick={() => void run(() => metaRequest('buy', { token, cosmeticId: cosmetic.id }), '购买成功').then(() => refreshSelf())}>奉纳购置</button>
+-          : <button className="btn-buy" disabled={!catalog?.wheelEnabled} onClick={() => window.location.assign('/autochess/wheel')}>{catalog?.wheelEnabled ? '去对对碰试试' : '转盘筹备中'}</button>}
+-        {self?.isAi && self.ownerName && (inShop || has) ? <button className="btn-gift" onClick={() => { setGiftSkin(cosmetic.id); setTab('me'); }}>送给你的人</button> : null}
+-      </div>
+-    </article>;
+-  };
++  const cosmeticCard = (cosmetic: Cosmetic) => <CosmeticCard key={cosmetic.id} cosmetic={cosmetic} self={self} wheelEnabled={catalog?.wheelEnabled}
++    onEquip={()=>void run(()=>metaRequest('equip',{token,cosmeticId:cosmetic.id}),'已更换外观').then(()=>refreshSelf())}
++    onBuy={()=>void run(()=>metaRequest('buy',{token,cosmeticId:cosmetic.id}),'购买成功').then(()=>refreshSelf())}
++    onGift={()=>{setGiftSkin(cosmetic.id);setTab('me');}} onWheel={()=>window.location.assign('/autochess/wheel')}/>;
+ 
+   return <main className="lobby">
+     <div className="lobby-quick-actions">{catalog?.wheelEnabled ? <button type="button" className="lobby-wheel-entry" onClick={() => window.location.assign('/autochess/wheel')}><span aria-hidden="true">✦</span> 对对碰 <span className="lobby-wheel-tag">试玩</span><span aria-hidden="true">↗</span></button> : null}<Feedback /></div>
+@@ -546,3 +506,50 @@ export default function Lobby({ packs, packsLoading, packsError, mcpUrl, onRefre
+       }} /> : null}
+   </main>;
+ }
++
++export function CosmeticCard({cosmetic,self,wheelEnabled,onEquip,onBuy,onGift,onWheel,disabled=false}:{cosmetic:Cosmetic;self:SelfAccount|null;wheelEnabled?:boolean;onEquip:()=>void;onBuy:()=>void;onGift:()=>void;onWheel:()=>void;disabled?:boolean}) {
++    const owned=new Set(self?.owned??[]);
++    const balanceFor=(currency:CurrencyId)=>self?.coins[currency]??0;
++    const inShop = isShopCosmetic(cosmetic);
++    const has = owned.has(cosmetic.id);
++    const equipped = self?.equipped[cosmetic.kind] === cosmetic.id;
++    const currency = self?.isAi ? 'bot' : 'human';
++    const rarityLabel = cosmetic.rarity === 'epic' ? '✦✦✦✦✦ MYTHIC · 神话' : cosmetic.rarity === 'rare' ? '❖❖❖❖ EPIC · 史诗' : '✧✧ CLASSIC · 经典';
++    const isFrame = cosmetic.kind === 'frame';
++    return <article key={cosmetic.id} className={`lobby-card rarity-${cosmetic.rarity} ${equipped ? 'is-equipped' : ''}`}>
++      <div className="card-fleuron-tl">✦</div>
++      <div className="card-fleuron-tr">✦</div>
++      <div className="lobby-card-header-bar">
++        <span className="lobby-card-kind">{isFrame ? '【冠位 · 头像框】' : '【棋坪 · 空间投影】'}</span>
++        <span className="lobby-card-badge">{rarityLabel}</span>
++      </div>
++      {isFrame && cosmetic.frameAsset ? <div className="lobby-card-art-box lobby-card-art-box--frame-asset" aria-label={`${cosmetic.name}佩戴预览`}>
++        <Avatar id="preview" frame={cosmetic.id} size={132} />
++      </div> : <div className="lobby-card-art-box">
++        <img className="lobby-card-art" src={cosmeticImage(cosmetic.id)} alt={cosmetic.name} />
++        {isFrame ? <div className="lobby-card-frame-preview" title="实机佩戴预览">
++          <div className="frame-astrolabe-ring" />
++          <Avatar id="preview" frame={cosmetic.id} size={52} />
++          <span className="frame-preview-tag">✦ 虚仪试戴 ✦</span>
++        </div> : <div className="lobby-card-board-palette" title="地貌天象配色">
++          <span className="palette-chip" style={{ background: cosmetic.palette?.sky ?? '#d6e6c8' }} />
++          <span className="palette-chip" style={{ background: cosmetic.palette?.outer ?? '#7fa06a' }} />
++          <span className="palette-chip" style={{ background: cosmetic.palette?.inner ?? '#e8f0da' }} />
++        </div>}
++      </div>
++      }
++      <div className="lobby-card-body">
++        <div className="lobby-card-title-row">
++          <strong>{cosmetic.art} {cosmetic.name}</strong>
++          <span className="lobby-price">{!inShop ? '✦ 转盘限定' : cosmeticPrice(cosmetic, currency) === 0 ? '✦ 迎新赠物' : `${cosmeticPrice(cosmetic, currency)} ${CURRENCY[currency].name}`}</span>
++        </div>
++        <small className="lobby-card-tagline">“{cosmetic.tagline}”</small>
++      </div>
++      <div className="lobby-card-actions">
++        {has ? <button className={equipped ? 'btn-equipped' : 'btn-equip'} disabled={disabled || equipped || !self} onClick={onEquip}>{equipped ? '✦ 已佩戴入局' : '更替外观'}</button>
++          : inShop ? <button className="btn-buy" disabled={disabled || !self || cosmeticPrice(cosmetic, currency) > balanceFor(currency)} onClick={onBuy}>奉纳购置</button>
++          : <button className="btn-buy" disabled={!wheelEnabled} onClick={onWheel}>{wheelEnabled ? '去对对碰试试' : '转盘筹备中'}</button>}
++        {self?.isAi && self.ownerName && (inShop || has) ? <button className="btn-gift" disabled={disabled} onClick={onGift}>送给你的人</button> : null}
++      </div>
++    </article>;
++  };
 diff --git a/components/autochess/room-app.tsx b/components/autochess/room-app.tsx
 index 410ef60..a476d3d 100644
 --- a/components/autochess/room-app.tsx
@@ -117,6 +227,145 @@ index 79cd593..2744c7f 100644
          </div>
        </section>
      </dialog>
+diff --git a/components/autochess/wheel.tsx b/components/autochess/wheel.tsx
+index a06b027..6118e63 100644
+--- a/components/autochess/wheel.tsx
++++ b/components/autochess/wheel.tsx
+@@ -22,7 +22,7 @@ export default function Wheel() {
+   return <main className="wheel-page"><a className="wheel-link" href="/autochess/room">← 回到 AutoChess</a><header><span>九枚小物，一场巧遇</span><h1>对对碰</h1><p>碰一碰，再把好运送给惦记的人。</p></header>{token===null?<output>正在翻开这一盘…</output>:token?<WheelAccount key={token} token={token}/>:<p>先回大厅登录，再来拆这一盘惊喜。<a className="wheel-link" href="/autochess/room#me">去登录</a></p>}</main>;
+ }
+ 
+-function WheelAccount({token}:{token:string}) {
++export function WheelAccount({token,cedar=false,onWardrobe}:{token:string;cedar?:boolean;onWardrobe?:()=>void}) {
+   const [view,setView]=useState<WheelView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+   const [retry,setRetry]=useState<WheelCommand|null>(null),[to,setTo]=useState(''),[note,setNote]=useState('');
+   const [giftId,setGiftId]=useState('');
+@@ -94,9 +94,9 @@ function WheelAccount({token}:{token:string}) {
+     if(!result||!wheelRewardWasClaimed(result,id))throw Error('暂未确认入账，请重试或刷新奖品箱。');
+   };
+   return <>
+-    <EchoBanner />
++    {!cedar?<EchoBanner />:null}
+     {openedPrize?<WheelReward key={openedPrize.id} prize={openedPrize} onClaim={claimPrize} onClose={()=>setOpenedPrize(null)}/>:null}
+-    <nav className="wheel-shortcuts" aria-label="对对碰快捷入口"><a className="wheel-link" href="#wheel-draw">去碰一碰</a>{view.ticketShop?<a className="wheel-link" href="#wheel-tickets">添抽奖券</a>:null}<a className="wheel-link" href="#wheel-exchange">积分兑换</a><a className="wheel-link" href="#wheel-prize-box">奖品箱 · {pending.length}</a><a className="wheel-link" href="/autochess/room#me">我的装扮</a></nav>
++    <nav className="wheel-shortcuts" aria-label="对对碰快捷入口"><a className="wheel-link" href="#wheel-draw">去碰一碰</a>{view.ticketShop?<a className="wheel-link" href="#wheel-tickets">添抽奖券</a>:null}<a className="wheel-link" href="#wheel-exchange">积分兑换</a><a className="wheel-link" href="#wheel-prize-box">奖品箱 · {pending.length}</a><a className="wheel-link" href={cedar?"#wardrobe":"/autochess/room#me"} onClick={cedar?event=>{event.preventDefault();onWardrobe?.();}:undefined}>我的装扮</a></nav>
+     {rules.preview?<p className="wheel-preview">抢先试玩 · 每个账号可领 {rules.starterTickets} 张体验券 · 购券只花游戏币</p>:null}
+     {view.ticketShop?<section className="wheel-ticket-shop" id="wheel-tickets" tabIndex={-1} aria-label="购买抽奖券"><h2>添几张抽奖券</h2><p>余额：{view.ticketShop.balance} {view.ticketShop.currencyName} · 每 {view.ticketShop.ticketsPerPack} 张 {view.ticketShop.packPrice} {view.ticketShop.currencyName}</p><div className="wheel-controls">{[1,5,10].map(packs=>{const shop=view.ticketShop!,count=packs*shop.ticketsPerPack,cost=packs*shop.packPrice;return count<=shop.maxTickets?<button key={count} disabled={disabled||shop.balance<cost} onClick={()=>act('buy_tickets',{count})}>买 {count} 张 · {cost} {shop.currencyName}</button>:null;})}</div><p>购券后自己决定何时抽；概率见下方，券和游戏币没有现金兑换。</p>{view.receipt?.events.filter(e=>e.kind==='buy_tickets').map((e,i)=><output key={i}>已到账 {e.tickets} 张券，花费 {e.cost} {view.ticketShop!.currencyName}</output>)}</section>:null}
+     <div className="wheel-play-area" id="wheel-draw" tabIndex={-1} ref={playArea}><div className="wheel-live">
+@@ -112,7 +112,7 @@ function WheelAccount({token}:{token:string}) {
+     {!busy&&view.receipt?<div className="wheel-results" aria-live="polite">{view.receipt.events.filter(e=>e.refund!==undefined).map((e,i)=><span key={i}>{({pair:'两碰',triple:'三联',clear:'全清'} as Record<string,string>)[e.kind]} · 返 {e.refund} 券 / +{e.points} 分{e.multiplier!>1?` ✨ 幸运 ×${e.multiplier}`:''}</span>)}{wheelPrizeNotice(view)?<strong>{wheelPrizeNotice(view)} <a href="#wheel-prize-box">查看奖品</a></strong>:null}</div>:null}
+     {error?<p role="alert">{error}</p>:null}
+     {view.receipt?.events.some(e=>e.kind==='gift')?<output>礼物已送到对方的对对碰奖品箱。</output>:null}
+-    {view.receipt?.events.some(e=>e.kind==='use')?<output>外观已收好。<a className="wheel-link" href="/autochess/room#me">去换上</a></output>:null}
++    {view.receipt?.events.some(e=>e.kind==='use')?<output>外观已收好。<a className="wheel-link" href={cedar?"#wardrobe":"/autochess/room#me"} onClick={cedar?event=>{event.preventDefault();onWardrobe?.();}:undefined}>去换上</a></output>:null}
+     {retry?<div className="wheel-retry"><button disabled={busy} onClick={()=>void execute(retry)}>原单重试</button><button disabled={busy} onClick={()=>{setRetry(null);void refresh();}}>刷新进度</button><p>原单重试会取回同一次结果。</p></div>:null}
+     <section className="wheel-section" id="wheel-exchange" tabIndex={-1}><h2>把积分换成心意</h2><p>小奖先到，积分也继续攒。达到门槛后自己选奖品，兑换后在待领奖品里选择自己用或赠送。</p><div className="wheel-prizes">{rules.redemptions.map(row=>{const prize=rules.prizes.find(p=>p.id===row.prizeId)!;return <article key={row.prizeId}><span>{prize.icon}</span><h3>{prize.name}</h3>{prize.reward.kind==='cosmetic'&&cosmeticById(prize.reward.cosmeticId)?.giftIntro?<p>{cosmeticById(prize.reward.cosmeticId)?.giftIntro}</p>:null}<button disabled={disabled||state.points<row.points} onClick={()=>act('redeem',{prizeId:row.prizeId})}>{row.points} 积分兑换</button></article>;})}</div></section>
+     <section className="wheel-section" id="wheel-prize-box" ref={prizeBox} tabIndex={-1}>
+@@ -126,7 +126,7 @@ function WheelAccount({token}:{token:string}) {
+           {prize.spec.giftable&&prize.spec.reward.kind==='cosmetic'?<button className="wheel-gift-select" aria-pressed={giftId===prize.id} disabled={disabled} onClick={()=>chooseGift(prize.id)}>{giftId===prize.id?'已选中这份':'选这份送礼'}</button>:null}
+         </div>
+       </article>)}</div>
+-      {!pending.length?<p>抽到或兑换外观后，就能在这里自用或送礼。<a className="wheel-link" href="#wheel-exchange">去兑换外观</a><a className="wheel-link" href="/autochess/room#me">查看我的装扮</a></p>:null}
++      {!pending.length?<p>抽到或兑换外观后，就能在这里自用或送礼。<a className="wheel-link" href="#wheel-exchange">去兑换外观</a><a className="wheel-link" href={cedar?"#wardrobe":"/autochess/room#me"} onClick={cedar?event=>{event.preventDefault();onWardrobe?.();}:undefined}>查看我的装扮</a></p>:null}
+       <div className="wheel-gift-form" ref={giftForm}>
+         <h3>把好运送出去</h3>
+         {view.receipt?.events.some(e=>e.kind==='gift')?<output>赠送成功，礼物已到对方的对对碰奖品箱。</output>:null}
+@@ -134,14 +134,14 @@ function WheelAccount({token}:{token:string}) {
+         <div className="wheel-address">
+           {machine?<p>送给你的人，收礼账号已绑定。</p>:<>
+             {!!view.gifting?.recipients.length&&<div className="wheel-gift-recipients"><span>送给你的机</span>{view.gifting.recipients.map(peer=><button key={peer.id} aria-pressed={to===peer.username} disabled={disabled} onClick={()=>setTo(peer.username)}>{peer.username}</button>)}</div>}
+-            <label>收礼账号<input value={to} maxLength={49} disabled={disabled} placeholder="选择上面的机，或填写棋友的完整账号名" onChange={e=>setTo(e.target.value)}/></label>
++            <label>收礼账号<input value={to} maxLength={49} disabled={disabled} placeholder={cedar?"选择上面的已绑定小机":"选择上面的机，或填写棋友的完整账号名"} onChange={e=>setTo(e.target.value)}/></label>
+           </>}
+           <label>捎句话（可选）<input value={note} maxLength={60} disabled={disabled} placeholder="这一份好运，想留给你。" onChange={e=>setNote(e.target.value)}/></label>
+         </div>
+         {error?<p role="alert">{error}</p>:null}
+         {retry?<button disabled={busy} onClick={()=>{setRetry(null);void refresh();}}>刷新进度，重新选择</button>:null}
+         <button className="wheel-gift-confirm" disabled={disabled||!canGift} onClick={()=>act('gift',{prizeId:giftId,...(!machine&&to.trim()?{to:to.trim()}:{}),...(note.trim()?{note:note.trim()}:{})})}>{busy?'正在处理…':'确认赠送'}</button>
+-        <p>{machine?'收礼人是你的人。':to.trim()?`收礼账号：${to.trim()}`:'可以送给你的机，也可以送给其他人。'} 礼物会放入对方的对对碰奖品箱。</p>
++        <p>{machine?'收礼人是你的人。':to.trim()?`收礼账号：${to.trim()}`:cedar?'可以送给当前绑定的小机。':'可以送给你的机，也可以送给其他人。'} 礼物会放入对方的对对碰奖品箱。</p>
+       </div>
+     </section>
+     <details className="wheel-section"><summary>试玩概率与记录</summary><p>九种图案等概率；每次碰清的积分倍率：{rules.luck.map(l=>`×${l.value}（${l.weight/rules.luck.reduce((n,r)=>n+r.weight,0)*100}%）`).join('、')}。</p><p>全清掉落：{rules.clearDrops.map(row=>`${rules.prizes.find(p=>p.id===row.value)?.name??'无额外小奖'} ${row.weight/rules.clearDrops.reduce((n,r)=>n+r.weight,0)*100}%`).join('、')}。币券抽到即到账，外观进入待领箱，可自用或赠送。</p>{state.prizes.filter(p=>p.status!=='pending').slice(-20).reverse().map(p=><p key={p.id}>{p.spec.name} · {p.status==='used'?(p.spec.reward.kind==='cosmetic'?'已自用':'已到账'):`已送给 ${p.to?.name}`}</p>)}</details>
+diff --git a/lib/accounts/account-store.ts b/lib/accounts/account-store.ts
+index 614f0e6..db4af9b 100644
+--- a/lib/accounts/account-store.ts
++++ b/lib/accounts/account-store.ts
+@@ -52,7 +52,7 @@ export type AiInvite = { hash: string; humanId: string; createdAt: number; expir
+ export type MachineTicket = { hash: string; roomId: string; hostId: string; kind: 'new' | 'existing'; aiId?: string; approvalId?: string; createdAt: number; expiresAt: number; usedAt?: number; revokedAt?: number };
+ export type MachineRequest = { id: string; roomId: string; mode?: string; requesterId: string; ownerId: string; aiId: string; createdAt: number; expiresAt: number; status: 'pending' | 'approved' | 'declined' | 'revoked'; ticket?: string };
+ type SessionState = { accountId: string; createdAt: number; lastSeenAt: number };
+-type AccountFile = { version: 1; accounts: Account[]; sessions: Record<string, SessionState>; bindings?: Binding[]; aiInvites?: AiInvite[]; machineTickets?: MachineTicket[]; machineRequests?: MachineRequest[]; roomGiftActions?: RoomGiftAction[]; settledRooms?: Record<string, number>; settlementReceipts?: Record<string, SettlementReceipt>; dailySettlement?: Record<string, DailySettlement>; subsidyActions?: SubsidyAction[]; pendingEcho?: EchoEvent[] };
++export type AccountFile = { version: 1; accounts: Account[]; sessions: Record<string, SessionState>; bindings?: Binding[]; aiInvites?: AiInvite[]; machineTickets?: MachineTicket[]; machineRequests?: MachineRequest[]; roomGiftActions?: RoomGiftAction[]; settledRooms?: Record<string, number>; settlementReceipts?: Record<string, SettlementReceipt>; dailySettlement?: Record<string, DailySettlement>; subsidyActions?: SubsidyAction[]; pendingEcho?: EchoEvent[] };
+ 
+ export const USERNAME_MIN = 2;
+ export const USERNAME_MAX = 24;
+@@ -114,13 +114,13 @@ export class AccountStore {
+   private pendingEcho = new Map<string, EchoEvent>();
+   private lastPersistedSeen = new Map<string, number>();
+ 
+-  constructor(readonly directory: string, readonly echo?: EchoPublisher, readonly wheelOptions: { enabled?: boolean; rules?: WheelRules; random?:()=>number } = {}) {
++  constructor(readonly directory: string, readonly echo?: EchoPublisher, readonly wheelOptions: { enabled?: boolean; rules?: WheelRules; random?:()=>number } = {}, private storage?: {read(): AccountFile | undefined; write(data: AccountFile): void}) {
+     if(wheelOptions.enabled)validateWheelRules(wheelOptions.rules??WHEEL_DRAFT);
+-    mkdirSync(directory, { recursive: true });
++    if (!storage) mkdirSync(directory, { recursive: true });
+     const file = join(directory, 'accounts.json');
+-    if (!existsSync(file)) return;
+-    const data = JSON.parse(readFileSync(file, 'utf8')) as AccountFile;
+-    if (data.version !== 1) fail('ACCOUNT_VERSION_UNSUPPORTED');
++    const data = storage ? storage.read() : existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as AccountFile : undefined;
++    if (data === undefined) return;
++    if (!data || data.version !== 1) fail('ACCOUNT_VERSION_UNSUPPORTED');
+     for (const account of data.accounts ?? []) {
+       this.accounts.set(account.id, account);
+       if (!account.deletedAt) this.byKey.set(account.usernameKey, account.id);
+@@ -164,6 +164,38 @@ export class AccountStore {
+     this.flushPendingEcho();
+   }
+ 
++  /** Trusted in-process platform bridge. No password or persistent login session is issued.
++   * The caller supplies a fresh binding snapshot and commits storage atomically. */
++  platformRun<T>(people: {id:string; name:string; isAi:boolean; owners?:string[]}[], actorId:string, run:(token:string)=>T):T {
++    if (!this.storage) fail('Platform bridge requires transactional storage');
++    for (const person of people) {
++      if (!/^platform:cedartoy:[a-f0-9]{32}$/.test(person.id)) fail('Invalid platform identity');
++      let account = this.accounts.get(person.id);
++      if (account && account.isAi !== person.isAi) fail('Platform identity type changed');
++      if (!account) {
++        account = {id:person.id,username:person.name,usernameKey:person.id,passwordHash:'platform-only',
++          isAi:person.isAi,isAdmin:false,createdAt:Date.now(),lastActiveAt:Date.now(),coins:emptyWallet(),
++          cosmetics:{owned:[DEFAULT_BOARD_SKIN],equipped:{board:DEFAULT_BOARD_SKIN}},gifts:[],record:{games:0,wins:0}};
++        this.accounts.set(person.id,account);
++      }
++      account.username=person.name; account.isAdmin=false;
++      this.byKey.set(person.id,person.id);
++    }
++    for (const person of people) if (person.isAi && person.owners) {
++      const account=this.accounts.get(person.id)!; delete account.ownerId;
++      const previous=new Map(this.bindings);
++      for (const [key,binding] of this.bindings) if(binding.aiId===person.id)this.bindings.delete(key);
++      for(const humanId of person.owners) {
++        if(!this.accounts.has(humanId)||this.accounts.get(humanId)!.isAi)fail('Invalid platform owner');
++        this.bindings.set(`${humanId}:${person.id}`,previous.get(`${humanId}:${person.id}`)??{humanId,aiId:person.id,createdAt:Date.now()});
++      }
++    }
++    if(!this.accounts.has(actorId))fail('Missing platform account');
++    const token=this.issueSession(actorId);
++    try {const result=run(token);this.sessions.delete(token);this.persist();return result;}
++    finally {this.sessions.delete(token);}
++  }
++
+   register(rawUsername: unknown, rawPassword: unknown, options: { isAi?: boolean; isAdmin?: boolean } = {}): { account: PublicAccount; token: string } {
+     const username = validateUsername(rawUsername);
+     const password = validatePassword(rawPassword);
+@@ -1228,6 +1260,7 @@ export class AccountStore {
+   private persist() {
+     const file = join(this.directory, 'accounts.json');
+     const data: AccountFile = { version: 1, accounts: [...this.accounts.values()], sessions: Object.fromEntries(this.sessions), bindings: [...this.bindings.values()], aiInvites: [...this.aiInvites.values()], machineTickets: [...this.machineTickets.values()], machineRequests: [...this.machineRequests.values()], roomGiftActions: [...this.roomGiftActions.values()], settledRooms: Object.fromEntries(this.settledRooms), settlementReceipts: Object.fromEntries(this.settlementReceipts), dailySettlement: Object.fromEntries(this.dailySettlement), subsidyActions: [...this.subsidyActions.values()], pendingEcho: [...this.pendingEcho.values()] };
++    if(this.storage){this.storage.write({...data,sessions:{}});return;}
+     writeFileSync(`${file}.pending`, JSON.stringify(data), { encoding: 'utf8', mode: 0o600 });
+     renameSync(`${file}.pending`, file);
+   }
 diff --git a/lib/autochess/platform-adapter.ts b/lib/autochess/platform-adapter.ts
 index 1531f25..ec41263 100644
 --- a/lib/autochess/platform-adapter.ts
@@ -247,7 +496,7 @@ index 1531f25..ec41263 100644
    }
  }
 diff --git a/lib/autochess/room-store.ts b/lib/autochess/room-store.ts
-index 9d8e918..596b89f 100644
+index 9d8e918..6429481 100644
 --- a/lib/autochess/room-store.ts
 +++ b/lib/autochess/room-store.ts
 @@ -5,7 +5,7 @@ import { BENCH_CAPACITY } from './constants';
@@ -288,6 +537,24 @@ index 9d8e918..596b89f 100644
  const secret = () => randomBytes(18).toString('hex');
  const fail = (message: string): never => { throw new Error(message); };
  export class RoomStore {
+@@ -62,7 +66,7 @@ export class RoomStore {
+   private seen = new Map<string, number>();
+   private listeners = new Set<() => void>();
+   private telemetry: BalanceTelemetryStore;
+-  constructor(readonly directory: string, private recorder?: RoomRecorder, private packAvailability?: { isEnabled(id: PackId): boolean }) {
++  constructor(readonly directory: string, private recorder?: RoomRecorder, private packAvailability?: { isEnabled(id: PackId): boolean }, private appearance?: (accountId:string)=>{skinId?:string;frame?:string}|undefined) {
+     mkdirSync(directory, { recursive: true });
+     this.telemetry = new BalanceTelemetryStore(directory);
+     for (const file of readdirSync(directory).filter(x => /^[a-f0-9]{12}\.json$/.test(x))) {
+@@ -160,7 +164,7 @@ export class RoomStore {
+       const place = i + 1;
+       seat.result = { place, participants: room.seats.length, round: room.round,
+         outcome: room.finishReason === 'idle' ? (room.winner === 'draw' ? 'draw' : room.seats.indexOf(seat) === room.winner ? 'win' : 'loss') : placementOutcome(place, room.seats.length),
+-        payment: seat.accountId && this.recorder && !(room.finishReason === 'idle' && room.matchKind !== 'travel') ? 'pending' : 'guest' };
++        payment: seat.accountId && seat.actorType !== 'guest' && this.recorder && !(room.finishReason === 'idle' && room.matchKind !== 'travel') ? 'pending' : 'guest' };
+       seat.ready = true;
+     });
+   }
 @@ -182,10 +186,18 @@ export class RoomStore {
  
    private persist(room: Room) {
@@ -409,6 +676,15 @@ index 9d8e918..596b89f 100644
      while (room.seats.length < room.seatCount) {
        const index = room.seats.length;
        const bot = this.makeSeat(room, index, BOT_NAMES[index - 1] ?? `棋手${index + 1}`);
+@@ -550,7 +634,7 @@ export class RoomStore {
+       mode: room.mode ?? 'standard', maxHp: matchRules(room.mode).startHp, pack: room.pack, packName: packMeta(room.pack).name, seatCount: room.seatCount, opponentIndex: venue?.opponent, venue,
+       wake:{requestedAt:room.wake?.requestedAt,receivedAt:room.wake?.receivedAt,status:room.phase==='finished'?'棋局结束':room.seats[1]?.ready?'机已就绪':room.wake?.round===room.round?(room.wake.receivedAt?'客户端已收到，等待机落子':'催促已登记，等待客户端接收'):'等待轮次事件'},
+       seats: room.seats.map((seat, i) => ({ id: seat.id, name: seat.name, hp: seat.hp, board: withHexes(seat.board, seat.hexes), bench: withHexes(seat.bench ?? [], seat.hexes),
+-        result: seat.result ? { place: seat.result.place, outcome: seat.result.outcome } : undefined, ready: seat.ready, say: seat.say, bot: seat.bot, accountId: seat.accountId, skinId: seat.skinId, frame: seat.frame, online: (i === 1 && room.cursor.enabled && room.cursor.status.startsWith('正在思考')) || Date.now() - (this.seen.get(`${room.id}:${i}`) ?? 0) < 45_000 })),
++        result: seat.result ? { place: seat.result.place, outcome: seat.result.outcome } : undefined, ready: seat.ready, say: seat.say, bot: seat.bot, accountId: seat.accountId, skinId: seat.skinId, frame: seat.frame, ...(seat.accountId ? this.appearance?.(seat.accountId) : {}), online: (i === 1 && room.cursor.enabled && room.cursor.status.startsWith('正在思考')) || Date.now() - (this.seen.get(`${room.id}:${i}`) ?? 0) < 45_000 })),
+       ...(index === undefined ? {} : { seatIndex: index, self: this.privateSeat(room.seats[index]!) }),
+       battle: battle ? { ...battle, output: { ...(fight?.output ?? battle.output), seed: 0 } } : undefined, winner: room.winner, log: room.log.slice(-15), cursor: room.cursor,
+       danmaku: room.danmaku ?? [] });
 @@ -698,6 +782,7 @@ export class RoomStore {
      }
      if (original.phase === 'finished' && input.action.kind !== 'danmaku') fail('棋局已经结束');
@@ -434,6 +710,71 @@ index 9d8e918..596b89f 100644
      });
      return this.view(credentials);
    }
+diff --git a/cedartoy/account-session.ts b/cedartoy/account-session.ts
+new file mode 100644
+index 0000000..4591757
+--- /dev/null
++++ b/cedartoy/account-session.ts
+@@ -0,0 +1,5 @@
++import {scopeKey} from './transport';
++// A local scope marker for original component race guards, never sent as a credential.
++export function readAccountToken(){return (localStorage.getItem('cedartoy_token')??'')+scopeKey();}
++export function writeAccountToken(){throw Error('请使用 4399 登录');}
++export function clearAccountToken(){/* Original login is not mounted in Cedar. */}
+diff --git a/cedartoy/economy.tsx b/cedartoy/economy.tsx
+new file mode 100644
+index 0000000..7e09a84
+--- /dev/null
++++ b/cedartoy/economy.tsx
+@@ -0,0 +1,48 @@
++import {useEffect,useRef,useState} from 'react';
++import {Avatar,CosmeticCard} from '../components/autochess/lobby';
++import {WheelAccount} from '../components/autochess/wheel';
++import GiftReveal from '../components/autochess/gift-reveal';
++import {cosmeticById,type Cosmetic} from '../lib/meta/cosmetics';
++import type {SelfAccount} from '../lib/accounts/account-store';
++import {metaRequest} from './transport';
++import {readAccountToken} from './account-session';
++
++export default function Economy({onBack,readOnly=false}:{onBack:()=>void;readOnly?:boolean}) {
++ const [profile,setProfile]=useState<{self:SelfAccount;recipients:{id:string;username:string}[]}>();
++ const [catalog,setCatalog]=useState<Cosmetic[]>([]),[tab,setTab]=useState('shop'),[error,setError]=useState('');
++ const [busy,setBusy]=useState(false),[gift,setGift]=useState<SelfAccount['gifts'][number]>();
++ const [to,setTo]=useState(''),[coins,setCoins]=useState(1),[giftSkin,setGiftSkin]=useState(''),[note,setNote]=useState('');
++ const pending=useRef<{op:string;params:object;requestId:string}|null>(null),locked=useRef(false),alive=useRef(true);
++ const identity=useRef(readAccountToken());
++ const valid=()=>alive.current&&identity.current===readAccountToken();
++ const refresh=async()=>{try{const [p,c]=await Promise.all([metaRequest<any>('profile'),metaRequest<any>('catalog')]);if(valid()){setProfile(p);setCatalog(c.cosmetics);setError('');}}catch(e){if(valid())setError((e as Error).message);}};
++ useEffect(()=>{alive.current=true;void refresh();return()=>{alive.current=false;};},[]);
++ const run=async(op:string,params:object={})=>{
++  if(locked.current||!valid())return;
++  if(readOnly){setError("小机钱包仅供查看，请由小机自行操作");return;}
++  if(pending.current&&JSON.stringify([op,params])!==JSON.stringify([pending.current.op,pending.current.params])){setError('请先重试上一笔未确认操作。');return;}
++  pending.current??={op,params,requestId:crypto.randomUUID()};locked.current=true;setBusy(true);setError('');
++  try{await metaRequest(op,{...params,requestId:pending.current.requestId});if(valid()){pending.current=null;await refresh();}}
++  catch(e){if(valid())setError((e as Error).message);throw e;}
++  finally{locked.current=false;if(valid())setBusy(false);}
++ };
++ const act=(op:string,params:object={})=>void run(op,params).catch(()=>{});
++ const self=profile?.self;
++ if(!readOnly&&tab==='wheel')return <div className="wheel-page"><button onClick={onBack}>返回棋室</button><h1>对对碰</h1><WheelAccount token={identity.current} cedar onWardrobe={()=>{setTab('me');void refresh();}}/></div>;
++ return <div className="lobby cedar-economy">
++  {readOnly?<p role="status">小机钱包仅供查看。购买、领取和赠礼请由小机自行操作。</p>:null}
++  <nav className="lobby-tabs" aria-label="局外功能"><button onClick={onBack}>返回棋室</button><button className={tab==='shop'?'is-active':''} onClick={()=>setTab('shop')} aria-pressed={tab==='shop'}>外观</button><button className={tab==='me'?'is-active':''} onClick={()=>setTab('me')} aria-pressed={tab==='me'}>装扮·礼物</button>{!readOnly?<button onClick={()=>setTab('wheel')}>对对碰</button>:null}</nav>
++  {error?<div className="lobby-panel" role="alert">{error} <button disabled={busy} onClick={()=>pending.current?act(pending.current.op,pending.current.params):void refresh()}>重试</button>{pending.current?<button disabled={busy} onClick={()=>{pending.current=null;void refresh();}}>刷新钱包</button>:null}</div>:null}
++  {!self?<output>正在读取钱包…</output>:<>
++   <section className="lobby-panel lobby-profile"><Avatar id={self.id} frame={self.frame} size={72}/><div><strong>{self.username}{self.isAi?' · 机':''}</strong><p>{self.coins.human} 铜钱 · {self.coins.bot} 机芯</p><p>{self.record.wins} 胜 / {self.record.games} 局</p></div></section>
++   {tab==='shop'?<section className="lobby-panel"><h2>外观</h2>{(['board','frame'] as const).map(kind=><div key={kind}><h3>{kind==='board'?'棋盘皮肤':'头像框'}</h3><div className="lobby-grid">{catalog.filter(c=>c.kind===kind).map(c=><CosmeticCard key={c.id} cosmetic={c} self={self} wheelEnabled={!readOnly} disabled={readOnly||busy||!!pending.current}
++     onBuy={()=>act('buy',{cosmeticId:c.id})} onEquip={()=>act('equip',{cosmeticId:c.id})} onGift={()=>{setGiftSkin(c.id);setTab('me');}} onWheel={()=>setTab('wheel')}/>)}</div></div>)}</section>:<section className="lobby-panel" id="wardrobe">
++    <h2>我的装扮</h2><div className="lobby-row">{self.owned.map(id=><button key={id} disabled={readOnly||busy||Object.values(self.equipped).includes(id)} onClick={()=>act('equip',{cosmeticId:id})}>{cosmeticById(id)?.name??id}{Object.values(self.equipped).includes(id)?' · 佩戴中':''}</button>)}{self.equipped.frame?<button disabled={readOnly||busy} onClick={()=>act('equip',{cosmeticId:null})}>卸下头像框</button>:null}</div>
++    {!self.isAi&&profile.recipients.length?<><h3>接济自家小机</h3><div className="lobby-row"><label>小机<select value={to} onChange={e=>setTo(e.target.value)}><option value="">请选择</option>{profile.recipients.map(p=><option key={p.id} value={p.id}>{p.username}</option>)}</select></label><label>铜钱<input type="number" min={1} step={1} value={coins} onChange={e=>setCoins(Number(e.target.value))}/></label><button disabled={busy||!to||coins<1} onClick={()=>act('subsidize',{to,coins})}>接济 · 1 铜钱换 10 机芯</button></div></>:null}
++    {self.isAi&&self.ownerName?<><h3>送给 {self.ownerName}</h3><div className="lobby-row"><select aria-label="赠送外观" value={giftSkin} onChange={e=>setGiftSkin(e.target.value)}><option value="">选一件外观</option>{[...new Set([...catalog.map(c=>c.id),...self.owned])].map(id=><option key={id} value={id}>{cosmeticById(id)?.name??id}</option>)}</select><input aria-label="附言" maxLength={60} value={note} onChange={e=>setNote(e.target.value)}/><button disabled={readOnly||busy||!giftSkin} onClick={()=>act('gift',{cosmeticId:giftSkin,note})}>确认赠送</button></div></>:null}
++    <h3>礼物</h3>{self.giftHistory.length?self.giftHistory.map(g=><div className="lobby-row" key={g.id}><span>{g.fromName} · {cosmeticById(g.cosmeticId)?.name} · {g.claimedAt?'已收下':'待领取'}</span><button onClick={()=>setGift(g)}>查看礼函</button></div>):<p className="lobby-hint">还没有赠礼记录；转盘奖品在对对碰奖品箱领取。</p>}
++   </section>}
++   {gift&&!readOnly?<GiftReveal gift={gift} cosmetic={cosmeticById(gift.cosmeticId)??undefined} onClose={()=>setGift(undefined)} onClaim={id=>run('claim',{giftId:id})}/>:null}
++  </>}
++ </div>;
++}
 diff --git a/cedartoy/image.tsx b/cedartoy/image.tsx
 new file mode 100644
 index 0000000..fb6d465
@@ -445,35 +786,37 @@ index 0000000..fb6d465
 +export default function Image({src,alt,fill,unoptimized,priority,quality,loader,...props}:any){return <img src={typeof src==='string'?src:src.src} alt={alt||''} {...props}/>;}
 diff --git a/cedartoy/index.html b/cedartoy/index.html
 new file mode 100644
-index 0000000..c765988
+index 0000000..a86f170
 --- /dev/null
 +++ b/cedartoy/index.html
 @@ -0,0 +1 @@
-+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>私人自走棋 · 4399</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>弈间 · 4399</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
-index 0000000..5fcb6ed
+index 0000000..e5c1621
 --- /dev/null
 +++ b/cedartoy/main.tsx
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,46 @@
 +import '../app/globals.css';
 +import React,{useEffect,useRef,useState} from 'react';
 +import {createRoot} from 'react-dom/client';
 +import {RoomApp} from '../components/autochess/room-app';
 +import {cedarRequest,roomRequest,setScope} from './transport';
 +import './style.css';
++import Economy from './economy';
 +type Room={roomId:string;packName:string;mode:string;phase:string;round:number;seats:number;capacity:number};
 +function App(){
 + const [config,setConfig]=useState<any>();const [error,setError]=useState('');const [busy,setBusy]=useState(false);
 + const [slot,setSlot]=useState(1);const [ai,setAI]=useState('');const [selected,setSelected]=useState<string[]>([]);
 + const [pack,setPack]=useState('ai');const [mode,setMode]=useState('standard');const [seats,setSeats]=useState(8);
++ const [economy,setEconomy]=useState(false);
 + const [room,setRoom]=useState('');const [watch,setWatch]=useState(false);
 + const [invitation,setInvitation]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('invite')||'');
 + const [stats,setStats]=useState<any>();const [range,setRange]=useState('1h');const createAttempt=useRef<{signature:string;id:string}|undefined>(undefined);
 + const configSequence=useRef(0);
 + const refresh=async()=>{const sequence=++configSequence.current;setScope({slot,ai_id:ai||undefined});try{const next=await cedarRequest('bootstrap');if(sequence===configSequence.current){setConfig(next);setError('');}}catch(e){if(sequence===configSequence.current)setError((e as Error).message);}};
-+ useEffect(()=>{setConfig(undefined);setSelected([]);void refresh();},[slot,ai]);
-+ useEffect(()=>{let previous=localStorage.getItem('cedartoy_token');const changed=()=>{const next=localStorage.getItem('cedartoy_token');if(next!==previous){previous=next;setRoom('');setConfig(undefined);setSelected([]);setAI('');setScope({slot});void refresh();}};window.addEventListener('storage',changed);document.addEventListener('visibilitychange',changed);return()=>{window.removeEventListener('storage',changed);document.removeEventListener('visibilitychange',changed);};},[slot,ai]);
++ useEffect(()=>{setEconomy(false);setStats(undefined);setConfig(undefined);setSelected([]);void refresh();},[slot,ai]);
++ useEffect(()=>{let previous=localStorage.getItem('cedartoy_token');const changed=()=>{const next=localStorage.getItem('cedartoy_token');if(next!==previous){previous=next;setEconomy(false);setStats(undefined);setRoom('');setConfig(undefined);setSelected([]);setAI('');setScope({slot});void refresh();}};window.addEventListener('storage',changed);document.addEventListener('visibilitychange',changed);return()=>{window.removeEventListener('storage',changed);document.removeEventListener('visibilitychange',changed);};},[slot,ai]);
 + const enter=(id:string,observe=false)=>{setScope({slot,ai_id:ai||undefined,watch:observe||!!ai});setWatch(observe||!!ai);setRoom(id);};
 + const run=async(fn:()=>Promise<void>)=>{if(busy)return;setBusy(true);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
 + const create=()=>run(async()=>{
@@ -482,12 +825,13 @@ index 0000000..5fcb6ed
 +  const result=await roomRequest('create',{pack,mode,seats:mode==='duel'?2:seats,ai_ids:selected,requestId:createAttempt.current!.id});
 +  createAttempt.current=undefined;enter(result.roomId);
 + });
-+ return <>{!room?<header className="cedar-top"><a href="/">← 4399</a><strong>私人自走棋</strong><span>{config?.name}</span>{room?<button onClick={()=>{setRoom('');setWatch(false);void refresh();}}>返回棋室</button>:null}</header>:null}
-+ {room?<RoomApp key={`${room}:${slot}:${ai}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{setRoom('');void refresh();}}/>:<main className="cedar-room">
++ return <>{!room?<header className="cedar-top"><a href="/">← 4399</a><strong>弈间</strong><span>{config?.name}</span>{room?<button onClick={()=>{setRoom('');setWatch(false);void refresh();}}>返回棋室</button>:null}</header>:null}
++ {room?<RoomApp key={`${room}:${slot}:${ai}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{setRoom('');void refresh();}}/>:economy?<Economy key={`${slot}:${ai}`} readOnly={!!ai} onBack={()=>{setEconomy(false);void refresh();}}/>:<main className="cedar-room">
 + <h1>自己的棋室</h1><p className="cedar-muted">一人也能开局，空位由 NPC 补齐。也可以带上自家小机，或邀请好友入座后再开始。</p>
 + {error?<p role="alert" className="cedar-error">{error}</p>:null}
 + {!config?<><a className="cedar-button" href="/" target="_blank" rel="noopener">去 4399 登录</a><button disabled={busy} onClick={()=>void refresh()}>重新连接</button></>:<>
-+ <div className="cedar-fields"><label>存档槽<select aria-label="存档槽" value={slot} onChange={e=>setSlot(Number(e.target.value))}>{[1,2,3,4,5].map(x=><option key={x}>{x}</option>)}</select></label><label>棋局归属<select aria-label="棋局归属" value={ai} onChange={e=>setAI(e.target.value)}><option value="">我的棋局</option>{config.machines.map((x:any)=><option key={x.id} value={x.id}>观看 {x.name}</option>)}</select></label></div>
++ <div className="cedar-fields"><label>存档槽<select aria-label="存档槽" value={slot} onChange={e=>setSlot(Number(e.target.value))}>{[1,2,3,4,5].map(x=><option key={x}>{x}</option>)}</select></label><label>棋局归属<select aria-label="棋局归属" value={ai} onChange={e=>setAI(e.target.value)}><option value="">我的棋局</option>{config.machines.map((x:any)=><option key={x.id} value={x.id}>{x.name} · 棋局与装扮</option>)}</select></label></div>
++ {config.economy?<button onClick={()=>setEconomy(true)}>外观 · 钱包 · 对对碰</button>:null}
 + {!ai?<section aria-labelledby="create-title"><h2 id="create-title">开一间私人房</h2><div className="cedar-fields"><label>棋谱<select aria-label="棋谱" value={pack} onChange={e=>setPack(e.target.value)}>{config.packs.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>模式<select aria-label="模式" value={mode} onChange={e=>setMode(e.target.value)}>{config.modes.map((m:any)=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>{mode==='standard'?<label>总席位<select aria-label="总席位" value={seats} onChange={e=>setSeats(Number(e.target.value))}>{[2,4,6,8,10,12,14,16].map(n=><option key={n}>{n}</option>)}</select></label>:null}</div>
 + {config.machines.length?<fieldset><legend>带上自家小机</legend>{config.machines.map((m:any)=><label className="cedar-check" key={m.id}><input type="checkbox" checked={selected.includes(m.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,m.id]:old.filter(x=>x!==m.id))}/>{m.name}</label>)}<p className="cedar-muted">小机使用同一存档槽，从根 MCP 的 rooms 找到席位后行动；这里不会自动唤醒它。</p></fieldset>:null}
 + <button className="cedar-primary" disabled={busy||selected.length>=(mode==='duel'?2:seats)} onClick={create}>创建私人房</button><p className="cedar-muted">进入棋盘后，由房主点「补路人机，直接开局」。开始前可继续邀请好友。</p>
@@ -519,31 +863,162 @@ index 0000000..9d4da0c
 +@media(max-width:480px){.cedar-top{padding:10px 14px;gap:10px}.cedar-top span{max-width:100px;overflow-wrap:anywhere}.cedar-room{margin:18px auto;padding:0 16px}.cedar-fields{gap:12px}.cedar-room form{align-items:stretch;flex-direction:column}.cedar-room form button{align-self:start}.cedar-saved button{padding:8px 10px}.cedar-room section{padding:16px 0}}
 diff --git a/cedartoy/transport.ts b/cedartoy/transport.ts
 new file mode 100644
-index 0000000..94b4453
+index 0000000..6e4901f
 --- /dev/null
 +++ b/cedartoy/transport.ts
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,27 @@
 +export type Scope={slot:number;ai_id?:string;watch?:boolean};
 +let scope:Scope={slot:1};
++export const scopeKey=()=>JSON.stringify(scope);
 +export const setScope=(next:Scope)=>{scope={...next};};
 +export async function cedarRequest<T=any>(path:string,body:object={}):Promise<T>{
-+ const token=localStorage.getItem('cedartoy_token');
++ const token=localStorage.getItem('cedartoy_token'),identityScope=scopeKey();
 + if(!token)throw Error('请先在 4399 首页登录人类账号，再返回棋室');
 + let response:Response;
 + try{response=await fetch('/autochess/api/'+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({...body,...scope}),signal:AbortSignal.timeout(8000),cache:'no-store'});}
 + catch{throw Error('网络中断，棋局仍保留。恢复后可以重连或重试刚才操作。');}
-+ const result=await response.json();if(!response.ok)throw Error(result.error||'请求失败');return result;
++ const result=await response.json();
++ if(token!==localStorage.getItem('cedartoy_token')||identityScope!==scopeKey())throw Error('账号或存档槽已切换，请重新打开');
++ if(!response.ok)throw Error(result.error||'请求失败');return result;
 +}
 +export function roomRequest<T=any>(op:string,args:object={}):Promise<T>{
 + // Original components accept RoomCredentials. Remove their compatibility placeholder here.
 + const {token,accountToken,...game}=args as Record<string,unknown>;
 + return cedarRequest('room',{...game,op});
 +}
-+export async function accountRequest<T=any>():Promise<T>{throw Error('请使用 4399 账号');}
-+export async function metaRequest<T=any>():Promise<T>{throw Error('精简模式不提供局外经济');}
++export function metaRequest<T=any>(op:string,args:object={}):Promise<T>{
++ const {token,accountToken,...params}=args as Record<string,unknown>;
++ return cedarRequest('economy',{...params,op});
++}
++export function accountRequest<T=any>(op:string,args:object={}):Promise<T>{
++ if(!['wheel','wheel_action'].includes(op))throw Error('请使用 4399 账号');
++ return metaRequest(op,args);
++}
+diff --git a/lib/accounts/cedartoy-economy.ts b/lib/accounts/cedartoy-economy.ts
+new file mode 100644
+index 0000000..665ce11
+--- /dev/null
++++ b/lib/accounts/cedartoy-economy.ts
+@@ -0,0 +1,116 @@
++/** Local-only wallet bridge: upstream rules, one SQLite transaction per operation. */
++import {DatabaseSync} from 'node:sqlite';
++import {mkdirSync,chmodSync} from 'node:fs';
++import {join} from 'node:path';
++import {createHash} from 'node:crypto';
++import {AccountStore,type AccountFile,type MatchSettlementInput} from './account-store';
++import {platformIdentity,type PlatformIdentity} from '../autochess/platform-adapter';
++import {listedCosmetics,DEFAULT_BOARD_SKIN} from '../meta/cosmetics';
++import {CURRENCY,EXCHANGE_BOT_PER_HUMAN,MATCH_REWARD} from '../meta/economy';
++
++type Person={playerId:string;name:string;actorType:'human'|'ai';owners?:string[]};
++const fail=(message:string):never=>{throw Error(message);};
++function readState(body:string):AccountFile {
++  try {
++    const data=JSON.parse(body);
++    if(data?.version!==1||!Array.isArray(data.accounts)||data.accounts.some((a:any)=>
++      !a||!/^platform:cedartoy:[a-f0-9]{32}$/.test(a.id)||typeof a.isAi!=='boolean'||
++      !['human','bot'].every(c=>Number.isSafeInteger(a.coins?.[c]))))throw Error();
++    if(new Set(data.accounts.map((a:any)=>a.id)).size!==data.accounts.length)throw Error();
++    return data;
++  }catch {throw Object.assign(Error('Wallet storage unavailable'),{code:'CEDAR_WALLET_INVALID'});}
++}
++export class CedarEconomy {
++  readonly db:DatabaseSync;
++  constructor(directory:string) {
++    mkdirSync(directory,{recursive:true,mode:0o700});
++    const file=join(directory,'accounts.db');this.db=new DatabaseSync(file);chmodSync(file,0o600);
++    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
++      CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
++      CREATE TABLE IF NOT EXISTS receipts(actor TEXT NOT NULL, request TEXT NOT NULL, fingerprint TEXT NOT NULL, response TEXT NOT NULL, PRIMARY KEY(actor,request));`);
++    const existing=this.db.prepare('SELECT body FROM state WHERE id=1').get() as {body:string}|undefined;
++    try {if(existing)readState(existing.body);}catch(error){this.db.close();throw error;}
++  }
++  close(){this.db.close();}
++  private transaction<T>(run:(store:AccountStore)=>T):T {
++    this.db.exec('BEGIN IMMEDIATE');
++    try {
++      const row=this.db.prepare('SELECT body FROM state WHERE id=1').get() as {body:string}|undefined;
++      let staged:AccountFile|undefined;
++      const store=new AccountStore('',undefined,{enabled:true},{read:()=>row?readState(row.body):undefined,write:data=>{staged=data;}});
++      const result=run(store);
++      if(staged&&JSON.stringify(staged)!==row?.body)this.db.prepare('INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(JSON.stringify(staged));
++      this.db.exec('COMMIT');return result;
++    }catch(error){this.db.exec('ROLLBACK');throw error;}
++  }
++  private people(identity:PlatformIdentity,context:unknown) {
++    if(identity.owner.actorType==='guest'||identity.playerId.startsWith('guest:'))fail('游客不提供局外钱包');
++    if(!Array.isArray(context)||context.length>200)fail('需要平台账号上下文');
++    const slot=identity.playerId.split(':')[1]??'1';
++    if(!(context as Person[]).some(p=>p.playerId===identity.playerId&&p.actorType===identity.owner.actorType))fail('平台身份类型不匹配');
++    return (context as Person[]).map(p=>{
++      if(!/^[1-9][0-9]*(?::[2-5])?$/.test(p.playerId)||(p.playerId.split(':')[1]??'1')!==slot||!['human','ai'].includes(p.actorType))fail('平台账号或存档槽无效');
++      const owner=platformIdentity({playerId:p.playerId,displayName:p.name,actorType:p.actorType}).owner;
++      return {id:owner.accountId,name:owner.accountName,isAi:p.actorType==='ai',owners:p.owners?.map(id=>{
++        if(!/^[1-9][0-9]*(?::[2-5])?$/.test(id)||(id.split(':')[1]??'1')!==slot)fail('绑定存档槽不匹配');
++        return platformIdentity({playerId:id}).owner.accountId;
++      })};
++    });
++  }
++  sync(identity:PlatformIdentity,context:unknown) {
++    if(identity.owner.actorType==='guest')return;
++    const people=this.people(identity,context);
++    this.transaction(store=>store.platformRun(people,identity.owner.accountId,()=>undefined));
++  }
++  appearance(accountId:string) {
++    const row=this.db.prepare('SELECT body FROM state WHERE id=1').get() as {body:string}|undefined;
++    const account:AccountFile['accounts'][number]|undefined=row?readState(row.body).accounts.find(a=>a.id===accountId):undefined;
++    return account?{skinId:account.cosmetics?.equipped.board??DEFAULT_BOARD_SKIN,frame:account.cosmetics?.equipped.frame}:undefined;
++  }
++  settle(input:MatchSettlementInput){return this.transaction(store=>{
++    // A pre-upgrade room may contain a player who has not authenticated since
++    // wallets were enabled. Keep payment pending until their trusted identity arrives.
++    if(input.entries.some(entry=>!store.getAccount(entry.accountId)))fail('等待平台账号初始化钱包');
++    return store.settleMatch(input);
++  });}
++  play(identity:PlatformIdentity,context:unknown,op:unknown,p:Record<string,any>) {
++    const people=this.people(identity,context),actor=people.find(p=>p.id===identity.owner.accountId)??fail('平台身份不匹配');
++    const peers=actor.isAi?people.filter(p=>actor.owners?.length===1&&actor.owners[0]===p.id):people.filter(p=>p.isAi&&p.owners?.length===1&&p.owners[0]===actor.id);
++    // The original wheel allows arbitrary username lookup. Cedar limits recipients to live household bindings.
++    let target:string|undefined;
++    if(op==='gift')target=actor.isAi&&peers.length===1?peers[0]!.id:fail('只能由归属明确的小机送给自己的人');
++    if(op==='subsidize'||(op==='wheel_action'&&p.command?.action==='gift')) {
++      const to=op==='subsidize'?p.to:p.command.to;
++      const found=actor.isAi?peers:peers.filter(peer=>to===peer.id||to===peer.name||to===(context as Person[]).find(person=>platformIdentity({playerId:person.playerId}).owner.accountId===peer.id)?.playerId);
++      if(found.length!==1)fail('收礼人必须是当前唯一绑定的家人');
++      target=found[0]!.id;
++      if(actor.isAi&&to&&to!==target&&to!==found[0]!.name)fail('收礼人固定为当前绑定人类');
++    }
++    const reads=['profile','catalog','wheel'];
++    if(![...reads,'buy','equip','gift','claim','subsidize','wheel_action'].includes(String(op)))fail('未知局外操作');
++    const requestId=op==='wheel_action'?p.command?.requestId:p.requestId;
++    if(!reads.includes(String(op))&&(typeof requestId!=='string'||!/^[a-zA-Z0-9_-]{8,80}$/.test(requestId)))fail('需要有效 requestId');
++    const fingerprint=createHash('sha256').update(JSON.stringify([op,p,target])).digest('hex');
++    return this.transaction(store=>store.platformRun(people,actor.id,token=>{
++      if(!reads.includes(String(op))) {
++        const old=this.db.prepare('SELECT fingerprint,response FROM receipts WHERE actor=? AND request=?').get(actor.id,requestId) as {fingerprint:string;response:string}|undefined;
++        if(old){if(old.fingerprint!==fingerprint)fail('重试编号已用于另一操作或收礼人已变化');return JSON.parse(old.response);}
++      }
++      let result:unknown;
++      switch(op) {
++        case 'catalog':result={cosmetics:listedCosmetics(),currencies:CURRENCY,exchange:EXCHANGE_BOT_PER_HUMAN,reward:MATCH_REWARD,defaultSkin:DEFAULT_BOARD_SKIN,wheelEnabled:true};break;
++        case 'profile':result={self:store.selfAccount(token),recipients:peers.map(p=>({id:p.id,username:p.name}))};break;
++        case 'buy':result={self:store.buyCosmetic(token,p.cosmeticId)};break;
++        case 'equip':result={self:store.equipCosmetic(token,p.cosmeticId)};break;
++        case 'claim':result=store.claimGifts(token,p.giftId);break;
++        case 'gift':result=store.giftCosmeticForAccount(token,requestId,p.cosmeticId,p.note);break;
++        case 'subsidize':result=store.subsidize(token,target,p.coins,requestId);break;
++        case 'wheel':result=store.wheelView(token);break;
++        case 'wheel_action':result=store.wheelAction(token,{...p.command,...(target?{to:target}:{})});break;
++      }
++      if((op==='wheel'||op==='wheel_action')&&result){const view=result as any;delete view.guide;view.recipientHint='仅限当前绑定的家人';view.gifting.recipients=peers.filter(p=>p.isAi).map(p=>({id:p.id,username:p.name}));}
++      if(!reads.includes(String(op)))this.db.prepare('INSERT INTO receipts VALUES(?,?,?,?)').run(actor.id,requestId,fingerprint,JSON.stringify(result));
++      return result;
++    }));
++  }
++}
 diff --git a/lib/autochess/cedartoy-web.ts b/lib/autochess/cedartoy-web.ts
 new file mode 100644
-index 0000000..2458e72
+index 0000000..d6401ff
 --- /dev/null
 +++ b/lib/autochess/cedartoy-web.ts
 @@ -0,0 +1,55 @@
@@ -572,8 +1047,8 @@ index 0000000..2458e72
 +  }
 +  return result as RoomAction;
 +}
-+export async function cedarWeb(store:RoomStore, identity:PlatformIdentity, op:unknown, p:Record<string,unknown>, household:SeatOwner[]=[]) {
-+  if(op==='config') return {slim:true,cursorEnabled:false,mcpUrl:'',packs:PACK_SUMMARIES,modes:LOBBY_MODES.map(mode=>({id:mode.id,name:mode.name})),rooms:store.platformRooms(identity.owner.accountId)};
++export async function cedarWeb(store:RoomStore, identity:PlatformIdentity, op:unknown, p:Record<string,unknown>, household:SeatOwner[]=[],economy=false) {
++  if(op==='config') return {slim:!economy,economy,cursorEnabled:false,mcpUrl:'',packs:PACK_SUMMARIES,modes:LOBBY_MODES.map(mode=>({id:mode.id,name:mode.name})),rooms:store.platformRooms(identity.owner.accountId)};
 +  if(op==='create') {
 +    // Validate through the same store; names and household come only from trusted platform context.
 +    return store.createForPlatform(identity.owner,text(p.requestId),p.pack===undefined?undefined:text(p.pack),p.mode===undefined?'standard':text(p.mode),p.seats as number|undefined,household);
@@ -631,18 +1106,20 @@ index 0000000..1b5efa1
 +SOFTWARE.
 diff --git a/scripts/cedartoy-server.ts b/scripts/cedartoy-server.ts
 new file mode 100644
-index 0000000..2c0468a
+index 0000000..85d2680
 --- /dev/null
 +++ b/scripts/cedartoy-server.ts
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,108 @@
 +/** Cedar-only satellite. Deliberately does not import the upstream HTTP/account/Cursor server. */
 +import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 +import { isAbsolute } from 'node:path';
++import { CedarEconomy } from '../lib/accounts/cedartoy-economy';
++import {join} from 'node:path';
 +import { RoomStore } from '../lib/autochess/room-store';
 +import { PlatformRoomAdapter, platformIdentity, verifyPlatformSecret, decodePlatformDisplayName } from '../lib/autochess/platform-adapter';
 +import { cedarWeb } from '../lib/autochess/cedartoy-web';
 +
-+export function cedarServer(store: RoomStore, secret: string) {
++export function cedarServer(store: RoomStore, secret: string, economy?:CedarEconomy) {
 +  if (!/^[a-f0-9]{64}$/.test(secret)) throw Error('CHESS_PLATFORM_SECRET must be 32 random bytes encoded as lowercase hex');
 +  const adapter = new PlatformRoomAdapter(store);
 +  let active = 0;
@@ -659,8 +1136,8 @@ index 0000000..2c0468a
 +        !verifyPlatformSecret(secret, header(req, 'x-autochess-platform-secret'))) {
 +      send(res,403,{error:'Forbidden'}); return;
 +    }
-+    if (req.method === 'GET' && req.url === '/health') { send(res,200,{ok:true,slim:true}); return; }
-+    if (req.method !== 'POST' || !['/platform/autochess','/platform/web','/platform/stats'].includes(req.url ?? '')) { send(res,404,{error:'Not found'}); return; }
++    if (req.method === 'GET' && req.url === '/health') { send(res,200,{ok:true,slim:!economy,economy:!!economy}); return; }
++    if (req.method !== 'POST' || !['/platform/autochess','/platform/web','/platform/stats','/platform/economy'].includes(req.url ?? '')) { send(res,404,{error:'Not found'}); return; }
 +    if (active >= 128) { send(res,503,{error:'Busy'}); return; }
 +    active++;
 +    let waitKey = '';
@@ -683,10 +1160,20 @@ index 0000000..2c0468a
 +        const seconds=windows[body?.range];if(!seconds) throw Error('Invalid range');
 +        const now=Date.now();send(res,200,{range:body.range,generated_at:new Date(now).toISOString(),...store.platformStats(now-seconds*1000,now)});return;
 +      }
++      if(req.url==='/platform/economy'||(req.url==='/platform/autochess'&&body?.action==='meta')) {
++        if(!economy)throw Error('旧精简模式未启用局外功能');
++        const params=req.url==='/platform/economy'?body:body.params;
++        send(res,200,economy.play(identity,body.context,params?.op,params?.params??params??{}));return;
++      }
++      if(economy) {
++        economy.sync(identity,body.context);
++        Object.assign(identity.owner,economy.appearance(identity.owner.accountId));
++      }
 +      if(req.url==='/platform/web') {
 +        if(role!=='human' && body?.op!=='state' && body?.op!=='config') throw Error('Human session required');
 +        const household=(Array.isArray(body?.household)?body.household:[]).map((person:any)=>platformIdentity({playerId:person.playerId,displayName:person.name,actorType:'ai'}).owner);
-+        send(res,200,await cedarWeb(store,identity,body?.op,body?.params??{},household));return;
++        if(economy)for(const person of household)Object.assign(person,economy.appearance(person.accountId));
++        send(res,200,await cedarWeb(store,identity,body?.op,body?.params??{},household,!!economy));return;
 +      }
 +      const roomId=body?.params?.roomId ?? body?.params?.room_id;
 +      const key=`${identity.owner.accountId}:${roomId}`;
@@ -721,13 +1208,15 @@ index 0000000..2c0468a
 +}
 +
 +if (process.argv[1]?.endsWith('/cedartoy-server.ts')) {
-+  if ((process.env.CHESS_SLIM ?? '1') !== '1') throw Error('Cedar requires CHESS_SLIM=1');
++  const full=process.env.CHESS_CEDAR_MODE==='platform';
++  if (!full && (process.env.CHESS_SLIM ?? '1') !== '1') throw Error('Use CHESS_CEDAR_MODE=platform or legacy CHESS_SLIM=1');
 +  const directory = process.env.CHESS_ROOM_DATA ?? '';
 +  if (!isAbsolute(directory)) throw Error('CHESS_ROOM_DATA must be an absolute private data directory');
 +  const port = Number(process.env.CHESS_ROOM_PORT ?? 8791);
 +  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw Error('Invalid CHESS_ROOM_PORT');
 +  // The launcher holds an exclusive OS lock for this directory for the entire process lifetime.
-+  cedarServer(new RoomStore(directory), process.env.CHESS_PLATFORM_SECRET ?? '').listen(port,'127.0.0.1');
++  const economy=full?new CedarEconomy(join(directory,'economy')):undefined;
++  cedarServer(new RoomStore(directory,economy,undefined,economy?(id=>economy.appearance(id)):undefined), process.env.CHESS_PLATFORM_SECRET ?? '',economy).listen(port,'127.0.0.1');
 +}
 diff --git a/test/cedartoy-http.test.ts b/test/cedartoy-http.test.ts
 new file mode 100644
@@ -768,22 +1257,48 @@ index 0000000..a7da857
 +});
 diff --git a/test/cedartoy-persistence.ts b/test/cedartoy-persistence.ts
 new file mode 100644
-index 0000000..a34f24a
+index 0000000..f6dfe06
 --- /dev/null
 +++ b/test/cedartoy-persistence.ts
-@@ -0,0 +1,40 @@
-+/** Three separate processes, temporary saves only. Works with `node --import tsx`. */
+@@ -0,0 +1,66 @@
++/** Four separate processes, temporary saves only. Works with `node --import tsx`. */
 +import assert from 'node:assert/strict';
 +import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 +import { tmpdir } from 'node:os';
 +import { join } from 'node:path';
 +import { spawnSync } from 'node:child_process';
 +import { fileURLToPath } from 'node:url';
++import { CedarEconomy } from '../lib/accounts/cedartoy-economy';
++import {platformIdentity} from '../lib/autochess/platform-adapter';
++import {listedCosmetics,cosmeticPrice} from '../lib/meta/cosmetics';
 +import { RoomStore } from '../lib/autochess/room-store';
 +
 +const [step, directory] = process.argv.slice(2);
 +const owner={accountId:'platform:test:guest-regcheck',accountName:'临时验证'};
 +if(step) {
++  const economy=new CedarEconomy(join(directory!,'economy'));
++  const human=platformIdentity({playerId:'951',actorType:'human'}),ai=platformIdentity({playerId:'952',actorType:'ai'});
++  const context=[{playerId:'951',name:'持久化人类',actorType:'human'},{playerId:'952',name:'持久化小机',actorType:'ai',owners:['951']}];
++  const meta=(who:typeof human,op:string,p:any={})=>economy.play(who,context,op,p) as any;
++  const skin=listedCosmetics().find(c=>c.kind==='board'&&c.acquisition!=='wheel'&&cosmeticPrice(c,'human')>0)!;
++  const frame=listedCosmetics().find(c=>c.kind==='frame'&&c.acquisition!=='wheel'&&c.acquisition!=='retired')!;
++  if(step==='create') {
++    economy.sync(human,context);
++    for(let i=0;i<3;i++)economy.settle({roomId:'fund-'+i,round:3,entries:[{accountId:human.owner.accountId,outcome:'win'},{accountId:ai.owner.accountId,outcome:'win'}]});
++  } else if(step==='mutate') {
++    meta(human,'buy',{cosmeticId:skin.id,requestId:'persistent-buy'});
++    meta(ai,'gift',{cosmeticId:frame.id,requestId:'persistent-gift'});
++  } else {
++    meta(human,'buy',{cosmeticId:skin.id,requestId:'persistent-buy'});
++    meta(ai,'gift',{cosmeticId:frame.id,requestId:'persistent-gift'});
++    let self=meta(human,'profile').self;
++    assert.equal(self.coins.human,84-cosmeticPrice(skin,'human'));assert.equal(self.giftHistory.length,1);
++    meta(human,'claim',{giftId:self.giftHistory[0].id,requestId:'persistent-claim'});
++    assert.equal(economy.appearance(human.owner.accountId)?.frame,frame.id);
++    assert.equal(economy.appearance(human.owner.accountId)?.skinId,skin.id);
++  }
++  economy.close();
++  if(step==='verify')process.exit(0);
 +  const store=new RoomStore(directory!);
 +  if(step==='create') {
 +    const room=store.createForPlatform(owner,'persist-create-1','jianghu','standard',8);
@@ -805,11 +1320,11 @@ index 0000000..a34f24a
 +} else {
 +  const dir=mkdtempSync(join(tmpdir(),'autochess-persist-'));
 +  try {
-+    for(const phase of ['create','mutate','read']) {
++    for(const phase of ['create','mutate','read','verify']) {
 +      const child=spawnSync(process.execPath,[...process.execArgv,fileURLToPath(import.meta.url),phase,dir],{encoding:'utf8',timeout:60000});
 +      assert.equal(child.status,0,`${phase}: ${child.stderr}\n${child.stdout}`);
 +    }
-+    console.log('PASS: create -> independent mutate -> independent read; NPCs, identity, replay message and receipts persisted');
++    console.log('PASS: create -> independent mutate -> independent read -> independent verify; NPCs, identity, wallet, purchases, gifts/claims and receipts persisted');
 +  } finally {rmSync(dir,{recursive:true,force:true});}
 +}
 diff --git a/test/cedartoy-private.test.ts b/test/cedartoy-private.test.ts
@@ -970,10 +1485,10 @@ index 0000000..22b422b
 +});
 diff --git a/test/cedartoy-web.test.ts b/test/cedartoy-web.test.ts
 new file mode 100644
-index 0000000..bc790d8
+index 0000000..8727f98
 --- /dev/null
 +++ b/test/cedartoy-web.test.ts
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,207 @@
 +import assert from 'node:assert/strict';
 +import {test} from 'node:test';
 +import {mkdtempSync,rmSync} from 'node:fs';
@@ -1033,12 +1548,160 @@ index 0000000..bc790d8
 + assert.deepEqual(store.platformStats(Date.now()-3600000,Date.now()+1),{active_humans:1,active_machines:0,created:2,started:1,finished:1});
 + assert.deepEqual(store.platformStats(Date.now()+10,Date.now()+20),{active_humans:0,active_machines:0,created:0,started:0,finished:0});
 +});
++
++import {CedarEconomy} from '../lib/accounts/cedartoy-economy';
++import {AccountStore} from '../lib/accounts/account-store';
++import {listedCosmetics,cosmeticPrice,DEFAULT_BOARD_SKIN} from '../lib/meta/cosmetics';
++import {readFileSync,writeFileSync} from 'node:fs';
++
++test('Cedar wallets reuse original economy atomically, isolate slots, retry purchases and gifts, revoke bindings',t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-wallet-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
++ const e=new CedarEconomy(dir);t.after(()=>e.close());
++ const human=platformIdentity({playerId:'101',actorType:'human'}),ai=platformIdentity({playerId:'202',actorType:'ai'});
++ const guest=platformIdentity({playerId:'guest:wallet-test',actorType:'guest'});
++ e.sync(guest,undefined);assert.throws(()=>e.play(guest,undefined,'profile',{}),/游客/);
++ const people=[{playerId:'101',name:'人',actorType:'human'},{playerId:'202',name:'机',actorType:'ai',owners:['101']}];
++ const call=(who:typeof human,op:string,p:any={})=>e.play(who,people,op,p) as any;
++ assert.deepEqual(call(human,'profile').self.coins,{human:0,bot:0});call(ai,'profile');
++ const skin=listedCosmetics().find(c=>c.kind==='board'&&c.acquisition!=='wheel'&&cosmeticPrice(c,'human')>0)!;
++ assert.throws(()=>call(human,'buy',{cosmeticId:skin.id,requestId:'buy-no-funds'}),/余额不足/);
++ for(let i=0;i<3;i++)e.settle({roomId:'funds-'+i,round:3,entries:[{accountId:human.owner.accountId,outcome:'win'},{accountId:ai.owner.accountId,outcome:'win'}]});
++ const balance=call(human,'profile').self.coins.human;
++ const request={cosmeticId:skin.id,requestId:'buy-skin-once'};
++ call(human,'buy',request);call(human,'buy',request);
++ assert.equal(call(human,'profile').self.coins.human,balance-cosmeticPrice(skin,'human'));
++ assert.throws(()=>call(human,'buy',{...request,cosmeticId:DEFAULT_BOARD_SKIN}),/重试/);
++ assert.equal(e.appearance(human.owner.accountId)?.skinId,skin.id);
++ const slot=platformIdentity({playerId:'101:2',actorType:'human'});
++ assert.equal((e.play(slot,[{playerId:'101:2',name:'人',actorType:'human'}],'profile',{}) as any).self.coins.human,0);
++ const frame=listedCosmetics().find(c=>c.kind==='frame'&&c.acquisition!=='wheel'&&c.acquisition!=='retired')!;
++ const gift={cosmeticId:frame.id,requestId:'gift-frame-once',note:'自己的礼物'};
++ call(ai,'gift',gift);call(ai,'gift',gift);
++ const inbox=call(human,'profile').self.gifts;assert.equal(inbox.length,1);
++ call(human,'claim',{giftId:inbox[0].id,requestId:'claim-frame-once'});call(human,'claim',{giftId:inbox[0].id,requestId:'claim-frame-once'});
++ assert.equal(e.appearance(human.owner.accountId)?.frame,frame.id);
++ const rooms=new RoomStore(join(dir,'rooms'),e,undefined,id=>e.appearance(id));
++ const guestRoom=rooms.createForPlatform(guest.owner,'guest-room-no-pay','ai','duel');
++ const guestSeat=rooms.accountSeat(guestRoom.roomId,guest.owner.accountId)!;
++ const guestStart=rooms.start(guestSeat,'guest-start-npc');
++ const guestEnd=rooms.mutate({...guestSeat,round:guestStart.round,revision:guestStart.self!.revision,requestId:'guest-resign-npc',action:{kind:'resign'}});
++ assert.equal(guestEnd.self!.result!.payment,'guest');
++ const room=rooms.createForPlatform(human.owner,'equipped-room','ai','duel');
++ const appearance=rooms.view(rooms.accountSeat(room.roomId,human.owner.accountId)!).seats[0]!;
++ assert.equal(appearance.skinId,skin.id);assert.equal(appearance.frame,frame.id);
++ assert.equal(call(human,'profile').self.giftHistory.length,1);
++ assert.throws(()=>e.play(ai,[people[0],{...people[1],owners:[]}],'gift',gift),/归属/);
++ assert.throws(()=>call(human,'wheel_action',{command:{action:'gift',requestId:'bad-target-123',revision:0,prizeId:'x',to:'陌生人'}}),/家人/);
++ const before=call(human,'profile').self.coins.human;
++ e.db.exec("CREATE TRIGGER fail_receipt BEFORE INSERT ON receipts BEGIN SELECT RAISE(ABORT,'disk failure'); END");
++ assert.throws(()=>call(human,'subsidize',{to:'202',coins:1,requestId:'subsidy-rollback'}));
++ e.db.exec('DROP TRIGGER fail_receipt');assert.equal(call(human,'profile').self.coins.human,before);
++ const start={action:'start',requestId:'wheel-start-once',revision:0};
++ const wheel=call(human,'wheel_action',{command:start});assert.equal(wheel.state.tickets,30);
++ assert.deepEqual(call(human,'wheel_action',{command:start}),wheel);
++ const fill={action:'fill',requestId:'wheel-fill-once',revision:wheel.state.revision};
++ const drawn=call(human,'wheel_action',{command:fill});assert(drawn.state.revision>wheel.state.revision);
++ assert.deepEqual(call(human,'wheel_action',{command:fill}),drawn);
++ const state=JSON.parse((e.db.prepare('SELECT body FROM state').get() as any).body);
++ assert.deepEqual(state.sessions,{});assert(state.accounts.every((a:any)=>a.passwordHash==='platform-only'&&!a.isAdmin));
++ // Original away matches allow AI debt; validation must not mistake it for corruption.
++ for(let i=0;i<5;i++)e.settle({roomId:'machine-away-loss-'+i,round:3,entries:[{accountId:ai.owner.accountId,outcome:'loss'}]});
++ const debt=call(ai,'profile').self.coins.bot;assert(debt<0);
++ assert.throws(()=>call(ai,'buy',{cosmeticId:skin.id,requestId:'machine-debt-buy'}),/余额不足/);
++ const support={to:'202',coins:1,requestId:'machine-debt-support'};
++ call(human,'subsidize',support);call(human,'subsidize',support);
++ const fresh=new CedarEconomy(dir);
++ try{assert.equal((fresh.play(ai,people,'profile',{}) as any).self.coins.bot,debt+10);}finally{fresh.close();}
++});
++
++test('wheel ticket purchases, original redemptions and household gifts settle exactly once; corrupt wallets are preserved',t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-wheel-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
++ const e=new CedarEconomy(dir);t.after(()=>e.close());
++ const human=platformIdentity({playerId:'601',actorType:'human'}),ai=platformIdentity({playerId:'602',actorType:'ai'});
++ const context=[{playerId:'601',name:'人',actorType:'human'},{playerId:'602',name:'机',actorType:'ai',owners:['601']}];
++ const call=(who:typeof human,op:string,p:any={})=>e.play(who,context,op,p) as any;
++ let n=0;
++ const act=(who:typeof human,action:string,p:any={})=>{
++  const command={action,revision:call(who,'wheel').state.revision,requestId:'wheel-chain-'+(++n),...p};
++  const result=call(who,'wheel_action',{command});assert.deepEqual(call(who,'wheel_action',{command}),result);return result;
++ };
++ call(human,'profile');call(ai,'profile');act(human,'start');act(ai,'start');
++ e.settle({roomId:'wheel-fixture-funds',round:3,entries:[{accountId:human.owner.accountId,outcome:'win'},{accountId:ai.owner.accountId,outcome:'win'}]});
++ const before=call(human,'profile').self.coins.human,price=call(human,'wheel').ticketShop.packPrice;
++ assert.equal(act(human,'buy_tickets',{count:10}).state.tickets,40);
++ assert.equal(call(human,'profile').self.coins.human,before-price);
++ assert.throws(()=>act(human,'buy_tickets',{count:11}),/10/);
++ // Deterministic test-only earned points; the public API has no grant/points mutation.
++ const state=JSON.parse((e.db.prepare('SELECT body FROM state').get() as any).body);
++ for(const account of state.accounts)account.wheel.points=account.wheel.totalPoints=700;
++ e.db.prepare('UPDATE state SET body=?').run(JSON.stringify(state));
++ const own=act(human,'redeem',{prizeId:'astrolabe'}).state.prizes.find((p:any)=>p.spec.id==='astrolabe');
++ act(human,'use',{prizeId:own.id});
++ assert(call(human,'profile').self.owned.includes('skin-time-astrolabe'));
++ const send=act(human,'redeem',{prizeId:'ivy'}).state.prizes.find((p:any)=>p.spec.id==='ivy');
++ act(human,'gift',{prizeId:send.id,to:ai.owner.accountId});
++ const inbox=call(ai,'wheel').state.prizes;assert.equal(inbox.length,1);
++ act(ai,'use',{prizeId:inbox[0].id});assert(call(ai,'profile').self.owned.includes('frame-revival-ivy'));
++ const back=act(ai,'redeem',{prizeId:'olive'}).state.prizes.find((p:any)=>p.spec.id==='olive');
++ const giftCommand={action:'gift',prizeId:back.id,revision:call(ai,'wheel').state.revision,requestId:'wheel-gift-back'};
++ call(ai,'wheel_action',{command:giftCommand});
++ assert.throws(()=>e.play(ai,[context[0],{...context[1],owners:[]}],'wheel_action',{command:giftCommand}),/家人/);
++ const pending=call(human,'wheel').state.prizes.find((p:any)=>p.source==='gift');act(human,'use',{prizeId:pending.id});
++ assert(call(human,'profile').self.owned.includes('frame-revival-olive'));
++ assert.equal(call(human,'wheel').state.points,0);
++ const saved=(e.db.prepare('SELECT body FROM state').get() as any).body;
++ e.db.prepare('UPDATE state SET body=?').run('null');
++ assert.throws(()=>call(human,'profile'),/storage unavailable/);
++ assert.equal((e.db.prepare('SELECT body FROM state').get() as any).body,'null');
++ e.db.prepare('UPDATE state SET body=?').run(saved);
++ assert.throws(()=>e.play(human,[{...context[0],actorType:'ai'}],'profile',{}),/身份类型/);
++ const legacy=join(dir,'accounts.json');writeFileSync(legacy,'null');
++ assert.throws(()=>new AccountStore(dir),/VERSION/);assert.equal(readFileSync(legacy,'utf8'),'null');
++});
++
++test('a real solo NPC match settles into the wallet and equipped appearance enters the room; legacy rooms survive',async t=>{
++ const dir=mkdtempSync(join(tmpdir(),'cedar-wallet-match-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
++ const e=new CedarEconomy(join(dir,'economy'));t.after(()=>e.close());
++ const who=platformIdentity({playerId:'501',actorType:'human'}),context=[{playerId:'501',name:'实战棋手',actorType:'human'}];e.sync(who,context);
++ const store=new RoomStore(dir,e,undefined,id=>e.appearance(id));
++ const made=store.createForPlatform(who.owner,'wallet-real-match','ai','duel');const cred=store.accountSeat(made.roomId,who.owner.accountId)!;
++ let v=store.start(cred,'wallet-real-start'),steps=0;
++ while(v.phase!=='finished'&&steps++<300){
++  const s=v.self!;let action:any;
++  if(s.swordOffer)action={kind:'pick_sword',item:s.swordOffer.choices[0]};
++  else if(s.hexOffer)action={kind:'pick_hex',hex:s.hexOffer.choices[0]!.id};
++  else if(s.itemOffer)action={kind:'pick_item',item:s.itemOffer.boxes[s.itemOffer.boxIndex]![0]};
++  else if(s.draft)action={kind:'roll_and_claim'};
++  else if(!s.board.length&&s.bench?.length)action={kind:'move',piece:s.bench[0]!.id,row:0,col:0};
++  else action={kind:'ready'};
++  v=store.mutate({...cred,round:v.round,revision:s.revision,requestId:'real-step-'+steps,action});
++ }
++ assert.equal(v.phase,'finished');assert(v.round>=3);assert.equal(v.self!.result!.payment,'paid');
++ const profile=()=>e.play(who,context,'profile',{}) as any;
++ assert.equal(profile().self.coins.human,v.self!.result!.reward!.delta);assert(profile().self.coins.human>0);
++ const original=profile().self.coins.human;
++ const resumed=new RoomStore(dir,e,undefined,id=>e.appearance(id));resumed.view(cred);assert.equal(profile().self.coins.human,original);
++ // A pre-economy finished room retains its factual guest receipt, without retroactive fabricated rewards.
++ const file=join(dir,made.roomId+'.json'),old=JSON.parse(readFileSync(file,'utf8'));
++ delete old.settled;for(const seat of old.seats){if(seat.result){seat.result.payment='guest';delete seat.result.reward;}}
++ writeFileSync(file,JSON.stringify(old));new RoomStore(dir,e).view(cred);assert.equal(profile().self.coins.human,original);
++ // A pending pre-upgrade player must not be marked paid before their first login.
++ const late=platformIdentity({playerId:'502',actorType:'human'}),copy=structuredClone(old);
++ copy.id='fedcba987654';copy.seats[0].accountId=late.owner.accountId;copy.seats[0].result.payment='pending';
++ writeFileSync(join(dir,copy.id+'.json'),JSON.stringify(copy));
++ const upgraded=new RoomStore(dir,e),lateCred={...cred,roomId:copy.id};
++ assert.equal(upgraded.view(lateCred).self!.result!.payment,'pending');
++ e.sync(late,[{playerId:'502',name:'旧局回归玩家',actorType:'human'}]);
++ assert.equal(upgraded.view(lateCred).self!.result!.payment,'paid');
++ assert.equal((e.play(late,[{playerId:'502',name:'旧局回归玩家',actorType:'human'}],'profile',{}) as any).self.coins.human,original);
++ console.log('REAL NPC MATCH',JSON.stringify({round:v.round,outcome:v.self!.result!.outcome,reward:v.self!.result!.reward}));
++});
 diff --git a/vite.cedar.config.ts b/vite.cedar.config.ts
 new file mode 100644
-index 0000000..dd29c9c
+index 0000000..6d810e6
 --- /dev/null
 +++ b/vite.cedar.config.ts
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,21 @@
 +import {defineConfig} from 'vite';
 +import react from '@vitejs/plugin-react';
 +import tailwindcss from '@tailwindcss/postcss';
@@ -1048,8 +1711,10 @@ index 0000000..dd29c9c
 + root,
 + base:'/autochess/static/',
 + plugins:[{name:'cedar-transport',enforce:'pre',resolveId(source,importer){
++  if(importer&&source==='./account-session')return root+'cedartoy/account-session.ts';
 +  if(importer&&source==='./room-request')return root+'cedartoy/transport.ts';
 + },transform(code,id){
++  if(id.endsWith('/wheel.css'))return code.replace(/^@import url.*fonts\.googleapis.*$/gm,'');
 +  if(id.endsWith('/lib/meta/board-scenes.js')||id.endsWith('/lib/meta/cosmetics.ts'))
 +    return code.replace(/(['"])\/(boards|frames)\//g, '$1/autochess/static/$2/');
 + }},react()],

@@ -5,8 +5,10 @@ from urllib.parse import urlsplit, quote
 
 import httpx
 from cedar_backend.errors import _McpError
+from .economy import FIELDS as META_FIELDS
 
 _FIELDS = {
+    'meta': {'op'} | set().union(*META_FIELDS.values()),
     'rooms': set(),
     'cancel_wait': {'roomId'},
     'create': {'requestId', 'pack', 'mode', 'seats'},
@@ -50,7 +52,7 @@ def _contains_credential(value):
 
 def payload(action, arguments, *, allow_wait=False):
     if not isinstance(action, str) or action not in _FIELDS:
-        raise _McpError(-32602, 'AutoChess action 仅支持 rooms/create/join/start/read/act/cancel_wait')
+        raise _McpError(-32602, 'AutoChess action 仅支持 rooms/create/join/start/read/act/cancel_wait/meta')
     # Select only game fields; platform token, passwords and forged identities never get forwarded.
     params = {}
     for key, value in arguments.items():
@@ -69,7 +71,7 @@ def payload(action, arguments, *, allow_wait=False):
     return {'action': action, 'params': params}
 
 
-def prepare(arguments, *, player_id, actor_type='guest', display_name=None, allow_wait=False):
+def prepare(arguments, *, player_id, actor_type='guest', display_name=None, allow_wait=False, context=None):
     origin, secret = configuration()
     if not isinstance(player_id, str) or not re.fullmatch(r'(?:[1-9][0-9]*(?::[2-5])?|guest:[A-Za-z0-9_-]+)', player_id):
         raise _McpError(-32602, '无效的平台玩家身份')
@@ -80,7 +82,7 @@ def prepare(arguments, *, player_id, actor_type='guest', display_name=None, allo
     if display_name:
         headers['X-Player-Name'] = quote(str(display_name)[:48], safe='')
     return {'origin': origin, 'headers': headers,
-            'body': payload(arguments.get('action'), arguments, allow_wait=allow_wait)}
+            'body': {**payload(arguments.get('action'), arguments, allow_wait=allow_wait), **({'context': context} if context is not None else {})}}
 
 
 def decode_response(status, data):
@@ -94,8 +96,10 @@ def decode_response(status, data):
 
 
 def request(prepared, endpoint='/platform/autochess', body=None):
-    if endpoint not in ('/platform/autochess', '/platform/web', '/platform/stats'):
+    if endpoint not in ('/platform/autochess', '/platform/web', '/platform/stats', '/platform/economy'):
         raise _McpError(-32603, '无效的内部路由')
+    if body is not None and 'context' in prepared['body']:
+        body = {**body, 'context': prepared['body']['context']}
     try:
         with httpx.Client(trust_env=False, follow_redirects=False, timeout=5) as client:
             response = client.post(prepared['origin'] + endpoint, json=prepared['body'] if body is None else body,

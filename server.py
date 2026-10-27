@@ -3566,7 +3566,7 @@ def _tool_list_games(path_token=None):
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
     if autochess_adapter.enabled():
-        games += " | autochess·私人自走棋·江川雪"
+        games += " | autochess·弈间·江川雪"
     extra = " | ".join(f"{game}·{research_scales.RESEARCH_TITLES[game]}·{research_scales.SCALES[game].spec.get('author_short', research_scales.SCALES[game].spec['author'].split(',')[0])}" for game in sorted(research_scales.MCP_GAMES))
     return ("玩法见 get_guide(game)\n" + deeptalk_catalog.discovery()
             + "\n测试: " + tests + (" | " + extra if extra else "")
@@ -4035,6 +4035,7 @@ def _tool_play_inner(
         _McpError=_McpError,
         _account_announcement_identity=_account_announcement_identity,
         _account_slot_player_id=_account_slot_player_id,
+        _autochess_context=lambda account, slot: autochess_web.economy.context(_db_connect, account, slot),
         _anti_addiction_context=_anti_addiction_context,
         _anti_addiction_preflight=_anti_addiction_preflight,
         _anti_addiction_rest=_anti_addiction_rest,

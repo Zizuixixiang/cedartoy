@@ -66,6 +66,7 @@ class AutochessBoundaryTests(unittest.TestCase):
     def test_root_canonical_account_slots_and_guest_namespaces(self):
         with ExitStack() as stack:
             stack.enter_context(patch.object(server.sqlite3, 'connect', side_effect=AssertionError('unexpected database access')))
+            stack.enter_context(patch.object(server.autochess_web.economy, 'context', return_value=None))
             stack.enter_context(patch.object(server, '_current_account', return_value={'id':42,'username':'machine','is_ai':1}))
             stack.enter_context(patch.object(server, '_auto_migrate_legacy_account_saves'))
             stack.enter_context(patch.object(server, '_anti_addiction_context', return_value=None))
@@ -81,6 +82,7 @@ class AutochessBoundaryTests(unittest.TestCase):
     def test_path_token_and_bearer_reach_canonical_identity_through_http_dispatch(self):
         with ExitStack() as stack:
             stack.enter_context(patch.object(server.sqlite3, 'connect', side_effect=AssertionError('unexpected database access')))
+            stack.enter_context(patch.object(server.autochess_web.economy, 'context', return_value=None))
             account=stack.enter_context(patch.object(server, '_current_account', return_value={'id':42,'username':'fixture','is_ai':1}))
             for name in ('_auto_migrate_legacy_account_saves', '_reject_claimed_guest'):
                 stack.enter_context(patch.object(server, name))
@@ -119,7 +121,7 @@ class AutochessBoundaryTests(unittest.TestCase):
         with patch.dict(os.environ, {'AUTOCHESS_ENABLED':'0'}):
             self.assertNotIn('autochess·',server._tool_list_games())
         with patch.dict(os.environ, {'AUTOCHESS_ENABLED':'1'}):
-            self.assertIn('autochess·私人自走棋·江川雪',server._tool_list_games())
+            self.assertIn('autochess·弈间·江川雪',server._tool_list_games())
         self.assertEqual(before,json.dumps(server._root_tools(),ensure_ascii=False))
         guide=json.loads(server._tool_get_guide({'game':'autochess'}))['guide']
         for value in ('江川雪','63657956652','https://github.com/Cecilia-coding/AutoChess-MCP','MIT','start','self.revision'):

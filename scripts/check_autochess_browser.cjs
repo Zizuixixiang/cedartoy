@@ -122,10 +122,53 @@ const fs=require('node:fs');
   await page.setViewportSize({width,height:900});await page.screenshot({path:`artifacts/autochess-stage2/entry-${width}.png`,fullPage:true});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'entry overflow '+width);
  }
+ // Reuse original cosmetic cards, gift UI and wheel inside the same Cedar entry.
+ await page.getByRole('button',{name:'外观 · 钱包 · 对对碰',exact:true}).click();
+ await page.locator('.cedar-economy .lobby-profile').waitFor();
+ for(const width of [360,430,1440]){
+  await page.setViewportSize({width,height:900});
+  await page.screenshot({path:`artifacts/autochess-stage2/economy-shop-${width}.png`});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'shop overflow '+width);
+ }
+ const rose=page.locator('.lobby-card').filter({hasText:'玫瑰古堡'});
+ await rose.getByRole('button',{name:'奉纳购置',exact:true}).click();
+ await rose.getByRole('button',{name:'✦ 已佩戴入局',exact:true}).waitFor();
+ await page.getByRole('button',{name:'装扮·礼物',exact:true}).click();
+ await page.locator('#wardrobe h2').waitFor();
+ await page.getByRole('button',{name:'对对碰',exact:true}).click();
+ await page.getByRole('button',{name:'领试玩券，开一盘',exact:true}).click();
+ await page.getByRole('button',{name:'补一格',exact:true}).waitFor();
+ for(const width of [360,430,1440]){
+  await page.setViewportSize({width,height:900});
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:`artifacts/autochess-stage2/economy-wheel-${width}.png`});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'wheel overflow '+width);
+ }
+ await page.getByRole('button',{name:'补一格',exact:true}).click();
+ await page.getByRole('button',{name:'补一格',exact:true}).waitFor();
+ await page.getByRole('link',{name:'我的装扮',exact:true}).click();
+ await page.getByRole('button',{name:'返回棋室',exact:true}).click();
+ // Independent slot/AI wallets; a real account change clears the delegated panel.
+ await page.getByLabel('存档槽',{exact:true}).selectOption('2');
+ await page.getByRole('button',{name:'外观 · 钱包 · 对对碰',exact:true}).click();
+ await page.locator('.lobby-profile').filter({hasText:'0 铜钱 · 0 机芯'}).waitFor();
+ await page.getByRole('button',{name:'返回棋室',exact:true}).click();
+ await page.getByLabel('存档槽',{exact:true}).selectOption('1');
+ await page.getByLabel('棋局归属',{exact:true}).selectOption('202');
+ await page.getByRole('button',{name:'外观 · 钱包 · 对对碰',exact:true}).click();
+ await page.locator('.lobby-profile').filter({hasText:'临时小机'}).filter({hasText:'0 铜钱 · 0 机芯'}).waitFor();
+ await page.evaluate(token=>{localStorage.setItem('cedartoy_token',token);window.dispatchEvent(new Event('storage'));},process.env.AUTOCHESS_BROWSER_FRIEND_TOKEN);
+ await page.getByRole('button',{name:'创建私人房',exact:true}).waitFor();
+ assert.equal(await page.locator('.cedar-economy').count(),0,'account change clears wallet');
+ await page.getByRole('button',{name:'外观 · 钱包 · 对对碰',exact:true}).click();
+ await page.locator('.lobby-profile').filter({hasText:'临时朋友'}).filter({hasText:'0 铜钱 · 0 机芯'}).waitFor();
+ await page.evaluate(token=>{localStorage.setItem('cedartoy_token',token);window.dispatchEvent(new Event('storage'));},process.env.AUTOCHESS_BROWSER_TOKEN);
+ await page.getByRole('button',{name:'创建私人房',exact:true}).waitFor();
  await page.setViewportSize({width:1440,height:1000});
  await page.getByLabel('模式',{exact:true}).selectOption('duel');
  await page.getByRole('button',{name:'创建私人房',exact:true}).click();
  await page.getByRole('button',{name:'补路人机，直接开局',exact:true}).waitFor({timeout:15000});
+ await page.locator('.peach-arena-shell[data-skin="rose-court"]').waitFor();
  await page.screenshot({path:'artifacts/autochess-stage2/waiting-desktop.png',fullPage:true});
  await page.getByRole('button',{name:'补路人机，直接开局',exact:true}).click();
  await page.waitForTimeout(3000);

@@ -444,6 +444,11 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--autochess"]:
+        # Existing vendor chain, all rooms and wallets under its TemporaryDirectory.
+        sys.exit(subprocess.call([
+            os.environ.get("AUTOCHESS_TEST_NODE", "node"), "--import", "tsx", "test/cedartoy-persistence.ts",
+        ], cwd=ROOT / "vendor" / "autochess"))
     if sys.argv[1:] == ["--shared-craft"]:
         # Bound account rooms cannot use the legacy guest runner. This targeted
         # chain creates disposable accounts and all stores under TemporaryDirectory.
@@ -501,5 +506,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere|--shared-craft]")
+        sys.exit("用法：persistence_check.py [--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere|--shared-craft|--autochess]")
     sys.exit(main())
