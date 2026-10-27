@@ -1072,7 +1072,7 @@ index 1531f25..ec41263 100644
    }
  }
 diff --git a/lib/autochess/room-store.ts b/lib/autochess/room-store.ts
-index 9d8e918..4a8156a 100644
+index 9d8e918..ac6da9f 100644
 --- a/lib/autochess/room-store.ts
 +++ b/lib/autochess/room-store.ts
 @@ -1,3 +1,4 @@
@@ -1098,16 +1098,22 @@ index 9d8e918..4a8156a 100644
  import { boardSkinId, matchRules, parseMatchMode, type MatchModeId } from './match-rules';
  import { createRng, hash32, hashString } from './rng';
  import { recurringGrantPool, type RecurringRosterUnit } from './hex-recurring';
-@@ -36,7 +37,7 @@ import { DANMAKU_STYLES } from './room-types';
+@@ -36,9 +37,12 @@ import { DANMAKU_STYLES } from './room-types';
  const BOT_NAMES = ['路人甲','路人乙','路人丙','路人丁','路人戊','路人己','路人庚','路人辛','路人壬','路人癸','路人子','路人丑','路人寅','路人卯'];
  /** 房间闲置上限：超过这段时间没有任何操作就自动结束（掉线判负），不留下隔夜还在打的局。 */
  const ROOM_IDLE_KILL_MS = 60 * 60 * 1000;
 -type Seat = RoomSelf & { token: string; say: string; bot?: boolean; accountId?: string; accountName?: string; skinId?: string; frame?: string };
++const PLATFORM_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
++const PLATFORM_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
++const validTime = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 +type Seat = RoomSelf & { actorType?: 'human' | 'ai' | 'guest'; actorKey?: string; activeAt?: number; token: string; say: string; bot?: boolean; accountId?: string; accountName?: string; skinId?: string; frame?: string };
  type Room = { version: 1; id: string; invite: string; watch: string; seed: number; revision: number; round: number;
-   /** 最后一次落子/操作时间；超过闲置上限的房间会被自动结束（掉线判负）。 */
+-  /** 最后一次落子/操作时间；超过闲置上限的房间会被自动结束（掉线判负）。 */
++  /** Persistence clock; only upstream rooms use it as their idle clock. */
    updatedAt?: number;
-@@ -46,6 +47,10 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
+   mode?: MatchModeId; pack: PackId; seatCount: number; pairings: Matchup[]; lastOpponent: (number | undefined)[];
+   matchKind?: 'queue' | 'travel'; matchKey?: string;
+@@ -46,6 +50,14 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
    telemetrySource?: 'lab';
    /** 机开房请求的幂等键；断线重试返回原房间与原席位。 */
    machineCreate?: { accountId: string; requestId: string };
@@ -1115,10 +1121,14 @@ index 9d8e918..4a8156a 100644
 +  platformCreate?: { accountId: string; requestId: string; signature: string };
 +  platformStart?: string;
 +  platformTimes?: { created: number; started?: number; finished?: number };
++  /** Platform lifecycle clocks: reads/chat/presence never refresh these. */
++  lastActionAt?: number;
++  terminalAt?: number;
++  preserved?: boolean;
    wake?: {round:number;sequence:number;requestedAt:number;receivedId?:string;receivedAt?:number};
    phase: RoomView['phase']; seats: Seat[]; finalBattles?: Record<number, RoomBattle>; battle?: RoomBattle; battleAt?: number; winner?: RoomView['winner']; log: string[];
    receipts: Record<string, string>; joinKey?: string; joinKeys: Record<string, number>; cursor: { enabled: boolean; status: string };
-@@ -54,7 +59,7 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
+@@ -54,7 +66,7 @@ type Room = { version: 1; id: string; invite: string; watch: string; seed: numbe
    settled?: number; finishReason?: 'idle' | 'cancelled' };
  /** 局外结算回调：淘汰时逐席位提交，传完整参赛账号判定陪伴关系。 */
  export type RoomRecorder = { settle(input: MatchSettlementInput): ReturnType<AccountStore['settleMatch']> | void };
@@ -1127,7 +1137,7 @@ index 9d8e918..4a8156a 100644
  const secret = () => randomBytes(18).toString('hex');
  const fail = (message: string): never => { throw new Error(message); };
  export class RoomStore {
-@@ -62,7 +67,7 @@ export class RoomStore {
+@@ -62,11 +74,12 @@ export class RoomStore {
    private seen = new Map<string, number>();
    private listeners = new Set<() => void>();
    private telemetry: BalanceTelemetryStore;
@@ -1136,16 +1146,92 @@ index 9d8e918..4a8156a 100644
      mkdirSync(directory, { recursive: true });
      this.telemetry = new BalanceTelemetryStore(directory);
      for (const file of readdirSync(directory).filter(x => /^[a-f0-9]{12}\.json$/.test(x))) {
-@@ -126,6 +131,8 @@ export class RoomStore {
+       const room = JSON.parse(readFileSync(join(directory, file), 'utf8')) as Room;
++      if (room.platformCreate && file !== `${room.id}.json`) throw new Error('ROOM_ID_MISMATCH');
+       if (!room.updatedAt) { try { room.updatedAt = statSync(join(directory, file)).mtimeMs; } catch { room.updatedAt = 0; } }
+       if (room.version !== 1) throw new Error('ROOM_VERSION_UNSUPPORTED');
+       room.pack = parsePackId(room.pack);
+@@ -105,19 +118,68 @@ export class RoomStore {
+         }
+       }
+       for (const seat of room.seats) ensureRoomPieceRefs(seat);
+-      this.reapIdle(room);
++      if (!room.platformCreate) this.reapIdle(room);
+       this.rooms.set(room.id, room);
+       // 房间先写成、统计尚未落盘时重启，可用最近一轮战报补回；旧历史不冒充完整样本。
+       if (room.battle && room.battleAt && room.battleAt >= this.telemetry.startedAt) {
+         try { this.telemetry.recordBattle({ pack: room.pack, mode: room.mode!, battle: room.battle, botSeats: room.seats.map(seat => !!seat.bot), at: room.battleAt, source: room.telemetrySource ?? 'live' }); } catch { /* 战局仍可恢复 */ }
+       }
+     }
++    this.cleanup();
+   }
+   private load(id: string) {
+-    const room = this.rooms.get(id) ?? fail('房间不存在');
++    let room = this.rooms.get(id) ?? fail('房间不存在');
++    if (room.platformCreate) room = this.maintainPlatformRoom(room) ?? fail('房间不存在');
+     for (const seat of room.seats) this.restoreShopBan(seat, room);
+     this.reapIdle(room);
+-    if (room.seats.some(seat => seat.result?.payment === 'pending')) { this.recordResults(room); this.persist(room); }
++    if (!(room.platformCreate && room.finishReason === 'idle') && room.seats.some(seat => seat.result?.payment === 'pending')) { this.recordResults(room); this.persist(room); }
++    return room;
++  }
++  /** Only private room JSON is eligible; no account, telemetry or other-game storage. */
++  cleanup() {
++    for (const room of [...this.rooms.values()]) if (room.platformCreate) this.maintainPlatformRoom(room);
++  }
++  private maintainPlatformRoom(original: Room): Room | undefined {
++    const now = Date.now();
++    let room = original;
++    // Old files had a write clock, not an action/terminal clock. Persist a one-time
++    // full grace period on upgrade; even ancient/ambiguous saves cannot vanish on boot.
++    const history = [room.updatedAt, room.lastActionAt, room.terminalAt, room.platformTimes?.created, room.platformTimes?.started,
++      room.platformTimes?.finished, ...room.seats.map(seat => seat.activeAt)].filter(validTime);
++    const firstAction = Math.max(0, ...[room.platformTimes?.created, room.platformTimes?.started].filter(validTime));
++    const needsAction = !validTime(room.lastActionAt) || room.lastActionAt < firstAction;
++    const needsTerminal = room.phase === 'finished' && (needsAction || !validTime(room.terminalAt)
++      || room.terminalAt < Math.max(firstAction, validTime(room.lastActionAt) ? room.lastActionAt : 0));
++    if (needsAction || needsTerminal) {
++      room = structuredClone(room);
++      if (needsAction) room.lastActionAt = Math.max(now, ...history);
++      if (needsTerminal) room.terminalAt = Math.max(now, ...history, room.lastActionAt!);
++      this.persist(room);
++    }
++    if (room.phase === 'finished') {
++      // Unknown preservation values also fail safe. Remove disk first: on error the
++      // memory entry survives; ENOENT means a previous deletion already succeeded.
++      if (room.preserved !== undefined && room.preserved !== false) return room;
++      if (now - room.terminalAt! < PLATFORM_RETENTION_MS) return room;
++      // The wallet is a separate SQLite store: never discard the sole pending
++      // settlement receipt before it has been safely recorded there.
++      if (room.seats.some(seat => seat.result?.payment === 'pending')) return room;
++      try { unlinkSync(join(this.directory, `${room.id}.json`)); }
++      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
++      this.rooms.delete(room.id);
++      for (const key of this.seen.keys()) if (key.startsWith(`${room.id}:`)) this.seen.delete(key);
++      for (const notify of this.listeners) notify();
++      return undefined;
++    }
++    if (now - room.lastActionAt! < PLATFORM_IDLE_MS) return room;
++    // Clone before writing so failed persistence cannot leave a phantom terminal state.
++    room = structuredClone(room);
++    room.phase = 'finished'; room.winner = 'draw'; room.finishReason = 'idle';
++    room.terminalAt = now; room.revision++;
++    room.cursor = { enabled: false, status: '棋局结束' };
++    room.log.push('私人棋局闲置满 7 天，已归档为和局，不计战绩与收益。');
++    this.assignResults(room, true);
++    this.persist(room);
+     return room;
+   }
+   /** 掉线判负：闲置超过上限的房间直接结束（正在进行中的活跃房间不受影响）。 */
+@@ -126,6 +188,7 @@ export class RoomStore {
        if (this.recordFinish(room)) this.persist(room);
        return;
      }
-+    // Platform private seats survive closed browsers and long pauses, including cold restarts.
 +    if (room.platformCreate) return;
      if (Date.now() - (room.updatedAt ?? 0) < ROOM_IDLE_KILL_MS) return;
      room.phase = 'finished';
      room.finishReason = 'idle';
-@@ -160,7 +167,7 @@ export class RoomStore {
+@@ -160,7 +223,7 @@ export class RoomStore {
        const place = i + 1;
        seat.result = { place, participants: room.seats.length, round: room.round,
          outcome: room.finishReason === 'idle' ? (room.winner === 'draw' ? 'draw' : room.seats.indexOf(seat) === room.winner ? 'win' : 'loss') : placementOutcome(place, room.seats.length),
@@ -1154,10 +1240,11 @@ index 9d8e918..4a8156a 100644
        seat.ready = true;
      });
    }
-@@ -182,10 +189,18 @@ export class RoomStore {
+@@ -182,10 +245,19 @@ export class RoomStore {
  
    private persist(room: Room) {
      room.updatedAt = Date.now();
++    if (room.platformCreate && room.phase === 'finished') room.terminalAt ??= room.updatedAt;
 +    if (room.platformTimes && room.phase === 'finished' && !room.finishReason) room.platformTimes.finished ??= room.updatedAt;
      for (const seat of room.seats) ensureRoomPieceRefs(seat);
      const file = join(this.directory, `${room.id}.json`);
@@ -1175,7 +1262,7 @@ index 9d8e918..4a8156a 100644
      this.rooms.set(room.id, room);
      if (room.battle && room.battleAt && room.battleAt >= this.telemetry.startedAt) {
        try { this.telemetry.recordBattle({ pack: room.pack, mode: room.mode!, battle: room.battle, botSeats: room.seats.map(seat => !!seat.bot), at: room.battleAt, source: room.telemetrySource ?? 'live' }); }
-@@ -374,7 +389,7 @@ export class RoomStore {
+@@ -374,7 +446,7 @@ export class RoomStore {
        level: START_LEVEL, xp: 0, winStreak: 0, capacity: fieldCapacityForLevel(START_LEVEL),
        swordOffer: this.openingOffer(room, index, room.round),
        token: secret(), revision: 0, ready: false, shop: [], say: '',
@@ -1184,7 +1271,7 @@ index 9d8e918..4a8156a 100644
    }
    private newRoom(pack?: string, seats?: number, mode = 'standard'): Room {
      const packId = parsePackId(pack ?? process.env.CHESS_PACK);
-@@ -405,6 +420,99 @@ export class RoomStore {
+@@ -405,6 +477,102 @@ export class RoomStore {
      this.persist(room);
      return { roomId: room.id, token: room.seats[0]!.token, invitation: `${room.id}.${room.invite}`, watchToken: room.watch };
    }
@@ -1212,6 +1299,7 @@ index 9d8e918..4a8156a 100644
 +    const room = this.newRoom(packId, count, mode);
 +    room.platformCreate = { accountId: owner.accountId, requestId, signature };
 +    room.platformTimes = { created: Date.now() };
++    room.lastActionAt = room.platformTimes.created;
 +    room.seats.push(this.makeSeat(room, 0, owner.accountName, owner));
 +    for (const person of household) {
 +      const seat = this.makeSeat(room,room.seats.length,person.accountName,person);
@@ -1224,6 +1312,7 @@ index 9d8e918..4a8156a 100644
 +  }
 +  /** Only the platform asks for this caller's own rooms. Never returns a public directory. */
 +  platformRooms(accountId: string) {
++    this.cleanup();
 +    return [...this.rooms.values()].filter(room=>room.platformCreate && room.seats.some(seat=>seat.accountId===accountId))
 +      .sort((a,b)=>(b.updatedAt??0)-(a.updatedAt??0)).slice(0,40)
 +      .map(room=>({roomId:room.id,pack:room.pack,packName:packMeta(room.pack).name,mode:room.mode,
@@ -1277,6 +1366,7 @@ index 9d8e918..4a8156a 100644
 +    const index = room.seats.length;
 +    const seat = this.makeSeat(room, index, owner.accountName, owner);
 +    room.seats.push(seat);
++    room.lastActionAt = Date.now();
 +    room.revision++; room.log.push(`${seat.name} 已入座。`);
 +    this.persist(room);
 +    return { roomId: room.id, token: seat.token };
@@ -1284,7 +1374,7 @@ index 9d8e918..4a8156a 100644
    /** Matchmaking seats both people in one write. The server's bystanders fill the other slots. */
    createMatched(requestKey: string, people: SeatOwner[], pack?: string, seats?: number) {
      const existing = [...this.rooms.values()].find(room => room.matchKind === 'queue' && room.matchKey === requestKey);
-@@ -524,17 +632,27 @@ export class RoomStore {
+@@ -524,17 +692,29 @@ export class RoomStore {
      return { roomId: room.id, token: room.seats[1]!.token };
    }
    /** 单人开局：把剩余席位补成路人机并进入备战（房主不想等人时用）。 */
@@ -1299,8 +1389,10 @@ index 9d8e918..4a8156a 100644
      if (room.phase !== 'waiting') fail('已经开局了');
 +    if (room.platformCreate) {
 +      room.platformStart = platformRequestId;
-+      if (room.platformTimes) room.platformTimes.started = Date.now();
-+      room.seats[0]!.activeAt = Date.now();
++      const startedAt = Date.now();
++      room.lastActionAt = startedAt;
++      if (room.platformTimes) room.platformTimes.started = startedAt;
++      room.seats[0]!.activeAt = startedAt;
 +    }
 +    const missing = room.seatCount - room.seats.length;
      while (room.seats.length < room.seatCount) {
@@ -1314,7 +1406,7 @@ index 9d8e918..4a8156a 100644
      this.persist(room);
      return this.view(credentials);
    }
-@@ -550,7 +668,7 @@ export class RoomStore {
+@@ -550,7 +730,7 @@ export class RoomStore {
        mode: room.mode ?? 'standard', maxHp: matchRules(room.mode).startHp, pack: room.pack, packName: packMeta(room.pack).name, seatCount: room.seatCount, opponentIndex: venue?.opponent, venue,
        wake:{requestedAt:room.wake?.requestedAt,receivedAt:room.wake?.receivedAt,status:room.phase==='finished'?'棋局结束':room.seats[1]?.ready?'机已就绪':room.wake?.round===room.round?(room.wake.receivedAt?'客户端已收到，等待机落子':'催促已登记，等待客户端接收'):'等待轮次事件'},
        seats: room.seats.map((seat, i) => ({ id: seat.id, name: seat.name, hp: seat.hp, board: withHexes(seat.board, seat.hexes), bench: withHexes(seat.bench ?? [], seat.hexes),
@@ -1323,15 +1415,18 @@ index 9d8e918..4a8156a 100644
        ...(index === undefined ? {} : { seatIndex: index, self: this.privateSeat(room.seats[index]!) }),
        battle: battle ? { ...battle, output: { ...(fight?.output ?? battle.output), seed: 0 } } : undefined, winner: room.winner, log: room.log.slice(-15), cursor: room.cursor,
        danmaku: room.danmaku ?? [] });
-@@ -698,6 +816,7 @@ export class RoomStore {
+@@ -698,6 +878,10 @@ export class RoomStore {
      }
      if (original.phase === 'finished' && input.action.kind !== 'danmaku') fail('棋局已经结束');
      const room = structuredClone(original); const seat = room.seats[index]!;
-+    if (input.action.kind !== 'danmaku') seat.activeAt = Date.now();
++    if (input.action.kind !== 'danmaku') {
++      seat.activeAt = Date.now();
++      if (room.platformCreate) room.lastActionAt = seat.activeAt;
++    }
      if (input.action.kind === 'danmaku') {
        this.postDanmaku(room, index, input.action);
        room.revision++; room.receipts[key] = signature;
-@@ -1267,12 +1386,12 @@ export class RoomStore {
+@@ -1267,12 +1451,15 @@ export class RoomStore {
      if (this.livingSeats(room).length <= rules.finishWhenLiving && this.maybeFinish(room)) return;
      if (this.livingSeats(room).every(seat => seat.bot && seat.ready)) this.battle(room);
    }
@@ -1341,9 +1436,13 @@ index 9d8e918..4a8156a 100644
 +    if (signal?.aborted || this.view(credentials).revision > after) return this.view(credentials);
      await new Promise<void>(resolve => {
 -      const finish = () => { clearTimeout(timer); this.listeners.delete(check); resolve(); };
-+      const finish = () => { clearTimeout(timer); this.listeners.delete(check); signal?.removeEventListener('abort', finish); resolve(); };
-       const check = () => { if (this.load(credentials.roomId).revision > after) finish(); };
+-      const check = () => { if (this.load(credentials.roomId).revision > after) finish(); };
 -      const timer = setTimeout(finish, Math.min(25_000, Math.max(0, ms))); this.listeners.add(check); check();
++      const finish = () => { clearTimeout(timer); this.listeners.delete(check); signal?.removeEventListener('abort', finish); resolve(); };
++      const check = () => {
++        const room = this.rooms.get(credentials.roomId);
++        if (!room || (room.platformCreate ? room.revision : this.load(credentials.roomId).revision) > after) finish();
++      };
 +      const timer = setTimeout(finish, Math.min(25_000, Math.max(0, ms))); this.listeners.add(check); signal?.addEventListener('abort', finish, {once:true}); check();
      });
      return this.view(credentials);
@@ -1887,10 +1986,10 @@ index 0000000..1b5efa1
 +SOFTWARE.
 diff --git a/scripts/cedartoy-server.ts b/scripts/cedartoy-server.ts
 new file mode 100644
-index 0000000..f594be4
+index 0000000..0f8a25e
 --- /dev/null
 +++ b/scripts/cedartoy-server.ts
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,124 @@
 +/** Cedar-only satellite. Deliberately does not import the upstream HTTP/account/Cursor server. */
 +import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 +import { isAbsolute } from 'node:path';
@@ -1989,6 +2088,18 @@ index 0000000..f594be4
 +  });
 +  server.requestTimeout = 10000;
 +  server.headersTimeout = 10000;
++  // One timer per satellite listener, sharing its single RoomStore. No session ping
++  // writes and no request required for idle archival or terminal retention cleanup.
++  let maintenance: ReturnType<typeof setInterval> | undefined;
++  server.on('listening', () => {
++    if (maintenance) return;
++    maintenance = setInterval(() => {
++      try { store.cleanup(); }
++      catch { console.error('AutoChess room maintenance failed; retrying next interval'); }
++    }, 20 * 60 * 1000);
++    maintenance.unref();
++  });
++  server.on('close', () => { clearInterval(maintenance); maintenance = undefined; });
 +  return server;
 +}
 +
@@ -2840,4 +2951,310 @@ index 0000000..acb4f72
 +    env: { ...process.env, IDLE_DIRECTORY: directory, IDLE_CASES: JSON.stringify(cases) },
 +  });
 +  assert.equal(child.status, 0, child.stderr || child.stdout);
++});
+diff --git a/test/cedartoy-lifecycle.test.ts b/test/cedartoy-lifecycle.test.ts
+new file mode 100644
+index 0000000..83f5558
+--- /dev/null
++++ b/test/cedartoy-lifecycle.test.ts
+@@ -0,0 +1,300 @@
++import assert from 'node:assert/strict';
++import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { spawnSync } from 'node:child_process';
++import { syncBuiltinESMExports } from 'node:module';
++import { test, type TestContext } from 'node:test';
++import { RoomStore, type RoomRecorder } from '../lib/autochess/room-store';
++import { cedarServer } from '../scripts/cedartoy-server';
++import { CedarEconomy } from '../lib/accounts/cedartoy-economy';
++import { platformIdentity } from '../lib/autochess/platform-adapter';
++import type { RoomCredentials, RoomMutation } from '../lib/autochess/room-types';
++
++const DAY = 24 * 60 * 60 * 1000, WEEK = 7 * DAY, BASE = Date.UTC(2026, 9, 1);
++const host = { accountId: 'lifecycle:host', accountName: '临时棋手', actorType: 'human' as const };
++const peer = { accountId: 'lifecycle:peer', accountName: '临时棋友', actorType: 'human' as const };
++function fixture(t: TestContext, recorder?: RoomRecorder) {
++  const directory = mkdtempSync(join(tmpdir(), 'cedar-lifecycle-'));
++  t.after(() => rmSync(directory, { recursive: true, force: true }));
++  let clock = BASE;
++  t.mock.method(Date, 'now', () => clock);
++  const store = new RoomStore(directory, recorder);
++  const file = (id: string) => join(directory, id + '.json');
++  const raw = (id: string) => JSON.parse(readFileSync(file(id), 'utf8'));
++  const make = (key: string, pack = 'ai', mode = 'duel') => {
++    const made = store.createForPlatform(host, key, pack, mode, mode === 'duel' ? 2 : 8);
++    return { ...made, ...store.accountSeat(made.roomId, host.accountId)! };
++  };
++  return { directory, store, file, raw, make, at: (time: number) => { clock = time; } };
++}
++function act(store: RoomStore, credentials: RoomCredentials, action: RoomMutation['action'], requestId: string) {
++  const view = store.view(credentials);
++  return store.mutate({ ...credentials, round: view.round, revision: view.self!.revision, action, requestId });
++}
++function child(directory: string, time: number, code: string) {
++  const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `
++    import assert from 'node:assert/strict';
++    import {readFileSync,existsSync} from 'node:fs';
++    import {join} from 'node:path';
++    import {RoomStore} from './lib/autochess/room-store.ts';
++    Date.now=()=>${time};
++    const directory=process.env.LIFECYCLE_DIRECTORY;
++    const store=new RoomStore(directory);
++    ${code}
++  `], { cwd: new URL('..', import.meta.url), env: { ...process.env, LIFECYCLE_DIRECTORY: directory }, encoding: 'utf8', timeout: 30_000 });
++  assert.equal(result.status, 0, result.stderr || result.stdout);
++}
++
++test('both packs and modes: 6d23h59 survives; seven idle days draw; seven more days deletes', t => {
++  let settlements = 0;
++  const f = fixture(t, { settle() { settlements++; } });
++  const rooms = [];
++  for (const pack of ['ai', 'jianghu']) for (const mode of ['duel', 'standard']) for (const phase of ['waiting', 'prepare']) {
++    const room = f.make(`${pack}-${mode}-${phase}`, pack, mode);
++    if (phase === 'prepare') f.store.start(room, 'start-' + room.roomId);
++    rooms.push({ ...room, phase, revision: f.store.view(room).revision, hp: f.raw(room.roomId).seats.map((seat: any) => seat.hp) });
++  }
++  f.at(BASE + WEEK - 60_000);
++  for (const room of rooms) assert.equal(f.store.view(room).phase, room.phase);
++  f.at(BASE + WEEK);
++  assert(f.store.platformRooms(host.accountId).every(room => room.phase === 'finished'));
++  for (const room of rooms) {
++    const raw = f.raw(room.roomId), view = f.store.view(room);
++    assert.equal(view.winner, 'draw'); assert.equal(view.revision, room.revision + 1);
++    assert.equal(raw.finishReason, 'idle'); assert.equal(raw.terminalAt, BASE + WEEK);
++    assert.equal(raw.lastActionAt, BASE); assert.equal(raw.platformTimes.finished, undefined);
++    assert.equal(raw.settled, undefined); assert.deepEqual(raw.seats.map((seat: any) => seat.hp), room.hp);
++    assert(raw.seats.every((seat: any) => seat.result.outcome === 'draw' && !seat.result.reward && seat.result.payment !== 'pending'));
++  }
++  assert.equal(settlements, 0); assert.equal(f.store.platformStats(0, BASE + 2 * WEEK).finished, 0);
++  f.at(BASE + 2 * WEEK - 1); f.store.cleanup();
++  for (const room of rooms) assert(existsSync(f.file(room.roomId)));
++  f.at(BASE + 2 * WEEK); f.store.cleanup(); f.store.cleanup();
++  assert.equal(f.store.platformRooms(host.accountId).length, 0);
++  for (const room of rooms) { assert(!existsSync(f.file(room.roomId))); assert.throws(() => f.store.view(room), /不存在/); }
++  assert.equal(settlements, 0);
++  child(f.directory, BASE + 2 * WEEK, `assert.equal(store.platformRooms('${host.accountId}').length,0);`);
++});
++
++test('start, effective join and actual move reset idle; reads, retries, presence and chat do not', t => {
++  const f = fixture(t), room = f.make('activity-create');
++  f.at(BASE + 6 * DAY); f.store.joinForPlatform(room.invitation, peer);
++  assert.equal(f.raw(room.roomId).lastActionAt, BASE + 6 * DAY);
++  f.at(BASE + 7 * DAY); f.store.joinForPlatform(room.invitation, peer);
++  assert.equal(f.raw(room.roomId).lastActionAt, BASE + 6 * DAY);
++  f.store.start(room, 'activity-start');
++  assert.equal(f.raw(room.roomId).lastActionAt, BASE + 7 * DAY);
++  const moveAt = BASE + 14 * DAY - 60_000; // Exactly 6d23h59 after start still allows a real move.
++  f.at(moveAt);
++  const pieces = f.store.view(room).self!.bench!; assert(pieces.length > 0);
++  const piece = pieces[0]!;
++  const move = { kind: 'move' as const, piece: piece.id, row: 0, col: 0 };
++  const beforeMove = f.store.view(room);
++  const input = { ...room, round: beforeMove.round, revision: beforeMove.self!.revision, action: move, requestId: 'actual-board-move' };
++  f.store.mutate(input);
++  assert.equal(f.raw(room.roomId).lastActionAt, moveAt);
++  f.at(BASE + 14 * DAY); f.store.mutate(input); f.store.start(room, 'activity-start');
++  assert.throws(() => act(f.store, room, { kind: 'move', piece: 'missing', row: 0, col: 0 }, 'invalid-board-move'));
++  const saved = readFileSync(f.file(room.roomId), 'utf8');
++  for (let i = 0; i < 10; i++) { f.store.view(room); f.store.accountSeat(room.roomId, host.accountId); f.store.platformRooms(host.accountId); f.store.cleanup(); }
++  assert.equal(readFileSync(f.file(room.roomId), 'utf8'), saved);
++  act(f.store, room, { kind: 'danmaku', text: '只是聊天' }, 'activity-chat');
++  assert.equal(f.raw(room.roomId).updatedAt, BASE + 14 * DAY);
++  assert.equal(f.raw(room.roomId).lastActionAt, moveAt);
++  f.at(moveAt + WEEK - 1); assert.equal(f.store.view(room).phase, 'prepare');
++  f.at(moveAt + WEEK); assert.equal(f.store.view(room).phase, 'finished');
++});
++
++test('cancellation, resignation and normal completion retain from actual terminal time', t => {
++  const f = fixture(t);
++  const cancel = f.make('manual-cancel'), resign = f.make('manual-resign'), normal = f.make('manual-normal');
++  f.store.start(resign, 'resign-start'); f.store.start(normal, 'normal-start');
++  f.at(BASE + 2 * DAY);
++  act(f.store, cancel, { kind: 'cancel_room' }, 'cancel-now'); act(f.store, resign, { kind: 'resign' }, 'resign-now');
++  // Near-complete snapshot avoids a random long match; actual ready/battle/maybeFinish still runs.
++  const snapshot = f.raw(normal.roomId); snapshot.round = 1000;
++  writeFileSync(f.file(normal.roomId), JSON.stringify(snapshot));
++  const restored = new RoomStore(f.directory);
++  let preparation = restored.view(normal).self!;
++  if (preparation.swordOffer) act(restored, normal, { kind: 'pick_sword', item: preparation.swordOffer.choices[0]! }, 'normal-pick-sword');
++  preparation = restored.view(normal).self!;
++  if (preparation.hexOffer) act(restored, normal, { kind: 'pick_hex', hex: preparation.hexOffer.choices[0]!.id }, 'normal-pick-hex');
++  act(restored, normal, { kind: 'move', piece: preparation.bench![0]!.id, row: 0, col: 0 }, 'normal-board-move');
++  assert.equal(act(restored, normal, { kind: 'ready' }, 'normal-ready').phase, 'finished');
++  assert.equal(f.raw(normal.roomId).finishReason, undefined);
++  for (const room of [cancel, resign, normal]) assert.equal(f.raw(room.roomId).terminalAt, BASE + 2 * DAY);
++  f.at(BASE + 8 * DAY);
++  for (const room of [cancel, resign, normal]) {
++    act(restored, room, { kind: 'danmaku', text: '赛后聊天' }, 'terminal-chat');
++    assert.equal(f.raw(room.roomId).terminalAt, BASE + 2 * DAY);
++  }
++  f.at(BASE + 9 * DAY - 1); restored.cleanup();
++  for (const room of [cancel, resign, normal]) assert(existsSync(f.file(room.roomId)));
++  f.at(BASE + 9 * DAY); restored.cleanup();
++  for (const room of [cancel, resign, normal]) assert(!existsSync(f.file(room.roomId)));
++});
++
++test('legacy and ambiguous timestamps get persisted grace; independent cold boots never reset it', t => {
++  const f = fixture(t);
++  const waiting = f.make('legacy-waiting'), finished = f.make('legacy-finished'), ambiguous = f.make('legacy-ambiguous');
++  act(f.store, finished, { kind: 'cancel_room' }, 'legacy-cancel'); act(f.store, ambiguous, { kind: 'cancel_room' }, 'ambiguous-cancel');
++  for (const room of [waiting, finished, ambiguous]) {
++    const raw = f.raw(room.roomId); delete raw.lastActionAt; delete raw.terminalAt;
++    raw.updatedAt = BASE; raw.platformTimes.finished = room === waiting ? undefined : BASE;
++    if (room === ambiguous) { raw.updatedAt = 'invalid'; raw.terminalAt = -1; raw.platformTimes.finished = null; }
++    writeFileSync(f.file(room.roomId), JSON.stringify(raw));
++  }
++  const upgrade = BASE + 100 * DAY;
++  child(f.directory, upgrade, `assert.equal(store.platformRooms('${host.accountId}').length,3);`);
++  for (const room of [waiting, finished, ambiguous]) {
++    assert.equal(f.raw(room.roomId).lastActionAt, upgrade);
++    if (room !== waiting) assert.equal(f.raw(room.roomId).terminalAt, upgrade);
++  }
++  child(f.directory, upgrade + WEEK - 1, `assert.equal(store.platformRooms('${host.accountId}').length,3);`);
++  assert.equal(f.raw(finished.roomId).terminalAt, upgrade);
++  child(f.directory, upgrade + WEEK, `
++    assert.equal(store.platformRooms('${host.accountId}').length,1);
++    const room=JSON.parse(readFileSync(join(directory,'${waiting.roomId}.json'),'utf8'));
++    assert.equal(room.finishReason,'idle');assert.equal(room.terminalAt,${upgrade + WEEK});
++  `);
++  child(f.directory, upgrade + 2 * WEEK, `assert.equal(store.platformRooms('${host.accountId}').length,0);`);
++});
++
++test('new clocks persist across separate processes for start, archive and deletion', t => {
++  const f = fixture(t), room = f.make('restart-create');
++  f.at(BASE + 3 * DAY); f.store.start(room, 'restart-start');
++  child(f.directory, BASE + 10 * DAY - 1, `
++    const room=JSON.parse(readFileSync(join(directory,'${room.roomId}.json'),'utf8'));
++    assert.equal(room.phase,'prepare');assert.equal(room.lastActionAt,${BASE + 3 * DAY});
++  `);
++  child(f.directory, BASE + 10 * DAY, `
++    const room=JSON.parse(readFileSync(join(directory,'${room.roomId}.json'),'utf8'));
++    assert.equal(room.phase,'finished');assert.equal(room.terminalAt,${BASE + 10 * DAY});
++  `);
++  child(f.directory, BASE + 17 * DAY - 1, `assert(existsSync(join(directory,'${room.roomId}.json')));`);
++  child(f.directory, BASE + 17 * DAY, `assert(!existsSync(join(directory,'${room.roomId}.json')));`);
++});
++
++test('upstream still ends at one hour, travel still loses, non-platform JSON never expires', t => {
++  let travelLoss = false;
++  const f = fixture(t, { settle(input) { travelLoss ||= !!input.travelIdleLoss; } });
++  const ordinary = f.store.create('原版', 'ai', 2, host, 'duel');
++  const travel = f.store.create('远游', 'ai', 2, host, 'duel', 'travel'); f.store.start(travel);
++  const privateRoom = f.make('private-hour');
++  f.at(BASE + 60 * 60_000 - 1); assert.equal(f.store.view(ordinary).phase, 'waiting');
++  f.at(BASE + 60 * 60_000);
++  assert.equal(f.store.view(ordinary).winner, 'draw'); assert.equal(f.store.view(travel).winner, 1);
++  assert(travelLoss); assert.equal(f.store.view(privateRoom).phase, 'waiting');
++  f.at(BASE + 30 * DAY); f.store.cleanup();
++  assert(existsSync(f.file(ordinary.roomId))); assert(existsSync(f.file(travel.roomId)));
++});
++
++test('failed archive/delete preserve disk and memory; retry and missing-file deletion are idempotent', t => {
++  const f = fixture(t), room = f.make('failure-create');
++  const before = readFileSync(f.file(room.roomId), 'utf8'); f.at(BASE + WEEK);
++  const rename = t.mock.method(fs, 'renameSync', () => { throw Object.assign(Error('write failure'), { code: 'EIO' }); }); syncBuiltinESMExports();
++  try {
++    assert.throws(() => f.store.cleanup(), /write failure/); assert.equal(readFileSync(f.file(room.roomId), 'utf8'), before);
++    f.at(BASE + WEEK - 1); assert.equal(f.store.view(room).phase, 'waiting');
++    assert(!readdirSync(f.directory).some(name => name.endsWith('.pending')));
++  } finally { rename.mock.restore(); syncBuiltinESMExports(); }
++  f.at(BASE + WEEK); f.store.cleanup();
++  const terminal = readFileSync(f.file(room.roomId), 'utf8'); f.at(BASE + 2 * WEEK);
++  const unlink = t.mock.method(fs, 'unlinkSync', () => { throw Object.assign(Error('delete failure'), { code: 'EACCES' }); }); syncBuiltinESMExports();
++  try {
++    assert.throws(() => f.store.cleanup(), /delete failure/); assert.equal(readFileSync(f.file(room.roomId), 'utf8'), terminal);
++    f.at(BASE + 2 * WEEK - 1); assert.equal(f.store.view(room).phase, 'finished');
++  } finally { unlink.mock.restore(); syncBuiltinESMExports(); }
++  fs.unlinkSync(f.file(room.roomId)); f.at(BASE + 2 * WEEK); f.store.cleanup(); f.store.cleanup();
++  assert.throws(() => f.store.view(room), /不存在/);
++});
++
++test('preserved and future/contradictory clocks are retained conservatively', t => {
++  const f = fixture(t);
++  const preserved = f.make('preserved-create'), future = f.make('future-create'), contradictory = f.make('contradictory-create');
++  for (const room of [preserved, future, contradictory]) act(f.store, room, { kind: 'cancel_room' }, 'preserve-cancel');
++  const a = f.raw(preserved.roomId); a.preserved = true; writeFileSync(f.file(preserved.roomId), JSON.stringify(a));
++  const b = f.raw(future.roomId); delete b.lastActionAt; b.terminalAt = BASE + 100 * DAY; writeFileSync(f.file(future.roomId), JSON.stringify(b));
++  const c = f.raw(contradictory.roomId); c.terminalAt = BASE - DAY; writeFileSync(f.file(contradictory.roomId), JSON.stringify(c));
++  f.at(BASE + 10 * DAY); const restored = new RoomStore(f.directory); restored.cleanup();
++  assert.equal(restored.platformRooms(host.accountId).length, 3); assert.equal(f.raw(contradictory.roomId).terminalAt, BASE + 10 * DAY);
++  assert.equal(f.raw(future.roomId).terminalAt, BASE + 100 * DAY);
++});
++
++test('maintenance wakes long polls on archival and cleanly rejects polls for deleted rooms', async t => {
++  const f = fixture(t), room = f.make('poll-create');
++  const pending = f.store.wait(room, f.store.view(room).revision);
++  f.at(BASE + WEEK); f.store.cleanup();
++  assert.equal((await pending).phase, 'finished');
++  const deleted = f.store.wait(room, f.store.view(room).revision);
++  f.at(BASE + 2 * WEEK); f.store.cleanup();
++  await assert.rejects(deleted, /不存在/);
++});
++
++test('satellite listening hook mounts 20-minute unref maintenance; no requests; close clears it', t => {
++  const f = fixture(t), room = f.make('timer-create');
++  let callback: (() => void) | undefined, timer: NodeJS.Timeout | undefined;
++  const realSetInterval = globalThis.setInterval;
++  t.mock.method(globalThis, 'setInterval', (fn: () => void, delay: number) => {
++    assert.equal(delay, 20 * 60_000); callback = fn; timer = realSetInterval(() => {}, delay); return timer;
++  });
++  const server = cedarServer(f.store, 'a'.repeat(64));
++  t.after(() => { if (timer) clearInterval(timer); server.close(); });
++  // Dispatch Node's lifecycle events without a socket (sandbox may deny loopback).
++  // Capture the actual scheduled callback; do not replace RoomStore.cleanup.
++  server.emit('listening');
++  assert(callback); assert.equal(timer!.hasRef(), false);
++  f.at(BASE + WEEK); callback(); assert.equal(f.raw(room.roomId).phase, 'finished');
++  f.at(BASE + 2 * WEEK); callback(); assert(!existsSync(f.file(room.roomId)));
++  const clear = t.mock.method(globalThis, 'clearInterval');
++  server.emit('close');
++  assert(clear.mock.calls.some(call => call.arguments[0] === timer));
++});
++
++test('expired terminal rooms with unrecorded wallet settlements remain until payment is resolved', t => {
++  const f = fixture(t), room = f.make('outstanding-payment');
++  act(f.store, room, { kind: 'cancel_room' }, 'cancel-for-payment');
++  const snapshot = f.raw(room.roomId);
++  snapshot.seats[0].result = { place: 1, participants: 1, round: 1, outcome: 'draw', payment: 'pending' };
++  writeFileSync(f.file(room.roomId), JSON.stringify(snapshot));
++  f.at(BASE + WEEK);
++  const interrupted = new RoomStore(f.directory, { settle() { throw Error('wallet temporarily unavailable'); } });
++  interrupted.cleanup();
++  assert(existsSync(f.file(room.roomId)), 'pending economy settlement must prevent automatic deletion');
++  assert.equal(f.raw(room.roomId).seats[0].result.payment, 'pending');
++  // Once a wallet transaction is known to have been recorded, normal retention applies.
++  const repaired = f.raw(room.roomId);
++  repaired.seats[0].result.payment = 'paid';
++  writeFileSync(f.file(room.roomId), JSON.stringify(repaired));
++  const ready = new RoomStore(f.directory);
++  ready.cleanup();
++  assert(!existsSync(f.file(room.roomId)));
++});
++
++test('archive/delete never writes real wallet SQLite, ledger or unrelated files', t => {
++  const f = fixture(t), economy = new CedarEconomy(join(f.directory, 'economy'));
++  const identity = platformIdentity({ playerId: '951', actorType: 'human' });
++  economy.sync(identity, [{ playerId: '951', name: '临时钱包', actorType: 'human' }]);
++  const store = new RoomStore(f.directory, economy);
++  const paid = store.createForPlatform(identity.owner, 'wallet-paid-create', 'ai', 'duel');
++  const paidSeat = store.accountSeat(paid.roomId, identity.owner.accountId)!;
++  store.start(paidSeat, 'wallet-paid-start');
++  act(store, paidSeat, { kind: 'resign' }, 'wallet-paid-resign');
++  assert.equal(f.raw(paid.roomId).seats[0].result.payment, 'paid');
++  assert(f.raw(paid.roomId).settled);
++  economy.close();
++  const snapshot = (path: string): Record<string, Buffer> => Object.fromEntries(readdirSync(path, { withFileTypes: true }).flatMap(entry => {
++    const file = join(path, entry.name); return entry.isDirectory() ? Object.entries(snapshot(file)) : [[file, readFileSync(file)]];
++  }));
++  writeFileSync(join(f.directory, 'other-game.json'), 'do not touch');
++  const protectedFiles = snapshot(join(f.directory, 'economy'));
++  assert(Object.keys(protectedFiles).some(file => file.endsWith('accounts.db')));
++  let settlementCalls = 0;
++  t.mock.method(economy, 'settle', () => { settlementCalls++; throw Error('Unexpected settlement'); });
++  const made = store.createForPlatform(host, 'wallet-create');
++  f.at(BASE + WEEK); store.cleanup(); f.at(BASE + 2 * WEEK); store.cleanup();
++  assert(!existsSync(f.file(made.roomId))); assert(!existsSync(f.file(paid.roomId))); assert.equal(settlementCalls, 0);
++  assert.deepEqual(snapshot(join(f.directory, 'economy')), protectedFiles);
++  assert.equal(readFileSync(join(f.directory, 'other-game.json'), 'utf8'), 'do not touch');
 +});
