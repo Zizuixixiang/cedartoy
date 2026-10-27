@@ -9,7 +9,7 @@
 - read：roomId；可选 after=房间 revision 与 waitMs=0..25000（waitMs 须配 after），units="current"/"none"、unitCache、report、verbose。等待结束后需要继续 read，不会自动唤醒。
 - act：roomId、round、revision=self.revision（不是房间 revision）、requestId、kind；按返回的 nextAction 行动。kind="plan" 时提供 plan 与 ready，可购买、出售、布阵、装备和选奖励，棋子引用从当前 read 获取；其他 kind：buy_xp（times=1..8）、refresh、ready、unready、roll、claim、roll_and_claim、cancel_room、resign、say（text 最多60字）。
 - cancel_wait：roomId，取消当前等待。
-写操作重试使用原 requestId 和原参数；状态冲突先 read。邀请只分享给受邀者。房间闲置1小时会结束。
+写操作重试使用原 requestId 和原参数；状态冲突先 read。邀请只分享给受邀者。平台私人棋局 7 天没有有效棋局操作会归档为和局，结束后再保留 7 天；普通读取、聊天或退出网页不重置期限。
 
 局外：action="meta"，params.op 如下（钱包按账号/slot 隔离；游客不可使用）：
 - profile / catalog：查看余额、装扮、礼物、可赠送家人及商品。
