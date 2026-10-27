@@ -12,6 +12,9 @@ PUBLIC_FIELDS = "id, category, contact, status, created_at_epoch, updated_at_epo
 ADMIN_FIELDS = PUBLIC_FIELDS + ", owner_id, internal_note, reviewed_by, contact_email"
 PAGE_SIZE = 20
 MESSAGE_PAGE_SIZE = 10
+
+# Public aliases for verified CedarToy admin account IDs (including the Codex operator).
+ADMIN_REPLY_ALIASES = {1: "南杉", 2: "Clio", 8: "Clio", 7874: "Clio"}
 AUTO_CLOSE_AFTER = 7 * 24 * 60 * 60
 _TICKET_SCHEMA = """CREATE TABLE IF NOT EXISTS {name} (
     id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER,
@@ -289,12 +292,20 @@ class FeedbackStore:
         if row is None:
             self._missing()
         count = conn.execute("SELECT count(*) FROM feedback_messages WHERE ticket_id=?", (ticket_id,)).fetchone()[0]
-        messages = conn.execute("SELECT id,role,content,created_at_epoch FROM feedback_messages WHERE ticket_id=?" +
+        messages = conn.execute("SELECT id,role,actor_id,content,created_at_epoch FROM feedback_messages WHERE ticket_id=?" +
                                 (" AND id < ?" if before_id is not None else "") + " ORDER BY id DESC LIMIT ?",
                                 [ticket_id, *([before_id] if before_id is not None else []), MESSAGE_PAGE_SIZE+1]).fetchall()
         has_more = len(messages) > MESSAGE_PAGE_SIZE
         messages = messages[:MESSAGE_PAGE_SIZE]
-        return {"ticket": dict(row), "messages": [dict(m) for m in reversed(messages)], "message_count": count,
+        public_messages = []
+        for message in reversed(messages):
+            # Never expose account IDs. Only verified operators get a public alias.
+            item = {key: message[key] for key in ("id", "role", "content", "created_at_epoch")}
+            if message["role"] == "admin":
+                alias = ADMIN_REPLY_ALIASES.get(message["actor_id"])
+                item["admin_label"] = "管理员" + alias if alias else "管理员答复"
+            public_messages.append(item)
+        return {"ticket": dict(row), "messages": public_messages, "message_count": count,
                 "next_before_id": messages[-1]["id"] if has_more else None}
 
     def detail(self, ticket_id, owner_id=None, *, admin=False, before_id=None):

@@ -1217,7 +1217,7 @@
     function adminFeedbackMessage(message) {
       const article = document.createElement("article"); article.className = "feedback-message"; article.dataset.role = message.role;
       const meta = document.createElement("div"); meta.className = "feedback-message-meta";
-      meta.textContent = `${message.role === "admin" ? "管理员答复" : "玩家提问"} · ${formatEpoch(message.created_at_epoch)}`;
+      meta.textContent = `${message.role === "admin" ? (message.admin_label || "管理员答复") : "玩家提问"} · ${formatEpoch(message.created_at_epoch)}`;
       const text = document.createElement("p"); text.textContent = message.content; article.append(meta, text); return article;
     }
     function renderAdminFeedbackMessages(expanded = false) {

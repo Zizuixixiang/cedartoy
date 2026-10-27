@@ -52,6 +52,24 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(args.kwargs["extra_headers"]["Cache-Control"], "no-store")
         return args.kwargs.get("status", 200), args.args[0]
 
+    def test_reply_aliases_for_admin_and_player(self):
+        ticket = self.submit(self.human_id)
+        tid = ticket["ticket_id"]
+        other = self._add_user("south_admin")
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET is_admin=1 WHERE id=?", (other,))
+        with patch.dict(feedback_tickets.ADMIN_REPLY_ALIASES, {self.admin_id: "Clio", other: "南杉"}, clear=True):
+            self.call("admin_feedback_review", ticket_id=tid, reply="first", confirm=True)
+            self.call("admin_feedback_review", token=self._token_for(other), ticket_id=tid, reply="second", confirm=True)
+            for data in (self.store.detail(tid, self.human_id), self.store.detail(tid, admin=True),
+                         self.http("detail", {"ticket_id": tid}, self.human_token)[1],
+                         self.http("detail", {"ticket_id": tid}, self.admin_token, admin=True)[1],
+                         self.call("feedback_detail", token=self.human_token, ticket_id=tid),
+                         self.call("admin_feedback_detail", ticket_id=tid)):
+                messages = data["messages"]
+                self.assertEqual([m.get("admin_label") for m in messages], [None, "管理员Clio", "管理员南杉"])
+                self.assertTrue(all("actor_id" not in m for m in messages))
+
     def test_listing_status_priority_and_recent_update_order(self):
         expected = {status: [] for status in ("pending", "processing", "closed")}
         with self._connect() as conn:
