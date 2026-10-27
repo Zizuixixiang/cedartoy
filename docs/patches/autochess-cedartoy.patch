@@ -910,10 +910,10 @@ index 0000000..6be6fa0
 +<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
-index 0000000..3208c87
+index 0000000..63761c9
 --- /dev/null
 +++ b/cedartoy/main.tsx
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,81 @@
 +import '../app/globals.css';
 +import React,{useEffect,useRef,useState} from 'react';
 +import {createRoot} from 'react-dom/client';
@@ -970,25 +970,24 @@ index 0000000..3208c87
 +  <LobbyHeader name="弈间" tabs={tabs} tab={tab} onTab={id=>navigate(id as Tab)} wallet={profile?.coins}/>
 +  {error?<p role="alert" className="room-error">{error} <button disabled={busy} onClick={()=>void refresh()}>重新连接</button></p>:null}
 +  {!signedIn?<p className="lobby-notice">请先登录，再回到棋室入座。<a href="/">前往登录</a></p>:!config&&!error?<p className="lobby-hint" role="status">正在翻开棋室…</p>:null}
-+  {ai?<p className="lobby-notice" role="status">正在查看 {config?.machines.find(m=>m.id===ai)?.name||'自家小机'} · 存档槽 {slot}。钱包只读，购买、佩戴、领取与赠礼由小机自行操作。</p>:slot!==1?<p className="lobby-hint">存档槽 {slot} · 可在「我的」切换</p>:null}
++  {ai?<p className="lobby-notice" role="status">正在查看 {config?.machines.find(m=>m.id===ai)?.name||'自家小机'} 的棋局（只读）</p>:null}
 +  {tab==='start'?<section className="lobby-panel chamber-start">
 +   {['tl','tr','bl','br'].map(c=><div key={c} className={`panel-corner-fleuron ${c}`} aria-hidden="true">❖</div>)}
 +   <h2>天机开弈</h2>
 +   {!ai?<>
-+    <p className="lobby-hint">选定一套古籍棋谱以开局。一人可补齐 NPC，也可邀好友与自家小机同席。</p>
++    <p className="lobby-hint">选定古籍棋谱开局，邀好友、小机同席；空位可由路人机补齐。</p>
 +    <LobbyPackCards packs={config?.packs??PACK_SUMMARIES} selectedPack={pack} onPack={setPack} mode={mode} onMode={setMode} modes={modes} onRetry={()=>void refresh()}/>
 +    <div className="lobby-row"><button className="lobby-primary" disabled={busy||!config||selected.length>=(mode==='duel'?2:seats)} onClick={create}>✦ {modePack(mode).createLabel} ✦</button></div>
-+    <p className="lobby-hint">入座后点「补路人机，直接开局」即可单人游玩；开局前也可复制密函邀好友。</p>
 +    {config?<details className="lobby-machine-legacy cedar-table-settings"><summary>同席设置 · {mode==='duel'?2:seats} 席{selected.length?` · 带上 ${selected.length} 只小机`:''}</summary>
 +     {mode==='standard'?<div className="lobby-row"><label>总席位 <select aria-label="总席位" value={seats} onChange={e=>setSeats(Number(e.target.value))}>{[2,4,6,8,10,12,14,16].map(n=><option key={n}>{n}</option>)}</select></label></div>:null}
-+     {config.machines.length?<><h3>带上自家小机</h3><div className="lobby-row">{config.machines.map(m=><button type="button" key={m.id} aria-pressed={selected.includes(m.id)} className={selected.includes(m.id)?'lobby-primary':''} onClick={()=>setSelected(old=>old.includes(m.id)?old.filter(id=>id!==m.id):[...old,m.id])}>{selected.includes(m.id)?'✦ ':'✧ '}{m.name}</button>)}</div><p className="lobby-hint">小机使用同一存档槽，从根 MCP 的 rooms 找到席位后行动；这里不会自动唤醒它。</p></>:<p className="lobby-hint">已绑定的小机会显示在这里。</p>}
++     {config.machines.length?<><h3>带上自家小机</h3><div className="lobby-row">{config.machines.map(m=><button type="button" key={m.id} aria-pressed={selected.includes(m.id)} className={selected.includes(m.id)?'lobby-primary':''} onClick={()=>setSelected(old=>old.includes(m.id)?old.filter(id=>id!==m.id):[...old,m.id])}>{selected.includes(m.id)?'✦ ':'✧ '}{m.name}</button>)}</div></>:<p className="lobby-hint">暂无可邀请的小机。</p>}
 +     {selected.length>=(mode==='duel'?2:seats)?<p className="room-error" role="alert">请为自己留一席，减少小机或增加席位。</p>:null}
 +    </details>:null}
 +    <h3>入座已知棋局</h3><form className="lobby-row" onSubmit={e=>{e.preventDefault();void join();}}><input aria-label="好友邀请" value={invitation} onChange={e=>setInvitation(e.target.value)} placeholder="粘贴好友的密函或邀请链接" required/><button disabled={busy||!config||!invitation.trim()}>入座登盘</button></form>
 +   </>:null}
 +   {config?<><h3>{ai?'自家机的棋局':'我的棋局'}</h3>{config.rooms.length?config.rooms.map(r=><div className="lobby-row cedar-saved" key={r.roomId}><span className="lobby-queue"><strong>{r.packName} · {modePack(r.mode).name}</strong><small>{r.phase==='waiting'?`等待开局 · ${r.seats}/${r.capacity} 席`:r.phase==='finished'?'已结束 · 可查看棋盘':`第 ${r.round} 轮`}</small></span>{!ai?<button onClick={()=>enter(r.roomId)}>回到棋盘</button>:null}<button onClick={()=>enter(r.roomId,true)}>观看</button></div>):<p className="lobby-hint">此存档槽还没有棋局。</p>}</>:null}
 +  </section>:null}
-+  {tab==='me'&&config?<section className="lobby-panel"><h2>我的棋室</h2><div className="lobby-row cedar-scope"><label>存档槽 <select aria-label="存档槽" value={slot} onChange={e=>changeScope(Number(e.target.value),ai)}>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select></label><label>棋局归属 <select aria-label="棋局归属" value={ai} onChange={e=>changeScope(slot,e.target.value)}><option value="">我的棋局</option>{config.machines.map(m=><option key={m.id} value={m.id}>{m.name} · 只读</option>)}</select></label></div><p className="lobby-hint">每个存档槽独立保存棋局与装扮。查看小机后，在「开始」观看它的棋局。</p>
++  {tab==='me'&&config?<section className="lobby-panel"><h2>我的棋室</h2><div className="lobby-row cedar-scope"><label>存档槽 <select aria-label="存档槽" value={slot} onChange={e=>changeScope(Number(e.target.value),ai)}>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select></label><label>棋局归属 <select aria-label="棋局归属" value={ai} onChange={e=>changeScope(slot,e.target.value)}><option value="">我的棋局</option>{config.machines.map(m=><option key={m.id} value={m.id}>{m.name} · 只读</option>)}</select></label></div>
 +   {config.author_stats?<details className="lobby-machine-legacy"><summary>弈间 · 游玩统计</summary><div className="lobby-row"><select aria-label="统计时段" value={range} onChange={e=>{statsSequence.current++;setRange(e.target.value);setStats(undefined);}}>{['10m','1h','6h','12h','24h'].map(r=><option key={r}>{r}</option>)}</select><button disabled={busy} onClick={()=>void run(async()=>{const id=++statsSequence.current;const result=await cedarRequest('stats',{range});if(alive.current&&id===statsSequence.current)setStats(result);})}>查看聚合</button></div>{stats?<dl className="cedar-stats">{[['活跃人类','active_humans'],['活跃小机','active_machines'],['开房','created'],['开始','started'],['完成','finished']].map(([label,key])=><div key={key}><dt>{label}</dt><dd>{stats[key]??0}</dd></div>)}</dl>:null}<p className="lobby-hint">时段活跃，非在线人数。只含本游戏聚合；预留小机席位与 NPC 不计入。</p></details>:null}
 +  </section>:null}
 +  {tab!=='start'&&config?.economy?<Economy tab={tab} onTab={navigate} readOnly={!!ai} onProfile={setProfile}/>:null}
