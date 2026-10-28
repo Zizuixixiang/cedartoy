@@ -26,6 +26,7 @@ class StatsExtractionTests(unittest.TestCase):
             ("VENDOR_SAVE_ROOT", self.root / "saves"),
             ("CAMPING_PLAZA_DB_PATH", self.root / "camp.db"),
             ("SHARED_CRAFT_DATA_DIR", self.root / "craft"),
+            ("AUTOCHESS_ROOM_DATA", self.root / "autochess"),
         ):
             self.stack.enter_context(patch.object(server, name, value))
 
@@ -125,6 +126,7 @@ class StatsExtractionTests(unittest.TestCase):
               patch.object(server, "_sum_ciyuwu_runs", return_value=9) as runs,
               patch.object(server, "_vendor_save_stats", return_value={"save_count": None, "file_count": 0}),
               patch.object(server, "_count_shared_craft_saves", return_value=5) as craft,
+              patch.object(server, "_count_autochess_saves", return_value=16) as chess,
               patch.object(server, "count_saved_tarot_sessions", return_value=2) as tarot,
               patch.object(server, "_camping_plaza_save_admin", return_value={"save_count": "6"}) as camp):
             for strict in (False, True):
@@ -134,6 +136,8 @@ class StatsExtractionTests(unittest.TestCase):
                 self.assertEqual(result["camping_plaza"]["metric"], 6)
                 self.assertEqual(result["shared_craft"], {"metric_label": "存档数", "metric": 5})
                 craft.assert_called_with(strict=strict)
+                self.assertEqual(result["autochess"], {"metric_label": "存档数", "metric": 16})
+                chess.assert_called_with(strict=strict)
                 camp.assert_called_with("stats", timeout=2 if strict else 20)
                 tarot.assert_called_with(strict=strict)
             runs.assert_called_once_with()
@@ -141,6 +145,8 @@ class StatsExtractionTests(unittest.TestCase):
             self.assertEqual(server._public_game_stats()["camping_plaza"]["metric"], 0)
             self.assertIsNone(server._public_game_stats(strict=True)["camping_plaza"]["metric"])
             craft.return_value = None
+            chess.return_value = None
+            self.assertIsNone(server._public_game_stats()["autochess"]["metric"])
             self.assertIsNone(server._public_game_stats()["shared_craft"]["metric"])
 
 

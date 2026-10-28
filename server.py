@@ -267,6 +267,7 @@ GARDEN_LEGACY_DB_PATH = Path(__file__).resolve().parent / "vendor" / "Garden-Cat
 CAMPING_PLAZA_DB_PATH = Path(os.getenv("CAMPING_PLAZA_DB_PATH", Path(__file__).resolve().parent / "data" / "camping_plaza.db"))
 # Match the satellite's CRAFT_DATA_DIR when overriding the local default.
 SHARED_CRAFT_DATA_DIR = Path(os.getenv("CRAFT_DATA_DIR", Path(__file__).resolve().parent / "data" / "shared_craft"))
+AUTOCHESS_ROOM_DATA = Path(os.getenv("CHESS_ROOM_DATA", Path(__file__).resolve().parent / "data" / "autochess_rooms"))
 GAME_MAINTENANCE = {
     "camping_plaza": {
         "enabled": False,
@@ -2443,6 +2444,12 @@ def _count_shared_craft_saves(*, strict=False):
     )
 
 
+def _count_autochess_saves(*, strict=False):
+    return public_stats._count_autochess_saves(
+        data_dir=AUTOCHESS_ROOM_DATA, strict=strict,
+    )
+
+
 def _public_game_stats(*, strict=False):
     return public_stats._public_game_stats(
         strict=strict,
@@ -2451,6 +2458,7 @@ def _public_game_stats(*, strict=False):
         sum_ciyuwu_runs=_sum_ciyuwu_runs,
         count_saved_tarot_sessions=count_saved_tarot_sessions,
         count_shared_craft_saves=_count_shared_craft_saves,
+        count_autochess_saves=_count_autochess_saves,
         vendor_save_stats=_vendor_save_stats,
         camping_plaza_db_path=CAMPING_PLAZA_DB_PATH,
         camping_plaza_save_admin=_camping_plaza_save_admin,

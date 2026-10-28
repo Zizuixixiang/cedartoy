@@ -343,6 +343,29 @@ def _count_shared_craft_saves(*, data_dir, strict=False):
         _CRAFT_COUNT_LOCK.release()
 
 
+def _count_autochess_saves(*, data_dir, strict=False):
+    """Count persisted private rooms in any phase, without opening their contents.
+
+    Only canonical, top-level regular room files count. No wallets, slots,
+    backups, symlinks or temporary files. Missing/unreadable/over-budget storage
+    is unknown, never a misleading zero or partial count.
+    """
+    deadline = time.monotonic() + (0.1 if strict else 0.25)
+    try:
+        if data_dir.is_symlink():
+            return None
+        count = 0
+        with os.scandir(data_dir) as entries:
+            for number, entry in enumerate(entries, 1):
+                if number > 10000 or time.monotonic() > deadline:
+                    return None
+                if re.fullmatch(r"[0-9a-f]{12}\.json", entry.name) and entry.is_file(follow_symlinks=False):
+                    count += 1
+        return count if time.monotonic() <= deadline else None
+    except OSError:
+        return None
+
+
 def _activity_catalog(
     *,
     index_path,
@@ -384,11 +407,16 @@ def _public_game_stats(
     sum_ciyuwu_runs,
     count_saved_tarot_sessions,
     count_shared_craft_saves,
+    count_autochess_saves,
     vendor_save_stats,
     camping_plaza_db_path,
     camping_plaza_save_admin,
 ):
     stats = {
+        "autochess": {
+            "metric_label": "存档数",
+            "metric": count_autochess_saves(strict=strict),
+        },
         "puzzle_box": {
             "metric_label": "存档数",
             "metric": count_puzzle_box_saves(),

@@ -3437,6 +3437,9 @@
                     <ol class="rank-list" id="rankList"></ol>
                   </div>
                   <div class="arcade-bank" data-bank-scope="screen"></div>
+                  <div class="modal-actions" data-autochess-stats-entry style="display:none">
+                    <button class="pixel-btn watch-btn secondary" data-autochess-stats type="button">管理统计</button>
+                  </div>
                   <div class="modal-actions" data-craft-author-entry style="display:none">
                     <button class="pixel-btn watch-btn secondary" data-craft-author type="button">查看已分享作品</button>
                   </div>
@@ -3984,6 +3987,9 @@
         <button class="pixel-btn watch-btn" id="drawerWatchButton" type="button" style="display:none">围观大屏 →</button>
         <button class="pixel-btn" id="drawerEnter" type="button">ENTER →</button>
       </div>
+      <div class="modal-actions" data-autochess-stats-entry style="display:none">
+        <button class="pixel-btn watch-btn secondary" data-autochess-stats type="button">管理统计</button>
+      </div>
       <div class="modal-actions" data-craft-author-entry style="display:none">
         <button class="pixel-btn watch-btn secondary" data-craft-author type="button">查看已分享作品</button>
       </div>
@@ -4042,7 +4048,7 @@
         id: "autochess", iconFile: "autochess.svg", category: "mini", watch: true,
         watchLabel: "进入棋室 →", name: "弈间", mission: "MISSION: AUTOCHESS",
         location: "LOCATION: PRIVATE TABLE", glyph: "棋", badge: "AUTOCHESS", level: "LV.01",
-        metricLabel: "私人棋室", metric: "--", short: "原作 3D 棋盘 / 私人 NPC 对局",
+        metricLabel: "存档数", metric: "--", short: "原作 3D 棋盘 / 私人 NPC 对局",
         desc: "一个人带 NPC 开局，或与自家小机、受邀好友同桌。保留原作棋谱、商店、装备与战斗回放。",
         logs: ["作者：江川雪 · 小红书 63657956652", '原作 <a href="https://github.com/Cecilia-coding/AutoChess-MCP" target="_blank" rel="noopener noreferrer">AutoChess-MCP · GitHub</a> · MIT 许可证', "私人邀请入座，房主开始时补齐 NPC。"],
         stats: [], ctaLabel: "作者原版 ↗", footerIcons: ["棋", "✦", "◌"],
@@ -6936,6 +6942,7 @@
       [$("enterButton"), guideEnter, drawerEnter].forEach((button) => {
         if (button) button.style.visibility = game.id === "candle" ? "hidden" : "";
       });
+      refreshAutochessStatsAccess();
       refreshCandleFeedbackAccess();
       refreshCraftAuthorAccess();
       const watchLabel = game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →");
@@ -7040,6 +7047,53 @@
       } catch (error) { showToast(error.message); }
       finally { craftRoomBusy = false; }
     }
+    const autochessStats = {identity: "", allowed: false, access: null};
+    function renderAutochessStatsEntry() {
+      const visible = currentGame().id === "autochess" && autochessStats.allowed && autochessStats.identity === candleIdentity();
+      document.querySelectorAll("[data-autochess-stats-entry]").forEach(entry => { entry.style.display = visible ? "" : "none"; });
+    }
+    function clearAutochessStats() {
+      autochessStats.access?.abort();
+      Object.assign(autochessStats, {identity: "", allowed: false, access: null});
+      renderAutochessStatsEntry();
+    }
+    async function refreshAutochessStatsAccess(force = false) {
+      const identity = candleIdentity();
+      // Game previews, login refresh, and live metric refresh can all call this.
+      // Do not abort a valid in-flight grant or hide an already granted entry.
+      // Explicit entry clicks use force=true and always recheck server access.
+      if (!force && identity && currentGame().id === "autochess" &&
+          autochessStats.identity === identity && (autochessStats.access || autochessStats.allowed)) {
+        renderAutochessStatsEntry();
+        return;
+      }
+      clearAutochessStats();
+      if (!identity || currentGame().id !== "autochess") return;
+      autochessStats.identity = identity;
+      const controller = new AbortController(); autochessStats.access = controller;
+      try {
+        const response = await fetch("/autochess/api/stats", {method: "POST", headers: headers(true), cache: "no-store", signal: controller.signal, body: JSON.stringify({op: "access"})});
+        const data = response.ok ? await response.json() : {};
+        if (controller.signal.aborted || autochessStats.access !== controller || identity !== candleIdentity() || currentGame().id !== "autochess") return;
+        autochessStats.allowed = data.allowed === true;
+        renderAutochessStatsEntry();
+      } catch (_) {
+        // No permission is assumed on failure. Selecting the game again retries access.
+        if (!controller.signal.aborted && identity === candleIdentity()) renderAutochessStatsEntry();
+      } finally {
+        if (autochessStats.access === controller) autochessStats.access = null;
+      }
+    }
+    async function openAutochessStats() {
+      const identity = candleIdentity();
+      if (currentGame().id !== "autochess" || !autochessStats.allowed || autochessStats.identity !== identity) return;
+      await refreshAutochessStatsAccess(true);
+      if (currentGame().id === "autochess" && autochessStats.allowed && autochessStats.identity === identity && identity === candleIdentity()) {
+        window.location.href = "/autochess/#management";
+      }
+    }
+    document.querySelectorAll("[data-autochess-stats]").forEach(button => button.addEventListener("click", openAutochessStats));
+
     let craftAuthorIdentity = "", craftAuthorAllowed = false, craftAuthorPage = 1;
     let craftAuthorController = null, craftAuthorFocus = null;
     let craftAuthorAccessController = null;
@@ -9376,6 +9430,7 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        refreshAutochessStatsAccess();
         refreshCraftAuthorAccess();
         refreshFeedbackUnread();
         updateFeedbackModeVisibility();
@@ -9398,7 +9453,7 @@
     }
 
     function openModal(id) {
-      if (id === "loginModal") { clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); }
+      if (id === "loginModal") { clearAutochessStats(); clearCraftAuthor(); $("craftAuthorModal").classList.remove("show"); }
       if (id === "loginModal") resetLoginModal();
       if (id === "avatarModal") resetAvatarModal();
       if (id === "forgotPasswordModal") resetForgotPasswordModal();
@@ -9417,6 +9472,7 @@
     function closeModals() {
       if ($("feedbackModal").classList.contains("show") && feedbackBusy) return;
       craftRoomPending = false;
+      clearAutochessStats();
       const candleWasOpen = $("candleFeedbackModal").classList.contains("show");
       const craftWasOpen = $("craftAuthorModal").classList.contains("show");
       clearCraftAuthor();
@@ -9442,9 +9498,12 @@
       resetPasswordVisibility();
       if (candleWasOpen) candleFeedbackFocus?.focus();
       if (craftWasOpen) craftAuthorFocus?.focus();
+      if (currentGame().id === "autochess") void refreshAutochessStatsAccess();
     }
 
     function renderAuth() {
+      // Invalidate even when loadMe exits early (logout / expired identity).
+      if (autochessStats.identity !== candleIdentity()) clearAutochessStats();
       refreshFeedbackUnread();
       const area = $("authArea");
       if (!me) {

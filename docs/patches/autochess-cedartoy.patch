@@ -1596,10 +1596,10 @@ index 0000000..6bae111
 +<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
-index 0000000..3f81912
+index 0000000..b2529d1
 --- /dev/null
 +++ b/cedartoy/main.tsx
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,85 @@
 +import {newRequestId} from '../components/autochess/request-id';
 +import '../app/globals.css';
 +import React,{useEffect,useRef,useState} from 'react';
@@ -1634,7 +1634,7 @@ index 0000000..3f81912
 + const [selected,setSelected]=useState<string[]>([]),[pack,setPack]=useState('ai'),[mode,setMode]=useState<MatchModeId>('standard'),[seats,setSeats]=useState(8);
 + const [profile,setProfile]=useState<SelfAccount>(),[room,setRoom]=useState(''),[watch,setWatch]=useState(false);
 + const [invitation,setInvitation]=useState(()=>new URLSearchParams(location.hash.slice(1)).get('invite')||'');
-+ const [management,setManagement]=useState(false);
++ const [management,setManagement]=useState(()=>location.hash==='#management');
 + const alive=useRef(true),locked=useRef(false),sequence=useRef(0);
 + const createAttempt=useRef<{signature:string;id:string}|undefined>(undefined);
 + const resetRoomScope=()=>setScope({slot,ai_id:ai||undefined});
@@ -1649,10 +1649,11 @@ index 0000000..3f81912
 +  if(alive.current){createAttempt.current=undefined;enter(result.roomId);}
 + });
 + const join=()=>run(async()=>{let code=invitation.trim();try{code=new URLSearchParams(new URL(code).hash.slice(1)).get('invite')||code;}catch{/* A raw private invitation is also accepted. */}const result=await roomRequest('join',{invitation:code});if(alive.current){history.replaceState(null,'','/autochess/');enter(result.roomId);}});
-+ const navigate=(next:Tab)=>{setManagement(false);setTab(next);};
++ const leaveManagement=()=>{setManagement(false);if(location.hash==='#management')history.replaceState(null,'',location.pathname+location.search);};
++ const navigate=(next:Tab)=>{leaveManagement();setTab(next);};
 + const modes=config?LOBBY_MODES.filter(m=>config.modes.some(x=>x.id===m.id)):LOBBY_MODES;
 + const tabs=TABS.filter(t=>(config?.economy!==false||!['shop','wheel'].includes(t.id))&&(!ai||t.id!=='wheel'));
-+ if(management&&config?.author_stats&&!ai)return <GameStats onBack={()=>setManagement(false)} onDenied={()=>{setManagement(false);setConfig(old=>old?{...old,author_stats:false}:old);setError('未获本游戏统计查看授权');}}/>;
++ if(management&&config?.author_stats&&!ai)return <GameStats onBack={leaveManagement} onDenied={()=>{leaveManagement();setConfig(old=>old?{...old,author_stats:false}:old);setError('未获本游戏统计查看授权');}}/>;
 + if(room)return <RoomApp key={`${room}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{resetRoomScope();setRoom('');setWatch(false);void refresh();void metaRequest<{self:SelfAccount}>('profile').then(p=>{if(alive.current)setProfile(p.self);}).catch(()=>{});}}/>;
 + return <div className="lobby-viewport"><main className="lobby cedar-lobby">
 +  <div className="celestial-astrolabe-bg" aria-hidden="true"/>
