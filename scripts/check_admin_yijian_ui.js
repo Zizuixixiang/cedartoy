@@ -10,7 +10,7 @@ assert.equal((home.match(/data-autochess-stats type="button">管理统计/g)||[]
 assert(home.includes('window.location.href = "/autochess/#management"'));
 const game=fs.readFileSync('vendor/autochess/cedartoy/main.tsx','utf8');
 assert(game.includes("useState(()=>location.hash==='#management')"));
-assert(game.includes('management&&config?.author_stats&&!ai'));
+assert(game.includes('management&&config?.author_stats===true&&!ai'));
 assert(game.includes("if(location.hash==='#management')history.replaceState(null,'',location.pathname+location.search)"));
 const controller=home.slice(home.indexOf('    const autochessStats ='),home.indexOf('    let craftAuthorIdentity ='));
 assert(controller.includes('JSON.stringify({op: "access"})'));

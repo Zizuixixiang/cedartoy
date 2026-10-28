@@ -1596,10 +1596,10 @@ index 0000000..6bae111
 +<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>弈间</title></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>
 diff --git a/cedartoy/main.tsx b/cedartoy/main.tsx
 new file mode 100644
-index 0000000..b2529d1
+index 0000000..e0fdd6c
 --- /dev/null
 +++ b/cedartoy/main.tsx
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,96 @@
 +import {newRequestId} from '../components/autochess/request-id';
 +import '../app/globals.css';
 +import React,{useEffect,useRef,useState} from 'react';
@@ -1653,7 +1653,18 @@ index 0000000..b2529d1
 + const navigate=(next:Tab)=>{leaveManagement();setTab(next);};
 + const modes=config?LOBBY_MODES.filter(m=>config.modes.some(x=>x.id===m.id)):LOBBY_MODES;
 + const tabs=TABS.filter(t=>(config?.economy!==false||!['shop','wheel'].includes(t.id))&&(!ai||t.id!=='wheel'));
-+ if(management&&config?.author_stats&&!ai)return <GameStats onBack={leaveManagement} onDenied={()=>{leaveManagement();setConfig(old=>old?{...old,author_stats:false}:old);setError('未获本游戏统计查看授权');}}/>;
++ if(management&&config?.author_stats===true&&!ai)return <GameStats onBack={leaveManagement} onDenied={()=>{leaveManagement();setConfig(old=>old?{...old,author_stats:false}:old);setError('未获本游戏统计查看授权');}}/>;
++ if(management){
++  const waiting=signedIn&&!ai&&!config&&!error;
++  return <main className="yijian-management" aria-label="弈间独立统计">
++   <div className="management-shell"><header className="management-head"><h1>弈间 · 游玩统计</h1><button onClick={leaveManagement}>返回棋室</button></header>
++    <section className="management-panel" aria-busy={waiting}>
++     <p role={waiting?'status':'alert'}>{waiting?'正在验证弈间统计权限…':!signedIn?'请先登录，再查看弈间统计。':error?'暂时无法验证弈间统计权限，请重试或返回棋室。':'未获本游戏统计查看授权。'}</p>
++     {!waiting&&signedIn&&!ai?<div><button disabled={busy} onClick={()=>void run(refresh)}>重试</button></div>:null}
++    </section>
++   </div>
++  </main>;
++ }
 + if(room)return <RoomApp key={`${room}:${watch}`} cedar initialCredentials={{roomId:room,token:''}} onSessionChange={()=>{resetRoomScope();setRoom('');setWatch(false);void refresh();void metaRequest<{self:SelfAccount}>('profile').then(p=>{if(alive.current)setProfile(p.self);}).catch(()=>{});}}/>;
 + return <div className="lobby-viewport"><main className="lobby cedar-lobby">
 +  <div className="celestial-astrolabe-bg" aria-hidden="true"/>
