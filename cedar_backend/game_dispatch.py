@@ -462,6 +462,9 @@ def _play_garden_cat(arguments, owner_name, *,
             "未知 garden_cat action；只开放 cmd / status / help / new / catalog / notes / export / import，请先 get_guide(game=\"garden_cat\") 查看用法。",
         )
 
+    if action in {"cmd", "status"} and extra.get("compact", True) is not False:
+        path += "?compact=1"
+
     try:
         resp = httpx.request(method, f"{GARDEN_CAT_BASE}{path}", json=body, headers=headers, timeout=60)
     except httpx.HTTPError as exc:

@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 TOY_ROOT = Path(__file__).resolve().parents[1]
-ENGINE_ROOT = TOY_ROOT / "vendor" / "Garden-Cat-Engine"
+ENGINE_ROOT = Path(os.environ.get("GARDEN_CAT_ENGINE_ROOT", TOY_ROOT / "vendor" / "Garden-Cat-Engine"))
 sys.path.insert(0, str(ENGINE_ROOT))
 
 

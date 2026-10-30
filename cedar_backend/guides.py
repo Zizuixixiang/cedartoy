@@ -121,8 +121,8 @@ GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
 - export：导出当前 slot 的 JSON 游戏存档。
 - import：params.save_data 传 export 得到的 JSON；当前 slot 已有存档时必须同时传 confirm=true。便签板是共享留言数据，不随存档导入导出。
 
-建议先 catalog，再用 cmd 依次执行 buy / plant / water / harvest / sell；遇到参数不确定时调用 help。
-status 只返回摘要数据，不含收藏品和信件图鉴。查看收藏品用 cmd collectibles，查看信件用 cmd letters，查看完整花卉目录用 catalog。
+建议先 catalog，再用 cmd 执行 buy daisy 2 → plant daisy 1 → water 1 → harvest 1 → sell all。花束 make_bouquet / gift_bouquet / list_bouquet、花店 establish_flower_shop / set_flower_shop_hours / launch_flower_shop、小屋 buy_cottage_furniture 的真实参数见 help；沿用作者规则。
+status/cmd 默认 compact 摘要：含每盆花 slot/flower_id/status、种子/鲜花数量、猫粮份数、花店/花束和小屋状态；虫害盆先 treat 再 harvest。params.compact=false 可取作者完整摘要。查看收藏品用 cmd collectibles，查看信件用 cmd letters，查看完整花卉目录用 catalog。
 客户端自报 session_id 不参与身份；账号与 slot 由塘子注入并隔离存档。
 
 作者：乐诶雷女士。"""

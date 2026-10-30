@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.parse
 import json
 import sys
 import sqlite3
@@ -22,13 +23,13 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
     def test_proxy_method_and_path_whitelists_are_exact(self):
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/"))
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/web/status"))
-        self.assertTrue(server._garden_cat_proxy_allowed("GET", "/web/catalog"))
+        self.assertTrue(server._garden_cat_proxy_allowed("GET", "/api/catalog"))
         self.assertTrue(server._garden_cat_proxy_allowed("GET", "/web/notes"))
-        self.assertTrue(server._garden_cat_proxy_allowed("GET", "/static/human.js"))
-        self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/water"))
-        self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/pet_cat"))
+        self.assertTrue(server._garden_cat_proxy_allowed("GET", "/static/app.js"))
+        self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/cmd"))
+        self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/new_game"))
         self.assertTrue(server._garden_cat_proxy_allowed("POST", "/web/notes"))
-        for path in ("/api/status", "/api/cmd", "/web/cmd", "/web/new_game", "/web/delete"):
+        for path in ("/api/status", "/api/cmd", "/web/water", "/web/pet_cat", "/web/delete"):
             self.assertFalse(server._garden_cat_proxy_allowed("GET", path), path)
             self.assertFalse(server._garden_cat_proxy_allowed("POST", path), path)
         self.assertFalse(server._garden_cat_proxy_allowed("PUT", "/web/water"))
@@ -36,7 +37,7 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
     def test_proxy_path_mapping_is_explicit(self):
         self.assertEqual(server._garden_cat_upstream_path("/"), "/web/")
         self.assertEqual(server._garden_cat_upstream_path("/web/status"), "/web/status")
-        self.assertEqual(server._garden_cat_upstream_path("/static/human.js"), "/static/human.js")
+        self.assertEqual(server._garden_cat_upstream_path("/static/app.js"), "/static/app.js")
 
     def test_notes_forwarder_injects_trusted_machine_name(self):
         class FakeResponse:
@@ -60,7 +61,7 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
         self.assertEqual(request_mock.call_args.args[0], "POST")
         self.assertEqual(request_mock.call_args.args[1], f"{server.GARDEN_CAT_BASE}/api/notes")
         self.assertEqual(request_mock.call_args.kwargs["json"], {"content": "今天也浇水啦"})
-        self.assertEqual(request_mock.call_args.kwargs["headers"]["X-Garden-Owner-Name"], "阿橘")
+        self.assertEqual(request_mock.call_args.kwargs["headers"]["X-Garden-Owner-Name"], urllib.parse.quote("阿橘"))
 
         with patch.object(server.httpx, "request", return_value=FakeResponse()) as request_mock:
             server._play_garden_cat(
@@ -250,8 +251,8 @@ class GardenCatProxyPolicyTests(unittest.TestCase):
         self.assertEqual(captured["target"], "/web/pet_cat?kept=yes")
         self.assertEqual(captured["headers"]["X-Player-Id"], "42:3")
         self.assertEqual(captured["headers"]["X-Garden-Player"], "42:3")
-        self.assertEqual(captured["headers"]["X-Garden-Owner-Name"], "阿橘")
-        self.assertEqual(captured["headers"]["X-Garden-Human-Name"], "小满")
+        self.assertEqual(captured["headers"]["X-Garden-Owner-Name"], urllib.parse.quote("阿橘"))
+        self.assertEqual(captured["headers"]["X-Garden-Human-Name"], urllib.parse.quote("小满"))
         self.assertNotIn("Authorization", captured["headers"])
         self.assertNotIn("Cookie", captured["headers"])
 
