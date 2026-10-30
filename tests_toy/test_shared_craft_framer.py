@@ -1,6 +1,8 @@
 """Framer regression: original assets and real handlers, disposable storage only."""
 import base64
 import io
+import json
+from pathlib import Path
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -9,10 +11,22 @@ from shared_craft_adapter import ui
 from shared_craft_adapter.service import create_app
 from tests_toy import test_shared_craft
 
+LEGACY = "996967978a115422d3c6b455a501de65634bd8a0"
+COMPOSED = "a2d7cb7f7f6afce6d03df9b8d8c555345d8d53ea"
+
+
+def upstream_source(revision, name="static/beads-framer.js"):
+    # Immutable fetched commits; never checkout/fetch or edit the vendor tree.
+    repo = Path(__file__).resolve().parents[1] / "vendor/shared-craft-room"
+    return subprocess.check_output(
+        ["git", "-C", str(repo), "show", revision + ":src/shared_craft_room/" + name],
+        text=True, timeout=15)
+
 
 class SharedCraftFramerTests(unittest.TestCase):
     def test_script_rewrites_only_fetch_urls_and_separates_full_from_piece_export(self):
-        original = (ui.STATIC / "beads-framer.js").read_text()
+        original = upstream_source(LEGACY)
+        disk = (ui.STATIC / "beads-framer.js").read_bytes()
         prefix = "/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}"
         expected = original
         for suffix in ("/bead-boards/${board.id}", "/gallery"):
@@ -29,21 +43,22 @@ class SharedCraftFramerTests(unittest.TestCase):
         ):
             self.assertEqual(original.count(old), 1)
             expected = expected.replace(old, new)
-        response = ui.asset("beads-framer.js")
+        with patch.object(type(ui.STATIC), "read_bytes", return_value=original.encode()):
+            response = ui.asset("beads-framer.js")
         self.assertEqual(response.status_code, 200)
         self.assertIn("javascript", response.headers["content-type"])
         self.assertEqual(response.body.decode(), expected)
         self.assertNotIn(prefix, response.body.decode())
         checked = subprocess.run(["node", "--check"], input=response.body, capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr.decode())
-        self.assertEqual((ui.STATIC / "beads-framer.js").read_text(), original)
+        self.assertEqual((ui.STATIC / "beads-framer.js").read_bytes(), disk)
         for name in ("finishedDataURL", "pieceDataURL"):
             original_function = next(line for line in original.splitlines()
                                      if line.startswith(f"function {name}("))
             self.assertIn(original_function, response.body.decode())
 
     def test_changed_upstream_export_fails_closed(self):
-        original = (ui.STATIC / "beads-framer.js").read_bytes()
+        original = upstream_source(LEGACY).encode()
         for altered in (original.replace(b"function finishedDataURL(){", b"function renamed(){"),
                         original + b"\nfunction finishedDataURL(){}",
                         original.replace(b"dataUrl=finishedDataURL()", b"dataUrl=otherExport()"),
@@ -51,6 +66,63 @@ class SharedCraftFramerTests(unittest.TestCase):
             with patch.object(type(ui.STATIC), "read_bytes", return_value=altered):
                 with self.assertRaisesRegex(ValueError, "装裱导出"):
                     ui.asset("beads-framer.js")
+
+    def test_composed_export_keeps_author_implementation_and_only_rewrites_two_urls(self):
+        original = upstream_source(COMPOSED)
+        prefix = "/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}"
+        expected = original
+        for suffix in ("/bead-boards/${board.id}", "/gallery"):
+            expected = expected.replace(f"fetch(`{prefix}{suffix}`", f"fetch(`/shared-craft/api{suffix}`")
+        with patch.object(type(ui.STATIC), "read_bytes", return_value=original.encode()):
+            response = ui.asset("beads-framer.js")
+        text = response.body.decode()
+        self.assertEqual(text, expected)
+        self.assertEqual(text.count("fetch(`/shared-craft/api"), 2)
+        self.assertNotIn(prefix, text)
+        self.assertNotIn("assembledDataURL", text)
+        self.assertIn("exportCanvas=composedCanvas(),dataUrl=exportCanvas.toDataURL('image/png'),pieceUrl=pieceDataURL()", text)
+        self.assertIn("data_url:dataUrl,piece_data_url:pieceUrl", text)
+        checked = subprocess.run(["node", "--check"], input=response.body, capture_output=True, timeout=15)
+        self.assertEqual(checked.returncode, 0, checked.stderr.decode())
+        # Execute the actual unchanged exporters with instrumented canvas/object
+        # boundaries: full copies the unselected composition; piece omits its bag.
+        functions = "\n".join(line for line in text.splitlines()
+                              if line.startswith(("function composedCanvas()", "function pieceDataURL()")))
+        script = r"""
+const assert=require('node:assert/strict'), events=[];
+const canvas={width:900,height:900}, piece={kind:'piece',shell:true,keyring:true}, objects=[piece];
+function draw(selected){events.push(['draw',selected])}
+const document={createElement:()=>({getContext:()=>({drawImage:(source,x,y)=>{
+  assert.equal(source,canvas);assert.equal(x,0);assert.equal(y,0);events.push(['copy']);
+}}),toDataURL:()=> 'full'})};
+function finishedDataURL(){assert.equal(piece.shell,false);assert.equal(piece.keyring,false);return 'piece'}
+eval(JSON.parse(process.argv[1]));
+assert.equal(composedCanvas().toDataURL('image/png'),'full');
+assert.deepEqual(events,[['draw',false],['copy'],['draw',true]]);
+assert.equal(pieceDataURL(),'piece');assert.equal(piece.shell,true);assert.equal(piece.keyring,true);
+"""
+        result = subprocess.run(["node", "-e", script, json.dumps(functions)], capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+    def test_unknown_composed_or_mixed_exports_fail_closed(self):
+        original = upstream_source(COMPOSED)
+        for altered in (
+            original.replace("exportCanvas=composedCanvas()", "exportCanvas=finishedCanvas()"),
+            original.replace("pieceUrl=pieceDataURL()", "pieceUrl=exportCanvas.toDataURL('image/png')"),
+            original.replace("data_url:dataUrl,piece_data_url:pieceUrl", "data_url:pieceUrl,piece_data_url:dataUrl"),
+            original.replace("function composedCanvas(){draw(false);", "function composedCanvas(){draw(true);"),
+            original + "\nfunction pieceDataURL(){return 'wrong'}",
+            original + "\ndataUrl=finishedDataURL(),pieceUrl=pieceDataURL()",
+        ):
+            with self.subTest(altered=altered[-70:]), patch.object(type(ui.STATIC), "read_bytes", return_value=altered.encode()):
+                with self.assertRaisesRegex(ValueError, "装裱导出"):
+                    ui.asset("beads-framer.js")
+
+    def test_installed_upstream_asset_is_supported(self):
+        response = ui.asset("beads-framer.js")
+        self.assertEqual(response.status_code, 200)
+        checked = subprocess.run(["node", "--check"], input=response.body, capture_output=True, timeout=15)
+        self.assertEqual(checked.returncode, 0, checked.stderr.decode())
 
     def test_finished_decoration_and_gallery_survive_app_restart(self):
         fixture = test_shared_craft.SharedCraftTests()

@@ -1,4 +1,5 @@
 """Small, checked transformations of the upstream assets, served in place."""
+import hashlib
 import mimetypes
 from pathlib import Path
 import re
@@ -7,6 +8,46 @@ from starlette.responses import Response
 
 STATIC = Path(__file__).resolve().parents[1] / "vendor/shared-craft-room/src/shared_craft_room/static"
 ASSETS = Path(__file__).with_name("assets")
+
+# Only the reviewed export block is pinned, not unrelated UI or assets.
+# 9969679 needs the full-preview fix; a2d7cb7 already exports composedCanvas.
+FRAMER_EXPORTS = {
+    "d6e6bb6e0afac373f0db715becd06c6bc34f3c5235f1eb9fa61aacc7a7312961": "legacy",
+    "65f50cb7828cb0dbcc4952926a50c1220da42ab371773741ee6b2a1ba60de125": "composed",
+}
+
+
+def framer_script(text):
+    block = re.search(r"^function (?:finishedDataURL|finishedCanvas)\(\).*?"
+                      r"(?=^\$\('#framer-gallery'\))", text, re.M | re.S)
+    mode = FRAMER_EXPORTS.get(hashlib.sha256(block[0].encode()).hexdigest()) if block else None
+    if mode is None:
+        raise ValueError("上游装裱导出已变化，需重新核验适配")
+    # Reject duplicate definitions/handlers outside the checked block too.
+    for name, expected in (("finishedDataURL", 1), ("pieceDataURL", 1),
+                           ("finishedCanvas", int(mode == "composed")),
+                           ("composedCanvas", int(mode == "composed")),
+                           ("assembledDataURL", 0)):
+        if len(re.findall(r"\bfunction\s+" + name + r"\s*\(", text)) != expected:
+            raise ValueError("上游装裱导出已变化，需重新核验适配")
+    legacy = "dataUrl=finishedDataURL(),pieceUrl=pieceDataURL()"
+    native = "exportCanvas=composedCanvas(),dataUrl=exportCanvas.toDataURL('image/png'),pieceUrl=pieceDataURL()"
+    if (text.count(legacy) != int(mode == "legacy")
+            or text.count(native) != int(mode == "composed")
+            or text.count("$('#framer-export').onclick=") != 1):
+        raise ValueError("上游装裱导出已变化，需重新核验适配")
+    for suffix in ("/bead-boards/${board.id}", "/gallery"):
+        before = "fetch(`/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}" + suffix + "`"
+        if text.count(before) != 1:
+            raise ValueError("上游装裱 API 已变化，需重新核验适配")
+        text = text.replace(before, "fetch(`/shared-craft/api" + suffix + "`")
+    if mode == "legacy":
+        # Keep the transparent/cropped exporters intact. Only save uses full preview.
+        text = text.replace("function finishedDataURL(){",
+                            "function assembledDataURL(){try{draw(false);return canvas.toDataURL('image/png')}finally{draw(true)}}\n"
+                            "function finishedDataURL(){")
+        text = text.replace(legacy, "dataUrl=assembledDataURL(),pieceUrl=pieceDataURL()")
+    return text
 
 
 def replace(text, before, after):
@@ -89,27 +130,7 @@ function inventoryView(){
             text += "\n" + (ASSETS / "share.js").read_text()
         raw = text.encode()
     elif name == "beads-framer.js":
-        text = raw.decode()
-        for suffix in ("/bead-boards/${board.id}", "/gallery"):
-            text = replace(
-                text,
-                "fetch(`/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}" + suffix + "`",
-                "fetch(`/shared-craft/api" + suffix + "`",
-            )
-        # Preserve both upstream transparent/cropped exporters verbatim: the
-        # pouch's display.png still needs pieceDataURL -> finishedDataURL.
-        # Only the save event exports the complete, unselected preview.
-        for before, after in (
-            ("function finishedDataURL(){",
-             "function assembledDataURL(){try{draw(false);return canvas.toDataURL('image/png')}finally{draw(true)}}\n"
-             "function finishedDataURL(){"),
-            ("dataUrl=finishedDataURL(),pieceUrl=pieceDataURL()",
-             "dataUrl=assembledDataURL(),pieceUrl=pieceDataURL()"),
-        ):
-            if text.count(before) != 1:
-                raise ValueError("上游装裱导出已变化，需重新核验适配")
-            text = replace(text, before, after)
-        raw = text.encode()
+        raw = framer_script(raw.decode()).encode()
     elif name == "beads-v2.css":
         raw = raw.replace('content:"对方"'.encode(), 'content:"TA"'.encode())
     return Response(raw, media_type=mimetypes.guess_type(name)[0] or "application/octet-stream")

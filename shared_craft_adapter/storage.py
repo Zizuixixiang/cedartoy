@@ -54,34 +54,38 @@ def atomic_bytes(path, raw):
             os.unlink(temporary)
 
 
+def validate_json(data, kind):
+    """Shared structural validation without IO (also used by offline dry-run)."""
+    assert isinstance(data, dict)
+    field = {"canvas": "strokes", "beads": "boards", "gallery": "items",
+             "participants": "participants"}[kind]
+    assert isinstance(data[field], list)
+    assert all(isinstance(item, dict) for item in data[field])
+    if kind == "canvas":
+        assert isinstance(data["revision"], int)
+        assert 0 < data["width"] <= 4096 and 0 < data["height"] <= 4096
+        assert isinstance(data["background"], str)
+        for stroke in data[field]:
+            assert isinstance(stroke["points"], list) and isinstance(stroke["actor"], str)
+    elif kind == "beads":
+        for board in data[field]:
+            assert board["mode"] in {"together", "separate", "gift"}
+            assert isinstance(board["cells"], dict) and isinstance(board["inventories"], dict)
+            assert isinstance(board["id"], str) and isinstance(board["owner"], str)
+    elif kind == "gallery":
+        for item in data[field]:
+            assert isinstance(item["id"], str) and isinstance(item["authors"], list)
+    else:
+        for item in data[field]:
+            assert isinstance(item["id"], str) and item["id"].isdigit()
+            assert isinstance(item["display_name"], str)
+    return data
+
+
 def read_json(path, kind):
     raw = path.read_bytes()  # IO failures propagate, never become an empty save.
     try:
-        data = json.loads(raw)
-        assert isinstance(data, dict)
-        field = {"canvas": "strokes", "beads": "boards", "gallery": "items",
-                 "participants": "participants"}[kind]
-        assert isinstance(data[field], list)
-        assert all(isinstance(item, dict) for item in data[field])
-        if kind == "canvas":
-            assert isinstance(data["revision"], int)
-            assert 0 < data["width"] <= 4096 and 0 < data["height"] <= 4096
-            assert isinstance(data["background"], str)
-            for stroke in data[field]:
-                assert isinstance(stroke["points"], list) and isinstance(stroke["actor"], str)
-        elif kind == "beads":
-            for board in data[field]:
-                assert board["mode"] in {"together", "separate", "gift"}
-                assert isinstance(board["cells"], dict) and isinstance(board["inventories"], dict)
-                assert isinstance(board["id"], str) and isinstance(board["owner"], str)
-        elif kind == "gallery":
-            for item in data[field]:
-                assert isinstance(item["id"], str) and isinstance(item["authors"], list)
-        else:
-            for item in data[field]:
-                assert isinstance(item["id"], str) and item["id"].isdigit()
-                assert isinstance(item["display_name"], str)
-        return data
+        return validate_json(json.loads(raw), kind)
     except (ValueError, AssertionError, KeyError, TypeError):
         backup = path.with_name(path.name + ".corrupt-" + hashlib.sha256(raw).hexdigest()[:16])
         if not backup.exists():
@@ -104,6 +108,9 @@ def protect_store(store, kind, lock, images=None):
              if image_folder and tracking else {})
 
     def load():
+        if images is not None:
+            from .primary import recover
+            recover(store.path.parent, images.root)
         read_json(store.path, kind)
         # Preserve upstream bead migration/normalisation after strict validation.
         return original_load()
@@ -157,3 +164,7 @@ def protect_store(store, kind, lock, images=None):
             return read
         store.decorated_bytes = remote_reader(store.decorated_bytes, ".png")
         store.display_piece_bytes = remote_reader(store.display_piece_bytes, "-piece.png")
+
+    if images is not None:
+        from .primary import install
+        install(store, kind, images)

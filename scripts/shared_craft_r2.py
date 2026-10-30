@@ -15,7 +15,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from shared_craft_adapter.object_storage import (
     BUCKET, PREFIX, ROOM, MAX_IMAGE, S3, digest, ensure_object, file_identity, object_key,
-    verified_get,
+    verified_get, reference_sha,
 )
 
 
@@ -151,6 +151,8 @@ def manifest_stream(path, root):
             if not line:
                 break
             if not line.endswith(b"\n"):
+                if first:
+                    raise ValueError("manifest has no valid header; refusing to truncate")
                 stream.seek(start)
                 stream.truncate()
                 break
@@ -180,7 +182,8 @@ def migrate(root, manifest, *, apply=False, verify_only=False, backend=None, roo
     counts = {"planned": 0, "uploaded": 0, "existing": 0, "verified": 0, "failed": 0}
     with manifest_stream(manifest, root) as journal:
         for source, identity, raw in sources(root, rooms):
-            sha = digest(raw)
+            marker_sha = reference_sha(raw)
+            sha = marker_sha or digest(raw)
             key = object_key(*identity, sha)
             entry = {"source": source, "room": identity[0], "kind": identity[1],
                      "key": key, "sha256": sha, "bytes": len(raw), "time": int(time.time())}
@@ -190,10 +193,11 @@ def migrate(root, manifest, *, apply=False, verify_only=False, backend=None, roo
                 counts["planned"] += 1
                 continue
             try:
-                if verify_only:
-                    if verified_get(backend, key, sha) != raw:
+                if verify_only or marker_sha:
+                    remote = verified_get(backend, key, sha)
+                    if remote is None or (not marker_sha and remote != raw):
                         raise ValueError("remote image missing")
-                    status = "verified"
+                    status = "verified" if verify_only else "existing"
                 else:
                     status = ensure_object(backend, key, raw)
                 counts[status] += 1

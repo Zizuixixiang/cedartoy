@@ -1,4 +1,4 @@
-"""Phase-one private PNG mirror. Local files/BLOBs remain authoritative.
+"""Private image storage: optional local mirror or explicit verified R2 primary.
 
 No list/delete/public URL API; all keys are confined to one fixed bucket/prefix.
 Only the satellite and the explicit backfill command load credentials.
@@ -25,7 +25,7 @@ LOG = logging.getLogger(__name__)
 ROOM = r"[1-9][0-9]{0,19}"
 FILE = r"[a-f0-9]{1,64}(?:-display|-piece)?\.png"
 KEY = re.compile(
-    rf"{PREFIX}/rooms/({ROOM})/(gallery|finished|shares)/"
+    rf"{PREFIX}/rooms/({ROOM})/(gallery|finished|shares|references)/"
     r"([a-f0-9]{1,64}(?:-display|-piece)?)/([a-f0-9]{64})\.png"
 )
 
@@ -196,6 +196,8 @@ def ensure_object(backend, key, raw):
     sha = digest(raw)
     existing = verified_get(backend, key, sha)
     if existing is not None:
+        if existing != raw:
+            raise ValueError("R2 byte mismatch")
         return "existing"
     backend.put(key, raw)
     if verified_get(backend, key, sha) != raw:
@@ -203,12 +205,37 @@ def ensure_object(backend, key, raw):
     return "uploaded"
 
 
+REF = b"CRAFT-R2:1:"
+
+
+class StorageUnavailable(RuntimeError):
+    """Sanitized fail-closed error safe for the authenticated response."""
+
+
+def reference(sha):
+    if not re.fullmatch(r"[a-f0-9]{64}", sha):
+        raise ValueError("invalid image SHA256")
+    return REF + sha.encode("ascii")
+
+
+def reference_sha(raw):
+    if not isinstance(raw, bytes):
+        raise ValueError("invalid image record")
+    if not raw.startswith(REF):
+        if raw.startswith(b"CRAFT-R2:"):
+            raise ValueError("unsupported image reference version")
+        return None
+    sha = raw[len(REF):].decode("ascii")
+    reference(sha)
+    return sha
+
+
 class Images:
-    MODES = {"off", "mirror", "prefer-r2"}
+    MODES = {"off", "mirror", "prefer-r2", "primary"}
 
     def __init__(self, root, mode="off", backend=None, rooms=None):
         if mode not in self.MODES:
-            raise ValueError("CRAFT_R2_MODE must be off, mirror or prefer-r2")
+            raise ValueError("CRAFT_R2_MODE must be off, mirror, prefer-r2 or primary")
         self.root, self.mode, self.backend = Path(root), mode, backend
         self.rooms = None if rooms is None else frozenset(rooms)
         if self.rooms is not None and any(not re.fullmatch(ROOM, r) for r in self.rooms):
@@ -218,6 +245,7 @@ class Images:
         self.worker = None
         self.worker_lock = threading.Lock()
         self.closed = False
+        self.primary_slots = threading.BoundedSemaphore(8)
 
     @classmethod
     def from_env(cls, root, env=None):
@@ -229,6 +257,8 @@ class Images:
             try:
                 result.backend = S3.from_env(env)
             except Exception:
+                if mode == "primary":
+                    raise StorageUnavailable("R2 主存配置不可用；服务未启动") from None
                 LOG.warning("Shared craft R2 configuration unavailable; using local images")
         return result
 
@@ -236,11 +266,48 @@ class Images:
         return (self.mode != "off" and self.backend is not None
                 and (self.rooms is None or room in self.rooms))
 
+    def primary(self, room):
+        # Selection is independent of backend health: a failed backend must never
+        # accidentally select the old local-authoritative write path.
+        return self.mode == "primary" and (self.rooms is None or room in self.rooms)
+
+    def store(self, room, kind, name, raw):
+        if not self.primary(room):
+            return raw
+        if not raw or len(raw) > MAX_IMAGE or reference_sha(raw):
+            raise ValueError("invalid image payload/size")
+        if not self.primary_slots.acquire(blocking=False):
+            raise StorageUnavailable("R2 主存繁忙；图片未保存，请稍后重试")
+        try:
+            if self.closed or self.backend is None:
+                raise OSError("R2 unavailable")
+            sha = digest(raw)
+            ensure_object(self.backend, object_key(room, kind, name, sha), raw)
+            return reference(sha)
+        except Exception:
+            raise StorageUnavailable("R2 主存上传或完整回读校验失败；图片未保存") from None
+        finally:
+            self.primary_slots.release()
+
     def _failure(self):
         self.retry_at = time.monotonic() + 30
         LOG.warning("Shared craft R2 unavailable or SHA check failed; local image retained")
 
     def read(self, room, kind, name, local):
+        sha = reference_sha(local)
+        if sha:
+            try:
+                # Persistent references are readable in any configured R2 mode,
+                # including rooms removed from the write canary. Never send a
+                # pointer as image bytes, even when mode=off.
+                if self.mode == "off" or self.backend is None or self.closed:
+                    raise OSError("R2 reference requires backend")
+                remote = verified_get(self.backend, object_key(room, kind, name, sha), sha)
+                if remote is None:
+                    raise OSError("missing R2 image")
+                return remote
+            except Exception:
+                raise StorageUnavailable("R2 主存图片读取或校验失败；引用已保留") from None
         if self.mode != "prefer-r2" or not self.enabled(room) or time.monotonic() < self.retry_at:
             return local
         key = object_key(room, kind, name, digest(local))
@@ -261,7 +328,7 @@ class Images:
             self.mirror(*identity, Path(path).read_bytes())
 
     def mirror(self, room, kind, name, raw):
-        if not self.enabled(room) or time.monotonic() < self.retry_at:
+        if self.primary(room) or reference_sha(raw) or not self.enabled(room) or time.monotonic() < self.retry_at:
             return
         key = object_key(room, kind, name, digest(raw))
         if len(raw) > MAX_IMAGE:

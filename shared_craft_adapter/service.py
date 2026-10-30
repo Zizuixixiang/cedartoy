@@ -24,7 +24,7 @@ from starlette.routing import Route
 from .identity import resolve, author_access, require_active_account
 from .storage import RoomLock, protect_store, read_json
 from .sharing import Shares
-from .object_storage import Images
+from .object_storage import Images, StorageUnavailable
 from . import ui
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,6 +123,8 @@ class Room:
                    "__package__": "shared_craft_room", "__file__": str(UPSTREAM / "server.py")}
         exec(original_code(), self.ns)
         with self.lock:
+            from .primary import recover
+            recover(folder, root)
             for name, cls in (("canvas", "SharedCanvas"), ("beads", "BeadBoards"), ("gallery", "CraftGallery")):
                 path = folder / (name + ".json")
                 if path.exists():
@@ -320,6 +322,8 @@ def create_app(data_dir, accounts_db, grants_db, secret, *, images=None):
                             response = Response(images.read_file(response.path), media_type="image/png")
                         return response
                 return JSONResponse({"error": "Not found"}, status_code=404)
+        except StorageUnavailable as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
         except PermissionError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
         except (KeyError, ValueError, TypeError) as exc:

@@ -15,6 +15,7 @@ open_bead_board(board_id) 查板/色表/库存；select_bead_color(board_id,colo
 place_beads(board_id,beads)：beads=[{"x":0,"y":0,"color":"F14"}]，每次1–5颗，x/y 为整数0..size-1。
 take_bead(board_id,x,y) 取豆；refill_beads(board_id,color) 用完后补80颗；get_bead_snapshot(board_id) 看 PNG。
 set_bead_work_plan/pin_bead_reference(board_id,beads,title?) 存1–512颗计划，title≤60字；continue_bead_work(board_id,handfuls?,interval_ms?) 执行1–8批，每批≤5颗，间隔250–1500毫秒。
+新版上游支持 upload_bead_reference(board_id,data_url)：真实 PNG/JPEG/WebP Base64 image data URL，≤1400000字符且原图≤1MB；只钉参考图，不推算坐标。Base64 耗 token，已有坐标用 pin_bead_reference。
 reveal_bead_gift(board_id) 揭晓；work_bead_finish(board_id,action)：params.action=cover→heat→start_iron→finish_iron→lift；等 heat_ready_at/cool_ready_at，熨烫2.8–6.2秒；uncover 在盖纸/预热时揭纸。
 
 list_gallery；save_gallery(kind,title?,source_id?,piece_columns?,piece_rows?)：kind=sketch/bead；sketch 需笔迹；bead 需网页保存装饰、source_id 豆板ID及正整数 piece_columns/piece_rows。

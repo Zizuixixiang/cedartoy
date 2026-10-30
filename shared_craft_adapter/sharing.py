@@ -5,6 +5,7 @@ import uuid
 from contextlib import closing
 
 from .identity import author_access
+from .object_storage import file_identity, reference_sha, StorageUnavailable
 
 
 class Shares:
@@ -50,12 +51,19 @@ class Shares:
                                  (int(time.time()), result["id"]))
                     result["status"] = "shared"
                 return result
-            image = room.gallery.image_path(item_id).read_bytes()
+            path = room.gallery.image_path(item_id)
+            image = path.read_bytes()
+            if reference_sha(image):
+                if self.images is None:
+                    raise StorageUnavailable("R2 主存图片需要配置读取后端")
+                image = self.images.read(*file_identity(self.images.root, path), image)
             submission = uuid.uuid4().hex
+            stored = (self.images.store(identity["room"], "shares", submission, image)
+                      if self.images is not None else image)
             conn.execute("INSERT INTO submissions VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (submission, identity["room"], item_id, identity["actor"], item["title"],
-                          note, image, "shared", int(time.time()), int(time.time())))
-        # The frozen BLOB commits first and is never replaced by a live image.
+                          note, stored, "shared", int(time.time()), int(time.time())))
+        # Primary references commit only after verified upload; legacy mirrors queue after commit.
         if self.images is not None:
             try:
                 self.images.mirror(identity["room"], "shares", submission, image)
@@ -65,6 +73,8 @@ class Shares:
 
     def _image(self, row):
         if self.images is None:
+            if reference_sha(row["image"]):
+                raise StorageUnavailable("R2 主存图片需要配置读取后端")
             return row["image"]
         return self.images.read(row["room"], "shares", row["id"], row["image"])
 

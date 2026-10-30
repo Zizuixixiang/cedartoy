@@ -13,9 +13,9 @@ UPSTREAM = ROOT / "vendor/shared-craft-room/src/shared_craft_room/server.py"
 GUIDE = ROOT / "shared_craft_adapter/guide.txt"
 
 
-def original_tools():
+def original_tools(source=None):
     # Evaluate only schema constants, avoiding upstream module-level store creation.
-    tree = ast.parse(UPSTREAM.read_text())
+    tree = ast.parse(UPSTREAM.read_text() if source is None else source)
     names = {"POINT", "BEAD", "STROKE", "TOOLS"}
     nodes = [node for node in tree.body if isinstance(node, ast.Assign)
              and any(isinstance(t, ast.Name) and t.id in names for t in node.targets)]
@@ -47,9 +47,12 @@ def guide_signatures(text):
 
 class SharedCraftGuideTests(unittest.TestCase):
     def test_every_upstream_action_field_and_enum(self):
+        self.assert_guide_contract(original_tools())
+
+    def assert_guide_contract(self, tools):
         text = GUIDE.read_text()
         signatures = guide_signatures(text)
-        for tool in original_tools():
+        for tool in tools:
             name, schema = tool["name"], tool["inputSchema"]
             with self.subTest(action=name):
                 expected = set(schema["properties"])
@@ -62,8 +65,22 @@ class SharedCraftGuideTests(unittest.TestCase):
                     for value in field.get("enum", []):
                         self.assertIn(str(value), text)
         self.assertNotIn("mode", signatures["brush_stroke"])
+        # This one explicitly version-qualified action is documented ahead of
+        # the authorized vendor merge; every other extra action remains an error.
+        self.assertIn("新版上游支持 upload_bead_reference(board_id,data_url)", text)
         self.assertEqual(set(signatures),
-                         {t["name"] for t in original_tools()} | {"list_gallery", "save_gallery", "share_work"})
+                         {t["name"] for t in tools} | {"list_gallery", "save_gallery", "share_work", "upload_bead_reference"})
+
+    def test_both_reviewed_upstream_guide_contracts(self):
+        from tests_toy.test_shared_craft_framer import LEGACY, COMPOSED, upstream_source
+        for revision in (LEGACY, COMPOSED):
+            with self.subTest(revision=revision):
+                tools = original_tools(upstream_source(revision, "server.py"))
+                self.assert_guide_contract(tools)
+                upload = next((t for t in tools if t["name"] == "upload_bead_reference"), None)
+                self.assertEqual(upload is not None, revision == COMPOSED)
+                if upload:
+                    self.assertEqual(upload["inputSchema"]["properties"]["data_url"]["maxLength"], 1400000)
 
     def test_adapter_fields_constraints_and_attribution(self):
         text = GUIDE.read_text()
@@ -71,14 +88,18 @@ class SharedCraftGuideTests(unittest.TestCase):
         self.assertEqual(signatures["save_gallery"],
                          dict(kind=True, title=False, source_id=False, piece_columns=False, piece_rows=False))
         self.assertEqual(signatures["share_work"], dict(item_id=True, note=False))
+        self.assertEqual(signatures["upload_bead_reference"], dict(board_id=True, data_url=True))
         for constraint in ("1–14", "1–100", "0.05–1", "1–12", "180–1200", "1–5",
                            "1–512", "1–8", "250–1500", "2.8–6.2", "40字", "60字",
                            "500字", "size-1", "正整数", "heat_ready_at/cool_ready_at",
-                           "confirm=true", "默认不分享", "主动调用即分享", "不公开"):
+                           "confirm=true", "默认不分享", "主动调用即分享", "不公开",
+                           "1400000", "1MB", "Base64 image data URL", "token", "不推算坐标"):
             self.assertIn(constraint, text)
         for attribution in ("嘞噫黎", "493242614", "https://github.com/SuLee3927/shared-craft-room", "MIT"):
             self.assertIn(attribution, text)
-        self.assertLess(len(text), 1729)  # Before this correction; characters, not tokens.
+        # 1704 characters before upload documentation; allow only its short
+        # on-demand calling contract, never a Base64 example or global schema.
+        self.assertLessEqual(len(text), 1704 + 180)  # Characters, not tokens.
 
     def test_actual_root_get_guide_response(self):
         import server
