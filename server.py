@@ -4673,7 +4673,7 @@ def _duel_proxy_allowed(method, public_path):
         return (
             public_path in {
                 "/", "/chips", "/api/whoami", "/api/chips",
-                "/api/notifications/unread",
+                "/api/notifications/unread", "/api/spectating/rooms",
                 "/api/chips/exchanges", "/api/chips/exchanges/catalog",
             }
             or public_path in {
