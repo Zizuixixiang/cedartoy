@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, History, House, ListPlus, LogOut, Plus, RefreshCw, Search, Shield, TriangleAlert, Trophy, UserRound } from 'lucide-react'
 import { api, ensureGuestToken, logoutToGuest, post } from '../api'
@@ -110,6 +110,45 @@ export default function Lobby() {
   const [cedartoyMe, setCedartoyMe] = useState(null)
   const [accountAction, setAccountAction] = useState(null)
   const [spoilerConfirm, setSpoilerConfirm] = useState(null)
+  const createDockRef = useRef(null)
+  const [desktopPickerStyle, setDesktopPickerStyle] = useState(undefined)
+
+  useLayoutEffect(() => {
+    if (!puzzlePickerOpen || createTab !== 'random' || bottomTab !== 'rooms') return
+    // Escape the desktop form's scroll clipping; keep the mobile picker unchanged.
+    const positionPicker = () => {
+      if (!window.matchMedia('(min-width: 901px)').matches) {
+        setDesktopPickerStyle(undefined)
+        return
+      }
+      const search = createDockRef.current?.querySelector('.puzzle-search')
+      const body = createDockRef.current?.querySelector('.create-body')
+      if (!search || !body) return
+      const anchor = search.getBoundingClientRect()
+      const bounds = body.getBoundingClientRect()
+      const below = Math.max(0, bounds.bottom - anchor.bottom - 12)
+      const above = Math.max(0, anchor.top - bounds.top - 12)
+      const upwards = below < Math.min(210, above)
+      const maxHeight = Math.min(210, upwards ? above : below)
+      setDesktopPickerStyle({
+        position: 'fixed',
+        left: anchor.left,
+        right: 'auto',
+        width: anchor.width,
+        top: upwards ? 'auto' : anchor.bottom + 4,
+        bottom: upwards ? window.innerHeight - anchor.top + 4 : 'auto',
+        maxHeight,
+        visibility: anchor.top < bounds.top || anchor.bottom > bounds.bottom ? 'hidden' : 'visible',
+      })
+    }
+    positionPicker()
+    window.addEventListener('resize', positionPicker)
+    window.addEventListener('scroll', positionPicker, true)
+    return () => {
+      window.removeEventListener('resize', positionPicker)
+      window.removeEventListener('scroll', positionPicker, true)
+    }
+  }, [puzzlePickerOpen, createTab, bottomTab])
 
   const load = async () => {
     try {
@@ -365,7 +404,7 @@ export default function Lobby() {
                   <span className="puzzle-search-count">{filteredPuzzles.length}题</span>
                 </label>
                 {puzzlePickerOpen && (
-                  <div id="puzzle-search-results" className="puzzle-search-results" role="listbox" aria-label="题目搜索结果">
+                  <div id="puzzle-search-results" className="puzzle-search-results" style={desktopPickerStyle} role="listbox" aria-label="题目搜索结果">
                     {filteredPuzzles.length > 0 ? filteredPuzzles.map((puzzle) => (
                       <button
                         type="button"
@@ -566,7 +605,7 @@ export default function Lobby() {
             )}
           </div>
         </section>}
-        <aside className="create-dock">{createPanel}</aside>
+        <aside className="create-dock" ref={createDockRef}>{createPanel}</aside>
       </main>
 
       <nav className="lobby-bottom-nav" aria-label="底部导航">

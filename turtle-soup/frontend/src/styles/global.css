@@ -1492,19 +1492,135 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
     overflow: hidden;
     grid-template-rows: auto minmax(0, 1fr);
   }
-  .lobby-main {
-    min-height: 0;
-    overflow: hidden;
-    padding-bottom: 22px;
+  .lobby-page .lobby-main {
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 520px);
+    gap: clamp(16px, 2vw, 30px);
+    /* Reserve the existing fixed navigation and its bottom breathing room. */
+    padding: 24px 24px calc(82px + 22px);
+    font-size: 16px;
   }
-  .rooms-area {
+  .lobby-page .lobby-main.single-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lobby-page .rooms-area {
     height: 100%;
     min-height: 0;
   }
-  .pixel-room-list {
-    padding-bottom: calc(14px + 82px);
+  .lobby-page .pixel-room-list {
+    padding-bottom: 14px;
   }
-  .lobby-bottom-nav {
+  .lobby-page .rooms-head h1 {
+    font-size: 28px;
+    line-height: 1.35;
+  }
+  .lobby-page .rooms-head > button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .lobby-page .pixel-room-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px 16px;
+  }
+  .lobby-page .room-glyph {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: clamp(52px, 6vw, 92px);
+    height: clamp(52px, 6vw, 92px);
+  }
+  .lobby-page .room-code {
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .lobby-page .room-copy {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .lobby-page .room-copy h2 {
+    padding-right: 0;
+    font-size: 24px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .lobby-page .create-dock {
+    min-width: 0;
+    height: 100%;
+    align-self: stretch;
+  }
+  .lobby-page .pixel-create {
+    height: 100%;
+    max-height: none;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .lobby-page .terminal-head strong {
+    font-size: 24px;
+    line-height: 1.35;
+  }
+  .lobby-page .create-body {
+    grid-template-rows: auto minmax(140px, 1fr) auto;
+    gap: 16px;
+    padding: 20px;
+  }
+  .lobby-page .create-body:has(.terminal-note) {
+    grid-template-rows: auto auto minmax(140px, 1fr) auto;
+  }
+  .lobby-page .create-body:has(textarea) {
+    grid-template-rows: repeat(2, minmax(160px, 1fr)) auto;
+  }
+  .lobby-page .terminal-label:has(textarea) {
+    grid-template-rows: auto minmax(112px, 1fr);
+  }
+  .lobby-page .terminal-label textarea {
+    height: 100%;
+    line-height: 1.5;
+  }
+  .lobby-page .terminal-preview {
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    overflow-wrap: anywhere;
+  }
+  .lobby-page .terminal-label :is(select, textarea),
+  .lobby-page .terminal-preview,
+  .lobby-page .room-copy p {
+    font-size: 16px;
+  }
+  .lobby-page :is(.terminal-head small, .room-lock-option, .puzzle-tag-filter,
+    .puzzle-search input, .puzzle-search-count, .puzzle-result-title,
+    .puzzle-search-empty, .terminal-note, .terminal-error) {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .lobby-page .terminal-label textarea::placeholder {
+    font-size: 14px;
+  }
+  .lobby-page .puzzle-result-tags span {
+    font-size: 12px;
+  }
+  .lobby-page .puzzle-tag-filter {
+    min-height: 34px;
+  }
+  .lobby-page .puzzle-search {
+    min-height: 42px;
+  }
+  .lobby-page .pixel-create .actions {
+    align-items: stretch;
+  }
+  .lobby-page .pixel-create .actions button,
+  .lobby-page .pixel-primary.wide {
+    min-height: 48px;
+    padding: 10px 14px;
+    font-size: 16px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .lobby-page .lobby-bottom-nav {
     position: fixed;
     left: 0;
     right: 0;
