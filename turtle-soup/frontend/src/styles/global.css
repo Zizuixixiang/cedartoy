@@ -1495,9 +1495,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   .lobby-page .lobby-main {
     grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 520px);
     gap: clamp(16px, 2vw, 30px);
-    /* Reserve the existing fixed navigation and its bottom breathing room. */
-    padding: 24px 24px calc(82px + 22px);
-    font-size: 16px;
   }
   .lobby-page .lobby-main.single-view {
     grid-template-columns: minmax(0, 1fr);
@@ -1507,51 +1504,14 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
     min-height: 0;
   }
   .lobby-page .pixel-room-list {
-    padding-bottom: 14px;
-  }
-  .lobby-page .rooms-head h1 {
-    font-size: 28px;
-    line-height: 1.35;
-  }
-  .lobby-page .rooms-head > button {
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
-  .lobby-page .pixel-room-card {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 8px 16px;
-  }
-  .lobby-page .room-glyph {
-    grid-column: 1;
-    grid-row: 1 / 3;
-    width: clamp(52px, 6vw, 92px);
-    height: clamp(52px, 6vw, 92px);
-  }
-  .lobby-page .room-code {
-    position: static;
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
-    max-width: 100%;
-    overflow-wrap: anywhere;
-    font-size: 14px;
-    line-height: 1.4;
-  }
-  .lobby-page .room-copy {
-    grid-column: 2;
-    grid-row: 2;
-  }
-  .lobby-page .room-copy h2 {
-    padding-right: 0;
-    font-size: 24px;
-    line-height: 1.35;
-    overflow-wrap: anywhere;
+    padding-bottom: calc(14px + 82px);
   }
   .lobby-page .create-dock {
     min-width: 0;
-    height: 100%;
+    /* Keep the dock's 24px top gap and navigation clearance independently of the list. */
+    margin: -12px 0 82px;
     align-self: stretch;
+    font-size: 16px;
   }
   .lobby-page .pixel-create {
     height: 100%;
@@ -1587,8 +1547,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
     overflow-wrap: anywhere;
   }
   .lobby-page .terminal-label :is(select, textarea),
-  .lobby-page .terminal-preview,
-  .lobby-page .room-copy p {
+  .lobby-page .terminal-preview {
     font-size: 16px;
   }
   .lobby-page :is(.terminal-head small, .room-lock-option, .puzzle-tag-filter,
