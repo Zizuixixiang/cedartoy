@@ -3086,7 +3086,7 @@
       .game-card .card-enter { grid-column: 2 / -1; }
 
       :root {
-        --desktop-title: 22px;
+        --desktop-title: 28px;
         --desktop-body: 16px;
         --desktop-control: 14px;
         --desktop-meta: 13px;
@@ -3192,7 +3192,14 @@
       #historyModal .history-fold-toggle { min-height: 36px; }
       #historyModal .history-fold-body { padding: 4px 0; }
       .history-stat { height: auto; min-height: 32px; white-space: normal; }
-      .history-tab { white-space: normal; overflow-wrap: anywhere; }
+      .history-tabs { grid-auto-rows: 1fr; }
+      .history-tab {
+        display: grid;
+        place-items: center;
+        text-align: center;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
       .history-duel-meta { grid-template-columns: minmax(0, 1fr); }
       .history-duel-time { white-space: normal; }
 
@@ -3542,9 +3549,9 @@
 
     <main class="main">
       <section class="sidebar" aria-label="游戏列表">
-        <div class="search-row">
+        <form class="search-row" id="searchForm" role="search" autocomplete="off">
           <label class="search">
-            <input id="searchInput" type="search" placeholder="搜索游戏..." autocomplete="off">
+            <input id="searchInput" name="q" type="search" aria-label="搜索游戏" placeholder="搜索游戏..." autocomplete="off">
             <span class="search-mark">⌕</span>
           </label>
           <button class="notification-bell" id="notificationBell" type="button" aria-label="通知" title="通知">
@@ -3553,7 +3560,7 @@
             </svg>
             <span class="notification-badge" id="notificationBadge" hidden>0</span>
           </button>
-        </div>
+        </form>
 
         <div class="tabs" role="tablist" aria-label="游戏分类">
           <button class="tab-button" data-filter="test" type="button">测试</button>
@@ -5147,98 +5154,106 @@
       url: `/${id}`, ranks: []
     })));
 
-    // Desktop status-log copy only; mobile drawers keep each game's original logs.
+    // Desktop homepage copy only; mobile drawers keep each game's original logs.
     const desktopTestLogs = {
+      "humanity": games.find((game) => game.id === "humanity").logs.map((line) =>
+        line.replace(" · 仅供娱乐", "")),
+      "sins_virtues": games.find((game) => game.id === "sins_virtues").logs
+        .filter((line) => line !== "仅供娱乐；不是心理诊断，也不代表道德评价。")
+        .map((line) => line.replace(" · 仅供娱乐", "")),
+      "ai_life": games.find((game) => game.id === "ai_life").logs.map((line) =>
+        line.replace(" · 并非作者官方版本", "")),
+      "nowhere": games.find((game) => game.id === "nowhere").logs.map((line) =>
+        line.replace("非商业平台适配，非作者官方版本。", "非商业平台适配。")),
       "aidep": [
         "学习卡住时，你会把哪一步交给 AI？",
         "回想使用 AI 的习惯，看看情绪、功能、认知依赖和失控感。",
-        "Wu 等研究改编，仅供人类；原研究限中国 18–24 岁大学生学习场景。",
-        "供自我了解，不测情感陪伴，也不作成瘾诊断。"
+        "Wu 等研究改编，仅供人类。"
       ],
       "bsfl": [
         "一个人待着时，是自在，还是总想找人陪？",
         "回想独处、分离时的感受，看看自己有多害怕孤独。",
-        "Ventura-León 等题组 · 供自我了解，不判定依恋类型。"
+        "Ventura-León 等题组。"
       ],
       "bsr": [
         "这句话真有深意，还是只是听起来很厉害？",
         "给抽象生成句和古典格言打分，看看哪一类更打动你。",
-        "Pennycook 等研究的娱乐改编，不测智商或识骗能力。"
+        "Pennycook 等研究改编。"
       ],
       "evs": [
         "一句批评、一次冷淡，哪种时刻更容易戳中你？",
         "从被否定、关系担忧、人际不和与回避拖延，找找自己的敏感点。",
-        "Yamaguchi 题组 · 看结果与小建议，供自我了解，不作诊断。"
+        "Yamaguchi 题组 · 看结果与小建议。"
       ],
       "ipip_adhd": [
         "刚想做什么来着？注意力和行动节奏来报到。",
         "回顾忘事、难以专注、抢答和坐立不安，看看哪些表现更像自己。",
-        "IPIP 表征版 · 供自我了解，不用于 ADHD 筛查或诊断。"
+        "IPIP 表征版。"
       ],
       "ipip_empathy": [
         "看到别人处境艰难，你心里会起多大波澜？",
         "选出像自己的描述，看看关心与同情他人的倾向。",
-        "IPIP / Barchard 题组 · 供自我了解，不是完整共情能力评级。"
+        "IPIP / Barchard 题组。"
       ],
       "ipip_need_for_cognition": [
         "碰到复杂问题，你想绕开，还是拆开看看？",
         "从难读的材料、抽象概念和新办法，摸摸自己的动脑偏好。",
-        "IPIP 表征版 · 供自我了解，喜欢动脑不等于智商高低。"
+        "IPIP 表征版。"
       ],
       "ipip_self_monitoring": [
         "聚光灯照过来时，你会接住，还是往后退一步？",
         "回想即兴表达、吸引注意的时刻，看看自己怎样呈现给别人。",
-        "IPIP 表征版 · 供自我了解，不评判真诚与否。"
+        "IPIP 表征版。"
       ],
       "ipip_sociability": [
         "走进一场聚会，你会先开口，还是等熟人出现？",
         "从主动交谈、表达感受与相处时的自在，看看自己的社交倾向。",
-        "IPIP CPI-Sy 表征版 · 供自我了解，不是人气榜。"
+        "IPIP CPI-Sy 表征版。"
       ],
       "irrc": [
         "关系里，你有哪些拿手项，又会在哪些地方卡住？",
         "从换位思考、冲突处理到亲密回避，看看七个方面的表现。",
-        "Faber 等题组 · 供自我了解，优势与困难分开看，不打能力总分。"
+        "Faber 等题组。"
       ],
       "jrrs": [
         "伴侣夸了别人、提起前任，你的醋意会冒头吗？",
         "回顾吃醋时的不安、反应，以及它对日常生活的影响。",
-        "İpek 等题组 · 供自我了解，只看整体倾向，不划分嫉妒类型。"
+        "İpek 等题组。"
       ],
       "mesx": [
         "把关怀圈展开：家人之外，谁还在里面？",
         "给不同的人、动物与植物选择圈层，看看自己的关怀范围。",
-        "Crimston 等题组 · 供自我了解，不评判人格好坏。"
+        "Crimston 等题组。"
       ],
       "ppts": [
         "待办一来就清掉，还是总想明天再说？",
         "看看拖延与抢先完成这两种节奏，它们也可能同时出现在你身上。",
-        "Husain 等题组 · 供自我了解，不评效率等级。"
+        "Husain 等题组。"
       ],
       "rbi": [
         "回放过去一周：你怎样把在意变成行动？",
         "从陪伴亲昵、履行约定到表达感受，看看自己与伴侣的互动。",
-        "Harel 等题组 · 供有伴侣者自我了解，不是对方给你的评价。"
+        "Harel 等题组。"
       ],
       "rnss": [
         "在人际关系里，你想要的支持有没有被接住？",
         "做自己、被保护、被主动关心……看看五类需求的满足程度。",
-        "Žvelc 等题组 · 供自我了解，不限恋爱关系，也不衡量个人价值。"
+        "Žvelc 等题组。"
       ],
       "romlon": [
         "看到别人甜蜜时，你会不会觉得自己落了单？",
         "用四道题回想浪漫期待与恋爱比较，看看这份孤独感。",
-        "Husain 等题组 · 供自我了解，不代表所有孤独，也不作诊断。"
+        "Husain 等题组。"
       ],
       "ross": [
         "难过时，你想要一个拥抱、一条建议，还是先自己扛？",
         "看看自己会直接求助、委婉表达，还是暂时不想要支持。",
-        "Perks 等题组 · 供有伴侣关系经验者自我了解，四种反应分开看。"
+        "Perks 等题组 · 四种反应分开看。"
       ],
       "rss": [
         "关系一有摩擦，你先防御、起疑，还是试着把话说开？",
         "回想现在或上一段恋爱，看看防御、信任困难与相处技能上的卡点。",
-        "Peel 等题组 · 供自我了解，不预言分手，也不归罪任何一方。"
+        "Peel 等题组。"
       ],
       "dt_relations": [
         "照片能不能发、哪些话不想聊，你的边界想怎样被听见？",
@@ -5300,6 +5315,10 @@
         "每题保存或跳过后即可互看已保存的回答，回顾各自计划；不计分。",
         "题源：Alli M. Tucker-Stanojković · CedarToy 中文翻译与编排。"
       ]
+    };
+
+    const desktopGameShorts = {
+      sins_virtues: "35 题看看七种欲望与七种调节怎样同时出现。"
     };
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
@@ -7168,7 +7187,9 @@
       }
       let lastTestGroup = "";
       $("gameList").innerHTML = homepageGames.map((game) => {
-        const searchable = `${game.name} ${game.short} ${game.tags.join(" ")}`.toLowerCase();
+        const short = !window.matchMedia("(max-width: 599px)").matches
+          ? (desktopGameShorts[game.id] || game.short) : game.short;
+        const searchable = `${game.name} ${short} ${game.tags.join(" ")}`.toLowerCase();
         const hidden = !canShowGame(game) || game.category !== filter || (query && !searchable.includes(query));
         const testGroup = filter === "test" && !hidden
           ? (game.testGroup === "deeptalk" ? "深聊问答 · 不计分" : "测试 · 有结果") : "";
@@ -7186,7 +7207,7 @@
               : `<span class="glyph">${game.glyph}</span>`}
             <span>
               <h2 class="game-title">${game.name}</h2>
-              <p class="game-sub">${game.short}</p>
+              <p class="game-sub">${short}</p>
               <span class="tags">${tags}</span>
             </span>
             <span class="level">${game.level}</span>
@@ -10803,6 +10824,7 @@
         renderGames();
       });
     });
+    $("searchForm").addEventListener("submit", (event) => event.preventDefault());
     $("searchInput").addEventListener("input", renderGames);
     $("searchInput").addEventListener("focus", () => document.body.classList.add("searching"));
     $("searchInput").addEventListener("blur", () => document.body.classList.remove("searching"));
