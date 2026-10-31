@@ -576,7 +576,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
                 "rematch",
                 {"room_id": "OLDROOM1", "game_type": "must-drop",
                  "stake": 99},
-                {"room_id": "OLDROOM1"},
+                {"room_id": "OLDROOM1", "household_ais": {"42": "machine"}},
                 "rematch 再来一局",
             ),
             (
@@ -655,6 +655,7 @@ class DuelRoomsPlatformTests(unittest.TestCase):
             patch.object(
                 server, "_duel_bound_human_player_id", return_value="trusted-human"
             ),
+            patch.object(server, "_duel_household_ai_names", return_value={"42": "machine"}),
             patch.object(server.httpx, "post", return_value=FakeResponse()) as post,
             patch.object(server, "_stamp_save_owner"),
             patch.object(server, "_anti_addiction_record_success", return_value=""),

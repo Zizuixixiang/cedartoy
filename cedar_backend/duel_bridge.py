@@ -52,6 +52,23 @@ def _duel_bound_human_player_id(ai_user, *,
     return str(rows[0]["id"]) if rows else None
 
 
+def _duel_household_ai_names(ai_user, *, _db_connect, _duel_bound_human_player_id):
+    """Trusted account names, never a caller-supplied roster or human seat."""
+    names = {str(ai_user["id"]): str(ai_user["username"])}
+    human_id = _duel_bound_human_player_id(ai_user)
+    if human_id is None:
+        return names
+    with _db_connect() as conn:
+        rows = conn.execute("""
+            SELECT ai.id, ai.username FROM user_bindings b
+            JOIN toy_users ai ON ai.id = b.ai_user_id
+            WHERE b.human_user_id = ? AND ai.is_ai = 1 AND ai.deleted_at IS NULL
+            ORDER BY ai.id
+        """, (int(human_id),)).fetchall()
+    names.update({str(row["id"]): str(row["username"]) for row in rows})
+    return names
+
+
 def _duel_state_retry_example(*, wait, full_state):
     params = {"room_id": "..."}
     if wait:
@@ -340,6 +357,7 @@ def _duel_backend_mcp_error(status_code, data, payload, *,
 
 
 def _prepare_duel_payload(arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name, *,
+    trusted_household_ais=None,
     _DUEL_MOVE_SIBLING_FIELDS,
     _McpError,
     _duel_mcp_error,
@@ -362,6 +380,12 @@ def _prepare_duel_payload(arguments, trusted_opponent_id, force_opponent, truste
                 normalized_arguments["message"] = nested_message
             arguments = normalized_arguments
     action = arguments.get("action")
+    if "include_human" in arguments:
+        if action != "new" or type(arguments["include_human"]) is not bool:
+            raise _McpError(-32602, "include_human 仅用于 new，必须是布尔值")
+    ai_only = action == "new" and arguments.get("include_human") is False
+    if action == "new" and "ai_players" in arguments and not ai_only:
+        raise _McpError(-32602, "MCP ai_players 仅用于 new(include_human=false)")
     action_fields = {
         "catalog": set(),
         "rooms": {"include_terminal", "limit", "offset"},
@@ -520,8 +544,29 @@ def _prepare_duel_payload(arguments, trusted_opponent_id, force_opponent, truste
     if force_opponent:
         # 账号请求绝不接受模型自报 opponent_id；只认平台绑定表。
         payload.pop("opponent_id", None)
-        if action in {"new", "join", "chips"} and trusted_opponent_id is not None and not payload.get("invite_code"):
+        if action in {"new", "join", "chips"} and not ai_only and trusted_opponent_id is not None and not payload.get("invite_code"):
             payload["opponent_id"] = trusted_opponent_id
+    if ai_only:
+        if not trusted_player_id or trusted_household_ais is None:
+            raise _McpError(-32001, "不带人类开房需要已认证 AI 的绑定上下文")
+        selected = arguments.get("ai_players", [])
+        if not isinstance(selected, list) or len(selected) > 5:
+            raise _McpError(-32602, "ai_players 必须是至多 5 个其他自家小机 ID 的数组")
+        roster = [trusted_player_id, *selected]
+        accounts = []
+        for pid in roster:
+            if not isinstance(pid, str) or not re.fullmatch(r"[1-9][0-9]*(?::[2-5])?", pid):
+                raise _McpError(-32602, "ai_players 使用账号 ID，可带 :2 至 :5 存档槽")
+            account = pid.split(":", 1)[0]
+            if account not in trusted_household_ais:
+                raise _McpError(-32003, "所选小机不属于当前 AI 的绑定家庭")
+            if account in accounts:
+                raise _McpError(-32602, "调用者自动入座，同一账号不能重复入座（含不同槽）")
+            accounts.append(account)
+        payload.update(include_human=False, participant_ids=roster,
+                       household_ais={key: trusted_household_ais[key] for key in accounts})
+    elif action == "rematch" and trusted_household_ais is not None:
+        payload["household_ais"] = dict(trusted_household_ais)
     return payload
 
 
@@ -598,6 +643,7 @@ def _request_duel_backend(payload, *,
 
 
 def _play_duel(arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name, *,
+    trusted_household_ais=None,
     _annotate_duel_wait_followup,
     _prepare_duel_payload,
     _request_duel_backend,
@@ -610,6 +656,7 @@ def _play_duel(arguments, trusted_opponent_id, force_opponent, trusted_player_id
         force_opponent=force_opponent,
         trusted_player_id=trusted_player_id,
         trusted_display_name=trusted_display_name,
+        **({"trusted_household_ais": trusted_household_ais} if trusted_household_ais is not None else {}),
     )
     duel_wait_control.begin(payload)
     try:

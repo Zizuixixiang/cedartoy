@@ -255,6 +255,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
     _current_account,
     _deserialize_object_param,
     _duel_bound_human_player_id,
+    _duel_household_ai_names,
     _finalize_play_response,
     _fishing_import,
     _game_maintenance,
@@ -537,7 +538,7 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
         response = autochess_adapter.play(merged_arguments, **identity)
     elif game == "duel":
         # Duel 是独立 loopback 进程（8772）。账号 player_id 已在上方被强制
-        # 改写；AI 新建房间时再从绑定关系补齐人类身份，容量闸门按人机对计数。
+        # 改写；普通开房的参赛身份只从平台绑定关系推导。
         trusted_opponent_id = None
         force_opponent = bool(account_user and account_user.get("is_ai"))
         if (action in {"rooms", "chips", "invite", "start", "chat", "reclaim"} or merged_arguments.get("invite_code")) and not force_opponent:
@@ -545,7 +546,10 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
                 -32001,
                 f"duel {action} 仅供已认证的 AI 账号操作自己的数据。",
             )
-        if force_opponent and action in {"new", "join", "chips"} and not merged_arguments.get("invite_code"):
+        ai_only = action == "new" and merged_arguments.get("include_human") is False
+        if ai_only and not force_opponent:
+            raise _McpError(-32001, "不带人类开房仅供已认证的 AI 账号")
+        if force_opponent and not ai_only and action in {"new", "join", "chips"} and not merged_arguments.get("invite_code"):
             trusted_opponent_id = _duel_bound_human_player_id(account_user)
         duel_kwargs = {
             "trusted_display_name": account_user.get("username") if force_opponent else None,
@@ -555,6 +559,8 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
                 account_player_id if force_opponent else None
             ),
         }
+        if force_opponent and (ai_only or action == "rematch"):
+            duel_kwargs["trusted_household_ais"] = _duel_household_ai_names(account_user)
         if defer_duel:
             return _DeferredDuelCall(
                 activity_params={key: merged_arguments.get(key) for key in ("op", "loan_action", "exchange_action")},

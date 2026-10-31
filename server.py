@@ -4061,6 +4061,7 @@ def _tool_play_inner(
         _aidep_shared_result=_aidep_shared_result,
         _deserialize_object_param=_deserialize_object_param,
         _duel_bound_human_player_id=_duel_bound_human_player_id,
+        _duel_household_ai_names=_duel_household_ai_names,
         _finalize_play_response=_finalize_play_response,
         _fishing_import=_fishing_import,
         _game_maintenance=_game_maintenance,
@@ -4257,6 +4258,13 @@ def _duel_bound_human_player_id(ai_user):
     )
 
 
+def _duel_household_ai_names(ai_user):
+    return duel_bridge._duel_household_ai_names(
+        ai_user, _db_connect=_db_connect,
+        _duel_bound_human_player_id=_duel_bound_human_player_id,
+    )
+
+
 def _tarot_bound_human_user_id(ai_user):
     return game_dispatch._tarot_bound_human_user_id(
         ai_user,
@@ -4367,9 +4375,11 @@ def _prepare_duel_payload(
     force_opponent=False,
     trusted_player_id=None,
     trusted_display_name=None,
+    trusted_household_ais=None,
 ):
     return duel_bridge._prepare_duel_payload(
         arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name,
+        trusted_household_ais=trusted_household_ais,
         _DUEL_MOVE_SIBLING_FIELDS=_DUEL_MOVE_SIBLING_FIELDS,
         _McpError=_McpError,
         _duel_mcp_error=_duel_mcp_error,
@@ -4399,9 +4409,11 @@ def _play_duel(
     force_opponent=False,
     trusted_player_id=None,
     trusted_display_name=None,
+    trusted_household_ais=None,
 ):
     return duel_bridge._play_duel(
         arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name,
+        trusted_household_ais=trusted_household_ais,
         _annotate_duel_wait_followup=_annotate_duel_wait_followup,
         _prepare_duel_payload=_prepare_duel_payload,
         _request_duel_backend=_request_duel_backend,
