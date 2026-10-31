@@ -296,7 +296,15 @@ REQUEST_RATE_LIMIT_MAX = 60
 # duel 的官方网关挂等可持续数分钟，首次 prepare 使用独立配额，
 # 避免和常规 MCP 的 60 次/分钟桶互相挤占。内部心跳不重复计数。
 DUEL_REQUEST_RATE_LIMIT_MAX = 120
-DUEL_WEB_REQUEST_RATE_LIMIT_MAX = 600
+# Web 同步按账号 + 房间隔离；10 个房间每 3 秒同步仅 200 次/分钟。
+# 读总量 600 为跨房间兜底，页面/资源/写入不消耗这个桶。
+DUEL_WEB_ROOM_READ_RATE_LIMIT_MAX = 120
+DUEL_WEB_READ_TOTAL_RATE_LIMIT_MAX = 600
+DUEL_WEB_GENERAL_READ_RATE_LIMIT_MAX = 120
+DUEL_WEB_WRITE_RATE_LIMIT_MAX = 120
+DUEL_WEB_PAGE_RATE_LIMIT_MAX = 120
+DUEL_WEB_RESOURCE_RATE_LIMIT_MAX = 120
+DUEL_WEB_ANONYMOUS_READ_RATE_LIMIT_MAX = 120
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 REGISTER_RATE_LIMIT_MAX = 3
 FAILED_LOGIN_WINDOW_SECONDS = 10 * 60
@@ -1336,15 +1344,45 @@ def _check_request_rate_limit(identity, max_count=REQUEST_RATE_LIMIT_MAX):
     )
 
 
-def _check_duel_web_request_rate_limit(identity):
-    """Use a separate bucket so duel polling cannot consume the site's MCP quota."""
-    return _check_sliding_window_limit(
-        _DUEL_WEB_REQUEST_RATE_LIMIT,
-        identity,
-        now=time.time(),
-        window_seconds=REQUEST_RATE_LIMIT_WINDOW_SECONDS,
-        max_count=DUEL_WEB_REQUEST_RATE_LIMIT_MAX,
-    )
+def _check_duel_web_request_rate_limit(identity, method, public_path):
+    """Charge allowed web routes atomically, independently of both MCP quotas."""
+    # 仅接受现有白名单；不解码/放宽路径，也不让 query/perspective 进入桶键。
+    if not _duel_proxy_allowed(method, public_path):
+        return False
+    if public_path in {"/", "/chips"}:
+        limits = [((identity, "page"), DUEL_WEB_PAGE_RATE_LIMIT_MAX)]
+    elif public_path.startswith(("/static/", "/api/npc-avatars/")):
+        # NPC 头像只改变计费类别，handler 中原有鉴权要求保持不变。
+        limits = [((identity, "resource"), DUEL_WEB_RESOURCE_RATE_LIMIT_MAX)]
+    elif method == "GET":
+        identified = identity.startswith("user:")
+        limits = [((identity, "read_total"), (
+            DUEL_WEB_READ_TOTAL_RATE_LIMIT_MAX if identified
+            else DUEL_WEB_ANONYMOUS_READ_RATE_LIMIT_MAX
+        ))]
+        room = re.fullmatch(r"/api/rooms/([A-Z0-9]{8})", public_path)
+        if identified and room:
+            # 白名单仅接受大写八位 ID，这就是上游的规范化房间 ID。
+            limits.append(((identity, "room", room[1]), DUEL_WEB_ROOM_READ_RATE_LIMIT_MAX))
+        else:
+            # 未识别账号的请求按 IP 共用读桶，不能靠换房间放大额度。
+            limits.append(((identity, "read"), DUEL_WEB_GENERAL_READ_RATE_LIMIT_MAX))
+    else:
+        limits = [((identity, "write"), DUEL_WEB_WRITE_RATE_LIMIT_MAX)]
+
+    with _RATE_LIMIT_LOCK:
+        now = time.time()
+        _prune_rate_limit_buckets(
+            _DUEL_WEB_REQUEST_RATE_LIMIT, now, REQUEST_RATE_LIMIT_WINDOW_SECONDS
+        )
+        if any(len(_DUEL_WEB_REQUEST_RATE_LIMIT.get(key, ())) >= maximum
+               for key, maximum in limits):
+            return False
+        # 所有层级均有余量才记账；局部拒绝不消耗总量，总量拒绝不新建房间桶。
+        # 每账号每窗口最多创建 600 个房间桶，过期桶在下次检查时整体回收。
+        for key, _maximum in limits:
+            _DUEL_WEB_REQUEST_RATE_LIMIT.setdefault(key, []).append(now)
+        return True
 
 
 def _is_duel_play_payload(payload):
@@ -8182,12 +8220,14 @@ a{{color:#c9afff}}
             if token_user_id is not None
             else f"ip:{self._client_ip()}"
         )
-        # /duel/ 页面三秒轮询走自己的 120 次/分钟池，不能挤占全站
-        # MCP 的 60 次/分钟配额，避免返回首页时被误判为登出。
-        if not _check_duel_web_request_rate_limit(rate_identity):
+        if not _check_duel_web_request_rate_limit(rate_identity, method, public_path):
             self._send_json(
                 {"error": REQUEST_RATE_LIMIT_MESSAGE, "code": 429},
                 status=429,
+                extra_headers={
+                    "Retry-After": str(REQUEST_RATE_LIMIT_WINDOW_SECONDS),
+                    "Cache-Control": "no-store",
+                },
             )
             return
 
