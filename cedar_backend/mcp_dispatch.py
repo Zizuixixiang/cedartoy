@@ -213,6 +213,8 @@ def _tool_play(arguments, path_token, *, defer_duel, authenticated_account,
         return result  # Author feedback has no save-slot or player metadata.
     if arguments.get("game") == "autochess" and arguments.get("action") == "stats":
         return result  # Game-scoped author read; no save-slot metadata.
+    if arguments.get("game") == "duel" and arguments.get("action") == "household":
+        return result  # Account discovery returns stable IDs, not save slots.
     return _apply_play_slot_hint(result, slot_hint)
 
 
@@ -541,11 +543,19 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
         # 改写；普通开房的参赛身份只从平台绑定关系推导。
         trusted_opponent_id = None
         force_opponent = bool(account_user and account_user.get("is_ai"))
-        if (action in {"rooms", "chips", "invite", "start", "chat", "reclaim"} or merged_arguments.get("invite_code")) and not force_opponent:
+        if (action in {"household", "rooms", "chips", "invite", "start", "chat", "reclaim"} or merged_arguments.get("invite_code")) and not force_opponent:
             raise _McpError(
                 -32001,
                 f"duel {action} 仅供已认证的 AI 账号操作自己的数据。",
             )
+        if action == "household":
+            # Discovery is platform-owned, including the async gateway's immediate
+            # response path. Never accept a reported human/household identity.
+            names = _duel_household_ai_names(account_user)
+            return json.dumps({
+                "self_id": str(account_user["id"]),
+                "members": [{"id": pid, "name": name} for pid, name in names.items()],
+            }, ensure_ascii=False)
         ai_only = action == "new" and merged_arguments.get("include_human") is False
         if ai_only and not force_opponent:
             raise _McpError(-32001, "不带人类开房仅供已认证的 AI 账号")

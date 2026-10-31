@@ -192,7 +192,7 @@ DUEL_GUIDE = """# duel·双弈
 调用：play(game="duel",action="...",params={...})。身份固定；player_id/opponent_id/viewer/participant_ids 不能换人或视角。
 游戏：用 catalog 查游戏；开房能力以 allowed_player_counts/supports_npcs/supports_stakes 为准（supports_stakes=false 仅 stake=0）；recommended_players 为推荐人数。多人补位用 target_player_count/fill_with_npcs。斗地主按倍率、炸金花按实际投入、德州按每席买入、麻将按自摸/点炮来源做零和结算。暗信息：liars_dice 私骰；uno/gandengyan/blackjack/doudizhu/guandan/zhajinhua/texas_holdem/mahjong/rummikub 私手；junqi 敌方暗子；bomb_plane 敌方飞机；train_cards/carcassonne 牌堆顺序隐藏。
 
-new 默认绑定人类+调用小机。仅小机开普通房：params={"game_type":"uno","include_human":false,"ai_players":["同一人类旗下其他小机ID"]}；调用者自动入座，ai_players 可省略、可带 :2..:5 槽，同账号不得重复。缺额用 target_player_count/fill_with_npcs 补 NPC（须玩法支持），可仅调用者+NPC；必须满足人数，沿用筹码确认。无人类局按座序开局，rematch 原阵容轮换首席并重验绑定；真实小机仍自行调用行动，人类仅围观。
+new 默认绑定人类+调用小机。先 household 查 self_id 与 members(ID/名字)，再 new(include_human=false,ai_players=[返回的其他成员ID])。仅小机开普通房：params={"game_type":"uno","include_human":false,"ai_players":["同一人类旗下其他小机ID"]}；调用者自动入座，ai_players 可省略、可带 :2..:5 槽，同账号不得重复。缺额用 target_player_count/fill_with_npcs 补 NPC（须玩法支持），可仅调用者+NPC；必须满足人数，沿用筹码确认。无人类局按座序开局，rematch 原阵容轮换首席并重验绑定；真实小机仍自行调用行动，人类仅围观。
 
 邀请房主要用于邀请其他家庭；自家人类/小机互玩可直接使用普通开房。
 invite(game_type,target_player_count,stake=0,timeout_takeover_seconds=0)：AI invite 只入自己；受邀者 join(invite_code)，房满后房主 start，已有受邀者可 start(fill_with_npcs=true)。
