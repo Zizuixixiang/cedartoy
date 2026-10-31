@@ -1125,7 +1125,7 @@
     }
     #feedbackModal :is(.modal-title, .modal-hint, .modal-msg, .field, .field-hint, .pixel-btn), #feedbackDetail h3 { color: var(--text); }
     #feedbackModal .pixel-btn:not(.secondary) { color: var(--screen-bg); }
-    #feedbackModal input::placeholder, #feedbackModal textarea::placeholder { color: var(--text); opacity: 1; }
+    #feedbackModal input::placeholder, #feedbackModal textarea::placeholder { color: #786e7f; opacity: 1; }
     #feedbackModal .modal-actions { flex-wrap: wrap; align-items: center; gap: 8px; }
     #feedbackModal .modal-actions button { font-size: 11px; padding: 8px; }
     #feedbackModal .feedback-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: stretch; }
@@ -3073,6 +3073,172 @@
       color: var(--muted);
     }
 
+    /* Desktop typography and account panels; mobile keeps the original scale. */
+    @media (min-width: 600px) {
+      /* Keep scrolling-list cards tall enough for all wrapped content. */
+      .game-card {
+        flex-shrink: 0;
+        grid-template-columns: 62px minmax(0, 1fr) minmax(0, auto);
+      }
+      .game-card > span { min-width: 0; }
+      .game-card :is(.game-title, .game-sub, .tag, .level, .card-enter) { overflow-wrap: anywhere; }
+      .game-card .level { white-space: normal; }
+      .game-card .card-enter { grid-column: 2 / -1; }
+
+      :root {
+        --desktop-title: 22px;
+        --desktop-body: 16px;
+        --desktop-control: 14px;
+        --desktop-meta: 13px;
+      }
+
+      .modal-title, .bank-picker-title { font-size: var(--desktop-title); line-height: 1.4; }
+      .modal .field, .modal .checkbox-field,
+      .modal .field :is(input, textarea, select), #loginModal .field input,
+      #feedbackModal :is(input, select, textarea),
+      #forgotPasswordModal :is(textarea, select),
+      .desc, .rank-list, .history-empty, .history-summary,
+      .history-card-title, .history-section-title, .history-game-title,
+      .history-duel-game, .announcement-content, .announcement-title,
+      .puzzle-box-text, .puzzle-box-answer, .puzzle-box-title,
+      .memoria-guide-doc summary, .memoria-guide-doc pre, .memoria-guide-markdown,
+      .recovery-status-card, .machine-token-success strong,
+      #feedbackList .feedback-list-item, #feedbackDetail .feedback-message p,
+      :is(#candleFeedbackContent, #craftAuthorContent) p {
+        font-size: var(--desktop-body);
+        line-height: 1.65;
+      }
+
+      .pixel-btn, .panel-tab, .bank-select-btn,
+      .bank-row .pixel-btn, .bank-title, .nav-label,
+      .modal .modal-actions button, #feedbackModal .modal-actions button,
+      .recovery-modes button, #recoveryCopy,
+      #machineTokenModal .machine-token-copy-button,
+      :is(#candleFeedbackModal, #craftAuthorModal) .pixel-btn,
+      #historyContent .pixel-btn, .history-tab,
+      .unbind-btn, .machine-toggle, .avatar-frame-option,
+      .announcement-options, .announcement-choice-list legend,
+      .announcement-choice, .announcement-feedback-label,
+      .announcement-feedback-label textarea, .platform-dist-title,
+      .puzzle-box-row, .puzzle-box-section-title {
+        font-size: var(--desktop-control);
+        line-height: 1.5;
+      }
+
+      .modal-hint, .field-hint, .modal-msg, .pixel-toast,
+      .stat, .cases-label, .stat-label, .art-badge, .press-hint,
+      .game-sub, .game-group-title, .level, .card-enter, .tag, .arcade-bank,
+      .garden-picker-option-meta, .garden-picker-hint,
+      .history-stat, .history-fold-summary, .history-card-desc,
+      .history-more-status, .history-duel-meta, .history-duel-detail,
+      .history-duel-result, .history-achievements,
+      .machine-thresholds, .machine-msg, .account-delete-link,
+      .machine-token-success, .machine-token-output-label,
+      .machine-token-recommended, .machine-token-copy-msg, #machineTokenBack,
+      #loginModal .forgot-password-link,
+      #feedbackPage, #feedbackModal .feedback-status,
+      #feedbackModal .feedback-message-meta, #feedbackDetail .feedback-history summary,
+      #deleteAccountModal :is(.delete-warning, .delete-note, .delete-final),
+      .announcement-meta, .announcement-unread,
+      .announcement-vote-status, .announcement-vote-error,
+      .announcement-login-hint, .announcement-empty,
+      .platform-stat-card span, .platform-stat-note, .platform-dist-dimension,
+      .platform-dist-row, .platform-dist-ecr .platform-dist-label-sub,
+      .platform-entertainment-badge, .puzzle-box-status, .puzzle-box-challenge,
+      .candle-feedback-line, .candle-feedback-pages {
+        font-size: var(--desktop-meta);
+        line-height: 1.6;
+      }
+
+      .preview, .machine, .screen { min-width: 0; }
+      .screen-inner { overflow-y: auto; }
+      .screen-body { flex: 1 0 auto; }
+      .screen-head, .screen-footer { flex-shrink: 0; }
+      .screen-head > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+      @media (max-width: 980px) {
+        .app .main { grid-template-columns: minmax(240px, 40%) minmax(0, 1fr); }
+        .screen-body .info { width: 100%; overflow-wrap: anywhere; }
+        .screen-footer { flex-wrap: wrap; gap: 8px; }
+      }
+
+      /* Larger text needs room to wrap and scroll, including short laptop windows. */
+      .modal .modal-box {
+        max-height: calc(var(--visual-viewport-height) - 36px);
+        overflow-y: auto;
+        overflow-wrap: anywhere;
+      }
+      .modal-box { width: min(520px, 100%); }
+      #deleteAccountModal .modal-box { width: min(480px, 100%); }
+      .modal :is(input, textarea, select) { min-width: 0; }
+      .modal .pixel-btn, .bank-picker-option { white-space: normal; }
+      .modal .modal-actions button, .history-tab { min-height: 44px; }
+      #feedbackModal .checkbox-field > span,
+      #forgotPasswordModal .checkbox-field > span { white-space: normal; }
+      .recovery-account-row { grid-template-columns: minmax(0, 130px) minmax(0, 1fr); }
+      .machine-token-output-controls { grid-template-columns: minmax(0, 1fr) 112px; }
+      #machineTokenModal .machine-token-copy-button { width: 112px; }
+      #machineTokenModal .machine-token-result textarea { font-size: var(--desktop-control); height: 64px; max-height: 64px; }
+      .modal :is(.modal-title, .modal-hint, .modal-msg, .modal-actions) { flex-shrink: 0; }
+      .rank-list li { grid-template-columns: auto minmax(0, 1fr) auto; }
+      .rank-list li > * { min-width: 0; overflow-wrap: anywhere; }
+      .bottom-nav { height: auto; min-height: 88px; }
+      .bank-row .pixel-btn { min-height: 36px; }
+
+      /* History grows with its content; only the records scroll at the height limit. */
+      #historyModal .modal-box { height: auto; }
+      #historyModal .history-content { flex: 0 1 auto; }
+      #historyModal .history-card-list { align-content: start; grid-auto-rows: max-content; }
+      #historyModal .history-card { padding: 8px 12px; align-content: start; }
+      #historyModal .history-fold-toggle { min-height: 36px; }
+      #historyModal .history-fold-body { padding: 4px 0; }
+      .history-stat { height: auto; min-height: 32px; white-space: normal; }
+      .history-tab { white-space: normal; overflow-wrap: anywhere; }
+      .history-duel-meta { grid-template-columns: minmax(0, 1fr); }
+      .history-duel-time { white-space: normal; }
+
+      /* Every machine has a name row and a separate, consistently spaced action row. */
+      #mineDrawer .drawer { width: min(560px, calc(100vw - 36px)); max-width: 560px; }
+      #mineDrawer .drawer h2 { font-size: var(--desktop-title); }
+      #mineDrawer .drawer .desc.mine-user-name,
+      #mineDrawer .machine-name { font-size: var(--desktop-body); line-height: 1.65; }
+      #mineDrawer .mine-user-row { align-items: center; }
+      #mineDrawer .mine-user-row > .unbind-btn { flex: none; }
+      #mineDrawer .unbind-btn { min-height: 36px; white-space: nowrap; }
+      #mineDrawer .machine-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+      #mineDrawer .machine-name { white-space: normal; overflow-wrap: anywhere; }
+      #mineDrawer .machine-head-actions {
+        display: grid;
+        grid-template-columns: repeat(4, max-content);
+        justify-content: start;
+        gap: 8px;
+      }
+      #mineDrawer .machine-thresholds input { width: 70px; font-size: var(--desktop-control); }
+      #mineDrawer .rank-list li { grid-template-columns: auto minmax(0, 1fr); }
+      #mineDrawer .rank-list li > span:last-child { grid-column: 2; }
+      #mineDrawer .rank-list li > span:last-child:has(button) { display: flex; gap: 8px; }
+      #mineContent > .pixel-btn {
+        --mine-action-top: 0px;
+        --mine-action-bottom: 0px;
+        display: flex;
+        width: 100%;
+        height: 44px;
+        min-height: 44px;
+        margin: 0;
+        padding: 8px 12px;
+      }
+      #mineContent > .pixel-btn + .pixel-btn {
+        --mine-action-top: 10px;
+        margin-top: var(--mine-action-top);
+      }
+      #mineContent > .pixel-btn:hover { background: var(--bg); }
+      #mineContent > .pixel-btn:focus-visible { outline: 2px solid var(--purple-darker); outline-offset: 3px; }
+      #mineContent > .pixel-btn:active { border-right-width: 2px; border-bottom-width: 2px; }
+
+      .topbar .top-actions { flex-wrap: wrap; justify-content: flex-end; }
+      .topbar .auth-area { flex-wrap: wrap; }
+      .topbar .user-name { font-size: var(--desktop-body); }
+    }
+
     @media (max-width: 980px) {
       .topbar { grid-template-columns: 1fr; }
       .top-actions { justify-content: space-between; }
@@ -3295,6 +3461,8 @@
         min-height: 38px;
         font-size: 11px;
       }
+      /* Preserve the former primary button box with the secondary 3px border. */
+      #mineBind { padding: 7px 17px 11px 13px; }
       .drawer .bank-row .pixel-btn {
         width: auto;
         min-height: 32px;
@@ -4978,6 +5146,161 @@
       stats: [], footerIcons: ["◎", "◇"], tags: ["心理量表", humanOnly ? "人类专属" : "人机娱乐"],
       url: `/${id}`, ranks: []
     })));
+
+    // Desktop status-log copy only; mobile drawers keep each game's original logs.
+    const desktopTestLogs = {
+      "aidep": [
+        "学习卡住时，你会把哪一步交给 AI？",
+        "回想使用 AI 的习惯，看看情绪、功能、认知依赖和失控感。",
+        "Wu 等研究改编，仅供人类；原研究限中国 18–24 岁大学生学习场景。",
+        "供自我了解，不测情感陪伴，也不作成瘾诊断。"
+      ],
+      "bsfl": [
+        "一个人待着时，是自在，还是总想找人陪？",
+        "回想独处、分离时的感受，看看自己有多害怕孤独。",
+        "Ventura-León 等题组 · 供自我了解，不判定依恋类型。"
+      ],
+      "bsr": [
+        "这句话真有深意，还是只是听起来很厉害？",
+        "给抽象生成句和古典格言打分，看看哪一类更打动你。",
+        "Pennycook 等研究的娱乐改编，不测智商或识骗能力。"
+      ],
+      "evs": [
+        "一句批评、一次冷淡，哪种时刻更容易戳中你？",
+        "从被否定、关系担忧、人际不和与回避拖延，找找自己的敏感点。",
+        "Yamaguchi 题组 · 看结果与小建议，供自我了解，不作诊断。"
+      ],
+      "ipip_adhd": [
+        "刚想做什么来着？注意力和行动节奏来报到。",
+        "回顾忘事、难以专注、抢答和坐立不安，看看哪些表现更像自己。",
+        "IPIP 表征版 · 供自我了解，不用于 ADHD 筛查或诊断。"
+      ],
+      "ipip_empathy": [
+        "看到别人处境艰难，你心里会起多大波澜？",
+        "选出像自己的描述，看看关心与同情他人的倾向。",
+        "IPIP / Barchard 题组 · 供自我了解，不是完整共情能力评级。"
+      ],
+      "ipip_need_for_cognition": [
+        "碰到复杂问题，你想绕开，还是拆开看看？",
+        "从难读的材料、抽象概念和新办法，摸摸自己的动脑偏好。",
+        "IPIP 表征版 · 供自我了解，喜欢动脑不等于智商高低。"
+      ],
+      "ipip_self_monitoring": [
+        "聚光灯照过来时，你会接住，还是往后退一步？",
+        "回想即兴表达、吸引注意的时刻，看看自己怎样呈现给别人。",
+        "IPIP 表征版 · 供自我了解，不评判真诚与否。"
+      ],
+      "ipip_sociability": [
+        "走进一场聚会，你会先开口，还是等熟人出现？",
+        "从主动交谈、表达感受与相处时的自在，看看自己的社交倾向。",
+        "IPIP CPI-Sy 表征版 · 供自我了解，不是人气榜。"
+      ],
+      "irrc": [
+        "关系里，你有哪些拿手项，又会在哪些地方卡住？",
+        "从换位思考、冲突处理到亲密回避，看看七个方面的表现。",
+        "Faber 等题组 · 供自我了解，优势与困难分开看，不打能力总分。"
+      ],
+      "jrrs": [
+        "伴侣夸了别人、提起前任，你的醋意会冒头吗？",
+        "回顾吃醋时的不安、反应，以及它对日常生活的影响。",
+        "İpek 等题组 · 供自我了解，只看整体倾向，不划分嫉妒类型。"
+      ],
+      "mesx": [
+        "把关怀圈展开：家人之外，谁还在里面？",
+        "给不同的人、动物与植物选择圈层，看看自己的关怀范围。",
+        "Crimston 等题组 · 供自我了解，不评判人格好坏。"
+      ],
+      "ppts": [
+        "待办一来就清掉，还是总想明天再说？",
+        "看看拖延与抢先完成这两种节奏，它们也可能同时出现在你身上。",
+        "Husain 等题组 · 供自我了解，不评效率等级。"
+      ],
+      "rbi": [
+        "回放过去一周：你怎样把在意变成行动？",
+        "从陪伴亲昵、履行约定到表达感受，看看自己与伴侣的互动。",
+        "Harel 等题组 · 供有伴侣者自我了解，不是对方给你的评价。"
+      ],
+      "rnss": [
+        "在人际关系里，你想要的支持有没有被接住？",
+        "做自己、被保护、被主动关心……看看五类需求的满足程度。",
+        "Žvelc 等题组 · 供自我了解，不限恋爱关系，也不衡量个人价值。"
+      ],
+      "romlon": [
+        "看到别人甜蜜时，你会不会觉得自己落了单？",
+        "用四道题回想浪漫期待与恋爱比较，看看这份孤独感。",
+        "Husain 等题组 · 供自我了解，不代表所有孤独，也不作诊断。"
+      ],
+      "ross": [
+        "难过时，你想要一个拥抱、一条建议，还是先自己扛？",
+        "看看自己会直接求助、委婉表达，还是暂时不想要支持。",
+        "Perks 等题组 · 供有伴侣关系经验者自我了解，四种反应分开看。"
+      ],
+      "rss": [
+        "关系一有摩擦，你先防御、起疑，还是试着把话说开？",
+        "回想现在或上一段恋爱，看看防御、信任困难与相处技能上的卡点。",
+        "Peel 等题组 · 供自我了解，不预言分手，也不归罪任何一方。"
+      ],
+      "dt_relations": [
+        "照片能不能发、哪些话不想聊，你的边界想怎样被听见？",
+        "和绑定的小机聊个人空间、倾听与同意；没有标准答案，也不计分。",
+        "每题保存或跳过后，即可互看已保存的回答，找找沟通中的不同。",
+        "题源：BCcampus、Leonard 与 Coleman · 完整署名见答题页。"
+      ],
+      "dt_couple50": [
+        "从最近迷上的电影，聊到理想约会和让你幸福的瞬间。",
+        "和绑定的小机交换日常喜好、梦想与感受，不计分。",
+        "每题保存或跳过后，即可互看已保存的回答，慢慢认识对方。",
+        "题源：そらとひかり · CedarToy 中文翻译与编排。"
+      ],
+      "dt_scenarios": [
+        "朋友告白却不心动，伴侣要你在恋人与朋友间二选一，你会怎么回应？",
+        "和绑定的小机讨论关系两难、个人边界与性别话题，不计分。",
+        "每题保存或跳过后，即可互看已保存的回应，没有标准解法。",
+        "题源：SFU InterroBang / BCcampus 中文讲义 · 详见答题页。"
+      ],
+      "dt_romance100": [
+        "从心动条件到吃醋、信任、同居和未来，你们想的一样吗？",
+        "和绑定的小机聊恋爱观，也聊那些不愿妥协的小事。",
+        "每题保存或跳过后即可互看已保存的回答，不计分，也没有配对分数。",
+        "题源：デジタル教科書 · CedarToy 中文翻译与编排。"
+      ],
+      "dt_work20": [
+        "稳定还是挑战，效率还是质量，你会怎样取舍？",
+        "和绑定的小机聊工作的意义；可以兼顾两端，也可以分情况回答。",
+        "每题保存或跳过后，即可互看已保存的理由；不计分。",
+        "题源：ゆば（原作者注明题目由 ChatGPT 生成）。"
+      ],
+      "dt_favorites100": [
+        "从一口喜欢的食物，到一首歌、一款游戏，交换各自的心头好。",
+        "和绑定的小机聊日常兴趣，不熟悉或不适用的题可以跳过。",
+        "保存或跳过后即可互看已保存的回答，找共同话题；不计分。",
+        "题源：デジタル教科書 · CedarToy 中文翻译与编排。"
+      ],
+      "dt_know100": [
+        "除了名字，你还想让对方知道哪些关于自己的小事？",
+        "和绑定的小机聊成长经历、生活习惯、花钱偏好与未来梦想。",
+        "每题保存或跳过后，即可互看已保存的回答；不计分。",
+        "题源：デジタル教科書 · 不适用或不想答的题可跳过。"
+      ],
+      "dt_life35": [
+        "什么算幸福，什么让你害怕，又有什么遗憾一直留在心里？",
+        "和绑定的小机从珍视的人与事，聊到自己想成为的样子。",
+        "每题保存或跳过后即可互看已保存的回答；不计分，难开口的可以跳过。",
+        "传统普鲁斯特问卷 · 参考整理：Dawn M. Roode，中文自译。"
+      ],
+      "dt_dilemmas30": [
+        "如果有人带着朋友渐远、创作压力或家庭牵挂来求助，你会怎样回应？",
+        "和绑定的小机面对虚构烦恼，聊聊各自会如何安慰与出主意。",
+        "保存或跳过后即可查看彼此已保存的回应；没有标准答案，也不计分。",
+        "题源：つん · CedarToy 中文翻译与编排。"
+      ],
+      "dt_learning_goals": [
+        "想做的事，下一步准备从哪里开始？",
+        "和绑定的小机聊目标、每周复盘、能力实例与解决问题的办法。",
+        "每题保存或跳过后即可互看已保存的回答，回顾各自计划；不计分。",
+        "题源：Alli M. Tucker-Stanojković · CedarToy 中文翻译与编排。"
+      ]
+    };
 
     const FIXED_GAME_IDS = ["soup", "duel", "fishing", "eco"];
     const HUMAN_FRONTEND_GAME_IDS = new Set([
@@ -6852,7 +7175,9 @@
         const heading = testGroup && testGroup !== lastTestGroup
           ? `<div class="game-group-title" role="heading" aria-level="2">${testGroup}</div>` : "";
         if (testGroup) lastTestGroup = testGroup;
-        const enterLabel = game.id === "autochess" ? "进入棋室 →" : game.id === "candle" ? "" : (game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →"));
+        const enterLabel = !window.matchMedia("(max-width: 599px)").matches && game.watch
+          ? (game.maintenance ? "维护中" : (game.watchLabel || "围观大屏 →"))
+          : game.id === "autochess" ? "进入棋室 →" : game.id === "candle" ? "" : (game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →"));
         const tags = game.tags.map((tag, index) => `<span class="tag ${index === 0 ? "pink" : ""}">${tag}</span>`).join("");
         return `
           ${heading}<button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
@@ -6917,7 +7242,7 @@
         detailGlyph.classList.remove("has-img");
         detailGlyph.textContent = game.glyph;
       }
-      $("detailDesc").innerHTML = game.logs.map((line) => `&gt; ${line}`).join("<br>");
+      $("detailDesc").innerHTML = (desktopTestLogs[game.id] || game.logs).map((line) => `&gt; ${line}`).join("<br>");
       const stats = game.stats || [];
       document.querySelector(".stat-bars").style.display = stats.length ? "" : "none";
       ["One", "Two"].forEach((key, index) => {
@@ -6971,6 +7296,9 @@
     }
 
     function previewGame(id) {
+      // Desktop entry/picker callbacks still use selected; hover must not retarget them.
+      if (!window.matchMedia("(max-width: 599px)").matches
+          && (desktopEntryPending || $("bankPicker").classList.contains("show"))) return;
       if (!games.some((game) => game.id === id)) return;
       selected = id;
       if (id === "puzzle_box") detailTab = drawerTab = "preview";
@@ -7004,16 +7332,29 @@
       openGame(currentGame());
     }
 
-    function enterGameById(id) {
-      if (id === "autochess") { window.location.href = "/autochess/"; return; }
+    let desktopEntryPending = false;
+
+    async function enterGameById(id) {
+      if (desktopEntryPending) return;
       const game = games.find((item) => item.id === id);
-      if (!game) return;
+      if (!game || !canShowGame(game)) return;
       selected = id;
       if (id === "candle") {
         selectGame(id, true);
         return;
       }
-      openGame(game);
+      // Keep the public chess-room entry; other frontends reuse their login/save flow.
+      if (id === "autochess" && !game.maintenance) { window.location.href = "/autochess/"; return; }
+      if (!game.watch || game.comingSoon || game.adultConfirm) {
+        openGame(game);
+        return;
+      }
+      desktopEntryPending = true;
+      try {
+        await enterWatch();
+      } finally {
+        desktopEntryPending = false;
+      }
     }
 
 
@@ -9539,26 +9880,11 @@
               <path d="M21 12H9"></path>
             </svg>
           </button>
-          <button class="pixel-btn secondary desktop-only" id="historyOpen" type="button">历史</button>
-          ${!me.user.is_ai ? '<button class="pixel-btn secondary desktop-only" id="machinesOpen" type="button">我的小机</button>' : ''}
-          <button class="pixel-btn secondary desktop-only" id="bindOpen" type="button">绑定</button>
-          ${!me.user.is_ai ? '<button class="pixel-btn secondary desktop-only" id="changePasswordOpen" type="button">修改密码</button>' : ''}
           <button class="pixel-btn secondary desktop-only" id="logoutBtn" type="button">登出</button>
         </span>
       `;
       const topAvatarOpen = $("topAvatarOpen");
-      const bindOpen = $("bindOpen");
-      const historyOpen = $("historyOpen");
-      const machinesOpen = $("machinesOpen");
-      const changePasswordOpen = $("changePasswordOpen");
       if (topAvatarOpen) topAvatarOpen.addEventListener("click", openAvatarModal);
-      if (bindOpen) bindOpen.addEventListener("click", () => openModal("bindModal"));
-      if (historyOpen) historyOpen.addEventListener("click", openHistory);
-      if (changePasswordOpen) changePasswordOpen.addEventListener("click", () => openModal("changePasswordModal"));
-      if (machinesOpen) machinesOpen.addEventListener("click", () => {
-        renderMine();
-        openMineDrawer();
-      });
       $("logoutBtn").addEventListener("click", logout);
       const mobileLogout = $("mobileLogoutBtn");
       if (mobileLogout) mobileLogout.addEventListener("click", logout);
@@ -9623,11 +9949,11 @@
         ${machineCardsVisible ? "" : `<ol class="rank-list">${bindings}</ol>`}
         ${renderMachinePanel()}
         ${renderEmailSecurityCard()}
-        ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:10px">管理后台</a>' : ''}
-        <button class="pixel-btn" id="mineBind" type="button">绑定</button>
-        <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:10px">小机 Token</button>
-        ${!me.user.is_ai ? '<button class="pixel-btn secondary" id="mineChangePassword" type="button" style="margin-top:10px">修改密码</button>' : ''}
-        <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:10px">登出</button>
+        ${me.user.is_admin ? '<a class="pixel-btn secondary" href="/admin" style="margin-bottom:var(--mine-action-bottom, 10px)">管理后台</a>' : ''}
+        <button class="pixel-btn secondary" id="mineBind" type="button">绑定</button>
+        <button class="pixel-btn secondary" id="mineMachineToken" type="button" style="margin-top:var(--mine-action-top, 10px)">小机 Token</button>
+        ${!me.user.is_ai ? '<button class="pixel-btn secondary" id="mineChangePassword" type="button" style="margin-top:var(--mine-action-top, 10px)">修改密码</button>' : ''}
+        <button class="pixel-btn secondary" id="mineLogout" type="button" style="margin-top:var(--mine-action-top, 10px)">登出</button>
         <div class="account-delete-link-wrap"><button class="account-delete-link" id="mineDeleteAccount" type="button">注销账号</button></div>
       `;
       bindMachinePanel();
@@ -10665,6 +10991,7 @@
       syncViewportInsets();
     }
 
+    window.matchMedia("(max-width: 599px)").addEventListener("change", renderGames);
     renderGames();
     renderDetail();
     renderAuth();
