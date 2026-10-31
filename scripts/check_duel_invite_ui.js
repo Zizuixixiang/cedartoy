@@ -124,9 +124,11 @@ assert.equal(w.getComputedStyle(panel).marginLeft,'auto');
 assert.equal(w.getComputedStyle(w.document.getElementById('gameView')).paddingLeft,'14px');
 assert.ok(panel.textContent.includes('乙 · ID 1'));
 assert.ok(!/human:|~|@/.test(panel.textContent));
-assert.equal(button('关闭邀请房').textContent,'×');
-assert.equal(button('关闭邀请房').getAttribute('aria-label'),'关闭邀请房');
-assert.equal(w.getComputedStyle(button('关闭邀请房')).position,'absolute');
+assert.equal(button('返回大厅').textContent,'返回大厅');
+assert.notEqual(w.getComputedStyle(button('返回大厅')).position,'absolute','navigation participates in layout');
+assert.equal(button('解散房间').textContent,'解散房间');
+assert.ok(button('解散房间').classList.contains('danger'));
+assert.equal(button('开始游戏').nextElementSibling,button('解散房间'),'start and dissolve are adjacent');
 assert.equal(button('开始游戏').disabled,false);
 assert.equal(panel.querySelector('#inviteStartHint'),null,'owner has no guest hint');
 assert.equal(button('NPC 补满并开始'),null);
@@ -138,7 +140,8 @@ assert.deepEqual(copied,['ABCDEF123456','https://toy.cedarstar.org/duel/?invite=
 assert.equal(panel.querySelector('.invite-code-line').textContent,'ABCDEF123456');
 w.fixture={...waitingFixture,viewer:{player_id:'human:2',seat:0}};
 w.run('renderGame(fixture,"",[]);');
-assert.equal(button('关闭邀请房'),null);
+assert.equal(button('解散房间'),null);
+assert.ok(button('返回大厅'));
 assert.equal(button('开始游戏').disabled,true);
 assert.equal(panel.querySelector('#inviteStartHint').textContent,'等待房主开始游戏');
 assert.ok(visible(panel.querySelector('#inviteStartHint')));
@@ -215,16 +218,110 @@ assert.equal(visible(reclaimControl),false,'another seat is not reclaimable');
 w.fixture={...w.fixture,room_kind:'bound',current_player_id:'human:1'};
 w.run('renderGame(fixture,"",[]);');
 assert.equal(visible(reclaimControl),false,'ordinary game cannot show invitation takeover control');
-// Filling and closing use the existing lifecycle endpoints.
+// Filling uses the existing lifecycle endpoint.
 w.fixture={...waitingFixture,target_player_count:4,room_ready:false};
 w.run('renderGame(fixture,"",[]);');
 button('NPC 补满并开始').click(); await flush();
 assert.equal(requests.at(-1).body.fill_with_npcs,true);
-w.run('backToLobby=async()=>{window.returnedToLobby=true;}; renderGame(fixture,"",[]);');
-button('关闭邀请房').click(); await flush();
-assert.equal(requests.at(-1).url,'/duel/api/rooms/ABCDEFGH/leave');
-assert.equal(w.returnedToLobby,true);
+// Real navigation + list re-entry use only a fake transport, never production rooms.
+const navigationRequests=[];
+const summary={...waitingFixture,participant_names:participants.slice(0,2).map(p=>p.display_name),participant_count:2};
+w.lobbyIdentity={...JSON.parse(w.run('JSON.stringify(identity)')),bound:true,
+  wallet:{balance:0},identity_label:'测试',rooms:[summary],pending_invitations:[]};
+w.fetch=async(url,options={})=>{
+  navigationRequests.push({url,method:options.method || 'GET'});
+  let data={ok:true};
+  if (url.endsWith('/whoami')) data=w.lobbyIdentity;
+  else if (url.includes('/spectating/rooms')) data={rooms:[{...summary,spectating:true}]};
+  else if (url.endsWith('/rooms/ABCDEFGH')) data={room:w.fixture,timeline:[]};
+  return {ok:true,json:async()=>data};
+};
+const settle=async(predicate)=>{
+  for(let i=0;i<40 && !predicate();i++) await new Promise(resolve=>setTimeout(resolve,5));
+  assert.ok(predicate(),'navigation completed');
+};
+let confirmations=0;
+w.confirm=()=>{confirmations++;return false;};
+w.fixture=waitingFixture;
+w.run('renderGame(fixture,"",[]);');
+const beforeCancel=w.run('JSON.stringify(room)');
+button('解散房间').click();await flush();
+assert.equal(confirmations,1);
+assert.deepEqual(navigationRequests,[],'cancel sends no request');
+assert.equal(w.run('JSON.stringify(room)'),beforeCancel,'cancel keeps room and seats');
+assert.ok(visible(panel));
+assert.equal(button('解散房间').disabled,false);
+
+// Both owner and guest can return and find the waiting room under 我的.
+for (const playerId of ['human:1','human:2']) {
+  w.fixture={...waitingFixture,viewer:{player_id:playerId,seat:playerId==='human:1'?1:0}};
+  w.run('writeRoomRoute(room.room_id,{mode:"replace",backToLobby:false});renderGame(fixture,"",[]);');
+  navigationRequests.length=0;
+  const original=JSON.stringify(w.fixture);
+  button('返回大厅').click();
+  await settle(()=>w.run('room')===null && w.document.querySelector('#roomList .room-open')?.getAttribute('aria-label').includes(waitingFixture.room_id));
+  await flush();
+  assert.equal(w.run('roomListScope'),'mine');
+  assert.ok(visible(w.document.getElementById('lobbyView')));
+  assert.equal(JSON.stringify(w.fixture),original,'return does not mutate participants/seats');
+  assert.ok(navigationRequests.every(r=>r.method==='GET'),'return only refreshes the lobby');
+  assert.equal(confirmations,1,'return needs no destruction confirmation');
+  w.document.querySelector('#roomList .room-open').click();
+  await settle(()=>w.run('room?.room_id')===waitingFixture.room_id);
+  await flush();
+  assert.equal(w.run('room.status'),'waiting');
+  assert.equal(w.run('room.viewer.player_id'),playerId,'re-entry keeps the viewer seat');
+  assert.equal(w.run('JSON.stringify(room.participants)'),JSON.stringify(waitingFixture.participants));
+  assert.ok(visible(button('返回大厅')),'waiting room can be re-entered');
+  // Re-entry creates a browser history entry: exercise its popstate path too.
+  button('返回大厅').click();
+  await settle(()=>w.run('room')===null);
+  assert.equal(navigationRequests.filter(r=>r.url.endsWith('/leave')).length,0);
+  w.run('renderGame(fixture,"",[]);');
+}
+
+// Spectators get navigation only; even an owner perspective grants no destructive controls.
+w.fixture={...waitingFixture,spectating:true};
+w.run('renderGame(fixture,"",[]);');
+assert.deepEqual([...panel.querySelectorAll('button')].map(b=>b.textContent),['返回大厅']);
+assert.equal(visible(w.document.getElementById('backButton')),false,'no duplicate waiting-page navigation');
+assert.equal(w.run('canHumanMove()'),false);
+navigationRequests.length=0;
+button('返回大厅').click();
+await settle(()=>w.run('room')===null);
+await flush();
+assert.ok(visible(w.document.getElementById('lobbyView')));
+assert.ok(navigationRequests.every(r=>r.method==='GET'),'spectator only navigates');
+assert.equal(confirmations,1);
+
+// Confirmation sends exactly one leave, including rapid repeated clicks while pending.
+w.fixture=waitingFixture;
+w.run('setRoomListScope("mine");renderGame(fixture,"",[]);');
+navigationRequests.length=0;
+let finishLeave;
+const navigationFetch=w.fetch;
+w.fetch=(url,options)=>url.endsWith('/leave')
+  ? (navigationRequests.push({url,method:options.method}),new Promise(resolve=>{finishLeave=()=>resolve({ok:true,json:async()=>({ok:true})});}))
+  : navigationFetch(url,options);
+w.confirm=()=>{confirmations++;return true;};
+const dissolve=button('解散房间');
+dissolve.click();dissolve.click();
+assert.equal(confirmations,2);
+assert.equal(navigationRequests.filter(r=>r.url.endsWith('/leave')).length,1);
+assert.equal(navigationRequests[0].method,'POST');
+assert.equal(dissolve.disabled,true);
+assert.ok(visible(panel),'wait for server success before navigating');
+finishLeave();await settle(()=>w.run('room')===null);await flush();
+assert.ok(visible(w.document.getElementById('lobbyView')));
+// A server rejection keeps the waiting room available and reports the error.
+w.run('renderGame(fixture,"",[]);');
+w.fetch=async()=>({ok:false,status:409,json:async()=>({message:'房间状态已变化'})});
+button('解散房间').click();await flush();
+assert.ok(visible(panel));
+assert.equal(button('解散房间').disabled,false);
+assert.match(w.document.getElementById('inviteRoomNotice').textContent,/房间状态已变化/);
 w.run('renderGame({...room,status:"playing",game_type:"tictactoe",board_state:{board:[["","",""],["","",""],["","",""]]}},"",[]);');
+assert.ok(visible(w.document.getElementById('backButton')),'ordinary game navigation returns after waiting');
 // Legacy games retain the same stage and do not show invitation controls.
 w.run('renderGame({...room,room_kind:"bound"},"",[]);');
 assert.equal(visible(panel),false);

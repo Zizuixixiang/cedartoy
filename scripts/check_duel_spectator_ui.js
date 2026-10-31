@@ -45,7 +45,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   try {
     for (const entry of fixtures.games) {
       show(entry.waiting);
-      assert.equal(doc.querySelectorAll('#inviteRoomPanel button').length, 0, `${entry.game}: waiting is read-only`);
+      assert.deepEqual([...doc.querySelectorAll('#inviteRoomPanel button')].map(b => b.textContent), ['返回大厅'], `${entry.game}: waiting offers navigation only`);
       assert.equal(doc.querySelector('#roomId').textContent, entry.waiting.room.room_id);
       for (const view of entry.views) {
         show(view);
@@ -67,7 +67,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     show(single);
     assert.equal(doc.querySelector('#spectatorSelect').classList.contains('hidden'), true);
     assert.equal(doc.querySelector('#spectatorName').textContent, single.room.spectator_choices[0].name);
-    doc.querySelector('#roomListScope').value = 'machines';
+    w.run('setRoomListScope("machines")');
     w.summaries = fixtures.rooms;
     w.run('renderRooms(summaries);');
     assert.match(doc.querySelector('.room-enter').textContent, /围观/);
