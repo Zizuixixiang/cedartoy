@@ -56,9 +56,13 @@ const assertSelection = value => {
     assert.equal(hint.textContent, '仅可观战，不能操作对局。');
     assert.equal(scope.contains(hint), false, 'helper text is outside the segmented control');
     assert.equal(scope.parentElement.firstElementChild, scope, 'tabs occupy the card top');
-    assert.equal(scope.nextElementSibling.id, 'roomScopePanel');
-    assert.equal(hint.parentElement, refresh.parentElement, 'hint and refresh share the separate tool row');
-    assert.equal(scope.contains(refresh), false, 'refresh cannot narrow the tabs');
+    assert.equal(scope.parentElement.nextElementSibling.id, 'roomScopePanel');
+    assert.equal(refresh.parentElement, scope.parentElement, 'refresh is in the topbar');
+    assert.equal(doc.querySelector('.room-list-tools'), null, 'no empty tools row');
+    assert.equal(hint.parentElement.id, 'roomScopePanel');
+    assert.equal(refresh.getAttribute('aria-label'), '刷新房间列表');
+    assert.equal(scope.querySelectorAll('[role="tab"]').length, 2, 'refresh is not a third tab');
+    assert.equal(scope.contains(refresh), false, 'refresh is a separate action outside tablist');
     assertSelection('mine');
     for (const button of [mine, machines]) {
       assert.equal(button.type, 'button');
@@ -155,12 +159,12 @@ const assertSelection = value => {
       const [, kind, limit] = condition.match(/^\((min|max)-width: (\d+)px\)$/);
       return (kind === 'min' ? width >= +limit : width <= +limit) ? atWidth([...rule.cssRules], width) : '';
     }).join('\n');
-    for (const width of [360, 428, 1023, 1024, 1280]) {
+    for (const width of [360, 430, 1024, 1280]) {
       const style = doc.createElement('style'); style.textContent = atWidth(cssRules, width); doc.head.appendChild(style);
       const computed = node => w.getComputedStyle(node);
       assert.equal(computed(scope).display, 'grid');
       assert.equal(computed(scope).gridTemplateColumns, 'repeat(2, minmax(0, 1fr))');
-      assert.equal(computed(scope.parentElement).padding, '0px', 'tabs stay flush on mobile too');
+      assert.equal(parseFloat(computed(scope.parentElement).padding), 0, 'tabs stay flush on mobile too');
       assert.equal(computed(mine).appearance, 'none');
       assert.equal(computed(mine).borderRadius, '0px');
       const spectator = computed(doc.getElementById('spectatorSelect'));
@@ -171,13 +175,21 @@ const assertSelection = value => {
         const selected = scope.querySelector('[aria-selected="true"]');
         assert.equal(computed(selected).backgroundColor, 'rgb(255, 255, 255)');
         assert.equal(computed(selected).borderBottomColor, 'rgba(0, 0, 0, 0)');
-        assert.equal(computed(hint).visibility, value === 'mine' ? 'hidden' : 'visible');
-        assert.notEqual(computed(hint).display, 'none', 'hint retains toolbar space in both tabs');
+        assert.equal(computed(hint).display, value === 'mine' ? 'none' : 'block', 'mine reserves no helper height');
       }
       assert.equal(computed(mine).fontSize, '13px');
       assert.equal(computed(mine).minHeight, '44px');
       assert.equal(computed(hint).fontSize, '12px');
-      assert.equal(computed(refresh).minHeight, '36px');
+      assert.equal(computed(refresh).minHeight, '44px');
+      const view = doc.getElementById('gameView');
+      view.classList.add('spectating-view');
+      assert.equal(computed(doc.getElementById('spectatorSelect')).height, '28px');
+      assert.equal(computed(doc.getElementById('spectatorSelect')).borderTopWidth, '1px');
+      assert.equal(computed(doc.getElementById('turn')).fontSize, '12px');
+      assert.equal(computed(doc.getElementById('turn')).overflow, 'hidden');
+      assert.equal(computed(doc.getElementById('turn')).boxShadow, 'none');
+      view.classList.remove('spectating-view');
+      assert.equal(computed(doc.getElementById('turn')).fontSize, width < 600 ? '14px' : '15px', 'ordinary player hierarchy unchanged');
       for (const count of [2, 4]) {
         w.layoutFixture = {game_type: count === 2 ? 'tictactoe' : 'uno',
           participants: Array.from({length: count}, (_, i) => ({player_id: String(i)}))};
@@ -199,6 +211,6 @@ const assertSelection = value => {
       }
       style.remove();
     }
-    console.log('PASS shared UI: full-width tabs, keyboard, reserved tool row, spectator select, refresh/races, invite return/cancel/confirm; CSS declarations at 360/428/1023/1024/1280 for 2/4 seats. No rendered geometry or screenshots.');
+    console.log('PASS shared UI: full-width tabs, keyboard, topbar refresh with no blank tool row, spectator select, refresh/races, invite return/cancel/confirm; CSS declarations at 360/430/1024/1280 for 2/4 seats. No rendered geometry or screenshots.');
   } finally { w.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
