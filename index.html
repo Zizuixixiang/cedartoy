@@ -3151,7 +3151,24 @@
       }
 
       .preview, .machine, .screen { min-width: 0; }
-      .screen-inner { overflow-y: auto; }
+      .screen-inner {
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--purple-darker) transparent;
+      }
+      /* Chromium/WebKit: keep standard properties from overriding custom parts. */
+      @supports selector(::-webkit-scrollbar) {
+        .screen-inner { scrollbar-width: auto; scrollbar-color: auto; }
+      }
+      .screen-inner::-webkit-scrollbar { width: 6px; height: 6px; }
+      .screen-inner::-webkit-scrollbar-track,
+      .screen-inner::-webkit-scrollbar-corner { background: transparent; }
+      .screen-inner::-webkit-scrollbar-thumb {
+        background: var(--purple-darker);
+        min-height: 24px;
+      }
+      .screen-inner::-webkit-scrollbar-thumb:hover { background: var(--purple-dark); }
+      .screen-inner::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
       .screen-body { flex: 1 0 auto; }
       .screen-head, .screen-footer { flex-shrink: 0; }
       .screen-head > div:first-child { min-width: 0; overflow-wrap: anywhere; }
