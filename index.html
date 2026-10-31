@@ -3153,8 +3153,12 @@
       .preview, .machine, .screen { min-width: 0; }
       .screen-inner {
         overflow-y: auto;
+        padding-right: 10px; /* Keep text clear of the 6px overlay scrollbar. */
         scrollbar-width: thin;
-        scrollbar-color: var(--purple-darker) transparent;
+        scrollbar-color: rgba(190, 177, 209, 0.45) transparent;
+      }
+      @supports not selector(::-webkit-scrollbar) {
+        .screen-inner:hover { scrollbar-color: rgba(190, 177, 209, 0.65) transparent; }
       }
       /* Chromium/WebKit: keep standard properties from overriding custom parts. */
       @supports selector(::-webkit-scrollbar) {
@@ -3164,10 +3168,10 @@
       .screen-inner::-webkit-scrollbar-track,
       .screen-inner::-webkit-scrollbar-corner { background: transparent; }
       .screen-inner::-webkit-scrollbar-thumb {
-        background: var(--purple-darker);
+        background: rgba(190, 177, 209, 0.45);
         min-height: 24px;
       }
-      .screen-inner::-webkit-scrollbar-thumb:hover { background: var(--purple-dark); }
+      .screen-inner::-webkit-scrollbar-thumb:hover { background: rgba(190, 177, 209, 0.65); }
       .screen-inner::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
       .screen-body { flex: 1 0 auto; }
       .screen-head, .screen-footer { flex-shrink: 0; }
