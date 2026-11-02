@@ -8612,9 +8612,13 @@ a{{color:#c9afff}}
                 self.send_header(key, value)
             if set_cookie:
                 self.send_header("Set-Cookie", set_cookie)
-            self.send_header("Content-Length", str(len(raw)))
+            # A 304 has no body, but its Content-Length (if supplied) would
+            # describe the cached 200 representation, not len(raw) == 0.
+            # Omit it rather than corrupting static-resource cache metadata.
+            if status != 304:
+                self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
-            if self.command != "HEAD":
+            if self.command != "HEAD" and status != 304:
                 self.wfile.write(raw)
         except BrokenPipeError:
             pass
