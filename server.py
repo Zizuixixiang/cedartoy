@@ -8477,7 +8477,8 @@ a{{color:#c9afff}}
         path = full.split("?", 1)[0]
         query_string = full.partition("?")[2]
         public_path = path[len("/garden-cat"):] or "/"
-        if not _garden_cat_proxy_allowed(method, public_path):
+        is_boot_report = method == "POST" and public_path == "/web/boot-report"
+        if not is_boot_report and not _garden_cat_proxy_allowed(method, public_path):
             self._send_json({"error": "not found"}, status=404)
             return
 
@@ -8507,6 +8508,10 @@ a{{color:#c9afff}}
                     f"HttpOnly; SameSite=Lax; Max-Age={HUMAN_TOKEN_SECONDS}"
                 )
 
+        if is_boot_report:
+            self._handle_garden_cat_boot_report(user, target)
+            return
+
         self._proxy_to_garden_cat(
             method,
             _garden_cat_upstream_path(public_path),
@@ -8516,6 +8521,57 @@ a{{color:#c9afff}}
             activity_user=(None if is_static else user),
             human_name=(user.get("username") if not is_static else None),
         )
+
+    def _handle_garden_cat_boot_report(self, user, target):
+        """Bound, authenticated startup telemetry; never proxy to game/save APIs."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if self.headers.get("Transfer-Encoding") or not 0 < length <= 2048:
+                raise ValueError("invalid length")
+            report = self._read_json_body()
+            request_id = report.get("request_id")
+            if not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id):
+                raise ValueError("invalid id")
+            event = report.get("event")
+            phase = report.get("phase")
+            if event not in ("page_start", "ready", "error", "timeout"):
+                raise ValueError("invalid event")
+            if phase not in ("script_load", "script_start", "catalog_request",
+                             "catalog_ready", "state_request", "ready"):
+                raise ValueError("invalid phase")
+        except (TypeError, ValueError):
+            self.close_connection = True
+            self._send_json({"error": "invalid diagnostic"}, status=400)
+            return
+
+        def number(key):
+            value = report.get(key)
+            return value if type(value) is int and 0 <= value <= 100_000_000 else 0
+
+        error_name = report.get("error_name")
+        if error_name not in ("Error", "SyntaxError", "TypeError", "ReferenceError",
+                              "RangeError", "URIError", "EvalError", "ResourceError"):
+            error_name = "unknown"
+        error_code = report.get("error_code")
+        if error_code not in ("script_load", "unexpected_token", "missing_api",
+                              "null_access", "network", "unknown"):
+            error_code = "unknown"
+        asset = report.get("asset")
+        if not isinstance(asset, str) or not re.fullmatch(r"v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}-[0-9]{10}", asset):
+            asset = "unknown"
+        # Only browser version tokens; never URLs, cookies, error text or raw UA.
+        browser = ",".join(name + "/" + version for name, version in re.findall(
+            r"\b(Chrome|Chromium|CriOS|Firefox|FxiOS|Version|Quark)/([0-9]{1,3}(?:\.[0-9]{1,6}){0,3})",
+            self.headers.get("User-Agent", "")[:1024],
+        )[:5]) or "unknown"
+        logger.info(
+            "garden_boot request_id=%s user_id=%s player=%s event=%s phase=%s "
+            "elapsed_ms=%s error_name=%s error_code=%s line=%s column=%s asset=%s browser=%s",
+            request_id, int(user["id"]), target["player"], event, phase,
+            number("elapsed_ms"), error_name, error_code, number("line"),
+            number("column"), asset, browser,
+        )
+        self._send_json({"ok": True}, extra_headers={"Cache-Control": "no-store"})
 
     def _proxy_to_garden_cat(
         self, method, upstream_path, query_string, set_cookie=None, target=None,
