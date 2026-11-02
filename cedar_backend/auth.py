@@ -313,6 +313,7 @@ def _current_account(raw_token, *, allow_pending_deletion,
     _opaque_ai_token_hash,
     _row_dict,
     time,
+    diagnostic=None,
 ):
     if not raw_token:
         raise _McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
@@ -329,6 +330,8 @@ def _current_account(raw_token, *, allow_pending_deletion,
             user_id = int(payload["user_id"])
         except (KeyError, TypeError, ValueError):
             raise _McpError(-32001, "登录已失效。请检查：1) MCP 地址是否为 toy.cedarstar.org/你的token（不要带花括号）；2) 人类是否完整复制了 token（不要漏字符）；3) 如果 token 确实丢失，可用 account 工具的 login 重新获取。") from None
+    if diagnostic is not None:
+        diagnostic("account_lookup")
     with _db_connect() as conn:
         if is_opaque:
             token_row = _row_dict(conn.execute(
@@ -372,6 +375,10 @@ def _current_account(raw_token, *, allow_pending_deletion,
             if user.get("is_ai"):
                 raise _McpError(-32001, "登录已失效：Token 账号类型不匹配")
             auth_token_format = "jwt"
+        # Only the garden picker opts into these markers. Never report an ID
+        # from an unverified token, and mark the write before it can block.
+        if diagnostic is not None:
+            diagnostic("identity_verified", user_id=user_id)
         if user.get("deletion_requested_at_epoch") is not None:
             scheduled = int(user["scheduled_delete_at_epoch"])
             if not allow_pending_deletion:
@@ -383,8 +390,12 @@ def _current_account(raw_token, *, allow_pending_deletion,
                 )
             user["_auth_token_format"] = auth_token_format
             return user
+        if diagnostic is not None:
+            diagnostic("activity_update")
         conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user_id,))
         conn.commit()
+        if diagnostic is not None:
+            diagnostic("activity_committed")
         user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
         user["_auth_token_format"] = auth_token_format
     return user

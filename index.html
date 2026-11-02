@@ -8458,30 +8458,47 @@
     }
 
     async function openGardenCatPicker() {
+      // Correlation only: never include credentials, response bodies or saves.
+      const requestId = Array.from({length: 16}, () => Math.floor(Math.random() * 256).toString(16).padStart(2, "0")).join("");
+      const started = performance.now();
+      let phase = "open";
+      const diagnostic = (event, status) => {
+        try {
+          console.info("garden_picker", JSON.stringify({request_id: requestId, event, phase, elapsed_ms: Math.round(performance.now() - started), status}));
+        } catch (_) { /* Diagnostics must not break the picker. */ }
+        phase = event;
+      };
       $("bankPickerPanel").setAttribute("aria-label", "选择小机");
       $("bankPickerTitle").textContent = "选择小机";
       $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取花园...</p>`;
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
       try {
+        diagnostic("request_start");
         const res = await fetch("/api/garden-cat/gardens", {
-          headers: headers(false),
+          headers: {...headers(false), "X-Garden-Request-Id": requestId},
           cache: "no-store",
         });
+        diagnostic("response_headers", res.status);
         if (res.status === 401) throw new Error("登录已失效，请重新登录");
         if (!res.ok) throw new Error("花园列表读取失败，请稍后再试");
         const data = await res.json();
+        diagnostic("body_read");
         const gardens = Array.isArray(data.gardens) ? data.gardens : [];
         if (!gardens.length) {
           $("bankPickerOptions").innerHTML = `
             <p class="garden-picker-empty">你家小机还没有开花园</p>
             <p class="garden-picker-hint">让小机连接 MCP，调用 play(game=&quot;garden_cat&quot;, action=&quot;status&quot;) 就能开始经营第一座花园。</p>
           `;
+          diagnostic("empty_rendered");
           return;
         }
         renderGardenCatMachinePicker(gardens);
+        diagnostic("rendered");
       } catch (err) {
+        diagnostic("error");
         $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "花园列表读取失败，请稍后再试")}</p>`;
+        diagnostic("error_rendered");
       }
     }
 

@@ -539,9 +539,15 @@ def _garden_cat_watchable_gardens_for_user(user, save_root=None):
     return gardens
 
 
-def _garden_cat_watchable_gardens(raw_token):
-    user = _current_account(raw_token)
-    return {"gardens": _garden_cat_watchable_gardens_for_user(user)}
+def _garden_cat_watchable_gardens(raw_token, *, diagnostic=None):
+    user = _current_account(raw_token, diagnostic=diagnostic)
+    if diagnostic is not None:
+        diagnostic("authenticated", user_id=user["id"])
+        diagnostic("list_read")
+    result = {"gardens": _garden_cat_watchable_gardens_for_user(user)}
+    if diagnostic is not None:
+        diagnostic("list_ready")
+    return result
 
 
 def _bound_ai_slot_target_for_user(user, requested_player):
@@ -1284,9 +1290,10 @@ def _account_username_aliases(user):
     )
 
 
-def _current_account(raw_token, *, allow_pending_deletion=False):
+def _current_account(raw_token, *, allow_pending_deletion=False, diagnostic=None):
     return auth._current_account(
         raw_token, allow_pending_deletion=allow_pending_deletion,
+        diagnostic=diagnostic,
         AI_OPAQUE_TOKEN_FORMAT_VERSION=AI_OPAQUE_TOKEN_FORMAT_VERSION,
         AI_OPAQUE_TOKEN_PREFIX=AI_OPAQUE_TOKEN_PREFIX,
         _McpError=_McpError,
@@ -6508,14 +6515,62 @@ a{{color:#c9afff}}
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
 
     def _handle_api_garden_cat_gardens(self):
+        # Client-generated IDs also correlate requests that stall before auth.
+        # Ignore malformed IDs; never log headers, URLs, exception text or saves.
+        request_id = self.headers.get("X-Garden-Request-Id", "")
+        if not re.fullmatch(r"[0-9a-f]{32}", request_id):
+            request_id = secrets.token_hex(16)
+        started = previous = time.monotonic()
+        phase = "handler"
+        account_id = None
+
+        def diagnostic(event, *, user_id=None, status=None, error=None, outcome=None):
+            nonlocal previous, phase, account_id
+            now = time.monotonic()
+            if user_id is not None:
+                account_id = int(user_id)
+            logger.info(
+                "garden_picker request_id=%s event=%s phase=%s user_id=%s "
+                "elapsed_ms=%.2f phase_ms=%.2f status=%s outcome=%s "
+                "error_type=%s sqlite_code=%s sqlite_busy=%s",
+                request_id, event, phase, account_id,
+                (now - started) * 1000, (now - previous) * 1000, status, outcome,
+                type(error).__name__ if error is not None else None,
+                getattr(error, "sqlite_errorcode", None),
+                isinstance(error, sqlite3.OperationalError)
+                and str(error) in {"database is locked", "database table is locked"},
+            )
+            previous, phase = now, event
+
+        diagnostic("enter")
+        status = 200
         try:
-            result = _garden_cat_watchable_gardens(_extract_bearer(self.headers))
-            self._send_json(result, extra_headers={"Cache-Control": "no-cache, no-store"})
+            diagnostic("auth_start")
+            result = _garden_cat_watchable_gardens(
+                _extract_bearer(self.headers), diagnostic=diagnostic,
+            )
         except _McpError as exc:
             status = 401 if exc.code == -32001 else (403 if exc.code == -32003 else 400)
-            self._send_json({"error": exc.message}, status=status)
+            diagnostic("error", status=status, error=exc)
+            result = {"error": exc.message}
         except Exception as exc:
-            self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+            status = 500
+            diagnostic("error", status=status, error=exc)
+            result = {"error": "server error", "detail": str(exc)}
+
+        diagnostic("response_start", status=status)
+        try:
+            self._send_json(result, status=status, extra_headers={
+                "Cache-Control": "no-cache, no-store",
+                "X-Garden-Request-Id": request_id,
+            })
+        except Exception as exc:
+            # A response may already be partially written. Do not send a second
+            # HTTP response on the same connection (including on BrokenPipe).
+            self.close_connection = True
+            diagnostic("end", status=status, error=exc, outcome="write_failed")
+            return
+        diagnostic("end", status=status, outcome="ok" if status == 200 else "http_error")
 
     def _handle_api_forest_saves(self):
         try:
