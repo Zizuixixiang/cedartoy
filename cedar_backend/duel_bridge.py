@@ -358,6 +358,7 @@ def _duel_backend_mcp_error(status_code, data, payload, *,
 
 def _prepare_duel_payload(arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name, *,
     trusted_household_ais=None,
+    trusted_avatar=None,
     _DUEL_MOVE_SIBLING_FIELDS,
     _McpError,
     _duel_mcp_error,
@@ -531,12 +532,17 @@ def _prepare_duel_payload(arguments, trusted_opponent_id, force_opponent, truste
             allowed_fields |= exchange_fields.get(exchange_action, set())
     else:
         allowed_fields = {"action", "player_id"} | action_fields[action]
+    if action in {"new", "invite"} and arguments.get("game_type") == "liars_dice":
+        allowed_fields.add("move")  # Room-local rules; validated by the dice plugin.
     payload = {
         key: value
         for key, value in arguments.items()
         if key in allowed_fields and value is not None
     }
-    if trusted_display_name is not None and (action == "invite" or (action == "join" and arguments.get("invite_code"))):
+    dice_profile = (action in {"new", "invite"} and arguments.get("game_type") == "liars_dice") or (action == "move" and isinstance(arguments.get("move"), dict) and arguments["move"].get("action") == "choose_team_seat")
+    if trusted_avatar is not None and dice_profile:
+        payload["display_avatar"] = trusted_avatar
+    if trusted_display_name is not None and (dice_profile or action == "invite" or (action == "join" and arguments.get("invite_code"))):
         payload["display_name"] = trusted_display_name
     if trusted_player_id is not None:
         # 聚合层认证得到的 canonical AI 身份始终覆盖顶层或 params 自报值。
@@ -644,6 +650,7 @@ def _request_duel_backend(payload, *,
 
 def _play_duel(arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name, *,
     trusted_household_ais=None,
+    trusted_avatar=None,
     _annotate_duel_wait_followup,
     _prepare_duel_payload,
     _request_duel_backend,
@@ -657,6 +664,7 @@ def _play_duel(arguments, trusted_opponent_id, force_opponent, trusted_player_id
         trusted_player_id=trusted_player_id,
         trusted_display_name=trusted_display_name,
         **({"trusted_household_ais": trusted_household_ais} if trusted_household_ais is not None else {}),
+        **({"trusted_avatar": trusted_avatar} if trusted_avatar is not None else {}),
     )
     duel_wait_control.begin(payload)
     try:

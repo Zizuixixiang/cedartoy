@@ -4421,10 +4421,12 @@ def _prepare_duel_payload(
     trusted_player_id=None,
     trusted_display_name=None,
     trusted_household_ais=None,
+    trusted_avatar=None,
 ):
     return duel_bridge._prepare_duel_payload(
         arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name,
         trusted_household_ais=trusted_household_ais,
+        trusted_avatar=trusted_avatar,
         _DUEL_MOVE_SIBLING_FIELDS=_DUEL_MOVE_SIBLING_FIELDS,
         _McpError=_McpError,
         _duel_mcp_error=_duel_mcp_error,
@@ -4455,10 +4457,12 @@ def _play_duel(
     trusted_player_id=None,
     trusted_display_name=None,
     trusted_household_ais=None,
+    trusted_avatar=None,
 ):
     return duel_bridge._play_duel(
         arguments, trusted_opponent_id, force_opponent, trusted_player_id, trusted_display_name,
         trusted_household_ais=trusted_household_ais,
+        trusted_avatar=trusted_avatar,
         _annotate_duel_wait_followup=_annotate_duel_wait_followup,
         _prepare_duel_payload=_prepare_duel_payload,
         _request_duel_backend=_request_duel_backend,

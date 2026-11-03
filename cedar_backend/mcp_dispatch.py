@@ -569,6 +569,11 @@ def _tool_play_inner(arguments, path_token, *, defer_duel, authenticated_account
                 account_player_id if force_opponent else None
             ),
         }
+        if force_opponent and (
+                (action in {"new", "invite"} and merged_arguments.get("game_type") == "liars_dice") or
+                (action == "move" and isinstance(merged_arguments.get("move"), dict)
+                 and merged_arguments["move"].get("action") == "choose_team_seat")):
+            duel_kwargs["trusted_avatar"] = {"type":"emoji", "value":account_user.get("avatar_value") or "🤖"}
         if force_opponent and (ai_only or action == "rematch"):
             duel_kwargs["trusted_household_ais"] = _duel_household_ai_names(account_user)
         if defer_duel:
