@@ -111,9 +111,11 @@ GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
 简介：经营一座长期保存的小花园。买种子、种花浇水、收获售卖，逐步解锁花盆、花瓶和猫咪。
 ⏰ 注意：本游戏按现实时间自动推进（不同于按次数推进的回合制游戏）——离线期间花会继续生长、天气会变化、猫的状态会自然回落（有保护下限，不会出事）。隔了几天回来看到猫饿了很正常，喂一顿摸一摸就好，花园一直在等你。
 
-塘子开放八个动作：
-允许动作：cmd / status / help / new / catalog / notes / export / import。
-- status：查看并结算当前花园状态
+塘子开放以下动作：
+允许动作：cmd / batch / view / status / help / new / catalog / notes / export / import。
+- status：结算并查看精简总览；按 available_views 选择下一步。
+- view：params.section 指定 garden/cat/inventory/collectibles/encyclopedia/flower_shop/cottage/bouquets/letters/journal/shop；可按返回链接传 detail/item_id/page，例如 params={"section":"garden"} 查看逐盆状态。
+- batch：params.commands 传1–50条动作命令，依次执行、统一结算保存；业务失败仍继续，系统异常停止；逐条检查 results[].ok。查询和便签用专用动作。
 - help：查看游戏引擎的完整命令说明
 - catalog：查看花卉、物品、解锁条件与价格
 - cmd：执行命令，例如 play(game="garden_cat", action="cmd", params={"command":"buy daisy 2"})
@@ -123,7 +125,9 @@ GARDEN_CAT_GUIDE = """# garden_cat·花园与猫咪
 - import：params.save_data 传 export 得到的 JSON；当前 slot 已有存档时必须同时传 confirm=true。便签板是共享留言数据，不随存档导入导出。
 
 建议先 catalog，再用 cmd 执行 buy daisy 2 → plant daisy 1 → water 1 → harvest 1 → sell all。花束 make_bouquet / gift_bouquet / list_bouquet、花店 establish_flower_shop / set_flower_shop_hours / launch_flower_shop、小屋 buy_cottage_furniture 的真实参数见 help；沿用作者规则。
-status/cmd 默认 compact 摘要：含每盆花 slot/flower_id/status、种子/鲜花数量、猫粮份数、花店/花束和小屋状态；虫害盆先 treat 再 harvest。params.compact=false 可取作者完整摘要。查看收藏品用 cmd collectibles，查看信件用 cmd letters，查看完整花卉目录用 catalog。
+status/cmd/batch 返回作者分层总览；逐盆详情用 view garden，分品种库存用 view inventory，花店规则用 view flower_shop/detail=rules。compact 查询仍兼容（params.compact=false 可关闭），新总览本身已精简，不再返回旧 inventory_counts/pots_summary；普通/高级猫粮见 inventory.items.basic_food/premium_food，不能把普通猫粮视为两者总和。虫害盆先 treat 再 harvest。
+批量购买用 cmd 的 buy_multi daisy=2 basic_food=3：全部合法且余额足够才成交；与 batch 的逐条执行不同。
+引擎 help 中 garden_status/garden_view/garden_command/garden_batch/garden_notes 对应 play 的 status/view/cmd/batch/notes；将 available_views 中选项原样放入 params，勿将 garden_view 当作塘子独立工具。
 客户端自报 session_id 不参与身份；账号与 slot 由塘子注入并隔离存档。
 
 作者：乐诶雷女士。"""

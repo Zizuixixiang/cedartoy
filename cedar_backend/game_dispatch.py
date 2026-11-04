@@ -379,7 +379,7 @@ def _play_garden_cat(arguments, owner_name, *,
     json,
     urllib,
 ):
-    """Forward the six public actions while stripping all client session identity."""
+    """Forward Garden actions while stripping all client session identity."""
     action = arguments.get("action")
     # _tool_play_inner puts its resolved identity at the top level. Never let a
     # nested client parameter override that trusted value at the forwarding edge.
@@ -432,6 +432,28 @@ def _play_garden_cat(arguments, owner_name, *,
         if not isinstance(command, str) or not command.strip():
             raise _McpError(-32602, "garden_cat cmd 需要 params.command")
         method, path, body = "POST", "/api/cmd", {"command": command}
+    elif action == "batch":
+        commands = extra.get("commands")
+        if (not isinstance(commands, list) or not 1 <= len(commands) <= 50
+                or any(not isinstance(command, str) or not command.strip() for command in commands)):
+            raise _McpError(-32602, "garden_cat batch 需要 params.commands：1–50 条非空命令字符串")
+        method, path, body = "POST", "/api/cmd/batch", {"commands": commands}
+    elif action == "view":
+        selectors = {}
+        for key in ("section", "detail", "item_id"):
+            value = extra.get(key)
+            if value is not None:
+                if not isinstance(value, str) or not value.strip():
+                    raise _McpError(-32602, f"garden_cat view 的 params.{key} 必须是非空字符串")
+                selectors[key] = value
+        if "section" not in selectors:
+            raise _McpError(-32602, "garden_cat view 需要 params.section")
+        if "page" in extra:
+            page = extra["page"]
+            if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+                raise _McpError(-32602, "garden_cat view 的 params.page 必须是正整数")
+            selectors["page"] = page
+        method, path, body = "GET", "/api/view?" + urllib.parse.urlencode(selectors), None
     elif action == "status":
         method, path, body = "GET", "/api/status", None
     elif action == "help":
@@ -459,10 +481,10 @@ def _play_garden_cat(arguments, owner_name, *,
     else:
         raise _McpError(
             -32602,
-            "未知 garden_cat action；只开放 cmd / status / help / new / catalog / notes / export / import，请先 get_guide(game=\"garden_cat\") 查看用法。",
+            "未知 garden_cat action；只开放 cmd / batch / view / status / help / new / catalog / notes / export / import，请先 get_guide(game=\"garden_cat\") 查看用法。",
         )
 
-    if action in {"cmd", "status"} and extra.get("compact", True) is not False:
+    if action in {"cmd", "batch", "status"} and extra.get("compact", True) is not False:
         path += "?compact=1"
 
     try:
@@ -477,7 +499,19 @@ def _play_garden_cat(arguments, owner_name, *,
         detail = payload.get("message") if isinstance(payload, dict) else None
         code = -32602 if resp.status_code < 500 else -32603
         raise _McpError(code, detail or f"garden_cat 后端错误 HTTP {resp.status_code}")
-    return payload
+    # The author's navigation names refer to standalone MCP tools. CedarToy
+    # exposes the same capabilities through its existing small play envelope.
+    def platform_navigation(value):
+        if isinstance(value, dict):
+            result = {key: platform_navigation(item) for key, item in value.items()}
+            if result.get("next_tool") == "garden_view":
+                result.update(next_tool="play", next_action="view")
+            return result
+        if isinstance(value, list):
+            return [platform_navigation(item) for item in value]
+        return value
+
+    return platform_navigation(payload)
 
 
 def _play_camping_plaza(arguments, *,

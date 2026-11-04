@@ -200,5 +200,57 @@ class GardenCatPhase2Tests(unittest.TestCase):
         self.assertIn('target.searchParams.set("live_events"', js)
         self.assertNotIn('X-Garden-Token', js)
 
+    def test_layered_views_and_batch_use_trusted_slot_and_author_rules(self):
+        import server
+
+        class Response:
+            def __init__(self, response):
+                self.status_code = response.status_code
+                self.json = response.get_json
+
+        def forward(method, url, *, json, headers, timeout):
+            target = urllib.parse.urlsplit(url)
+            return Response(self.client.open(target.path + ("?" + target.query if target.query else ""),
+                                             method=method, json=json, headers=headers))
+
+        def play(action, **params):
+            return server._play_garden_cat({
+                "game": "garden_cat", "action": action, "player_id": "42:2",
+                "params": {"session_id": "43", "player_id": "43", "slot": 5,
+                           "source_name": "伪造", **params},
+            }, owner_name="小机阿橘")
+
+        with patch.object(server.httpx, "request", side_effect=forward):
+            overview = play("status")["state"]
+            self.assertEqual((overview["next_tool"], overview["next_action"]), ("play", "view"))
+            for link in overview["available_views"]:
+                self.assertTrue(play("view", **link)["ok"])
+            result = play("batch", commands=["buy_multi daisy=2 basic_food=1", "plant daisy 1",
+                                              "harvest 1", "water 1"])
+            self.assertEqual([row["ok"] for row in result["results"]], [True, True, False, True])
+            self.assertEqual(result["state"]["money"], 34)
+            self.assertEqual(result["state"]["inventory"]["items"]["basic_food"], 10)
+            self.assertEqual(play("view", section="garden")["items"][0]["status"], "growing")
+            events = [event for event in self._read_state("42:2")["events"] if event.get("source") == "ai"]
+            self.assertTrue(events)
+            self.assertTrue(all(event.get("source_name") == "小机阿橘" for event in events))
+            self.assertEqual(play("status", compact=False)["state"]["money"], 34)
+        self.assertFalse(Path(self.game_api.STORE.state_file_for("43")).exists())
+
+    def test_new_actions_reject_invalid_params_before_forwarding(self):
+        import server
+        for action, params in (
+            ("batch", {"commands": "water all"}), ("batch", {"commands": []}),
+            ("batch", {"commands": ["water all"] * 51}), ("batch", {"commands": [False]}),
+            ("view", {}), ("view", {"section": ["garden"]}),
+            ("view", {"section": "journal", "page": True}),
+            ("view", {"section": "journal", "page": 0}),
+        ):
+            with self.subTest(action=action, params=params), patch.object(server.httpx, "request") as request:
+                with self.assertRaises(server._McpError):
+                    server._play_garden_cat({"game": "garden_cat", "action": action,
+                                             "player_id": "42:2", "params": params})
+                request.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

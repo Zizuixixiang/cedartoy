@@ -4,6 +4,7 @@ import base64
 import hashlib
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,7 +15,8 @@ import server
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / "vendor" / "Garden-Cat-Engine"
+ENGINE = Path(os.environ.get("GARDEN_CAT_ENGINE_ROOT", ROOT / "vendor" / "Garden-Cat-Engine"))
+PYTHON = os.environ.get("GARDEN_TEST_PYTHON", str(ENGINE / ".venv/bin/python"))
 
 
 class GardenStaticProxyTests(unittest.TestCase):
@@ -47,7 +49,7 @@ record('page', '/web/', {'X-Forwarded-Prefix': '/garden-cat'})
 print(json.dumps(results))
 '''
             result = subprocess.run(
-                [str(ENGINE / ".venv/bin/python"), "-B", "-c", code, tmp],
+                [PYTHON, "-B", "-c", code, tmp],
                 cwd=ENGINE, check=True, capture_output=True, timeout=20,
             )
             cls.responses = json.loads(result.stdout)

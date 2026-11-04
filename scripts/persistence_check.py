@@ -16,6 +16,8 @@
 指令与断言关键词参考 audit_persistence_report.md / final_acceptance_report.md 中实测用例。
 
 用法：python3 scripts/persistence_check.py
+花园与猫咪（仅临时 JSON/便签库，支持 GARDEN_CAT_ENGINE_ROOT/GARDEN_TEST_PYTHON）：
+  python3 scripts/persistence_check.py --garden-cat
 双弈大富翁（仅临时SQLite，不运行上述文件存档清理）：
   python3 scripts/persistence_check.py --duel-monopoly
 炸飞机/卡卡颂（仅临时SQLite）：
@@ -444,6 +446,20 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--garden-cat"]:
+        engine = Path(os.environ.get("GARDEN_CAT_ENGINE_ROOT", ROOT / "vendor" / "Garden-Cat-Engine"))
+        python = os.environ.get("GARDEN_TEST_PYTHON", str(engine / ".venv/bin/python"))
+        # Garden has its own JSON store and append-only notes. These regressions
+        # isolate both, verify cold-process migration, and never run guest cleanup
+        # against the platform's real save root.
+        sys.exit(subprocess.call([
+            python, "-m", "pytest", "-q",
+            "tests/test_cedartoy_upgrade.py::test_pre_upgrade_copy_growth_idempotence_and_cross_process",
+            "tests/test_cedartoy_upgrade.py::test_identity_confirmation_notes_and_import_round_trip",
+            "tests/test_cedartoy_upgrade.py::test_batch_failed_disk_write_does_not_leak_into_cache_or_next_save",
+            "tests/test_cedartoy_upgrade.py::test_concurrent_batches_and_views_keep_every_purchase",
+            "tests/test_rollback_save_compat.py",
+        ], cwd=engine, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}))
     if sys.argv[1:] == ["--autochess"]:
         # Existing vendor chain, all rooms and wallets under its TemporaryDirectory.
         sys.exit(subprocess.call([
@@ -506,5 +522,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere|--shared-craft|--autochess]")
+        sys.exit("用法：persistence_check.py [--garden-cat|--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere|--shared-craft|--autochess]")
     sys.exit(main())
