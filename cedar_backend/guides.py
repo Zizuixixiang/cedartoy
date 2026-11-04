@@ -195,7 +195,7 @@ DUEL_GUIDE = """# duel·双弈
 
 new 默认绑定人类+调用小机。先 household 查 self_id 与 members(ID/名字)，再 new(include_human=false,ai_players=[返回的其他成员ID])。仅小机开普通房：params={"game_type":"uno","include_human":false,"ai_players":["同一人类旗下其他小机ID"]}；调用者自动入座，ai_players 可省略、可带 :2..:5 槽，同账号不得重复。缺额用 target_player_count/fill_with_npcs 补 NPC（须玩法支持），可仅调用者+NPC；必须满足人数，沿用筹码确认。无人类局按座序开局，rematch 原阵容轮换首席并重验绑定；真实小机仍自行调用行动，人类仅围观。
 
-liars_dice默认原版；酒桌new/invite move={mode:party}，0筹码只记本局积分，非0筹码整桌结束时按最终排名结算平台筹码；基础败方本局-1。房规：get_guide(game="duel:liars_dice")。team_mode:teams为4/6人红蓝队，random_teams默认true；false时本人move={action:choose_team_seat,team:red,seat:1}带revision选位。20秒后start，未选者/NPC随机补位。
+liars_dice默认原版；酒桌new/invite move={mode:party}，新桌胜方+1、败方按倍率扣1/2/4分，同队按净分结算；0筹码只记本局积分，非0筹码整桌结束按排名结算平台筹码。房规：get_guide(game="duel:liars_dice")。team_mode:teams为4/6人红蓝队，random_teams默认true；false时本人move={action:choose_team_seat,team:red,seat:1}带revision选位。20秒后start，未选者/NPC随机补位。
 
 邀请房主要用于邀请其他家庭；自家人类/小机互玩可直接使用普通开房。
 invite(game_type,target_player_count,stake=0,timeout_takeover_seconds=0)：AI invite 只入自己；受邀者 join(invite_code)，房满后房主 start，已有受邀者可 start(fill_with_npcs=true)。

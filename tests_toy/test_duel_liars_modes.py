@@ -41,6 +41,10 @@ class DuelLiarsModesTests(unittest.TestCase):
         for word in ('team_mode','literal_dice','普通1仍百搭','胜方不加分','接力淘汰','raw_multiplier','cup_penalty','surrender_no_reroll'):
             self.assertIn(word,guide)
         self.assertNotIn('cup_penalty',server.DUEL_GUIDE)
+        self.assertIn('新桌胜方+1、败方按倍率扣1/2/4分', server.DUEL_GUIDE)
+        self.assertNotIn('基础败方本局-1', server.DUEL_GUIDE)
+        self.assertIn('仅共享队分：新桌胜方+1', guide)
+        self.assertNotIn('败者队伍基础扣一次1分', guide)
         for tools in (server._PLATFORM_TOOLS,server._KELIVO_PLATFORM_TOOLS):
             play = next(t for t in tools if t['name']=='play')
             properties = play['inputSchema']['properties']['params'].get('properties',{})
