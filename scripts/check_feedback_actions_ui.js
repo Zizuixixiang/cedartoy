@@ -27,10 +27,10 @@ function fixture() {
   };
   return state;
 }
-function page(file, state, token = '') {
+function page(file, state, token = '', hash = '') {
   const errors = [], vc = new VirtualConsole(); vc.on('jsdomError', e => errors.push(e.message));
   const dom = new JSDOM(fs.readFileSync(path.join(root, file), 'utf8'), {
-    url: 'https://feedback.test/' + (file === 'admin.html' ? 'admin' : ''), runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
+    url: 'https://feedback.test/' + (file === 'admin.html' ? 'admin' : '') + hash, runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
       if (token) w.localStorage.setItem('cedartoy_token', token);
       w.fetch = state.fetch;
@@ -63,7 +63,16 @@ function checkActorNames(w, admin) {
 }
 async function checkAdmin() {
   const state = fixture(), {w, $, errors} = page('admin.html', state, 'admin-stub');
-  const badge = n => { assert.equal($('recoveryCount').textContent, n > 99 ? '99+' : String(n)); assert.equal($('recoveryCount').hidden, n === 0); };
+  const badge = n => {
+    const values = w.eval('[pendingTicketCounts.recovery, pendingTicketCounts.feedback]');
+    for (const [id, value] of [['recoveryCount', n], ['recoveryKindCount', values[0]], ['feedbackKindCount', values[1]]]) {
+      assert.equal($(id).textContent, value > 99 ? '99+' : String(value));
+      assert.equal($(id).hidden, value === 0);
+      assert.equal($(id).getAttribute('aria-hidden'), 'true');
+      assert.equal($(id).parentElement.getAttribute('aria-label').includes(`待处理 ${value} 条`), value > 0);
+    }
+    assert.equal(values[0] + values[1], n);
+  };
   const counts = async (r, f) => { state.recovery = r; state.feedback = f; await w.loadRecoveryCount(); badge(r + f); };
   try {
     checkActorNames(w, true);
@@ -72,7 +81,7 @@ async function checkAdmin() {
     // The current admin tab uses an inline flex badge, not the old overlay.
     assert.equal(w.getComputedStyle($('recoveryCount')).position, 'static');
     assert.equal(w.getComputedStyle($('recoveryCount')).flex, '0 0 auto');
-    for (const pair of [[3, 0], [0, 1], [3, 2], [0, 0], [98, 2]]) await counts(...pair);
+    for (const pair of [[3, 0], [0, 1], [3, 2], [0, 0], [98, 2], [100, 101]]) await counts(...pair);
     await counts(2, 3);
     for (const failed of ['recovery', 'feedback']) {
       const isFailed = url => url.includes('/admin/' + failed);
@@ -118,6 +127,24 @@ async function checkAdmin() {
     w.localStorage.setItem('cedartoy_token', 'new-admin');
     state.intercept = null; await counts(0, 1);
     finishUnauthorized(reply({}, 401)); await unauthorized; badge(1); assert.equal(w.token(), 'new-admin');
+    // Recovery review must refresh after the write, superseding any pre-review counts.
+    let recoveryOpen = true;
+    state.intercept = url => url.includes('/admin/recovery?') ? reply({pending_count: recoveryOpen ? 1 : 0,
+      total: recoveryOpen ? 1 : 0, tickets: recoveryOpen ? [{id: 7, status: 'pending'}] : []}) : null;
+    await w.loadRecoveryTickets();
+    const preReview = [];
+    state.intercept = (url, options) => options.cache === 'no-store'
+      ? new Promise(resolve => preReview.push(resolve)) : null;
+    const oldReviewCounts = w.loadRecoveryCount();
+    state.intercept = url => {
+      if (url.endsWith('/recovery/review')) { recoveryOpen = false; return reply({ok: true}); }
+      if (url.includes('/admin/recovery?')) return reply({pending_count: 0, total: 0, tickets: []});
+      return null;
+    };
+    $('recoveryTickets').querySelector('[data-recovery-action="approved"]').click(); await tick(); badge(1);
+    assert.equal(recoveryOpen, false); assert.match($('recoveryTickets').textContent, /暂无工单/);
+    preReview.forEach(resolve => resolve(reply({pending_count: 99, total: 99})));
+    await oldReviewCounts; badge(1); state.intercept = null;
     // Actual UI review handlers refresh counts for reply, processing and closure.
     $('recoveryTab').click(); await tick();
     w.document.querySelector('[data-ticket-kind="feedback"]').click(); await tick();
@@ -178,6 +205,133 @@ async function checkAdmin() {
     console.log('Admin stub PASS: count combinations, 99+, partial failures, queue failure, concurrent refresh, identity changes, stale 401, review and follow-up refresh.');
   } finally { w.close(); }
 }
+async function checkTicketNavigation() {
+  const state = fixture(), {w, $, errors} = page('admin.html', state, 'admin-navigation');
+  const kindButton = kind => w.document.querySelector(`[data-ticket-kind="${kind}"]`);
+  const selected = kind => {
+    assert.equal(w.eval('ticketKind'), kind);
+    for (const name of ['recovery', 'feedback']) {
+      assert.equal($(name === 'recovery' ? 'recoveryQueue' : 'feedbackQueue').hidden, name !== kind);
+      assert.equal(kindButton(name).getAttribute('aria-pressed'), String(name === kind));
+    }
+    assert.equal($('ticketEntryStatus').textContent, '');
+  };
+  const holdCounts = () => {
+    const held = [];
+    state.intercept = (url, options) => options.cache === 'no-store'
+      ? new Promise(resolve => held.push({url, resolve})) : null;
+    return (r, f) => {
+      assert.equal(held.length, 2);
+      state.intercept = null;
+      held.forEach(({url, resolve}) => resolve(reply(url.includes('recovery')
+        ? {pending_count: r, tickets: [], total: r} : {total: f, tickets: []})));
+    };
+  };
+  try {
+    await tick();
+    // Entry uses fresh counts, including a change since the top badge last loaded.
+    for (const [r, f, expected] of [[0, 0, 'recovery'], [0, 4, 'feedback'], [2, 0, 'recovery'], [2, 4, 'recovery']]) {
+      $('usersTab').click(); state.recovery = r; state.feedback = f;
+      const before = state.calls.length;
+      $('recoveryTab').click(); await tick(); selected(expected);
+      const calls = state.calls.slice(before);
+      assert.equal(calls.filter(c => c.url.includes('/admin/recovery?')).length, 1);
+      assert.equal(calls.filter(c => c.url.endsWith('/feedback/list') && c.body.status === 'pending').length, 1);
+      assert.equal(calls.length, expected === 'feedback' ? 3 : 2, 'one count batch plus only a distinct list query');
+    }
+    kindButton('feedback').click(); await tick(); selected('feedback');
+    // Both-zero restores the last manual choice even after an automatic recovery entry.
+    $('usersTab').click(); $('recoveryTab').click(); await tick(); selected('recovery');
+    $('usersTab').click(); state.recovery = state.feedback = 0;
+    $('recoveryTab').click(); await tick(); selected('feedback');
+    const before = state.calls.length;
+    $('recoveryTab').click(); await tick(); selected('feedback');
+    assert.equal(state.calls.length, before, 'clicking the active top tab is not another entry');
+    state.recovery = 8; await w.loadRecoveryCount(); selected('feedback');
+
+    // A manual choice during delayed entry cancels auto-selection and shares counts.
+    $('usersTab').click(); let release = holdCounts();
+    $('recoveryTab').click();
+    assert.ok($('recoveryQueue').hidden && $('feedbackQueue').hidden);
+    assert.match($('ticketEntryStatus').textContent, /加载/);
+    kindButton('feedback').click(); await tick(); selected('feedback');
+    release(9, 0); await tick(); selected('feedback');
+    assert.equal($('recoveryKindCount').textContent, '9');
+    $('usersTab').click(); release = holdCounts();
+    const manualStart = state.calls.length;
+    $('recoveryTab').click(); kindButton('recovery').click();
+    release(0, 9); await tick(); selected('recovery');
+    assert.equal(state.calls.length - manualStart, 2, 'manual pending queue reuses the in-flight count response');
+
+    // A pending feedback filter can also reuse its count response; other filters stay intact.
+    $('feedbackAdminFilter').value = 'pending';
+    $('usersTab').click(); state.recovery = 0; state.feedback = 1;
+    const pendingStart = state.calls.length;
+    $('recoveryTab').click(); await tick(); selected('feedback');
+    assert.equal(state.calls.length - pendingStart, 2);
+    $('feedbackAdminFilter').value = 'all';
+
+    // Leaving/re-entering shares an in-flight count batch; only the new entry loads.
+    $('usersTab').click(); release = holdCounts();
+    const callStart = state.calls.length;
+    $('recoveryTab').click(); $('usersTab').click(); $('recoveryTab').click();
+    release(0, 3); await tick(); selected('feedback');
+    assert.equal(state.calls.length - callStart, 3);
+    $('usersTab').click(); release = holdCounts(); $('recoveryTab').click(); $('usersTab').click();
+    const leavingCalls = state.calls.length; release(0, 2); await tick();
+    assert.equal($('recoveryPanel').hidden, true);
+    assert.equal(state.calls.length, leavingCalls, 'leaving prevents a late queue load');
+
+    // Explicit refresh supersedes an entry request, even when the old one finishes first.
+    release = holdCounts(); $('recoveryTab').click();
+    const releaseNew = holdCounts(); const newer = w.loadRecoveryCount();
+    release(8, 0); await tick();
+    assert.ok($('recoveryQueue').hidden && $('feedbackQueue').hidden);
+    releaseNew(0, 6); await newer; await tick(); selected('feedback');
+
+    // Login changes cancel entry, clear every badge and discard the prior manual choice.
+    for (const notify of [true, false]) {
+      $('usersTab').click(); release = holdCounts(); $('recoveryTab').click();
+      w.localStorage.setItem('cedartoy_token', 'changed-' + notify);
+      if (notify) w.dispatchEvent(new w.StorageEvent('storage', {key: 'cedartoy_token'}));
+      release(77, 88); await tick();
+      for (const id of ['recoveryCount', 'recoveryKindCount', 'feedbackKindCount']) assert.equal($(id).hidden, true);
+      assert.ok($('recoveryQueue').hidden && $('feedbackQueue').hidden);
+      state.recovery = state.feedback = 0;
+      $('usersTab').click(); $('recoveryTab').click(); await tick(); selected('recovery');
+    }
+    const releaseOldLogin = holdCounts(); const oldLogin = w.loadRecoveryCount();
+    w.localStorage.setItem('cedartoy_token', 'latest-login');
+    w.dispatchEvent(new w.StorageEvent('storage', {key: 'cedartoy_token'}));
+    state.intercept = null; state.feedback = 3; await w.loadRecoveryCount();
+    releaseOldLogin(99, 99); await oldLogin;
+    assert.equal($('recoveryCount').textContent, '3', 'old login cannot overwrite a new login count');
+    // Initial failures have no fabricated counts; later failures retain successful values.
+    state.recovery = 0; state.feedback = 2; await w.loadRecoveryCount();
+    state.intercept = (url, options) => options.cache === 'no-store' ? reply({}, 503) : null;
+    $('usersTab').click(); $('recoveryTab').click(); await tick(); selected('feedback');
+    assert.equal($('feedbackKindCount').textContent, '2');
+    state.intercept = null;
+    w.localStorage.removeItem('cedartoy_token');
+    w.dispatchEvent(new w.StorageEvent('storage', {key: null}));
+    assert.equal($('recoveryCount').hidden, true);
+    assert.deepEqual(errors, []);
+  } finally { w.close(); }
+  // Direct #recovery page entry waits for startup counts and reuses the pending list.
+  for (const fail of [false, true]) {
+    const state = fixture();
+    if (fail) state.intercept = (url, options) => options.cache === 'no-store' ? reply({}, 500) : null;
+    const {w, $, errors} = page('admin.html', state, 'admin-direct', '#recovery');
+    try {
+      await tick(); assert.equal(w.eval('ticketKind'), fail ? 'recovery' : 'feedback');
+      assert.equal($('recoveryPanel').hidden, false);
+      assert.equal($('recoveryCount').hidden, fail);
+      assert.equal(state.calls.length, 3);
+      assert.deepEqual(errors, []);
+    } finally { w.close(); }
+  }
+  console.log('Admin navigation PASS: four combinations, stable priority, manual memory, entry-only selection, deduplicated requests, delayed/stale refresh, login changes, failures and direct page entry.');
+}
 async function checkFeedback() {
   const state = fixture(), {w, $, errors} = page('index.html', state);
   const mode = name => w.document.querySelector(`[data-feedback-mode="${name}"]`);
@@ -231,4 +385,7 @@ async function checkFeedback() {
   } finally { w.close(); }
 }
 module.exports = {fixture};
-if (require.main === module) (async () => { await checkFeedback(); await checkAdmin(); })().catch(e => {console.error(e); process.exitCode = 1;});
+if (require.main === module) (async () => {
+  if (!process.env.FEEDBACK_ADMIN_ONLY) await checkFeedback();
+  await checkAdmin(); await checkTicketNavigation();
+})().catch(e => {console.error(e); process.exitCode = 1;});

@@ -118,6 +118,7 @@
     .recovery-count { flex: none; min-width: 20px; padding: 0 4px; border-radius: 999px; background: #c63737; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; pointer-events: none; }
     .recovery-count[hidden] { display: none; }
     .ticket-kind-switch { display: flex; gap: 8px; margin-bottom: 12px; }
+    #recoveryPanel > .ticket-kind-switch { flex-wrap: wrap; }
     #recoveryQueue[hidden], #feedbackQueue[hidden], #feedbackQueue [hidden] { display: none; }
     #feedbackAdminTickets { display: grid; gap: 12px; }
     #feedbackQueue .feedback-ticket-summary { height: auto; display: grid; gap: 6px; width: 100%; text-align: left; justify-content: stretch; padding: 12px; white-space: normal; overflow-wrap: anywhere; }
@@ -767,7 +768,7 @@
 
     <nav class="admin-tabs" aria-label="管理后台页面">
       <button id="usersTab" type="button" role="tab" aria-selected="true" aria-controls="usersPanel">用户管理</button>
-      <button id="recoveryTab" type="button" role="tab" aria-selected="false" aria-controls="recoveryPanel">工单<span class="recovery-count" id="recoveryCount" hidden></span></button>
+      <button id="recoveryTab" type="button" role="tab" aria-selected="false" aria-controls="recoveryPanel">工单<span class="recovery-count" id="recoveryCount" aria-hidden="true" hidden></span></button>
       <button id="dashboardTab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">运营看板</button>
       <button id="costsTab" type="button" role="tab" aria-selected="false" aria-controls="costsPanel">API 费用</button>
     </nav>
@@ -816,9 +817,10 @@
 
     <div class="tab-panel" id="recoveryPanel" role="tabpanel" aria-labelledby="recoveryTab" hidden>
       <div class="ticket-kind-switch" aria-label="工单类型">
-        <button class="primary" type="button" data-ticket-kind="recovery" aria-pressed="true">账号找回</button>
-        <button type="button" data-ticket-kind="feedback" aria-pressed="false">意见反馈</button>
+        <button class="primary" type="button" data-ticket-kind="recovery" aria-pressed="true" aria-controls="recoveryQueue">账号找回<span class="recovery-count" id="recoveryKindCount" aria-hidden="true" hidden></span></button>
+        <button type="button" data-ticket-kind="feedback" aria-pressed="false" aria-controls="feedbackQueue">意见反馈<span class="recovery-count" id="feedbackKindCount" aria-hidden="true" hidden></span></button>
       </div>
+      <p class="status" id="ticketEntryStatus" role="status"></p>
       <section class="recovery-panel" id="recoveryQueue" aria-label="找回工单审核队列">
         <div class="recovery-toolbar" aria-label="工单筛选">
           <select id="recoveryView" aria-label="工单状态"><option value="pending">待审批</option><option value="processed">已处理</option></select>
@@ -1092,29 +1094,44 @@
     let recoveryReviewBusy = false;
 
     let recoveryCountVersion = 0;
+    let ticketCountRequest = null;
+    let ticketEntryVersion = 0;
+    let manualTicketKind = "recovery";
     let ticketCountIdentity = token();
     const pendingTicketCounts = {recovery: 0, feedback: 0};
 
     function updateRecoveryCount() {
       const count = pendingTicketCounts.recovery + pendingTicketCounts.feedback;
-      $("recoveryCount").textContent = count > 99 ? "99+" : String(count);
-      $("recoveryCount").hidden = count === 0;
-      $("recoveryTab").setAttribute("aria-label", count ? `工单，待处理 ${count} 条` : "工单");
+      for (const [badge, button, label, value] of [
+        [$("recoveryCount"), $("recoveryTab"), "工单", count],
+        [$("recoveryKindCount"), document.querySelector('[data-ticket-kind="recovery"]'), "账号找回", pendingTicketCounts.recovery],
+        [$("feedbackKindCount"), document.querySelector('[data-ticket-kind="feedback"]'), "意见反馈", pendingTicketCounts.feedback],
+      ]) {
+        badge.textContent = value > 99 ? "99+" : String(value);
+        badge.hidden = value === 0;
+        button.setAttribute("aria-label", value ? `${label}，待处理 ${value} 条` : label);
+      }
     }
 
     function resetTicketCount() {
       recoveryCountVersion++;
+      ticketCountRequest = null;
+      ticketEntryVersion++;
+      manualTicketKind = "recovery";
+      if ($("ticketEntryStatus").textContent) $("ticketEntryStatus").textContent = "登录身份已变化，请重新进入工单。";
       ticketCountIdentity = token();
       pendingTicketCounts.recovery = pendingTicketCounts.feedback = 0;
       updateRecoveryCount();
     }
 
-    async function loadRecoveryCount() {
+    function loadRecoveryCount({reuse = false} = {}) {
       if (ticketCountIdentity !== token()) resetTicketCount();
+      if (reuse && ticketCountRequest) return ticketCountRequest;
       const version = ++recoveryCountVersion, identity = token();
-      if (!identity) return;
+      if (!identity) return Promise.resolve({});
+      const snapshots = {};
       // Each source keeps its last successful count; badge errors never log out a panel.
-      await Promise.all([
+      const pending = Promise.all([
         ["recovery", "/api/admin/recovery?view=pending&page=1", {}, "pending_count"],
         ["feedback", "/api/admin/feedback/list", {method: "POST", body: JSON.stringify({status: "pending", page: 1})}, "total"],
       ].map(async ([kind, path, options, field]) => {
@@ -1125,12 +1142,34 @@
           if (version !== recoveryCountVersion || identity !== token()) return;
           if (!Number.isSafeInteger(data[field]) || data[field] < 0) return;
           pendingTicketCounts[kind] = data[field];
+          snapshots[kind] = data;
           updateRecoveryCount();
         } catch (_) { /* Keep the last successful count for this source. */ }
         finally {
           if (ticketCountIdentity !== token()) resetTicketCount();
         }
-      }));
+      })).then(() => version === recoveryCountVersion && identity === token() ? snapshots : null)
+        .finally(() => { if (ticketCountRequest === pending) ticketCountRequest = null; });
+      ticketCountRequest = pending;
+      return pending;
+    }
+
+    async function enterTickets() {
+      if (ticketCountIdentity !== token()) resetTicketCount();
+      const version = ++ticketEntryVersion, identity = token();
+      // Resolve both sources before showing a queue; never flash the default queue first.
+      $("recoveryQueue").hidden = $("feedbackQueue").hidden = true;
+      $("ticketEntryStatus").textContent = "加载工单…";
+      let snapshots = await loadRecoveryCount({reuse: true});
+      // An explicit refresh may supersede the entry request while it is in flight.
+      while (!snapshots && ticketCountRequest && version === ticketEntryVersion && identity === token()) {
+        snapshots = await ticketCountRequest;
+      }
+      if (version !== ticketEntryVersion || identity !== token() || activeTab !== "recovery") return;
+      $("ticketEntryStatus").textContent = "";
+      const kind = pendingTicketCounts.recovery > 0 ? "recovery"
+        : pendingTicketCounts.feedback > 0 ? "feedback" : manualTicketKind;
+      switchTicketKind(kind, {automatic: true, snapshots: snapshots || {}});
     }
 
     let ticketKind = "recovery", feedbackAdminPage = 1, feedbackAdminTotal = 0, feedbackAdminBusy = false;
@@ -1146,8 +1185,13 @@
       badge.append(icon, label); return badge;
     }
     const feedbackCategoryLabels = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
-    function switchTicketKind(kind) {
-      if (feedbackAdminBusy || recoveryReviewBusy) return;
+    function switchTicketKind(kind, {automatic = false, snapshots = null} = {}) {
+      if (!automatic && (feedbackAdminBusy || recoveryReviewBusy)) return;
+      if (!automatic) {
+        ticketEntryVersion++;
+        manualTicketKind = kind;
+      }
+      $("ticketEntryStatus").textContent = "";
       ticketKind = kind;
       $("recoveryQueue").hidden = kind !== "recovery";
       $("feedbackQueue").hidden = kind !== "feedback";
@@ -1155,7 +1199,8 @@
         button.setAttribute("aria-pressed", String(button.dataset.ticketKind === kind));
         button.classList.toggle("primary", button.dataset.ticketKind === kind);
       });
-      if (kind === "feedback") loadAdminFeedback(); else loadRecoveryTickets();
+      const options = {refreshCounts: !snapshots, initialData: snapshots && snapshots[kind]};
+      if (kind === "feedback") loadAdminFeedback(options); else loadRecoveryTickets(options);
     }
     async function adminFeedbackRequest(operation, body) {
       return request("/api/admin/feedback/" + operation, {method: "POST", body: JSON.stringify(body)});
@@ -1185,9 +1230,9 @@
         $("feedbackAdminNext").disabled = feedbackAdminPage * 20 >= feedbackAdminTotal;
       }
     }
-    function loadAdminFeedback() {
+    function loadAdminFeedback({refreshCounts = true, initialData = null} = {}) {
       if (feedbackAdminBusy) return;
-      loadRecoveryCount();
+      const counts = refreshCounts ? loadRecoveryCount({reuse: true}) : null;
       feedbackAdminConversation = null;
       $("feedbackAdminTickets").hidden = false;
       $("feedbackAdminTickets").replaceChildren();
@@ -1195,7 +1240,12 @@
       $("feedbackAdminDetail").hidden = true;
       $("feedbackAdminPagination").hidden = true;
       return adminFeedbackRun(async current => {
-        const data = await adminFeedbackRequest("list", {page: feedbackAdminPage, status: $("feedbackAdminFilter").value});
+        if (counts && feedbackAdminPage === 1 && $("feedbackAdminFilter").value === "pending") {
+          initialData = (await counts)?.feedback;
+          if (!current()) return;
+        }
+        const data = initialData && feedbackAdminPage === 1 && $("feedbackAdminFilter").value === "pending"
+          ? initialData : await adminFeedbackRequest("list", {page: feedbackAdminPage, status: $("feedbackAdminFilter").value});
         if (!current()) return;
         feedbackAdminTotal = data.total;
         $("feedbackAdminPagination").hidden = data.total <= 20;
@@ -1332,14 +1382,21 @@
       return `工单 ID：${ticket.id}\n账号${ticket.account_kind === "id" ? " ID" : "名"}：${ticket.account}\n绑定小机：${ticket.machine}\n约注册时间：${ticket.registered_about}\n玩过游戏：${ticket.games}\n补充说明：${ticket.explanation || "无"}\n提交时间：${formatEpoch(ticket.created_at_epoch)}`;
     }
 
-    async function loadRecoveryTickets() {
+    async function loadRecoveryTickets({refreshCounts = true, initialData = null} = {}) {
       if (recoveryLoading || recoveryReviewBusy) return;
       recoveryLoading = true;
-      loadRecoveryCount();
+      const counts = refreshCounts ? loadRecoveryCount({reuse: true}) : null;
+      const identity = token();
       $("recoveryStatus").textContent = "加载中…";
       $("recoveryView").disabled = true;
       try {
-        const data = await request(`/api/admin/recovery?view=${$("recoveryView").value}&page=${recoveryPage}`);
+        if (counts && recoveryPage === 1 && $("recoveryView").value === "pending") {
+          initialData = (await counts)?.recovery;
+          if (identity !== token()) return;
+        }
+        const data = initialData && recoveryPage === 1 && $("recoveryView").value === "pending"
+          ? initialData : await request(`/api/admin/recovery?view=${$("recoveryView").value}&page=${recoveryPage}`);
+        if (identity !== token()) return;
         recoveryTickets = data.tickets || [];
         $("recoveryPagination").hidden = data.total <= 20;
         $("recoveryPage").textContent = `第 ${recoveryPage} / ${Math.max(1, Math.ceil(data.total / 20))} 页`;
@@ -1370,10 +1427,17 @@
           </article>`).join("") || '<p class="recovery-empty">暂无工单</p>';
         $("recoveryStatus").textContent = "";
       } catch (err) {
+        if (identity !== token()) return;
         $("recoveryTickets").textContent = "";
         $("recoveryPagination").hidden = true;
         $("recoveryStatus").textContent = err.message;
-      } finally { recoveryLoading = false; $("recoveryView").disabled = false; }
+      } finally {
+        recoveryLoading = false; $("recoveryView").disabled = false;
+        if (identity !== token()) {
+          $("recoveryTickets").replaceChildren(); $("recoveryPagination").hidden = true;
+          $("recoveryStatus").textContent = "登录身份已变化，请刷新。";
+        }
+      }
     }
 
     async function handleRecoveryAction(event) {
@@ -1401,7 +1465,7 @@
         recoveryReviewBusy = false;
         card.querySelectorAll("button").forEach(item => { item.disabled = false; });
       }
-      if (reviewed) { recoveryPage = 1; await loadRecoveryTickets(); }
+      if (reviewed) { recoveryPage = 1; loadRecoveryCount(); await loadRecoveryTickets(); }
     }
 
     function boolBadge(value, yes, no) {
@@ -1932,6 +1996,7 @@
     $("costsTab").addEventListener("click", () => switchTab("costs"));
 
     function switchTab(tab) {
+      const previousTab = activeTab;
       activeTab = ["users", "recovery", "dashboard", "costs"].includes(tab) ? tab : "users";
       for (const name of ["users", "recovery", "dashboard", "costs"]) {
         $(name + "Panel").hidden = activeTab !== name;
@@ -1941,13 +2006,17 @@
       if (activeTab === "dashboard") {
         if (!dashboardData || Date.now() - dashboardLastLoadedAt >= DASHBOARD_REFRESH_MS) loadDashboard();
       } else if (activeTab === "recovery") {
-        if (ticketKind === "feedback") loadAdminFeedback(); else loadRecoveryTickets();
+        if (previousTab !== "recovery") enterTickets();
       } else if (activeTab === "costs") {
         if (!costSaving) loadCosts();
       } else if (!usersLoaded) {
         loadUsers();
       }
       updateDashboardTimer();
+      if (activeTab !== "recovery") {
+        ticketEntryVersion++;
+        $("ticketEntryStatus").textContent = "";
+      }
     }
 
     async function loadUsers() {
