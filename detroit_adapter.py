@@ -1018,7 +1018,7 @@ def fetch_public(path: str) -> tuple[int, str, bytes]:
 
 
 def rewrite_public(path: str, body: bytes) -> bytes:
-    """Mount the unmodified upstream UI under /detroit without leaking MCP keys."""
+    """Mount the native save/game UI, removing standalone setup and promotion."""
     if path == "host":
         try:
             text = body.decode("utf-8")
@@ -1051,55 +1051,54 @@ def rewrite_public(path: str, body: bytes) -> bytes:
             r"window.location.href = cedarPageSlotUrl(\1)",
             text,
         )
-        replacement = '''async function showMcpSetup() {
-  const existingFallback = document.querySelector('#copy-fallback');
-  if (existingFallback) existingFallback.remove();
-  const dialog = document.createElement('div');
-  dialog.id = 'copy-fallback';
-  dialog.className = 'copy-fallback';
-  dialog.innerHTML = `<div class="copy-fallback-panel" role="dialog" aria-modal="true" aria-label="CedarToy MCP"><h2>CedarToy 統一 MCP</h2><p>小機請使用 CedarToy/4399 的統一 MCP，並先呼叫 <code>get_guide(game="detroit")</code>。</p><p class="tiny">遊戲與存檔由「如火如風的容」老師站點托管。</p><button id="copy-close" class="button primary">知道了</button></div>`;
-  document.body.appendChild(dialog);
-  dialog.querySelector('#copy-close').addEventListener('click', () => dialog.remove());
-}'''
-        text, count = re.subn(
-            r"^async function showMcpSetup\(\) \{\n.*?^\}",
-            replacement,
-            text,
-            count=1,
-            flags=re.DOTALL | re.MULTILINE,
-        )
+        # Strip only the author's presentation fragments, before their DOM is built.
+        # Keep all save-management handlers and navigation/generation guards intact.
+        def trim_home(match):
+            home = match.group(0)
+            modern = "${homeUi('connectLabel')}" in home
+            fragments = (
+                (r'<div class="field"><label>\$\{homeUi\(\'connectLabel\'\)\}</label><button id="mcp-setup"[^>]*>.*?</button></div>', 1),
+                (r'<div class="cloud-save-note" role="note">.*?</div>', 1),
+                (r'<div class="field offline-download">.*?</div>', 1),
+                (r'<details class="usage-note">.*?</details>', 2),
+                (r'<p class="tiny">\$\{homeUi\(\'mcpText\'\)\}</p>', 1),
+                (r'<p class="tiny"><a [^>]+>\$\{homeUi\(\'license\'\)\}</a></p>', 1),
+                (r'<footer class="fan-disclaimer">.*?</footer>', 1),
+                (r'<div class="eyebrow">\$\{homeChrome\(\'chapters\'\)\}</div>.*?<div class="rule"></div>', 1),
+                (r'<p class="lede">\$\{homeUi\(\'newLead\'\)\}</p>', 1),
+                (r"document\.querySelector\('#mcp-setup'\)\.addEventListener\('click', showMcpSetup\);", 1),
+            ) if modern else (
+                # Retain compatibility with the older non-localized host.
+                (r'<button id="mcp-setup"[^>]*>.*?</button>', 1),
+                (r'<div class="cloud-save-note" role="note">.*?</div>', 1),
+                (r'<a href="/detroit/downloads/detroit_blind_host_windows_v[0-9]+\.zip"[^>]*>.*?</a>', 1),
+                (r'<details class="usage-note">.*?</details>', 1),
+                (r'<p class="tiny">按上方按鈕取得這個瀏覽器專屬的完整 MCP 網址.*?</p><p class="tiny">非商用實驗.*?</p>', 1),
+            )
+            for pattern, expected in fragments:
+                # Refuse a changed upstream boundary rather than swallow gameplay UI.
+                def remove(fragment):
+                    if re.search(r'id="(?:create|import|save-name|difficulty|locale)"|data-(?:open|delete|backup|history)=', fragment.group(0)):
+                        raise DetroitError("老师页面版本变化，无法安全精简说明区域", status=502)
+                    return ""
+                home, count = re.subn(pattern, remove, home, flags=re.DOTALL)
+                if count != expected:
+                    raise DetroitError("老师页面版本变化，无法安全精简说明区域", status=502)
+            return home
+
+        text, count = re.subn(r"^async function showHome\(\) \{\n.*?^\}", trim_home,
+                              text, flags=re.DOTALL | re.MULTILINE)
         if count != 1:
-            raise DetroitError("老师页面版本变化，无法安全替换连接说明", status=502)
-        text = text.replace("建立 AI 連接網址", "查看 CedarToy 統一連接說明")
-        text = re.sub(
-            r'<div class="cloud-save-note" role="note">.*?</div>',
-            '<div class="cloud-save-note" role="note"><strong>目前存檔</strong>'
-            '<p>可在此查看劇情與章末記錄；備份、匯入和匯出功能仍可正常使用，遊戲進度會自動保存。</p></div>',
-            text,
-            count=1,
-        )
-        text = re.sub(
-            r'<details class="usage-note">.*?</details>',
-            '<details class="usage-note"><summary>來源與許可</summary><div class="tiny">'
-            '<p>老師倉庫：<a href="https://github.com/cfzdgbw42k-pixel/detroit-ai-player" target="_blank" rel="noopener noreferrer">GitHub</a>；老師註明本作的創作來源為 Baba88611 原項目：'
-            '<a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">GitHub</a>。</p>'
-            '<p>非商用實驗；劇情資料依原項目的 CC BY-NC 4.0（<a href="https://github.com/Baba88611/detroit-ai-player/blob/main/docs/legal/CC-BY-NC-4.0.txt" target="_blank" rel="noopener noreferrer">GitHub</a>）授權。</p>'
-            '</div></details>',
-            text,
-            count=1,
-        )
-        old_note = re.compile(
-            r'<p class="tiny">按上方按鈕取得這個瀏覽器專屬的完整 MCP 網址.*?</p><p class="tiny">非商用實驗.*?</p>'
-        )
-        new_note = (
-            '<p class="tiny">作者：<a href="http://community.rhysen.love/thread/3170" target="_blank" rel="noopener noreferrer">如火如風的容</a>'
-            '（小红书号 27231843685） · '
-            '<a href="https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host" target="_blank" rel="noopener noreferrer">作者原版 ↗</a></p>'
-        )
-        text = old_note.sub(new_note, text, count=1)
-        text = text.replace('''<p class="tiny">${homeUi('mcpText')}</p><p class="tiny"><a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">${homeUi('license')}</a></p>''', new_note)
-        text = text.replace('''<details class="usage-note"><summary>${homeUi('connection')}</summary><div class="tiny"><p>${homeUi('connectionText')}</p></div></details>''', '')
-        text = text.replace("${homeUi('connect')}", "CedarToy MCP")
+            raise DetroitError("老师页面版本变化，无法安全精简存档首页", status=502)
+        text, count = re.subn(r"^async function showMcpSetup\(\) \{\n.*?^\}", "",
+                              text, flags=re.DOTALL | re.MULTILINE)
+        if count != 1:
+            raise DetroitError("老师页面版本变化，无法安全移除连接说明", status=502)
+        # v151's now-unused localized connection dialog is separate from gameplay UI.
+        text = re.sub(r"^const MCP_SETUP_UI = \{\n.*?^\};\nfunction mcpSetupUi\(key\) \{\n.*?^\}",
+                      "", text, count=1, flags=re.DOTALL | re.MULTILINE)
+        if "showMcpSetup" in text or "mcpSetupUi(" in text:
+            raise DetroitError("老师页面版本变化，连接说明仍被引用", status=502)
         text = text.replace('<section class="ending-progress" aria-label=',
                             '<section class="ending-progress" ${homeData.cedartoy_per_save_progress ? "hidden" : ""} aria-label=')
         # Preserve the author's home/navigation state machine, including its generation guard.

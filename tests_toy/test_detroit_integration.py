@@ -392,7 +392,7 @@ class DetroitIntegrationTests(unittest.TestCase):
         account_deletion._delete_file_saves(self.save_root, ["43"])
         self.assertTrue((self.save_root / "detroit" / "43" / detroit_adapter.STATE_NAME).exists())
 
-    def test_original_page_rewrite_and_public_attribution(self):
+    def test_original_page_trim_keeps_homepage_attribution(self):
         html = detroit_adapter.rewrite_public(
             "host", (FIXTURE_ROOT / "detroit_host_v17.html").read_bytes()
         ).decode("utf-8")
@@ -404,38 +404,9 @@ class DetroitIntegrationTests(unittest.TestCase):
         self.assertNotIn("/cdn-cgi/", html)
         self.assertIn("/detroit/api/sessions", script)
         self.assertNotIn("/api/mcp-connection", script)
-        self.assertIn("CedarToy 統一 MCP", script)
-        self.assertEqual(script.count('get_guide(game="detroit")'), 1)
-        self.assertIn("遊戲與存檔由「如火如風的容」老師站點托管", script)
-        self.assertIn("目前存檔", script)
-        self.assertIn("可在此查看劇情與章末記錄", script)
-        self.assertNotIn("本站玩法說明", script)
-        self.assertEqual(script.count("來源與許可"), 1)
-        self.assertIn(
-            '<details class="usage-note"><summary>來源與許可</summary>', script
-        )
-        self.assertNotIn('<details class="usage-note" open', script)
-        self.assertNotIn("上游 owner", script)
-        self.assertNotIn("安全代理", script)
-        self.assertNotIn("專屬網址", script)
-        self.assertNotIn("存檔鑰匙", script)
-        self.assertNotIn("第三方中轉", script)
-        self.assertNotIn("換手機", script)
-        self.assertNotIn("換瀏覽器", script)
-        self.assertNotIn("清除本站資料", script)
-        self.assertNotIn("1–5 號槽位", script)
-        self.assertIn("如火如風的容", script)
-        self.assertIn("27231843685", script)
-        self.assertIn("Baba88611", script)
-        self.assertIn(
-            "https://github.com/cfzdgbw42k-pixel/detroit-ai-player", script
-        )
-        self.assertIn("CC BY-NC 4.0", script)
-        self.assertIn(
-            "https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host", script
-        )
-        self.assertEqual(script.count("作者原版 ↗"), 1)
-        self.assertIn('target="_blank"', script)
+        for removed in ("mcp-setup", "showMcpSetup", "CedarToy MCP", "cloud-save-note",
+                        "usage-note", "來源與許可", "CC BY-NC", "Baba88611", "/downloads/"):
+            self.assertNotIn(removed, script)
 
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('id: "detroit"', homepage)
@@ -454,6 +425,19 @@ class DetroitIntegrationTests(unittest.TestCase):
         self.assertIn("if (bindings.length === 1)", detroit_picker)
         self.assertNotIn("[1, 2, 3, 4, 5].map", detroit_picker)
 
+    def test_page_trim_rejects_changed_boundaries_and_gameplay_controls(self):
+        source = (FIXTURE_ROOT / "detroit_host_v17.js").read_text(encoding="utf-8")
+        for changed in (
+            source.replace('id="mcp-setup"', 'id="renamed-setup"'),
+            source.replace('<summary>三種玩法與費用差異</summary>',
+                           '<summary>三種玩法與費用差異</summary><button id="import">Import</button>'),
+            source + "\nshowMcpSetup();\n",
+        ):
+            with self.subTest(source=changed[:40]):
+                with self.assertRaises(detroit_adapter.DetroitError) as error:
+                    detroit_adapter.rewrite_public("host.js", changed.encode())
+                self.assertEqual(error.exception.status, 502)
+
     def test_rewritten_page_preserves_original_save_home(self):
         script = detroit_adapter.rewrite_public(
             "host.js", (FIXTURE_ROOT / "detroit_host_v17.js").read_bytes()
@@ -465,6 +449,13 @@ class DetroitIntegrationTests(unittest.TestCase):
     def test_root_tool_schema_guide_and_log_redaction(self):
         play_tool = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")
         properties = play_tool["inputSchema"]["properties"]["params"]["properties"]
+        self.assertEqual(properties["slot"]["maximum"], 12)
+        for slot in (5, 6, 12):
+            self.assertEqual(server._save_slot_from_arguments(
+                {"game": "detroit", "params": {"slot": slot}}), slot)
+        for game, slot in (("detroit", 13), ("garden_cat", 6), ("eco", 6)):
+            with self.assertRaises(server._McpError):
+                server._save_slot_from_arguments({"game": game, "params": {"slot": slot}})
         for name in ("revision", "node_id", "label", "reason", "reflection", "name", "difficulty", "confirm_retry"):
             self.assertIn(name, properties)
         all_of = json.dumps(play_tool["inputSchema"]["allOf"], ensure_ascii=False)
