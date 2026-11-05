@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import aiosqlite
-from db_diagnostics import ObservedConnection, caller_site
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,10 +27,23 @@ DEFAULT_SETTINGS = {
 
 TIMEZONE_MIGRATION_KEY = "timezone_utc_to_shanghai_20260602"
 
+# Keep this additive migration independently executable for existing shared
+# account databases. FK checks otherwise scan the large audit table once per
+# deleted game log; the player indexes also cover guest unlink/recent activity.
+CLEANUP_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_judge_audit_game_log
+    ON judge_audit_logs(game_log_id);
+CREATE INDEX IF NOT EXISTS idx_judge_audit_player
+    ON judge_audit_logs(player_id);
+CREATE INDEX IF NOT EXISTS idx_game_logs_room
+    ON game_logs(room_id);
+CREATE INDEX IF NOT EXISTS idx_game_logs_player_created
+    ON game_logs(player_id, created_at);
+"""
+
 
 async def get_db() -> aiosqlite.Connection:
-    origin = caller_site()
-    db = await aiosqlite.connect(DB_PATH, factory=lambda *a, **kw: ObservedConnection(*a, diagnostic_origin=origin, **kw))
+    db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys = ON")
     return db
@@ -364,6 +376,7 @@ async def init_db() -> None:
                 ON judge_audit_logs(room_id, created_at);
             """
         )
+        await db.executescript(CLEANUP_INDEX_SQL)
         for key, value in DEFAULT_SETTINGS.items():
             await db.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",

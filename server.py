@@ -436,8 +436,7 @@ def _duel_mcp_error_text(exc):
 
 
 def _db_connect():
-    from cedar_backend.db_observability import ObservedConnection
-    conn = sqlite3.connect(TURTLE_DB_PATH, factory=ObservedConnection)
+    conn = sqlite3.connect(TURTLE_DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
