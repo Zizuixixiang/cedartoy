@@ -131,6 +131,13 @@
     #feedbackQueue .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--line); background: #fff; }
     #feedbackQueue .feedback-message[data-role="admin"] { border-left-color: var(--accent); }
     #feedbackQueue .feedback-message p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #feedbackQueue .feedback-message-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    #feedbackQueue .feedback-message-actions button { font-size: 13px; }
+    #feedbackQueue .feedback-message-editor { display: grid; gap: 8px; margin-top: 8px; }
+    #feedbackQueue .feedback-message-editor textarea { width: 100%; min-height: 100px; resize: vertical; }
+    #feedbackQueue .feedback-audit { margin-top: 8px; font-size: 12px; }
+    #feedbackQueue .feedback-audit summary { cursor: pointer; padding: 8px 0; }
+    #feedbackQueue .feedback-audit-record { border-top: 1px solid var(--line); padding: 8px 0; }
     #feedbackQueue .feedback-history summary { cursor: pointer; padding: 10px 0; font-size: 13px; }
     #feedbackQueue .feedback-history-records { max-height: 300px; overflow-y: auto; }
     #feedbackQueue .feedback-admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1266,11 +1273,76 @@
     }
     let feedbackAdminConversation = null;
     function adminFeedbackMessage(message) {
-      const article = document.createElement("article"); article.className = "feedback-message"; article.dataset.role = message.role;
+      const article = document.createElement("article"); article.className = "feedback-message"; article.dataset.role = message.role; article.tabIndex = -1;
       const meta = document.createElement("div"); meta.className = "feedback-message-meta";
       const speaker = message.role === "admin" ? (message.admin_label || "管理员答复") : (message.actor_kind === "ai" ? (message.actor_name || "小机留言") : "玩家提问");
-      meta.textContent = `${speaker} · ${formatEpoch(message.created_at_epoch)}`;
-      const text = document.createElement("p"); text.textContent = message.content; article.append(meta, text); return article;
+      meta.textContent = `${speaker} · ${formatEpoch(message.created_at_epoch)}${message.withdrawn ? " · 已撤回" : message.edited ? " · 已编辑" : ""}`;
+      const text = document.createElement("p"); text.textContent = message.content; article.append(meta, text);
+      const conversation = feedbackAdminConversation;
+      const button = (label, action) => {
+        const el = document.createElement("button"); el.type = "button"; el.textContent = label; el.onclick = action; return el;
+      };
+      const save = (operation, content) => adminFeedbackRun(async current => {
+        const result = await adminFeedbackRequest(operation, {ticket_id: conversation.ticket.id, message_id: message.id,
+          expected_version: message.version, confirm: true, ...(operation === "edit" ? {content} : {})});
+        if (!current() || conversation !== feedbackAdminConversation) return;
+        delete message.edited; delete message.withdrawn;
+        Object.assign(message, result.message);
+        const next = adminFeedbackMessage(message); article.replaceWith(next);
+        (next.querySelector(".feedback-message-actions button") || next).focus();
+      });
+      if (message.can_manage) {
+        const actions = document.createElement("div"); actions.className = "feedback-message-actions";
+        const edit = button("编辑", () => {
+          if (feedbackAdminBusy) return;
+          actions.hidden = true; text.hidden = true;
+          const form = document.createElement("form"); form.className = "feedback-message-editor";
+          const label = document.createElement("label"); label.textContent = "修改回复";
+          const input = document.createElement("textarea"); input.id = `feedbackEdit${message.id}`;
+          label.htmlFor = input.id; input.value = message.content; input.maxLength = 4000; input.required = true; input.rows = 3;
+          const hint = document.createElement("div"); hint.className = "feedback-message-meta"; hint.textContent = "已发邮件不会同步更改。";
+          const controls = document.createElement("div"); controls.className = "feedback-message-actions";
+          const submit = document.createElement("button"); submit.type = "submit"; submit.className = "primary"; submit.textContent = "保存修改";
+          const cancel = button("取消", () => { form.remove(); actions.hidden = false; text.hidden = false; edit.focus(); });
+          controls.append(submit, cancel); form.append(label, input, hint, controls); actions.after(form);
+          form.onsubmit = event => {
+            event.preventDefault();
+            if (!input.value.trim()) { input.setCustomValidity("请填写回复"); input.reportValidity(); return; }
+            save("edit", input.value);
+          };
+          input.oninput = () => input.setCustomValidity("");
+          form.onkeydown = event => { if (event.key === "Escape" && !feedbackAdminBusy) { event.preventDefault(); cancel.click(); } };
+          input.focus();
+        });
+        const withdraw = button("撤回", () => {
+          if (!feedbackAdminBusy && confirm("撤回这条回复？已发邮件不受影响。")) save("withdraw");
+        });
+        withdraw.className = "danger"; actions.append(edit, withdraw); article.append(actions);
+      }
+      if (message.version > 1) {
+        const audit = document.createElement("details"); audit.className = "feedback-audit";
+        const summary = document.createElement("summary"); summary.textContent = "修订记录（仅管理员）";
+        const records = document.createElement("div");
+        let loaded = false, before;
+        const more = button("更早修订", () => load()); more.hidden = true;
+        const load = () => adminFeedbackRun(async current => {
+          const data = await adminFeedbackRequest("detail", {ticket_id: conversation.ticket.id, message_id: message.id,
+            ...(before ? {before_version: before} : {})});
+          if (!current() || conversation !== feedbackAdminConversation) return;
+          const fragment = document.createDocumentFragment();
+          for (const record of data.history) {
+            const entry = document.createElement("div"); entry.className = "feedback-audit-record";
+            const title = document.createElement("div"); title.className = "feedback-message-meta";
+            title.textContent = `${record.admin_label} · ${formatEpoch(record.created_at_epoch)} · ${{original: "原文", edit: "编辑", withdraw: "撤回"}[record.action]}`;
+            const body = document.createElement("p"); body.textContent = record.content; entry.append(title, body); fragment.append(entry);
+          }
+          records.prepend(fragment); before = data.next_before_version; more.hidden = !before; loaded = true;
+        });
+        summary.onclick = event => { if (feedbackAdminBusy) event.preventDefault(); };
+        audit.ontoggle = () => { if (audit.open && !loaded) load(); };
+        audit.append(summary, records, more); article.append(audit);
+      }
+      return article;
     }
     function renderAdminFeedbackMessages(expanded = false) {
       const c = feedbackAdminConversation, host = $("feedbackAdminMessages"); host.replaceChildren();

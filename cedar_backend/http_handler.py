@@ -170,7 +170,8 @@ def do_POST(
         return
 
     if path in {"/api/feedback/submit", "/api/feedback/query", "/api/feedback/list", "/api/feedback/detail", "/api/feedback/message", "/api/feedback/unread", "/api/feedback/close",
-                "/api/admin/feedback/list", "/api/admin/feedback/detail", "/api/admin/feedback/review"}:
+                "/api/admin/feedback/list", "/api/admin/feedback/detail", "/api/admin/feedback/review",
+                "/api/admin/feedback/edit", "/api/admin/feedback/withdraw"}:
         self._handle_feedback(path)
         return
 

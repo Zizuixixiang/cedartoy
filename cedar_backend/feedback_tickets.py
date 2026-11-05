@@ -1,4 +1,4 @@
-"""Private append-only feedback conversations, separate from password recovery."""
+"""Private feedback conversations with append-only messages and admin revisions."""
 import hashlib
 import json
 import logging
@@ -152,6 +152,30 @@ def init_schema(conn):
             ticket_id INTEGER NOT NULL REFERENCES feedback_tickets(id), owner_id INTEGER NOT NULL,
             read_id INTEGER NOT NULL DEFAULT 0, notified_id INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(ticket_id, owner_id))""")
+        # Originals never change; public reads project the latest revision. The
+        # unique index also makes version checks safe across processes.
+        conn.execute("""CREATE TABLE IF NOT EXISTS feedback_message_revisions (
+            message_id INTEGER NOT NULL REFERENCES feedback_messages(id),
+            version INTEGER NOT NULL CHECK(version >= 2),
+            action TEXT NOT NULL CHECK(action IN ('edit','withdraw')),
+            content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 4000),
+            actor_id INTEGER NOT NULL, created_at_epoch INTEGER NOT NULL,
+            PRIMARY KEY(message_id, version))""")
+        for table in ("feedback_messages", "feedback_message_revisions"):
+            # Original text, attribution and timestamp, and every revision
+            # field are immutable even if application code attempts an UPDATE.
+            update = ("UPDATE OF content,role,actor_id,actor_kind,ticket_id,id,created_at_epoch"
+                      if table == "feedback_messages" else "UPDATE")
+            for verb, event in (("update", update), ("delete", "DELETE")):
+                conn.execute(f"""CREATE TRIGGER IF NOT EXISTS {table}_no_{verb}
+                    BEFORE {event} ON {table}
+                    BEGIN SELECT RAISE(ABORT, 'feedback history is immutable'); END""")
+            # REPLACE can bypass DELETE triggers when recursive_triggers is off.
+            key = ("id=NEW.id" if table == "feedback_messages" else
+                   "message_id=NEW.message_id AND version=NEW.version")
+            conn.execute(f"""CREATE TRIGGER IF NOT EXISTS {table}_no_replace
+                BEFORE INSERT ON {table} WHEN EXISTS(SELECT 1 FROM {table} WHERE {key})
+                BEGIN SELECT RAISE(ABORT, 'feedback history is immutable'); END""")
         conn.execute("RELEASE feedback_schema")
     except Exception:
         conn.execute("ROLLBACK TO feedback_schema")
@@ -386,8 +410,18 @@ class FeedbackStore:
             # Resolve AI names from the stored speaker, including historical messages.
             # Never expose account IDs or replace the verified operator aliases.
             item = {key: message[key] for key in ("id", "role", "content", "created_at_epoch")}
+            revision = conn.execute("""SELECT version,action,content,created_at_epoch
+                FROM feedback_message_revisions WHERE message_id=? ORDER BY version DESC LIMIT 1""",
+                (message["id"],)).fetchone()
+            if revision:
+                item["content"] = revision["content"]
+                item["withdrawn" if revision["action"] == "withdraw" else "edited"] = True
+                item["modified_at_epoch"] = revision["created_at_epoch"]
+            if admin and viewer is not None and message["role"] == "admin":
+                item["version"] = revision["version"] if revision else 1
+                item["can_manage"] = message["actor_id"] == viewer and not item.get("withdrawn")
             item["actor_kind"] = message["actor_kind"] or ("admin" if message["role"] == "admin" else "player")
-            if viewer is not None:
+            if viewer is not None and not admin:
                 item["is_self"] = message["actor_id"] == viewer
             if message["role"] == "admin":
                 alias = ADMIN_REPLY_ALIASES.get(message["actor_id"])
@@ -413,7 +447,7 @@ class FeedbackStore:
                 new_after = conn.execute("""SELECT max(b.message_id,coalesce(c.read_id,0))
                     FROM feedback_unread_baseline b LEFT JOIN feedback_read_cursors c
                     ON c.ticket_id=? AND c.owner_id=? WHERE b.singleton=1""", (ticket_id, owner_id)).fetchone()[0]
-            result = self._detail(conn, ticket_id, admin, before_id, viewer=None if admin else owner_id, new_after=new_after)
+            result = self._detail(conn, ticket_id, admin, before_id, viewer=owner_id, new_after=new_after)
             if not admin:
                 # Only opening the latest detail acknowledges this snapshot. Loading
                 # older history must not swallow replies arriving after it was opened.
@@ -470,6 +504,65 @@ class FeedbackStore:
                             WHERE id=? AND status!='closed'""", (int(time.time()), ticket_id))
             row = conn.execute("SELECT updated_at_epoch FROM feedback_tickets WHERE id=?", (ticket_id,)).fetchone()
         return {"ok": True, "ticket_id": ticket_id, "status": "closed", "updated_at_epoch": row[0]}
+
+    def revise_message(self, body, admin, *, withdraw=False):
+        """Called only after token authentication; recheck privilege under the write lock.
+
+        Deliberately avoid _open(): even expiry maintenance must not run on a
+        rejected mutation. Startup/normal ticket creation initializes the schema.
+        """
+        ticket_id = self.integer(body.get("ticket_id"), "ticket_id")
+        message_id = self.integer(body.get("message_id"), "message_id")
+        version = self.integer(body.get("expected_version"), "expected_version")
+        content = "此回复已撤回" if withdraw else self.text(body, "content", 4000, True)
+        now = int(time.time())
+        with closing(self.connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            authorized = conn.execute("SELECT 1 FROM toy_users WHERE id=? AND is_admin=1 AND deleted_at IS NULL",
+                                      (admin["id"],)).fetchone()
+            row = conn.execute("""SELECT id FROM feedback_messages
+                WHERE id=? AND ticket_id=? AND role='admin' AND actor_id=?""",
+                (message_id, ticket_id, admin["id"])).fetchone() if authorized else None
+            if row is None:
+                raise self.error(-32003, "无权修改此消息")
+            latest = conn.execute("""SELECT version,action FROM feedback_message_revisions
+                WHERE message_id=? ORDER BY version DESC LIMIT 1""", (message_id,)).fetchone()
+            if version != (latest["version"] if latest else 1) or (latest and latest["action"] == "withdraw"):
+                raise self.error(-32009, "消息已变更，请刷新后重试")
+            self._rate(conn, "feedback_review_limits", "admin_id=?", [admin["id"]], 120, 1000, now)
+            conn.execute("DELETE FROM feedback_review_limits WHERE created_at_epoch < ?", (now-86400,))
+            conn.execute("INSERT INTO feedback_review_limits VALUES (?,?)", (admin["id"], now))
+            conn.execute("""INSERT INTO feedback_message_revisions
+                (message_id,version,action,content,actor_id,created_at_epoch) VALUES (?,?,?,?,?,?)""",
+                (message_id, version+1, "withdraw" if withdraw else "edit", content, admin["id"], now))
+            # No new message, cursor, ticket timestamp/status or email event.
+            result = self._detail(conn, ticket_id, True, message_id+1, viewer=admin["id"])
+            message = next(m for m in result["messages"] if m["id"] == message_id)
+        return {"ok": True, "message": message}
+
+    def message_history(self, body):
+        """Bounded audit, available only through authenticated admin_detail."""
+        ticket_id = self.integer(body.get("ticket_id"), "ticket_id")
+        message_id = self.integer(body.get("message_id"), "message_id")
+        before = self.integer(body.get("before_version", 2**63-1), "before_version")
+        with closing(self.connect()) as conn, conn:
+            conn.execute("BEGIN")
+            original = conn.execute("""SELECT 1 AS version,'original' AS action,content,actor_id,created_at_epoch
+                FROM feedback_messages WHERE id=? AND ticket_id=? AND role='admin'""",
+                (message_id, ticket_id)).fetchone()
+            if original is None:
+                self._missing()
+            rows = [dict(r) for r in conn.execute("""SELECT version,action,content,actor_id,created_at_epoch
+                FROM feedback_message_revisions WHERE message_id=? AND version<?
+                ORDER BY version DESC LIMIT ?""", (message_id, before, MESSAGE_PAGE_SIZE+1))]
+            if before > 1:
+                rows.append(dict(original))
+            more = len(rows) > MESSAGE_PAGE_SIZE
+            rows = rows[:MESSAGE_PAGE_SIZE]
+            for row in rows:
+                alias = ADMIN_REPLY_ALIASES.get(row["actor_id"])
+                row["admin_label"] = "管理员" + alias if alias else "管理员答复"
+            return {"history": list(reversed(rows)), "next_before_version": rows[-1]["version"] if more else None}
 
     def review(self, body, admin):
         ticket_id = self.integer(body.get("ticket_id"), "ticket_id")

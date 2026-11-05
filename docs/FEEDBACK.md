@@ -4,7 +4,7 @@
 
 ## 会话与权限
 
-- 实际 `TURTLE_SOUP_DB` 账号库中的 `feedback_tickets` 保存工单，`feedback_messages` 追加 QA 消息。首次提交是第一条玩家消息，后续玩家追问和管理员答复均追加，不修改/删除旧消息。每条记录保存角色、实际写入账号（匿名为空）、发言时身份 actor_kind（human/ai/admin/anonymous）、正文、Unix时间；按服务端消息ID顺序展示，同秒并发也有确定顺序。
+- 实际 `TURTLE_SOUP_DB` 账号库中的 `feedback_tickets` 保存工单，`feedback_messages` 追加 QA 消息。首次提交是第一条玩家消息，后续玩家追问和管理员答复均追加，原记录不修改/删除。管理员可通过修订记录编辑或撤回自己的管理员回复；玩家原始反馈及追问永久不可编辑/删除，管理员也不能修改玩家消息或其他管理员的回复。每条原记录保存角色、实际写入账号（匿名为空）、发言时身份 actor_kind（human/ai/admin/anonymous）、正文、Unix时间；按服务端消息ID顺序展示，同秒并发也有确定顺序。
 - 三种状态：玩家发起或追问 → `pending`（待处理）；管理员回复 → `processing`（处理中）；管理员或合法共享参与者结单 → `closed`（已结束）。发起者及直接绑定账号可直接结束待处理/处理中工单，不要求管理员先回复；详情外层最底部左侧「结束工单」二次确认后执行，右侧仍为「关闭」。已结束不可重复点击；结束保留历史和追问草稿，不追加管理员消息或发送管理员答复/结单通知。已结束的玩家追问仍会自动重新打开；已结束后管理员继续答复会转处理中。玩家不能任意设置状态。
 - 网页沿用 `cedartoy_token` → `Authorization: Bearer …`。登录归属只取 `_current_account` 的实际账号ID；自填contact和自报ID不能赋予权限。本人及与原发起者**当前直接绑定**的人类/小机可列出、读取、追问、结束旧/新工单；每次操作都在数据库事务快照内重新校验，不缓存共享名单。A 人—X 机—B 人不让 B 看到 A 的工单，A 人绑定的两只小机也不互通各自工单。多绑定按一跳去重；解绑后立即失权，即便曾留言或存在读游标。匿名单不因绑定共享。携带失效token不能静默降为匿名提交。
 - 匿名提交一次性返回 `secrets.token_urlsafe(32)`（256位随机性）查询码；服务端只存SHA-256哈希。原码可查该单、追加消息和结束工单；追加/结束时必须同时匹配单号和原码，不能转向其他工单。凭码操作不依赖登录状态；没有匿名列表。码不进入URL、日志或浏览器持久存储，持码人可读写该单，遗失无法重新获取。
@@ -20,7 +20,7 @@
 
 - 新建工单按IP哈希和已登录账号分别限5次/小时、20次/24小时。
 - 玩家消息（含首条）按IP及实际账号限20次/小时、100次/24小时；每单限10次/小时、40次/24小时。匿名每单限流在换IP后仍有效。
-- 管理员每个账号的回复、备注和改状态合计限120次/小时、1000次/24小时，MCP同样生效。`feedback_review_limits` 只保留最近24小时的写入计数事件，不存正文。
+- 管理员每个账号的回复、备注、改状态、编辑和撤回合计限120次/小时、1000次/24小时，MCP同样生效。`feedback_review_limits` 只保留最近24小时的写入计数事件，不存正文。
 - 所有持久限流计数、消息插入和状态更新在同一SQLite写事务内完成。反馈HTTP另复用现有每IP30次请求窗口限流。JSON请求体上限64KiB，不接受分块请求；响应 `Cache-Control: no-store`。所有身份/能力码校验都在服务端完成。
 
 ## 初版升级
@@ -45,12 +45,24 @@
 | `/api/feedback/message` | ticket_id、content、可选query_code；合法共享参与者或匹配原码的匿名单；拒绝额外字段 |
 | `/api/feedback/close` | ticket_id、confirm=true、可选query_code；服务端校验合法共享参与者或匹配原码的匿名单，拒绝额外字段；重复结束幂等，不扩展公共MCP schema |
 | `/api/admin/feedback/list` | 可选status（含all）、page；管理员 |
-| `/api/admin/feedback/detail` | ticket_id、可选before_id；管理员 |
+| `/api/admin/feedback/detail` | ticket_id、可选before_id；管理员。指定message_id时改为修订审计，使用before_version分页，不能混用before_id |
 | `/api/admin/feedback/review` | ticket_id、confirm=true；reply/internal_note/status至少一项；管理员 |
+| `/api/admin/feedback/edit` | ticket_id、message_id、expected_version、content、confirm=true；仅消息原作者且当前仍是管理员 |
+| `/api/admin/feedback/withdraw` | ticket_id、message_id、expected_version、confirm=true；仅消息原作者且当前仍是管理员 |
 
 管理员同样只使用 `feedback` 工具：`admin_list`、`admin_detail`、`admin_review`，业务参数全部放 params；分别复用管理 HTTP 的 list/detail/review 能力。admin_review 必须 confirm=true；非空 reply 追加消息并转 processing，可同时 status=closed，或仅改 status/internal_note。内部备注仅管理员可见，不进入公共消息。
 
-三个管理员动作严格调用 `_require_admin_account`，先鉴权后验证业务参数/读工单，绑定管理员的小机不继承权限；只使用连接路径 Token 或 Bearer，拒绝自报身份、显式 token 和额外参数。`get_guide(game="feedback")` 只在当前真实账号通过管理员检查时追加 `_feedback_admin.md`，普通 Guide 不含管理员动作或内部备注字段。该附录无独立 Guide 入口。网页管理 HTTP API 路径及参数保持原状。
+所有管理员动作严格调用 `_require_admin_account`，先鉴权后验证业务参数/读工单，绑定管理员的小机不继承权限；只使用连接路径 Token 或 Bearer，拒绝自报身份、显式 token 和额外参数。`get_guide(game="feedback")` 只在当前真实账号通过管理员检查时追加 `_feedback_admin.md`，普通 Guide 不含管理员动作或内部备注字段。该附录无独立 Guide 入口。原list/detail/review请求向后兼容。
+
+### 管理员回复修订
+
+MCP同一隐藏管理链路支持 `admin_edit` / `admin_withdraw`，参数与对应HTTP路由一致；公共schema、普通反馈Guide和玩家网页均不提供编辑/撤回入口。后台detail仅给管理员返回消息version、can_manage；编辑必须传非空content（最多4000字），两种操作都需confirm=true。无登录/失效token返回401，非管理员返回403；其他管理员消息、玩家消息、错误工单及不存在消息统一403，不透露目标是否存在。写事务内再次检查当前管理员权限及role=admin、actor_id匹配；绑定不赋权。初版没有可确认actor_id的回复也不可修改。
+
+`feedback_message_revisions` 以(message_id,version)为主键，只追加编辑/撤回后的文字、动作、实际操作者和Unix时间；原文和原始时间留在feedback_messages。数据库触发器禁止修改/删除原消息的正文、身份、归属、时间及任何修订记录。版本从1开始，expected_version不符或已撤回返回409，失败不消耗反馈写入额度；撤回后不能恢复/继续编辑。玩家读取只投影最新正文或「此回复已撤回」，附已编辑/已撤回标记；内部原文仅经管理员detail指定message_id审计，每页最多10版。后台条目按需展开「修订记录」，不把全部原文随普通会话/MCP响应发送。
+
+修订不追加消息、不改工单更新时间/状态、消息ID/排序/分页、初始摘要或读/通知游标；已有未读保持，已读消息的修订不产生新未读，需history查看最新投影。撤回保留占位，不改变七天自动结单时钟。已发邮件及发送事件保持原样，修订不发送新邮件，不能撤回收件箱副本。后台操作前有短提示说明邮件不受影响。
+
+迁移由账号库现有init_schema在savepoint内创建修订表及触发器，无需独立迁移脚本，不回填/改写历史消息或重设未读baseline；可重复执行。合并后按既有启动迁移执行，并先在SQLite一致性副本验证。**产生修订后不要直接回退到忽略修订表的旧读取代码**，否则旧原文（含已撤回回复）会再次显示；回滚需保留投影读取逻辑或使用经评估的一致性快照。
 
 旧 account 的 feedback_list/detail 和 admin_feedback_list/detail/review 已移除，调用返回“未知 account action”；不保留别名。account 的普通/管理员 Guide 不包含反馈说明，legacy schema 删除反馈专用 status/reply/before_id/internal_note，保留账号找回所需的 page/ticket_id 等字段。
 
@@ -64,6 +76,9 @@
 
 ```sh
 python3 -m unittest tests_toy.test_feedback_shared tests_toy.test_feedback tests_toy.test_feedback_unread tests_toy.test_feedback_email tests_toy.test_mcp_schema_selection tests_toy.test_mcp_module_compat tests_toy.test_root_mcp_protocol.RootMcpProtocolTests.test_root_schemas_keep_gemini_numeric_enum_compatibility
+python3 -m unittest tests_toy.test_feedback_admin_messages
+node scripts/check_feedback_admin_messages_ui.js
+node scripts/check_feedback_admin_messages_browser.js
 node scripts/check_feedback_shared_ui.js
 FEEDBACK_DOM_ONLY=1 node scripts/check_feedback_shared_ui.js
 node scripts/check_feedback_browser.js

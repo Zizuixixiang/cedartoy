@@ -470,10 +470,10 @@ class FeedbackTests(unittest.TestCase):
         # 20 player messages including both initial questions; new ticket/IP cannot bypass owner limit.
         with self.assertRaises(server._McpError): self.submit(self.human_id, ip="192.0.2.4")
         with self._connect() as conn:
-            conn.execute("UPDATE feedback_messages SET created_at_epoch=?", (int(time.time())-7200,))
             for _ in range(80):
                 self.store._message(conn, a["ticket_id"], "player", self.human_id, "day", int(time.time())-7200, "other")
-        with self.assertRaises(server._McpError):
+        # Advance the clock instead of rewriting immutable message timestamps.
+        with patch.object(feedback_tickets, "time", **{"time.return_value": int(time.time())+7200}), self.assertRaises(server._McpError):
             self.store.append({"ticket_id": b["ticket_id"], "content": "daily"}, self.human_id, "new-ip")
 
     def test_strict_fields_lengths_pagination_and_confirm(self):
