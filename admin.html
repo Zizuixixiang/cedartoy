@@ -126,7 +126,7 @@
     #feedbackQueue .feedback-status { display: inline-flex; align-items: center; flex: none; gap: 4px; padding: 2px 8px; border: 1px solid #3b82f6; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 700; line-height: 1.5; white-space: nowrap; }
     #feedbackQueue .feedback-status[data-status="pending"] { color: #795619; border-color: #9b742d; background: #fff9e8; }
     #feedbackQueue .feedback-status[data-status="closed"] { color: #166534; border-color: #22a447; background: #edfbea; }
-    #feedbackQueue .feedback-message-meta { font-size: 12px; line-height: 1.5; color: var(--muted); }
+    #feedbackQueue .feedback-message-meta { font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
     #feedbackQueue .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--line); background: #fff; }
     #feedbackQueue .feedback-message[data-role="admin"] { border-left-color: var(--accent); }
     #feedbackQueue .feedback-message p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1218,7 +1218,8 @@
     function adminFeedbackMessage(message) {
       const article = document.createElement("article"); article.className = "feedback-message"; article.dataset.role = message.role;
       const meta = document.createElement("div"); meta.className = "feedback-message-meta";
-      meta.textContent = `${message.role === "admin" ? (message.admin_label || "管理员答复") : "玩家提问"} · ${formatEpoch(message.created_at_epoch)}`;
+      const speaker = message.role === "admin" ? (message.admin_label || "管理员答复") : (message.actor_kind === "ai" ? (message.actor_name || "小机留言") : "玩家提问");
+      meta.textContent = `${speaker} · ${formatEpoch(message.created_at_epoch)}`;
       const text = document.createElement("p"); text.textContent = message.content; article.append(meta, text); return article;
     }
     function renderAdminFeedbackMessages(expanded = false) {

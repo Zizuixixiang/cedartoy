@@ -13,7 +13,7 @@ from tests_toy.test_feedback import FeedbackTests
 import server
 case=FeedbackTests('runTest')
 case.setUp()
-print(json.dumps({'human':case.human_token,'ai':case.ai_token,'admin':case.admin_token}),flush=True)
+print(json.dumps({'human':case.human_token,'ai':case.ai_token,'admin':case.admin_token,'other':case.other_human_token}),flush=True)
 try:
     for line in sys.stdin:
         req=json.loads(line)
@@ -53,14 +53,20 @@ finally: case.doCleanups()
       if (!result.id) ready(result); else { pending.get(result.id).resolve(result); pending.delete(result.id); }
     }
   });
+  let delayedUnread = null;
   const backend = request => new Promise((resolve, reject) => {
     const id = ++sequence; pending.set(id, {resolve, reject}); child.stdin.write(JSON.stringify({id, ...request}) + "\n");
+  }).then(async response => {
+    if (delayedUnread && request.path === "/api/feedback/unread") {
+      const delay = delayedUnread; delayedUnread = null; delay.started(); await delay.wait;
+    }
+    return response;
   });
   try {
     const fixture = await initialized;
     const headers = who => ({"Content-Type": "application/json", Authorization: `Bearer ${fixture[who]}`, "X-Test-IP": who});
-    const mcp = async (action, params = {}) => {
-      const response = await backend({path: "/mcp", headers: headers("ai"), body: JSON.stringify({jsonrpc: "2.0", id: 1, method: "tools/call", params: {name: "feedback", arguments: {action, params}}})});
+    const mcp = async (action, params = {}, who = "ai") => {
+      const response = await backend({path: "/mcp", headers: headers(who), body: JSON.stringify({jsonrpc: "2.0", id: 1, method: "tools/call", params: {name: "feedback", arguments: {action, params}}})});
       assert.equal(response.body.result.isError, false, JSON.stringify(response.body));
       return JSON.parse(response.body.result.content[0].text);
     };
@@ -85,6 +91,7 @@ finally: case.doCleanups()
           return route.fulfill({status: response.status, json: response.body});
         });
         driver = await context.newPage(); driver.on("pageerror", e => errors.push(e.message));
+        await driver.clock.install();
         driver.on("dialog", dialog => dialog.accept()); await driver.goto("http://feedback.test");
       } else {
         const {JSDOM, VirtualConsole} = require("jsdom");
@@ -94,6 +101,8 @@ finally: case.doCleanups()
           beforeParse(w) {
             w.localStorage.setItem("cedartoy_token", fixture.human); w.confirm = () => true;
             w.matchMedia = query => ({media: query, matches: false, addEventListener() {}, removeEventListener() {}});
+            const interval = w.setInterval.bind(w);
+            w.setInterval = (fn, ms) => { if (ms === 15000) w.feedbackTestPoll = fn; return interval(fn, ms); };
             w.fetch = async (url, options = {}) => {
               const response = await backend({path: url, headers: options.headers || {}, body: options.body || ""});
               return {ok: response.status < 400, status: response.status, json: async () => response.body};
@@ -110,21 +119,72 @@ finally: case.doCleanups()
       };
       const idle = () => until(() => !feedbackBusy);
       const badge = () => evaluate(() => !document.getElementById("feedbackUnreadDot").hidden);
+      const poll = async () => {
+        if (browser) await driver.clock.fastForward(15000);
+        else await evaluate(() => window.feedbackTestPoll());
+        await evaluate(() => feedbackUnreadPending);
+      };
+      const dots = async expected => {
+        assert.equal(await badge(), expected);
+        assert.equal(await evaluate(() => !document.getElementById("feedbackListUnreadDot").hidden), expected);
+      };
+      const rowDot = id => evaluate(id => !document.querySelector(`#feedbackList [data-ticket-id="${id}"] .feedback-unread-dot`).hidden, id);
+      const openRow = async id => { await click(`#feedbackList [data-ticket-id="${id}"]`); await idle(); };
+      const screenshot = async name => {
+        if (browser && process.env.SCREENSHOT_DIR) {
+          fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive: true});
+          await driver.screenshot({path: path.join(process.env.SCREENSHOT_DIR, `feedback-${name}-${width}.png`)});
+        }
+      };
       await evaluate(() => refreshFeedbackUnread());
-      const tid = (await mcp("submit", {category: "bug", content: `小机共享工单 ${width}`})).ticket_id;
-      await evaluate(() => refreshFeedbackUnread()); assert.equal(await badge(), true);
+      await dots(false);
       await click('[data-bottom-action="feedback"]');
-      assert.match(await evaluate(() => document.getElementById("feedbackIdentity").textContent), /直接绑定/);
       await click('[data-feedback-mode="list"]'); await idle();
-      await evaluate(subject => [...document.querySelectorAll("#feedbackList button")].find(b => b.textContent.includes(subject)).click(), `小机共享工单 ${width}`);
-      await idle(); assert.equal(await badge(), false);
-      assert.match(await evaluate(() => document.getElementById("feedbackMessages").textContent), /小机留言/);
+      const tid = (await mcp("submit", {category: "bug", content: `小机共享工单 ${width}`})).ticket_id;
+      // The page is already open: only the scheduled refresh may discover this ticket.
+      await poll(); await dots(true); assert.equal(await rowDot(tid), true);
+      assert.equal((await http("unread")).unread_count, 1);
+      assert.equal((await mcp("unread")).unread_count, 0);
+      assert.match(await evaluate(() => document.getElementById("feedbackIdentity").textContent), /直接绑定/);
+      if (browser) {
+        const geometry = await evaluate(() => {
+          const rect = el => { const r = el.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; };
+          const controls = [...document.querySelectorAll('[data-bottom-action="feedback"], [data-feedback-mode="list"], #feedbackList button')];
+          const before = controls.map(rect);
+          const dots = [...document.querySelectorAll('.feedback-unread-dot:not([hidden])')];
+          const styles = dots.map(el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return {position:s.position, color:s.backgroundColor, width:r.width, height:r.height}; });
+          dots.forEach(el => el.hidden = true);
+          const after = controls.map(rect);
+          dots.forEach(el => el.hidden = false);
+          return {before, after, styles, overflow:document.documentElement.scrollWidth > innerWidth};
+        });
+        assert.deepEqual(geometry.before, geometry.after);
+        assert.equal(geometry.overflow, false);
+        assert.ok(geometry.styles.length >= 3);
+        assert.ok(geometry.styles.every(s => s.position === 'absolute' && s.color === 'rgb(198, 55, 55)' && s.width === 9 && s.height === 9));
+        await screenshot('unread-list');
+        await driver.reload(); await evaluate(() => refreshFeedbackUnread()); await dots(true);
+        await click('[data-bottom-action="feedback"]');
+      }
+      // Opening the modal or listing (again) must not read the ticket.
+      await click('[data-feedback-mode="list"]'); await idle();
+      await dots(true); assert.equal(await rowDot(tid), true);
+      assert.equal((await http("unread")).unread_count, 1);
+      await openRow(tid); await dots(false);
+      assert.match(await evaluate(() => document.getElementById("feedbackMessages").textContent), /Machine/);
+      await evaluate(() => [...document.querySelectorAll('#feedbackFollowupForm button')].find(b => b.textContent === '收起对话').click());
+      await idle(); assert.equal(await rowDot(tid), false);
+      await evaluate(id => { window.feedbackTestRow = document.querySelector(`#feedbackList [data-ticket-id="${id}"]`); window.feedbackTestRow.focus(); }, tid);
+      await poll();
+      assert.equal(await evaluate(() => window.feedbackTestRow === document.activeElement && window.feedbackTestRow.isConnected), true);
+      await screenshot('read-list');
+      await openRow(tid);
       await evaluate(() => { document.getElementById("feedbackFollowupContent").value = "人类回复 <img src=x onerror=alert(1)>"; document.getElementById("feedbackFollowupForm").requestSubmit(); });
       await idle();
       const newMessages = await mcp("detail", {ticket_id: tid});
       assert.equal(newMessages.messages.length, 1); assert.equal(newMessages.messages[0].actor_kind, "human");
       await mcp("reply", {ticket_id: tid, content: "小机再补充"});
-      await evaluate(() => refreshFeedbackUnread()); assert.equal(await badge(), true);
+      await poll(); await dots(true);
       await evaluate(() => closeModals()); await click('[data-bottom-action="feedback"]');
       await click('[data-feedback-mode="list"]'); await idle();
       await evaluate(subject => [...document.querySelectorAll("#feedbackList button")].find(b => b.textContent.includes(subject)).click(), `小机共享工单 ${width}`);
@@ -136,6 +196,41 @@ finally: case.doCleanups()
       assert.ok((await mcp("list", {unread_only: true})).tickets.some(t => t.id === humanTid));
       assert.equal((await mcp("detail", {ticket_id: humanTid})).messages[0].actor_kind, "human");
       assert.equal((await http("unread")).unread_count, 0);
+      // Admin replies notify both identities; one's read never acknowledges the other.
+      await mcp("admin_review", {ticket_id: tid, reply: "管理员新回复", confirm: true}, "admin");
+      await poll(); await dots(true);
+      assert.equal((await mcp("list", {unread_only: true})).tickets[0].id, tid);
+      assert.equal((await mcp("unread")).unread_count, 1); // One-time MCP hint/list did not read.
+      await evaluate(() => closeModals());
+      // An old identity's delayed response must not repaint after login switches.
+      let release, started;
+      const held = new Promise(resolve => started = resolve);
+      delayedUnread = {started, wait: new Promise(resolve => release = resolve)};
+      await evaluate(() => { void refreshFeedbackUnread(); }); await held;
+      await evaluate(t => { localStorage.setItem("cedartoy_token", t); renderAuth(); }, fixture.other);
+      await evaluate(() => feedbackUnreadPending); await dots(false);
+      release(); await new Promise(resolve => setTimeout(resolve, 20)); await dots(false);
+      await evaluate(t => { localStorage.setItem("cedartoy_token", t); window.dispatchEvent(new StorageEvent("storage", {key:"cedartoy_token"})); }, fixture.human);
+      await evaluate(() => feedbackUnreadPending); await dots(true);
+      await click('[data-bottom-action="feedback"]'); await click('[data-feedback-mode="list"]'); await idle();
+      assert.equal(await rowDot(tid), true);
+      await openRow(tid); await dots(false);
+      assert.equal((await mcp("unread")).unread_count, 1);
+      await mcp("detail", {ticket_id: tid});
+      // Make real older pages, open the latest, then receive a new reply while paging back.
+      for (let i = 0; i < 11; i++) await mcp("admin_review", {ticket_id: tid, reply: `历史回复 ${i}`, confirm: true}, "admin");
+      await evaluate(() => closeModals()); await click('[data-bottom-action="feedback"]');
+      await click('[data-feedback-mode="list"]'); await idle(); await openRow(tid); await dots(false);
+      await mcp("admin_review", {ticket_id: tid, reply: "翻页时的新回复", confirm: true}, "admin");
+      await poll(); await dots(true);
+      await evaluate(() => { document.querySelector('#feedbackMessages details').open = true; });
+      await click('#feedbackMessages .feedback-history button'); await idle(); await dots(true);
+      assert.equal((await http("unread")).unread_count, 1);
+      await screenshot('history');
+      await evaluate(() => closeModals()); await click('[data-bottom-action="feedback"]');
+      await click('[data-feedback-mode="list"]'); await idle(); await openRow(tid); await dots(false);
+      while ((await mcp("detail", {ticket_id: tid})).has_more_new) {}
+      assert.equal((await mcp("unread")).unread_count, 0);
       if (browser) {
         assert.equal(await evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         if (process.env.SCREENSHOT_DIR) {
@@ -147,7 +242,7 @@ finally: case.doCleanups()
         await context.close();
       } else window.close();
       assert.deepEqual(errors, []);
-      console.log(`${browser ? width + "px browser" : "DOM only"}: shared submit/reply/close, speaker kind, independent unread and XSS passed`);
+      console.log(`${browser ? width + "px browser" : "DOM only"}: three unread dots, live AI creation, human/AI/admin independent reads, login race, history pagination, focus, replies/close and XSS passed${browser ? '; reload and no layout shift verified' : '; rendered layout NOT verified'}`);
     }
   } finally {
     if (browser) await browser.close();

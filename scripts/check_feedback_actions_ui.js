@@ -31,18 +31,47 @@ function page(file, state, token = '') {
   const errors = [], vc = new VirtualConsole(); vc.on('jsdomError', e => errors.push(e.message));
   const dom = new JSDOM(fs.readFileSync(path.join(root, file), 'utf8'), {
     url: 'https://feedback.test/' + (file === 'admin.html' ? 'admin' : ''), runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
-    beforeParse(w) { if (token) w.localStorage.setItem('cedartoy_token', token); w.fetch = state.fetch; },
+    beforeParse(w) {
+      if (token) w.localStorage.setItem('cedartoy_token', token);
+      w.fetch = state.fetch;
+      w.matchMedia = query => ({media: query, matches: false, addEventListener() {}, removeEventListener() {}});
+    },
   });
   return {w: dom.window, $: id => dom.window.document.getElementById(id), errors};
+}
+function checkActorNames(w, admin) {
+  const names = ['First_machine_甲', 'Second_machine_乙', '<img src=x onerror="window.feedbackXss=1">&"', 'M'.repeat(120)];
+  const messages = names.map((actor_name, i) => ({id: i + 1, role: 'player', actor_kind: 'ai', actor_name,
+    content: '机器留言正文', created_at_epoch: 1700000000}));
+  messages.push(
+    {role: 'player', actor_kind: 'ai', content: '账号不存在'},
+    {role: 'player', actor_kind: 'human', actor_name: 'ignored', content: '人类正文'},
+    {role: 'admin', actor_kind: 'ai', actor_name: 'ignored', admin_label: '管理员Clio', content: '管理员正文'},
+    {role: 'player', actor_kind: 'anonymous', content: '匿名正文'});
+  messages.push({...messages[0], id: 9, content: '最新小机回复'});
+  const data = {ticket: {id: 1, category: 'bug', status: 'pending', internal_note: '', created_at_epoch: 1700000000},
+    messages, message_count: messages.length, next_before_id: null};
+  if (admin) w.renderAdminFeedbackDetail(data); else w.renderFeedbackDetail(data);
+  const host = w.document.getElementById(admin ? 'feedbackAdminMessages' : 'feedbackMessages');
+  host.querySelector('details').open = true;
+  const labels = [...host.querySelectorAll('.feedback-message-meta')].map(el => el.textContent.split(' · ')[0]);
+  assert.deepEqual(labels, [...names, '小机留言', admin ? '玩家提问' : '人类留言', '管理员Clio', admin ? '玩家提问' : '匿名留言', names[0]]);
+  assert.equal(host.querySelectorAll('img,script').length, 0);
+  assert.equal(w.feedbackXss, undefined);
+  assert.equal(host.querySelectorAll('.feedback-history .feedback-message').length, messages.length - 3);
+  console.log(`${admin ? 'Admin' : 'Frontend'} DOM PASS: distinct AI names in history/recent messages, missing-account fallback, text-only XSS, unchanged human/admin labels.`);
 }
 async function checkAdmin() {
   const state = fixture(), {w, $, errors} = page('admin.html', state, 'admin-stub');
   const badge = n => { assert.equal($('recoveryCount').textContent, n > 99 ? '99+' : String(n)); assert.equal($('recoveryCount').hidden, n === 0); };
   const counts = async (r, f) => { state.recovery = r; state.feedback = f; await w.loadRecoveryCount(); badge(r + f); };
   try {
+    checkActorNames(w, true);
     await tick(); badge(1); // feedback-only must work on initial load, before entering the panel.
     assert.equal($('recoveryTab').firstChild.textContent, '工单');
-    assert.equal(w.getComputedStyle($('recoveryCount')).position, 'absolute');
+    // The current admin tab uses an inline flex badge, not the old overlay.
+    assert.equal(w.getComputedStyle($('recoveryCount')).position, 'static');
+    assert.equal(w.getComputedStyle($('recoveryCount')).flex, '0 0 auto');
     for (const pair of [[3, 0], [0, 1], [3, 2], [0, 0], [98, 2]]) await counts(...pair);
     await counts(2, 3);
     for (const failed of ['recovery', 'feedback']) {
@@ -154,6 +183,7 @@ async function checkFeedback() {
   const mode = name => w.document.querySelector(`[data-feedback-mode="${name}"]`);
   const close = () => $('feedbackModal').querySelector('[data-close-modal]');
   try {
+    checkActorNames(w, false);
     await tick(); w.openFeedback();
     assert.equal(mode('list').hidden, true); assert.equal(mode('query').hidden, false);
     assert.equal($('feedbackSubmit').form, $('feedbackForm'));

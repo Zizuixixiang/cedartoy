@@ -34,6 +34,107 @@ class SharedFeedbackTests(unittest.TestCase):
     def unread(self, actor):
         return self.store.unread(actor)["unread_count"]
 
+    def test_trusted_ai_names_in_existing_messages_and_all_detail_transports(self):
+        other_ai = self._add_user("Second_machine", is_ai=True)
+        with self._connect() as conn:
+            conn.execute("INSERT INTO user_bindings(human_user_id,ai_user_id) VALUES (?,?)",
+                         (self.human_id, other_ai))
+        tid = self.submit(self.human_id)["ticket_id"]
+        self.feedback("reply", {"ticket_id": tid, "content": "first machine"})
+        self.feedback("reply", {"ticket_id": tid, "content": "second machine"},
+                      token=self._token_for(other_ai))
+        # A name changed after writing must also resolve for existing messages.
+        name = 'Renamed_<img src=x onerror=alert(1)>&"'
+        with self._connect() as conn:
+            conn.execute("UPDATE toy_users SET username=? WHERE id=?", (name, self.ai_id))
+        for admin in (False, True):
+            for transport in ("http", "path_token", "bearer_token"):
+                with self.subTest(admin=admin, transport=transport):
+                    token = self.admin_token if admin else self.human_token
+                    if transport == "http":
+                        status, data = self.http("detail", {"ticket_id": tid}, token, admin=admin)
+                        self.assertEqual(status, 200)
+                    else:
+                        data = self.feedback("admin_detail" if admin else "detail",
+                                             {"ticket_id": tid, **({} if admin else {"mode": "history"})},
+                                             token=token, transport=transport)
+                    self.assertEqual([m.get("actor_name") for m in data["messages"]],
+                                     [None, name, "Second_machine"])
+                    self.assertTrue(all("actor_id" not in m for m in data["messages"]))
+        new = self.feedback("detail", {"ticket_id": tid}, token=self._token_for(other_ai))
+        self.assertEqual([m.get("actor_name") for m in new["messages"]], [None, name])
+        self.assertEqual(self.feedback("detail", {"ticket_id": tid}, token=self._token_for(other_ai))["messages"], [])
+        # Paginating old messages still resolves names without advancing unread cursors.
+        with self._connect() as conn:
+            for i in range(feedback_tickets.MESSAGE_PAGE_SIZE):
+                self.store._message(conn, tid, "player", other_ai, f"later {i}", 1800000000)
+        latest = self.feedback("detail", {"ticket_id": tid, "mode": "history"})
+        self.assertTrue(latest["next_before_id"])
+        old = self.feedback("detail", {"ticket_id": tid, "mode": "history", "before_id": latest["next_before_id"]})
+        self.assertEqual([m.get("actor_name") for m in old["messages"]], [None, name, "Second_machine"])
+        with self._connect() as conn:
+            conn.execute("DELETE FROM user_bindings WHERE ai_user_id=?", (other_ai,))
+            conn.execute("DELETE FROM toy_users WHERE id=?", (other_ai,))
+        missing = self.store.detail(tid, self.human_id)
+        self.assertTrue(all(m["actor_name"] == "小机留言" for m in missing["messages"]))
+
+    def test_client_cannot_supply_ai_display_name(self):
+        tid = self.submit(self.human_id)["ticket_id"]
+        for field in ("actor_name", "username", "actor_id"):
+            for action, params in (("submit", {"category": "bug", "content": "forged"}),
+                                   ("reply", {"ticket_id": tid, "content": "forged"})):
+                params[field] = self.admin_id if field == "actor_id" else "Forged administrator"
+                status, data = self.http("message" if action == "reply" else action, params, self.ai_token)
+                if action == "submit":
+                    # HTTP submit historically ignores unknown keys; they must never win.
+                    self.assertEqual(status, 200)
+                    message = self.store.detail(data["ticket_id"], self.ai_id)["messages"][0]
+                    self.assertEqual((message["actor_kind"], message["actor_name"]), ("ai", "Machine"))
+                else:
+                    self.assertEqual(status, 400)
+                result = self.mcp({"action": action, "params": params}, token=self.ai_token, name="feedback")
+                self.assertTrue(result["result"]["isError"])
+        self.assertEqual(self.store.detail(tid, self.human_id)["message_count"], 1)
+
+    def test_shared_unread_survives_upgrade_listing_and_notifications(self):
+        # Simulate an established rollout boundary, then a new MCP-created AI ticket.
+        old = self.submit(self.human_id)["ticket_id"]
+        with self._connect() as conn:
+            baseline = conn.execute("SELECT max(id) FROM feedback_messages").fetchone()[0]
+            conn.execute("UPDATE feedback_unread_baseline SET message_id=?", (baseline,))
+        tid = self.feedback("submit", {"category": "bug", "content": "new AI ticket"})["ticket_id"]
+        self.assertEqual((self.unread(self.human_id), self.unread(self.ai_id)), (1, 0))
+        for _ in range(2):
+            with self._connect() as conn:
+                feedback_tickets.init_schema(conn)
+                self.assertEqual(conn.execute("SELECT message_id FROM feedback_unread_baseline").fetchone()[0], baseline)
+            rows = self.http("list", token=self.human_token)[1]["tickets"]
+            self.assertEqual({r["id"]: r["unread"] for r in rows}, {old: False, tid: True})
+            self.store.claim_notification(self.human_id)
+            self.assertEqual(self.http("unread", token=self.human_token)[1]["unread_count"], 1)
+        self.assertEqual(self.unread(self.other_human_id), 0)
+        self.http("detail", {"ticket_id": tid}, self.human_token)
+        self.assertEqual((self.unread(self.human_id), self.unread(self.ai_id)), (0, 0))
+        self.store.review({"ticket_id": tid, "reply": "admin reply"}, {"id": self.admin_id})
+        self.assertEqual((self.unread(self.human_id), self.unread(self.ai_id)), (1, 1))
+        self.assertTrue(self.store.claim_notification(self.ai_id))
+        self.assertFalse(self.store.claim_notification(self.ai_id))
+        self.http("detail", {"ticket_id": tid}, self.human_token)
+        self.assertEqual((self.unread(self.human_id), self.unread(self.ai_id)), (0, 1))
+        self.feedback("detail", {"ticket_id": tid})
+        # Replying without a detail read must not acknowledge another participant.
+        self.feedback("reply", {"ticket_id": tid, "content": "AI followup"})
+        self.http("message", {"ticket_id": tid, "content": "human followup"}, self.human_token)
+        self.assertEqual((self.unread(self.human_id), self.unread(self.ai_id)), (1, 1))
+        with self._connect() as conn:
+            read_id = conn.execute("SELECT read_id FROM feedback_read_cursors WHERE ticket_id=? AND owner_id=?",
+                                   (tid, self.human_id)).fetchone()[0]
+        self.http("detail", {"ticket_id": tid, "before_id": 2**62}, self.human_token)
+        with self._connect() as conn:
+            self.assertEqual(conn.execute("SELECT read_id FROM feedback_read_cursors WHERE ticket_id=? AND owner_id=?",
+                                          (tid, self.human_id)).fetchone()[0], read_id)
+        self.assertEqual((self.unread(self.human_id), self.unread(self.ai_id)), (1, 1))
+
     def test_human_submit_machine_read_reply_human_close_and_reverse(self):
         status, ticket = self.http("submit", {"category": "bug", "content": "人类提问"}, self.human_token)
         self.assertEqual(status, 200)

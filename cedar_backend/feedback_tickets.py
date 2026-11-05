@@ -374,13 +374,17 @@ class FeedbackStore:
             clause = " AND id < ?"
             values.append(before_id)
         order = "ASC" if new_after is not None else "DESC"
-        messages = conn.execute("SELECT id,role,actor_id,actor_kind,content,created_at_epoch FROM feedback_messages WHERE ticket_id=?" +
+        messages = conn.execute("""SELECT id,role,actor_id,actor_kind,content,created_at_epoch,
+                                (SELECT username FROM toy_users WHERE id=feedback_messages.actor_id
+                                 AND feedback_messages.actor_kind='ai' AND feedback_messages.role='player') AS actor_name
+                                FROM feedback_messages WHERE ticket_id=?""" +
                                 clause + f" ORDER BY id {order} LIMIT ?", values + [MESSAGE_PAGE_SIZE+1]).fetchall()
         has_more = len(messages) > MESSAGE_PAGE_SIZE
         messages = messages[:MESSAGE_PAGE_SIZE]
         public_messages = []
         for message in (messages if new_after is not None else reversed(messages)):
-            # Never expose account IDs. Only verified operators get a public alias.
+            # Resolve AI names from the stored speaker, including historical messages.
+            # Never expose account IDs or replace the verified operator aliases.
             item = {key: message[key] for key in ("id", "role", "content", "created_at_epoch")}
             item["actor_kind"] = message["actor_kind"] or ("admin" if message["role"] == "admin" else "player")
             if viewer is not None:
@@ -388,6 +392,8 @@ class FeedbackStore:
             if message["role"] == "admin":
                 alias = ADMIN_REPLY_ALIASES.get(message["actor_id"])
                 item["admin_label"] = "管理员" + alias if alias else "管理员答复"
+            elif item["actor_kind"] == "ai":
+                item["actor_name"] = message["actor_name"] or "小机留言"
             public_messages.append(item)
         return {"ticket": dict(row), "messages": public_messages, "message_count": count,
                 "next_before_id": messages[-1]["id"] if has_more and new_after is None else None,

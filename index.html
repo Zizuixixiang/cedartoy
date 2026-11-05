@@ -1052,7 +1052,8 @@
     }
 
     .nav-label { font-size: 11px; }
-    [data-bottom-action="feedback"] .nav-icon { position: relative; }
+    [data-bottom-action="feedback"] .nav-icon,
+    [data-feedback-mode="list"], #feedbackList .feedback-list-item { position: relative; }
     .feedback-unread-dot {
       position: absolute;
       top: -4px;
@@ -1060,7 +1061,7 @@
       width: 9px;
       height: 9px;
       border: 2px solid white;
-      background: var(--purple-darker);
+      background: #c63737;
       pointer-events: none;
     }
     .feedback-unread-dot[hidden] { display: none; }
@@ -1141,7 +1142,7 @@
     #feedbackPage { font-size: 11px; }
     #feedbackDetail .feedback-message { margin: 12px 0; padding: 10px; border-left: 3px solid var(--purple); background: var(--bg); }
     #feedbackDetail .feedback-message[data-role="admin"] { border-left-color: var(--pink-dark); background: #fff; }
-    #feedbackModal .feedback-message-meta { font: 11px/1.5 system-ui, sans-serif; }
+    #feedbackModal .feedback-message-meta { font: 11px/1.5 system-ui, sans-serif; overflow-wrap: anywhere; }
     #feedbackDetail .feedback-message p { margin: 6px 0 0; font: 13px/1.7 system-ui, sans-serif; white-space: pre-wrap; }
     #feedbackDetail .feedback-history summary { cursor: pointer; padding: 10px 0; font-size: 12px; }
     #feedbackDetail .feedback-history-records { max-height: 300px; overflow-y: auto; }
@@ -3682,7 +3683,7 @@
       <h2 class="modal-title" id="feedbackTitle">💬 反馈与建议</h2>
       <div class="recovery-modes" aria-label="反馈操作">
         <button class="pixel-btn" data-feedback-mode="submit" aria-pressed="true" type="button">写反馈</button>
-        <button class="pixel-btn secondary" data-feedback-mode="list" aria-pressed="false" type="button">我的反馈</button>
+        <button class="pixel-btn secondary" data-feedback-mode="list" aria-pressed="false" type="button">我的反馈<span id="feedbackListUnreadDot" class="feedback-unread-dot" aria-hidden="true" hidden></span></button>
         <button class="pixel-btn secondary" data-feedback-mode="query" aria-pressed="false" type="button">凭码查询</button>
       </div>
       <form id="feedbackForm">
@@ -9422,19 +9423,38 @@
     }
     const feedbackCategories = {bug: "问题 / Bug", suggestion: "功能建议", account: "账号相关", other: "其他"};
     let feedbackUnreadVersion = 0, feedbackUnreadIdentity = null, feedbackUnreadQueue = Promise.resolve();
+    let feedbackUnreadPending = null;
     function setFeedbackUnread(count) {
       const unread = Number(count) > 0;
       $("feedbackUnreadDot").hidden = !unread;
+      $("feedbackListUnreadDot").hidden = !unread;
       document.querySelector('[data-bottom-action="feedback"]').setAttribute("aria-label", unread ? "反馈，有新消息未读" : "反馈");
+      document.querySelector('[data-feedback-mode="list"]').setAttribute("aria-label", unread ? "我的反馈，有新消息未读" : "我的反馈");
     }
     async function refreshFeedbackUnread() {
       if (feedbackUnreadIdentity !== token()) {
         feedbackUnreadIdentity = token();
         feedbackUnreadVersion++;
+        // A stalled old login must neither block nor repaint the new identity.
+        feedbackUnreadQueue = Promise.resolve();
+        feedbackUnreadPending = null;
+        feedbackVersion++;
+        feedbackResetResults();
+        updateFeedbackModeVisibility();
         setFeedbackUnread(0);
       }
       if (!token()) return;
-      try { await feedbackRequest("unread", {}); } catch (_) { /* Retry on next foreground visit/open. */ }
+      if (feedbackUnreadPending) return feedbackUnreadPending;
+      const version = feedbackVersion, identity = token(), page = feedbackPage;
+      const refreshList = !feedbackBusy && !feedbackConversation && feedbackMode === "list" && $("feedbackModal").classList.contains("show");
+      const pending = (async () => {
+        try {
+          const data = await feedbackRequest(refreshList ? "list" : "unread", refreshList ? {page} : {});
+          if (refreshList && identity === token() && version === feedbackVersion && page === feedbackPage && !feedbackBusy && !feedbackConversation) renderFeedbackList(data);
+        } catch (_) { /* Keep the last known state; retry on the next poll/foreground visit. */ }
+      })();
+      feedbackUnreadPending = pending;
+      try { await pending; } finally { if (feedbackUnreadPending === pending) feedbackUnreadPending = null; }
     }
     let feedbackMode = "submit", feedbackPage = 1, feedbackBusy = false, feedbackVersion = 0;
     let feedbackReceipt = null, feedbackIdentityToken = null, feedbackReturnFocus = null;
@@ -9450,6 +9470,7 @@
       feedbackConversation = null;
       syncFeedbackCloseTicket();
       $("feedbackList").replaceChildren();
+      feedbackListSnapshot = "";
       $("feedbackDetail").replaceChildren();
       $("feedbackDetail").hidden = true;
       $("feedbackPagination").hidden = true;
@@ -9590,7 +9611,7 @@
       const article = document.createElement("article"); article.className = "feedback-message";
       article.dataset.role = message.role;
       const meta = document.createElement("div"); meta.className = "feedback-message-meta";
-      const speaker = message.role === "admin" ? (message.admin_label || "管理员答复") : ({human: "人类留言", ai: "小机留言", anonymous: "匿名留言"}[message.actor_kind] || "玩家提问");
+      const speaker = message.role === "admin" ? (message.admin_label || "管理员答复") : ({human: "人类留言", ai: message.actor_name || "小机留言", anonymous: "匿名留言"}[message.actor_kind] || "玩家提问");
       meta.textContent = `${message.is_self ? "我 · " : ""}${speaker} · ${new Date(message.created_at_epoch * 1000).toLocaleString()}`;
       const text = document.createElement("p"); text.textContent = message.content;
       article.append(meta, text); return article;
@@ -9665,12 +9686,42 @@
       $("feedbackList").hidden = true; $("feedbackPagination").hidden = true;
       renderFeedbackMessages(); panel.hidden = false; panel.focus();
     }
-    let feedbackTotal = 0;
+    let feedbackTotal = 0, feedbackListSnapshot = "";
     function updateFeedbackPagination() {
       $("feedbackPagination").hidden = Boolean(feedbackConversation) || feedbackTotal <= 20;
       $("feedbackPrev").disabled = feedbackPage <= 1;
       $("feedbackNext").disabled = feedbackPage * 20 >= feedbackTotal;
       $("feedbackPage").textContent = `第 ${feedbackPage} 页`;
+    }
+    function renderFeedbackList(data) {
+      const snapshot = JSON.stringify(data.tickets);
+      if (snapshot === feedbackListSnapshot && data.total === feedbackTotal) return;
+      feedbackListSnapshot = snapshot;
+      const focusedId = document.activeElement?.closest("#feedbackList button")?.dataset.ticketId;
+      $("feedbackList").replaceChildren();
+      feedbackTotal = data.total;
+      for (const ticket of data.tickets) {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "pixel-btn secondary feedback-list-item";
+        button.dataset.ticketId = String(ticket.id);
+        const dot = document.createElement("span"); dot.className = "feedback-unread-dot";
+        dot.hidden = !ticket.unread; dot.setAttribute("aria-hidden", "true");
+        const heading = document.createElement("span"); heading.className = "feedback-ticket-heading";
+        const title = document.createElement("span"); title.className = "feedback-ticket-preview"; title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
+        heading.append(title, feedbackStatusElement(ticket.status));
+        const meta = document.createElement("span"); meta.className = "feedback-message-meta";
+        meta.textContent = `${ticket.unread ? "新消息 · " : ""}${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
+        button.append(heading, meta, dot);
+        button.onclick = () => feedbackRun(async current => {
+          const data = await feedbackRequest("detail", {ticket_id: ticket.id});
+          if (current()) renderFeedbackDetail(data);
+        });
+        $("feedbackList").append(button);
+      }
+      if (focusedId) $("feedbackList").querySelector(`[data-ticket-id="${focusedId}"]`)?.focus({preventScroll: true});
+      updateFeedbackPagination();
+      $("feedbackMessage").textContent = "";
+      if (!data.total) $("feedbackMessage").textContent = "还没有反馈。遇到问题或有建议，欢迎告诉我们。";
     }
     function loadFeedbackList() {
       feedbackTotal = 0;
@@ -9679,24 +9730,7 @@
       if (!token()) { $("feedbackMessage").textContent = "登录后可查看自己的反馈；匿名提交请使用「凭码查询」。"; return; }
       return feedbackRun(async current => {
         const data = await feedbackRequest("list", {page: feedbackPage});
-        if (!current()) return;
-        feedbackTotal = data.total;
-        for (const ticket of data.tickets) {
-          const button = document.createElement("button");
-          button.type = "button"; button.className = "pixel-btn secondary feedback-list-item";
-          const heading = document.createElement("span"); heading.className = "feedback-ticket-heading";
-          const title = document.createElement("span"); title.className = "feedback-ticket-preview"; title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
-          heading.append(title, feedbackStatusElement(ticket.status));
-          const meta = document.createElement("span"); meta.className = "feedback-message-meta";
-          meta.textContent = `${ticket.unread ? "新消息 · " : ""}${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
-          button.append(heading, meta);
-          button.onclick = () => feedbackRun(async current => {
-            const data = await feedbackRequest("detail", {ticket_id: ticket.id});
-            if (current()) renderFeedbackDetail(data);
-          });
-          $("feedbackList").append(button);
-        }
-        if (!data.total) $("feedbackMessage").textContent = "还没有反馈。遇到问题或有建议，欢迎告诉我们。";
+        if (current()) renderFeedbackList(data);
       });
     }
     $("feedbackForm").addEventListener("submit", event => {
@@ -9780,6 +9814,8 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) refreshFeedbackUnread();
     });
+    window.addEventListener("focus", () => { if (!document.hidden) refreshFeedbackUnread(); });
+    setInterval(() => { if (!document.hidden && token()) refreshFeedbackUnread(); }, 15000);
 
     function openPlaceholder(title, message) {
       closeDrawers();
