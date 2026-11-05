@@ -1056,10 +1056,12 @@
     [data-feedback-mode="list"], #feedbackList .feedback-list-item { position: relative; }
     .feedback-unread-dot {
       position: absolute;
+      box-sizing: border-box;
+      z-index: 1;
       top: -4px;
       right: -5px;
-      width: 9px;
-      height: 9px;
+      width: 14px;
+      height: 14px;
       border: 2px solid white;
       background: #c63737;
       pointer-events: none;

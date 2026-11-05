@@ -152,7 +152,7 @@ finally: case.doCleanups()
           const controls = [...document.querySelectorAll('[data-bottom-action="feedback"], [data-feedback-mode="list"], #feedbackList button')];
           const before = controls.map(rect);
           const dots = [...document.querySelectorAll('.feedback-unread-dot:not([hidden])')];
-          const styles = dots.map(el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return {position:s.position, color:s.backgroundColor, width:r.width, height:r.height}; });
+          const styles = dots.map(el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return {position:s.position, color:s.backgroundColor, width:r.width, height:r.height, boxSizing:s.boxSizing, border:s.borderTopWidth, borderColor:s.borderTopColor}; });
           dots.forEach(el => el.hidden = true);
           const after = controls.map(rect);
           dots.forEach(el => el.hidden = false);
@@ -161,7 +161,7 @@ finally: case.doCleanups()
         assert.deepEqual(geometry.before, geometry.after);
         assert.equal(geometry.overflow, false);
         assert.ok(geometry.styles.length >= 3);
-        assert.ok(geometry.styles.every(s => s.position === 'absolute' && s.color === 'rgb(198, 55, 55)' && s.width === 9 && s.height === 9));
+        assert.ok(geometry.styles.every(s => s.position === 'absolute' && s.color === 'rgb(198, 55, 55)' && s.width === 14 && s.height === 14 && s.boxSizing === 'border-box' && s.border === '2px' && s.borderColor === 'rgb(255, 255, 255)'));
         await screenshot('unread-list');
         await driver.reload(); await evaluate(() => refreshFeedbackUnread()); await dots(true);
         await click('[data-bottom-action="feedback"]');
