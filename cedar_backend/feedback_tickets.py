@@ -1,5 +1,6 @@
 """Private append-only feedback conversations, separate from password recovery."""
 import hashlib
+import json
 import logging
 import re
 import secrets
@@ -16,6 +17,44 @@ MESSAGE_PAGE_SIZE = 10
 # Public aliases for verified CedarToy admin account IDs (including the Codex operator).
 ADMIN_REPLY_ALIASES = {1: "南杉", 2: "Clio", 8: "Clio", 7874: "Clio"}
 AUTO_CLOSE_AFTER = 7 * 24 * 60 * 60
+
+
+def handle_mcp(arguments, actor_id, ip, *, store, error, admin_feedback):
+    """Authenticated thin router; no caller-supplied identity or anonymous capability."""
+    if not isinstance(arguments, dict) or set(arguments) - {"action", "params"}:
+        raise error(-32602, "仅接受 action、params；字段见 feedback Guide")
+    action, params = arguments.get("action"), arguments.get("params", {})
+    if isinstance(params, str):
+        try:
+            params = json.loads(params)
+        except ValueError:
+            raise error(-32602, "params 必须为 JSON 对象") from None
+    if not isinstance(params, dict) or "action" in params:
+        raise error(-32602, "params 必须为业务参数对象，不接受嵌套 action")
+    if isinstance(action, str) and action.startswith("admin_"):
+        # The shared HTTP/MCP admin handler authenticates before field validation or reads.
+        return admin_feedback({**params, "action": action})
+    fields = {
+        "submit": {"category", "content", "contact", "notify_email", "contact_email"},
+        "list": {"page", "unread_only"}, "unread": set(),
+        "detail": {"ticket_id", "mode", "before_id"},
+        "reply": {"ticket_id", "content"}, "close": {"ticket_id", "confirm"},
+    }
+    if not isinstance(action, str) or action not in fields or not isinstance(params, dict) or set(params) - fields[action]:
+        raise error(-32602, "反馈操作或参数无效；请读 feedback Guide")
+    if action == "submit":
+        return store.submit(params, actor_id, ip)
+    if action == "list":
+        return store.listing(actor_id, page=params.get("page", 1), unread_only=params.get("unread_only", False))
+    if action == "unread":
+        return store.unread(actor_id)
+    if action == "detail":
+        return store.detail(params.get("ticket_id"), actor_id, mode=params.get("mode", "new"), before_id=params.get("before_id"))
+    if action == "reply":
+        return store.append(params, actor_id, ip)
+    return store.close(params, actor_id)
+
+
 _TICKET_SCHEMA = """CREATE TABLE IF NOT EXISTS {name} (
     id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER,
     query_code_hash TEXT UNIQUE, ip_hash TEXT NOT NULL,
@@ -70,6 +109,15 @@ def init_schema(conn):
                 conn.execute("UPDATE sqlite_sequence SET seq=max(seq,?) WHERE name='feedback_tickets'", (old_sequence,))
             else:
                 conn.execute("INSERT INTO sqlite_sequence(name,seq) VALUES ('feedback_tickets',?)", (old_sequence,))
+        # Keep the speaker's kind at write time; never impersonate the ticket owner.
+        if "actor_kind" not in {r[1] for r in conn.execute("PRAGMA table_info(feedback_messages)")}:
+            conn.execute("ALTER TABLE feedback_messages ADD COLUMN actor_kind TEXT")
+            conn.execute("UPDATE feedback_messages SET actor_kind='admin' WHERE role='admin'")
+            conn.execute("UPDATE feedback_messages SET actor_kind='anonymous' WHERE role='player' AND actor_id IS NULL")
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='toy_users'").fetchone():
+                conn.execute("""UPDATE feedback_messages SET actor_kind=(
+                    SELECT CASE WHEN is_ai=1 THEN 'ai' ELSE 'human' END FROM toy_users WHERE id=actor_id)
+                    WHERE role='player' AND actor_id IS NOT NULL""")
         # Adding an optional contact address leaves existing tickets and query codes unchanged.
         ticket_columns = {row[1] for row in conn.execute("PRAGMA table_info(feedback_tickets)")}
         if "contact_email" not in ticket_columns:
@@ -164,20 +212,40 @@ class FeedbackStore:
             raise self.error(-32029, "提交较多，请稍后再试")
 
     def _message(self, conn, ticket_id, role, actor, content, now, ip_hash=None):
+        kind = "admin" if role == "admin" else "anonymous"
+        if role == "player" and actor is not None:
+            user = conn.execute("SELECT is_ai FROM toy_users WHERE id=?", (actor,)).fetchone()
+            kind = ("ai" if user[0] else "human") if user else "player"
         cursor = conn.execute("""INSERT INTO feedback_messages
-            (ticket_id,role,actor_id,content,created_at_epoch,ip_hash) VALUES (?,?,?,?,?,?)""",
-            (ticket_id, role, actor, content, now, ip_hash))
+            (ticket_id,role,actor_id,content,created_at_epoch,ip_hash,actor_kind) VALUES (?,?,?,?,?,?,?)""",
+            (ticket_id, role, actor, content, now, ip_hash, kind))
         return cursor.lastrowid
 
+    @staticmethod
+    def _access_clause():
+        # One hop from the ORIGINAL owner, never from another participant.
+        # UNION avoids duplicate rows for legacy many-to-many bindings and lets
+        # SQLite use the ticket-owner index on every MCP notification precheck.
+        return """t.owner_id IN (SELECT ? UNION
+            SELECT b.ai_user_id FROM user_bindings b
+            JOIN toy_users h ON h.id=b.human_user_id AND h.is_ai=0 AND h.deleted_at IS NULL
+            JOIN toy_users a ON a.id=b.ai_user_id AND a.is_ai=1 AND a.deleted_at IS NULL
+            WHERE b.human_user_id=? UNION
+            SELECT b.human_user_id FROM user_bindings b
+            JOIN toy_users h ON h.id=b.human_user_id AND h.is_ai=0 AND h.deleted_at IS NULL
+            JOIN toy_users a ON a.id=b.ai_user_id AND a.is_ai=1 AND a.deleted_at IS NULL
+            WHERE b.ai_user_id=?)"""
+
     def _unread_rows(self, conn, owner_id):
-        # owner_id always comes from authentication, never a binding or request field.
+        # The cursor key is the actual viewer, independently of the original owner.
         return conn.execute("""SELECT t.id, max(m.id) AS latest_id,
                 coalesce(c.notified_id,0) AS notified_id
-            FROM feedback_tickets t JOIN feedback_messages m ON m.ticket_id=t.id AND m.role='admin'
-            LEFT JOIN feedback_read_cursors c ON c.ticket_id=t.id AND c.owner_id=t.owner_id
-            WHERE t.owner_id=? AND m.id > max(coalesce(c.read_id,0),
+            FROM feedback_tickets t JOIN feedback_messages m ON m.ticket_id=t.id
+            LEFT JOIN feedback_read_cursors c ON c.ticket_id=t.id AND c.owner_id=?
+            WHERE """ + self._access_clause() + """ AND m.actor_id IS NOT ?
+                AND m.id > max(coalesce(c.read_id,0),
                 (SELECT message_id FROM feedback_unread_baseline WHERE singleton=1))
-            GROUP BY t.id""", (owner_id,)).fetchall()
+            GROUP BY t.id""", (owner_id, owner_id, owner_id, owner_id, owner_id)).fetchall()
 
     def unread(self, owner_id):
         if owner_id is None:
@@ -233,25 +301,31 @@ class FeedbackStore:
             self._message(conn, ticket_id, "player", owner_id, content, now, ip_hash)
             return {"ok": True, "ticket_id": ticket_id, **({"query_code": code} if code else {})}
 
-    def listing(self, owner_id=None, *, admin=False, status="all", page=1):
+    def listing(self, owner_id=None, *, admin=False, status="all", page=1, unread_only=False):
         self.integer(page, "page", 1000000)
         self.choice(status, ("all",) + STATUSES, "status")
+        if type(unread_only) is not bool:
+            raise self.error(-32602, "unread_only 必须为布尔值")
         if not admin and owner_id is None:
             raise self.error(-32001, "请先登录后查看自己的反馈")
         clauses, values = [], []
         if not admin:
-            clauses.append("owner_id=?")
-            values.append(owner_id)
+            clauses.append(self._access_clause())
+            values.extend([owner_id] * 3)
         if status != "all":
             clauses.append("status=?")
             values.append(status)
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         order = "coalesce(updated_at_epoch,created_at_epoch) DESC,id DESC"
         if status == "all":
             order = "CASE status WHEN 'pending' THEN 0 WHEN 'processing' THEN 1 WHEN 'closed' THEN 2 END," + order
         with closing(self._open()) as conn, conn:
             conn.execute("BEGIN")
-            total = conn.execute("SELECT count(*) FROM feedback_tickets" + where, values).fetchone()[0]
+            unread_ids = {row["id"] for row in self._unread_rows(conn, owner_id)} if not admin else set()
+            if unread_only:
+                clauses.append("t.id IN (" + ",".join("?" for _ in unread_ids) + ")")
+                values.extend(sorted(unread_ids))
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            total = conn.execute("SELECT count(*) FROM feedback_tickets t" + where, values).fetchone()[0]
             rows = conn.execute("""SELECT id, category, substr(content,1,80) AS preview, status,
                 created_at_epoch, updated_at_epoch,
                 (SELECT count(*) FROM feedback_messages m WHERE m.ticket_id=t.id) AS message_count,
@@ -259,7 +333,6 @@ class FeedbackStore:
                 FROM feedback_tickets t""" + where +
                 " ORDER BY " + order + " LIMIT ? OFFSET ?",
                 values + [PAGE_SIZE, (page-1)*PAGE_SIZE]).fetchall()
-            unread_ids = {row["id"] for row in self._unread_rows(conn, owner_id)} if not admin else set()
         return {"tickets": [dict(row) if admin else {**dict(row), "unread": row["id"] in unread_ids} for row in rows],
                 "total": total, "page": page, "page_size": PAGE_SIZE,
                 **({"unread_count": len(unread_ids)} if not admin else {})}
@@ -278,49 +351,68 @@ class FeedbackStore:
             row = conn.execute("SELECT id,owner_id FROM feedback_tickets WHERE id=? AND owner_id IS NULL AND query_code_hash=?",
                                (ticket_id, self._code_hash(code))).fetchone()
         elif owner_id is not None:
-            row = conn.execute("SELECT id,owner_id FROM feedback_tickets WHERE id=? AND owner_id=?", (ticket_id, owner_id)).fetchone()
+            row = conn.execute("SELECT t.id,t.owner_id FROM feedback_tickets t WHERE t.id=? AND " +
+                               self._access_clause(), (ticket_id, owner_id, owner_id, owner_id)).fetchone()
         else:
             raise self.error(-32001, "请登录或提供该单私密查询码")
         if row is None:
             self._missing()
         return row
 
-    def _detail(self, conn, ticket_id, admin, before_id):
+    def _detail(self, conn, ticket_id, admin, before_id, *, viewer=None, new_after=None):
         if before_id is not None:
             self.integer(before_id, "before_id")
         row = conn.execute(f"SELECT {ADMIN_FIELDS if admin else PUBLIC_FIELDS} FROM feedback_tickets WHERE id=?", (ticket_id,)).fetchone()
         if row is None:
             self._missing()
         count = conn.execute("SELECT count(*) FROM feedback_messages WHERE ticket_id=?", (ticket_id,)).fetchone()[0]
-        messages = conn.execute("SELECT id,role,actor_id,content,created_at_epoch FROM feedback_messages WHERE ticket_id=?" +
-                                (" AND id < ?" if before_id is not None else "") + " ORDER BY id DESC LIMIT ?",
-                                [ticket_id, *([before_id] if before_id is not None else []), MESSAGE_PAGE_SIZE+1]).fetchall()
+        clause, values = "", [ticket_id]
+        if new_after is not None:
+            clause = " AND id > ? AND actor_id IS NOT ?"
+            values.extend([new_after, viewer])
+        elif before_id is not None:
+            clause = " AND id < ?"
+            values.append(before_id)
+        order = "ASC" if new_after is not None else "DESC"
+        messages = conn.execute("SELECT id,role,actor_id,actor_kind,content,created_at_epoch FROM feedback_messages WHERE ticket_id=?" +
+                                clause + f" ORDER BY id {order} LIMIT ?", values + [MESSAGE_PAGE_SIZE+1]).fetchall()
         has_more = len(messages) > MESSAGE_PAGE_SIZE
         messages = messages[:MESSAGE_PAGE_SIZE]
         public_messages = []
-        for message in reversed(messages):
+        for message in (messages if new_after is not None else reversed(messages)):
             # Never expose account IDs. Only verified operators get a public alias.
             item = {key: message[key] for key in ("id", "role", "content", "created_at_epoch")}
+            item["actor_kind"] = message["actor_kind"] or ("admin" if message["role"] == "admin" else "player")
+            if viewer is not None:
+                item["is_self"] = message["actor_id"] == viewer
             if message["role"] == "admin":
                 alias = ADMIN_REPLY_ALIASES.get(message["actor_id"])
                 item["admin_label"] = "管理员" + alias if alias else "管理员答复"
             public_messages.append(item)
         return {"ticket": dict(row), "messages": public_messages, "message_count": count,
-                "next_before_id": messages[-1]["id"] if has_more else None}
+                "next_before_id": messages[-1]["id"] if has_more and new_after is None else None,
+                **({"has_more_new": has_more} if new_after is not None else {})}
 
-    def detail(self, ticket_id, owner_id=None, *, admin=False, before_id=None):
+    def detail(self, ticket_id, owner_id=None, *, admin=False, before_id=None, mode="history"):
         self.integer(ticket_id, "ticket_id")
+        self.choice(mode, ("history", "new"), "mode")
+        if mode == "new" and (admin or before_id is not None):
+            raise self.error(-32602, "new 模式不能带 before_id 或用于管理员查看")
         with closing(self._open()) as conn, conn:
             conn.execute("BEGIN" if admin else "BEGIN IMMEDIATE")
             if not admin:
                 self._owned(conn, ticket_id, owner_id)
-            result = self._detail(conn, ticket_id, admin, before_id)
+            new_after = None
+            if mode == "new":
+                new_after = conn.execute("""SELECT max(b.message_id,coalesce(c.read_id,0))
+                    FROM feedback_unread_baseline b LEFT JOIN feedback_read_cursors c
+                    ON c.ticket_id=? AND c.owner_id=? WHERE b.singleton=1""", (ticket_id, owner_id)).fetchone()[0]
+            result = self._detail(conn, ticket_id, admin, before_id, viewer=None if admin else owner_id, new_after=new_after)
             if not admin:
                 # Only opening the latest detail acknowledges this snapshot. Loading
                 # older history must not swallow replies arriving after it was opened.
                 if before_id is None:
-                    latest = conn.execute("SELECT coalesce(max(id),0) FROM feedback_messages WHERE ticket_id=? AND role='admin'",
-                                          (ticket_id,)).fetchone()[0]
+                    latest = max((m["id"] for m in result["messages"]), default=0)
                     conn.execute("""INSERT INTO feedback_read_cursors(ticket_id,owner_id,read_id) VALUES (?,?,?)
                         ON CONFLICT(ticket_id,owner_id) DO UPDATE SET read_id=max(read_id,excluded.read_id)""",
                         (ticket_id, owner_id, latest))
@@ -346,12 +438,13 @@ class FeedbackStore:
             conn.execute("BEGIN IMMEDIATE")
             if "query_code" in body:
                 self._code_hash(body["query_code"])  # Explicit null/empty code never falls back to an owner.
-            row = self._owned(conn, ticket_id, owner_id, body.get("query_code"))
+            self._owned(conn, ticket_id, owner_id, body.get("query_code"))
+            actor_id = None if "query_code" in body else owner_id
             for column, identity, hourly, daily in (("ip_hash", ip_hash, 20, 100),
-                    ("actor_id", row["owner_id"], 20, 100), ("ticket_id", ticket_id, 10, 40)):
+                    ("actor_id", actor_id, 20, 100), ("ticket_id", ticket_id, 10, 40)):
                 if identity is not None:
                     self._rate(conn, "feedback_messages", f"role='player' AND {column}=?", [identity], hourly, daily, now)
-            message_id = self._message(conn, ticket_id, "player", row["owner_id"], content, now, ip_hash)
+            message_id = self._message(conn, ticket_id, "player", actor_id, content, now, ip_hash)
             conn.execute("UPDATE feedback_tickets SET status='pending', updated_at_epoch=? WHERE id=?", (now,ticket_id))
         return {"ok": True, "ticket_id": ticket_id, "message_id": message_id, "status": "pending"}
 

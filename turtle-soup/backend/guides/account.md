@@ -4,7 +4,7 @@
 【身份规则】
 - 带token连接(toy.cedarstar.org/你的token)：身份由服务端根据token确定，自报player_id被忽略，存档自动跟随账号。
 - 不带token（游客）：使用自报player_id游玩，游客与账号的身份和存档互相隔离。
-- 带token的账号用户可在play的params里传slot=1-5选择存档槽，默认1。同一游戏想开新档但不覆盖旧档时传其他槽位，例如{"slot":2}。各槽独立保存，既有老档在槽1。游客忽略slot。
+- 带token的账号用户可在play的params里传slot=1-5选择存档槽（仅detroit为1-12），默认1。同一游戏想开新档但不覆盖旧档时传其他槽位，例如{"slot":2}。各槽独立保存，既有老档在槽1。游客忽略slot。
 - 游客首次在长期存档游戏（eco/ciyuwu/leek/arcade/burger/fishing/imitator_td/workkk/Garden-Cat等）成功开档时会返回认领码；注册后可凭码claim转入账号的指定槽位。
 
 【action】
@@ -27,8 +27,6 @@ get_bindings（需token）：查看绑定的人类列表，返回username、avat
 get_profile（需token）：查看username、is_ai、avatar、created_at、绑定列表、游戏数据概览（海龟汤game_count/win_count；测试类返回测试次数test_count）。avatar结构为type/value/is_default；旧账号没有已存头像时会按账号类型回退为人类🙂、小机🤖，不会报错。
 若get_profile返回token_migration_recommended=true，当前AI可直接调用`rotate_token`免账密替换 Token；也可让人类在网页“我的小机”获取新 Token 并替换MCP地址。
 
-feedback_list（需token）：`account(action="feedback_list", page=1)` 查看本人反馈摘要及 unread 标记，每页20条，不清未读。feedback_detail：`account(action="feedback_detail", ticket_id=单号)` 读详情并清该单未读；可传返回的 next_before_id 为 before_id 读更早消息（不清新回复）。只查当前账号，不共享绑定人类/小机工单，不支持查询码或代查身份。客户端若丢弃未声明参数，用 MCP 地址的 `?schema=legacy` 兼容模式。
-
 guest_claim_code：游客找回/补发认领码。传player_id，可传裸id（如abc）或guest:前缀（如guest:abc）。已有未认领码直接返回；没有码会生成；已认领会返回认领槽位，并提示改用带token地址。
 
 claim（需token）：传claim_code，可选slot=1..5（默认1），把对应游客的全部存档迁到当前token对应账号的同一个目标槽，不能指定其他账号。示例：`account(action="claim", claim_code="你的认领码", slot=2)`。
@@ -37,7 +35,7 @@ claim（需token）：传claim_code，可选slot=1..5（默认1），把对应�
 
 my_saves（需token）：查看所有游戏存档概况，按slots列出各槽位。测试类返回最近结果与进行中测试；海龟汤返回game_count/win_count/提问统计；eco返回天数/池塘评分/存活物种数；ciyuwu返回局数/遗刻/成就；vendor游戏返回存档关键数字。没有存档的游戏不列出。可传human:true查绑定人类存档（只读）；多人类绑定时需传username指定，否则报错列出可选username。未绑定时提示先绑定。
 
-delete_save（需token）：删除当前身份单个游戏存档。传game+slot（1-5，默认1）+confirm:true。仅删当前token对应账号和槽位名下的存档，不能指定或删除其他账号。游客存档无鉴权凭证，不支持删除；想重开可直接换一个新的游客player_id，或注册账号后用认领码把档转入账号管理。删除范围：eco/ciyuwu及vendor游戏的所选槽存档；dnd/mbti/bdsmtest等测评的所选槽进行中测试和结果。海龟汤不可删。
+delete_save（需token）：删除当前身份单个游戏存档。传game+slot（1-5，仅detroit为1-12，默认1）+confirm:true。仅删当前token对应账号和槽位名下的存档，不能指定或删除其他账号。游客存档无鉴权凭证，不支持删除；想重开可直接换一个新的游客player_id，或注册账号后用认领码把档转入账号管理。删除范围：eco/ciyuwu及vendor游戏的所选槽存档；dnd/mbti/bdsmtest等测评的所选槽进行中测试和结果。海龟汤不可删。
 
 change_password（需token）：传old_password+new_password。新密码≥6位。游客无密码不适用。人类可在网页“我的”可选绑定邮箱并从登录页找回密码；小机忘记密码时，已绑定小机由人类网页“我的→我的小机”重置，未绑定联系管理员。
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cedartoy 每日备份：sqlite 一致性快照 + JSON 存档打包 + R2 推送 + 本地 7 天滚动。
+# cedartoy 每日备份：sqlite 一致性快照 + JSON 存档打包 + R2 推送 + 本地最近 3 份日期归档。
 # 由 /etc/cron.d/cedartoy-backup 于每日 3:50 调用（赶在 4:00 guest 清理之前）。
 #
 # 归档布局（相对 /opt/cedartoy）：
@@ -11,18 +11,18 @@
 # 生产数据只读：所有 sqlite 库先用 .backup 导出到临时 staging 目录再打包。
 #
 # 可用环境变量覆盖（自测用）：
-#   BACKUP_ROOT、R2_REMOTE（置空跳过推送）、RETENTION_DAYS、RETRY_DELAY_SECONDS
+#   BACKUP_ROOT、R2_REMOTE（置空跳过推送及清理）、RETENTION_COUNT、RETRY_DELAY_SECONDS
 
 set -uo pipefail
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-APP_ROOT="/opt/cedartoy"
+APP_ROOT="${BACKUP_APP_ROOT:-/opt/cedartoy}"
 DATA_DIR="$APP_ROOT/data"
 BACKUP_ROOT="${BACKUP_ROOT:-/home/backups/cedartoy}"
 # 复用 cedarclio 的 rclone 凭证；token 仅授权 cedarclio-backup 桶，故用独立前缀隔离
 R2_REMOTE="${R2_REMOTE-cloudflare_r2:cedarclio-backup/cedartoy-backups}"
-RETENTION_DAYS="${RETENTION_DAYS:-7}"
+RETENTION_COUNT="${RETENTION_COUNT:-3}"
 MAX_ATTEMPTS=3
 RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-300}"
 RCLONE_BIN="/snap/bin/rclone"
@@ -45,6 +45,51 @@ cleanup_stage() {
   STAGE=""
 }
 trap cleanup_stage EXIT
+
+# 仅按文件名日期清理已在 R2 核对同名、同大小的成功归档；异常包和手工快照保留。
+prune_local_archives() {
+  python3 - "$BACKUP_ROOT" "$RETENTION_COUNT" "$RCLONE_BIN" "$R2_REMOTE" "$ARCHIVE" <<'PY'
+import datetime
+import json
+import re
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+root, count, rclone, remote, current = sys.argv[1:]
+if not re.fullmatch(r"[1-9][0-9]*", count):
+    sys.exit("Invalid RETENTION_COUNT: expected a positive integer; no archives deleted")
+objects = json.loads(subprocess.check_output(
+    [rclone, "lsjson", remote, "--files-only", "--max-depth", "1"], text=True
+))
+remote_sizes = {obj["Path"]: obj["Size"] for obj in objects if not obj["IsDir"]}
+verified = []
+for path in Path(root).iterdir():
+    match = re.fullmatch(r"data_([0-9]{8})\.tar\.gz", path.name)
+    if not match:
+        continue
+    try:
+        datetime.datetime.strptime(match[1], "%Y%m%d")
+    except ValueError:
+        continue
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        continue
+    if info.st_size > 0 and remote_sizes.get(path.name) == info.st_size:
+        verified.append((path, info))
+    else:
+        print(f"Keep unverified local archive: {path.name}")
+if Path(current) not in [path for path, _ in verified]:
+    sys.exit("Current archive not verified in R2; no archives deleted")
+verified.sort(key=lambda item: item[0].name, reverse=True)
+for path, info in verified[int(count):]:
+    if path.lstat() != info:
+        sys.exit(f"Archive changed during verification: {path.name}; stopping prune")
+    path.unlink()
+    print(f"Pruned verified local archive: {path.name} ({info.st_size} bytes)")
+PY
+}
 
 # --- 2. sqlite 一致性快照（.backup 对 WAL 库安全，sessions.db 已启用 WAL） ---
 snapshot_db() {
@@ -168,7 +213,7 @@ PY_CHECK
   fi
   log "Step 3: ok ($(du -h "$ARCHIVE" | cut -f1))"
 
-  # --- 4. 推送 R2（失败不影响本地备份与滚动清理，但以非零退出码上报） ---
+  # --- 4. 推送 R2（失败保留全部本地归档，禁止滚动清理） ---
   if [[ -n "$R2_REMOTE" ]]; then
     log "Step 4: pushing archive to $R2_REMOTE"
     if "$RCLONE_BIN" copy "$ARCHIVE" "$R2_REMOTE"; then
@@ -181,16 +226,20 @@ PY_CHECK
     log "Step 4: skipped (R2_REMOTE empty)"
   fi
 
-  # --- 5. 本地 7 天滚动清理 ---
-  log "Step 5: pruning data_*.tar.gz older than $RETENTION_DAYS days in $BACKUP_ROOT"
-  if ! find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'data_*.tar.gz' -mtime "+$RETENTION_DAYS" -delete; then
-    log "Failed: prune failed"
-    return 1
+  if [[ "$r2_fail" -ne 0 ]]; then
+    log "Backup attempt finished with R2 push failure; local pruning skipped"
+    return 2
   fi
 
-  if [[ "$r2_fail" -ne 0 ]]; then
-    log "Backup attempt finished with R2 push failure"
-    return 2
+  # --- 5. R2 验证后按日期保留最近 N 份；不动远端、临时包或手工快照 ---
+  if [[ -n "$R2_REMOTE" ]]; then
+    log "Step 5: keeping latest $RETENTION_COUNT verified date archives in $BACKUP_ROOT"
+    if ! prune_local_archives; then
+      log "Failed: archive verification or prune failed"
+      return 1
+    fi
+  else
+    log "Step 5: skipped (R2_REMOTE empty; all local archives kept)"
   fi
 
   cleanup_stage

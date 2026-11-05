@@ -99,7 +99,7 @@ class McpSchemaSelectionTests(unittest.TestCase):
             for mode in ("", "?schema=standard", "?schema=legacy"):
                 path = "/mcp" + mode
                 tools = self.post(path, "StrictClient/1.0")["result"]["tools"]
-                self.assertEqual({t["name"] for t in tools}, {"list_games", "get_guide", "play", "account"})
+                self.assertEqual({t["name"] for t in tools}, {"list_games", "get_guide", "play", "account", "feedback"})
                 properties = next(t for t in tools if t["name"] == "account")["inputSchema"]["properties"]
                 for action, handler in (("login_or_register", "_login_or_register_ai"),
                                         ("login", "_login_existing_account")):

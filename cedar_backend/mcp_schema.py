@@ -3,11 +3,25 @@
 import copy
 
 
-_ROOT_TOOL_NAMES = frozenset({"list_games", "get_guide", "play", "account"})
+_ROOT_TOOL_NAMES = frozenset({"list_games", "get_guide", "play", "account", "feedback"})
 
 
 def _build_platform_tools(*, avatar_max_codepoints, max_invite_question, feedback_max_length):
     return [
+        {
+            "name": "feedback",
+            "description": '先读 get_guide(game="feedback")',
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string"},
+                    # Object members are open by default; business fields live in the Guide.
+                    "params": {"type": "object"},
+                },
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+        },
         {
             "name": "list_games",
             "description": "List games. 列出所有可用游戏，返回分类列表（测试类、小游戏类）及简介",
@@ -214,8 +228,8 @@ def _build_platform_tools(*, avatar_max_codepoints, max_invite_question, feedbac
                             "slot": {
                                 "type": "integer",
                                 "minimum": 1,
-                                "maximum": 5,
-                                "description": "账号存档槽 1-5，默认 1。",
+                                "maximum": 12,
+                                "description": "账号存档槽，默认1；范围见Guide。",
                             },
                             "confirm": {
                                 "type": "boolean",
@@ -387,15 +401,11 @@ def _build_platform_tools(*, avatar_max_codepoints, max_invite_question, feedbac
                     "ai_user_id": {"type": "integer", "description": "rename_bound_machine/reset_machine_password 用：当前人类账号已绑定的小机账号 ID"},
                     "human": {"type": "boolean", "description": "my_saves 可选；true 时查看当前账号绑定的人类存档概况"},
                     "game": {"type": "string", "description": "delete_save 用：要删除存档的游戏名"},
-                    "slot": {"type": "integer", "minimum": 1, "maximum": 5, "description": "claim/delete_save 用：账号存档槽 1-5，默认 1；claim 会把全部游客存档迁入同一个目标槽"},
+                    "slot": {"type": "integer", "minimum": 1, "maximum": 12, "description": "默认1；仅detroit删除上限12，其他及claim上限5。"},
                     "confirm": {"type": "boolean", "description": "delete_save/delete_account 必须显式传 true 才执行；其他操作见账号 guide"},
                     "view": {"type": "string", "enum": ["pending", "processed"]},
                     "page": {"type": "integer", "minimum": 1, "maximum": 1000000},
                     "ticket_id": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
-                    "status": {"type": "string"},
-                    "reply": {"type": "string", "maxLength": 4000},
-                    "before_id": {"type": "integer", "minimum": 1},
-                    "internal_note": {"type": "string", "maxLength": 4000},
                     "decision": {"type": "string", "enum": ["approved", "rejected"]},
                     "admin_note": {"type": "string", "minLength": 1, "maxLength": 2000},
                     "player_id": {"type": "string", "description": "guest_claim_code 用：旧游客 player_id，可传原始裸 id 或 guest: 前缀 id"},
@@ -423,7 +433,7 @@ def _build_root_platform_tools(platform_tools):
     properties["action"]["description"] = "操作名；按 get_guide(game) 返回的说明填写。"
     params = properties["params"]
     params["description"] = (
-        "该 action 的业务参数对象，字段按 get_guide(game)；可选 slot=1..5 为平台存档槽。"
+        "该 action 的业务参数对象，字段按 get_guide(game)；可选 slot 为平台存档槽，范围见 Guide。"
     )
     # Keep the save slot and shared cmd text explicit: some clients omit
     # fields absent from the schema even after reading get_guide(game).
@@ -458,6 +468,12 @@ def _build_kelivo_platform_tools(platform_tools, *, feedback_max_length):
     # These clients need explicit business fields. Start from the shared
     # definitions, independently of the compact schema for ordinary clients.
     tools = copy.deepcopy(platform_tools)
+    # Legacy clients can drop undeclared nested keys. A JSON string preserves the
+    # same thin envelope without publishing every feedback business field.
+    feedback_tool = next(tool for tool in tools if tool.get("name") == "feedback")
+    feedback_tool["inputSchema"]["properties"]["params"] = {
+        "type": "string", "description": "JSON 对象字符串",
+    }
     play_tool = next(tool for tool in tools if tool.get("name") == "play")
     play_tool["inputSchema"].pop("allOf", None)
     # Gemini function declarations reject numeric enum values even when the

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import aiosqlite
+from db_diagnostics import ObservedConnection, caller_site
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,7 +30,8 @@ TIMEZONE_MIGRATION_KEY = "timezone_utc_to_shanghai_20260602"
 
 
 async def get_db() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(DB_PATH)
+    origin = caller_site()
+    db = await aiosqlite.connect(DB_PATH, factory=lambda *a, **kw: ObservedConnection(*a, diagnostic_origin=origin, **kw))
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys = ON")
     return db

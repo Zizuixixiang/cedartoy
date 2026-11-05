@@ -6,6 +6,9 @@ Database paths, mutable state and configuration remain owned by the caller.
 """
 
 
+from .auth_activity import update_activity
+
+
 def _hash_password(password, *,
     PWD_CONTEXT,
     _ab64_encode,
@@ -392,11 +395,10 @@ def _current_account(raw_token, *, allow_pending_deletion,
             return user
         if diagnostic is not None:
             diagnostic("activity_update")
-        conn.execute("UPDATE toy_users SET last_active_at = datetime('now', 'localtime') WHERE id = ?", (user_id,))
-        conn.commit()
-        if diagnostic is not None:
-            diagnostic("activity_committed")
-        user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
+        if update_activity(conn, user_id, user.get("last_active_at")):
+            if diagnostic is not None:
+                diagnostic("activity_committed")
+            user = _row_dict(conn.execute("SELECT * FROM toy_users WHERE id = ?", (user_id,)).fetchone())
         user["_auth_token_format"] = auth_token_format
     return user
 

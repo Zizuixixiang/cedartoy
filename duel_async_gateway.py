@@ -10,6 +10,8 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
+from cedar_backend import mcp_diagnostics
 from autochess_adapter import async_edge as autochess_edge
 from contextlib import asynccontextmanager
 
@@ -253,6 +255,12 @@ async def _proxy_to_cedartoy(request, body):
         headers=_forward_request_headers(request),
         timeout=PROXY_TIMEOUT_SECONDS,
     )
+    trace = request.scope.get("mcp_diagnostic")
+    if trace is not None and len(raw) <= 65536:
+        try:
+            await asyncio.to_thread(trace.response, json.loads(raw))
+        except Exception:
+            pass
     return _raw_response(status, headers, raw)
 
 
@@ -666,6 +674,7 @@ def create_app(
     concurrency=None,
     max_wait_seconds=None,
     keepalive_seconds=None,
+    diagnostics=False,
 ):
     if http_client is not None:
         if cedartoy_client is not None or duel_client is not None:
@@ -733,6 +742,11 @@ def create_app(
         openapi_url=None,
         lifespan=lifespan,
     )
+    if diagnostics:
+        application.add_middleware(
+            mcp_diagnostics.Middleware, sink=mcp_diagnostics.EDGE_SINK,
+            db_path=Path(os.getenv("TURTLE_SOUP_DB", Path(__file__).resolve().parent / "turtle-soup/backend/turtle_soup.db")),
+            candidate=_is_root_mcp_path)
     application.state.cedartoy_client = cedartoy_client
     application.state.autochess_client = http_client
     application.state.autochess_slots = asyncio.Semaphore(80)
@@ -752,11 +766,21 @@ def create_app(
     async def gateway_post(request: Request, path: str):
         del path
         raw_body = await request.body()
+        trace = request.scope.get("mcp_diagnostic")
+        if trace is not None and len(raw_body) <= 65536:
+            try:
+                await asyncio.to_thread(trace.payload, json.loads(raw_body))
+            except Exception:
+                pass
         auto_payload = autochess_edge.candidate(raw_body, request.url.path, sys.modules[__name__])
         if auto_payload is not None:
+            if trace is not None:
+                await asyncio.to_thread(trace.emit, "autochess_dispatch")
             return await autochess_edge.handle(request, auto_payload, sys.modules[__name__])
         duel_payload = _duel_rpc_payload(raw_body, request.url.path)
         if duel_payload is None:
+            if trace is not None:
+                await asyncio.to_thread(trace.emit, "proxy_dispatch")
             try:
                 return await _proxy_to_cedartoy(request, raw_body)
             except httpx.HTTPError as exc:
@@ -766,9 +790,11 @@ def create_app(
                     {"error": "CedarToy proxy failed", "detail": str(exc)},
                     502,
                 )
+        if trace is not None:
+            await asyncio.to_thread(trace.emit, "duel_dispatch")
         return await _handle_duel(request, duel_payload)
 
     return application
 
 
-app = create_app()
+app = create_app(diagnostics=True)

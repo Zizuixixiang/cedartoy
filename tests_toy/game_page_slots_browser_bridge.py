@@ -101,7 +101,7 @@ def main():
                 saves[player] = payload['marker']; result = {'marker': saves[player]}
             else: result = {'marker': saves.get(player, 'empty')}
             return 200, {'content-type': 'application/json'}, json.dumps(result).encode()
-        stack.enter_context(patch.object(server.detroit_adapter, 'browser_api', side_effect=detroit_api))
+        stack.enter_context(patch.object(server.detroit_adapter, 'browser_machine_api', side_effect=detroit_api))
         class Handler(server.CedarToyHandler):
             def log_message(self, *_): pass
         httpd = ThreadingHTTPServer(('127.0.0.1', 0), Handler)

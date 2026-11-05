@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Twice-daily monitor for the RackNerd Black Friday 2025 4GB plan only."""
+"""Exact 2025 restock monitor with an opt-in public promotion-list monitor."""
 from __future__ import annotations
 
 import argparse
@@ -21,6 +21,7 @@ from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
+from urllib.robotparser import RobotFileParser
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "deploy/racknerd-monitor.json"
@@ -28,6 +29,9 @@ RUNTIME = ROOT / "data/racknerd-monitor"
 LOG = logging.getLogger("racknerd-monitor")
 OFFICIAL = "https://my.racknerd.com/index.php?rp=/store/blackfriday2025/4-gb-kvm-vps-black-friday-2025"
 CLUB = "https://racknerd.club/en/black-friday-2025"
+SPECIALS = "https://www.racknerd.com/specials/"
+SPECIALS_ROBOTS = "https://www.racknerd.com/robots.txt"
+USER_AGENT = "RackNerdOfferMonitor/2.0"
 NAME = "4 GB KVM VPS (Black Friday 2025)"
 TARGET = {"name": NAME, "ram_mb": 4096, "cpu_cores": 3, "disk_gb": 65,
           "annual_cents": 2998, "official_url": OFFICIAL, "club_url": CLUB}
@@ -50,6 +54,8 @@ def allowed_url(url):
     u = urlsplit(url)
     if u.scheme != "https" or u.username or u.password or u.port not in (None, 443):
         raise EvidenceError("unapproved_url")
+    if url in (SPECIALS, SPECIALS_ROBOTS):
+        return url
     if u.hostname == "racknerd.club" and u.path == "/en/black-friday-2025" and not u.query:
         return url
     if u.hostname == "my.racknerd.com":
@@ -78,7 +84,7 @@ class Fetcher:
         time.sleep(max(0, self.interval - (time.monotonic() - self.last)))
         self.last = time.monotonic()
         req = Request(url, headers={
-            "User-Agent": "RackNerdOfferMonitor/2.0 (twice daily)",
+            "User-Agent": USER_AGENT + " (twice daily)",
             "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9", "Cache-Control": "no-cache, max-age=0",
         })
@@ -95,6 +101,22 @@ class Fetcher:
             if len(body) > 2_000_000:
                 raise EvidenceError("page_too_large")
             return body.decode("utf-8", errors="replace"), final
+
+
+class NoPromotionRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise EvidenceError("promotion_redirect_refused")
+
+
+class PromotionFetcher(Fetcher):
+    def __init__(self):
+        super().__init__()
+        self.opener = build_opener(ProxyHandler({}), NoPromotionRedirect())
+
+    def get(self, url):
+        if url not in (SPECIALS, SPECIALS_ROBOTS):
+            raise EvidenceError("unapproved_promotion_url")
+        return super().get(url)
 
 
 class Node:
@@ -232,6 +254,8 @@ def validate_config(config):
         raise EvidenceError("invalid_config")
     if not 43200 <= config["baseline_max_age_seconds"] <= 172800:
         raise EvidenceError("invalid_baseline_age")
+    if not isinstance(config.get("promotions_enabled", False), bool):
+        raise EvidenceError("invalid_promotions_config")
 
 
 def scan(config, fetcher, state, wait=time.sleep):
@@ -266,6 +290,154 @@ def scan(config, fetcher, state, wait=time.sleep):
     return observations
 
 
+def check_promotions_robots(fetcher):
+    """Fail closed; only the reviewed public list is fetched, never its order links."""
+    text, final = fetcher.get(SPECIALS_ROBOTS)
+    if final != SPECIALS_ROBOTS or not re.search(r"(?im)^user-agent\s*:", text) or "<html" in text.lower():
+        raise EvidenceError("robots_unreadable")
+    robots = RobotFileParser()
+    robots.parse(text.splitlines())
+    if not robots.can_fetch(USER_AGENT, SPECIALS):
+        raise EvidenceError("robots_disallowed")
+    delay = robots.crawl_delay(USER_AGENT) or 0
+    rate = robots.request_rate(USER_AGENT)
+    delay = max(delay, rate.seconds / rate.requests if rate and rate.requests else 0)
+    if delay > 60:
+        raise EvidenceError("robots_rate_not_supported")
+    fetcher.interval = max(fetcher.interval, delay)
+    # RobotFileParser does not implement wildcard paths. Conservatively honor
+    # every matching wildcard Disallow, including those for other agents.
+    for line in text.splitlines():
+        key, _, value = line.partition("#")[0].partition(":")
+        value = value.strip()
+        if key.strip().lower() == "disallow" and ("*" in value or "$" in value):
+            pattern = re.escape(value.rstrip("$")).replace(r"\*", ".*")
+            if re.match(pattern + ("$" if value.endswith("$") else ""), "/specials/"):
+                raise EvidenceError("robots_disallowed")
+
+
+def promotion_link(href):
+    """Normalize identity without requesting the checkout or affiliate URL."""
+    u = urlsplit(href)
+    if u.scheme != "https" or u.netloc != "my.racknerd.com" or u.fragment:
+        return None
+    query = parse_qs(u.query)
+    if u.path == "/cart.php" and query.get("a") == ["add"] and len(query.get("pid", [])) == 1:
+        pid = query["pid"][0]
+        if re.fullmatch(r"[1-9]\d{0,6}", pid):
+            return "pid:" + pid, "https://my.racknerd.com/cart.php?a=add&pid=" + pid
+    route = query.get("rp", [u.path])[0]
+    if re.fullmatch(r"/store/[a-z0-9-]+/[a-z0-9-]+", route):
+        return "route:" + route, "https://my.racknerd.com/index.php?" + urlencode({"rp": route})
+    return None
+
+
+def parse_promotions(html, url):
+    if url != SPECIALS:
+        raise EvidenceError("promotions_wrong_page")
+    root = Document(html).root
+    titles = [n for n in root.nodes("h3") if re.fullmatch(r"\d+(?:\.\d+)?\s*GB\s+KVM VPS", n.text, re.I)]
+    if not titles:
+        raise EvidenceError("promotion_cards_missing")
+    offers = {}
+    for title in titles:
+        # Use the smallest container with a single plan heading and its order
+        # link. Never combine prices/specs from adjacent cards or the demo UI.
+        cards = [n for n in root.nodes() if n.tag in ("div", "article", "section", "li")
+                 and title in list(n.nodes("h3")) and len(list(n.nodes("h3"))) == 1
+                 and any(promotion_link(a.attrs.get("href", "")) for a in n.nodes("a"))
+                 and annual_prices(n.text)]
+        if not cards:
+            raise EvidenceError("promotion_card_incomplete")
+        card = cards[-1]
+        ram = {int(Decimal(v) * 1024) for v in re.findall(r"\b(\d+(?:\.\d+)?)\s*GB\s+(?:DDR\d*\s+)?RAM\b", card.text, re.I)}
+        prices = annual_prices(card.text)
+        links = {p for a in card.nodes("a") if (p := promotion_link(a.attrs.get("href", "")))}
+        if len(ram) != 1 or len(prices) != 1 or len(links) != 1:
+            raise EvidenceError("promotion_card_ambiguous")
+        memory, price = ram.pop(), prices.pop()
+        if memory != int(Decimal(re.match(r"\d+(?:\.\d+)?", title.text)[0]) * 1024) or price <= 0:
+            raise EvidenceError("promotion_specs_mismatch")
+        key, order_url = links.pop()
+        if key in offers:
+            raise EvidenceError("promotion_duplicate_identity")
+        labels = [a for a in card.nodes("a") if promotion_link(a.attrs.get("href", ""))]
+        sold_out = bool(re.search(r"\b(?:sold out|out of stock|0 available)\b", card.text, re.I))
+        order_link = any(a.text.lower() in ("order now", "buy now", "available", "in stock") and not disabled(a) for a in labels)
+        offers[key] = {"name": title.text, "ram_mb": memory, "annual_cents": price,
+                       "listing": "sold_out" if sold_out else "order_link" if order_link else "unknown",
+                       "order_url": order_url}
+    return offers
+
+
+def scan_promotions(fetcher, wait=time.sleep):
+    result = {"source": SPECIALS, "error": None, "offers": {}, "checks": 0}
+    try:
+        check_promotions_robots(fetcher)
+        first = parse_promotions(*fetcher.get(SPECIALS))
+        result["checks"] = 1
+        wait(20)
+        second = parse_promotions(*fetcher.get(SPECIALS))
+        result["checks"] = 2
+        if first != second:
+            raise EvidenceError("promotion_confirmation_conflict")
+        result["offers"] = second
+    except Exception as error:
+        result["error"] = safe_error(error)
+    result["checked_at"] = time.time()
+    return result
+
+
+def observe_promotions(state, result, now=None):
+    """A separate, silent first baseline. Missing pages never mean sold out."""
+    now = time.time() if now is None else now
+    promo = state.setdefault("promotions", {"offers": {}, "initialized": False})
+    promo["last_read"] = {k: v for k, v in result.items() if k != "offers"}
+    state["pending"].pop("promotions", None)  # Rebuild only from current evidence.
+    if result["error"]:
+        return []
+    events = []
+    for key, offer in result["offers"].items():
+        # 925 remains exclusively owned by the original exact-plan monitor.
+        if key in ("pid:925", promotion_link(OFFICIAL)[0]):
+            continue
+        previous = promo["offers"].get(key)
+        record = promo["offers"].setdefault(key, {"reference_price": offer["annual_cents"]})
+        old = copy.deepcopy(record)
+        record.update({"offer": offer, "seen_at": now})
+        eligible = offer["ram_mb"] >= 4096 and offer["annual_cents"] <= 3500 and offer["listing"] != "sold_out"
+        reason = None
+        if eligible and promo["initialized"]:
+            if previous is None:
+                reason = "新发现套餐（不代表刚上架）"
+            elif (old["reference_price"] - offer["annual_cents"] >= max(200, old["reference_price"] * .1)
+                  and offer["annual_cents"] < old["offer"]["annual_cents"]):
+                reason = "列表价格明显下降"
+            elif old.get("offer", {}).get("listing") == "sold_out" and offer["listing"] == "order_link" and 0 <= now - old.get("seen_at", 0) <= 172800:
+                reason = "疑似补货（列表按钮变化）"
+        pending = old.get("event")
+        if pending and (pending["offer"] != offer or not 0 <= now - pending["created_at"] <= 172800):
+            pending = None
+        if reason and not pending:
+            pending = {"reason": reason, "offer": copy.deepcopy(offer), "created_at": now}
+        record["event"] = pending if eligible else None
+        if record["event"] and ("notified_at" not in record or now - record["notified_at"] >= 86400):
+            events.append((key, record["event"]))
+    promo["initialized"] = True
+    if not events:
+        return []
+    # One digest per scan, at most five plans; the remainder waits for revalidation.
+    events = events[:5]
+    lines = ["RackNerd 促销列表线索 · CedarStar/CedarClio 候选",
+             "来源：官方公开促销列表 " + SPECIALS,
+             "库存、结账价格、续费及机房未核实；Order Now 不等于有货。请手动核验。"]
+    for key, event in events:
+        offer = event["offer"]
+        lines.append(f"{event['reason']}：{offer['name']} · ${offer['annual_cents'] / 100:.2f}/年\n{offer['order_url']}")
+    state["pending"]["promotions"] = {"text": "\n".join(lines), "items": [key for key, _ in events], "created_at": now}
+    return ["promotions"]
+
+
 def empty_state():
     return {"version": 2, "target": OFFICIAL, "sources": {}, "pending": {},
             "failure_count": 0, "failure_alerted": False}
@@ -283,6 +455,10 @@ def read_state(path):
         return migrated
     if state.get("version") != 2 or state.get("target") != OFFICIAL or any(not isinstance(state.get(k), dict) for k in ("sources", "pending")):
         raise EvidenceError("invalid_state_preserved")
+    if "promotions" in state:
+        promo = state["promotions"]
+        if not isinstance(promo, dict) or not isinstance(promo.get("offers"), dict) or not isinstance(promo.get("initialized"), bool):
+            raise EvidenceError("invalid_state_preserved")
     return state
 
 
@@ -405,9 +581,15 @@ def deliver(state, ready, send, persist):
         except Exception as error:
             LOG.warning("telegram_failed kind=%s pending=%d", safe_error(error), len(ready) - sent)
             return sent, False
-        state["pending"].pop(key)
+        pending = state["pending"].pop(key)
         if key == "failure":
             state["failure_alerted"] = True
+        elif key == "promotions":
+            for item in pending["items"]:
+                record = state["promotions"]["offers"][item]
+                record["reference_price"] = record["offer"]["annual_cents"]
+                record["notified_at"] = pending["created_at"]
+                record["event"] = None
         else:
             state["sources"]["official" if key == "confirmed" else "club"]["notified"] = True
         persist(state)
@@ -419,10 +601,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--runtime-dir", type=Path, default=RUNTIME)
+    parser.add_argument("--check-promotions", action="store_true", help="include the unverified public-list parser in --dry-run only")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="fetch and print; never send or change state")
     modes.add_argument("--initialize", action="store_true", help="silently seed target baseline, including migration from v1; refuses an existing target baseline")
     args = parser.parse_args(argv)
+    if args.check_promotions and not args.dry_run:
+        parser.error("--check-promotions requires --dry-run")
     os.umask(0o077)
     args.runtime_dir.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(args.runtime_dir / "monitor.log", maxBytes=262144, backupCount=2)
@@ -452,12 +637,18 @@ def main(argv=None):
             if args.initialize and mode == "unavailable":
                 raise EvidenceError("baseline_requires_usable_signal")
             ready = observe(state, observations, config, args.initialize)
+            promotions = None
+            if config.get("promotions_enabled", False) or args.check_promotions:
+                promotions = scan_promotions(PromotionFetcher())
+                ready += observe_promotions(state, promotions)
+                LOG.info("promotions_scan error=%s plans=%d checks=%d", promotions["error"], len(promotions["offers"]), promotions["checks"])
             report = {"target": TARGET, "mode": mode, "observations": observations,
+                      "promotions": promotions, "promotions_enabled": config.get("promotions_enabled", False),
                       "would_notify": [{"kind": k, "text": state["pending"][k]["text"]} for k in ready],
                       "limitation": "Club has no inventory update timestamp; changes are unverified auxiliary clues only."}
             if args.dry_run:
                 print(json.dumps(report, ensure_ascii=False, indent=2))
-                return 1 if mode == "unavailable" else 0
+                return 1 if mode == "unavailable" or (promotions and promotions["error"]) else 0
             save_state(path, state)
             if args.initialize:
                 sent, ok = 0, True

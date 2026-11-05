@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import http.cookiejar
 import http.client
 import importlib
@@ -194,8 +195,9 @@ class DetroitIntegrationTests(unittest.TestCase):
                 raise server._McpError(-32001, "未登录：当前是游客模式。已注册请把 MCP 地址改成 toy.cedarstar.org/你的token 再重连；未注册请先 login_or_register。")
             return {"id": 7, "username": "人类", "is_ai": 0}
 
-        def bound_target(user, requested_player):
-            return target if user.get("id") == 7 and requested_player == "42:3" else None
+        def bound_target(user, requested_player, *, game=None):
+            self.assertEqual(game, "detroit")
+            return target if user.get("id") == 7 and requested_player in {"42", "42:3"} else None
 
         host_fixture = (FIXTURE_ROOT / "detroit_host_v17.html").read_bytes()
         browser_payload = json.dumps(
@@ -211,7 +213,7 @@ class DetroitIntegrationTests(unittest.TestCase):
             return_value=(200, "text/html; charset=utf-8", host_fixture),
         ), patch.object(
             server.detroit_adapter,
-            "browser_api",
+            "browser_machine_api",
             return_value=(200, {"content-type": "application/json; charset=utf-8"}, browser_payload),
         ) as browser_api:
             httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.CedarToyHandler)
@@ -231,12 +233,12 @@ class DetroitIntegrationTests(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                     self.assertIn("底特律盲玩主持台", response.read().decode("utf-8"))
                 self.assertEqual({cookie.name for cookie in jar}, {"detroit_token"})
-                self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(response.url).query), {"player": ["42:3"]})
+                self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(response.url).query), {"player": ["42"]})
                 self.assertTrue(all(not cookie.secure for cookie in jar))
 
                 with opener.open(f"{base}/detroit/api/sessions?player=42%3A3") as response:
                     self.assertEqual(json.loads(response.read())["sessions"][0]["name"], "已有第一局")
-                browser_api.assert_called_once_with("42:3", "GET", "sessions", query={}, payload=None)
+                browser_api.assert_called_once_with("42", "GET", "sessions", query={}, payload=None)
 
                 unauthorized = urllib.request.build_opener(urllib.request.ProxyHandler({}))
                 with self.assertRaises(urllib.error.HTTPError) as denied:
@@ -350,7 +352,10 @@ class DetroitIntegrationTests(unittest.TestCase):
             "format": "Detroit Blind Run 完整存檔",
             "session": {"id": "save_abcdefghijk", "name": "自己的"},
         }
-        with patch.object(detroit_adapter, "_browser_call_unlocked", return_value=FakeResponse(backup)):
+        backup_response = FakeResponse(backup)
+        backup_response.headers.update({"x-save-revision": "1", "x-backup-kind": "full-save",
+                                        "x-backup-sha256": hashlib.sha256(backup_response.content).hexdigest()})
+        with patch.object(detroit_adapter, "_browser_call_unlocked", return_value=backup_response):
             _status, headers, body = detroit_adapter.browser_api(
                 "42", "GET", "backup", query={"id": detroit_adapter.PUBLIC_SAVE_ID}
             )
@@ -444,29 +449,18 @@ class DetroitIntegrationTests(unittest.TestCase):
         detroit_picker = homepage.split("async function openDetroitPicker", 1)[1].split(
             "function renderCampingPlazaSlotPicker", 1
         )[0]
-        self.assertIn(".filter((machine) => machine.slots.length > 0)", detroit_picker)
-        self.assertIn("还没有底特律存档", detroit_picker)
-        self.assertIn("if (machine.slots.length === 1)", detroit_picker)
+        self.assertNotIn("/api/auth/saves", detroit_picker)
+        self.assertNotIn("slots", detroit_picker)
+        self.assertIn("if (bindings.length === 1)", detroit_picker)
         self.assertNotIn("[1, 2, 3, 4, 5].map", detroit_picker)
 
-    def test_rewritten_page_opens_existing_save_only_on_initial_load(self):
+    def test_rewritten_page_preserves_original_save_home(self):
         script = detroit_adapter.rewrite_public(
             "host.js", (FIXTURE_ROOT / "detroit_host_v17.js").read_bytes()
         ).decode("utf-8")
-        self.assertIn("async function showCedarToyInitialSave()", script)
-        self.assertIn("const listing = await api('/detroit/api/sessions')", script)
-        self.assertIn("if (!sessions.length) return showHome();", script)
-        self.assertIn(
-            "render(await api(`/detroit/api/session?id=${encodeURIComponent(sessions[0].id)}`));",
-            script,
-        )
-        self.assertIn("showCedarToyInitialSave().catch", script)
-        self.assertNotIn("showHome().catch", script)
-        self.assertIn("async function showHome()", script)
+        self.assertNotIn("showCedarToyInitialSave", script)
+        self.assertIn("showHome().catch", script)
         self.assertIn("addEventListener('click', showHome)", script)
-        initial_bootstrap = script.split("async function showCedarToyInitialSave()", 1)[1]
-        self.assertNotIn("method: 'POST'", initial_bootstrap)
-        self.assertNotIn("create_save", initial_bootstrap)
 
     def test_root_tool_schema_guide_and_log_redaction(self):
         play_tool = next(tool for tool in server._PLATFORM_TOOLS if tool["name"] == "play")

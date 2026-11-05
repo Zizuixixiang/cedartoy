@@ -6,6 +6,11 @@ Database paths, mutable state and configuration remain owned by the caller.
 """
 
 
+def max_save_slot(game=None):
+    """Only Detroit has the extended account slots; identities stay unchanged."""
+    return 12 if game == "detroit" else 5
+
+
 def _game_player_ids(user, *,
     GAME_PLAYER_ID_RE,
     _account_username_aliases,
@@ -53,6 +58,7 @@ def _normalize_save_slot(slot, *,
 
 def _bound_ai_slot_target_for_user(user, requested_player, *,
     MIN_SAVE_SLOT,
+    MAX_SAVE_SLOT=5,
     _account_slot_player_id,
     _db_connect,
     re,
@@ -60,11 +66,13 @@ def _bound_ai_slot_target_for_user(user, requested_player, *,
     """Resolve a browser-supplied player to one canonical bound AI save slot."""
     if not user or user.get("is_ai"):
         return None
-    match = re.fullmatch(r"([1-9][0-9]*)(?::([1-5]))?", str(requested_player or ""))
+    match = re.fullmatch(r"([1-9][0-9]*)(?::([1-9][0-9]?))?", str(requested_player or ""))
     if not match:
         return None
     ai_user_id = int(match.group(1))
     slot = int(match.group(2) or MIN_SAVE_SLOT)
+    if not MIN_SAVE_SLOT <= slot <= MAX_SAVE_SLOT:
+        return None
     with _db_connect() as conn:
         row = conn.execute(
             """
@@ -144,9 +152,9 @@ def _save_slot_from_arguments(arguments, *,
     params = arguments.get("params")
     raw = params.get("slot", MIN_SAVE_SLOT) if isinstance(params, dict) else MIN_SAVE_SLOT
     if isinstance(raw, bool) or not isinstance(raw, int):
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+        raise _McpError(-32602, f"slot 必须是 {MIN_SAVE_SLOT}-{MAX_SAVE_SLOT} 的整数")
     if raw < MIN_SAVE_SLOT or raw > MAX_SAVE_SLOT:
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+        raise _McpError(-32602, f"slot 必须是 {MIN_SAVE_SLOT}-{MAX_SAVE_SLOT} 的整数")
     return raw
 
 
@@ -157,10 +165,10 @@ def _save_slot_from_account_arguments(arguments, *,
 ):
     raw = arguments.get("slot", MIN_SAVE_SLOT)
     if isinstance(raw, bool) or not isinstance(raw, int):
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+        raise _McpError(-32602, f"slot 必须是 {MIN_SAVE_SLOT}-{MAX_SAVE_SLOT} 的整数")
     slot = raw
     if slot < MIN_SAVE_SLOT or slot > MAX_SAVE_SLOT:
-        raise _McpError(-32602, "slot 必须是 1-5 的整数")
+        raise _McpError(-32602, f"slot 必须是 {MIN_SAVE_SLOT}-{MAX_SAVE_SLOT} 的整数")
     return slot
 
 

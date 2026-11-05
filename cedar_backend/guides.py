@@ -41,11 +41,11 @@ AI_LIFE_GUIDE = """# ai_life·AI人生桌游
 
 
 DETROIT_GUIDE = """# detroit·底特律：变人
-调用：play(game="detroit", action="操作", params={...})；params.slot=1..5（默认 1）。人类网页选择绑定小机同槽，即与小机共档。
+调用：play(game="detroit", action="操作", params={...})；params.slot=1..12（默认 1，仅本作扩槽）。人类选择绑定小机进入原版主持台，管理全部存档；网页新建/导入自动分配空槽，与小机共档。
 
 操作：
 - list_saves 查槽位。
-- create_save 传 name（1–60 字）、difficulty（casual/experienced/hardcore）；非空槽不会静默覆盖，确认覆盖另传 confirm=true。
+- create_save 传 name（1–60 字）、difficulty（casual/experienced/hardcore），可选 locale（zh-Hant/zh-Hans/en/ja）；非空槽不会静默覆盖，确认覆盖另传 confirm=true。
 - read_current_scene 取 revision、node_id、剧情和选项。
 - play_step 传 revision、node_id、label、reason（1–500 字），记录选择并推进；record_choice 同参但只记录。
 - continue_scene 无选项时传 revision、node_id。
@@ -247,7 +247,8 @@ def _tool_get_guide(
     if game == "ai_life":
         return json.dumps({"game": "ai_life", "guide": guide_with_slot_note(guide_texts["AI_LIFE_GUIDE"])}, ensure_ascii=False)
     if game == "detroit":
-        return json.dumps({"game": "detroit", "guide": guide_with_slot_note(guide_texts["DETROIT_GUIDE"])}, ensure_ascii=False)
+        return json.dumps({"game": "detroit", "guide": guide_texts["DETROIT_GUIDE"] +
+                           SAVE_SLOT_GUIDE_NOTE.replace("slot=1-5", "slot=1-12")}, ensure_ascii=False)
     if game == "tarot":
         return json.dumps({"game": "tarot", "guide": guide_texts["TAROT_GUIDE"]}, ensure_ascii=False)
     if game == "garden_cat":

@@ -27,6 +27,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
     _feedback_unread_reminder,
     _root_tools,
     _tool_account,
+    _tool_feedback,
     _tool_get_guide,
     _tool_list_games,
     _tool_play,
@@ -111,6 +112,8 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                         path_token=path_token or bearer_token,
                         client_ip=client_ip,
                     )
+                elif name == "feedback":
+                    text = _tool_feedback(arguments, path_token=path_token or bearer_token, client_ip=client_ip)
                 else:
                     raise _McpError(-32601, f"未知工具：{name}")
                 content = list(text.content) if isinstance(text, ContentResult) else [{"type": "text", "text": text}]
@@ -711,8 +714,6 @@ def _tool_account(arguments, user_agent, path_token, client_ip, *,
     _set_avatar,
     _workkk_save_summary,
     admin_recovery_mcp,
-    _admin_feedback,
-    _account_feedback,
     json,
 ):
     action = arguments.get("action")
@@ -739,12 +740,6 @@ def _tool_account(arguments, user_agent, path_token, client_ip, *,
         result = _generate_binding_token(raw_token)
         return json.dumps(result, ensure_ascii=False)
     raw_token = arguments.get("token") or path_token
-    if action in ("feedback_list", "feedback_detail"):
-        if path_token and arguments.get("token") not in (None, path_token):
-            raise _McpError(-32602, "反馈查询身份与当前连接不一致")
-        return json.dumps(_account_feedback(arguments, path_token or raw_token), ensure_ascii=False)
-    if isinstance(action, str) and action.startswith("admin_feedback_"):
-        return json.dumps(_admin_feedback(arguments, raw_token), ensure_ascii=False)
     if isinstance(action, str) and action in admin_recovery_mcp.ACTIONS:
         result = admin_recovery_mcp.handle(
             arguments, raw_token, require_admin=_require_admin_account,

@@ -523,5 +523,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--garden-cat|--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--duel-ka-wu-xing|--nowhere|--shared-craft|--autochess]")
+        sys.exit("用法：persistence_check.py [--garden-cat|--autochess|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--duel-ka-wu-xing|--nowhere|--candle|--deeptalk|--research-scales|--shared-craft]")
     sys.exit(main())

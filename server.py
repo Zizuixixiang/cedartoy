@@ -135,6 +135,7 @@ from cedar_backend import satellite_proxy
 from cedar_backend import http_handler, http_server
 from cedar_backend.web import responses as web_responses
 from cedar_backend import duel_bridge
+from cedar_backend import mcp_diagnostics
 from cedar_backend import mcp_dispatch
 from cedar_backend import game_dispatch
 from cedar_backend import save_management
@@ -419,6 +420,7 @@ def _handle_root_mcp(payload, user_agent="", path_token=None, client_ip=None, be
         _feedback_unread_reminder=_feedback_unread_reminder,
         _root_tools=_root_tools,
         _tool_account=_tool_account,
+        _tool_feedback=_tool_feedback,
         _tool_get_guide=_tool_get_guide,
         _tool_list_games=_tool_list_games,
         _tool_play=_tool_play,
@@ -434,7 +436,8 @@ def _duel_mcp_error_text(exc):
 
 
 def _db_connect():
-    conn = sqlite3.connect(TURTLE_DB_PATH)
+    from cedar_backend.db_observability import ObservedConnection
+    conn = sqlite3.connect(TURTLE_DB_PATH, factory=ObservedConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -462,11 +465,11 @@ def _account_slot_player_id(user_id, slot):
     return player_identity._account_slot_player_id(user_id, slot)
 
 
-def _account_slot_player_ids(user):
+def _account_slot_player_ids(user, *, game=None):
     return player_identity._account_slot_player_ids(
         user,
         GAME_PLAYER_ID_RE=GAME_PLAYER_ID_RE,
-        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MAX_SAVE_SLOT=player_identity.max_save_slot(game),
         MIN_SAVE_SLOT=MIN_SAVE_SLOT,
         _account_slot_player_id=_account_slot_player_id,
         _account_username_aliases=_account_username_aliases,
@@ -550,10 +553,11 @@ def _garden_cat_watchable_gardens(raw_token, *, diagnostic=None):
     return result
 
 
-def _bound_ai_slot_target_for_user(user, requested_player):
+def _bound_ai_slot_target_for_user(user, requested_player, *, game=None):
     return player_identity._bound_ai_slot_target_for_user(
         user, requested_player,
         MIN_SAVE_SLOT=MIN_SAVE_SLOT,
+        MAX_SAVE_SLOT=player_identity.max_save_slot(game),
         _account_slot_player_id=_account_slot_player_id,
         _db_connect=_db_connect,
         re=re,
@@ -2158,16 +2162,11 @@ def _feedback_store():
         normalize_email=_normalize_email, send_email=_send_feedback_email)
 
 
-def _account_feedback(arguments, raw_token):
-    user = _current_account(raw_token)
-    action = arguments.get("action")
-    fields = {"feedback_list": {"page"}, "feedback_detail": {"ticket_id", "before_id"}}
-    if action not in fields or set(arguments) - (fields[action] | {"action", "token"}):
-        raise _McpError(-32602, "反馈查询参数无效，请查看 account Guide")
-    store = _feedback_store()
-    if action == "feedback_list":
-        return store.listing(user["id"], page=arguments.get("page", 1))
-    return store.detail(arguments.get("ticket_id"), user["id"], before_id=arguments.get("before_id"))
+def _tool_feedback(arguments, *, path_token=None, client_ip=None):
+    user = _current_account(path_token)
+    return json.dumps(feedback_tickets.handle_mcp(
+        arguments, user["id"], client_ip or "unknown", store=_feedback_store(), error=_McpError,
+        admin_feedback=lambda arguments: _admin_feedback(arguments, path_token)), ensure_ascii=False)
 
 
 def _feedback_unread_reminder(raw_token):
@@ -2179,7 +2178,7 @@ def _feedback_unread_reminder(raw_token):
         # The lightweight game reminder ID resolver is insufficient for legacy JWTs.
         user = _current_account(raw_token)
         if user.get("is_ai") and _feedback_store().claim_notification(user["id"]):
-            return '有反馈未读，可用 account(action="feedback_list") 查看。'
+            return '有反馈未读，可用 feedback(action="list",params={"unread_only":true}) 查看。'
     except _McpError:
         return ""
     except Exception:
@@ -3062,16 +3061,16 @@ def _override_player_id(arguments, player_id):
 def _save_slot_from_arguments(arguments):
     return player_identity._save_slot_from_arguments(
         arguments,
-        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MAX_SAVE_SLOT=player_identity.max_save_slot(arguments.get("game")),
         MIN_SAVE_SLOT=MIN_SAVE_SLOT,
         _McpError=_McpError,
     )
 
 
-def _save_slot_from_account_arguments(arguments):
+def _save_slot_from_account_arguments(arguments, *, game=None):
     return player_identity._save_slot_from_account_arguments(
         arguments,
-        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MAX_SAVE_SLOT=player_identity.max_save_slot(game),
         MIN_SAVE_SLOT=MIN_SAVE_SLOT,
         _McpError=_McpError,
     )
@@ -3534,7 +3533,7 @@ def _nowhere_web_saves(raw_token):
 def _filtered_account_web_saves(raw_token, game):
     return save_management._filtered_account_web_saves(
         raw_token, game,
-        MAX_SAVE_SLOT=MAX_SAVE_SLOT,
+        MAX_SAVE_SLOT=player_identity.max_save_slot(game),
         MIN_SAVE_SLOT=MIN_SAVE_SLOT,
         ThreadPoolExecutor=ThreadPoolExecutor,
         VendorCmdError=VendorCmdError,
@@ -3650,6 +3649,16 @@ def _game_maintenance(game):
 
 def _tool_get_guide(arguments, *, path_token=None):
     game = arguments.get("game")
+    if game == "feedback":
+        guide = (GUIDE_DIR / "feedback.md").read_text(encoding="utf-8")
+        if path_token:
+            try:
+                _require_admin_account(path_token)
+            except (_McpError, sqlite3.Error):
+                pass  # Public guide remains available; admin appendix fails closed.
+            else:
+                guide += "\n" + (GUIDE_DIR / "_feedback_admin.md").read_text(encoding="utf-8")
+        return json.dumps({"game": game, "guide": guide}, ensure_ascii=False)
     if game == "autochess":
         guide = (Path(__file__).resolve().parent / "autochess_adapter/guide.txt").read_text()
         if path_token:
@@ -4215,8 +4224,6 @@ def _tool_account(arguments, user_agent="", path_token=None, client_ip=None):
         _set_avatar=_set_avatar,
         _workkk_save_summary=_workkk_save_summary,
         admin_recovery_mcp=admin_recovery_mcp,
-        _admin_feedback=_admin_feedback,
-        _account_feedback=_account_feedback,
         json=json,
     )
 
@@ -4778,7 +4785,30 @@ class CedarToyHandler(BaseHTTPRequestHandler):
     server_version = "CedarToy/1.0"
     protocol_version = "HTTP/1.1"
 
+    def _start_mcp_diagnostic(self, path_token=None):
+        if not hasattr(self, "command"):
+            return
+        self._mcp_diagnostic = mcp_diagnostics.start(mcp_diagnostics.MAIN_SINK, "main", self.command)
+        if self._mcp_diagnostic is not None:
+            self._mcp_diagnostic.identify(TURTLE_DB_PATH, path_token or _extract_bearer(self.headers))
+
     def do_POST(self):
+        self._mcp_diagnostic = None
+        outcome = "completed"
+        try:
+            return self._do_POST()
+        except (BrokenPipeError, ConnectionResetError):
+            outcome = "disconnected"
+            raise
+        except Exception:
+            outcome = "exception"
+            raise
+        finally:
+            if self._mcp_diagnostic is not None:
+                self._mcp_diagnostic.finish(outcome)
+            self._mcp_diagnostic = None
+
+    def _do_POST(self):
         if self.path.startswith("/_internal/autochess-gateway/"):
             return autochess_gateway.serve(self, sys.modules[__name__])
         if self.path.split("?", 1)[0] == "/autochess" or self.path.startswith("/autochess/"):
@@ -4813,6 +4843,25 @@ class CedarToyHandler(BaseHTTPRequestHandler):
         )
 
     def do_GET(self):
+        self._mcp_diagnostic = None
+        path, path_token = self._request_path_and_token()
+        if getattr(self, "headers", None) is not None and self._is_mcp_event_stream_get(path):
+            self._start_mcp_diagnostic(path_token)
+        outcome = "completed"
+        try:
+            return self._do_GET()
+        except (BrokenPipeError, ConnectionResetError):
+            outcome = "disconnected"
+            raise
+        except Exception:
+            outcome = "exception"
+            raise
+        finally:
+            if self._mcp_diagnostic is not None:
+                self._mcp_diagnostic.finish(outcome)
+            self._mcp_diagnostic = None
+
+    def _do_GET(self):
         if self.path.split("?", 1)[0] == "/autochess" or self.path.startswith("/autochess/"):
             return autochess_web.serve(self, sys.modules[__name__])
         if self.path.split("?", 1)[0] == "/shared-craft" or self.path.startswith("/shared-craft/"):
@@ -5053,7 +5102,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             raise
         if user.get("is_ai"):
             raise _McpError(-32003, "底特律网页只供绑定人类进入")
-        target = _bound_ai_slot_target_for_user(user, player)
+        target = _bound_ai_slot_target_for_user(user, player, game="detroit")
         if target is None:
             raise _McpError(-32003, "你没有绑定这只小机或槽位无效")
         target = {**target, "activity_user": {"id": user["id"], "is_ai": False}}
@@ -5087,8 +5136,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             pass
 
     def _handle_detroit_get(self, path, params):
-        if path in {"/detroit/host.js", "/detroit/host.css"}:
-            public_name = path.removeprefix("/detroit/")
+        public_name = path.removeprefix("/detroit/")
+        if public_name in detroit_adapter.PUBLIC_ASSETS - {"host"}:
             try:
                 status, content_type, body = detroit_adapter.fetch_public(public_name)
                 if status < 400:
@@ -5096,22 +5145,9 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             except detroit_adapter.DetroitError as exc:
                 self._send_json({"error": exc.message}, status=exc.status)
                 return
-            self._send_detroit_bytes(status, content_type, body)
-            return
-        if path == "/detroit/downloads/detroit_blind_host_windows_v9.zip":
-            try:
-                status, content_type, body = detroit_adapter.fetch_public(
-                    "downloads/detroit_blind_host_windows_v9.zip"
-                )
-            except detroit_adapter.DetroitError as exc:
-                self._send_json({"error": exc.message}, status=exc.status)
-                return
-            self._send_detroit_bytes(
-                status,
-                content_type,
-                body,
-                content_disposition='attachment; filename="detroit_blind_host_windows_v9.zip"',
-            )
+            disposition = (f'attachment; filename="{public_name.rsplit("/", 1)[-1]}"'
+                           if public_name.startswith("downloads/") else "")
+            self._send_detroit_bytes(status, content_type, body, content_disposition=disposition)
             return
         if path.startswith("/detroit/api/"):
             self._handle_detroit_api("GET", path, params=params)
@@ -5136,7 +5172,7 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             forwarded_proto = self.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
             secure = "; Secure" if forwarded_proto == "https" else ""
             self.send_response(303)
-            self.send_header("Location", "/detroit/?" + urllib.parse.urlencode({"player": target["player"]}))
+            self.send_header("Location", "/detroit/?" + urllib.parse.urlencode({"player": str(target["ai_user_id"])}))
             self.send_header(
                 "Set-Cookie",
                 f"detroit_token={urllib.parse.quote(raw_token, safe='')}; Path=/detroit; HttpOnly; SameSite=Lax{secure}; Max-Age={HUMAN_TOKEN_SECONDS}",
@@ -5191,8 +5227,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
                 if len(values) != 1:
                     raise detroit_adapter.DetroitError("查询参数必须唯一")
                 flat_query[key] = values[0]
-            status, headers, body = detroit_adapter.browser_api(
-                target["player"],
+            status, headers, body = detroit_adapter.browser_machine_api(
+                str(target["ai_user_id"]),
                 method,
                 endpoint,
                 query=flat_query,
@@ -5208,6 +5244,8 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             headers.get("content-type", "application/json; charset=utf-8"),
             body,
             content_disposition=headers.get("content-disposition", ""),
+            extra_headers={key: headers[key] for key in
+                           ("x-save-revision", "x-backup-sha256", "x-backup-kind") if key in headers},
         )
 
     def _ai_life_human_target(self, requested_player, token_from_query=""):
@@ -6183,7 +6221,7 @@ a{{color:#c9afff}}
             raw_token = _extract_bearer(self.headers)
             operation = path.rsplit("/", 1)[-1]
             if path.startswith("/api/admin/"):
-                result = _admin_feedback({**body, "action": "admin_feedback_" + operation}, raw_token)
+                result = _admin_feedback({**body, "action": "admin_" + operation}, raw_token)
             else:
                 store = _feedback_store()
                 if operation == "query":
@@ -6197,14 +6235,14 @@ a{{color:#c9afff}}
                     if operation == "submit":
                         result = store.submit(body, owner_id, self._client_ip())
                     elif operation == "list":
-                        result = store.listing(owner_id, page=body.get("page", 1))
+                        result = store.listing(owner_id, page=body.get("page", 1), unread_only=body.get("unread_only", False))
                     elif operation == "unread":
                         result = store.unread(owner_id)
                     elif operation == "close":
                         result = store.close(body, owner_id)
                     else:
                         result = store.append(body, owner_id, self._client_ip()) if operation == "message" else store.detail(
-                            body.get("ticket_id"), owner_id, before_id=body.get("before_id"))
+                            body.get("ticket_id"), owner_id, before_id=body.get("before_id"), mode=body.get("mode", "history"))
             self._send_json(result, extra_headers=response_headers)
         except _McpError as exc:
             status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else self._admin_error_status(exc)
@@ -7871,7 +7909,16 @@ a{{color:#c9afff}}
             safe_message,
         ))
 
+    def send_response(self, code, message=None):
+        trace = getattr(self, "_mcp_diagnostic", None)
+        if trace is not None:
+            trace.http_status = code
+        return super().send_response(code, message)
+
     def _send_json(self, payload, status=200, extra_headers=None):
+        trace = getattr(self, "_mcp_diagnostic", None)
+        if trace is not None:
+            trace.response(payload)
         return web_responses._send_json(
             self, payload, status, extra_headers,
             json=json,

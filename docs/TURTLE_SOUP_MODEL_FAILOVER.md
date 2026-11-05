@@ -16,80 +16,87 @@
 
 ## 已核实的生产映射（2026-10-25）
 
-宿主 supervisor 的 `turtle-soup` 工作目录为 `/opt/cedartoy/turtle-soup/backend`，命令为 `/opt/cedarstar/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8012`。实际进程未覆盖 `TURTLE_SOUP_DB` / `API_COST_DB`，因此配置库为 `/opt/cedartoy/turtle-soup/backend/turtle_soup.db`，计费库为 `/opt/cedartoy/data/api_costs.db`。执行切换前重新核对进程环境，仅读取路径白名单，不打印整个 environment。
+宿主 supervisor 的 `turtle-soup` 工作目录为 `/opt/cedartoy/turtle-soup/backend`，命令使用 `/opt/cedarstar/venv/bin/uvicorn`，监听 127.0.0.1:8012。实际进程未覆盖 `TURTLE_SOUP_DB` / `API_COST_DB`，配置库为 `/opt/cedartoy/turtle-soup/backend/turtle_soup.db`，计费库为 `/opt/cedartoy/data/api_costs.db`。主服务 `cedartoy` 的 `TURTLE_SOUP_DB` 同指该配置库。执行切换前重新核对进程路径白名单，不打印整个 environment。
 
-三个配置的接口均为 `https://api.chenmoai.com/v1`，有现成非空凭据，且三者凭据相同；不需要新建、轮换或复制 Key。
+三个配置的接口均为 `https://api.chenmoai.com/v1`，已有非空凭据；不需要新建、轮换或复制 Key。前次回退修复 `f376755` 已上线，当前是 DeepSeek 主用。本轮开发仅准备 GLM 代码与价格录入能力，未修改生产配置。
 
-| ID | 用途 purpose | 切换前 model | 切换前 priority / enabled | 目标 model | 目标 priority / enabled |
-|---|---|---|---|---|---|
-| 28 | both（裁判与提示） | `[anti量]gemini-3.8-flash` | 2 / 1 | `[正向量3]deepseek-v4.1-flash` | 1 / 1 |
-| 29 | npc（决策与发言） | 同上 | 2 / 1 | 同上 | 1 / 1 |
-| 30 | tarot | 同上 | 2 / 1 | 同上 | 1 / 1 |
+| ID | purpose | 当前 model | 目标 model | priority / enabled（不变） |
+|---|---|---|---|---|
+| 28 | both（裁判与提示） | `[正向量3]deepseek-v4.1-flash` | `[按量1]glm-5.3-flash` | 1 / 1 |
+| 29 | npc（决策与发言） | 同上 | 同上 | 1 / 1 |
+| 30 | tarot | 同上 | 同上 | 1 / 1 |
 
-模型前缀和字符必须完整保留。SSE 适配按沉默域名和精确模型名匹配。只改模型而保留 priority=2，不会成为首选。三种用途现统一用正整数 1/2/3：DeepSeek 为 1；海龟汤的巧克力/小鸡农场为 2/3；NPC、塔罗的小鸡农场/巧克力为 2/3，保留按业务成本形成的备用顺序。
-
-切换后计划路由：
+模型前缀和字符必须完整保留，URL、Key、名称、purpose、priority、enabled 均沿用原值。主备顺序保持：
 
 - 裁判 / 提示：28(1) → 33(2) → 11(3) → 8(4) → 9(6) → 13(7)。
 - NPC 决策 / 发言：29(1) → 17(2) → 31(3)。
 - 塔罗：30(1) → 24(2) → 32(3)。
 
-三用途共用沉默凭据锁与同模型健康状态；不通过复制配置规避串行限制。NPC 会跳过忙节点，必要时落到 Gemini 备线。这是保留的并发规则，不代表 DeepSeek 配置失效。
+三用途共用沉默凭据锁与同模型健康状态。NPC 会跳过忙节点，必要时落到 Gemini 备线；不通过复制配置规避限制。
 
-## 不触碰房间的探活
+## GLM 专用兼容
 
-2026-10-25 使用 #28 现有凭据、目标模型完成了一次实际 SSE 探活：HTTP 200、1.9 秒、严格返回“测试成功”，上游 usage 为输入 17、输出 2、共 19 tokens。未经过房间 / 存档 / 生产账本写入链路。该探活只证明当时的连通性、模型名、凭据和 SSE 解析，不证明长上下文、完整塔罗输出或负载下的表现。新模型价格未核验，usage 不能换算为已确认金额。
+沉默 GLM 在 system / user 分开传递时出现解释性正文，无法满足现有判定 / JSON 格式。`judge._chenmo_glm_payload` 只匹配规范化端点 `https://api.chenmoai.com/v1/chat/completions` 和精确模型 `[按量1]glm-5.3-flash`：把原消息逐条保留 role、content、顺序和示例，JSON 转义后放进一条 user 消息，并添加简短角色 / 格式说明；固定非流式。不会原地修改消息，所以备用渠道仍收到原 system / user / assistant 结构，猜汤底审计也保留原消息。
 
-随后另做了五次短合成任务探活（复用同一凭据与模型），全部 HTTP 200：普通判定 2.40 秒 / 49 tokens、猜汤底 JSON 3.28 秒 / 259 tokens、提示 2.06 秒 / 65 tokens、NPC 决策 2.23 秒 / 36 tokens、塔罗短解读 2.42 秒 / 80 tokens。前三项使用原有业务 validator，NPC 检查合法 action JSON，塔罗只检查非拒绝且有足够长度的短文。这些是虚构短提示，不是生产完整系统提示、私密汤底或完整牌阵质量评测。六次探活总计上游报告 508 tokens，未写生产账本。
+此兼容不更改判题标准、存档或 MCP schema；GLM 的无效输出仍走原业务校验和跨渠道回退。NPC / 塔罗只保留原通用拒绝检查，其游戏专属 JSON 校验不移到公共层。沉默精确 DeepSeek 模型继续走原 SSE 合并；其他模型 / 域名不变。首轮合成样例中消息 JSON 字符体积增加约 164–320 字符（不是 token 数），仅该渠道承受兼容开销，未复制整套规则或增加全局上下文。
 
-离线回归：内容回退 / SSE / 计费 55 项，以及既有韧性 / 官方 DeepSeek 额度 / NPC 与塔罗桥接 76 项通过。测试用 MockTransport、临时库或被替换的计费 recorder，不连接真实模型与生产存档。
+## 价格录入：已有管理入口，六条独立规则
 
-需要重新探活时，在仓库根执行以下代码。每次只发一个付费用量请求，最多 128 输出 tokens、45 秒总时限。`cfg=None` 是此诊断特意绕开生产账本的参数；不要改成 `_post_chat_completion` / `test_config`，后两者会计费入账或修改运行健康。
+来源：用户 2026-10-25 提供的沉默模型页面截图，单位均为人民币 / 百万 tokens。不是网上检索价格，也不是供应商最终账单。生产仍需主助手录入；代码没有自动种入模型价格或改库。
 
-```bash
-/opt/cedarstar/venv/bin/python -B - <<'PY'
-import asyncio, json, logging, sqlite3, sys, time
-from pathlib import Path
-sys.path.insert(0, 'turtle-soup/backend')
-import httpx, judge
-logging.disable(logging.CRITICAL)
-with sqlite3.connect(Path('/opt/cedartoy/turtle-soup/backend/turtle_soup.db').as_uri()+'?mode=ro', uri=True) as db:
-    db.row_factory = sqlite3.Row
-    cfg = dict(db.execute('SELECT id,api_url,api_key FROM judge_api_configs WHERE id=28').fetchone())
-model = '[正向量3]deepseek-v4.1-flash'
-assert judge._requires_chenmo_sse(cfg['api_url'], model)
-async def run():
-    started = time.monotonic()
-    try:
-        async with httpx.AsyncClient(timeout=45) as client:
-            response = await asyncio.wait_for(judge._send_chat_completion(
-                client, cfg['api_url'], cfg['api_key'], {
-                    'model': model, 'temperature': 0.1, 'max_tokens': 128,
-                    'messages': [{'role': 'user', 'content': '请只回复：测试成功'}],
-                }, cfg=None, pool='test',
-                validate=lambda r: judge._completion_text(r, lambda s: s.strip() == '测试成功'),
-            ), timeout=45)
-        print(json.dumps({'success': True, 'http_status': response.status_code,
-                          'seconds': round(time.monotonic()-started, 2)}, ensure_ascii=False))
-    except Exception as exc:
-        print(json.dumps({'success': False, 'error_type': type(exc).__name__}, ensure_ascii=False))
-        raise SystemExit(1)
-asyncio.run(run())
-PY
+| 精确模型 | 输入 | 输出 | 缓存输入 / 读取（替代普通输入） | 管理端计费模式 |
+|---|---:|---:|---:|---|
+| `[按量1]glm-5.3-flash` | 0.064 | 0.224 | 0.0184 | 按量 |
+| `[正向量3]deepseek-v4.1-flash` | 0.100 | 0.400 | 0.0020 | 按量（参考估算） |
+
+DeepSeek 页面标注动态计费，目前无档位 / 时段倍率来源，所以基础价只能参考估算。价格表摘要、用途、渠道和总费用均显示估算标记；不能把它描述为精确扣款。缺少完整 usage 时仍按既有规则待核算。GLM 显示的是按所录费率计算的费用，也不是钱包对账凭证。
+
+在 `/admin` → **API 费用** → **模型价格** → **新增价格**，分别选择现有 #28 / #29 / #30 对应渠道，逐个填写上述两个完整模型名和三项费率，共六条 `config_id + model` 规则。不覆盖旧 Gemini 模型规则。切换模型前就可为新模型新增价格，无需先发生调用。
+
+同一管理会话可用既有 `POST /api/admin/api-costs/prices`，以下两个请求体分别把 `config_id` 取 28、29、30。不要把管理员 Token 或上游 Key 放进文档 / 命令历史。
+
+```json
+{"config_id":28,"model":"[按量1]glm-5.3-flash","mode":"tokens","input":"0.064","output":"0.224","cache":"0.0184"}
 ```
 
-## 主助手切换顺序
+```json
+{"config_id":28,"model":"[正向量3]deepseek-v4.1-flash","mode":"tokens","input":"0.100","output":"0.400","cache":"0.0020","reference_only":true}
+```
 
-1. 复核本补丁与定向测试，保留工作树其他脏改。核验当前进程环境、上述三条配置及已有主备列表；若与表中不同，停止套用旧值，重新确定变更和回滚基线。
-2. 对实际配置库做 SQLite 一致性快照，按 [备份手册](BACKUP.md) 的机制保存到受保护位置（含凭据，限制访问，不入 Git）。不要直接复制正在运行的 `.db`，也不要运行整个备份上传流程来代替一次局部快照。记录三条配置的非敏感原值用于逐条回滚。
-3. 发布已复核的代码，按 [运维手册](OPERATIONS.md#服务与日志) 用显式 supervisor 配置重启 `turtle-soup`。本补丁也修改主进程导入的 `api_costs.py`，应同步重启 `cedartoy`。这是待执行步骤，本开发任务没有执行部署。
-4. 再做上述合成探活，失败就保持原生产配置。先切 #28 并核验，再切 #29、#30。通过既有管理员配置更新接口 `PUT /soup/api/admin/api-configs/{id}` 操作，沿用管理员会话，不新建账号或轮换用户 Token。
-5. 每次更新提交现有 `name`、原 `api_url`、原 `purpose`、`enabled=1`、目标 `model` 和 `priority=1`；同时按上表将同用途的巧克力、小鸡农场配置编号依次调整为 2/3。`api_key` 留空字符串使服务端保留原凭据。接口会重置该节点运行状态。不要用列表接口返回的掩码字符串覆盖 Key，不改其他配置，不批量禁用 Gemini 备用。配置按请求读取，三条配置更新自身无需再次重启。
-6. 回读核对九个相关 ID 的精确 model / priority / enabled / purpose；禁止打印 Key 字段。用模拟配置与 MockTransport 离线核验四个 pool 的第一候选是 28 / 29 / 29 / 30。真实业务正常到来后，从计费账本按 `config_id,model,purpose,status,http_status` 聚合观察目标模型是否实际承担 soup / npc / tarot；不在公共房间提交测试、不展示用户内容。
-7. 观察 `/var/log/turtle-soup.err.log` 的拒绝原因、fallback 和总时限，以及账本 `failed`（包括 HTTP 200 无效答案）。原有“仅 HTTP 200 即健康”的判断已不足够。使用合成内容单独检查普通判定、猜汤底 JSON、提示、NPC 和塔罗的任务质量；没有经过业务校验的“测试成功”不能宣称全部玩法验收完成。
+`reference_only` 存在既有价格 JSON 中，无 schema 迁移。每次保存按服务器当前时间追加版本；按调用开始时间选费率并把快照写进账本，不重算历史，不回填此前未知费用，不使用 effective=0 的默认种价。离线已验证延迟入账的旧请求也不会套用新价。
+
+录入验收：刷新后六条规则分别存在；再次打开 DeepSeek 是“按量（参考估算）”，GLM 是“按量”；缓存字段分别为 0.0020 / 0.0184；切换精确模型不会串价。临时库验证样例：输入 1,000,000、其中缓存 200,000、输出 500,000，GLM 费用 ¥0.16688，DeepSeek 参考费用 ¥0.2804。公式为 `(输入-缓存)*输入费率 + 缓存*缓存费率 + 输出*输出费率`，最后除以一百万。
+
+## 不触碰房间的探活与验证边界
+
+`python -B scripts/probe_chenmo_glm.py --help` 查看用法。真实探活必须显式 `--live`：
+
+```bash
+/opt/cedarstar/venv/bin/python -B scripts/probe_chenmo_glm.py --live --db /opt/cedartoy/turtle-soup/backend/turtle_soup.db
+```
+
+脚本只读配置和现有系统提示，在独立进程内把三个配置的模型副本改为 GLM，替换计费 recorder 为内存记录；不访问房间、账号、存档或管理员接口，不写生产计费账本。最多八次串行付费调用，每用例仅一个实际节点、最多 2048 输出 tokens、35 秒总等待。可用 `--case hint_history` 等选项只执行指定用例一次。输出仅合成用例名、通过状态、匿名调用统计，以及合成普通问题的判定枚举；不打印凭据、系统提示、原文和私密数据。脚本没有后台重试；任何失败 exit 1，不能循环运行直到绿灯。
+
+海龟汤使用生产系统提示和真实业务消息组装，所有汤面 / 汤底 / 历史均是脚本内虚构的“晴天带伞”故事。NPC 使用桥接接口支持的 system / user 结构检查 action_id / message JSON；塔罗使用原 `tarot_prompt_helper.mjs` 生成合成单牌消息。NPC 不是完整实际棋局测试，塔罗不是多牌长解读评测。
+
+本轮结果：首轮 ask / guess / hint / NPC JSON / 塔罗短文五类均通过，1.75–3.59 秒。扩展历史 / 否定 / 错误猜测 / 发言探活中，一次 hint 被原 validator 拒绝并记为 failed，相同合成用例复测两次通过；没有放宽校验。八用例脚本随后全部满足格式，其中否定问题一次未达预期语义判定（故脚本整体 7/8，而非全绿）；独立复测该问题得到 no。真实单牌塔罗完整消息通过，用时 9.28 秒。这说明格式兼容有效，但不能保证模型每次的判题质量或提示合规；生产仍需保留备用并观察，不能以“HTTP 200”宣称全部验收完成。
+
+离线：GLM / 内容回退 / SSE / 计费 62 项通过，既有韧性 / 官方 DeepSeek 额度 / NPC 与塔罗桥接 76 项通过。GLM 无效正文的调用序列为 28 → 33（备用收到原消息），失败 / 成功分别入账；全部无效仍返回原忙提示。既有 Gemini 33 → 11 回归仍通过。价格测试涵盖六条精确模型 / 渠道规则、缓存替代计费、参考标识、历史不回算和延迟事件。
+
+管理端 DOM 和实际 Chromium 360 / 430 / 1280px 检查通过，已人工查看三种宽度的原价格表单、参考标识及统计。沿用原组件，CSS 仅缩紧展开箭头行高，避免字体放大到 28px 后旋转箭头造成 2px 横向溢出。浏览器测试使用隔离 fixture，保存价格不会触达生产。
+
+## 主助手上线 / 切换顺序
+
+1. 复核 diff 与测试，保留其他脏改；重新核验进程环境、当前三条配置及主备映射。若不同，先更新回滚基线。模型质量的上述偶发偏差需要纳入上线判断。
+2. 按 [备份手册](BACKUP.md) 对实际配置库和计费库做 SQLite 一致性快照，保存到受保护位置（配置库含凭据，不入 Git）；不要直接复制活跃 `.db`，不要为局部快照执行整套上传备份。记录三条配置的非敏感原值。
+3. 发布复核后的代码；使用显式配置 `supervisorctl -c /etc/supervisor/supervisord.conf restart turtle-soup`。主进程也导入 `api_costs.py`，同步 `restart cedartoy`。这只是交接步骤，本开发任务没有执行重启 / 部署 / commit / push。
+4. 先通过原管理入口录入并回读六条价格规则，再执行一次合成探活评估；失败时保留当前 DeepSeek 配置并复核，不用反复探活掩盖失败。
+5. 先改 #28、核验后再改 #29、#30。通过既有管理员 `PUT /soup/api/admin/api-configs/{id}`，提交原 `name`、`api_url`、`purpose`、`enabled=1`、`priority=1`，只把 `model` 改成 `[按量1]glm-5.3-flash`。`api_key` 留空字符串由服务端保留原凭据，绝不能提交列表里的掩码字符串。所有备用 ID / priority 保持不变，不批量禁用 Gemini。配置按请求读取，修改配置自身无需再次重启。
+6. 回读三条配置的白名单字段以及备用顺序；从新账本按 `config_id,model,purpose,status,http_status` 聚合观察 28 / 29 / 30 的 GLM 实际调用与价目快照，DeepSeek 规则仍保留。只看聚合 / 系统错误原因，不在公共房间发题，也不输出用户正文。
+7. 观察 `/var/log/turtle-soup.err.log` 的拒绝、fallback 和超时；HTTP 200 无效正文必须计为 failed。若无效输出比例或判题质量不可接受，按下一节回滚模型。
 
 ## 回滚
 
-配置回滚优先，保留已经修复的回退代码。要恢复本次切换前的路由，需把 #28 / #29 / #30 的 `model` 恢复为 `[anti量]gemini-3.8-flash`、`priority` 恢复为 2；同时把 #33 / #17 / #24 的 `priority` 恢复为 0，#11 / #31 / #32 的 `priority` 恢复为 1。保持凭据、purpose、enabled 不变，通过相同管理接口提交。若只完成部分切换，仅回滚对应已改行；配置热读取，无需重启。
+只回滚已切换行：把 #28 / #29 / #30 的 `model` 改回 `[正向量3]deepseek-v4.1-flash`，保留 priority=1、enabled=1、purpose、URL、Key 及所有备线；热读取，无需重启。保留已有拒绝回退修复和 DeepSeek SSE 适配。六条价目不删除，不恢复旧计费库；未来改价通过管理入口再追加版本，历史快照不变。
 
-不要为这次配置回滚整库恢复：账号库还有并发产生的用户与游戏数据。若代码自身出现回归，再由主助手用部署前保存的文件版本恢复本补丁相关生产代码并重启对应服务；不要 `git reset --hard` 清掉无关工作树改动。回滚回退代码会重新暴露 HTTP 200 拒绝反复命中主节点的已知缺陷。
+不要整库恢复账号库或计费库，会覆盖并发用户数据 / 调用记录。若代码自身回归，由主助手选择性恢复本轮改动并重启对应进程，不能 `git reset --hard` 清除其他脏改。恢复到本轮开发前的 f376755 行为仍保留已上线的跨渠道回退；不要退到此前 HTTP 200 拒绝被算成功的实现。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local recovery operations; run --help. No HTTP, tokens, migrations or login.
+"""Local recovery operations; run --help. No HTTP, migrations or login.
 
 Use the service's TURTLE_SOUP_DB environment. Reviewer selection is a local
 operator's audit attribution, not proof that the named admin logged in.
@@ -14,6 +14,8 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts import recovery_email_ops as mail_ops
 TICKET_FIELDS = (
     "id", "account_kind", "account", "machine", "registered_about", "games",
     "explanation", "status", "admin_note", "user_id", "created_at_epoch",
@@ -146,11 +148,13 @@ def review_ticket(backend, ticket_id, decision, note, selector):
     # Read-only open also prevents a mistyped DB path from creating an empty DB.
     with closing(read_only(backend.TURTLE_DB_PATH)) as conn:
         reviewer = resolve_reviewer(conn, selector)
+    mail_ops.preflight(backend, ticket_id)
     result = backend._review_recovery_ticket(
         ticket_id, {"decision": decision, "admin_note": note}, reviewer,
     )
     return {"ok": bool(result["ok"]), "ticket_id": ticket_id,
-            "status": decision, "reviewer": reviewer}
+            "status": decision, "reviewer": reviewer,
+            **mail_ops.status(backend.TURTLE_DB_PATH, ticket_id)}
 
 
 def positive_int(value):
@@ -174,25 +178,45 @@ def main(argv=None, *, backend=None):
         command.add_argument("--note", required=True, help="审核说明，1–2000 字；工单申请人可见")
         command.add_argument("--reviewer", default=os.getenv("CEDARTOY_RECOVERY_REVIEWER"),
                              help="现有 active admin 的 ID/精确用户名；可用 id: / username: 消歧")
+    resend = commands.add_parser("resend", help="补发确定未投递的已批准通知；默认只读预检")
+    resend.add_argument("ticket_id", type=positive_int)
+    resend.add_argument("--reviewer", default=os.getenv("CEDARTOY_RECOVERY_REVIEWER"))
+    resend.add_argument("--send", action="store_true", help="明确执行一次发送；结果不明时勿重试")
+    renew = commands.add_parser("renew", help="续发已过期链接至原邮箱；默认只读预检")
+    renew.add_argument("ticket_id", type=positive_int)
+    renew.add_argument("--reviewer", default=os.getenv("CEDARTOY_RECOVERY_REVIEWER"))
+    renew.add_argument("--expected-token-id", type=positive_int, help="预检得到的旧记录 ID；发送时必填")
+    renew.add_argument("--send", action="store_true", help="生成新 48h 链接并发送一次；勿盲重试")
     args = parser.parse_args(argv)
+    direct_entrypoint = backend is None
     if backend is None:
         sys.path.insert(0, str(ROOT))
         import server as backend
     try:
+        if direct_entrypoint and args.command in ("approve", "reject", "resend", "renew"):
+            mail_ops.preflight(backend, args.ticket_id, root=ROOT)
         if args.command in ("list", "pending"):
             if args.page > 1000000:
                 raise CliError("page 最大为 1000000")
             result = list_tickets(backend.TURTLE_DB_PATH, args.view, args.page)
         elif args.command == "inspect":
             result = inspect_ticket(backend, args.ticket_id)
+        elif args.command in ("resend", "renew"):
+            with closing(read_only(backend.TURTLE_DB_PATH)) as conn:
+                reviewer = resolve_reviewer(conn, args.reviewer)
+            if args.command == "renew":
+                result = mail_ops.renew(backend, args.ticket_id, reviewer,
+                                        expected_token_id=args.expected_token_id, send=args.send)
+            else:
+                result = mail_ops.resend(backend, args.ticket_id, reviewer, send=args.send)
         else:
             if not 1 <= len(args.note.strip()) <= 2000:
                 raise CliError("审核说明必须是 1–2000 字")
             result = review_ticket(backend, args.ticket_id,
                                    "approved" if args.command == "approve" else "rejected",
                                    args.note.strip(), args.reviewer)
-    except (CliError, backend._McpError) as exc:
-        result = {"ok": False, "error": str(exc) if isinstance(exc, CliError) else exc.message}
+    except (CliError, mail_ops.MailOperationError, backend._McpError) as exc:
+        result = {"ok": False, "error": str(exc) if isinstance(exc, (CliError, mail_ops.MailOperationError)) else exc.message}
     except (OSError, sqlite3.Error):
         # Raw database/filesystem errors may contain operational details.
         result = {"ok": False, "error": "无法读取或写入，请检查服务实际 TURTLE_SOUP_DB、权限及表结构；未自动建库或迁移"}

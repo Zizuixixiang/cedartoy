@@ -142,7 +142,7 @@ async function checkForgotPassword(emailEnabled) {
       if (status === "approved") {
         assert.equal($("recoveryLink").href, resetUrl);
         assert.ok(panel.contains($("recoveryLinkBox")));
-        assert.match($("recoveryLinkBox").textContent, /24\s*小时内有效/);
+        assert.match($("recoveryLinkBox").textContent, /48\s*小时内有效/);
         assert.match($("recoveryLinkExpiry").textContent, /链接有效至/);
         $("recoveryCopy").click(); await tick();
         assert.equal(clipboard.at(-1), resetUrl);

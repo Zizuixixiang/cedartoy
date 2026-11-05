@@ -129,7 +129,7 @@ class RootMcpProtocolTests(unittest.TestCase):
         )
         self.assertEqual(
             {tool["name"] for tool in listed["result"]["tools"]},
-            {"list_games", "get_guide", "play", "account"},
+            {"list_games", "get_guide", "play", "account", "feedback"},
         )
 
         with patch.object(server, "_tool_list_games", return_value="game catalog"):
@@ -232,7 +232,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                 self.assertEqual(properties["action"]["description"],
                                  "操作名；按 get_guide(game) 返回的说明填写。")
                 params_copy = properties["params"]["description"]
-                for guidance in ("业务参数对象", "get_guide(game)", "可选 slot=1..5", "平台存档槽"):
+                for guidance in ("业务参数对象", "get_guide(game)", "可选 slot", "平台存档槽", "范围见 Guide"):
                     self.assertIn(guidance, params_copy)
                 serialized = json.dumps(tool, ensure_ascii=False)
                 for example in ("duel", "nowhere", "detroit", "tarot", "ai_life", "turtle_soup",
@@ -274,7 +274,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                 validator.validate({"action": "admin_recovery_detail", "ticket_id": 1})
                 for field, value in (("username", 123), ("password", 123), ("ai_user_id", "42"),
                                      ("human", "true"), ("confirm", "true"), ("slot", 0),
-                                     ("slot", 6), ("slot", "2"), ("avatar", "🤖" * 17)):
+                                     ("slot", 13), ("slot", "2"), ("avatar", "🤖" * 17)):
                     self.assertFalse(validator.is_valid({"action": "fixture", field: value}), (field, value))
                 self.assertFalse(validator.is_valid({"username": "fixture"}))
                 self.assertLess(len(json.dumps(tool, ensure_ascii=False)),
@@ -399,7 +399,7 @@ class RootMcpProtocolTests(unittest.TestCase):
                     validator.validate({"game": "puzzle_box", "action": "open", "params": {
                         "slot": slot, "puzzle_id": "N10",
                     }})
-                for slot in (0, 6):
+                for slot in (0, 13):
                     self.assertFalse(validator.is_valid({"game": "puzzle_box", "action": "open",
                                                          "params": {"slot": slot}}))
 

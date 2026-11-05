@@ -35,7 +35,9 @@ class FeedbackTests(unittest.TestCase):
         return self.store.submit({"category": "bug", "content": "问题 <script>alert(1)</script>", **extra}, owner, ip)
 
     def call(self, action, token=None, **params):
-        return json.loads(server._tool_account({"action": action, **params}, path_token=token or self.admin_token))
+        if action == "detail":
+            params.setdefault("mode", "history")
+        return json.loads(server._tool_feedback({"action": action, "params": params}, path_token=token or self.admin_token))
 
     def http(self, operation, body=None, token=None, *, admin=False, rate=True, headers=None):
         raw = json.dumps(body or {}).encode()
@@ -59,13 +61,13 @@ class FeedbackTests(unittest.TestCase):
         with self._connect() as conn:
             conn.execute("UPDATE toy_users SET is_admin=1 WHERE id=?", (other,))
         with patch.dict(feedback_tickets.ADMIN_REPLY_ALIASES, {self.admin_id: "Clio", other: "南杉"}, clear=True):
-            self.call("admin_feedback_review", ticket_id=tid, reply="first", confirm=True)
-            self.call("admin_feedback_review", token=self._token_for(other), ticket_id=tid, reply="second", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="first", confirm=True)
+            self.call("admin_review", token=self._token_for(other), ticket_id=tid, reply="second", confirm=True)
             for data in (self.store.detail(tid, self.human_id), self.store.detail(tid, admin=True),
                          self.http("detail", {"ticket_id": tid}, self.human_token)[1],
                          self.http("detail", {"ticket_id": tid}, self.admin_token, admin=True)[1],
-                         self.call("feedback_detail", token=self.human_token, ticket_id=tid),
-                         self.call("admin_feedback_detail", ticket_id=tid)):
+                         self.call("detail", token=self.human_token, ticket_id=tid),
+                         self.call("admin_detail", ticket_id=tid)):
                 messages = data["messages"]
                 self.assertEqual([m.get("admin_label") for m in messages], [None, "管理员Clio", "管理员南杉"])
                 self.assertTrue(all("actor_id" not in m for m in messages))
@@ -131,7 +133,7 @@ class FeedbackTests(unittest.TestCase):
                 with patch.object(feedback_tickets, "time", **{"time.return_value": replied_at}):
                     receipt = self.submit()
                     tid = receipt["ticket_id"]
-                    self.call("admin_feedback_review", ticket_id=tid, reply="请再试试", confirm=True)
+                    self.call("admin_review", ticket_id=tid, reply="请再试试", confirm=True)
                     before = self.store.query(receipt["query_code"])
                 with patch.object(feedback_tickets, "time", **{"time.return_value": replied_at + elapsed}):
                     after = self.store.query(receipt["query_code"])
@@ -157,14 +159,14 @@ class FeedbackTests(unittest.TestCase):
             pending_reply = self.submit()["ticket_id"]
             receipt = self.submit()
             player_last = receipt["ticket_id"]
-            self.call("admin_feedback_review", ticket_id=manual, status="processing", confirm=True)
+            self.call("admin_review", ticket_id=manual, status="processing", confirm=True)
             for tid in (pending_reply, player_last):
-                self.call("admin_feedback_review", ticket_id=tid, reply="答复", confirm=True)
-            self.call("admin_feedback_review", ticket_id=pending_reply, status="pending", confirm=True)
+                self.call("admin_review", ticket_id=tid, reply="答复", confirm=True)
+            self.call("admin_review", ticket_id=pending_reply, status="pending", confirm=True)
             # A player follow-up normally reopens; a subsequent manual status edit
             # must still not make the old admin reply eligible for expiration.
             self.store.append({"ticket_id": player_last, "query_code": receipt["query_code"], "content": "追问"}, None, "192.0.2.2")
-            self.call("admin_feedback_review", ticket_id=player_last, status="processing", confirm=True)
+            self.call("admin_review", ticket_id=player_last, status="processing", confirm=True)
         with patch.object(feedback_tickets, "time", **{"time.return_value": started + 30 * 86400}):
             statuses = {t["id"]: t["status"] for t in self.store.listing(admin=True)["tickets"]}
         self.assertEqual(statuses, {pending: "pending", manual: "processing", pending_reply: "pending",
@@ -174,11 +176,11 @@ class FeedbackTests(unittest.TestCase):
         started = 1800000000
         with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
             tid = self.submit(self.human_id)["ticket_id"]
-            self.call("admin_feedback_review", ticket_id=tid, reply="第一次回复", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="第一次回复", confirm=True)
         with patch.object(feedback_tickets, "time", **{"time.return_value": started + 86400}):
-            self.call("admin_feedback_review", ticket_id=tid, reply="补充回复", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="补充回复", confirm=True)
         with patch.object(feedback_tickets, "time", **{"time.return_value": started + 7 * 86400}):
-            self.call("admin_feedback_review", ticket_id=tid, internal_note="新备注", status="processing", confirm=True)
+            self.call("admin_review", ticket_id=tid, internal_note="新备注", status="processing", confirm=True)
             self.assertEqual(self.store.detail(tid, admin=True)["ticket"]["status"], "processing")
         with patch.object(feedback_tickets, "time", **{"time.return_value": started + 8 * 86400}):
             detail = self.store.detail(tid, admin=True)
@@ -190,13 +192,13 @@ class FeedbackTests(unittest.TestCase):
             self.store.append({"ticket_id": tid, "content": "还有问题"}, self.human_id, "192.0.2.2")
             reopened = self.store.detail(tid, self.human_id)
         self.assertEqual(reopened["ticket"]["status"], "pending")
-        self.assertEqual(reopened["messages"][:-1], detail["messages"])
+        self.assertEqual([{k: v for k, v in m.items() if k != "is_self"} for m in reopened["messages"][:-1]], detail["messages"])
 
     def test_auto_close_normalized_by_all_status_reads_and_unread(self):
         started = 1800000000
         with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
             tid = self.submit(self.human_id)["ticket_id"]
-            self.call("admin_feedback_review", ticket_id=tid, reply="答复", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="答复", confirm=True)
         reads = {
             "admin_list": lambda: self.store.listing(admin=True, status="processing"),
             "player_list": lambda: self.store.listing(self.human_id),
@@ -223,7 +225,7 @@ class FeedbackTests(unittest.TestCase):
                 else:
                     self.assertEqual(result["unread_count"], 1)  # Closure must not acknowledge the reply.
 
-    def test_actual_login_ownership_ignores_self_report_and_binding(self):
+    def test_actual_login_ownership_ignores_self_report_and_shares_direct_binding(self):
         status, a = self.http("submit", {"category": "account", "content": "A", "contact": "B", "user_id": self.other_human_id,
                                       "owner_id": self.other_human_id, "player_id": str(self.ai_id)}, self.human_token)
         self.assertEqual(status, 200)
@@ -233,7 +235,7 @@ class FeedbackTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT owner_id FROM feedback_tickets WHERE id=?", (a["ticket_id"],)).fetchone()[0], self.human_id)
         self.assertEqual(self.http("list", {"owner_id": self.other_human_id}, self.human_token)[1]["total"], 1)
         self.assertEqual(self.http("detail", {"ticket_id": b["ticket_id"]}, self.human_token)[0], 404)
-        self.assertEqual(self.http("detail", {"ticket_id": a["ticket_id"]}, self.ai_token)[0], 404)
+        self.assertEqual(self.http("detail", {"ticket_id": a["ticket_id"]}, self.ai_token)[0], 200)
         self.assertEqual(self.http("detail", {"ticket_id": a["ticket_id"]}, self.human_token)[0], 200)
         self.assertEqual(self.http("list", {}, None)[0], 401)
         self.assertEqual(self.http("detail", {"ticket_id": a["ticket_id"]})[0], 401)
@@ -260,39 +262,39 @@ class FeedbackTests(unittest.TestCase):
 
     def test_admin_boundary_before_lookup_for_all_actions_and_revocation(self):
         for token in (None, "invalid", self.human_token, self.ai_token):
-            for action in (*admin_feedback_mcp.ACTIONS, "admin_feedback_unknown"):
+            for action in (*admin_feedback_mcp.ACTIONS, "admin_unknown"):
                 with self.subTest(token=bool(token), action=action), patch.object(server, "_feedback_store") as factory:
                     with self.assertRaises(server._McpError) as error:
-                        server._tool_account({"action": action, "ticket_id": 1, "is_admin": True}, path_token=token)
+                        server._tool_feedback({"action": action, "params": {"ticket_id": 1, "is_admin": True}}, path_token=token)
                     self.assertIn(error.exception.code, (-32001, -32003))
                     factory.return_value.listing.assert_not_called()
                     factory.return_value.detail.assert_not_called()
                     factory.return_value.review.assert_not_called()
         with self._connect() as conn:
             conn.execute("UPDATE toy_users SET is_admin=0 WHERE id=?", (self.admin_id,))
-        with self.assertRaises(server._McpError): self.call("admin_feedback_list")
+        with self.assertRaises(server._McpError): self.call("admin_list")
         for action in ("list", "detail", "review"):
             self.assertEqual(self.http(action, {"ticket_id": 1}, self.human_token, admin=True)[0], 403)
 
     def test_review_public_reply_internal_note_and_state(self):
         receipt = self.submit()
         tid = receipt["ticket_id"]
-        self.call("admin_feedback_review", ticket_id=tid, internal_note="私密备注", confirm=True)
+        self.call("admin_review", ticket_id=tid, internal_note="私密备注", confirm=True)
         self.assertEqual(self.store.query(receipt["query_code"])["ticket"]["status"], "pending")
         for i in range(3):
-            self.call("admin_feedback_review", ticket_id=tid, reply=f"公开回复 {i} <img src=x onerror=alert(1)>", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply=f"公开回复 {i} <img src=x onerror=alert(1)>", confirm=True)
         public = self.store.query(receipt["query_code"])
         self.assertEqual(public["ticket"]["status"], "processing")
         self.assertEqual([m["role"] for m in public["messages"]], ["player", "admin", "admin", "admin"])
         self.assertEqual(public["message_count"], 4)
         self.assertNotIn("私密备注", json.dumps(public, ensure_ascii=False))
-        private = self.call("admin_feedback_detail", ticket_id=tid)["ticket"]
+        private = self.call("admin_detail", ticket_id=tid)["ticket"]
         self.assertEqual(private["internal_note"], "私密备注")
         self.assertEqual(private["reviewed_by"], self.admin_id)
         self.assertNotIn("query_code_hash", private)
         self.assertNotIn("ip_hash", private)
-        self.assertEqual(self.call("admin_feedback_list", status="processing")["total"], 1)
-        self.assertIn("不可信", self.call("admin_feedback_list")["untrusted_text_notice"])
+        self.assertEqual(self.call("admin_list", status="processing")["total"], 1)
+        self.assertIn("不可信", self.call("admin_list")["untrusted_text_notice"])
         self.assertEqual(self.http("review", {"ticket_id": tid, "status": "closed", "confirm": True}, self.admin_token, admin=True)[0], 200)
 
     def test_qa_rounds_close_reopen_and_login_anonymous_isolation(self):
@@ -302,14 +304,14 @@ class FeedbackTests(unittest.TestCase):
             capability = {"query_code": receipt["query_code"]} if owner is None else {}
             read = lambda: self.store.query(receipt["query_code"]) if owner is None else self.store.detail(tid, owner)
             initial = read()["messages"]
-            self.call("admin_feedback_review", ticket_id=tid, reply="回答一", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="回答一", confirm=True)
             self.assertEqual(read()["ticket"]["status"], "processing")
             payload = {"ticket_id": tid, "content": "追问一", **capability}
             self.assertEqual(self.http("message", payload, token)[0], 200)
             self.assertEqual(read()["ticket"]["status"], "pending")
             for text in ("回答二", "补充答复"):
-                self.call("admin_feedback_review", ticket_id=tid, reply=text, confirm=True)
-            self.call("admin_feedback_review", ticket_id=tid, status="closed", confirm=True)
+                self.call("admin_review", ticket_id=tid, reply=text, confirm=True)
+            self.call("admin_review", ticket_id=tid, status="closed", confirm=True)
             self.assertEqual(read()["ticket"]["status"], "closed")
             self.assertEqual(self.http("message", {**payload, "content": "重新提问"}, token)[0], 200)
             data = read()
@@ -317,14 +319,14 @@ class FeedbackTests(unittest.TestCase):
             self.assertEqual(data["messages"][:1], initial)
             self.assertEqual([m["content"] for m in data["messages"]][1:], ["回答一", "追问一", "回答二", "补充答复", "重新提问"])
             self.assertEqual([m["id"] for m in data["messages"]], sorted(m["id"] for m in data["messages"]))
-            self.call("admin_feedback_review", ticket_id=tid, status="closed", confirm=True)
-            self.call("admin_feedback_review", ticket_id=tid, reply="继续答复", confirm=True)
+            self.call("admin_review", ticket_id=tid, status="closed", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="继续答复", confirm=True)
             self.assertEqual(read()["ticket"]["status"], "processing")
         owned = self.submit(self.human_id, ip="192.0.2.5")["ticket_id"]
         anonymous = self.submit(ip="192.0.2.6")
         other = self.submit(ip="192.0.2.7")
         for tid in (owned, anonymous["ticket_id"]):
-            self.assertEqual(self.http("message", {"ticket_id": tid, "content": "forged"}, self.ai_token)[0], 404)
+            self.assertEqual(self.http("message", {"ticket_id": tid, "content": "forged"}, self.other_human_token)[0], 404)
             self.assertEqual(self.http("message", {"ticket_id": tid, "content": "anonymous"})[0], 401)
         for code in (None, "", "x"*43, other["query_code"]):
             self.assertEqual(self.http("message", {"ticket_id": anonymous["ticket_id"], "content": "bad", "query_code": code})[0], 404)
@@ -340,7 +342,7 @@ class FeedbackTests(unittest.TestCase):
         for state in ("pending", "processing"):
             tid = self.submit(self.human_id)["ticket_id"]
             if state == "processing":
-                self.call("admin_feedback_review", ticket_id=tid, status=state, confirm=True)
+                self.call("admin_review", ticket_id=tid, status=state, confirm=True)
             before = self.store.detail(tid, self.human_id)
             body = {"ticket_id": tid, "confirm": True}
             status, result = self.http("close", body, self.human_token)
@@ -358,10 +360,10 @@ class FeedbackTests(unittest.TestCase):
             self.assertEqual(reopened["ticket"]["status"], "pending")
             self.assertEqual(reopened["messages"][:-1], before["messages"])
 
-    def test_owner_close_rejects_foreign_bound_forged_and_unconfirmed_requests(self):
+    def test_owner_close_rejects_foreign_transitive_forged_and_unconfirmed_requests(self):
         tid = self.submit(self.human_id)["ticket_id"]
         body = {"ticket_id": tid, "confirm": True}
-        for token, expected in ((None, 401), ("invalid", 401), (self.ai_token, 404),
+        for token, expected in ((None, 401), ("invalid", 401),
                                 (self.other_human_token, 404), (self.admin_token, 404)):
             self.assertEqual(self.http("close", body, token)[0], expected)
         for confirm in (None, False, 1, "true"):
@@ -394,7 +396,7 @@ class FeedbackTests(unittest.TestCase):
         with patch.object(server, "_send_feedback_email") as send:
             self.store = server._feedback_store()
             tid = self.submit(self.ai_id, notify_email=True, contact_email="test@example.invalid")["ticket_id"]
-            self.call("admin_feedback_review", ticket_id=tid, reply="已有答复", internal_note="保留备注", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="已有答复", internal_note="保留备注", confirm=True)
             send.reset_mock()
             def snapshot():
                 with self._connect() as conn:
@@ -423,12 +425,12 @@ class FeedbackTests(unittest.TestCase):
     def test_message_cursor_pagination_survives_new_messages(self):
         receipt = self.submit()
         tid = receipt["ticket_id"]
-        for i in range(24): self.call("admin_feedback_review", ticket_id=tid, reply=str(i), confirm=True)
-        first = self.call("admin_feedback_detail", ticket_id=tid)
+        for i in range(24): self.call("admin_review", ticket_id=tid, reply=str(i), confirm=True)
+        first = self.call("admin_detail", ticket_id=tid)
         self.assertEqual(len(first["messages"]), 10)
         self.assertEqual(first["message_count"], 25)
         seen = list(first["messages"])
-        self.call("admin_feedback_review", ticket_id=tid, reply="new during pagination", confirm=True)
+        self.call("admin_review", ticket_id=tid, reply="new during pagination", confirm=True)
         cursor = first["next_before_id"]
         while cursor:
             page = self.store.query(receipt["query_code"], before_id=cursor)
@@ -438,7 +440,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(len({m["id"] for m in seen}), 25)
         self.assertEqual(seen[-1]["content"], "23")
         for bad in (True, 0, "1", 2**63):
-            with self.assertRaises(server._McpError): self.call("admin_feedback_detail", ticket_id=tid, before_id=bad)
+            with self.assertRaises(server._McpError): self.call("admin_detail", ticket_id=tid, before_id=bad)
         foreign = self.submit(self.other_human_id)
         self.assertEqual(self.http("detail", {"ticket_id": foreign["ticket_id"], "before_id": 999}, self.human_token)[0], 404)
 
@@ -455,7 +457,7 @@ class FeedbackTests(unittest.TestCase):
         with self._connect() as conn:
             conn.executemany("INSERT INTO feedback_review_limits VALUES (?,?)", [(self.admin_id,int(time.time()))]*120)
         with self.assertRaises(server._McpError) as error:
-            self.call("admin_feedback_review", ticket_id=receipt["ticket_id"], status="closed", confirm=True)
+            self.call("admin_review", ticket_id=receipt["ticket_id"], status="closed", confirm=True)
         self.assertEqual(error.exception.code, -32029)
         self.assertEqual(self.store.query(receipt["query_code"])["ticket"]["status"], "pending")
 
@@ -477,21 +479,21 @@ class FeedbackTests(unittest.TestCase):
     def test_strict_fields_lengths_pagination_and_confirm(self):
         tid = self.submit()["ticket_id"]
         for action, params in (
-            ("admin_feedback_list", {"page": True}), ("admin_feedback_list", {"page": "1"}),
-            ("admin_feedback_list", {"page": 0}), ("admin_feedback_list", {"page": 1000001}),
-            ("admin_feedback_list", {"status": []}), ("admin_feedback_list", {"user_id": 1}),
-            ("admin_feedback_detail", {"ticket_id": True}), ("admin_feedback_detail", {"ticket_id": 2**63}),
-            ("admin_feedback_review", {"ticket_id": tid, "status": "closed", "confirm": 1}),
-            ("admin_feedback_review", {"ticket_id": tid, "status": "replied", "confirm": True}),
-            ("admin_feedback_review", {"ticket_id": tid, "status": "closed", "confirm": True, "reply": None}),
-            ("admin_feedback_review", {"ticket_id": tid, "status": "closed", "confirm": True, "reply": "x"*4001}),
-            ("admin_feedback_review", {"ticket_id": tid, "status": "closed", "confirm": True, "reviewed_by": 2}),
+            ("admin_list", {"page": True}), ("admin_list", {"page": "1"}),
+            ("admin_list", {"page": 0}), ("admin_list", {"page": 1000001}),
+            ("admin_list", {"status": []}), ("admin_list", {"user_id": 1}),
+            ("admin_detail", {"ticket_id": True}), ("admin_detail", {"ticket_id": 2**63}),
+            ("admin_review", {"ticket_id": tid, "status": "closed", "confirm": 1}),
+            ("admin_review", {"ticket_id": tid, "status": "replied", "confirm": True}),
+            ("admin_review", {"ticket_id": tid, "status": "closed", "confirm": True, "reply": None}),
+            ("admin_review", {"ticket_id": tid, "status": "closed", "confirm": True, "reply": "x"*4001}),
+            ("admin_review", {"ticket_id": tid, "status": "closed", "confirm": True, "reviewed_by": 2}),
         ):
             with self.subTest(action=action, params=str(params)[:100]), self.assertRaises(server._McpError): self.call(action, **params)
         for extra in ({"content": " "}, {"content": "x"*4001}, {"contact": "x"*121}, {"category": []}, {"content": 123}):
             with self.assertRaises(server._McpError): self.submit(**extra)
         for i in range(21): self.submit(ip=f"192.0.2.{i+30}")
-        first, second = self.call("admin_feedback_list"), self.call("admin_feedback_list", page=2)
+        first, second = self.call("admin_list"), self.call("admin_list", page=2)
         self.assertEqual((first["total"], len(first["tickets"]), len(second["tickets"])), (22, 20, 2))
         self.assertFalse({t["id"] for t in first["tickets"]} & {t["id"] for t in second["tickets"]})
         self.assertTrue(all(len(t["preview"]) <= 120 for t in first["tickets"]))
@@ -609,13 +611,13 @@ class FeedbackTests(unittest.TestCase):
         tid = self.submit()["ticket_id"]
         with patch.object(server, "_duel_unread_request_reminder", return_value=""), patch.object(server, "_mcp_forced_announcement", return_value=None):
             for transport in ("path_token", "bearer_token"):
-                for arguments in ({"action": "admin_feedback_list"}, {"action": "admin_feedback_detail", "ticket_id": tid},
-                                  {"action": "admin_feedback_review", "ticket_id": tid, "status": "closed", "confirm": True}):
-                    payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "account", "arguments": arguments}}
+                for arguments in ({"action": "admin_list"}, {"action": "admin_detail", "ticket_id": tid},
+                                  {"action": "admin_review", "ticket_id": tid, "status": "closed", "confirm": True}):
+                    payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "feedback", "arguments": {"action": arguments["action"], "params": {k: v for k, v in arguments.items() if k != "action"}}}}
                     self.assertTrue(server._handle_root_mcp(payload, **{transport: self.ai_token})["result"]["isError"])
                     self.assertFalse(server._handle_root_mcp(payload, **{transport: self.admin_token})["result"]["isError"])
-        public = server._tool_get_guide({"game": "account"})
-        guide = server._tool_get_guide({"game": "account"}, path_token=self.admin_token)
+        public = server._tool_get_guide({"game": "feedback"})
+        guide = server._tool_get_guide({"game": "feedback"}, path_token=self.admin_token)
         for action in admin_feedback_mcp.ACTIONS:
             self.assertNotIn(action, public)
             self.assertIn(action, guide)
@@ -623,8 +625,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertTrue({"page", "ticket_id", "before_id", "reply", "internal_note"}.isdisjoint(root["inputSchema"]["properties"]))
         self.assertNotIn("admin_feedback", json.dumps(root))
         legacy = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "account")
-        for name in ("status", "reply", "internal_note"):
-            self.assertEqual(legacy["inputSchema"]["properties"][name]["type"], "string")
+        self.assertTrue({"status", "reply", "internal_note", "before_id"}.isdisjoint(legacy["inputSchema"]["properties"]))
 
 
 if __name__ == "__main__": unittest.main()

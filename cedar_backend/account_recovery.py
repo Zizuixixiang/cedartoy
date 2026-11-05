@@ -6,6 +6,8 @@ Database paths, mutable state and configuration remain owned by the caller.
 """
 
 
+RECOVERY_LINK_LIFETIME_SECONDS = 48 * 3600
+
 def _generate_reset_link(user_id, *,
     _McpError,
     _create_reset_token,
@@ -246,7 +248,7 @@ def _query_recovery_ticket(body, *,
             _complete_recovery_tickets(conn, ticket["user_id"])
             conn.commit()
             return {**result, "status": "completed"}
-        # The window limits issuance; a link already issued remains valid for its full 24h.
+        # The window limits issuance; a link already issued remains valid for its full 48h.
         if reset and reset[1] > now:
             expires_at = reset[1]
         else:
@@ -256,7 +258,7 @@ def _query_recovery_ticket(body, *,
                 conn.execute("UPDATE password_reset_tokens SET used=1 WHERE id=?", (ticket["reset_token_id"],))
             ticket["reset_nonce"] = secrets.token_urlsafe(32)
             token = _recovery_reset_token(ticket, code)
-            _, token_id, expires_at = _create_reset_token(conn, ticket["user_id"], lifetime_seconds=86400, token=token)
+            _, token_id, expires_at = _create_reset_token(conn, ticket["user_id"], lifetime_seconds=RECOVERY_LINK_LIFETIME_SECONDS, token=token)
             conn.execute(
                 "UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=? WHERE id=?",
                 (token_id, ticket["reset_nonce"], ticket["id"]),

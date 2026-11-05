@@ -85,6 +85,12 @@ finally: case.doCleanups()
       });
       const page = await context.newPage(), errors = [];
       page.on("pageerror", err => errors.push(err.message));
+      if (process.env.FEEDBACK_CLOSE_ONLY) {
+        await require("./check_feedback_close_browser.js").run({page, backend, fixture, width, screenshots});
+        assert.deepEqual(errors, [], "No JavaScript errors");
+        await context.close();
+        continue;
+      }
       await page.goto(base);
       const nav = page.locator(".bottom-nav .nav-label");
       assert.deepEqual(await nav.allTextContents(), ["反馈", "排行榜", "历史", "我的"]);

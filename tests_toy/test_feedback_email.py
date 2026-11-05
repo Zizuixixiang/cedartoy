@@ -32,7 +32,7 @@ class FeedbackEmailTests(unittest.TestCase):
             with patch.object(feedback_tickets, "time", **{"time.return_value": started}):
                 receipt = self.submit(notify_email=True, contact_email=email)
                 tid = receipt["ticket_id"]
-                self.call("admin_feedback_review", ticket_id=tid, reply="请再试试", confirm=True)
+                self.call("admin_review", ticket_id=tid, reply="请再试试", confirm=True)
                 before = self.store.detail(tid, admin=True)
             send.assert_called_once_with(email, tid, "请再试试", False)
             events = self._events(tid)
@@ -59,7 +59,7 @@ class FeedbackEmailTests(unittest.TestCase):
                 status, detail = self.http("detail", {"ticket_id": tid}, self.admin_token, admin=True)
                 self.assertEqual(status, 200)
                 self.assertEqual(detail["ticket"]["contact_email"], email)
-                self.assertEqual(self.call("admin_feedback_detail", ticket_id=tid)["ticket"]["contact_email"], email)
+                self.assertEqual(self.call("admin_detail", ticket_id=tid)["ticket"]["contact_email"], email)
                 for denied_token, expected in ((None, 401), (self.human_token, 403), (self.ai_token, 403)):
                     self.assertEqual(self.http("detail", {"ticket_id": tid}, denied_token, admin=True)[0], expected)
 
@@ -71,14 +71,14 @@ class FeedbackEmailTests(unittest.TestCase):
                     self.assertEqual(status, 200)
                     public_results.append(public)
                 if owner is not None:
-                    public_results.extend((self.call("feedback_list", token=token),
-                                           self.call("feedback_detail", token=token, ticket_id=tid)))
+                    public_results.extend((self.call("list", token=token),
+                                           self.call("detail", token=token, ticket_id=tid)))
                 for public in public_results:
                     self.assertNotIn("contact_email", str(public))
                     self.assertNotIn(email, str(public))
 
         tid = self.submit()["ticket_id"]
-        self.assertIsNone(self.call("admin_feedback_detail", ticket_id=tid)["ticket"]["contact_email"])
+        self.assertIsNone(self.call("admin_detail", ticket_id=tid)["ticket"]["contact_email"])
 
     def test_opt_in_only_public_reply_or_new_closure(self):
         with patch.object(server, "_send_feedback_email") as send:
@@ -89,19 +89,19 @@ class FeedbackEmailTests(unittest.TestCase):
                 row = conn.execute("SELECT contact_email FROM feedback_tickets WHERE id=?", (tid,)).fetchone()
                 self.assertEqual(row[0], "1452010907@qq.com")
             self.assertNotIn("contact_email", self.store.query(ticket["query_code"])["ticket"])
-            self.call("admin_feedback_review", ticket_id=tid, internal_note="内部", confirm=True)
-            self.call("admin_feedback_review", ticket_id=tid, status="processing", confirm=True)
+            self.call("admin_review", ticket_id=tid, internal_note="内部", confirm=True)
+            self.call("admin_review", ticket_id=tid, status="processing", confirm=True)
             send.assert_not_called()
             self.assertEqual(self._events(tid), [])
 
-            self.call("admin_feedback_review", ticket_id=tid, reply="已修好", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="已修好", confirm=True)
             send.assert_called_once_with("1452010907@qq.com", tid, "已修好", False)
-            self.call("admin_feedback_review", ticket_id=tid, status="closed", confirm=True)
-            self.call("admin_feedback_review", ticket_id=tid, status="closed", confirm=True)
+            self.call("admin_review", ticket_id=tid, status="closed", confirm=True)
+            self.call("admin_review", ticket_id=tid, status="closed", confirm=True)
             self.assertEqual(send.call_count, 2)
             send.assert_any_call("1452010907@qq.com", tid, None, True)
 
-            self.call("admin_feedback_review", ticket_id=tid, reply="补充说明", status="closed", confirm=True)
+            self.call("admin_review", ticket_id=tid, reply="补充说明", status="closed", confirm=True)
             send.assert_any_call("1452010907@qq.com", tid, "补充说明", True)
             self.assertEqual([(e["kind"], e["status"]) for e in self._events(tid)],
                              [("reply", "sent"), ("closed", "sent"), ("reply", "sent")])
@@ -142,7 +142,7 @@ class FeedbackEmailTests(unittest.TestCase):
         with patch.object(server, "_send_feedback_email") as send:
             self.store = server._feedback_store()
             ticket = self.submit(notify_email=False, contact_email="not-an-email")
-            self.call("admin_feedback_review", ticket_id=ticket["ticket_id"], reply="答复", confirm=True)
+            self.call("admin_review", ticket_id=ticket["ticket_id"], reply="答复", confirm=True)
             self.assertEqual(self._events(ticket["ticket_id"]), [])
             send.assert_not_called()
             for args in (
@@ -158,7 +158,7 @@ class FeedbackEmailTests(unittest.TestCase):
             self.store = server._feedback_store()
             ticket = self.submit(notify_email=True, contact_email="nanshan2368@gmail.com")
             tid = ticket["ticket_id"]
-            self.assertEqual(self.call("admin_feedback_review", ticket_id=tid,
+            self.assertEqual(self.call("admin_review", ticket_id=tid,
                                        reply="已处理", confirm=True)["ok"], True)
             send.assert_called_once()
             self.assertEqual(self._events(tid)[0]["status"], "failed")

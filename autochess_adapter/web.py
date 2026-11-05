@@ -2,14 +2,24 @@
 import json
 import mimetypes
 import os
+import time
 from pathlib import Path
 from urllib.parse import urlsplit, unquote
 
 from cedar_backend.errors import _McpError
-from . import economy
+from . import economy, web_diagnostics
 from . import enabled, prepare, request, _contains_credential
 
 DIST = Path(__file__).resolve().parents[1] / 'vendor/autochess/dist/cedartoy'
+_WEB_RATE_BUCKETS = {}
+WEB_RATE_LIMIT = 240
+
+def rate_allowed(server, owner):
+    return server._check_sliding_window_limit(
+        _WEB_RATE_BUCKETS, str(owner), now=time.monotonic(),
+        window_seconds=60, max_count=WEB_RATE_LIMIT)
+
+
 _OPS = {
     'config': set(), 'create': {'requestId', 'pack', 'mode', 'seats'},
     'join': {'invitation'}, 'state': {'roomId'}, 'invite': {'roomId'},
@@ -29,7 +39,8 @@ def api(handler, server, body, path):
     token = server._extract_bearer(handler.headers)
     context = handler._duel_human_context(token)  # authenticates and re-reads live bindings
     owner = context['human_player']
-    if not server._check_duel_web_request_rate_limit('autochess:' + owner):
+    handler._autochess_trace = web_diagnostics.begin(owner, path)
+    if not rate_allowed(server, owner):
         raise _McpError(-32000, '请求过于频繁，请稍后重试')
     if path.endswith('/stats'):
         allowed = author_allowed(owner)
@@ -87,7 +98,12 @@ def api(handler, server, body, path):
 
 
 def serve(handler, server):
+    handler._autochess_trace = None
+    handler._autochess_error = None
     def send_json(data, status=200, extra_headers=None):
+        trace = handler._autochess_trace
+        if trace is not None:
+            trace.emit('response', status, handler._autochess_error)
         headers = {'Connection': 'close'} if handler.command == 'POST' else {}
         try:
             return handler._send_json(data, status=status, extra_headers={**headers, **(extra_headers or {})})
@@ -132,7 +148,14 @@ def serve(handler, server):
         result = api(handler, server, body, path)
         return send_json(result, extra_headers={'Cache-Control': 'no-store'})
     except _McpError as exc:
+        handler._autochess_error = 'McpError'
         return send_json({'error': exc.message}, status=403 if exc.code in (-32001, -32003) else 400,
                                   extra_headers={'Cache-Control': 'no-store'})
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        handler._autochess_error = type(exc).__name__
         return send_json({'error': 'Invalid request'}, status=400)
+
+    except Exception:
+        if handler._autochess_trace is not None:
+            handler._autochess_trace.emit('exception', 500, 'OtherError')
+        raise

@@ -11,5 +11,6 @@
   "confirm_delay_seconds": 20,
   "baseline_max_age_seconds": 172800,
   "failure_threshold": 3,
+  "promotions_enabled": false,
   "telegram_env": "/opt/cedarclio/.env"
 }

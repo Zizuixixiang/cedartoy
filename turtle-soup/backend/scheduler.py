@@ -1,4 +1,7 @@
 import logging
+import functools
+import os
+import time
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -180,12 +183,29 @@ async def scan_recent_content() -> None:
         logger.warning("AI 内容扫描失败: %s", exc)
 
 
+def _diagnosed_job(function):
+    @functools.wraps(function)
+    async def run():
+        started = time.monotonic()
+        stamp = lambda: time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        logger.warning("account_db_job event=start time_utc=%s pid=%s job=%s", stamp(), os.getpid(), function.__name__)
+        outcome = "ok"
+        try:
+            return await function()
+        except BaseException:
+            outcome = "failed_or_cancelled"
+            raise
+        finally:
+            logger.warning("account_db_job event=end time_utc=%s pid=%s job=%s outcome=%s duration_ms=%s", stamp(), os.getpid(), function.__name__, outcome, round((time.monotonic()-started)*1000))
+    return run
+
+
 def start_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
-    scheduler.add_job(cleanup_inactive_rooms, "interval", hours=1, id="cleanup_inactive_rooms")
-    scheduler.add_job(cleanup_finished_rooms, "interval", minutes=10, id="cleanup_finished_rooms")
-    scheduler.add_job(cleanup_guests, "interval", hours=1, id="cleanup_guests")
-    scheduler.add_job(cleanup_stale_presence, "interval", minutes=15, id="cleanup_stale_presence")
+    scheduler.add_job(_diagnosed_job(cleanup_inactive_rooms), "interval", hours=1, id="cleanup_inactive_rooms")
+    scheduler.add_job(_diagnosed_job(cleanup_finished_rooms), "interval", minutes=10, id="cleanup_finished_rooms")
+    scheduler.add_job(_diagnosed_job(cleanup_guests), "interval", hours=1, id="cleanup_guests")
+    scheduler.add_job(_diagnosed_job(cleanup_stale_presence), "interval", minutes=15, id="cleanup_stale_presence")
     scheduler.add_job(scan_recent_content, "cron", hour=3, minute=0, id="scan_recent_content")
     scheduler.start()
     return scheduler

@@ -81,7 +81,21 @@ class AccountRecoveryTests(unittest.TestCase):
             send.assert_not_called()
             self.assertEqual(self.tokens(), [])
 
-    def test_notification_and_query_share_one_24h_single_use_link(self):
+
+    def test_existing_24h_token_not_extended_and_other_reset_ttl_unchanged(self):
+        body, tid = self.submit()
+        self.approve(tid)
+        first = server._query_recovery_ticket(body)
+        with self._connect() as conn:
+            conn.execute("UPDATE password_reset_tokens SET expires_at=datetime('now','+24 hours')")
+            expected = conn.execute("SELECT CAST(strftime('%s', expires_at) AS INTEGER) FROM password_reset_tokens").fetchone()[0]
+        self.assertEqual(server._query_recovery_ticket(body)["expires_at_epoch"], expected)
+        self.assertEqual(server._query_recovery_ticket(body)["reset_url"], first["reset_url"])
+        with self._connect() as conn:
+            _, _, expires = server._create_reset_token(conn, self.human_id, lifetime_seconds=3600)
+        self.assertAlmostEqual(expires - time.time(), 3600, delta=3)
+
+    def test_notification_and_query_share_one_48h_single_use_link(self):
         for consume_from in ("email", "query"):
             body, tid = self.submit(notify_email=True, contact_email="contact@example.invalid")
             def during_send(email, decision, note, url, *, verified_username):
@@ -98,7 +112,7 @@ class AccountRecoveryTests(unittest.TestCase):
                 url = send.call_args.args[3]
             result = server._query_recovery_ticket(body)
             self.assertEqual(result["reset_url"], url)
-            self.assertAlmostEqual(result["expires_at_epoch"] - time.time(), 86400, delta=3)
+            self.assertAlmostEqual(result["expires_at_epoch"] - time.time(), 172800, delta=3)
             ticket = self.ticket(tid)
             self.assertEqual(ticket["email_status"], "sent")
             self.assertGreaterEqual(ticket["email_finished_at_epoch"], ticket["email_attempted_at_epoch"])
@@ -161,7 +175,7 @@ class AccountRecoveryTests(unittest.TestCase):
                 if decision == "approved":
                     url = server._query_recovery_ticket(body)["reset_url"]
                     self.assertEqual(content.count(url), 1)
-                    self.assertIn("24 小时", content)
+                    self.assertIn("48 小时", content)
                     self.assertNotIn(url.split("=", 1)[1], str(log.mock_calls))
                 else:
                     self.assertIn("公开备注", content)
@@ -191,7 +205,7 @@ class AccountRecoveryTests(unittest.TestCase):
                 self.assertNotIn("未经核验的名字", content)
                 self.assertNotIn(f"账号「{self.human_id}」", content)
                 self.assertIn(server._query_recovery_ticket(body)["reset_url"], content)
-                self.assertIn("24 小时内有效，仅可使用一次，请勿转发", content)
+                self.assertIn("48 小时内有效，仅可使用一次，请勿转发", content)
 
     def test_notification_configuration_failure_preserves_review_and_fallback(self):
         for config in (None, "none"):
@@ -309,14 +323,14 @@ class AccountRecoveryTests(unittest.TestCase):
             self.assertIn("query_code_hash", columns)
             self.assertNotIn("access_hash", columns)
 
-    def test_approval_lazily_issues_hashed_24h_token_and_completes(self):
+    def test_approval_lazily_issues_hashed_48h_token_and_completes(self):
         body, ticket_id = self.submit()
         self.assertEqual(server._query_recovery_ticket(body)["status"], "pending")
         self.approve(ticket_id)
         self.assertEqual(self.tokens(), [])
         result = server._query_recovery_ticket(body)
         token = result["reset_url"].split("=", 1)[1]
-        self.assertAlmostEqual(result["expires_at_epoch"] - time.time(), 86400, delta=3)
+        self.assertAlmostEqual(result["expires_at_epoch"] - time.time(), 172800, delta=3)
         self.assertAlmostEqual(result["claim_until_epoch"] - time.time(), 7 * 86400, delta=3)
         self.assertEqual(server._query_recovery_ticket(body), result)
         self.assertEqual(len(self.tokens()), 1)
@@ -353,7 +367,7 @@ class AccountRecoveryTests(unittest.TestCase):
         with self.assertRaises(server._McpError):
             server._reset_password_by_token(first["reset_url"].split("=", 1)[1], "old-pass")
 
-    def test_window_expiry_prevents_new_tokens_but_preserves_issued_24h(self):
+    def test_window_expiry_prevents_new_tokens_but_preserves_issued_48h(self):
         body, tid = self.submit()
         self.approve(tid)
         first = server._query_recovery_ticket(body)

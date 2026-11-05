@@ -41,3 +41,19 @@ backups/
 /.nowhere-runtime/
 /.venv-shared-craft/
 /data/shared_craft/
+
+# Local build/test previews and live runtime data (never commit)
+/artifacts/
+/docs/previews/
+/data/autochess_rooms/
+/data/racknerd-monitor/
+/data/*.jsonl
+/data/*.jsonl.*
+/data/*diagnostics*_activation.json
+/data/*.db-shm
+/data/*.db-wal
+/server.py.orig
+/server.py.bak-*
+/deploy/*.bak-*
+/turtle-soup/backend/*.bak-*
+/garden_cat_save.json

@@ -33,7 +33,7 @@ class GamePageSlotTests(unittest.TestCase):
         self.stack.enter_context(patch.object(server, '_record_web_game_activity'))
         self.stack.enter_context(patch.object(server, '_game_maintenance', return_value=None))
         self.stack.enter_context(patch.object(server.detroit_adapter, 'fetch_public', return_value=(200, 'text/html', b'<html>fixture</html>')))
-        self.api = self.stack.enter_context(patch.object(server.detroit_adapter, 'browser_api', side_effect=self.detroit_api))
+        self.api = self.stack.enter_context(patch.object(server.detroit_adapter, 'browser_machine_api', side_effect=self.detroit_api))
         self.saves = {}
         self.targets = []
 
@@ -84,7 +84,7 @@ class GamePageSlotTests(unittest.TestCase):
 
     def test_tabs_keep_read_write_targets_across_other_tab_switches(self):
         for game in ('detroit', 'camping_plaza'):
-            for a, b in (('101:5', '101'), ('101:5', '202:2')):
+            for a, b in ((('101', '202'),) if game == 'detroit' else (('101:5', '101'), ('101:5', '202:2'))):
                 for player, marker, other in ((a, 'A', b), (b, 'B', a)):
                     h = self.call(game, player, method='POST', marker=marker, cookie_player=other)
                     h._send_json.assert_not_called()
@@ -97,7 +97,7 @@ class GamePageSlotTests(unittest.TestCase):
     def test_missing_unbound_invalid_duplicate_and_expired_requests_never_forward(self):
         for game in ('detroit', 'camping_plaza'):
             for method in ('GET', 'POST'):
-                for player in (None, '', '303', '101:0', '101:6', '101:x', '101:2:3', 'guest:any'):
+                for player in (None, '', '303', '101:0', '101:13' if game == 'detroit' else '101:6', '101:x', '101:2:3', 'guest:any'):
                     with self.subTest(game=game, method=method, player=player):
                         count = len(self.targets)
                         h = self.call(game, player, method=method)
@@ -112,11 +112,11 @@ class GamePageSlotTests(unittest.TestCase):
                 self.assertEqual(h._send_json.call_args.kwargs['status'], 403)
 
     def test_detroit_refresh_and_entry_redirect_keep_player_without_cookie_target(self):
-        for player in ('101', '101:5', '202:2'):
+        for player in ('101', '101:5', '101:6', '101:12', '202:2'):
             h = self.handler('/detroit/', 'detroit_token=fixture; detroit_player=303')
             h._handle_detroit_get('/detroit/', {'token': ['fixture'], 'player': [player]})
             location = dict(h.send_header.call_args_list[i].args for i in range(len(h.send_header.call_args_list)))['Location']
-            self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(location).query), {'player': [player]})
+            self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(location).query), {'player': [player.split(':')[0]]})
             refreshed = self.handler(location, 'detroit_token=fixture; detroit_player=202')
             refreshed._handle_detroit_get('/detroit/', {'player': [player]})
             refreshed._send_json.assert_not_called()

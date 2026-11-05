@@ -251,6 +251,9 @@ def do_POST(
         self._send_json({"error": "not found"}, status=404)
         return
 
+    diagnostic_start = getattr(self, "_start_mcp_diagnostic", None)
+    if diagnostic_start is not None:
+        diagnostic_start(path_token)
     if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
         try:
             raw_body = self._read_chunked_body()
@@ -271,6 +274,9 @@ def do_POST(
         self._send_json(_json_rpc_error(None, -32700, "Parse error"), status=400)
         return
 
+    trace = getattr(self, "_mcp_diagnostic", None)
+    if trace is not None:
+        trace.payload(payload)
     if not isinstance(payload, dict):
         self._send_json(_json_rpc_error(None, -32600, "Invalid Request"), status=400)
         return

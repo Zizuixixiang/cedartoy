@@ -142,6 +142,15 @@ class GardenPickerDiagnosticsTests(unittest.TestCase):
                         status, headers, body, _ = self.request()
                 finally:
                     blocker.rollback()
+            if mode == "IMMEDIATE":
+                # Activity timestamps are non-security bookkeeping: a reserved
+                # writer lock must not turn a verified login into HTTP 500.
+                self.assertEqual(status, 200)
+                self.assertEqual(self.records(logs)[-1]["outcome"], "ok")
+                self.assertFalse(any(r["event"] == "error" for r in self.records(logs)))
+                self.assertEqual([g["ai_user_id"] for g in json.loads(body)["gardens"]], [2])
+                self.assert_private(logs)
+                continue
             self.assertEqual(status, 500)
             self.assertEqual(json.loads(body)["detail"], "database is locked")
             error = next(r for r in self.records(logs) if r["event"] == "error")

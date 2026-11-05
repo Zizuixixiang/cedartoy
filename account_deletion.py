@@ -14,6 +14,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from cedar_backend.player_identity import max_save_slot
 
 DELETION_COOLDOWN_SECONDS = 72 * 60 * 60
 PURGE_LEASE_SECONDS = 15 * 60
@@ -221,9 +222,9 @@ def cancel_deletion(conn: sqlite3.Connection, user_id: int, *, now_epoch=None) -
     return {"status": "active", "pending": False, "cancelled": True}
 
 
-def _player_ids(user_id: int) -> list[str]:
+def _player_ids(user_id: int, *, game=None) -> list[str]:
     base = str(int(user_id))
-    return [base, *(f"{base}:{slot}" for slot in range(2, 6))]
+    return [base, *(f"{base}:{slot}" for slot in range(2, max_save_slot(game) + 1))]
 
 
 def _placeholders(values) -> str:
@@ -271,6 +272,7 @@ def _delete_managed_saves(
     garden_delete,
     camping_delete=None,
     detroit_delete=None,
+    detroit_player_ids=None,
 ) -> dict:
     counts = {"workkk": 0, "garden_cat": 0, "camping_plaza": 0, "detroit": 0}
     for player_id in player_ids:
@@ -294,6 +296,7 @@ def _delete_managed_saves(
             result = camping_delete(player_id)
             if result:
                 counts["camping_plaza"] += 1
+    for player_id in player_ids if detroit_player_ids is None else detroit_player_ids:
         detroit_path = save_root / "detroit" / player_id / "remote_state.fernet"
         if detroit_path.is_file():
             if detroit_delete is None:
@@ -631,6 +634,7 @@ def purge_account(
         garden_delete=garden_delete,
         camping_delete=camping_delete,
         detroit_delete=detroit_delete,
+        detroit_player_ids=_player_ids(user_id, game="detroit"),
     )
     _merge_stats(account_db, job_id, PHASE_MANAGED_SAVES, stats)
 

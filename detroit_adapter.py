@@ -11,12 +11,14 @@ from __future__ import annotations
 import base64
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import re
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -24,6 +26,7 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
 from cedar_backend.web.slot_context import page_slot_script
+from cedar_backend.player_identity import max_save_slot
 
 
 REMOTE_BASE = os.getenv(
@@ -40,7 +43,8 @@ MAX_PROXY_BODY = 4 * 1024 * 1024
 PUBLIC_SAVE_ID = "cedartoy-slot"
 BACKUP_SAVE_ID = "0" * 32
 
-_PLAYER_RE = re.compile(r"^[1-9][0-9]*(?::[2-5])?$")
+_PLAYER_RE = re.compile(r"^[1-9][0-9]*(?::(?:[2-9]|1[0-2]))?$")
+_VIRTUAL_SAVE_RE = re.compile(r"^ct-(1[0-2]|[1-9])-([0-9a-f]{64})$")
 _CONNECTION_RE = re.compile(r"^dbr_[A-Za-z0-9_-]{16,}$")
 _SAVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,160}$")
 _MCP_TOOLS = frozenset(
@@ -60,8 +64,52 @@ _MCP_TOOLS = frozenset(
 _MCP_WRITES_WITH_REQUEST_ID = frozenset(
     {"record_choice", "continue_scene", "save_chapter_reflection", "start_next_chapter"}
 )
-_BROWSER_GET = frozenset({"sessions", "session", "history", "export", "backup"})
+_BROWSER_GET = frozenset({"sessions", "session", "history", "stored-history", "export", "backup", "delete-preview"})
 _BROWSER_POST = frozenset({"sessions", "action", "delete", "import"})
+
+# Fixed paths used by the author's host.js v151; never a general-purpose proxy.
+PUBLIC_ASSETS = frozenset({
+    'host',
+    'host.js',
+    'host.css',
+    'downloads/detroit_blind_host_windows_v9.zip',
+    'downloads/detroit_blind_host_windows_v133.zip',
+    'characters/connor.webp',
+    'characters/kara.webp',
+    'characters/markus.webp',
+    'images/ch01-rooftop.jpg',
+    'images/ch02-reference.jpg',
+    'images/ch03-reference.jpg',
+    'images/ch04-reference.jpg',
+    'images/ch05-reference.jpg',
+    'images/ch06-jimmys-bar.jpg',
+    'images/ch07-reference.jpg',
+    'images/ch08-reference.jpg',
+    'images/ch09-reference.jpg',
+    'images/ch10-reference.jpg',
+    'images/ch11-reference.jpg',
+    'images/ch12-reference.jpg',
+    'images/ch13-reference.jpg',
+    'images/ch14-jericho-trail.jpg',
+    'images/ch15-reference.jpg',
+    'images/ch16-reference.jpg',
+    'images/ch17-reference.jpg',
+    'images/ch18-reference.jpg',
+    'images/ch19-reference.jpg',
+    'images/ch20-reference.jpg',
+    'images/ch21-reference.jpg',
+    'images/ch22-reference.jpg',
+    'images/ch23-reference.jpg',
+    'images/ch24-reference.jpg',
+    'images/ch25-rose-farm.jpg',
+    'images/ch26-markus-capitol.jpg',
+    'images/ch27-reference.jpg',
+    'images/ch28-reference.jpg',
+    'images/ch29-reference.jpg',
+    'images/ch30-reference.jpg',
+    'images/ch31-reference.jpg',
+    'images/ch32-reference.jpg',
+})
 
 
 class DetroitError(Exception):
@@ -144,11 +192,11 @@ def _write_state_unlocked(player_id: str, state: dict) -> None:
 
 
 @contextmanager
-def _locked(player_id: str):
+def _locked(player_id: str, *, lock_name=LOCK_NAME):
     directory = _player_dir(player_id)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(directory, 0o700)
-    lock_path = directory / LOCK_NAME
+    lock_path = directory / lock_name
     with lock_path.open("a+b") as handle:
         os.chmod(lock_path, 0o600)
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -223,7 +271,7 @@ def _safe_upstream_message(value: object, *secret_values: object) -> str:
 
 def _redact_save_id(value: object, save_id: str, replacement: str = PUBLIC_SAVE_ID) -> object:
     if isinstance(value, str):
-        return replacement if value == save_id else value
+        return value.replace(save_id, replacement)
     if isinstance(value, list):
         return [_redact_save_id(item, save_id, replacement) for item in value]
     if isinstance(value, dict):
@@ -469,6 +517,8 @@ def play(player_id: str, action: str, arguments: dict) -> dict:
                 raise DetroitError("create_save 的 name 必须是 1–60 字")
             if difficulty not in {"casual", "experienced", "hardcore"}:
                 raise DetroitError("difficulty 只能是 casual、experienced 或 hardcore")
+            if "locale" in args and (not isinstance(args["locale"], str) or args["locale"] not in {"zh-Hant", "zh-Hans", "en", "ja"}):
+                raise DetroitError("locale 只能是 zh-Hant、zh-Hans、en 或 ja")
             state, saves, _listing = _reconcile_save_unlocked(player_id, state)
             if state.get("pending_create") and not saves:
                 if not confirm_retry:
@@ -484,7 +534,10 @@ def play(player_id: str, action: str, arguments: dict) -> dict:
                 _remote_delete_unlocked(state, state["save_id"])
                 state.pop("save_id", None)
                 state.pop("summary", None)
+                state.pop("pending_play_step", None)
             create_args = {"name": raw_name.strip(), "difficulty": difficulty}
+            if "locale" in args:
+                create_args["locale"] = args["locale"]
             state["pending_create"] = {"requested_at": _now(), **create_args}
             _write_state_unlocked(player_id, state)
             try:
@@ -576,59 +629,50 @@ def has_save(player_id: str) -> bool:
     return save_summary(player_id) is not None
 
 
-def _remote_delete_unlocked(state: dict, save_id: str, save_name: str | None = None) -> bool:
-    owner = state.get("owner_cookie")
-    if not isinstance(owner, str):
-        raise DetroitError("远程存档身份缺失", status=500)
-    name = save_name or (state.get("summary") or {}).get("name")
+def _checked_delete_json(response: httpx.Response, state: dict, *, preview: bool = False) -> dict:
+    """Only an explicit success permits removing a local mapping."""
+    uncertain = not preview
+    if not 200 <= response.status_code < 300:
+        if 400 <= response.status_code < 500:
+            data = _safe_json(response, "删除")
+            raise DetroitError(_safe_upstream_message(
+                data.get("error") or "老师站点拒绝删除存档",
+                state.get("save_id"), state.get("owner_cookie"), state.get("mcp_url"),
+            ), status=response.status_code)
+        raise DetroitError("无法确认远程删除结果，请重新核对存档", uncertain=uncertain, status=502)
     try:
-        if not name:
-            listing = httpx.get(
-                REMOTE_BASE + "/api/sessions",
-                headers=_browser_headers(json_request=True),
-                cookies={"__Host-detroit_owner": owner},
-                timeout=45,
-            )
-            if listing.status_code >= 400:
-                raise DetroitError("无法核对待删除的远程存档", status=502)
-            sessions = _safe_json(listing, "存档列表").get("sessions") or []
-            match = next(
-                (item for item in sessions if isinstance(item, dict) and item.get("id") == save_id),
-                None,
-            )
-            if match is None:
-                return False
-            name = match.get("name")
-        if not isinstance(name, str):
-            raise DetroitError("无法核对待删除的远程存档名称", status=409)
-        response = httpx.post(
-            REMOTE_BASE + "/api/delete",
-            headers=_browser_headers(json_request=True),
-            cookies={"__Host-detroit_owner": owner},
-            json={
-                "id": save_id,
-                "name": name,
-                "confirmation": "刪除",
-            },
-            timeout=45,
-        )
-    except httpx.HTTPError as exc:
-        raise DetroitError("远程删除结果不明，请勿立即重复操作", uncertain=True, status=502) from exc
-    if response.status_code >= 500:
-        raise DetroitError("远程删除结果不明，请勿立即重复操作", uncertain=True, status=409)
-    if response.status_code == 404:
-        return False
-    if response.status_code >= 400:
-        payload = _safe_json(response, "删除")
-        raise DetroitError(
-            _safe_upstream_message(
-                payload.get("error") or "老师站点拒绝删除存档",
-                state.get("mcp_url"),
-                owner,
-                save_id,
-            ),
-            status=400,
-        )
+        data = _safe_json(response, "删除预览" if preview else "删除")
+    except DetroitError as exc:
+        raise DetroitError(exc.message, uncertain=uncertain, status=502) from None
+    if not preview and data.get("deleted") is not True:
+        raise DetroitError("远程未确认删除成功，已保留映射", uncertain=True, status=502)
+    return data
+
+
+def _validate_delete_precondition(payload: dict) -> None:
+    revision = payload.get("expected_revision")
+    digest = payload.get("expected_raw_sha256")
+    if (type(revision) is not int or revision < 0 or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        raise DetroitError("请重新打开删除预览并确认当前存档版本", status=409)
+    if not isinstance(payload.get("name"), str) or payload.get("confirmation") != "刪除":
+        raise DetroitError("删除存档必须核对名称并输入“刪除”确认")
+
+
+def _remote_delete_unlocked(state: dict, save_id: str) -> bool:
+    preview = _checked_delete_json(
+        _browser_call_unlocked(state, "GET", "delete-preview", query={"id": save_id}),
+        state, preview=True,
+    )
+    if preview.get("id") != save_id:
+        raise DetroitError("删除预览与当前槽位不一致，已停止删除", status=409)
+    payload = {
+        "id": save_id, "name": preview.get("name"), "confirmation": "刪除",
+        "expected_revision": preview.get("revision"),
+        "expected_raw_sha256": preview.get("raw_sha256"),
+    }
+    _validate_delete_precondition(payload)
+    _checked_delete_json(_browser_call_unlocked(state, "POST", "delete", payload=payload), state)
     return True
 
 
@@ -637,19 +681,13 @@ def delete_save(player_id: str) -> bool:
         state = _read_state_unlocked(player_id)
         if not state:
             return False
+        if state.get("pending_create") and not state.get("save_id"):
+            raise DetroitError("上次建档结果仍待确认，请先 list_saves 核对；已保留映射", uncertain=True, status=409)
         save_id = state.get("save_id")
         if save_id:
             _remote_delete_unlocked(state, save_id)
-        directory = _player_dir(player_id)
-        for name in (STATE_NAME, LOCK_NAME):
-            try:
-                (directory / name).unlink()
-            except FileNotFoundError:
-                pass
-        try:
-            directory.rmdir()
-        except OSError:
-            pass
+        # Keep the lock inode: unlinking it lets concurrent workers take different locks.
+        (_player_dir(player_id) / STATE_NAME).unlink(missing_ok=True)
         return bool(save_id)
 
 
@@ -693,16 +731,17 @@ def browser_api(
     *,
     query: dict[str, str] | None = None,
     payload: dict | None = None,
+    _lock_held: bool = False,
 ) -> tuple[int, dict[str, str], bytes]:
     """Proxy the original browser API while pinning it to one mapped save."""
     method = method.upper()
-    if (method == "GET" and endpoint not in _BROWSER_GET) or (
+    if method not in {"GET", "POST"} or (method == "GET" and endpoint not in _BROWSER_GET) or (
         method == "POST" and endpoint not in _BROWSER_POST
     ):
         raise DetroitError("不允许的底特律网页接口", status=404)
     query = dict(query or {})
     payload = dict(payload or {})
-    with _locked(player_id):
+    with nullcontext() if _lock_held else _locked(player_id):
         state = _ensure_owner_and_connection_unlocked(player_id, _read_state_unlocked(player_id))
         if endpoint == "sessions" and method == "POST":
             state, saves, _listing = _reconcile_save_unlocked(player_id, state)
@@ -727,6 +766,13 @@ def browser_api(
         elif endpoint == "sessions" and method == "GET":
             response = _browser_call_unlocked(state, method, endpoint)
             data = _safe_json(response, "存档列表")
+            if not 200 <= response.status_code < 300:
+                raise DetroitError(_safe_upstream_message(
+                    data.get("error") or "无法读取远程存档列表",
+                    state.get("save_id"), state.get("owner_cookie"), state.get("mcp_url"),
+                ), status=response.status_code if response.status_code >= 400 else 502)
+            if not isinstance(data.get("sessions"), list):
+                raise DetroitError("远程存档列表格式异常，已保留原映射", status=502)
             sessions = [item for item in data.get("sessions") or [] if isinstance(item, dict)]
             mapped = state.get("save_id")
             if mapped and sessions and not any(item.get("id") == mapped for item in sessions):
@@ -741,8 +787,15 @@ def browser_api(
                     state.pop("pending_create", None)
                     _write_state_unlocked(player_id, state)
             data["sessions"] = [item for item in sessions if mapped and item.get("id") == mapped]
-            if mapped:
-                data = _redact_save_id(data, mapped)
+            if data["sessions"]:
+                summary = _summary_from_save(data["sessions"][0]) or {}
+                if summary != state.get("summary"):
+                    state["summary"] = summary
+                    _write_state_unlocked(player_id, state)
+            for secret, replacement in ((mapped, PUBLIC_SAVE_ID), (state.get("owner_cookie"), "<redacted>"),
+                                        (state.get("mcp_url"), "<redacted>")):
+                if isinstance(secret, str) and secret:
+                    data = _redact_save_id(data, secret, replacement)
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
             return response.status_code, {"content-type": "application/json; charset=utf-8"}, body
         else:
@@ -752,9 +805,10 @@ def browser_api(
                 query["id"] = save_id
             else:
                 payload["id"] = save_id
-                if endpoint == "delete" and payload.get("confirmation") != "刪除":
-                    raise DetroitError("删除存档必须在原页面输入“刪除”确认")
+                if endpoint == "delete":
+                    _validate_delete_precondition(payload)
 
+        mapped_before = state.get("save_id")
         response = _browser_call_unlocked(
             state, method, endpoint, query=query if method == "GET" else None, payload=payload if method == "POST" else None
         )
@@ -763,19 +817,37 @@ def browser_api(
         body = response.content
         if len(body) > MAX_PROXY_BODY:
             raise DetroitError("老师站点响应超过安全大小限制", status=502)
-        if endpoint in {"sessions", "import"} and method == "POST" and response.status_code < 500:
-            state.pop("pending_create", None)
-            _write_state_unlocked(player_id, state)
         parsed_result = None
         if "json" in response.headers.get("content-type", "").lower():
             try:
                 parsed_result = response.json()
             except ValueError:
                 parsed_result = None
-        if response.status_code < 400 and endpoint in {"sessions", "import", "action", "session"}:
+        if endpoint == "delete":
+            _checked_delete_json(response, state)
+        if endpoint == "delete-preview":
+            preview = _checked_delete_json(response, state, preview=True)
+            if preview.get("id") != mapped_before:
+                raise DetroitError("删除预览与当前槽位不一致，已停止显示", status=409)
+        if endpoint in {"sessions", "import"} and method == "POST":
+            if 200 <= response.status_code < 300 and not (
+                isinstance(parsed_result, dict) and _save_id_from_result(parsed_result)
+            ):
+                raise DetroitError("建档响应缺少存档 ID，请刷新核对；不会自动重试", uncertain=True, status=502)
+            if not 200 <= response.status_code < 300 and not 400 <= response.status_code < 500:
+                raise DetroitError("建档结果不明，请刷新核对；不会自动重试", uncertain=True, status=502)
+            state.pop("pending_create", None)
+            if response.status_code >= 400:
+                _write_state_unlocked(player_id, state)
+            # On success, persist the new ID and cleared pending marker together below.
+        if 200 <= response.status_code < 300 and endpoint in {"action", "session"}:
+            returned_id = _save_id_from_result(parsed_result) if isinstance(parsed_result, dict) else None
+            if returned_id and returned_id != mapped_before:
+                raise DetroitError("远程响应与当前槽位不一致，已保留原映射", status=502)
+        if 200 <= response.status_code < 300 and endpoint in {"sessions", "import", "action", "session"}:
             if isinstance(parsed_result, dict):
                 _update_from_result_unlocked(player_id, state, parsed_result)
-        if response.status_code < 400 and endpoint == "delete":
+        if 200 <= response.status_code < 300 and endpoint == "delete":
             state.pop("save_id", None)
             state.pop("summary", None)
             state.pop("pending_play_step", None)
@@ -784,7 +856,7 @@ def browser_api(
             "content-type": response.headers.get("content-type", "application/json; charset=utf-8"),
             "content-disposition": response.headers.get("content-disposition", ""),
         }
-        mapped_save_id = state.get("save_id")
+        mapped_save_id = state.get("save_id") or mapped_before
         if isinstance(parsed_result, (dict, list)) and isinstance(mapped_save_id, str):
             replacement = BACKUP_SAVE_ID if endpoint == "backup" else PUBLIC_SAVE_ID
             body = json.dumps(
@@ -792,18 +864,145 @@ def browser_api(
                 ensure_ascii=False,
                 indent=2 if endpoint in {"export", "backup"} else None,
             ).encode("utf-8")
-        elif headers["content-type"].lower().startswith("text/") and isinstance(mapped_save_id, str):
-            body = body.replace(mapped_save_id.encode("utf-8"), PUBLIC_SAVE_ID.encode("utf-8"))
+        elif isinstance(mapped_save_id, str):
+            replacement = BACKUP_SAVE_ID if endpoint == "backup" else PUBLIC_SAVE_ID
+            body = body.replace(mapped_save_id.encode("utf-8"), replacement.encode("utf-8"))
+        for secret_key in ("owner_cookie", "mcp_url"):
+            secret = state.get(secret_key)
+            if isinstance(secret, str) and secret:
+                body = body.replace(secret.encode("utf-8"), b"<redacted>")
         if endpoint == "export":
             headers["content-disposition"] = 'attachment; filename="detroit-handoff.json"'
         elif endpoint == "backup":
             headers["content-disposition"] = 'attachment; filename="detroit-full-save.json"'
+            if 200 <= response.status_code < 300:
+                digest = response.headers.get("x-backup-sha256", "")
+                revision = response.headers.get("x-save-revision", "")
+                kind = response.headers.get("x-backup-kind", "")
+                if (digest != hashlib.sha256(response.content).hexdigest()
+                        or not re.fullmatch(r"[0-9]+", revision)
+                        or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", kind)):
+                    raise DetroitError("远程备份校验失败，请重新读取存档后再试", status=502)
+                headers.update({"x-save-revision": revision, "x-backup-kind": kind,
+                                "x-backup-sha256": hashlib.sha256(body).hexdigest()})
+                if kind == "raw-archive":
+                    headers["content-disposition"] = 'attachment; filename="detroit-raw-archive.txt"'
         return response.status_code, headers, body
+
+
+def _virtual_save_id(player_id: str, state: dict) -> str:
+    """Opaque, account/slot/generation-bound browser handle; never a credential."""
+    save_id = _require_mapped_save(state)
+    slot = player_id.partition(":")[2] or "1"
+    value = json.dumps([player_id, save_id], separators=(",", ":")).encode()
+    owner = state.get("owner_cookie")
+    if not isinstance(owner, str) or not owner:
+        raise DetroitError("远程存档身份缺失", status=500)
+    return f"ct-{slot}-" + hmac.new(owner.encode(), b"cedartoy-browser-save-v1\0" + value, hashlib.sha256).hexdigest()
+
+
+def _machine_slot(machine: str, slot: int) -> str:
+    return machine if slot == 1 else f"{machine}:{slot}"
+
+
+def _machine_state(player: str) -> dict | None:
+    state = _read_state_unlocked(player)
+    if state is not None:
+        if not isinstance(state.get("owner_cookie"), str) or not state["owner_cookie"]:
+            raise DetroitError("已有云端身份不完整，已停止操作并保留映射", status=409)
+        # A browser read must never replace an existing owner or MCP connection.
+        _validate_mcp_url(state.get("mcp_url"))
+    return state
+
+
+def _virtual_response(result, virtual_id):
+    status, headers, body = result
+    # The slot proxy already strips owner/MCP credentials and anonymizes backups.
+    # Do not alter backup bytes: their digest covers the exact anonymized payload.
+    body = body.replace(PUBLIC_SAVE_ID.encode(), virtual_id.encode())
+    if "x-backup-sha256" in headers:
+        headers = {**headers, "x-backup-sha256": hashlib.sha256(body).hexdigest()}
+    return status, headers, body
+
+
+def browser_machine_api(machine: str, method: str, endpoint: str, *, query=None, payload=None):
+    """Virtual author API over unchanged, independently owned 1..12 slot saves.
+
+    Caller authenticates the human's binding to machine. Every handle is checked
+    again under the same slot lock held through forwarding, including deletion.
+    No credential/mapping migration or cross-owner upstream request is performed.
+    """
+    if not isinstance(machine, str) or not re.fullmatch(r"[1-9][0-9]*", machine):
+        raise DetroitError("小机身份无效", status=403)
+    if (method == "GET" and endpoint not in _BROWSER_GET) or (method == "POST" and endpoint not in _BROWSER_POST) or method not in {"GET", "POST"}:
+        raise DetroitError("不允许的底特律网页接口", status=404)
+    query, payload = dict(query or {}), dict(payload or {})
+    players = [_machine_slot(machine, slot) for slot in range(1, max_save_slot("detroit") + 1)]
+    if method == "GET" and endpoint == "sessions":
+        def list_slot(player):
+            # Empty machines can enter without provisioning twelve cloud owners.
+            if not (_player_dir(player) / STATE_NAME).is_file():
+                return []
+            with _locked(player):
+                if not _machine_state(player):
+                    return []
+                result = browser_api(player, "GET", "sessions", _lock_held=True)
+                state = _read_state_unlocked(player)
+                data = json.loads(result[2])
+                if not data["sessions"]:
+                    if state.get("save_id") or state.get("pending_create"):
+                        raise DetroitError("有存档暂未被远程列表确认，请稍后刷新；已保留映射", status=409)
+                    return []
+                return json.loads(_virtual_response(result, _virtual_save_id(player, state))[2])["sessions"]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            sessions = [save for group in pool.map(list_slot, players) for save in group]
+        # Upstream counts cannot be unioned across owners without ending IDs.
+        data = {"sessions": sessions, "ending_progress": {"discovered": 0, "total": 0, "percent": 0},
+                "cedartoy_per_save_progress": True}
+        return 200, {"content-type": "application/json; charset=utf-8"}, json.dumps(data, ensure_ascii=False).encode()
+    if method == "POST" and endpoint in {"sessions", "import"}:
+        allowed = {"name", "difficulty", "locale"} if endpoint == "sessions" else {"backup"}
+        if set(payload) - allowed or query:
+            raise DetroitError("新建/导入由主持台分配空槽，不接受目标存档参数")
+        # Serializes browser allocations. MCP still uses its original per-slot
+        # lock, which is rechecked here and held through the entire creation.
+        with _locked(machine, lock_name=".browser-allocation.lock"):
+            for player in players:
+                if not (_player_dir(player) / STATE_NAME).is_file():
+                    continue
+                with _locked(player):
+                    state = _machine_state(player)
+                    if state and state.get("pending_create"):
+                        raise DetroitError("上次建档结果仍待确认，请先刷新列表；不会再次分配空槽", uncertain=True, status=409)
+            for player in players:
+                with _locked(player):
+                    state = _machine_state(player)
+                    if state and (state.get("save_id") or state.get("pending_create")):
+                        continue
+                    result = browser_api(player, method, endpoint, payload=payload, _lock_held=True)
+                    state = _read_state_unlocked(player)
+                    return _virtual_response(result, _virtual_save_id(player, state)) if result[0] < 300 else result
+        raise DetroitError("12 个存档槽已满，请先在存档列表确认删除一个存档后再新建或导入", status=409)
+    supplied = query.get("id") if method == "GET" else payload.get("id")
+    match = _VIRTUAL_SAVE_RE.fullmatch(supplied) if isinstance(supplied, str) else None
+    if not match:
+        raise DetroitError("存档标识无效，请返回存档首页刷新", status=403)
+    player = _machine_slot(machine, int(match.group(1)))
+    with _locked(player):
+        state = _machine_state(player)
+        if not state or not state.get("save_id") or not hmac.compare_digest(supplied, _virtual_save_id(player, state)):
+            raise DetroitError("存档已变更或不属于当前小机，请返回存档首页刷新", status=409)
+        if method == "GET":
+            query["id"] = PUBLIC_SAVE_ID
+        else:
+            payload["id"] = PUBLIC_SAVE_ID
+        result = browser_api(player, method, endpoint, query=query, payload=payload, _lock_held=True)
+        return _virtual_response(result, supplied)
 
 
 def fetch_public(path: str) -> tuple[int, str, bytes]:
     """Fetch only the fixed public host assets; never sends owner credentials."""
-    if path not in {"host", "host.js", "host.css", "downloads/detroit_blind_host_windows_v9.zip"}:
+    if path not in PUBLIC_ASSETS:
         raise DetroitError("未找到底特律公开资源", status=404)
     try:
         response = httpx.get(
@@ -843,6 +1042,9 @@ def rewrite_public(path: str, body: bytes) -> bytes:
         text = text.replace("`/api/", "`/detroit/api/")
         text = text.replace("'/downloads/", "'/detroit/downloads/").replace('"/downloads/', '"/detroit/downloads/')
         text = text.replace("`/downloads/", "`/detroit/downloads/")
+        for prefix in ("characters", "images"):
+            for quote in ("'", '"', "`"):
+                text = text.replace(quote + "/" + prefix + "/", quote + "/detroit/" + prefix + "/")
         # The author's export/backup buttons navigate directly instead of fetch.
         text = re.sub(
             r"window\.location\.href = (`/detroit/api/[^`]+`)",
@@ -855,18 +1057,16 @@ def rewrite_public(path: str, body: bytes) -> bytes:
   const dialog = document.createElement('div');
   dialog.id = 'copy-fallback';
   dialog.className = 'copy-fallback';
-  dialog.innerHTML = `<div class="copy-card"><h2>CedarToy 統一 MCP</h2><p>小機請使用 CedarToy/4399 的統一 MCP，並先呼叫 <code>get_guide(game="detroit")</code>。</p><p class="tiny">遊戲與存檔由「如火如風的容」老師站點托管。</p><button id="copy-close" class="button primary">知道了</button></div>`;
+  dialog.innerHTML = `<div class="copy-fallback-panel" role="dialog" aria-modal="true" aria-label="CedarToy MCP"><h2>CedarToy 統一 MCP</h2><p>小機請使用 CedarToy/4399 的統一 MCP，並先呼叫 <code>get_guide(game="detroit")</code>。</p><p class="tiny">遊戲與存檔由「如火如風的容」老師站點托管。</p><button id="copy-close" class="button primary">知道了</button></div>`;
   document.body.appendChild(dialog);
   dialog.querySelector('#copy-close').addEventListener('click', () => dialog.remove());
-}
-
-function showDeleteDialog'''
+}'''
         text, count = re.subn(
-            r"async function showMcpSetup\(\) \{.*?\n\}\n\nfunction showDeleteDialog",
+            r"^async function showMcpSetup\(\) \{\n.*?^\}",
             replacement,
             text,
             count=1,
-            flags=re.DOTALL,
+            flags=re.DOTALL | re.MULTILINE,
         )
         if count != 1:
             raise DetroitError("老师页面版本变化，无法安全替换连接说明", status=502)
@@ -897,24 +1097,11 @@ function showDeleteDialog'''
             '<a href="https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host" target="_blank" rel="noopener noreferrer">作者原版 ↗</a></p>'
         )
         text = old_note.sub(new_note, text, count=1)
-        original_bootstrap = (
-            'showHome().catch(error => { app.innerHTML = `<div class="error">'
-            '${escapeHtml(error.message)}</div>`; });'
-        )
-        if text.count(original_bootstrap) != 1:
-            raise DetroitError("老师页面版本变化，无法安全接入初始存档", status=502)
-        cedartoy_bootstrap = '''async function showCedarToyInitialSave() {
-  const listing = await api('/detroit/api/sessions');
-  const sessions = listing && Array.isArray(listing.sessions) ? listing.sessions : null;
-  if (sessions === null) throw new Error('存档列表格式异常，请稍后重试');
-  if (!sessions.length) return showHome();
-  if (sessions.length !== 1 || !sessions[0] || !sessions[0].id) {
-    throw new Error('当前槽位的存档状态异常，请联系管理员核对');
-  }
-  render(await api(`/detroit/api/session?id=${encodeURIComponent(sessions[0].id)}`));
-}
-
-showCedarToyInitialSave().catch(error => { app.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`; });'''
-        text = text.replace(original_bootstrap, cedartoy_bootstrap, 1)
+        text = text.replace('''<p class="tiny">${homeUi('mcpText')}</p><p class="tiny"><a href="https://github.com/Baba88611/detroit-ai-player" target="_blank" rel="noopener noreferrer">${homeUi('license')}</a></p>''', new_note)
+        text = text.replace('''<details class="usage-note"><summary>${homeUi('connection')}</summary><div class="tiny"><p>${homeUi('connectionText')}</p></div></details>''', '')
+        text = text.replace("${homeUi('connect')}", "CedarToy MCP")
+        text = text.replace('<section class="ending-progress" aria-label=',
+                            '<section class="ending-progress" ${homeData.cedartoy_per_save_progress ? "hidden" : ""} aria-label=')
+        # Preserve the author's home/navigation state machine, including its generation guard.
         return page_slot_script("/detroit") + text.encode("utf-8")
     return body

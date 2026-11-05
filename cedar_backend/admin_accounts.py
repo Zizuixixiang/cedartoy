@@ -6,6 +6,8 @@ Database paths, mutable state and configuration remain owned by the caller.
 """
 
 
+from .account_recovery import RECOVERY_LINK_LIFETIME_SECONDS
+
 def _require_admin_account(raw_token, *,
     _McpError,
     _current_account,
@@ -268,7 +270,7 @@ def _review_recovery_ticket(ticket_id, body, admin, *,
             if decision == "approved":
                 nonce = secrets.token_urlsafe(32)
                 token = _recovery_reset_token({"id": ticket_id, "reset_nonce": nonce, "reset_token_version": 2})
-                _, token_id, _ = _create_reset_token(conn, user_id, lifetime_seconds=86400, token=token)
+                _, token_id, _ = _create_reset_token(conn, user_id, lifetime_seconds=RECOVERY_LINK_LIFETIME_SECONDS, token=token)
                 conn.execute(
                     """UPDATE account_recovery_tickets SET reset_token_id=?, reset_nonce=?,
                        reset_token_version=2 WHERE id=?""", (token_id, nonce, ticket_id),

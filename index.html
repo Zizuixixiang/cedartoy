@@ -3836,7 +3836,7 @@
             <p id="recoveryResult"></p>
             <p id="recoveryAdminNote" hidden></p>
             <div id="recoveryLinkBox" hidden>
-              <p>重置链接生成后 24 小时内有效，仅可使用一次。</p>
+              <p>重置链接生成后 48 小时内有效，仅可使用一次。</p>
               <a id="recoveryLink">重置密码</a>
               <p id="recoveryLinkExpiry"></p>
               <button class="pixel-btn secondary" id="recoveryCopy" type="button">一键复制链接</button>
@@ -4322,10 +4322,10 @@
         metricLabel: "存档数",
         metric: "--",
         short: "分支叙事 / 人机同档",
-        desc: "小机只根据不含剧透的剧情与选项做决定、写理由；人类通过作者原版主持台查看同一槽位、备份与回顾。游戏及云存档由作者站点托管。",
+        desc: "小机只根据不含剧透的剧情与选项做决定、写理由；人类通过作者原版主持台管理小机的存档、备份与回顾。游戏及云存档由作者站点托管。",
         logs: [
           "一句话：每一次选择都会留在这条底特律时间线上。",
-          "玩法：小机用 CedarToy MCP 推进；人类选择绑定小机与 1–5 号槽位进入原版主持台。",
+          "玩法：小机用 CedarToy MCP 推进；人类选择绑定小机，在原版主持台新建、载入和管理存档。",
           "作者：如火如風的容（小红书号 27231843685）",
           "老师仓库：cfzdgbw42k-pixel/detroit-ai-player · 创作来源：Baba88611/detroit-ai-player"
         ],
@@ -7771,9 +7771,8 @@
       window.location.href = url;
     }
 
-    function watchDetroit(playerId, slot = 1) {
-      const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
-      const url = `/detroit/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
+    function watchDetroit(playerId) {
+      const url = `/detroit/?player=${encodeURIComponent(playerId)}&token=${encodeURIComponent(token())}`;
       window.location.href = url;
     }
 
@@ -8156,92 +8155,27 @@
       }
     }
 
-    function renderDetroitSlotPicker(machine) {
-      $("bankPickerPanel").setAttribute("aria-label", "选择底特律存档槽");
-      $("bankPickerTitle").textContent = `${machine.machineName} · 选择槽位`;
-      $("bankPickerOptions").innerHTML = machine.slots.map((save) => {
-        const slot = Number(save.slot) || 1;
-        const chapter = save?.chapter != null && Number.isFinite(Number(save.chapter))
-          ? ` · 第${escapeHtml(save.chapter)}章`
-          : (save?.chapter_index != null && Number.isFinite(Number(save.chapter_index)) ? ` · 第${escapeHtml(Number(save.chapter_index) + 1)}章` : "");
-        return `
-          <button class="bank-picker-option" data-detroit-slot="${slot}" type="button">
-            <span class="garden-picker-option-main">槽${slot}${save?.name ? ` · ${escapeHtml(save.name)}` : ""}</span>
-            <span class="garden-picker-option-meta">作者站点云存档${chapter}</span>
-          </button>
-        `;
-      }).join("");
-      document.querySelectorAll("[data-detroit-slot]").forEach((option) => {
-        option.addEventListener("click", () => {
-          closeBankPicker();
-          watchDetroit(machine.aiUserId, Number(option.dataset.detroitSlot) || 1);
-        });
-      });
-    }
-
-    function renderDetroitMachinePicker(machines) {
-      const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
-      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
+    async function openDetroitPicker(bindings) {
+      if (bindings.length === 1) {
+        closeBankPicker();
+        watchDetroit(bindings[0].id);
+        return;
+      }
+      $("bankPickerPanel").setAttribute("aria-label", "选择底特律小机");
       $("bankPickerTitle").textContent = "选择小机";
-      $("bankPickerOptions").innerHTML = machines.map((machine) => `
-        <button class="bank-picker-option" data-detroit-machine="${escapeHtml(machine.aiUserId)}" type="button">
-          <span class="garden-picker-option-main">${escapeHtml(machine.machineName)}</span>
-          <span class="garden-picker-option-meta">${machine.slots.length} 个已有底特律存档</span>
+      $("bankPickerOptions").innerHTML = bindings.map((machine) => `
+        <button class="bank-picker-option" data-detroit-machine="${escapeHtml(machine.id)}" type="button">
+          ${escapeHtml(machine.username)}
         </button>
       `).join("");
-      document.querySelectorAll("[data-detroit-machine]").forEach((option) => {
-        option.addEventListener("click", () => {
-          const machine = machinesById.get(option.dataset.detroitMachine);
-          if (!machine) return;
-          if (machine.slots.length === 1) {
-            closeBankPicker();
-            watchDetroit(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
-            return;
-          }
-          renderDetroitSlotPicker(machine);
-        });
-      });
-    }
-
-    async function openDetroitPicker(bindings) {
-      $("bankPickerPanel").setAttribute("aria-label", "选择底特律小机与槽位");
-      $("bankPickerTitle").textContent = "选择小机";
-      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取底特律槽位...</p>`;
       $("bankPicker").classList.add("show");
       $("bankPicker").setAttribute("aria-hidden", "false");
-      try {
-        const res = await fetch("/api/auth/saves?game=detroit", {headers: headers(false), cache: "no-store"});
-        const data = await res.json().catch(() => ({}));
-        if (res.status === 401) throw new Error("登录已失效，请重新登录");
-        if (!res.ok) throw new Error(data.error || "底特律槽位读取失败，请稍后再试");
-        const savedMachines = new Map(
-          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [String(machine?.user?.id), machine])
-        );
-        const machines = bindings.map((user) => ({
-          aiUserId: String(user.id),
-          machineName: user.username,
-          slots: Array.isArray(savedMachines.get(String(user.id))?.saves?.detroit?.slots)
-            ? savedMachines.get(String(user.id)).saves.detroit.slots
-            : [],
-        })).filter((machine) => machine.slots.length > 0);
-        if (!machines.length) {
-          $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">你绑定的小机还没有底特律存档；请先让小机开档，这里不会自动创建。</p>`;
-          return;
-        }
-        if (machines.length === 1) {
-          const machine = machines[0];
-          if (machine.slots.length === 1) {
-            closeBankPicker();
-            watchDetroit(machine.aiUserId, Number(machine.slots[0]?.slot) || 1);
-          } else {
-            renderDetroitSlotPicker(machine);
-          }
-          return;
-        }
-        renderDetroitMachinePicker(machines);
-      } catch (err) {
-        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "底特律槽位读取失败，请稍后再试")}</p>`;
-      }
+      document.querySelectorAll("[data-detroit-machine]").forEach((option) => {
+        option.addEventListener("click", () => {
+          closeBankPicker();
+          watchDetroit(option.dataset.detroitMachine);
+        });
+      });
     }
 
     function renderCampingPlazaSlotPicker(machine) {
@@ -9491,7 +9425,7 @@
     function setFeedbackUnread(count) {
       const unread = Number(count) > 0;
       $("feedbackUnreadDot").hidden = !unread;
-      document.querySelector('[data-bottom-action="feedback"]').setAttribute("aria-label", unread ? "反馈，有管理员新回复未读" : "反馈");
+      document.querySelector('[data-bottom-action="feedback"]').setAttribute("aria-label", unread ? "反馈，有新消息未读" : "反馈");
     }
     async function refreshFeedbackUnread() {
       if (feedbackUnreadIdentity !== token()) {
@@ -9532,7 +9466,7 @@
       }
       feedbackIdentityToken = token();
       updateFeedbackModeVisibility();
-      $("feedbackIdentity").textContent = token() ? "提交后可在「我的反馈」查看进展，仅当前登录账号可见。" : "无需登录也能反馈。提交后请保存私密查询码，用于查看进展。";
+      $("feedbackIdentity").textContent = token() ? "提交后可在「我的反馈」查看进展，与当前直接绑定的人类/小机共享。" : "无需登录也能反馈。提交后请保存私密查询码，用于查看进展。";
       openModal("feedbackModal");
       // Keep the underlying page out of keyboard and accessibility navigation.
       for (const el of document.body.children) {
@@ -9656,7 +9590,8 @@
       const article = document.createElement("article"); article.className = "feedback-message";
       article.dataset.role = message.role;
       const meta = document.createElement("div"); meta.className = "feedback-message-meta";
-      meta.textContent = `${message.role === "admin" ? (message.admin_label || "管理员答复") : "玩家提问"} · ${new Date(message.created_at_epoch * 1000).toLocaleString()}`;
+      const speaker = message.role === "admin" ? (message.admin_label || "管理员答复") : ({human: "人类留言", ai: "小机留言", anonymous: "匿名留言"}[message.actor_kind] || "玩家提问");
+      meta.textContent = `${message.is_self ? "我 · " : ""}${speaker} · ${new Date(message.created_at_epoch * 1000).toLocaleString()}`;
       const text = document.createElement("p"); text.textContent = message.content;
       article.append(meta, text); return article;
     }
@@ -9753,7 +9688,7 @@
           const title = document.createElement("span"); title.className = "feedback-ticket-preview"; title.textContent = `${feedbackCategories[ticket.category]} · ${ticket.preview}`;
           heading.append(title, feedbackStatusElement(ticket.status));
           const meta = document.createElement("span"); meta.className = "feedback-message-meta";
-          meta.textContent = `${ticket.unread ? "新回复 · " : ""}${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
+          meta.textContent = `${ticket.unread ? "新消息 · " : ""}${ticket.message_count} 条消息 · ${new Date((ticket.updated_at_epoch || ticket.created_at_epoch) * 1000).toLocaleString()}`;
           button.append(heading, meta);
           button.onclick = () => feedbackRun(async current => {
             const data = await feedbackRequest("detail", {ticket_id: ticket.id});

@@ -46,8 +46,8 @@ class FeedbackUnreadTests(unittest.TestCase):
     def count(self, owner=None):
         return self.store.unread(self.human_id if owner is None else owner)["unread_count"]
 
-    def mcp(self, arguments=None, *, token=None, transport="path_token", name="account", method="tools/call", request_id=1):
-        payload = {"jsonrpc": "2.0", "method": method, "params": {"name": name, "arguments": arguments or {"action": "feedback_list"}}}
+    def mcp(self, arguments=None, *, token=None, transport="path_token", name="feedback", method="tools/call", request_id=1):
+        payload = {"jsonrpc": "2.0", "method": method, "params": {"name": name, "arguments": arguments or {"action": "list"}}}
         if request_id is not None:
             payload["id"] = request_id
         with patch.object(server, "_duel_unread_request_reminder", return_value="GAME HINT"), patch.object(server, "_mcp_forced_announcement", return_value="ANNOUNCEMENT"):
@@ -122,21 +122,22 @@ class FeedbackUnreadTests(unittest.TestCase):
         anon = self.submit(ip="192.0.2.99")
         for tid in tickets + [anon["ticket_id"]]: self.reply(tid)
         for owner, token in zip(owners, [self.human_token, self.ai_token, other_token, self.other_human_token]):
-            data = self.call("feedback_list", token=token)
-            self.assertEqual([t["id"] for t in data["tickets"]], [tickets[owners.index(owner)]])
-            self.assertEqual(data["unread_count"], 1)
+            data = self.call("list", token=token)
+            visible = tickets[:2] if owner in (self.human_id, self.ai_id) else [tickets[owners.index(owner)]]
+            self.assertEqual({t["id"] for t in data["tickets"]}, set(visible))
+            self.assertEqual(data["unread_count"], len(visible))
             for tid in tickets + [anon["ticket_id"]]:
-                if tid != tickets[owners.index(owner)]:
-                    with self.assertRaises(_McpError): self.call("feedback_detail", token=token, ticket_id=tid)
+                if tid not in visible:
+                    with self.assertRaises(_McpError): self.call("detail", token=token, ticket_id=tid)
             for field, value in (("owner_id", self.human_id), ("username", "Human"), ("player_id", self.human_id), ("query_code", anon["query_code"])):
-                with self.assertRaises(_McpError): self.call("feedback_list", token=token, **{field: value})
+                with self.assertRaises(_McpError): self.call("list", token=token, **{field: value})
         self.assertEqual(self.http("unread")[0], 401)
         self.assertEqual(self.http("unread", token="expired")[0], 401)
-        self.assertEqual(self.http("unread", {"owner_id": self.ai_id}, self.human_token)[1], {"unread_count": 1})
+        self.assertEqual(self.http("unread", {"owner_id": self.ai_id}, self.human_token)[1], {"unread_count": 2})
         with self.assertRaises(_McpError):
-            server._tool_account({"action": "feedback_detail", "ticket_id": tickets[1], "token": self.ai_token}, path_token=self.human_token)
+            server._tool_feedback({"action": "detail", "params": {"ticket_id": tickets[1]}, "token": self.ai_token}, path_token=self.human_token)
         self.assertNotIn("unread_count", self.store.query(anon["query_code"]))
-        self.assertTrue(all(self.count(owner) == 1 for owner in owners))
+        self.assertEqual([self.count(owner) for owner in owners], [2, 2, 1, 1])
         with self.assertRaises(_McpError): self.store.detail(anon["ticket_id"], self.ai_id)
         self.assertFalse(server._feedback_unread_reminder(self.human_token))
         self.assertFalse(server._feedback_unread_reminder("expired"))
@@ -163,7 +164,7 @@ class FeedbackUnreadTests(unittest.TestCase):
 
     def test_no_pending_notification_only_selects_under_delete_mode_write_lock(self):
         tid = self.submit(self.ai_id)["ticket_id"]
-        other = self.submit(self.human_id)["ticket_id"]
+        other = self.submit(self.other_human_id)["ticket_id"]
         self.reply(other)  # Another identity's unread reply must not trigger a write.
         statements = []
 
@@ -284,7 +285,7 @@ class FeedbackUnreadTests(unittest.TestCase):
         with self._connect() as conn:
             conn.execute("UPDATE toy_users SET ai_token_version=coalesce(ai_token_version,0)+1 WHERE id=?", (self.ai_id,))
         self.assertEqual(server._feedback_unread_reminder(self.ai_token), "")
-        with self.assertRaises(_McpError): self.call("feedback_detail", token=self.ai_token, ticket_id=tid)
+        with self.assertRaises(_McpError): self.call("detail", token=self.ai_token, ticket_id=tid)
         self.assertEqual(self.count(self.ai_id), 1)
         with self._connect() as conn:
             conn.execute("UPDATE toy_users SET ai_token_version=ai_token_version-1, deletion_requested_at_epoch=1, scheduled_delete_at_epoch=9999999999 WHERE id=?", (self.ai_id,))
@@ -307,7 +308,7 @@ class FeedbackUnreadTests(unittest.TestCase):
         self.assertNotIn("GAME HINT", json.dumps(first))
         self.assertEqual(self.hints(self.mcp(token=self.ai_token)), [])
         self.assertEqual(self.count(self.ai_id), 1, "A hint or list is not a detail read")
-        detail = self.mcp({"action": "feedback_detail", "ticket_id": tid}, token=self.ai_token, transport="bearer_token")
+        detail = self.mcp({"action": "detail", "params": {"ticket_id": tid, "mode": "history"}}, token=self.ai_token, transport="bearer_token")
         self.assertFalse(detail["result"]["isError"])
         self.assertEqual(self.count(self.ai_id), 0)
         self.reply(tid)
@@ -318,31 +319,31 @@ class FeedbackUnreadTests(unittest.TestCase):
         self.assertEqual(self.hints(self.mcp(token=self.ai_token)), [])
         self.store.detail(tid, self.ai_id); self.reply(tid)
         # Reading first must suppress the not-yet-delivered hint as well.
-        self.assertEqual(self.hints(self.mcp({"action": "feedback_detail", "ticket_id": tid}, token=self.ai_token)), [])
+        self.assertEqual(self.hints(self.mcp({"action": "detail", "params": {"ticket_id": tid, "mode": "history"}}, token=self.ai_token)), [])
         self.reply(tid)
         with patch.object(FeedbackStore, "claim_notification", side_effect=sqlite3.OperationalError("fixture locked")):
             failed_hint = self.mcp(token=self.ai_token)
         self.assertFalse(failed_hint["result"]["isError"])
         self.assertEqual(len(self.hints(self.mcp(token=self.ai_token))), 1)
-        self.assertIn("feedback_detail", server._tool_get_guide({"game": "account"}))
+        self.assertNotIn("feedback", server._tool_get_guide({"game": "account"}))
         properties = next(t for t in server._root_tools() if t["name"] == "account")["inputSchema"]["properties"]
         self.assertTrue({"page", "ticket_id", "before_id"}.isdisjoint(properties))
 
-    def test_real_query_actions_path_bearer_explicit_and_legacy_fields(self):
+    def test_real_query_actions_path_bearer_and_legacy_params(self):
         tid = self.submit(self.ai_id)["ticket_id"]
         for transport in ("path_token", "bearer_token"):
             self.reply(tid)
             listing = self.mcp(token=self.ai_token, transport=transport)["result"]
             self.assertFalse(listing["isError"])
             self.assertEqual(json.loads(listing["content"][0]["text"])["unread_count"], 1)
-            result = self.mcp({"action": "feedback_detail", "ticket_id": tid}, token=self.ai_token, transport=transport)["result"]
+            result = self.mcp({"action": "detail", "params": {"ticket_id": tid, "mode": "history"}}, token=self.ai_token, transport=transport)["result"]
             self.assertFalse(result["isError"])
             self.assertEqual(json.loads(result["content"][0]["text"])["unread_count"], 0)
         self.reply(tid)
-        legacy = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "account")["inputSchema"]["properties"]
-        params = {"action": "feedback_detail", "ticket_id": tid, "token": self.ai_token}
+        legacy = next(t for t in server._root_tools(schema_mode="legacy") if t["name"] == "feedback")["inputSchema"]["properties"]
+        params = {"action": "detail", "params": json.dumps({"ticket_id": tid, "mode": "history"})}
         forwarded = {k: v for k, v in params.items() if k in legacy}
-        result = self.mcp(forwarded)["result"]
+        result = self.mcp(forwarded, token=self.ai_token)["result"]
         self.assertFalse(result["isError"])
         self.assertEqual(json.loads(result["content"][0]["text"])["unread_count"], 0)
 

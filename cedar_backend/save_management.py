@@ -953,7 +953,7 @@ def _delete_save(arguments, raw_token, *,
             "游客存档无鉴权凭证，不支持删除；想重开可直接换一个新的游客 player_id，或注册账号后用认领码把档转入账号管理",
         )
 
-    slot = _save_slot_from_account_arguments(arguments)
+    slot = _save_slot_from_account_arguments(arguments, game=game)
     user = _current_account(raw_token)
     _auto_migrate_legacy_account_saves(user)
     player_id = _account_slot_player_id(user["id"], slot)
@@ -1133,7 +1133,8 @@ def _account_saves_for_user(user, *, migrate_legacy,
         "detroit": detroit_adapter.save_summary,
     }
     for game, summarize in vendor_summaries.items():
-        for candidate, slot in candidate_pairs:
+        game_candidates = _account_slot_player_ids(user, game=game) if game == "detroit" else candidate_pairs
+        for candidate, slot in game_candidates:
             try:
                 summary = summarize(candidate)
             except VendorCmdError:

@@ -33,7 +33,7 @@ exports.run = async ({page, backend, fixture, width, screenshots}) => {
   for (const id of tickets) await review(id, {reply: "临时测试：管理员新回复"});
   await page.reload(); await check(true);
   assert.deepEqual(await page.locator(".bottom-nav").boundingBox(), originalNav);
-  assert.match(await page.locator('[data-bottom-action="feedback"]').getAttribute("aria-label"), /新回复未读/);
+  assert.match(await page.locator('[data-bottom-action="feedback"]').getAttribute("aria-label"), /新消息未读/);
   const geometry = await page.evaluate(() => {
     const button = document.querySelector('[data-bottom-action="feedback"]');
     const rect = el => { const r = el.getBoundingClientRect(); return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}; };

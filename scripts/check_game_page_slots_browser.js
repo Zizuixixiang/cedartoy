@@ -18,11 +18,14 @@ const realDetroit=Boolean(process.env.DETROIT_BROWSER_ASSETS);
  const pages=[await context.newPage(),await context.newPage(),await context.newPage()];
  async function enter(page,game,player){await page.goto(`${config.base}/${game}/?player=${encodeURIComponent(player)}&token=fixture`)}
  for(const game of ['detroit','camping-plaza']){
-  const players=['101:5','101','202:2'];
-  for(let i=0;i<pages.length;i++)await enter(pages[i],game,players[i]);
+  const players=game==='detroit'?['101','202']:['101:5','101','202:2'];
+  for(let i=0;i<players.length;i++){
+   await enter(pages[i],game,players[i]);
+   if(game==='detroit')await pages[i].locator(realDetroit?'[data-open]':'#continue').click();
+  }
   // Deliberately poison the old global player cookie after every page is loaded.
   await context.addCookies([{name:game==='detroit'?'detroit_player':'camping_plaza_player',value:'202%3A2',url:config.base+'/'+game+'/'}]);
-  for(let i=0;i<pages.length;i++){
+  for(let i=0;i<players.length;i++){
    const p=pages[i],name=['Alpha','Beta','Gamma'][i];
    if(game==='detroit'){
     if(realDetroit){
@@ -33,9 +36,10 @@ const realDetroit=Boolean(process.env.DETROIT_BROWSER_ASSETS);
     await p.locator('#playerNameInput').fill(name);await p.locator('#playerNameSubmit').click();await p.locator('#onboardingScreen').waitFor({state:'hidden'});
    }
   }
-  for(let i=0;i<pages.length;i++){
+  for(let i=0;i<players.length;i++){
    const p=pages[i],expected=['Alpha','Beta','Gamma'][i];await p.reload();
    if(game==='detroit'){
+    await p.locator(realDetroit?'[data-open]':'#continue').click();
     if(realDetroit){
      const expectedText=`Fixture ${players[i]} step 1`;
      await p.waitForFunction(text=>document.querySelector('.scene-text')?.textContent===text,expectedText);
@@ -49,7 +53,7 @@ const realDetroit=Boolean(process.env.DETROIT_BROWSER_ASSETS);
     }else{
     await p.waitForFunction(n=>document.querySelector('#marker')?.textContent===n,expected);
     await p.locator('#home').click();await p.locator('#continue').click();await p.waitForFunction(n=>document.querySelector('#marker')?.textContent===n,expected);
-    await p.locator('#internal').click();await p.waitForFunction(n=>document.querySelector('#marker')?.textContent===n,expected);
+    await p.locator('#internal').click();await p.locator('#continue').click();await p.waitForFunction(n=>document.querySelector('#marker')?.textContent===n,expected);
     assert.equal(new URL(await p.locator('#export').getAttribute('href')).searchParams.get('player'),players[i]);
     }
    }else{
@@ -63,7 +67,7 @@ const realDetroit=Boolean(process.env.DETROIT_BROWSER_ASSETS);
  }
  // Native browser requests bypass the bridge here to verify the server rejects
  // absent/invalid/unbound targets rather than recovering from a cookie.
- for(const game of ['detroit','camping-plaza'])for(const player of ['', '303','101:0','101:6','101:bad']){
+ for(const game of ['detroit','camping-plaza'])for(const player of ['', '303','101:0',game==='detroit'?'101:13':'101:6','101:bad']){
   const url=`${config.base}/${game}/api/${game==='detroit'?'session':'state'}?player=${encodeURIComponent(player)}`;
   assert.equal((await context.request.get(url)).status(),403);
  }

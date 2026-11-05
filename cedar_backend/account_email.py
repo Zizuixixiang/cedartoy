@@ -156,7 +156,7 @@ def _send_recovery_email(email, decision, note, reset_url, smtp_config, *,
         content = (
             f"你的账号「{verified_username}」找回申请已通过人工审核。\n\n"
             f"请使用此链接设置新密码：\n{reset_url}\n\n"
-            "链接 24 小时内有效，仅可使用一次，请勿转发。\n"
+            "链接 48 小时内有效，仅可使用一次，请勿转发。\n"
             "过期后可凭查询码重新领取。\n"
         )
     else:

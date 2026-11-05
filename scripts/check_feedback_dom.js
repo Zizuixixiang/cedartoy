@@ -12,6 +12,7 @@ exports.run = async ({backend, fixture, root}) => {
       url: "http://feedback.test/" + (file === "admin.html" ? "admin" : ""),
       runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: console,
       beforeParse(window) {
+        window.matchMedia = query => ({media: query, matches: false, addEventListener() {}, removeEventListener() {}});
         if (token) window.localStorage.setItem("cedartoy_token", token);
         window.fetch = async (url, options = {}) => {
           const response = await backend({path: url, method: options.method || "GET", headers: {...options.headers, "X-Feedback-Test-IP": "198.51.100.88"}, body: options.body || ""});
@@ -67,6 +68,8 @@ exports.run = async ({backend, fixture, root}) => {
     ad.querySelector('[data-ticket-kind="feedback"]').click();
     const adminDone = () => until(() => !a.eval("feedbackAdminBusy"), "admin request");
     await adminDone();
+    // The anonymous ticket was closed above; active-first ordering puts it after pending fixtures.
+    A("feedbackAdminFilter").value = "closed"; A("feedbackAdminFilter").dispatchEvent(new a.Event("change")); await adminDone();
     A("feedbackAdminTickets").querySelector("button").click(); await adminDone();
     assert.equal(A("feedbackAdminDetail").hidden, false);
     assert.match(A("feedbackAdminDetail").textContent, /匿名/);
@@ -145,10 +148,18 @@ exports.run = async ({backend, fixture, root}) => {
     };
     const tickets = (await api("list")).tickets.slice(0, 2).map(t => t.id);
     const review = (id, body) => api("review", {ticket_id:id, confirm:true, ...body}, true);
-    const openTicket = async id => {
-      const rows = (await api("list")).tickets;
-      $("feedbackList").querySelectorAll("button")[rows.findIndex(t => t.id === id)].click(); await done();
+    const showTicketPage = async id => {
+      for (let page = 1; ; page++) {
+        const data = await api("list", {page});
+        const index = data.tickets.findIndex(t => t.id === id);
+        if (index !== -1) {
+          if (w.eval("feedbackPage") !== page) { w.eval(`feedbackPage=${page}; loadFeedbackList()`); await done(); }
+          return $("feedbackList").querySelectorAll("button")[index];
+        }
+        assert.ok(page * data.page_size < data.total, "Ticket must remain in paginated list");
+      }
     };
+    const openTicket = async id => { (await showTicketPage(id)).click(); await done(); };
     click('[data-bottom-action="feedback"]');
     assert.equal($("feedbackCloseTicket").hidden, true);
     click('[data-feedback-mode="list"]'); await done(); await openTicket(tickets[0]);
@@ -192,7 +203,7 @@ exports.run = async ({backend, fixture, root}) => {
     assert.ok(closeCalls.every(body => body.confirm === true));
     $("feedbackFollowupForm").querySelector('button[type="button"]').click(); await done();
     assert.equal(endButton.hidden, true);
-    assert.equal($("feedbackList").querySelector(".feedback-status").dataset.status, "closed");
+    assert.equal((await showTicketPage(tickets[0])).querySelector(".feedback-status").dataset.status, "closed");
     await openTicket(tickets[0]);
     $("feedbackFollowupContent").value = "结单后追问"; submit("feedbackFollowupForm"); await done();
     assert.equal(w.eval("feedbackConversation.ticket.status"), "pending");

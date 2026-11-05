@@ -202,7 +202,7 @@ class AdminRecoveryMcpTests(unittest.TestCase):
         self.assertIn("reset_url", result)
         with self._connect() as conn:
             lifetime = conn.execute("SELECT strftime('%s',expires_at)-strftime('%s',created_at) FROM password_reset_tokens").fetchone()[0]
-            self.assertEqual(lifetime, 86400)
+            self.assertEqual(lifetime, 172800)
         with self.assertRaises(server._McpError):
             self.review(decision="rejected")
 
@@ -272,7 +272,7 @@ class AdminRecoveryMcpTests(unittest.TestCase):
             response = server._handle_root_mcp(
                 {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, schema_mode=mode)
             tools = response["result"]["tools"]
-            self.assertEqual({t["name"] for t in tools}, {"list_games", "get_guide", "play", "account"})
+            self.assertEqual({t["name"] for t in tools}, {"list_games", "get_guide", "play", "account", "feedback"})
             self.assertNotRegex(json.dumps(tools, ensure_ascii=False), r"admin_recovery_|admin_feedback_|管理员")
 
     def test_account_guide_visibility_uses_current_token_owner(self):
@@ -291,7 +291,9 @@ class AdminRecoveryMcpTests(unittest.TestCase):
         appendix = (server.GUIDE_DIR / "_account_admin.md").read_text(encoding="utf-8")
         admin = json.loads(server._tool_get_guide({"game": "account"}, path_token=self.admin_token))
         self.assertEqual(admin, {**public_data, "guide": public_data["guide"] + "\n" + appendix})
-        for prefix in ("admin_recovery_", "admin_feedback_"):
+        self.assertNotIn("feedback", admin["guide"])
+        self.assertNotIn("反馈", admin["guide"])
+        for prefix in ("admin_recovery_",):
             for action in ("list", "detail", "review"):
                 self.assertIn(prefix + action, admin["guide"])
         # Permissions are checked afresh; bindings and cached JWT claims cannot grant access.

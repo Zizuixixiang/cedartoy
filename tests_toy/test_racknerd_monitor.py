@@ -367,5 +367,146 @@ class StateTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
 
+class PromotionTests(unittest.TestCase):
+    # Synthetic markup for safety/state regression, NOT a captured live page.
+    def card(self, pid=1001, ram='4', price='29.99', label='Order Now'):
+        return (f'<article><div><h3>{ram} GB KVM VPS</h3></div>'
+                f'<div>${price}<span>/year</span></div><ul><li>{ram} GB RAM</li></ul>'
+                f'<a href="https://my.racknerd.com/cart.php?a=add&amp;pid={pid}">{label}</a></article>')
+
+    def result(self, html=None, error=None):
+        return {'source': m.SPECIALS, 'error': error, 'checks': 2, 'checked_at': 1000,
+                'offers': {} if error else m.parse_promotions(html or self.card(), m.SPECIALS)}
+
+    def test_scoped_specs_and_prices_reject_ambiguous_incomplete_markup(self):
+        offers = m.parse_promotions(self.card() + self.card(1002, '2', '15.99'), m.SPECIALS)
+        self.assertEqual(offers['pid:1001']['annual_cents'], 2999)
+        self.assertEqual(offers['pid:1002']['ram_mb'], 2048)
+        for html in [self.card() * 2, self.card().replace('4 GB RAM', '8 GB RAM'),
+                     self.card().replace('/year', '/month'), '<h3>4 GB KVM VPS</h3>',
+                     self.card().replace('</ul>', '</ul><p>$39.99/year</p>')]:
+            with self.subTest(html=html), self.assertRaises(m.EvidenceError):
+                m.parse_promotions(html, m.SPECIALS)
+
+    def test_button_is_never_official_stock_confirmation(self):
+        offer = self.result()['offers']['pid:1001']
+        self.assertNotIn('stock', offer)
+        self.assertEqual(offer['listing'], 'order_link')
+        html = self.card().replace('</ul>', '</ul><p>0 Available</p>')
+        self.assertEqual(self.result(html)['offers']['pid:1001']['listing'], 'sold_out')
+
+    def test_robots_denial_unreadable_and_failure_never_fetch_list(self):
+        for content in ['User-agent: *\nDisallow: /specials/',
+                        'User-agent: *\nDisallow: /*specials*', '<html>challenge</html>']:
+            fetch = MagicMock(interval=2)
+            fetch.get.return_value = content, m.SPECIALS_ROBOTS
+            result = m.scan_promotions(fetch, wait=MagicMock())
+            self.assertTrue(result['error'])
+            fetch.get.assert_called_once_with(m.SPECIALS_ROBOTS)
+        fetch.get.side_effect = HTTPError(m.SPECIALS_ROBOTS, 403, '', {}, None)
+        self.assertEqual(m.scan_promotions(fetch)['error'], 'http_403')
+
+    def test_two_read_confirmation_and_redirect_boundaries(self):
+        fetch = MagicMock(interval=2)
+        fetch.get.side_effect = [('User-agent: *\nDisallow: /cgi-bin/\nCrawl-delay: 5', m.SPECIALS_ROBOTS),
+                                 (self.card(), m.SPECIALS), (self.card(price='30.99'), m.SPECIALS)]
+        wait = MagicMock()
+        self.assertEqual(m.scan_promotions(fetch, wait)['error'], 'promotion_confirmation_conflict')
+        self.assertEqual(fetch.interval, 5)
+        wait.assert_called_once_with(20)
+        with self.assertRaises(m.EvidenceError):
+            m.NoPromotionRedirect().redirect_request(None, None, 302, '', {}, m.OFFICIAL)
+        with self.assertRaises(m.EvidenceError):
+            m.PromotionFetcher().get('https://racknerd.club/product/925')
+
+    def test_silent_baseline_filters_new_digest_and_delivery_dedup(self):
+        state = m.empty_state()
+        self.assertEqual(m.observe_promotions(state, self.result(), now=1000), [])
+        html = self.card() + self.card(1002) + self.card(1003, '3.5') + self.card(1004, price='35.01') + self.card(925)
+        ready = m.observe_promotions(state, self.result(html), now=2000)
+        self.assertEqual(ready, ['promotions'])
+        self.assertEqual(state['pending']['promotions']['items'], ['pid:1002'])
+        messages = []
+        m.deliver(state, ready, messages.append, lambda value: None)
+        self.assertIn('库存、结账价格', messages[0])
+        self.assertIn('官方公开促销列表', messages[0])
+        self.assertEqual(m.observe_promotions(state, self.result(html), now=3000), [])
+        self.assertEqual(state['sources'], {})
+
+    def test_price_threshold_and_no_repeat_on_bounce(self):
+        state = m.empty_state()
+        m.observe_promotions(state, self.result(self.card(price='39.99')), now=1000)
+        ready = m.observe_promotions(state, self.result(self.card(price='34.99')), now=2000)
+        self.assertEqual(ready, ['promotions'])
+        m.deliver(state, ready, lambda text: None, lambda value: None)
+        m.observe_promotions(state, self.result(self.card(price='39.99')), now=3000)
+        self.assertEqual(m.observe_promotions(state, self.result(self.card(price='34.99')), now=100000), [])
+        self.assertEqual(m.observe_promotions(state, self.result(self.card(price='33.99')), now=100001), [])
+
+    def test_restock_requires_recent_explicit_absence_not_missing_page(self):
+        state = m.empty_state()
+        m.observe_promotions(state, self.result(), now=1000)
+        m.observe_promotions(state, self.result(error='http_404'), now=2000)
+        self.assertEqual(m.observe_promotions(state, self.result(), now=3000), [])
+        m.observe_promotions(state, self.result(self.card(label='Sold Out')), now=4000)
+        self.assertEqual(m.observe_promotions(state, self.result(), now=5000), ['promotions'])
+        m.deliver(state, ['promotions'], lambda text: None, lambda value: None)
+        m.observe_promotions(state, self.result(self.card(label='Sold Out')), now=6000)
+        self.assertEqual(m.observe_promotions(state, self.result(), now=7000), [])  # cooldown
+        m.observe_promotions(state, self.result(self.card(label='Sold Out')), now=8000)
+        self.assertEqual(m.observe_promotions(state, self.result(), now=200000), [])  # stale absence
+
+    def test_failed_send_revalidated_cancelled_and_old_v2_preserved(self):
+        state = m.empty_state()
+        state['sources'] = {'club': {'stock': False}}
+        m.observe_promotions(state, self.result(), now=1000)
+        html = self.card() + self.card(1002)
+        ready = m.observe_promotions(state, self.result(html), now=2000)
+        with patch.object(m.LOG, 'warning'):
+            m.deliver(state, ready, MagicMock(side_effect=OSError('secret')), lambda value: None)
+        self.assertTrue(state['pending'])
+        self.assertEqual(m.observe_promotions(state, self.result(error='http_403'), now=3000), [])
+        self.assertEqual(m.observe_promotions(state, self.result(html), now=4000), ['promotions'])
+        self.assertEqual(m.observe_promotions(state, self.result(self.card() + self.card(1002, label='Sold Out')), now=5000), [])
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'state.json'
+            m.save_state(path, state)
+            self.assertEqual(m.read_state(path), state)
+        self.assertEqual(state['sources'], {'club': {'stock': False}})
+
+    def test_disabled_by_default_and_existing_dry_run_never_probes_new_source(self):
+        self.assertFalse(CONFIG['promotions_enabled'])
+        with tempfile.TemporaryDirectory() as temp, patch.object(m, 'scan', return_value=observations()), \
+                patch.object(m, 'scan_promotions') as scan, patch.object(m, 'send_telegram') as send, patch('builtins.print'):
+            self.assertEqual(m.main(['--runtime-dir', temp, '--dry-run']), 0)
+            scan.assert_not_called()
+            send.assert_not_called()
+
+    def test_expired_price_event_does_not_restart_its_retry_window(self):
+        state = m.empty_state()
+        m.observe_promotions(state, self.result(self.card(price='39.99')), now=1000)
+        self.assertEqual(m.observe_promotions(state, self.result(), now=2000), ['promotions'])
+        self.assertEqual(m.observe_promotions(state, self.result(), now=200000), [])
+        self.assertIsNone(state['promotions']['offers']['pid:1001']['event'])
+
+    def test_opt_in_dry_run_does_not_send_read_credentials_or_persist(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'state.json'
+            state = m.empty_state()
+            m.observe_promotions(state, self.result(), now=1000)
+            m.save_state(path, state)
+            before = path.read_bytes()
+            result = self.result(self.card() + self.card(1002, price='35.00'))
+            with patch.object(m, 'scan', return_value=observations()), \
+                    patch.object(m, 'scan_promotions', return_value=result), \
+                    patch.object(m, 'send_telegram') as send, patch.object(m, 'telegram_settings') as settings, \
+                    patch('sys.stdout', new_callable=io.StringIO) as output:
+                self.assertEqual(m.main(['--runtime-dir', temp, '--dry-run', '--check-promotions']), 0)
+                self.assertEqual(json.loads(output.getvalue())['would_notify'][0]['kind'], 'promotions')
+                send.assert_not_called()
+                settings.assert_not_called()
+            self.assertEqual(path.read_bytes(), before)
+
+
 if __name__ == '__main__':
     unittest.main()
