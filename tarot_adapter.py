@@ -1722,8 +1722,8 @@ class TarotWeb:
                 '"garden_cat","duel","tarot","camping_plaza"',
             ),
             (
-                '"soup", "eco", "forest", "duel", "workkk"',
-                '"soup", "eco", "forest", "duel", "tarot", "workkk"',
+                '"soup", "eco", "forest", "duel", "autochess", "workkk"',
+                '"soup", "eco", "forest", "duel", "tarot", "autochess", "workkk"',
             ),
         )
         for old, new in replacements:
