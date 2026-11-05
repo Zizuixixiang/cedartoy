@@ -322,6 +322,10 @@ class SharedFeedbackTests(unittest.TestCase):
         self.store.detail(tid, self.ai_id)
         with self._connect() as source, sqlite3.connect(":memory:") as snapshot:
             source.backup(snapshot)
+            # Reconstruct the pre-actor-kind schema, before immutable-history
+            # triggers existed; leave production migration protections intact.
+            snapshot.execute("DROP TRIGGER feedback_messages_no_update")
+            snapshot.execute("DROP TRIGGER feedback_messages_no_delete")
             snapshot.execute("ALTER TABLE feedback_messages DROP COLUMN actor_kind")
             snapshot.commit()
             old = snapshot.execute("SELECT * FROM feedback_read_cursors").fetchall()

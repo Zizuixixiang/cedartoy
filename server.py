@@ -6244,7 +6244,8 @@ a{{color:#c9afff}}
                             body.get("ticket_id"), owner_id, before_id=body.get("before_id"), mode=body.get("mode", "history"))
             self._send_json(result, extra_headers=response_headers)
         except _McpError as exc:
-            status = 429 if exc.code == RATE_LIMIT_ERROR_CODE else self._admin_error_status(exc)
+            status = (429 if exc.code == RATE_LIMIT_ERROR_CODE else
+                      409 if exc.code == -32009 else self._admin_error_status(exc))
             self._send_json({"error": exc.message}, status=status, extra_headers=response_headers)
         except (TypeError, ValueError):
             self.close_connection = True

@@ -9614,7 +9614,7 @@
       article.dataset.role = message.role;
       const meta = document.createElement("div"); meta.className = "feedback-message-meta";
       const speaker = message.role === "admin" ? (message.admin_label || "管理员答复") : ({human: "人类留言", ai: message.actor_name || "小机留言", anonymous: "匿名留言"}[message.actor_kind] || "玩家提问");
-      meta.textContent = `${message.is_self ? "我 · " : ""}${speaker} · ${new Date(message.created_at_epoch * 1000).toLocaleString()}`;
+      meta.textContent = `${message.is_self ? "我 · " : ""}${speaker} · ${new Date(message.created_at_epoch * 1000).toLocaleString()}${message.withdrawn ? " · 已撤回" : message.edited ? " · 已编辑" : ""}`;
       const text = document.createElement("p"); text.textContent = message.content;
       article.append(meta, text); return article;
     }
