@@ -487,10 +487,11 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--research-scales"]:
         from check_research_scale_persistence import main as research_main
         sys.exit(research_main())
-    if sys.argv[1:] in (["--duel-bomb-plane"], ["--duel-carcassonne"]):
-        duel = ROOT / "vendor" / "duel"
+    if sys.argv[1:] in (["--duel-bomb-plane"], ["--duel-carcassonne"], ["--duel-ka-wu-xing"]):
+        duel = Path(os.environ.get("DUEL_TEST_ROOT", str(ROOT / "vendor" / "duel")))
         python = os.environ.get("DUEL_TEST_PYTHON", str(duel / ".venv" / "bin" / "python"))
         test = {
+            "--duel-ka-wu-xing": "tests.test_ka_wu_xing.KaWuXingIntegrationTests",
             "--duel-bomb-plane": "tests.test_bomb_plane.BombPlaneRooms.test_cross_process_restore_and_resign_reveal",
             "--duel-carcassonne": "tests.test_carcassonne_integration.CarcassonneIntegration.test_cross_process_persistence_same_deck_and_next_move",
         }[sys.argv[1]]
@@ -522,5 +523,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--garden-cat|--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--nowhere|--shared-craft|--autochess]")
+        sys.exit("用法：persistence_check.py [--garden-cat|--deeptalk|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--duel-ka-wu-xing|--nowhere|--shared-craft|--autochess]")
     sys.exit(main())

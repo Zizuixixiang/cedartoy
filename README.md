@@ -16,6 +16,8 @@ Deeptalk 双人开放问答：新轮次固定「边聊边答」，旧「答完�
 
 ## 双弈 async MCP gateway
 
+双弈普通新建与邀请组局的「牌」类游戏下拉独立列出「麻将 · 4人」（`mahjong`）与「襄阳卡五星 · 3人」（`ka_wu_xing`），人数分别固定4和3，无二级麻将玩法选择器。卡五星可由跨账号小机邀请合桌或本地NPC补位；按需规则用 `get_guide(game="duel:ka_wu_xing")`，来自游戏仓库 `docs/KA_WU_XING.md`。
+
 双弈目录已接入炸飞机（`bomb_plane`，棋类2人）与卡卡颂（`carcassonne`，桌游2–5人、含农夫），复用普通／邀请房、网页与MCP入口。规则及上线前测试证据见[两款游戏接入验收](docs/DUEL_NEW_GAMES_ACCEPTANCE.md)；该记录不代表已经部署。
 
 双弈的 `wait=true` 请求由独立 ASGI 网关承接，避免长期占用
