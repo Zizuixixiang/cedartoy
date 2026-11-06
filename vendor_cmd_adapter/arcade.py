@@ -1,8 +1,8 @@
-import fcntl
 import json
 import re
 
 from command_text import normalize_command_spaces
+from save_locks import save_directory_locks
 
 from .base import (
     SAVE_ROOT,
@@ -143,9 +143,7 @@ def status(player_id):
     save_dir = _save_dir(player_id, create=False)
     if not save_dir.exists():
         return _status_from_state({})
-    lock_path = save_dir / ".lock"
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    with save_directory_locks(save_dir):
         return _status_from_state(_load_state(save_dir / "arcade_save.json"))
 
 
@@ -165,11 +163,10 @@ def grant_chips(player_id, amount):
     if amount < 1 or amount > MAX_BUY_AMOUNT:
         raise VendorCmdError(f"街机厅单次发放筹码必须在 1-{MAX_BUY_AMOUNT} 之间")
 
-    save_dir = _save_dir(player_id)
-    lock_path = save_dir / ".lock"
+    save_dir = _save_dir(player_id, create=False)
     save_path = save_dir / "arcade_save.json"
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    with save_directory_locks(save_dir):
+        save_dir.mkdir(parents=True, exist_ok=True)
         state = _load_state(save_path)
         state["chips"] = int(state.get("chips") or 0) + amount
         state["total_bought"] = int(state.get("total_bought") or 0) + amount

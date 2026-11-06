@@ -20,6 +20,14 @@ class SinsVirtuesTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self.temp_dir.name) / "sessions.db")
+        for name, value in (
+            ("VENDOR_SAVE_ROOT", Path(self.temp_dir.name) / "vendor_saves"),
+            ("TURTLE_DB_PATH", Path(self.temp_dir.name) / "accounts.db"),
+            ("SESSIONS_DB_PATH", Path(self.db_path)),
+        ):
+            isolation = patch.object(server, name, value)
+            isolation.start()
+            self.addCleanup(isolation.stop)
         self.db_patch = patch.object(handler, "DB_PATH", self.db_path)
         self.db_patch.start()
 
@@ -107,7 +115,7 @@ class SinsVirtuesTests(unittest.TestCase):
             "sins_virtues",
             "answer_batch",
             "",
-            {"player_id": player_id, "answers": [3] * 35},
+            {**state, "player_id": player_id, "answers": [3] * 35},
         )
         data = completed["result_data"]
         self.assertTrue(completed["complete"])
@@ -152,7 +160,7 @@ class SinsVirtuesTests(unittest.TestCase):
 
         completed = dispatch(
             "/api/sins_virtues/answer_batch",
-            {"player_id": "guest:webhttp1", "answers": [3] * 35},
+            {**started["data"], "player_id": "guest:webhttp1", "answers": [3] * 35},
         )
         self.assertEqual(completed["status"], 200)
         self.assertEqual(completed["data"]["result_data"]["kind"], "sins_virtues")

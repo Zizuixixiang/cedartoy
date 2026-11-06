@@ -21,6 +21,8 @@ class HumanTestsExtractionTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(server, "SESSIONS_DB_PATH", self.db))
+        self.stack.enter_context(patch.object(server, "VENDOR_SAVE_ROOT", Path(self.temp.name) / "vendor_saves"))
+        self.stack.enter_context(patch.object(server, "TURTLE_DB_PATH", Path(self.temp.name) / "accounts.db"))
         self.stack.enter_context(patch.object(research_scales, "DB_PATH", str(self.db)))
         for config in server.HUMAN_TEST_GAMES.values():
             if config.get("research"):
@@ -42,7 +44,7 @@ class HumanTestsExtractionTests(unittest.TestCase):
         with patch.object(server, "HUMAN_TEST_GAMES", {"mbti": {"handler": handler, "questions": questions}}):
             self.assertEqual(
                 server._human_test_active_session("mbti", "guest:webfixture"),
-                {"mode": "patched", "progress": 0, "total": 1},
+                {"mode": "patched", "progress": 0, "total": 1, "session_id": unittest.mock.ANY},
             )
             self.assertEqual(
                 server._human_test_public_questions("mbti", "patched"),
@@ -66,7 +68,7 @@ class HumanTestsExtractionTests(unittest.TestCase):
             patch.object(server, "_human_test_public_edition", return_value="custom"),
             patch.object(server, "_human_test_public_questions", return_value=[{"text": "patched"}]),
         ):
-            state = server._human_test_public_state("mbti", "99", "account", {"mode": "patched", "total": 1})
+            state = server._human_test_public_state("mbti", "99", "account", {"mode": "patched", "total": 1, "progress": 0, "session_id": "generation"})
         self.assertEqual(state["edition"], "custom")
         self.assertEqual(state["questions"], [{"text": "patched"}])
 
@@ -92,6 +94,7 @@ class HumanTestsExtractionTests(unittest.TestCase):
 
     def test_result_retry_uses_server_conversion_callbacks(self):
         with (
+            patch.object(server.human_tests, "_submit_web_answers", return_value=None),
             patch.object(server.mbti_handler, "mbti_get_result", return_value="raw") as get_result,
             patch.object(server, "_human_test_active_session", return_value=None),
             patch.object(server, "_replace_storage_identity_text", return_value="identity replaced") as replace,

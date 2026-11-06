@@ -40,6 +40,9 @@ class LoveEcrTests(unittest.TestCase):
         self.db_path = str(Path(self.temp_dir.name) / "sessions.db")
         self.account_db_path = str(Path(self.temp_dir.name) / "accounts.db")
         self.patches = [
+            patch.object(server, "VENDOR_SAVE_ROOT", Path(self.temp_dir.name) / "vendor_saves"),
+            patch.object(server, "TURTLE_DB_PATH", Path(self.account_db_path)),
+            patch.object(server, "SESSIONS_DB_PATH", Path(self.db_path)),
             patch.object(love_handler, "DB_PATH", self.db_path),
             patch.object(ecr_handler, "DB_PATH", self.db_path),
             patch.object(humanity_handler, "DB_PATH", self.db_path),
@@ -676,7 +679,7 @@ class LoveEcrTests(unittest.TestCase):
                 game,
                 "answer_batch",
                 "",
-                {"player_id": player_id, "answers": [4 if game == "ecr" else 1] * total},
+                {**state, "player_id": player_id, "answers": [4 if game == "ecr" else 1] * total},
             )
             self.assertEqual(completed["result_data"]["kind"], game)
             self.assertIn(f"存档身份：{player_id}", completed["result"])

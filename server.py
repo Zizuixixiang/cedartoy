@@ -20,7 +20,7 @@ import sys
 import time
 import urllib.parse
 from dataclasses import dataclass
-from contextlib import closing
+from contextlib import closing, contextmanager
 from email.message import EmailMessage
 from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
@@ -42,6 +42,7 @@ from cedar_backend import deeptalk as deeptalk_service
 from deeptalk import catalog as deeptalk_catalog
 from deeptalk.catalog import DeeptalkError, GUIDE as DEEPTALK_GUIDE
 from deeptalk.store import Store as DeeptalkStore
+from save_locks import save_directory_locks
 import game_activity
 
 # Shared accounting implementation also imported by the standalone soup service.
@@ -2986,14 +2987,18 @@ def _human_test_result_data(game, player_id):
 
 
 def _human_test_action(game, action, raw_token, body):
+    guest = body.get("player_id") if not raw_token else None
+    with _guest_save_guard(guest):
+        return _human_test_action_unlocked(game, action, raw_token, body)
+
+
+def _human_test_action_unlocked(game, action, raw_token, body):
     if game == "aidep" and action == "sharing":
         user = _current_account(raw_token)
         return aidep_sharing.access(research_scales.SCALES['aidep'], _db_connect, user, _McpError,
                                     change=body if body else None)
     if game in research_scales.SCALES:
         player_id, identity, user = _human_test_player_context(game, raw_token, body.get("player_id"))
-        if identity == "guest":
-            _reject_claimed_guest(player_id)
         with game_activity.capture_changes():
             state = research_scales.SCALES[game].execute(action, {**body, "player_id": player_id}, web=True)
             if identity == "account" and action in {"start", "answer", "save_answer", "answer_batch"}:
@@ -3127,6 +3132,20 @@ def _reject_claimed_guest(guest_player_id):
     )
 
 
+@contextmanager
+def _guest_save_guard(player_id):
+    # Share the claim fence across identity checks and the entire operation.
+    # Otherwise a request waiting for an engine lock could revive a moved guest.
+    valid = (isinstance(player_id, str) and player_id.startswith(GUEST_PREFIX)
+             and PLAIN_PLAYER_ID_RE.fullmatch(player_id[len(GUEST_PREFIX):]))
+    if valid:
+        with save_directory_locks(VENDOR_SAVE_ROOT / ".claims" / player_id):
+            _reject_claimed_guest(player_id)
+            yield
+    else:
+        yield
+
+
 def _guest_claim_code_for_player_id(player_id):
     return save_management._guest_claim_code_for_player_id(
         player_id,
@@ -3254,8 +3273,7 @@ def _rollback_managed_claim_saves(managed_migrations, old_player_id, target_play
     )
 
 
-@nowhere_storage.lock_platform_claim
-def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
+def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT, *, claim_state=None, save_claim_state=None):
     return save_management._migrate_player_saves(
         old_player_id, user_id, slot,
         DIRECTORY_VENDOR_GAMES=DIRECTORY_VENDOR_GAMES,
@@ -3265,6 +3283,7 @@ def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
         VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
         _McpError=_McpError,
         _account_slot_player_id=_account_slot_player_id,
+        _camping_plaza_save_summary=_camping_plaza_save_summary,
         _collect_player_saves=_collect_player_saves,
         _directory_vendor_save_exists=_directory_vendor_save_exists,
         _migrate_camping_plaza_save=_migrate_camping_plaza_save,
@@ -3275,6 +3294,9 @@ def _migrate_player_saves(old_player_id, user_id, slot=MIN_SAVE_SLOT):
         _sessions_table_columns=_sessions_table_columns,
         _table_exists=_table_exists,
         logger=logger,
+        nowhere_storage=nowhere_storage,
+        claim_state=claim_state,
+        save_claim_state=save_claim_state,
     )
 
 
@@ -3320,6 +3342,7 @@ def _auto_migrate_legacy_account_saves(user):
 def _claim_guest_saves(raw_token, claim_code, slot=MIN_SAVE_SLOT):
     return save_management._claim_guest_saves(
         raw_token, claim_code, slot,
+        VENDOR_SAVE_ROOT=VENDOR_SAVE_ROOT,
         _McpError=_McpError,
         _current_account=_current_account,
         _db_connect=_db_connect,
@@ -4092,6 +4115,19 @@ def _deserialize_object_param(value, param_name):
 
 
 def _tool_play_inner(
+    arguments, path_token=None, *, defer_duel=False, authenticated_account=None
+):
+    guest = None
+    if not path_token and authenticated_account is None:
+        params = _deserialize_object_param(arguments.get("params"), "params")
+        guest = _guest_player_id(_reported_player_id({**arguments, "params": params}))
+    with _guest_save_guard(guest):
+        return _tool_play_inner_unlocked(
+            arguments, path_token, defer_duel=defer_duel, authenticated_account=authenticated_account,
+        )
+
+
+def _tool_play_inner_unlocked(
     arguments, path_token=None, *, defer_duel=False, authenticated_account=None
 ):
     return mcp_dispatch._tool_play_inner(

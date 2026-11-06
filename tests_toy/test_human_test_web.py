@@ -15,6 +15,16 @@ class HumanTestWebTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self.temp_dir.name) / "sessions.db")
+        for name, value in (
+            ("VENDOR_SAVE_ROOT", Path(self.temp_dir.name) / "vendor_saves"),
+            ("TURTLE_DB_PATH", Path(self.temp_dir.name) / "accounts.db"),
+        ):
+            isolation = patch.object(server, name, value)
+            isolation.start()
+            self.addCleanup(isolation.stop)
+        self.sessions_db = patch.object(server, "SESSIONS_DB_PATH", Path(self.db_path))
+        self.sessions_db.start()
+        self.addCleanup(self.sessions_db.stop)
         self.mbti_db = patch.object(server.mbti_handler, "DB_PATH", self.db_path)
         self.enneagram_db = patch.object(server.enneagram_handler, "DB_PATH", self.db_path)
         self.dnd_db = patch.object(server.dnd_handler, "DB_PATH", self.db_path)
@@ -73,11 +83,11 @@ class HumanTestWebTests(unittest.TestCase):
 
     def test_mbti_quick_completes_with_one_web_batch(self):
         player_id = "guest:webquick1"
-        server._human_test_action(
+        state = server._human_test_action(
             "mbti", "start", "", {"player_id": player_id, "edition": "quick"}
         )
         completed = server._human_test_action(
-            "mbti", "answer_batch", "", {"player_id": player_id, "answers": [3] * 16}
+            "mbti", "answer_batch", "", {**state, "player_id": player_id, "answers": [3] * 16}
         )
         self.assertTrue(completed["complete"])
         self.assertIn(f"存档身份：{player_id}", completed["result"])
@@ -95,20 +105,20 @@ class HumanTestWebTests(unittest.TestCase):
         historical = server._human_test_action("mbti", "result", "", {"player_id": player_id})
         self.assertEqual(historical["result_data"]["type"], result_data["type"])
 
-    def test_mbti_complete_web_batch_uses_existing_handler_chunks(self):
+    def test_mbti_complete_web_batch_uses_existing_handler_scoring(self):
         player_id = "guest:webcomplete1"
         state = server._human_test_action(
             "mbti", "start", "", {"player_id": player_id, "edition": "complete"}
         )
         self.assertEqual(state["total"], 93)
-        original = server.mbti_handler.mbti_answer_batch
-        with patch.object(server.mbti_handler, "mbti_answer_batch", wraps=original) as answer_batch:
+        original = server.mbti_handler._finish_test
+        with patch.object(server.mbti_handler, "_finish_test", wraps=original) as answer_batch:
             completed = server._human_test_action(
-                "mbti", "answer_batch", "", {"player_id": player_id, "answers": [3] * 93}
+                "mbti", "answer_batch", "", {**state, "player_id": player_id, "answers": [3] * 93}
             )
         self.assertTrue(completed["complete"])
         self.assertIn(f"存档身份：{player_id}", completed["result"])
-        self.assertEqual(answer_batch.call_count, 6)
+        self.assertEqual(answer_batch.call_count, 1)
         self.assertIn("完整版", completed["result"])
         self.assertNotIn("full_fast", completed["result"])
 
@@ -129,7 +139,7 @@ class HumanTestWebTests(unittest.TestCase):
             "enneagram",
             "answer_batch",
             "",
-            {"player_id": player_id, "answers": [1] * 36},
+            {**state, "player_id": player_id, "answers": [1] * 36},
         )
         self.assertTrue(completed["complete"])
         data = completed["result_data"]
@@ -149,24 +159,24 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertNotIn("quick", completed["result"].lower())
         self.assertNotIn("full", completed["result"].lower())
 
-    def test_enneagram_complete_web_uses_16_question_handler_chunks(self):
+    def test_enneagram_complete_web_uses_existing_handler_scoring(self):
         player_id = "guest:webenneafull"
         state = server._human_test_action(
             "enneagram", "start", "", {"player_id": player_id, "edition": "complete"}
         )
         self.assertEqual(state["total"], 180)
         self.assertIn("我富有创造力", state["questions"][0]["text"])
-        original = server.enneagram_handler.enneagram_answer_batch
+        original = server.enneagram_handler._engine._finish_test
         with patch.object(
-            server.enneagram_handler, "enneagram_answer_batch", wraps=original
+            server.enneagram_handler._engine, "_finish_test", wraps=original
         ) as answer_batch:
             completed = server._human_test_action(
                 "enneagram",
                 "answer_batch",
                 "",
-                {"player_id": player_id, "answers": [3] * 180},
+                {**state, "player_id": player_id, "answers": [3] * 180},
             )
-        self.assertEqual(answer_batch.call_count, 12)
+        self.assertEqual(answer_batch.call_count, 1)
         data = completed["result_data"]
         self.assertTrue(data["is_full"])
         self.assertTrue(data["wing"])
@@ -180,7 +190,7 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertNotIn("quick", completed["result"].lower())
         self.assertNotIn("full", completed["result"].lower())
 
-    def test_dnd_has_one_web_version_and_completes_in_one_handler_batch(self):
+    def test_dnd_has_one_web_version_and_uses_existing_handler_scoring(self):
         player_id = "guest:webdnd1"
         state = server._human_test_action("dnd", "start", "", {"player_id": player_id})
         self.assertEqual(state["edition"], "standard")
@@ -190,10 +200,10 @@ class HumanTestWebTests(unittest.TestCase):
         self.assertIn("家族长辈", state["questions"][0]["text"])
         self.assertEqual(len(server.dnd_web_questions.QUESTIONS), 36)
 
-        original = server.dnd_handler.dnd_answer_batch
-        with patch.object(server.dnd_handler, "dnd_answer_batch", wraps=original) as answer_batch:
+        original = server.dnd_handler._finish_test
+        with patch.object(server.dnd_handler, "_finish_test", wraps=original) as answer_batch:
             completed = server._human_test_action(
-                "dnd", "answer_batch", "", {"player_id": player_id, "answers": [1] * 36}
+                "dnd", "answer_batch", "", {**state, "player_id": player_id, "answers": [1] * 36}
             )
         self.assertEqual(answer_batch.call_count, 1)
         self.assertTrue(completed["complete"])
@@ -212,11 +222,11 @@ class HumanTestWebTests(unittest.TestCase):
     def test_account_web_result_echoes_username_id_and_slot(self):
         user = {"id": 42, "username": "中文_用户", "is_ai": False}
         with patch.object(server, "_current_account", return_value=user):
-            server._human_test_action(
+            state = server._human_test_action(
                 "mbti", "start", "token", {"player_id": "guest:webspoof", "edition": "quick"}
             )
             completed = server._human_test_action(
-                "mbti", "answer_batch", "token", {"player_id": "wrong", "answers": [3] * 16}
+                "mbti", "answer_batch", "token", {**state, "player_id": "wrong", "answers": [3] * 16}
             )
         self.assertIn("存档身份：账号 中文_用户（id 42，槽 1）", completed["result"])
         self.assertNotIn("存档身份：42", completed["result"])

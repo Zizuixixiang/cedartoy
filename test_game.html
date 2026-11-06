@@ -649,7 +649,8 @@
     }
 
     async function api(action, payload = {}, retryGuest = true, signal) {
-      if (CONFIG.research && action === "answer_batch") payload = {...payload, session_id: activeState.session_id};
+      if (action === "answer_batch") payload = {...payload, session_id: payload.session_id ?? activeState.session_id,
+        ...(!CONFIG.research ? {expected_index: payload.expected_index ?? activeState.expected_index} : {})};
       const response = await fetch(`/api/${CONFIG.game}/${action}`, {
         method: "POST",
         headers: requestHeaders(),
@@ -787,7 +788,12 @@
       cursor = 0;
       if (!CONFIG.research) {
         try {
-          const saved = JSON.parse(localStorage.getItem(currentDraftKey()) || "null");
+          const raw = localStorage.getItem(currentDraftKey());
+          const saved = JSON.parse(raw || "null");
+          if (saved && saved.session_id !== state.session_id) {
+            preserveDraft(raw);
+            return;
+          }
           if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
             answers = Array.from({length: state.total}, (_, i) => Number.isInteger(saved.answers[i]) ? saved.answers[i] : null);
             cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));

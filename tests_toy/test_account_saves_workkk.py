@@ -271,6 +271,7 @@ class WorkkkPlatformAccountTests(unittest.TestCase):
         self.patches = [
             patch.object(server, "VENDOR_SAVE_ROOT", self.save_root),
             patch.object(server, "SESSIONS_DB_PATH", self.sessions_db),
+            patch.object(server, "CAMPING_PLAZA_DB_PATH", self.root / "missing-camping.db"),
             patch.object(server, "_db_connect", side_effect=self._connect),
         ]
         for active in self.patches:

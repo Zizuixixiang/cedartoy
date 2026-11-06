@@ -1,4 +1,3 @@
-import fcntl
 import json
 import math
 import os
@@ -10,6 +9,7 @@ import game_activity
 from pathlib import Path
 
 from command_text import normalize_command_spaces
+from save_locks import save_directory_locks
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -58,8 +58,6 @@ class VendorCmdGame:
     def run(self, player_id, command, *, reset=False, extra=None):
         player_id = require_player_id(player_id)
         save_dir = SAVE_ROOT / self.name / player_id
-        save_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = save_dir / ".lock"
 
         payload = {
             # 归一化 Unicode 空白：vendor 引擎普遍按 ASCII 空格切指令，
@@ -73,8 +71,8 @@ class VendorCmdGame:
         env = os.environ.copy() if self.environment is None else dict(self.environment)
         env["PYTHONIOENCODING"] = "utf-8"
 
-        with lock_path.open("w", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        with save_directory_locks(save_dir) as lock_fds:
+            save_dir.mkdir(parents=True, exist_ok=True)
             before = game_activity.save_fingerprint(save_dir)
             proc = subprocess.run(
                 [sys.executable, "-c", self.runner_code],
@@ -85,6 +83,7 @@ class VendorCmdGame:
                 env=env,
                 timeout=self.timeout,
                 check=False,
+                pass_fds=lock_fds,
             )
             after = game_activity.save_fingerprint(save_dir)
             if before is None or after is None:
@@ -182,9 +181,7 @@ def export_json_saves(
 
     expected_types = expected_types or {}
     archive = {}
-    lock_path = save_dir / ".lock"
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    with save_directory_locks(save_dir):
         for filename, path in candidates.items():
             if not path.is_file():
                 continue
@@ -235,16 +232,13 @@ def import_json_saves(
         _validate_save_value(filename, value, expected_types)
 
     save_dir = SAVE_ROOT / game_name / player_id
-    save_dir.mkdir(parents=True, exist_ok=True)
     targets = {
         filename: save_dir / relative_path
         for filename, relative_path in files.items()
     }
-    lock_path = save_dir / ".lock"
     staged = {}
     try:
-        with lock_path.open("w", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        with save_directory_locks(save_dir):
             for filename, value in archive.items():
                 target = targets[filename]
                 target.parent.mkdir(parents=True, exist_ok=True)

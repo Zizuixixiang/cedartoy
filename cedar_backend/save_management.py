@@ -3,12 +3,16 @@
 Dependencies are explicit arguments supplied by server wrappers at call time. Nested calls therefore retain the existing server patch points.
 Database paths, mutable state and configuration remain owned by the caller.
 Payload-forwarding helpers take dependencies positionally so arbitrary payload
-keys cannot collide with injected dependencies. The claim lock stays on the
-server compatibility wrapper and covers the entire migration and rollback.
+keys cannot collide with injected dependencies. Stable guest and per-save locks
+cover migration, rollback and recovery across processes.
 """
 
 
+import json
+from contextlib import ExitStack
+
 from research_scales import SCALES
+from save_locks import save_directory_locks
 
 
 def _init_guest_claim_table(conn):
@@ -25,8 +29,15 @@ def _init_guest_claim_table(conn):
         """
     )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(guest_claim_codes)")}
-    if "claimed_slot" not in columns:
-        conn.execute("ALTER TABLE guest_claim_codes ADD COLUMN claimed_slot INTEGER")
+    additions = (("claimed_slot", "INTEGER"), ("pending_by", "INTEGER"),
+                 ("pending_slot", "INTEGER"), ("recovery_json", "TEXT"))
+    if any(name not in columns for name, _ in additions):
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(guest_claim_codes)")}
+        for name, kind in additions:
+            if name not in columns:
+                conn.execute(f"ALTER TABLE guest_claim_codes ADD COLUMN {name} {kind}")
 
 
 def _ensure_guest_claim_code(guest_player_id, *,
@@ -83,9 +94,10 @@ def _claimed_guest_record(guest_player_id, *,
         _init_guest_claim_table(conn)
         return _row_dict(conn.execute(
             """
-            SELECT guest_player_id, claimed_by, claimed_at, claimed_slot
+            SELECT guest_player_id, COALESCE(claimed_by, pending_by) AS claimed_by,
+                   claimed_at, COALESCE(claimed_slot, pending_slot) AS claimed_slot
             FROM guest_claim_codes
-            WHERE guest_player_id = ? AND claimed_by IS NOT NULL
+            WHERE guest_player_id = ? AND (claimed_by IS NOT NULL OR pending_by IS NOT NULL)
             """,
             (guest_player_id,),
         ).fetchone())
@@ -497,6 +509,7 @@ def _migrate_player_saves(old_player_id, user_id, slot, *,
     VENDOR_SAVE_ROOT,
     _McpError,
     _account_slot_player_id,
+    _camping_plaza_save_summary,
     _collect_player_saves,
     _directory_vendor_save_exists,
     _migrate_camping_plaza_save,
@@ -507,6 +520,9 @@ def _migrate_player_saves(old_player_id, user_id, slot, *,
     _sessions_table_columns,
     _table_exists,
     logger,
+    nowhere_storage,
+    claim_state=None,
+    save_claim_state=None,
 ):
     """把游客全部存档改绑到账号选择的 canonical slot，并回填 user_id 列。
 
@@ -517,85 +533,133 @@ def _migrate_player_saves(old_player_id, user_id, slot, *,
     target_player_id = _account_slot_player_id(user_id, slot)
     if old_player_id == target_player_id:
         raise _McpError(-32602, "旧 id 与账号 id 相同，无需迁移")
-    found, conflicts = _collect_player_saves(old_player_id, target_player_id)
-    if not found:
-        raise _McpError(-32004, f"没有找到 player_id={old_player_id} 的任何存档")
-    if conflicts:
-        raise _McpError(
-            -32602,
-            "以下游戏在账号名下已有存档，迁移会冲突，已全部取消（不覆盖不删档）：" + "、".join(conflicts),
-        )
-    migrated = []
-    managed_migrations = []
-    moved_directories = []
-    sessions_conn = None
-    try:
-        # Resident services own live caches. They must all succeed before touching
-        # ordinary saves; never fall back to direct rename for either service.
-        if "camping_plaza" in found:
-            _migrate_camping_plaza_save(old_player_id, target_player_id)
-            managed_migrations.append(("camping_plaza", _migrate_camping_plaza_save))
-            migrated.append("camping_plaza")
-        if "garden_cat" in found:
-            _migrate_garden_cat_save(old_player_id, target_player_id)
-            managed_migrations.append(("garden_cat", _migrate_garden_cat_save))
-            migrated.append("vendor_saves/garden_cat")
-        if "workkk" in found:
-            _migrate_workkk_save(old_player_id, target_player_id)
-            managed_migrations.append(("workkk", _migrate_workkk_save))
-            migrated.append("vendor_saves/workkk")
-
+    # The SQLite write lock precedes all file locks, including on retries.
+    # A durable plan pins ownership before the first cross-storage mutation.
+    with ExitStack() as stack:
+        sessions_conn = None
         if SESSIONS_DB_PATH.exists():
             sessions_conn = _sessions_db_connect()
-            for table in ("eco_sessions", "ciyuwu_sessions", "test_sessions", "test_results"):
-                if not _table_exists(sessions_conn, table):
-                    continue
-                if "user_id" in _sessions_table_columns(sessions_conn, table):
-                    cur = sessions_conn.execute(
-                        f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
-                        (target_player_id, int(user_id), old_player_id),
-                    )
+            stack.callback(sessions_conn.close)
+            sessions_conn.execute("BEGIN IMMEDIATE")
+        stack.enter_context(save_directory_locks(*(
+            VENDOR_SAVE_ROOT / game / player
+            for game in DIRECTORY_VENDOR_GAMES
+            for player in (old_player_id, target_player_id)
+        )))
+        found, conflicts = _collect_player_saves(old_player_id, target_player_id)
+        if conflicts:
+            raise _McpError(-32602, "以下游戏在账号名下已有存档，迁移会冲突，已全部取消（不覆盖不删档）：" + "、".join(conflicts))
+        plan = claim_state.get("plan") if claim_state is not None else None
+        if plan is None:
+            if not found:
+                raise _McpError(-32004, f"没有找到 player_id={old_player_id} 的任何存档")
+            directories = {}
+            for key, value in found.items():
+                if "dir" in value:
+                    directory = VENDOR_SAVE_ROOT / key.removeprefix("vendor:") / old_player_id
+                    stat = directory.stat()
+                    directories[key] = [stat.st_dev, stat.st_ino]
+            plan = {"found": found, "directories": directories}
+            if claim_state is not None:
+                claim_state["plan"] = plan
+                save_claim_state(claim_state)
+        else:
+            # Renames preserve directory identity. Missing source alone must not
+            # let an unrelated target masquerade as a completed migration.
+            for key, identity in plan["directories"].items():
+                directory = VENDOR_SAVE_ROOT / key.removeprefix("vendor:")
+                source, target = directory / old_player_id, directory / target_player_id
+                path = source if source.exists() else target
+                if not path.exists() or [path.stat().st_dev, path.stat().st_ino] != identity:
+                    raise _McpError(-32603, "认领恢复检测到存档目录已变化；已保留数据，请联系管理员核对")
+            if "camping_plaza" in plan["found"] and "camping_plaza" not in found:
+                if _camping_plaza_save_summary(target_player_id) is None:
+                    raise _McpError(-32603, "认领恢复未找到露营目标存档；已保留认领归属")
+
+        migrated = []
+        managed_migrations = []
+        moved_directories = []
+        try:
+            for game, migrate, label in (
+                ("camping_plaza", _migrate_camping_plaza_save, "camping_plaza"),
+                ("garden_cat", _migrate_garden_cat_save, "vendor_saves/garden_cat"),
+                ("workkk", _migrate_workkk_save, "vendor_saves/workkk"),
+            ):
+                if game in found:
+                    migrate(old_player_id, target_player_id)
+                    managed_migrations.append((game, migrate))
+                if game in plan["found"]:
+                    migrated.append(label)
+
+            if sessions_conn is not None:
+                # This receipt commits with the rows: a process killed after
+                # commit but before consuming the claim code can safely replay.
+                sessions_conn.execute("""CREATE TABLE IF NOT EXISTS guest_claim_migrations (
+                    guest_player_id TEXT PRIMARY KEY, target_player_id TEXT NOT NULL,
+                    migrated_json TEXT NOT NULL)""")
+                receipt = sessions_conn.execute(
+                    "SELECT target_player_id, migrated_json FROM guest_claim_migrations WHERE guest_player_id = ?",
+                    (old_player_id,),
+                ).fetchone() if claim_state is not None else None
+                if receipt is not None:
+                    if receipt[0] != target_player_id:
+                        raise _McpError(-32603, "认领恢复目标与会话库记录不一致")
+                    migrated.extend(json.loads(receipt[1]))
                 else:
-                    cur = sessions_conn.execute(
-                        f"UPDATE {table} SET player_id = ? WHERE player_id = ?",
-                        (target_player_id, old_player_id),
-                    )
-                if cur.rowcount:
-                    migrated.append(f"{table}×{cur.rowcount}")
-        for game in DIRECTORY_VENDOR_GAMES:
-            old_dir = VENDOR_SAVE_ROOT / game / old_player_id
-            if _directory_vendor_save_exists(game, old_dir):
+                    db_migrated = []
+                    for table in ("eco_sessions", "ciyuwu_sessions", "test_sessions", "test_results"):
+                        if not _table_exists(sessions_conn, table):
+                            continue
+                        if "user_id" in _sessions_table_columns(sessions_conn, table):
+                            cur = sessions_conn.execute(
+                                f"UPDATE {table} SET player_id = ?, user_id = ? WHERE player_id = ?",
+                                (target_player_id, int(user_id), old_player_id),
+                            )
+                        else:
+                            cur = sessions_conn.execute(
+                                f"UPDATE {table} SET player_id = ? WHERE player_id = ?",
+                                (target_player_id, old_player_id),
+                            )
+                        if cur.rowcount:
+                            db_migrated.append(f"{table}×{cur.rowcount}")
+                    migrated.extend(db_migrated)
+                    if claim_state is not None:
+                        sessions_conn.execute("INSERT INTO guest_claim_migrations VALUES (?, ?, ?)",
+                                              (old_player_id, target_player_id, json.dumps(db_migrated)))
+            for game in DIRECTORY_VENDOR_GAMES:
+                old_dir = VENDOR_SAVE_ROOT / game / old_player_id
                 target_dir = VENDOR_SAVE_ROOT / game / target_player_id
-                old_dir.rename(target_dir)
-                moved_directories.append((old_dir, target_dir))
-                migrated.append(f"vendor_saves/{game}")
-        if sessions_conn is not None:
-            sessions_conn.commit()
-    except Exception:
-        if sessions_conn is not None:
-            sessions_conn.rollback()
-        for old_dir, target_dir in reversed(moved_directories):
-            try:
-                target_dir.rename(old_dir)
-            except OSError as rollback_exc:
-                logger.error(
-                    "directory claim rollback failed %s -> %s: %s",
-                    target_dir,
-                    old_dir,
-                    rollback_exc,
-                )
-        _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id)
-        raise
-    finally:
-        if sessions_conn is not None:
-            sessions_conn.close()
-    return {
-        "old_player_id": old_player_id,
-        "new_player_id": target_player_id,
-        "target_player_id": target_player_id,
-        "slot": slot,
-        "migrated": migrated,
-    }
+                if _directory_vendor_save_exists(game, old_dir):
+                    if target_dir.exists():
+                        raise _McpError(-32602, f"{game} 目标存档已存在，未覆盖")
+                    if game == "nowhere":
+                        nowhere_storage.migrate(old_player_id, target_player_id)
+                    else:
+                        old_dir.rename(target_dir)
+                    moved_directories.append((old_dir, target_dir))
+                if f"vendor:{game}" in plan["found"]:
+                    migrated.append(f"vendor_saves/{game}")
+            if sessions_conn is not None:
+                sessions_conn.commit()
+        except Exception:
+            if sessions_conn is not None:
+                sessions_conn.rollback()
+            for old_dir, target_dir in reversed(moved_directories):
+                try:
+                    if old_dir.exists():
+                        raise OSError("source was recreated; refusing rollback overwrite")
+                    target_dir.rename(old_dir)
+                except OSError as rollback_exc:
+                    logger.error("directory claim rollback failed %s -> %s: %s", target_dir, old_dir, rollback_exc)
+            _rollback_managed_claim_saves(managed_migrations, old_player_id, target_player_id)
+            raise
+        return {
+            "old_player_id": old_player_id,
+            "new_player_id": target_player_id,
+            "target_player_id": target_player_id,
+            "slot": slot,
+            "migrated": migrated,
+        }
 
 
 def _auto_migrate_legacy_username_saves(user, username, *,
@@ -637,6 +701,7 @@ def _auto_migrate_legacy_username_saves(user, username, *,
     if SESSIONS_DB_PATH.exists():
         try:
             with _sessions_db_connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
                 for table in ("eco_sessions", "ciyuwu_sessions"):
                     if not _table_exists(conn, table):
                         continue
@@ -707,13 +772,14 @@ def _auto_migrate_legacy_username_saves(user, username, *,
     for game in DIRECTORY_VENDOR_GAMES:
         old_dir = VENDOR_SAVE_ROOT / game / username
         target_dir = VENDOR_SAVE_ROOT / game / target_player_id
-        if _directory_vendor_save_exists(game, old_dir) and not target_dir.exists():
-            target_dir.parent.mkdir(parents=True, exist_ok=True)
-            if game == "nowhere":
-                nowhere_storage.migrate(username, target_player_id)
-            else:
-                old_dir.rename(target_dir)
-            migrated.append(f"vendor_saves/{game}")
+        with save_directory_locks(old_dir, target_dir):
+            if _directory_vendor_save_exists(game, old_dir) and not target_dir.exists():
+                target_dir.parent.mkdir(parents=True, exist_ok=True)
+                if game == "nowhere":
+                    nowhere_storage.migrate(username, target_player_id)
+                else:
+                    old_dir.rename(target_dir)
+                migrated.append(f"vendor_saves/{game}")
     workkk_old_dir = VENDOR_SAVE_ROOT / "workkk" / username
     workkk_target_dir = VENDOR_SAVE_ROOT / "workkk" / target_player_id
     if (workkk_old_dir / "game_state.json").is_file() and not workkk_target_dir.exists():
@@ -770,6 +836,7 @@ def _auto_migrate_legacy_account_saves(user, *,
 
 
 def _claim_guest_saves(raw_token, claim_code, slot, *,
+    VENDOR_SAVE_ROOT,
     _McpError,
     _current_account,
     _db_connect,
@@ -780,38 +847,75 @@ def _claim_guest_saves(raw_token, claim_code, slot, *,
     _save_slot_from_account_arguments,
 ):
     user = _current_account(raw_token)
+    user_id = int(user["id"])
     slot = _save_slot_from_account_arguments({"slot": slot})
     claim_code = (claim_code or "").strip()
     if not claim_code:
         raise _McpError(-32602, "claim_code 必填")
-    with _db_connect() as conn:
-        _init_guest_claim_table(conn)
-        row = _row_dict(conn.execute(
-            "SELECT * FROM guest_claim_codes WHERE code = ?", (claim_code,)
-        ).fetchone())
-    if not row or row.get("claimed_by") is not None:
+
+    def read_claim():
+        with _db_connect() as conn:
+            _init_guest_claim_table(conn)
+            return _row_dict(conn.execute(
+                "SELECT * FROM guest_claim_codes WHERE code = ?", (claim_code,),
+            ).fetchone())
+
+    row = read_claim()
+    if not row:
         raise _McpError(-32001, "认领码无效或已被使用")
-    result = _migrate_player_saves(
-        row["guest_player_id"],
-        int(user["id"]),
-        slot=slot,
-    )
-    with _db_connect() as conn:
-        conn.execute(
-            """
-            UPDATE guest_claim_codes
-            SET claimed_by = ?, claimed_at = datetime('now', 'localtime'), claimed_slot = ?
-            WHERE code = ? AND claimed_by IS NULL
-            """,
-            (int(user["id"]), slot, claim_code),
-        )
-        conn.commit()
-    return {
-        "ok": True,
-        "user": _public_user(user),
-        **result,
-        "message": f"游客存档已认领并转入账号槽 {slot}；旧游客身份已停用，请带 token 并选择该 slot 续档。",
-    }
+    # A stable per-guest lock serializes retry/finalization across processes.
+    # Account DB transactions are short; do not hold them while calling services.
+    with save_directory_locks(VENDOR_SAVE_ROOT / ".claims" / row["guest_player_id"]):
+        row = read_claim()
+        if not row:
+            raise _McpError(-32001, "认领码无效或已被使用")
+        owner = row.get("claimed_by") if row.get("claimed_by") is not None else row.get("pending_by")
+        owner_slot = row.get("claimed_slot") if row.get("claimed_by") is not None else row.get("pending_slot")
+        if owner is not None and (int(owner) != user_id or (owner_slot or 1) != slot):
+            raise _McpError(-32001, "认领码已锁定其他账号或存档槽，不能接管")
+        state = json.loads(row["recovery_json"]) if row.get("recovery_json") else {}
+        if row.get("claimed_by") is not None and "result" not in state:
+            # Old completed codes predate receipts and remain single-use.
+            raise _McpError(-32001, "认领码无效或已被使用")
+
+        def save_state(value):
+            with _db_connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                cur = conn.execute(
+                    """UPDATE guest_claim_codes SET pending_by = ?, pending_slot = ?, recovery_json = ?
+                       WHERE code = ? AND claimed_by IS NULL
+                       AND (pending_by IS NULL OR (pending_by = ? AND pending_slot = ?))""",
+                    (user_id, slot, json.dumps(value, ensure_ascii=False), claim_code, user_id, slot),
+                )
+                if cur.rowcount != 1:
+                    raise _McpError(-32001, "认领码已锁定其他账号或已被使用")
+                conn.commit()
+
+        result = state.get("result")
+        if result is None:
+            result = _migrate_player_saves(
+                row["guest_player_id"], user_id, slot=slot,
+                claim_state=state, save_claim_state=save_state,
+            )
+            state["result"] = result
+            with _db_connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                cur = conn.execute(
+                    """UPDATE guest_claim_codes
+                       SET claimed_by = ?, claimed_at = datetime('now', 'localtime'),
+                           claimed_slot = ?, recovery_json = ?
+                       WHERE code = ? AND claimed_by IS NULL AND pending_by = ? AND pending_slot = ?""",
+                    (user_id, slot, json.dumps(state, ensure_ascii=False), claim_code, user_id, slot),
+                )
+                if cur.rowcount != 1:
+                    raise _McpError(-32001, "认领码状态改变；已保留恢复记录")
+                conn.commit()
+        return {
+            "ok": True,
+            "user": _public_user(user),
+            **result,
+            "message": f"游客存档已认领并转入账号槽 {slot}；旧游客身份已停用，请带 token 并选择该 slot 续档。",
+        }
 
 
 def _delete_owned_session_rows(game, player_id, *,
@@ -863,9 +967,10 @@ def _delete_vendor_save_dir(game, player_id, *,
     if game not in DIRECTORY_VENDOR_GAMES:
         return None
     save_dir = VENDOR_SAVE_ROOT / game / player_id
-    if not save_dir.is_dir():
-        return None
-    shutil.rmtree(save_dir)
+    with save_directory_locks(save_dir):
+        if not save_dir.is_dir():
+            return None
+        shutil.rmtree(save_dir)
     return {"target": f"vendor_saves/{game}/{player_id}", "rows": 1}
 
 

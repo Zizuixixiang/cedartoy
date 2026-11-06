@@ -28,6 +28,8 @@ class GameActivityTests(unittest.TestCase):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(server, "SESSIONS_DB_PATH", self.db))
+        self.stack.enter_context(patch.object(server, "VENDOR_SAVE_ROOT", self.root / "vendor_saves"))
+        self.stack.enter_context(patch.object(server, "TURTLE_DB_PATH", self.root / "accounts.db"))
         self.stack.enter_context(patch.object(activity.time, "time", return_value=self.NOW))
         for name in ("_auto_migrate_legacy_account_saves", "_stamp_save_owner"):
             self.stack.enter_context(patch.object(server, name))
@@ -299,11 +301,11 @@ class GameActivityTests(unittest.TestCase):
 
     def test_actual_human_test_entry_records_own_identity_and_not_result_retry(self):
         with patch.object(server.mbti_handler, "DB_PATH", str(self.db)), patch.object(server, "_current_account", return_value=self.human):
-            server._human_test_action("mbti", "start", "token", {"edition": "quick", "player_id": "spoof"})
+            state = server._human_test_action("mbti", "start", "token", {"edition": "quick", "player_id": "spoof"})
             with self.assertRaises(server._McpError):
                 server._human_test_action("mbti", "answer_batch", "token", {"answers": []})
-            server._human_test_action("mbti", "answer_batch", "token", {"answers": [3] * 16})
-            server._human_test_action("mbti", "answer_batch", "token", {"answers": [3] * 16})
+            server._human_test_action("mbti", "answer_batch", "token", {**state, "answers": [3] * 16})
+            server._human_test_action("mbti", "answer_batch", "token", {**state, "answers": [3] * 16})
             server._human_test_action("mbti", "result", "token", {})
         self.assertEqual([(row[2], row[3], row[4]) for row in self.events()],
                          [("17", "human", "start"), ("17", "human", "answer_batch")])

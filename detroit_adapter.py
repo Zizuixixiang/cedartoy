@@ -9,7 +9,6 @@ one upstream owner and at most one upstream save.
 from __future__ import annotations
 
 import base64
-import fcntl
 import hashlib
 import hmac
 import json
@@ -20,6 +19,8 @@ import time
 from contextlib import contextmanager, nullcontext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from save_locks import save_directory_locks
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -194,16 +195,11 @@ def _write_state_unlocked(player_id: str, state: dict) -> None:
 @contextmanager
 def _locked(player_id: str, *, lock_name=LOCK_NAME):
     directory = _player_dir(player_id)
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(directory, 0o700)
-    lock_path = directory / lock_name
-    with lock_path.open("a+b") as handle:
-        os.chmod(lock_path, 0o600)
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    namespace = "state" if lock_name == LOCK_NAME else lock_name
+    with save_directory_locks(directory, namespace=namespace):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(directory, 0o700)
+        yield
 
 
 def _browser_headers(*, json_request: bool = False) -> dict:

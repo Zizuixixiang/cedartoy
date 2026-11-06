@@ -1,13 +1,16 @@
 """Human test Web coordination and public result conversion.
 
-Handlers retain ownership of questions, scoring and persistence. Server wrappers
+Handlers retain ownership of questions, scoring and result writes; this module
+coordinates Web transaction boundaries and restart generations. Server wrappers
 supply runtime dependencies on every call so patched paths, mappings and callbacks
 remain effective; this module never imports server or captures database paths.
 """
 
+import hashlib
 import json
 import re
 import sqlite3
+import time
 
 from dnd import handler as dnd_handler
 from dnd import questions as dnd_questions
@@ -198,18 +201,117 @@ def _human_test_public_questions(
     return public
 
 
+def _ensure_web_generation(conn):
+    """Give every restart a generation, including starts through the MCP handlers.
+
+    The trigger is part of the database, so all processes share this protection.
+    Initialization is transactional and safe to repeat after an interrupted upgrade.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(test_sessions)")}
+    if not columns:
+        return False
+    if "web_generation" not in columns:
+        conn.execute("ALTER TABLE test_sessions ADD COLUMN web_generation TEXT")
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS test_sessions_web_insert
+        AFTER INSERT ON test_sessions BEGIN
+            UPDATE test_sessions SET web_generation = lower(hex(randomblob(16)))
+            WHERE player_id = NEW.player_id AND game = NEW.game;
+        END
+    """)
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS test_sessions_web_restart
+        AFTER UPDATE OF created_at ON test_sessions BEGIN
+            UPDATE test_sessions SET web_generation = lower(hex(randomblob(16)))
+            WHERE player_id = NEW.player_id AND game = NEW.game;
+        END
+    """)
+    conn.execute("""
+        UPDATE test_sessions SET web_generation = lower(hex(randomblob(16)))
+        WHERE web_generation IS NULL
+    """)
+    return True
+
+
+def _submit_web_answers(game, handler, questions_module, player_id, body, error_class):
+    """Validate and score an entire Web submission in one SQLite write transaction."""
+    session_id = body.get("session_id")
+    expected_index = body.get("expected_index")
+    if (not isinstance(session_id, str) or not session_id
+            or type(expected_index) is not int or expected_index < 0):
+        raise error_class(-32602, "缺少 session_id 或 expected_index，请刷新测试页面后重试")
+    raw_answers = body["answers"]
+    engine = getattr(handler, "_engine", handler)
+    # Keep the existing games' answer coercion and scoring as the authority.
+    if game == "mbti":
+        answers = [handler._coerce_score(value, "each a_scores item must be an integer from 0 to 5")
+                   for value in raw_answers]
+    elif game == "dnd":
+        answers = [handler._coerce_answer(value, "each answers item must be an integer from 1 to 4")
+                   for value in raw_answers]
+    else:
+        answers = [engine._coerce_answer(value) for value in raw_answers]
+    digest = hashlib.sha256(json.dumps(answers, separators=(",", ":")).encode()).hexdigest()
+    now = time.time()
+    with sqlite3.connect(handler.DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        engine._init_db(conn)
+        _ensure_web_generation(conn)
+        engine._cleanup_expired(conn, now)
+        row = conn.execute(
+            "SELECT mode, current_question, answers, web_generation FROM test_sessions "
+            "WHERE player_id = ? AND game = ?", (player_id, game),
+        ).fetchone()
+        if row is None:
+            result = conn.execute(
+                "SELECT result_detail FROM test_results WHERE player_id = ? AND game = ?",
+                (player_id, game),
+            ).fetchone()
+            detail = json.loads(result[0]) if result else {}
+            if (detail.get("web_session_id") == session_id
+                    and detail.get("web_answers_digest") == digest):
+                return None  # Already committed; let the normal result conversion run.
+            raise error_class(-32002, "测试已结束或已更换，请刷新页面查看当前测试")
+        mode, progress, saved_json, generation = row
+        saved = json.loads(saved_json)
+        if generation != session_id or progress != expected_index or len(saved) != progress:
+            raise error_class(-32002, "测试或答题进度已变化，请刷新页面后重试")
+        questions = questions_module.get_questions(mode)
+        if len(answers) != len(questions):
+            raise error_class(-32602, f"须一次提交全部 {len(questions)} 题答案")
+        if saved != answers[:progress]:
+            raise error_class(-32002, "已保存答案与本次提交不同，请刷新页面后重试")
+        if game not in {"mbti", "dnd"}:
+            for question, answer in zip(questions, answers):
+                engine._validate_question_answer(question, answer)
+        text = engine._finish_test(conn, player_id, mode, questions, answers, now)
+        detail = json.loads(conn.execute(
+            "SELECT result_detail FROM test_results WHERE player_id = ? AND game = ?",
+            (player_id, game),
+        ).fetchone()[0])
+        detail.update(web_session_id=session_id, web_answers_digest=digest)
+        conn.execute(
+            "UPDATE test_results SET result_detail = ? WHERE player_id = ? AND game = ?",
+            (json.dumps(detail, ensure_ascii=False), player_id, game),
+        )
+    return text
+
+
 def _human_test_active_session(
     game, player_id, *,
     games,
 ):
-    """Read handler-owned progress; all session writes still go through the handler."""
+    """Read handler-owned progress and its durable restart generation."""
     config = games[game]
     handler = config["handler"]
     questions_module = config["questions"]
     with sqlite3.connect(handler.DB_PATH) as conn:
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            if not _ensure_web_generation(conn):
+                return None
             row = conn.execute(
-                "SELECT mode, current_question FROM test_sessions WHERE player_id = ? AND game = ?",
+                "SELECT mode, current_question, web_generation FROM test_sessions WHERE player_id = ? AND game = ?",
                 (player_id, game),
             ).fetchone()
         except sqlite3.OperationalError as exc:
@@ -219,12 +321,12 @@ def _human_test_active_session(
     if row is None:
         return None
 
-    mode, current_question = row
+    mode, current_question, generation = row
     total = len(questions_module.get_questions(mode))
     current_question = max(0, min(int(current_question), total))
     if current_question >= total:
         return None
-    return {"mode": mode, "progress": current_question, "total": total}
+    return {"mode": mode, "progress": current_question, "total": total, "session_id": generation}
 
 
 def _human_test_public_edition(
@@ -262,6 +364,8 @@ def _human_test_public_state(
         "complete": False,
         "edition": human_test_public_edition(game, mode),
         "total": session["total"],
+        "session_id": session["session_id"],
+        "expected_index": session["progress"],
         "instructions": instructions,
         "questions": human_test_public_questions(game, mode),
     }
@@ -636,39 +740,15 @@ def _human_test_action(
         if not isinstance(answers, list) or not answers:
             raise error_class(-32602, "answers 必须是非空数组")
         session = human_test_active_session(game, player_id)
-        if session is None:
-            # A completed request may be retried after the response was lost.
+        if session is not None:
+            human_test_public_edition(game, session["mode"])
+        text = _submit_web_answers(
+            game, handler, config["questions"], player_id, body, error_class,
+        )
+        if text is None:
             text = getattr(handler, f"{game}_get_result")({"player_id": player_id})
-            return {
-                "ok": True,
-                "game": game,
-                "player_id": player_id,
-                "identity": identity,
-                "complete": True,
-                "result": human_test_public_result(
-                    game, replace_storage_identity_text(text, identity_line)
-                ),
-                "result_data": human_test_result_data(game, player_id),
-            }
-        human_test_public_edition(game, session["mode"])
-        if len(answers) != session["total"]:
-            raise error_class(-32602, f"须一次提交全部 {session['total']} 题答案")
-
-        text = ""
-        progress = session["progress"]
-        while progress < session["total"]:
-            batch_size = min(
-                config["questions"].fast_batch_size(session["mode"]),
-                session["total"] - progress,
-            )
-            batch = answers[progress:progress + batch_size]
-            arguments = {
-                "player_id": player_id,
-                "a_scores" if game == "mbti" else "answers": batch,
-            }
-            text = getattr(handler, f"{game}_answer_batch")(arguments)
-            progress += batch_size
-        record_activity(sessions_db_path, game, "answer_batch", account_user, {"ok": True})
+        else:
+            record_activity(sessions_db_path, game, "answer_batch", account_user, {"ok": True})
     elif action == "compare":
         player_id_b = body.get("player_id_b") or body.get("other_player_id")
         comparison = getattr(handler, f"{game}_compare_data")(

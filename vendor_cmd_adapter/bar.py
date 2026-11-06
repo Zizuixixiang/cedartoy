@@ -7,13 +7,14 @@ The upstream game is unmodified.  This file only supplies CedarToy identity,
 save isolation, version selection, validation, and API packaging.
 """
 
-import fcntl
 import json
 import math
 import os
 import re
 import tempfile
 from pathlib import Path
+
+from save_locks import save_directory_locks
 
 from .base import (
     MAX_IMPORT_SAVE_BYTES,
@@ -273,10 +274,7 @@ def _atomic_write_json(path, value):
 
 def _write_selection(player_id, version):
     save_dir = _save_dir(player_id)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = save_dir / ".lock"
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    with save_directory_locks(save_dir):
         _atomic_write_json(
             save_dir / SELECTION_NAME,
             {"schema_version": SELECTION_SCHEMA_VERSION, "version": version},
@@ -466,6 +464,16 @@ def save_summary(player_id):
 
 
 def play(arguments):
+    if not isinstance(arguments, dict):
+        raise VendorCmdError("play 参数必须是对象")
+    player_id = require_player_id(arguments.get("player_id"))
+    # The command and its version metadata form one save operation. A delete
+    # followed by import must not be followed by this command's old selection.
+    with save_directory_locks(_save_dir(player_id)):
+        return _play_locked(arguments)
+
+
+def _play_locked(arguments):
     if not isinstance(arguments, dict):
         raise VendorCmdError("play 参数必须是对象")
     action = str(arguments.get("action") or "version").strip().lower()

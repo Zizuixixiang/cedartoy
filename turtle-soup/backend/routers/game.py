@@ -110,6 +110,22 @@ async def _ensure_player_can_play(room_id: str, player: dict) -> None:
         raise HTTPException(status_code=400, detail=ANSWER_REVEALED_STATUS_HINT)
 
 
+async def _ensure_can_play_in_transaction(db, room_id: str, player_id: int | None = None) -> dict:
+    rows = await db.execute_fetchall("SELECT * FROM rooms WHERE id=?", (room_id,))
+    if not rows:
+        raise HTTPException(status_code=404, detail="房间不存在")
+    room = dict(rows[0])
+    _ensure_active(room)
+    if player_id is not None:
+        revealed = await db.execute_fetchall(
+            "SELECT 1 FROM room_answer_reveals WHERE room_id=? AND player_id=?",
+            (room_id, player_id),
+        )
+        if revealed:
+            raise HTTPException(status_code=400, detail=ANSWER_REVEALED_STATUS_HINT)
+    return room
+
+
 async def _log_payload(log_id: int) -> dict:
     return await fetch_one(
         """
@@ -149,22 +165,6 @@ async def _manual_hint_count(room_id: str, player_id: int) -> int:
     return int(row["c"] if row else 0)
 
 
-async def _published_clue_for_player(room_id: str, player_id: int, clue: str) -> bool:
-    row = await fetch_one(
-        """
-        SELECT id FROM game_logs
-        WHERE room_id = ?
-          AND player_id = ?
-          AND type = 'auto_hint'
-          AND judgment = 'auto_hint'
-          AND hint_text = ?
-        LIMIT 1
-        """,
-        (room_id, player_id, clue),
-    )
-    return row is not None
-
-
 async def _system_notice(room_id: str, player_id: int | None = None) -> dict:
     log_id = await execute(
         "INSERT INTO game_logs (room_id, type, content) VALUES (?, 'system', ?)",
@@ -202,31 +202,68 @@ async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False, playe
             ask_count = latest_ask_count
 
         logs = await fetch_all("SELECT * FROM game_logs WHERE room_id = ? ORDER BY id ASC", (room["id"],))
+        # Model work stays outside the writer transaction. Its snapshot watermark
+        # is checked again under SQLite's cross-process lock before publication.
+        expected_last_hint = int(room.get("last_hint_at_ask_count") or 0)
         try:
             hint = await judge.generate_hint(room["surface"], room["answer"], logs)
         except Exception:
             if manual:
                 raise
             logger.exception("auto hint generation failed: room_id=%s ask_count=%s", room["id"], ask_count)
-            await execute(
-                "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
-                (ask_count, room["id"]),
+            hint = None
+        else:
+            if hint is None and not manual:
+                logger.warning("auto hint generation returned empty: room_id=%s ask_count=%s", room["id"], ask_count)
+        if hint is None and manual:
+            return None
+        db = await get_db()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            latest = await _ensure_can_play_in_transaction(db, room["id"], player_id)
+            pending = await db.execute_fetchall(
+                "SELECT id FROM game_logs WHERE room_id=? AND type='hint_offer' AND resolved=0"
+                + (" AND player_id=?" if manual else ""),
+                (room["id"], player_id) if manual else (room["id"],),
             )
-            return None
-        if hint is None and not manual:
-            logger.warning("auto hint generation returned empty: room_id=%s ask_count=%s", room["id"], ask_count)
-            await execute(
-                "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
-                (ask_count, room["id"]),
-            )
-            return None
-        if hint is None:
-            return None
+            if pending:
+                if manual:
+                    raise HTTPException(status_code=400, detail="请先处理当前提示")
+                return None
+            if manual:
+                counts = await db.execute_fetchall(
+                    "SELECT COUNT(*) AS c FROM game_logs WHERE room_id=? AND player_id=? AND type='hint_offer'",
+                    (room["id"], player_id),
+                )
+                manual_count = int(counts[0]["c"])
+                if manual_count >= 3:
+                    raise HTTPException(status_code=400, detail="手动提示次数已用完")
+                cursor = await db.execute(
+                    "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, resolved) VALUES (?, ?, 'hint_offer', ?, ?, 1)",
+                    (room["id"], player_id, f"hint:{ask_count}", hint),
+                )
+                hint_id = cursor.lastrowid
+            else:
+                if int(latest.get("last_hint_at_ask_count") or 0) != expected_last_hint:
+                    return None
+                hint_id = None
+                if hint is not None:
+                    cursor = await db.execute(
+                        "INSERT INTO game_logs (room_id, type, content, hint_text) VALUES (?, 'auto_hint', ?, ?)",
+                        (room["id"], hint, hint),
+                    )
+                    hint_id = cursor.lastrowid
+                await db.execute(
+                    "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
+                    (ask_count, room["id"]),
+                )
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+        finally:
+            await db.close()
         if manual:
-            hint_id = await execute(
-                "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, resolved) VALUES (?, ?, 'hint_offer', ?, ?, 1)",
-                (room["id"], player_id, f"hint:{ask_count}", hint),
-            )
             payload = {
                 "log_id": hint_id,
                 "hint_text": hint,
@@ -239,14 +276,8 @@ async def _offer_hint(room: dict, ask_count: int, *, manual: bool = False, playe
             }
             await broadcast(room["id"], "hint_offer", payload)
             return payload
-        hint_id = await execute(
-            "INSERT INTO game_logs (room_id, type, content, hint_text) VALUES (?, 'auto_hint', ?, ?)",
-            (room["id"], hint, hint),
-        )
-        await execute(
-            "UPDATE rooms SET last_hint_at_ask_count = ? WHERE id = ?",
-            (ask_count, room["id"]),
-        )
+        if hint_id is None:
+            return None
         payload = await _log_payload(hint_id)
         await broadcast(room["id"], "new_log", payload)
         return {"log_id": hint_id, "hint_text": hint}
@@ -324,24 +355,47 @@ async def _ask_impl(body: ContentBody, player: dict) -> tuple[dict, asyncio.Task
             raise
         judgment = result["judgment"]
         log_content = result.get("content_override") or question
-        log_id = await execute(
-            "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'ask', ?, ?)",
-            (body.room_id, player["id"], log_content, judgment),
-        )
         column = {"yes": "ask_count_y", "no": "ask_count_n", "unrelated": "ask_count_u", "partial": "ask_count_p"}[judgment]
-        await execute(
-            f"UPDATE players SET ask_count = ask_count + 1, {column} = {column} + 1 WHERE id = ?",
-            (player["id"],),
-        )
-        payload = await _log_payload(log_id)
-        await touch_room(body.room_id, player["id"])
-        await broadcast(body.room_id, "new_log", payload)
         clue = result.get("clue")
-        if clue is not None and not await _published_clue_for_player(body.room_id, player["id"], clue):
-            clue_id = await execute(
-                "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, judgment) VALUES (?, ?, 'auto_hint', ?, ?, 'auto_hint')",
-                (body.room_id, player["id"], clue, clue),
+        clue_id = None
+        db = await get_db()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            await _ensure_can_play_in_transaction(db, body.room_id, player["id"])
+            cursor = await db.execute(
+                "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'ask', ?, ?)",
+                (body.room_id, player["id"], log_content, judgment),
             )
+            log_id = cursor.lastrowid
+            await db.execute(
+                f"UPDATE players SET ask_count = ask_count + 1, {column} = {column} + 1 WHERE id = ?",
+                (player["id"],),
+            )
+            if clue is not None:
+                published = await db.execute_fetchall(
+                    "SELECT id FROM game_logs WHERE room_id=? AND player_id=? "
+                    "AND type='auto_hint' AND judgment='auto_hint' AND hint_text=? LIMIT 1",
+                    (body.room_id, player["id"], clue),
+                )
+                if not published:
+                    cursor = await db.execute(
+                        "INSERT INTO game_logs (room_id, player_id, type, content, hint_text, judgment) VALUES (?, ?, 'auto_hint', ?, ?, 'auto_hint')",
+                        (body.room_id, player["id"], clue, clue),
+                    )
+                    clue_id = cursor.lastrowid
+            await db.execute(
+                f"UPDATE room_presence SET last_active_at = {SQL_NOW} WHERE room_id=? AND player_id=?",
+                (body.room_id, player["id"]),
+            )
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+        finally:
+            await db.close()
+        payload = await _log_payload(log_id)
+        await broadcast(body.room_id, "new_log", payload)
+        if clue_id is not None:
             clue_payload = await _log_payload(clue_id)
             await broadcast(body.room_id, "new_log", clue_payload)
 
@@ -485,21 +539,33 @@ async def hint_request(body: HintRequestBody, player: dict = Depends(current_pla
 @router.post("/hint/respond")
 async def hint_respond(body: HintResponseBody, player: dict = Depends(current_player)):
     await require_room_access(body.room_id, player)
-    hint = await fetch_one(
-        "SELECT * FROM game_logs WHERE id = ? AND room_id = ? AND type = 'hint_offer'",
-        (body.log_id, body.room_id),
-    )
-    if not hint:
-        raise HTTPException(status_code=404, detail="提示不存在")
-    if hint["player_id"] is not None and int(hint["player_id"]) != int(player["id"]):
-        raise HTTPException(status_code=403, detail="只能处理自己的提示")
-    if hint["resolved"]:
-        raise HTTPException(status_code=409, detail="提示已处理")
-    await execute("UPDATE game_logs SET resolved = 1 WHERE id = ?", (body.log_id,))
-    await execute(
-        "INSERT INTO game_logs (room_id, player_id, type, content) VALUES (?, ?, ?, ?)",
-        (body.room_id, player["id"], "hint_accept" if body.accept else "hint_reject", str(body.log_id)),
-    )
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        rows = await db.execute_fetchall(
+            "SELECT * FROM game_logs WHERE id = ? AND room_id = ? AND type = 'hint_offer'",
+            (body.log_id, body.room_id),
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="提示不存在")
+        hint = dict(rows[0])
+        if hint["player_id"] is not None and int(hint["player_id"]) != int(player["id"]):
+            raise HTTPException(status_code=403, detail="只能处理自己的提示")
+        # Preserve the legacy HTTP 409 contract on retries. The response log and
+        # resolved flag now commit together, so retries cannot lose/duplicate it.
+        if hint["resolved"]:
+            raise HTTPException(status_code=409, detail="提示已处理")
+        await db.execute("UPDATE game_logs SET resolved = 1 WHERE id = ?", (body.log_id,))
+        await db.execute(
+            "INSERT INTO game_logs (room_id, player_id, type, content) VALUES (?, ?, ?, ?)",
+            (body.room_id, player["id"], "hint_accept" if body.accept else "hint_reject", str(body.log_id)),
+        )
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
     data = {"log_id": body.log_id, "accept": body.accept}
     if body.accept:
         data["hint_text"] = hint["hint_text"]

@@ -1,4 +1,3 @@
-import fcntl
 import hashlib
 import json
 import logging
@@ -11,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from command_text import normalize_command_spaces
+from save_locks import save_directory_locks
 
 from .base import (
     SAVE_ROOT,
@@ -194,10 +194,8 @@ def read_table(player_id):
     save_dir = _save_path(player_id).parent
     if not save_dir.is_dir():
         return None
-    lock_path = save_dir / ".lock"
     try:
-        with lock_path.open("a", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+        with save_directory_locks(save_dir):
             if not _save_path(player_id).is_file():
                 return None
             try:
@@ -351,10 +349,8 @@ def ensure_table(player_id, *, force=False):
     save_dir = _save_path(player_id).parent
     if not save_dir.is_dir():
         return None
-    lock_path = save_dir / ".lock"
     try:
-        with lock_path.open("a", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        with save_directory_locks(save_dir):
             main_save = _save_path(player_id)
             if not main_save.is_file():
                 return None
@@ -416,10 +412,8 @@ def delete_save(player_id):
     save_dir = _save_path(player_id).parent
     if not save_dir.is_dir():
         return False
-    lock_path = save_dir / ".lock"
     try:
-        with lock_path.open("a", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        with save_directory_locks(save_dir):
             try:
                 shutil.rmtree(save_dir)
             except FileNotFoundError:

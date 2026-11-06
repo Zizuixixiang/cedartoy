@@ -4,8 +4,7 @@ Workers materialize it in disposable, process-private homes. Stable external
 locks survive delete/claim; crashes never publish a partial multi-file save.
 """
 import base64
-from contextlib import contextmanager, ExitStack
-import fcntl
+from contextlib import contextmanager
 import functools
 import hashlib
 import json
@@ -14,6 +13,8 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+
+from save_locks import save_directory_locks
 
 from vendor_cmd_adapter.base import VendorCmdError, require_player_id, parse_import_save_data
 
@@ -26,14 +27,7 @@ IMAGE_RE = re.compile(r"postcards/card_[0-9]+\.png\Z")
 
 @contextmanager
 def locked(*players):
-    # Kept outside the game directory: stats and guest cleanup must not count it.
-    lock_root = ROOT.parent / ".nowhere-locks"
-    lock_root.mkdir(parents=True, exist_ok=True)
-    with ExitStack() as stack:
-        for player in sorted(set(players)):
-            player = require_player_id(player)
-            fd = stack.enter_context((lock_root / player).open("a"))
-            fcntl.flock(fd, fcntl.LOCK_EX)
+    with save_directory_locks(*(ROOT / require_player_id(player) for player in players)):
         yield
 
 
@@ -162,12 +156,12 @@ def migrate(old, new):
 def lock_platform_claim(function):
     """Hold Nowhere locks through the platform's all-game claim + rollback."""
     @functools.wraps(function)
-    def wrapped(old_player_id, user_id, slot=1):
+    def wrapped(old_player_id, user_id, slot=1, **kwargs):
         if not (ROOT / require_player_id(old_player_id)).exists():
-            return function(old_player_id, user_id, slot=slot)
+            return function(old_player_id, user_id, slot=slot, **kwargs)
         target = str(user_id) if slot == 1 else f"{user_id}:{slot}"
         with locked(old_player_id, target):
-            result = function(old_player_id, user_id, slot=slot)
+            result = function(old_player_id, user_id, slot=slot, **kwargs)
             from .pool import POOL
             POOL.discard(old_player_id)
             from .shared import forget
