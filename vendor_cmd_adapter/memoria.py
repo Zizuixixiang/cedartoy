@@ -116,6 +116,19 @@ def configure_module(mod, level, cfg, level_save_dir):
     setattr(mod, "_SAVE_PATH", str(save_path))
     if cfg.get("heartbeat"):
         setattr(mod, "_HEARTBEAT_PATH", str(level_save_dir / cfg["heartbeat"]))
+    if level == "3":
+        original_rest = mod._cmd_rest
+
+        def _rest_with_persisted_offset(args, state):
+            # L3 saves inside rest before reducing offset_value. The heartbeat
+            # gets the reduction, but the next platform process loads the main
+            # save. Persist after rest too, including semicolon dispatches.
+            text = original_rest(args, state)
+            if not mod._save():
+                raise RuntimeError("Memoria 第三关休息状态保存失败")
+            return text
+
+        mod._cmd_rest = _rest_with_persisted_offset
     if level in {"1", "4"} and hasattr(mod, "_dispatch"):
         original_dispatch = mod._dispatch
 

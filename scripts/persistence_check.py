@@ -16,6 +16,8 @@
 指令与断言关键词参考 audit_persistence_report.md / final_acceptance_report.md 中实测用例。
 
 用法：python3 scripts/persistence_check.py
+Memoria 第三关休息（仅临时存档、独立 runner 进程）：
+  python3 scripts/persistence_check.py --memoria
 花园与猫咪（仅临时 JSON/便签库，支持 GARDEN_CAT_ENGINE_ROOT/GARDEN_TEST_PYTHON）：
   python3 scripts/persistence_check.py --garden-cat
 双弈大富翁（仅临时SQLite，不运行上述文件存档清理）：
@@ -446,6 +448,11 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--memoria"]:
+        sys.exit(subprocess.call([
+            sys.executable, "-m", "unittest",
+            "tests_toy.test_memoria_rest_persistence", "-v",
+        ], cwd=ROOT))
     if sys.argv[1:] == ["--garden-cat"]:
         engine = Path(os.environ.get("GARDEN_CAT_ENGINE_ROOT", ROOT / "vendor" / "Garden-Cat-Engine"))
         python = os.environ.get("GARDEN_TEST_PYTHON", str(engine / ".venv/bin/python"))
@@ -523,5 +530,5 @@ if __name__ == "__main__":
             "tests.test_monopoly_integration.MonopolyIntegrationTests.test_build_sell_mortgage_redeem_and_consensual_trade_are_persisted",
         ], cwd=duel))
     if sys.argv[1:]:
-        sys.exit("用法：persistence_check.py [--garden-cat|--autochess|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--duel-ka-wu-xing|--nowhere|--candle|--deeptalk|--research-scales|--shared-craft]")
+        sys.exit("用法：persistence_check.py [--memoria|--garden-cat|--autochess|--duel-monopoly|--duel-bomb-plane|--duel-carcassonne|--duel-ka-wu-xing|--nowhere|--candle|--deeptalk|--research-scales|--shared-craft]")
     sys.exit(main())
