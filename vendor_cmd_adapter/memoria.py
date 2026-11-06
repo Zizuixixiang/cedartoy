@@ -68,6 +68,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 payload = json.load(sys.stdin)
@@ -109,13 +110,38 @@ def read_meta():
 
 def write_meta(meta):
     save_dir.mkdir(parents=True, exist_ok=True)
-    meta_path().write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_json(meta_path(), meta)
+
+def atomic_json(path, data):
+    fd, temporary = tempfile.mkstemp(prefix=".memoria-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2, allow_nan=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 def configure_module(mod, level, cfg, level_save_dir):
     save_path = level_save_dir / cfg["save"]
     setattr(mod, "_SAVE_PATH", str(save_path))
     if cfg.get("heartbeat"):
         setattr(mod, "_HEARTBEAT_PATH", str(level_save_dir / cfg["heartbeat"]))
+
+    def save_final_state():
+        # Preserve the author's state format, including pending interactions and
+        # snapshots. Upstream saves swallow IO errors and sometimes run before
+        # the action's last mutation; every platform exit also calls this hook.
+        data = dict(mod._STATE)
+        rng = getattr(mod, "_RNG", None)
+        if rng is not None:
+            data.update(rng_state=rng.state, rng_calls=rng.calls)
+        atomic_json(save_path, data)
+        return True
+
+    mod._save = save_final_state
     if level == "3":
         original_rest = mod._cmd_rest
 
@@ -252,16 +278,14 @@ def load_existing_state(mod):
                 mod.new_game()
             except TypeError:
                 mod.new_game("normal")
-            if hasattr(mod, "_save"):
-                try:
-                    mod._save()
-                except Exception:
-                    pass
         elif hasattr(mod, "_init_state"):
             try:
                 setattr(mod, "_STATE", mod._init_state())
             except TypeError:
                 setattr(mod, "_STATE", mod._init_state("normal"))
+    if getattr(mod, "_RNG", None) is None:
+        state = mod._STATE
+        mod._RNG = mod._Rng(state.get("rng_state", mod._DEFAULT_SEED), state.get("rng_calls", 0))
 
 level = level_key(extra.get("level") or read_meta().get("current_level"))
 cfg, mod, save_path = import_level(level)
@@ -289,14 +313,13 @@ if payload.get("reset"):
         text = mod.new_game(difficulty)
     else:
         text = mod.new_game()
-    if hasattr(mod, "_save"):
-        try:
-            mod._save()
-        except Exception:
-            pass
 else:
     text = mod.cmd(command)
 
+# cmd() may add counters after dispatch, or write pending state only to its
+# heartbeat. The next platform process loads the main save, never that heartbeat.
+# Save the final module state for both single and semicolon-batched commands.
+mod._save()
 meta["levels"][level]["has_save"] = save_path.exists()
 write_meta(meta)
 print(text, end="")

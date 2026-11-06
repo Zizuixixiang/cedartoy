@@ -23,6 +23,9 @@ from typing import Any
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
+from starlette.concurrency import run_in_threadpool
+
+from camping_plaza_persistence import install as install_persistence
 
 
 ROOT = Path(__file__).resolve().parent
@@ -118,7 +121,10 @@ async def cedar_identity(request: Request, call_next):
             return JSONResponse({"detail": "unable to persist CedarToy identity"}, status_code=500)
     try:
         if raw_player_id and request.method == "POST" and request.url.path == "/api/session":
-            _cedartoy_get_engine(create_new=True)
+            try:
+                await run_in_threadpool(_create_player_session)
+            except HTTPException as exc:
+                return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             # The browser needs a local marker, not the native random session.
             return JSONResponse({"success": True, "session_id": "cedartoy"})
         return await call_next(request)
@@ -393,6 +399,14 @@ def manage_save(action: str, payload: SaveAdminRequest, request: Request):
             "source_player_id": source_player_id,
             "target_player_id": target_player_id,
         }
+
+
+_persistence = install_persistence(_engine_module, upstream, _connect, _db_path)
+
+
+@_persistence.transactional
+def _create_player_session():
+    return _cedartoy_get_engine(create_new=True)
 
 
 if __name__ == "__main__":

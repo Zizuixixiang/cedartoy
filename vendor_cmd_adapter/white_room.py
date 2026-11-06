@@ -62,7 +62,12 @@ if command.lower() in {"quit", "exit", "退出"}:
 elif payload.get("reset"):
     result = engine.new_game(extra.get("mode") or "standard")
 else:
+    pending_before = engine._STATE.get("pending_restart")
     result = engine.cmd(command)
+    # Query commands cancel a pending restart in memory but return before the
+    # author's save. Keep that cancellation across our per-command processes.
+    if pending_before and not engine._STATE.get("pending_restart"):
+        engine._save()
 
 print(result, end="")
 '''
