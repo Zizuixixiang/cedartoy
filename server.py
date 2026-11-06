@@ -3241,11 +3241,12 @@ def _camping_plaza_save_admin(action, *, timeout=20, **payload):
     return save_management._camping_plaza_save_admin(CAMPING_PLAZA_BASE, _McpError, httpx, action, timeout=timeout, **payload)
 
 
-def _migrate_camping_plaza_save(old_player_id, target_player_id):
+def _migrate_camping_plaza_save(old_player_id, target_player_id, *, migration_receipt=None):
     return save_management._migrate_camping_plaza_save(
         old_player_id, target_player_id,
         _McpError=_McpError,
         _camping_plaza_save_admin=_camping_plaza_save_admin,
+        migration_receipt=migration_receipt,
     )
 
 

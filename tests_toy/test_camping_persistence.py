@@ -29,6 +29,10 @@ if mode == "seed":
         setattr(eng.state, key, value)
     eng.save_state()
     print(json.dumps({"seeded": True}))
+elif mode == "admin":
+    from fastapi import Request
+    request = Request({"type": "http", "client": ("127.0.0.1", 1234)})
+    print(json.dumps(a.manage_save(job["action"], a.SaveAdminRequest(**job["payload"]), request)))
 elif mode == "read":
     with sqlite3.connect(a.upstream.DB_PATH) as conn:
         row = conn.execute("SELECT snapshot_json FROM runtime_snapshot WHERE session_id=?", (sid,)).fetchone()
@@ -141,6 +145,24 @@ class CampingPersistenceTests(unittest.TestCase):
         result = self.run_child(mode="read", **kwargs)
         self.assertEqual(result["integrity"], "ok")
         return result["raw"]
+
+    def test_migration_receipt_survives_play_but_not_import_or_recreation(self):
+        def admin(action, **payload):
+            return self.run_child(mode="admin", action=action, payload=payload)
+
+        self.run_child(mode="seed", state={"turn": 1})
+        admin("migrate", source_player_id="guest:auditcamp", target_player_id="81", migration_receipt="fixture-proof")
+        self.assertEqual(admin("summary", player_id="81")["summary"]["migration_receipt"], "fixture-proof")
+        result = self.run_child(mode="concurrent", player="81")
+        self.assertEqual(result["loaded_turns"], [1])
+        self.assertEqual(admin("summary", player_id="81")["summary"]["migration_receipt"], "fixture-proof")
+        exported = admin("export", player_id="81")["save_data"]
+        admin("import", player_id="81", save_data=exported, confirm=True)
+        self.assertNotIn("migration_receipt", admin("summary", player_id="81")["summary"])
+        admin("migrate", source_player_id="81", target_player_id="82", migration_receipt="second-proof")
+        admin("delete", player_id="82")
+        self.run_child(mode="seed", player="82")
+        self.assertNotIn("migration_receipt", admin("summary", player_id="82")["summary"])
 
     def test_write_and_commit_failures_never_report_success_or_change_snapshot(self):
         # Baselines prove each fixture reaches a valid write, rather than a

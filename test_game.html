@@ -788,15 +788,44 @@
       cursor = 0;
       if (!CONFIG.research) {
         try {
-          const raw = localStorage.getItem(currentDraftKey());
-          const saved = JSON.parse(raw || "null");
-          if (saved && saved.session_id !== state.session_id) {
-            preserveDraft(raw);
-            return;
+          const base = currentDraftKey(), candidates = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key !== base && !key.startsWith(`${base}_conflict_`)) continue;
+            try {
+              const raw = localStorage.getItem(key), saved = JSON.parse(raw);
+              if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition
+                  && saved.total === state.total && Array.isArray(saved.answers) && saved.answers.length === state.total
+                  && saved.answers.every((v, n) => v === null || (CONFIG.game === "mbti"
+                    ? Number.isInteger(v) && v >= 0 && v <= 5 : state.questions[n].options.some(o => o.value === v)))
+                  && saved.answers.some(Number.isInteger)) {
+                candidates.push({raw, saved, key});
+              }
+            } catch (_) {}
           }
-          if ((!saved?.game || saved.game === CONFIG.game) && saved?.edition === state.edition && saved.total === state.total && Array.isArray(saved.answers)) {
-            answers = Array.from({length: state.total}, (_, i) => Number.isInteger(saved.answers[i]) ? saved.answers[i] : null);
+          const apply = saved => {
+            answers = [...saved.answers];
             cursor = Math.max(0, Math.min(Number(saved.cursor) || 0, state.total - 1));
+          };
+          const current = candidates.find(e => e.key === base && e.saved.session_id === state.session_id);
+          if (current) apply(current.saved);
+          if (!current && candidates.length) {
+            resumeChoice("恢复旧草稿？", "发现旧页面或上次测试的答案，尚未用于本次测试。请确认题目版本一致，再载入核对；提交仍需单独确认。原草稿会保留。", [
+              {label: "暂不恢复", run: () => {}},
+              ...candidates.filter((e, i) => !candidates.slice(0, i).some(other =>
+                JSON.stringify(other.saved.answers) === JSON.stringify(e.saved.answers))).map(({saved, raw}, i) => ({
+                label: `核对旧答案 ${i + 1}（已答 ${saved.answers.filter(Number.isInteger).length}/${state.total} 题）`,
+                run: () => {
+                  try {
+                    preserveDraft(raw);
+                    apply(saved);
+                    cursor = 0;
+                    saveDraft();
+                    renderQuestion();
+                  } catch (_) { showError("无法保留原草稿，请释放浏览器存储空间后重试。"); }
+                }
+              }))
+            ]);
           }
         } catch (_) {}
         return;
@@ -893,7 +922,9 @@
       if (!activeState) return;
       const key = currentDraftKey();
       const raw = localStorage.getItem(key);
-      if (CONFIG.research && raw !== null && raw !== lastDraftRaw) {
+      let sameRun = false;
+      try { sameRun = JSON.parse(raw)?.session_id === activeState.session_id; } catch (_) {}
+      if (raw !== null && (CONFIG.research ? raw !== lastDraftRaw : !sameRun)) {
         preserveDraft(raw);
       }
       const nextRaw = JSON.stringify(draftSnapshot());
@@ -903,7 +934,11 @@
     function clearDraft() {
       // Research drafts may contain choices never acknowledged by the server.
       // Keep them by run instead of deleting them when a result/retest arrives.
-      if (activeState && !CONFIG.research) localStorage.removeItem(draftKey());
+      if (activeState && !CONFIG.research) {
+        const raw = localStorage.getItem(draftKey());
+        if (raw !== null) preserveDraft(raw);
+        localStorage.removeItem(draftKey());
+      }
       answers = [];
       cursor = 0;
     }

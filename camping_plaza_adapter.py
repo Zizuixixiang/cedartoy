@@ -141,6 +141,7 @@ class SaveAdminRequest(BaseModel):
     target_player_id: str | None = None
     save_data: dict[str, Any] | None = None
     confirm: bool = False
+    migration_receipt: str | None = None
 
 
 def _require_loopback(request: Request) -> None:
@@ -181,6 +182,16 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute("""CREATE TABLE IF NOT EXISTS cedartoy_migration_receipts (
+        session_id TEXT PRIMARY KEY, receipt TEXT NOT NULL)""")
+    # A replacement camp must never inherit proof belonging to an earlier save.
+    for event in ("INSERT", "DELETE", "UPDATE OF session_id"):
+        name = event.split()[0].lower()
+        ref = "NEW" if event == "INSERT" else "OLD"
+        conn.execute(f"""CREATE TRIGGER IF NOT EXISTS camping_receipt_{name}
+            AFTER {event} ON runtime_snapshot BEGIN
+                DELETE FROM cedartoy_migration_receipts WHERE session_id = {ref}.session_id;
+            END""")
     return conn
 
 
@@ -310,7 +321,12 @@ def manage_save(action: str, payload: SaveAdminRequest, request: Request):
             if row is None:
                 raise HTTPException(status_code=404, detail="Camping Plaza save not found")
             snapshot = json.loads(row["snapshot_json"])
-            return {"exists": True, "summary": _summary(snapshot, row["updated_at"])}
+            summary = _summary(snapshot, row["updated_at"])
+            receipt = conn.execute("SELECT receipt FROM cedartoy_migration_receipts WHERE session_id = ?",
+                                   (session_id_for_player(player_id),)).fetchone()
+            if receipt:
+                summary["migration_receipt"] = receipt[0]
+            return {"exists": True, "summary": summary}
 
         if action == "export":
             row = _snapshot_row(conn, player_id)
@@ -341,6 +357,8 @@ def manage_save(action: str, payload: SaveAdminRequest, request: Request):
             if existing is not None and not payload.confirm:
                 conn.rollback()
                 raise HTTPException(status_code=409, detail="target save already exists; confirm is required")
+            conn.execute("DELETE FROM cedartoy_migration_receipts WHERE session_id = ?",
+                         (session_id_for_player(player_id),))
             conn.execute(
                 """
                 INSERT INTO runtime_snapshot (session_id, snapshot_json, updated_at)
@@ -393,6 +411,9 @@ def manage_save(action: str, payload: SaveAdminRequest, request: Request):
             (target_session, target_player_id),
         )
         conn.execute("DELETE FROM cedartoy_identity WHERE session_id = ?", (source_session,))
+        if payload.migration_receipt:
+            conn.execute("INSERT INTO cedartoy_migration_receipts VALUES (?, ?)",
+                         (target_session, payload.migration_receipt))
         conn.commit()
         return {
             "migrated": True,

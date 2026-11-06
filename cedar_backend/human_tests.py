@@ -239,7 +239,7 @@ def _submit_web_answers(game, handler, questions_module, player_id, body, error_
     expected_index = body.get("expected_index")
     if (not isinstance(session_id, str) or not session_id
             or type(expected_index) is not int or expected_index < 0):
-        raise error_class(-32602, "缺少 session_id 或 expected_index，请刷新测试页面后重试")
+        raise error_class(-32602, "页面版本已更新，答案尚未提交。请刷新页面，在“恢复旧草稿？”中选择核对旧答案，再确认提交；本机草稿会保留。")
     raw_answers = body["answers"]
     engine = getattr(handler, "_engine", handler)
     # Keep the existing games' answer coercion and scoring as the authority.

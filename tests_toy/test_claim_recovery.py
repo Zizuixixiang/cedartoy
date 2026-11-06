@@ -51,17 +51,53 @@ def claim(root, user=81, slot=1, fault=""):
     rename = Path.rename
 
     def interrupted_rename(source, target):
+        if fault in {"rollback", "rollback-fails", "before-move"} and source.name == GUEST and (
+                source.parent.name == "leek" or fault == "before-move"):
+            raise OSError("injected move failure")
+        if fault == "rollback-fails" and source.name == str(user):
+            raise OSError("injected rollback failure")
         result = rename(source, target)
         if fault == "directory" and source.name == GUEST:
             os._exit(71)  # directory moved, sessions transaction uncommitted
         return result
 
+    def camping_admin(action, **payload):
+        if not (root / "camping-enabled").exists():
+            return {}
+        import camping_plaza_adapter as adapter
+        from fastapi import Request, HTTPException
+        payload.pop("timeout", None)
+        request = Request({"type": "http", "client": ("127.0.0.1", 1234)})
+        try:
+            result = adapter.manage_save(action, adapter.SaveAdminRequest(**payload), request)
+        except HTTPException as exc:
+            raise server._McpError(-32004 if exc.status_code == 404 else -32602, str(exc.detail))
+        if action == "migrate" and fault == "camping":
+            os._exit(71)
+        return result
+
+    def camping_summary(player):
+        if fault == "http-wait":
+            (root / "http-waiting").touch()
+            deadline = time.monotonic() + 15
+            while not (root / "http-release").exists():
+                if time.monotonic() > deadline:
+                    raise RuntimeError("HTTP release timed out")
+                time.sleep(.01)
+        try:
+            return camping_admin("summary", player_id=player).get("summary")
+        except server._McpError as exc:
+            if exc.code == -32004:
+                return None
+            raise
+
     (root / "claim-started").touch()
     with (
         patch.object(server, "VENDOR_SAVE_ROOT", root / "saves"),
         patch.object(server, "SESSIONS_DB_PATH", root / "sessions.db"),
-        patch.object(server, "DIRECTORY_VENDOR_GAMES", ("arcade", "leek")),
-        patch.object(server, "_camping_plaza_save_summary", return_value=None),
+        patch.object(server, "DIRECTORY_VENDOR_GAMES", ("arcade", "leek", "detroit")),
+        patch.object(server, "_camping_plaza_save_summary", side_effect=camping_summary),
+        patch.object(server, "_camping_plaza_save_admin", side_effect=camping_admin),
         patch.object(server, "_db_connect", side_effect=accounts),
         patch.object(server, "_sessions_db_connect", side_effect=sessions),
         patch.object(server, "_current_account", return_value={"id": user}),
@@ -126,7 +162,8 @@ except Exception as exc:
             cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
                  "TURTLE_SOUP_DB": str(self.root / "accounts.db"),
-                 "SESSIONS_DB": str(self.root / "sessions.db")},
+                 "SESSIONS_DB": str(self.root / "sessions.db"),
+                 "CAMPING_PLAZA_DB_PATH": str(self.root / "camp.db"), "DATABASE_URL": ""},
         )
         self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
         return proc
@@ -153,6 +190,119 @@ except Exception as exc:
             if time.monotonic() > deadline:
                 self.fail("timed out waiting for " + name)
             time.sleep(.01)
+
+    def assert_other_player_can_write(self):
+        with sqlite3.connect(self.root / "sessions.db", timeout=.5) as conn:
+            conn.execute("INSERT OR REPLACE INTO eco_sessions VALUES ('99', 99, 'now', 'other player')")
+            conn.execute("DELETE FROM eco_sessions WHERE player_id='99'")
+
+    def test_unrelated_detroit_operation_does_not_block_claim_or_other_writes(self):
+        from save_locks import save_directory_locks
+        with save_directory_locks(self.root / "saves" / "detroit" / "81"):
+            self.assert_other_player_can_write()
+            process = self.spawn()
+            output, error = process.communicate(timeout=8)
+            self.assertEqual(process.returncode, 0, (output, error))
+            self.assert_other_player_can_write()
+        self.assert_owned(81)
+
+    def test_waiting_for_participating_directory_does_not_lock_sessions(self):
+        from save_locks import save_directory_locks
+        with save_directory_locks(self.root / "saves" / "arcade" / "81"):
+            process = self.spawn()
+            self.wait_file("claim-started")
+            time.sleep(.3)
+            self.assertIsNone(process.poll())
+            self.assert_other_player_can_write()
+        output, error = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 0, (output, error))
+        self.assert_owned(81)
+
+    def test_waiting_for_upstream_does_not_lock_sessions(self):
+        process = self.spawn(fault="http-wait")
+        self.wait_file("http-waiting")
+        self.assert_other_player_can_write()
+        (self.root / "http-release").touch()
+        output, error = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 0, (output, error))
+
+    def test_target_created_during_external_phase_is_rechecked_in_transaction(self):
+        with sqlite3.connect(self.root / "sessions.db") as conn:
+            conn.execute("CREATE TABLE test_results(player_id TEXT, game TEXT)")
+            conn.execute("INSERT INTO test_results VALUES (?, 'mbti')", (GUEST,))
+        process = self.spawn(fault="pause")
+        self.wait_file("claim-pinned")
+        with sqlite3.connect(self.root / "sessions.db", timeout=.5) as conn:
+            conn.execute("INSERT INTO test_results VALUES ('81', 'mbti')")
+        (self.root / "claim-release").touch()
+        output, error = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 2, (output, error))
+        with sqlite3.connect(self.root / "sessions.db") as conn:
+            self.assertEqual(conn.execute("SELECT player_id FROM test_results ORDER BY player_id").fetchall(),
+                             [('81',), (GUEST,)])
+        self.assertEqual(self.run_claim(user=82)[0], 0)
+        self.assert_owned(82)
+
+    def test_proven_rollback_releases_guest_and_allows_retry(self):
+        for fault in ("before-move", "rollback"):
+            with self.subTest(fault=fault):
+                self.assertEqual(self.run_claim(fault=fault)[0], 2)
+                with sqlite3.connect(self.root / "accounts.db") as conn:
+                    self.assertEqual(conn.execute(
+                        "SELECT claimed_by, pending_by, pending_slot, recovery_json FROM guest_claim_codes"
+                    ).fetchone(), (None, None, None, None))
+                for game in ("arcade", "leek"):
+                    self.assertTrue((self.root / "saves" / game / GUEST / "save.json").exists())
+                process = self.spawn(route="web")
+                process.communicate(timeout=15)
+                self.assertEqual(process.returncode, 0)
+        self.assertEqual(self.run_claim(user=82)[0], 0)
+        self.assert_owned(82)
+
+    def test_uncertain_rollback_stays_pinned_and_same_owner_can_recover(self):
+        process = self.spawn(fault="rollback-fails")
+        process.communicate(timeout=15)  # Expected rollback error is logged.
+        self.assertEqual(process.returncode, 2)
+        with sqlite3.connect(self.root / "accounts.db") as conn:
+            self.assertEqual(conn.execute("SELECT pending_by, pending_slot FROM guest_claim_codes").fetchone(), (81, 1))
+        self.assertEqual(self.run_claim(user=82)[0], 2)
+        self.assertEqual(self.run_claim()[0], 0)
+        self.assert_owned(81)
+
+    def camping(self, action):
+        code = """
+import camping_plaza_adapter as a
+from fastapi import Request
+import sys
+request = Request({'type':'http', 'client':('127.0.0.1',1234)})
+if sys.argv[1] == 'replace':
+    a.manage_save('delete', a.SaveAdminRequest(player_id='81'), request)
+player = '81' if sys.argv[1] == 'replace' else 'guest:claimrecovery'
+a._PLAYER_ID.set(player)
+a.upstream.mcp_state()
+"""
+        result = subprocess.run([sys.executable, "-c", code, action], cwd=ROOT,
+            env={**os.environ, "CAMPING_PLAZA_DB_PATH": str(self.root / "camp.db"),
+                 "DATABASE_URL": "", "PYTHONDONTWRITEBYTECODE": "1"},
+            capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (self.root / "camping-enabled").touch()
+
+    def test_camping_receipt_recovers_after_lost_response(self):
+        self.camping("seed")
+        self.assertEqual(self.run_claim(fault="camping")[0], 71)
+        self.assertEqual(self.run_claim(user=82)[0], 2)
+        self.assertEqual(self.run_claim()[0], 0)
+        self.assert_owned(81)
+
+    def test_camping_replacement_is_not_accepted_as_migrated_save(self):
+        self.camping("seed")
+        self.assertEqual(self.run_claim(fault="camping")[0], 71)
+        self.camping("replace")
+        before = (self.root / "camp.db").read_bytes()
+        self.assertEqual(self.run_claim()[0], 2)
+        self.assertEqual(self.run_claim(user=82)[0], 2)
+        self.assertEqual((self.root / "camp.db").read_bytes(), before)
 
     def test_reservation_survives_kill_before_any_move(self):
         self.assertEqual(self.run_claim(fault="reservation")[0], 71)

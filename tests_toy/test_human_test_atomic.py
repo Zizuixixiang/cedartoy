@@ -210,11 +210,13 @@ const page = fs.readFileSync("test_game.html", "utf8");
 const api = page.split("    async function api(")[1].split("    function renderModes(")[0];
 const restore = page.split("    function restoreDraft(")[1].split("    function draftSnapshot(")[0];
 const requests = [], archived = [];
+let choices;
 let saved = JSON.stringify({game:"mbti", session_id:"old", edition:"complete", total:2, answers:[1,2], cursor:1});
 const context = vm.createContext({
   CONFIG:{game:"mbti",research:false}, activeState:{session_id:"current",expected_index:0},
   identityBody: x=>x, requestHeaders: ()=>({}), token: ()=>"", currentDraftKey: ()=>"draft",
-  localStorage:{getItem:()=>saved}, preserveDraft: raw=>archived.push(raw),
+  localStorage:{length:1,key:()=>"draft",getItem:()=>saved}, preserveDraft: raw=>archived.push(raw),
+  resumeChoice:(title, help, items)=>{choices=items;}, saveDraft:()=>{}, renderQuestion:()=>{},
   fetch:async (url, request)=>{ requests.push(JSON.parse(request.body)); return {ok:true,status:200,json:async()=>({})}; },
   answers:[],cursor:0
 });
@@ -229,6 +231,11 @@ vm.runInContext("async function api(" + api + "function restoreDraft(" + restore
   const state={session_id:"current",edition:"complete",total:2};
   context.restoreDraft(state);
   assert.equal(context.answers.filter(Number.isInteger).length,0);
+  assert.equal(archived.length,0);
+  choices[0].run();
+  assert.equal(context.answers.filter(Number.isInteger).length,0);
+  choices[1].run();
+  assert.equal(JSON.stringify(context.answers),"[1,2]");
   assert.equal(archived.length,1);
   saved=saved.replace('"old"','"current"');
   context.restoreDraft(state);
