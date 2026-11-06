@@ -330,7 +330,7 @@ async def close_room(room_id: NormalizedRoomId, player: dict = Depends(current_p
     if room["created_by"] != player["id"] and not player.get("is_admin"):
         raise HTTPException(status_code=403, detail="只能关闭自己的房间")
     await execute(
-        f"UPDATE rooms SET status = 'finished', finished_at = {SQL_NOW} WHERE id = ?",
+        f"UPDATE rooms SET status = 'finished', finished_at = {SQL_NOW} WHERE id = ? AND status IN ('waiting', 'playing')",
         (room_id,),
     )
     return {"ok": True}

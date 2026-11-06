@@ -1,7 +1,9 @@
+import hashlib
 import json
 import re
 import sqlite3
 import time
+import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -221,8 +223,8 @@ def bdsmtest_start(arguments):
             """
             INSERT INTO test_sessions
                 (player_id, game, mode, current_question, answers,
-                 rauth, questions, pdata, created_at, last_active)
-            VALUES (?, ?, ?, 0, '[]', ?, ?, ?, ?, ?)
+                 rauth, questions, pdata, created_at, last_active, bdsm_session_id)
+            VALUES (?, ?, ?, 0, '[]', ?, ?, ?, ?, ?, ?)
             ON CONFLICT(player_id, game) DO UPDATE SET
                 mode = excluded.mode,
                 current_question = 0,
@@ -230,6 +232,7 @@ def bdsmtest_start(arguments):
                 rauth = excluded.rauth,
                 questions = excluded.questions,
                 pdata = excluded.pdata,
+                bdsm_session_id = excluded.bdsm_session_id,
                 created_at = excluded.created_at,
                 last_active = excluded.last_active
             """,
@@ -238,7 +241,7 @@ def bdsmtest_start(arguments):
                 json.dumps(session["rauth"], ensure_ascii=False),
                 json.dumps(questions, ensure_ascii=False),
                 json.dumps(session["pdata"], ensure_ascii=False),
-                now, now,
+                now, now, uuid.uuid4().hex,
             ),
         )
 
@@ -262,7 +265,7 @@ def bdsmtest_answer(arguments):
         if row is None:
             _raise_no_active_session(conn, player_id)
 
-        mode, current_question, answers, rauth, questions, pdata = row
+        mode, current_question, answers, rauth, questions, pdata, session_id = row
         if is_fast_mode(mode):
             raise JsonRpcError(
                 -32602,
@@ -274,7 +277,7 @@ def bdsmtest_answer(arguments):
 
         # 已答满但尚未出结果：上次算分可能失败，这里重试收尾。
         if current_question >= total:
-            return _finish(conn, player_id, mode, rauth, pdata, questions, answers, now)
+            return _finish(conn, player_id, mode, rauth, pdata, questions, answers, now, session_id)
 
         answers.append(score)
         next_question = current_question + 1
@@ -287,7 +290,7 @@ def bdsmtest_answer(arguments):
             # 先落盘答案再算分：算分失败会抛错触发事务回滚，若不先提交，
             # 刚追加的这条答案会一并被回滚，session 永远停在 total-1 题无法收尾。
             conn.commit()
-            return _finish(conn, player_id, mode, rauth, pdata, questions, answers, now)
+            return _finish(conn, player_id, mode, rauth, pdata, questions, answers, now, session_id)
     return _format_question(questions, next_question, with_header=False)
 
 
@@ -310,7 +313,7 @@ def bdsmtest_answer_batch(arguments):
         if row is None:
             _raise_no_active_session(conn, player_id)
 
-        mode, current_question, stored_answers, rauth, questions, pdata = row
+        mode, current_question, stored_answers, rauth, questions, pdata, session_id = row
         if not is_fast_mode(mode):
             raise JsonRpcError(
                 -32602,
@@ -328,7 +331,7 @@ def bdsmtest_answer_batch(arguments):
         )
         # 先落盘答案再算分：算分失败会回滚事务，先提交可保住答案以便重试收尾。
         conn.commit()
-        return _finish(conn, player_id, mode, rauth, pdata, questions, answers, now)
+        return _finish(conn, player_id, mode, rauth, pdata, questions, answers, now, session_id)
 
 
 def bdsmtest_get_result(arguments):
@@ -358,8 +361,12 @@ def bdsmtest_get_result(arguments):
     ) + f"\n存档身份：{player_id}"
 
 
-def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now):
+def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now, session_id):
     """用已收集的答案调原站算分、存档、清 session。"""
+    # Includes the already-complete retry path: never hold the cleanup/write
+    # transaction while waiting on the external scorer.
+    conn.commit()
+    answer_digest = hashlib.sha256(json.dumps(answers).encode()).hexdigest()
     qdata = {str(questions[i]["id"]): answers[i] for i in range(len(answers))}
     try:
         outcome = api.submit_and_score(rauth, pdata, qdata)
@@ -367,11 +374,30 @@ def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now):
         # 保留 session，便于再次调用同一工具重试收尾。
         raise JsonRpcError(-32010, str(exc)) from exc
 
-    scores = outcome["scores"]
-    rid = outcome.get("rid") or rauth.get("rid")
-    _save_result(conn, player_id, mode, scores, rid, now)
+    conn.execute("BEGIN IMMEDIATE")
+    current = conn.execute(
+        "SELECT bdsm_session_id, answers FROM test_sessions WHERE player_id=? AND game=?",
+        (player_id, GAME),
+    ).fetchone()
+    if current is None:
+        saved = conn.execute(
+            "SELECT result_detail FROM test_results WHERE player_id=? AND game=?", (player_id, GAME)
+        ).fetchone()
+        detail = json.loads(saved[0]) if saved else {}
+        if detail.get("session_id") != session_id or detail.get("answers_digest") != answer_digest:
+            raise JsonRpcError(-32002, "本次测评已被重开、删除或更新；旧算分结果未写入，请查看当前测评。")
+        # Concurrent identical completion: keep the first committed result.
+        scores, rid = detail["scores"], detail.get("rid")
+    else:
+        if current[0] != session_id or json.loads(current[1]) != answers:
+            raise JsonRpcError(-32002, "本次测评已被重开或答案已更新；旧算分结果未写入，请查看当前测评。")
+        scores = outcome["scores"]
+        rid = outcome.get("rid") or rauth.get("rid")
+        _save_result(conn, player_id, mode, scores, rid, now,
+                     session_id=session_id, answers_digest=answer_digest)
     conn.execute(
-        "DELETE FROM test_sessions WHERE player_id = ? AND game = ?", (player_id, GAME)
+        "DELETE FROM test_sessions WHERE player_id = ? AND game = ? AND bdsm_session_id = ?",
+        (player_id, GAME, session_id)
     )
     result_value = scores[0].get("name") if scores else ""
     return (
@@ -382,8 +408,9 @@ def _finish(conn, player_id, mode, rauth, pdata, questions, answers, now):
     )
 
 
-def _save_result(conn, player_id, mode, scores, rid, now):
-    detail = {"mode": mode, "scores": scores, "rid": rid}
+def _save_result(conn, player_id, mode, scores, rid, now, *, session_id, answers_digest):
+    detail = {"mode": mode, "scores": scores, "rid": rid,
+              "session_id": session_id, "answers_digest": answers_digest}
     result_value = scores[0].get("name") if scores else ""
     conn.execute(
         """
@@ -521,13 +548,18 @@ def _require_player_id(arguments):
 
 def _load_session(conn, player_id):
     row = conn.execute(
-        "SELECT mode, current_question, answers, rauth, questions, pdata "
+        "SELECT mode, current_question, answers, rauth, questions, pdata, bdsm_session_id "
         "FROM test_sessions WHERE player_id = ? AND game = ?",
         (player_id, GAME),
     ).fetchone()
     if row is None:
         return None
-    mode, current_question, answers_json, rauth_json, questions_json, pdata_json = row
+    mode, current_question, answers_json, rauth_json, questions_json, pdata_json, session_id = row
+    if not session_id:
+        # Adopt legacy sessions under the caller's write transaction.
+        session_id = uuid.uuid4().hex
+        conn.execute("UPDATE test_sessions SET bdsm_session_id=? WHERE player_id=? AND game=?",
+                     (session_id, player_id, GAME))
     return (
         mode,
         current_question,
@@ -535,6 +567,7 @@ def _load_session(conn, player_id):
         json.loads(rauth_json or "{}"),
         json.loads(questions_json or "[]"),
         json.loads(pdata_json or "{}"),
+        session_id,
     )
 
 
@@ -564,6 +597,9 @@ def _connect():
 
 
 def _init_db(conn):
+    # Serialize additive migration and the subsequent session read/write.
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS test_sessions (
@@ -592,7 +628,7 @@ def _init_db(conn):
     )
     # BDSMTest 额外需要的列（与 mbti 共用 test_sessions，按需补列，幂等）。
     existing = {r[1] for r in conn.execute("PRAGMA table_info(test_sessions)")}
-    for column in ("rauth", "questions", "pdata"):
+    for column in ("rauth", "questions", "pdata", "bdsm_session_id"):
         if column not in existing:
             conn.execute(f"ALTER TABLE test_sessions ADD COLUMN {column} TEXT")
 

@@ -61,6 +61,7 @@ async def _write_judge_audit(
     game_log_id: int | None,
     action: str,
     result: dict,
+    db=None,
 ) -> None:
     request_messages = result.get("request_messages")
     request_json = None
@@ -68,7 +69,7 @@ async def _write_judge_audit(
         request_json = json.dumps(request_messages, ensure_ascii=False)
     parsed = result.get("raw_json")
     parsed_json = json.dumps(parsed, ensure_ascii=False) if parsed is not None else None
-    await execute(
+    await (db.execute if db is not None else execute)(
         """
         INSERT INTO judge_audit_logs (
             room_id, player_id, game_log_id, action, success, score,
@@ -375,56 +376,63 @@ async def guess(body: GuessBody, player: dict = Depends(current_player)):
         raise
     correct = bool(result["success"])
     score = int(result["score"])
-    log_id = await execute(
-        "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'guess', ?, ?)",
-        (body.room_id, player["id"], guess_text, "yes" if correct else "no"),
-    )
-    await _write_judge_audit(
-        room_id=body.room_id,
-        player_id=player["id"],
-        game_log_id=log_id,
-        action="guess",
-        result=result,
-    )
-    payload = await _log_payload(log_id)
-    result_content = result.get("error") or f"还原度：{score}%"
-    await touch_room(body.room_id, player["id"])
-    if correct:
-        db = await get_db()
-        try:
+    reveal_text = (result.get("answer") or judge.public_answer_from_full_answer(room["answer"])) if correct else None
+    result_content = (f"还原度：{score}%\n{reveal_text}" if correct
+                      else result.get("error") or f"还原度：{score}%")
+    db = await get_db()
+    try:
+        # The judge runs outside this transaction. Recheck every eligibility
+        # condition after acquiring the writer, including personal answer reveals.
+        await db.execute("BEGIN IMMEDIATE")
+        rows = await db.execute_fetchall("SELECT status FROM rooms WHERE id=?", (body.room_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="房间不存在")
+        _ensure_active(rows[0])
+        revealed = await db.execute_fetchall(
+            "SELECT 1 FROM room_answer_reveals WHERE room_id=? AND player_id=?",
+            (body.room_id, player["id"]),
+        )
+        if revealed:
+            raise HTTPException(status_code=400, detail=ANSWER_REVEALED_STATUS_HINT)
+        cursor = await db.execute(
+            "INSERT INTO game_logs (room_id, player_id, type, content, judgment) VALUES (?, ?, 'guess', ?, ?)",
+            (body.room_id, player["id"], guess_text, "yes" if correct else "no"),
+        )
+        log_id = cursor.lastrowid
+        await _write_judge_audit(room_id=body.room_id, player_id=player["id"],
+                                 game_log_id=log_id, action="guess", result=result, db=db)
+        if correct:
             await db.execute(
                 f"UPDATE rooms SET status = 'finished', winner_id = ?, finished_at = {SQL_NOW} WHERE id = ?",
                 (player["id"], body.room_id),
             )
             await db.execute("UPDATE players SET win_count = win_count + 1 WHERE id = ?", (player["id"],))
-            ids = await db.execute_fetchall(
-                "SELECT DISTINCT player_id FROM game_logs WHERE room_id = ? AND type IN ('ask','guess') AND player_id IS NOT NULL",
-                (body.room_id,),
+            await db.execute(
+                "UPDATE players SET game_count = game_count + 1 WHERE id IN "
+                "(SELECT DISTINCT player_id FROM game_logs WHERE room_id = ? "
+                "AND type IN ('ask','guess') AND player_id IS NOT NULL)", (body.room_id,),
             )
-            for row in ids:
-                await db.execute("UPDATE players SET game_count = game_count + 1 WHERE id = ?", (row["player_id"],))
-            await db.commit()
-        finally:
-            await db.close()
-        reveal_answer = result.get("answer") or judge.public_answer_from_full_answer(room["answer"])
-        reveal_content = f"还原度：{score}%\n{reveal_answer}"
-        reveal_id = await execute(
-            "INSERT INTO game_logs (room_id, type, content, judgment) VALUES (?, 'system', ?, 'game_over')",
-            (body.room_id, reveal_content),
+        cursor = await db.execute(
+            "INSERT INTO game_logs (room_id, type, content, judgment) VALUES (?, 'system', ?, ?)",
+            (body.room_id, result_content, "game_over" if correct else "guess_result"),
         )
-        reveal_payload = await _log_payload(reveal_id)
-        await broadcast(body.room_id, "new_log", payload)
-        await broadcast(body.room_id, "new_log", reveal_payload)
-        await broadcast(body.room_id, "game_over", {"answer": reveal_answer, "winner": {"id": player["id"], "username": player.get("username") or f"游客{player['id']}"}})
-        result_payload = reveal_payload
-    else:
-        result_id = await execute(
-            "INSERT INTO game_logs (room_id, type, content, judgment) VALUES (?, 'system', ?, 'guess_result')",
-            (body.room_id, result_content),
+        result_id = cursor.lastrowid
+        await db.execute(
+            f"UPDATE room_presence SET last_active_at = {SQL_NOW} WHERE room_id=? AND player_id=?",
+            (body.room_id, player["id"]),
         )
-        result_payload = await _log_payload(result_id)
-        await broadcast(body.room_id, "new_log", payload)
-        await broadcast(body.room_id, "new_log", result_payload)
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
+    payload = await _log_payload(log_id)
+    result_payload = await _log_payload(result_id)
+    await broadcast(body.room_id, "new_log", payload)
+    await broadcast(body.room_id, "new_log", result_payload)
+    if correct:
+        await broadcast(body.room_id, "game_over", {"answer": reveal_text, "winner": {"id": player["id"], "username": player.get("username") or f"游客{player['id']}"}})
     return payload | {"correct": correct, "score": score, "result_log": result_payload}
 
 
@@ -440,10 +448,23 @@ async def reveal_answer(body: RevealAnswerBody, player: dict = Depends(current_p
             "message": "查看汤底需要再次确认。确认后你会立即看到完整汤底；房间不会结束，其他玩家可以继续推理，但你不能再参与本局答题、请求提示或操作记事板。若确认，请再次调用并传 confirm_reveal=true。",
         }
     reveal_answer_text = judge.public_answer_from_full_answer(room["answer"])
-    await execute(
-        "INSERT OR IGNORE INTO room_answer_reveals (room_id, player_id) VALUES (?, ?)",
-        (body.room_id, player["id"]),
-    )
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        rows = await db.execute_fetchall("SELECT status FROM rooms WHERE id=?", (body.room_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="房间不存在")
+        _ensure_active(rows[0])
+        await db.execute(
+            "INSERT OR IGNORE INTO room_answer_reveals (room_id, player_id) VALUES (?, ?)",
+            (body.room_id, player["id"]),
+        )
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
     await touch_room(body.room_id, player["id"])
     return {"answer": reveal_answer_text, "answer_revealed": True}
 

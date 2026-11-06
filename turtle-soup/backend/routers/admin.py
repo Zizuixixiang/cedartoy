@@ -368,7 +368,7 @@ async def create_admin_room(body: RoomAdminBody, admin: dict = Depends(admin_pla
 @router.post("/rooms/{room_id}/finish")
 async def finish_room(room_id: NormalizedRoomId, admin: dict = Depends(admin_player)):
     del admin
-    await execute(f"UPDATE rooms SET status = 'finished', finished_at = {SQL_NOW} WHERE id = ?", (room_id,))
+    await execute(f"UPDATE rooms SET status = 'finished', finished_at = {SQL_NOW} WHERE id = ? AND status IN ('waiting', 'playing')", (room_id,))
     return {"ok": True}
 
 
