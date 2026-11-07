@@ -1,5 +1,5 @@
 'use strict';
-// Fixtures only. Default: DOM behavior. --browser: rendered 360/428/1280 checks.
+// Fixtures only. Default: DOM behavior. --browser: rendered 360/430/1280 checks.
 // PLAYWRIGHT_MODULE and PLAYWRIGHT_EXECUTABLE_PATH may select an existing installation.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -38,7 +38,7 @@ function fixture() {
 async function domChecks() {
   const {JSDOM, VirtualConsole} = require('jsdom');
   const state = fixture();
-  for (const width of [360, 428, 1280]) {
+  for (const width of [360, 430, 1280]) {
     const errors = [];
     const dom = new JSDOM(html, {
       url: 'http://favorites.test/', runScripts: 'dangerously', pretendToBeVisual: true,
@@ -124,7 +124,7 @@ async function browserChecks() {
     browser = await chromium.launch({headless: true, executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
       args: ['--no-sandbox']});
     const state = fixture();
-    for (const width of [360, 428, 1280]) {
+    for (const width of [360, 430, 1280]) {
       const page = await browser.newPage({viewport: {width, height: 900}, hasTouch: width < 600});
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
@@ -151,9 +151,17 @@ async function browserChecks() {
       assert.equal(await page.locator('#gameDrawer.show').count(), 0);
       await page.reload(); await page.waitForFunction(() => favoritesReady);
       assert.equal(await star.getAttribute('aria-pressed'), 'true');
-      const box = await star.boundingBox();
-      assert(box.width >= (width < 600 ? 44 : 24) && box.height >= (width < 600 ? 44 : 24));
-      assert(await star.evaluate(el => {const r=el.getBoundingClientRect(); return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===el;}));
+      assert(await star.evaluate(el => {
+        const r = el.getBoundingClientRect(), level = el.previousElementSibling.getBoundingClientRect();
+        const style = getComputedStyle(el), target = getComputedStyle(el, '::before');
+        const x = r.right - parseFloat(target.right) - 44, y = r.y + r.height / 2 - 22;
+        return Math.abs(r.y + r.height / 2 - level.y - level.height / 2) < 1
+          && parseFloat(style.fontSize) <= 14 && style.borderWidth === '0px'
+          && style.boxShadow === 'none' && style.backgroundColor === 'rgba(0, 0, 0, 0)'
+          && target.width === '44px' && target.height === '44px'
+          && [[2, 2], [42, 2], [2, 42], [42, 42], [22, 22]].every(([dx, dy]) =>
+            document.elementFromPoint(x + dx, y + dy) === el);
+      }), 'Small unframed star shares the LV row and its transparent 44px target receives hits');
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({path: path.join(out, `${width}-mini.png`), fullPage: false});
       await page.locator('[data-filter="test"]').click();
