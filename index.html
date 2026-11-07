@@ -500,40 +500,43 @@
       cursor: pointer;
     }
     .card-open:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
-    .card-tools { display: flex; align-items: center; gap: 4px; }
-    /* Use the existing card gutters; the star adds no width to the metadata column. */
+    .card-tools { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+    /* Retain the old metadata footprint without displaying or announcing its labels. */
+    .card-tools .level { visibility: hidden; }
     .card-tools:has(.favorite-button) { margin-inline: -8px; }
     .favorite-button {
       position: relative;
-      flex: 0 0 12px;
-      width: 12px;
-      height: 14px;
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      /* Grow into the vacated label area without moving the card's grid tracks. */
+      margin: -7px 0 -7px -16px;
       padding: 0;
-      border: 0;
-      box-shadow: none;
-      background: transparent;
+      border: 1px solid var(--purple-darker);
+      box-shadow: 1px 1px 0 var(--purple-light);
+      background: white;
       color: var(--purple-darker);
       font-family: system-ui, sans-serif;
-      font-size: 12px;
+      font-size: 17px;
       line-height: 1;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Invisible touch target stays inside the card, extending over the passive LV label. */
+    /* Transparent touch area occupies only the card's unused upper-right corner. */
     .favorite-button::before {
       content: "";
       position: absolute;
       width: 44px;
       height: 44px;
-      right: -6px;
+      right: -7px;
       top: 50%;
       transform: translateY(-50%);
     }
-    .favorite-button[aria-pressed="true"], .favorite-button:hover { color: var(--text); }
+    .favorite-button[aria-pressed="true"] { background: var(--purple-darker); color: white; }
+    .favorite-button:hover { border-color: var(--text); }
     .favorite-button:focus-visible {
-      outline: none;
-      text-decoration: underline;
-      text-underline-offset: 4px;
+      outline: 2px solid var(--text);
+      outline-offset: 2px;
     }
     .favorite-button:disabled { opacity: 0.6; cursor: wait; }
     .card-enter {
@@ -7379,7 +7382,7 @@
               <span class="tags">${tags}</span>
             </span>
             <span class="card-tools">
-              <span class="level">${game.level}</span>
+              <span class="level" aria-hidden="true">${game.level}</span>
               ${game.adminOnly ? "" : `<button class="favorite-button" data-favorite="${game.id}" type="button"
                 aria-label="${isFavorite(game) ? "取消收藏" : "收藏"}${game.name}" aria-pressed="${isFavorite(game)}"
                 title="${isFavorite(game) ? "取消收藏" : "收藏"}" ${favoritesBusy ? "disabled" : ""}>${isFavorite(game) ? "★" : "☆"}</button>`}

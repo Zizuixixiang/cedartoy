@@ -152,16 +152,18 @@ async function browserChecks() {
       await page.reload(); await page.waitForFunction(() => favoritesReady);
       assert.equal(await star.getAttribute('aria-pressed'), 'true');
       assert(await star.evaluate(el => {
-        const r = el.getBoundingClientRect(), level = el.previousElementSibling.getBoundingClientRect();
+        const r = el.getBoundingClientRect(), level = el.previousElementSibling;
         const style = getComputedStyle(el), target = getComputedStyle(el, '::before');
-        const x = r.right - parseFloat(target.right) - 44, y = r.y + r.height / 2 - 22;
-        return Math.abs(r.y + r.height / 2 - level.y - level.height / 2) < 1
-          && parseFloat(style.fontSize) <= 14 && style.borderWidth === '0px'
-          && style.boxShadow === 'none' && style.backgroundColor === 'rgba(0, 0, 0, 0)'
+        const x = r.right - parseFloat(style.borderRightWidth) - parseFloat(target.right) - 44;
+        const y = r.y + r.height / 2 - 22;
+        return getComputedStyle(level).visibility === 'hidden' && level.getAttribute('aria-hidden') === 'true'
+          && r.width >= 26 && r.width <= 28 && r.height >= 26 && r.height <= 28
+          && parseFloat(style.fontSize) >= 16 && parseFloat(style.fontSize) <= 18 && style.borderWidth === '1px'
+          && style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'rgb(255, 255, 255)'
           && target.width === '44px' && target.height === '44px'
           && [[2, 2], [42, 2], [2, 42], [42, 42], [22, 22]].every(([dx, dy]) =>
             document.elementFromPoint(x + dx, y + dy) === el);
-      }), 'Small unframed star shares the LV row and its transparent 44px target receives hits');
+      }), 'Hidden level, compact filled favorite button, and transparent 44px target receiving hits');
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({path: path.join(out, `${width}-mini.png`), fullPage: false});
       await page.locator('[data-filter="test"]').click();
