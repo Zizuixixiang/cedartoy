@@ -121,6 +121,10 @@ def do_POST(
         self._handle_api_operit_web_ticket()
         return
 
+    if path == "/api/auth/favorites":
+        self._handle_api_favorites(write=True)
+        return
+
     if path == "/api/auth/login":
         self._handle_api_login()
         return
@@ -485,6 +489,10 @@ def do_GET(
 
     if path == "/api/puzzle-box/progress":
         self._handle_puzzle_box(params=params)
+        return
+
+    if path == "/api/auth/favorites":
+        self._handle_api_favorites()
         return
 
     if path == "/api/auth/me":

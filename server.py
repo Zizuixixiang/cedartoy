@@ -34,7 +34,7 @@ import duel_wait_control
 import account_deletion
 import admin_recovery_mcp
 import admin_feedback_mcp
-from cedar_backend import feedback_tickets
+from cedar_backend import feedback_tickets, favorites
 import avatar_appearances
 import detroit_adapter
 import puzzle_box
@@ -793,6 +793,7 @@ def _init_username_changes_table(conn):
 def _init_account_security_schema(conn):
     """Idempotent account/token compatibility and query-performance schema."""
     avatar_appearances.init_schema(conn)
+    favorites.init_schema(conn)
     if _table_exists(conn, "toy_users"):
         _add_column_if_missing(
             conn,
@@ -3628,7 +3629,25 @@ def _epoch_to_local_str(epoch):
         return None
 
 
-def _tool_list_games(path_token=None):
+def _account_favorites(raw_token, arguments, *, human_only=False):
+    if not isinstance(arguments, dict):
+        raise _McpError(-32602, "收藏参数须为对象")
+    user = (_current_human_account if human_only else _current_account)(raw_token)
+    with _db_connect() as conn:
+        # One snapshot for mutation, own collection and current direct bindings.
+        conn.execute("BEGIN IMMEDIATE" if arguments.get("action") != "favorites" else "BEGIN")
+        return favorites.operate(
+            conn, user, arguments.get("action"), arguments.get("game"),
+            include_bound=not human_only, error=_McpError,
+        )
+
+
+def _tool_list_games(path_token=None, *, arguments=None):
+    if arguments:
+        if not isinstance(arguments, dict):
+            raise _McpError(-32602, "参数须为对象")
+        if "action" in arguments:
+            return json.dumps(_account_favorites(path_token, arguments), ensure_ascii=False, separators=(",", ":"))
     camping_maintenance = _game_maintenance("camping_plaza")
     camping_label = "camping_plaza" + (
         f"（{camping_maintenance['label']}）" if camping_maintenance else ""
@@ -3637,7 +3656,7 @@ def _tool_list_games(path_token=None):
         "mbti·人格类型·南山君 | enneagram·九型人格·Max Ross | dnd·道德阵营·南山君 | love·爱语偏好·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度·南山君 | sins_virtues·罪与美德·南山君 | bdsmtest·性癖倾向·南山君"
     )
     games = (
-        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·地球漫游·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | shared_craft·共同手作·嘞噫黎 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
+        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·乌有乡（地球漫游）·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | shared_craft·共同手作·嘞噫黎 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
         f"{camping_label}·露营地经营·乐诶雷女士"
     )
     if autochess_adapter.enabled():
@@ -3671,7 +3690,11 @@ def _game_maintenance(game):
 
 
 def _tool_get_guide(arguments, *, path_token=None):
+    if arguments.get("game") == "乌有乡":
+        arguments = {**arguments, "game": "nowhere"}
     game = arguments.get("game")
+    if game == "list_games":
+        return json.dumps({"game": game, "guide": (GUIDE_DIR / "list_games.md").read_text(encoding="utf-8")}, ensure_ascii=False)
     if game == "feedback":
         guide = (GUIDE_DIR / "feedback.md").read_text(encoding="utf-8")
         if path_token:
@@ -4043,6 +4066,8 @@ def _apply_play_slot_hint(text, slot_hint):
 def _tool_play(
     arguments, path_token=None, *, defer_duel=False, authenticated_account=None
 ):
+    if arguments.get("game") == "乌有乡":
+        arguments = {**arguments, "game": "nowhere"}
     if arguments.get("game") == "shared_craft":
         maintenance = _game_maintenance("shared_craft")
         if maintenance:
@@ -6431,6 +6456,20 @@ a{{color:#c9afff}}
             self._send_json({"error": str(exc)}, status=400)
         except Exception as exc:
             self._send_json({"error": "server error", "detail": str(exc)}, status=500)
+
+    def _handle_api_favorites(self, *, write=False):
+        try:
+            arguments = self._read_json_body() if write else {"action": "favorites"}
+            result = _account_favorites(_extract_bearer(self.headers), arguments, human_only=True)
+            self._send_json(result, extra_headers={"Cache-Control": "no-store"})
+        except _McpError as exc:
+            self._send_json({"error": exc.message}, status=401 if exc.code == -32001 else 400,
+                            extra_headers={"Cache-Control": "no-store"})
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception:
+            logger.exception("favorites request failed")
+            self._send_json({"error": "收藏暂时不可用，请稍后重试"}, status=500)
 
     def _handle_api_me(self):
         try:

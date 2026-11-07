@@ -341,6 +341,15 @@ class PlatformTests(TemporaryStores):
                     for phrase in phrases:
                         self.assertIn(phrase, description)
 
+    def test_display_name_and_chinese_guide_alias(self):
+        self.assertIn("nowhere·乌有乡（地球漫游）·", server._tool_list_games())
+        arguments = {"game": "乌有乡"}
+        guide = server._tool_get_guide(arguments)
+        self.assertEqual(guide, server._tool_get_guide({"game": "nowhere"}))
+        self.assertEqual(json.loads(guide)["game"], "nowhere")
+        self.assertTrue(json.loads(guide)["guide"].startswith("# nowhere·乌有乡（地球漫游）"))
+        self.assertEqual(arguments, {"game": "乌有乡"})
+
     def test_root_mcp_path_and_bearer_override_forged_identity_and_slots(self):
         patches = [patch.object(server, "_current_account", return_value={"id": 101, "is_ai": True, "username": "test"}),
                    patch.object(server, "_authenticated_ai_player_id", return_value=None),
@@ -350,13 +359,15 @@ class PlatformTests(TemporaryStores):
                    patch.object(server, "_finalize_play_response", side_effect=lambda response, **kw: response)]
         for p in patches:
             self.stack.enter_context(p)
-        for auth in ({"path_token": "test-token"}, {"bearer_token": "test-token"}):
+        for game, auth in ((game, auth) for game in ("nowhere", "乌有乡")
+                           for auth in ({"path_token": "test-token"}, {"bearer_token": "test-token"})):
             request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "play", "arguments": {
-                "game": "nowhere", "action": "schema", "player_id": "202", "params": {"player_id": "202:2", "slot": 2}}}}
+                "game": game, "action": "schema", "player_id": "202", "params": {"player_id": "202:2", "slot": 2}}}}
             with patch.object(handler, "play", side_effect=lambda args: {"player_id": args["player_id"]}) as called:
                 response = server._handle_root_mcp(request, **auth)
                 self.assertFalse(response.get("result", {}).get("isError"), response)
                 self.assertEqual(called.call_args.args[0]["player_id"], "101:2")
+                self.assertEqual(request["params"]["arguments"]["game"], game)
 
 
 class WebTests(TemporaryStores):

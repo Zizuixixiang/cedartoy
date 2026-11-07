@@ -492,6 +492,33 @@
     .game-card.selected .game-title, .game-card:hover .game-title { color: var(--pink); }
     .game-sub { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
     .level { color: var(--purple); font-size: 10px; white-space: nowrap; }
+    .card-open {
+      position: absolute;
+      inset: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+    .card-open:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+    .card-tools { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .favorite-button {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 2px solid var(--purple);
+      box-shadow: 2px 2px 0 var(--purple-light);
+      background: white;
+      color: var(--text);
+      font-family: system-ui, sans-serif;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .favorite-button[aria-pressed="true"] { background: var(--bg); }
+    .favorite-button:hover { border-color: var(--pink-dark); }
+    .favorite-button:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+    .favorite-button:disabled { opacity: 0.6; cursor: wait; }
     .card-enter {
       grid-column: 3;
       justify-self: end;
@@ -3388,6 +3415,7 @@
       .game-title { font-size: 16px; margin-bottom: 4px; }
       .game-sub { font-size: 10px; margin-bottom: 8px; }
       .level { font-size: 9px; }
+      .favorite-button { width: 44px; height: 44px; }
       .card-enter { font-size: 8px; }
       .tag { font-size: 9px; padding: 3px 6px; }
       .preview { display: none; }
@@ -5381,6 +5409,11 @@
     const initialTab = new URLSearchParams(location.search).get("tab");
     let filter = ["test", "mini"].includes(initialTab) ? initialTab : "mini";
     let me = null;
+    let favoriteIds = new Set();
+    let favoriteToken = "";
+    let favoriteVersion = 0;
+    let favoritesBusy = false;
+    let favoritesReady = false;
     let avatarFeatureEnabled = false;
     let avatarFrameState = null;
     let loadMeAbort = null;
@@ -7204,6 +7237,97 @@
       mini: { title: "神秘新游戏" }
     };
 
+    function favoriteGameId(id) {
+      return id === "soup" ? "turtle_soup" : id === "attribute" ? "bdsmtest" : id;
+    }
+
+    function resetFavorites() {
+      favoriteVersion++;
+      favoriteIds = new Set();
+      favoriteToken = "";
+      favoritesBusy = false;
+      favoritesReady = false;
+    }
+
+    function isFavorite(game) {
+      return favoriteToken === token() && Boolean(me?.user && !me.user.is_ai)
+        && favoriteIds.has(favoriteGameId(game.id));
+    }
+
+    async function loadFavorites({forToggle = false} = {}) {
+      if (!token() || !me?.user || me.user.is_ai || me.pending_deletion) {
+        resetFavorites();
+        renderGames();
+        return false;
+      }
+      if (favoritesBusy && !forToggle) return false;
+      const auth = token();
+      if (favoriteToken !== auth) {
+        favoriteIds = new Set();
+        favoritesReady = false;
+      }
+      favoriteToken = auth;
+      const version = ++favoriteVersion;
+      try {
+        const res = await fetch("/api/auth/favorites", {headers: {Authorization: `Bearer ${auth}`}, cache: "no-store"});
+        const data = await res.json();
+        if (version !== favoriteVersion || token() !== auth) return false;
+        if (!res.ok) throw new Error(data.error || "收藏加载失败，请重试");
+        favoriteIds = new Set(data.self.games.map(game => game.id));
+        favoritesReady = true;
+        renderGames();
+        return true;
+      } catch (err) {
+        if (version === favoriteVersion && token() === auth) {
+          favoritesReady = false;
+          showToast("收藏加载失败，请稍后重试");
+        }
+        return false;
+      }
+    }
+
+    async function toggleFavorite(id) {
+      if (!token() || !me?.user || me.user.is_ai) {
+        showToast("请先登录人类账号再收藏");
+        $("loginOpen").click();
+        return;
+      }
+      if (favoritesBusy) return;
+      favoritesBusy = true;
+      if (!favoritesReady || favoriteToken !== token()) {
+        const ready = await loadFavorites({forToggle: true});
+        if (!ready) { favoritesBusy = false; return; }
+        favoritesBusy = true;
+      }
+      const auth = token();
+      const version = ++favoriteVersion;
+      const game = favoriteGameId(id);
+      const add = !favoriteIds.has(game);
+      const hadFocus = document.activeElement?.dataset.favorite === id;
+      const scrollTop = $("gameList").scrollTop;
+      renderGames();
+      try {
+        const res = await fetch("/api/auth/favorites", {
+          method: "POST", headers: {"Content-Type": "application/json", Authorization: `Bearer ${auth}`},
+          body: JSON.stringify({action: add ? "favorite_add" : "favorite_remove", game})
+        });
+        const data = await res.json();
+        if (version !== favoriteVersion || token() !== auth) return;
+        if (!res.ok) throw new Error(data.error || "收藏未保存，请重试");
+        favoriteIds = new Set(data.self.games.map(item => item.id));
+        showToast(add ? "已收藏" : "已取消收藏");
+      } catch (err) {
+        if (version === favoriteVersion && token() === auth) showToast(err.message || "收藏未保存，请重试");
+      } finally {
+        if (version === favoriteVersion && token() === auth) {
+          favoritesBusy = false;
+          renderGames();
+          $("gameList").scrollTop = scrollTop;
+          if (hadFocus) document.querySelector(`[data-favorite="${id}"]`)?.focus({preventScroll: true});
+        }
+      }
+    }
+
     function renderGames() {
       const query = $("searchInput").value.trim().toLowerCase();
       const visibleGames = homepageGames.filter(canShowGame);
@@ -7211,7 +7335,9 @@
         selected = visibleGames[0]?.id || "soup";
       }
       let lastTestGroup = "";
-      $("gameList").innerHTML = homepageGames.map((game) => {
+      // Stable partition: both favorites and other cards retain the existing order.
+      const orderedGames = [...homepageGames].sort((a, b) => Number(isFavorite(b)) - Number(isFavorite(a)));
+      $("gameList").innerHTML = orderedGames.map((game) => {
         const short = !window.matchMedia("(max-width: 599px)").matches
           ? (desktopGameShorts[game.id] || game.short) : game.short;
         const searchable = `${game.name} ${short} ${game.tags.join(" ")}`.toLowerCase();
@@ -7226,7 +7352,8 @@
           : game.id === "autochess" ? "进入棋室 →" : game.id === "candle" ? "" : (game.comingSoon ? "敬请期待" : (game.ctaLabel || "ENTER →"));
         const tags = game.tags.map((tag, index) => `<span class="tag ${index === 0 ? "pink" : ""}">${tag}</span>`).join("");
         return `
-          ${heading}<button class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}" type="button">
+          ${heading}<article class="game-card ${game.id === selected ? "selected" : ""} ${hidden ? "hidden" : ""}${game.comingSoon ? " coming-soon" : ""}" data-game="${game.id}">
+            <button class="card-open" type="button" aria-label="打开${game.name}"></button>
             ${ICON_IDS.includes(game.id)
               ? `<span class="glyph has-img"><img src="${gameIconUrl(game)}" alt="" loading="lazy"></span>`
               : `<span class="glyph">${game.glyph}</span>`}
@@ -7235,9 +7362,14 @@
               <p class="game-sub">${short}</p>
               <span class="tags">${tags}</span>
             </span>
-            <span class="level">${game.level}</span>
+            <span class="card-tools">
+              <span class="level">${game.level}</span>
+              ${game.adminOnly ? "" : `<button class="favorite-button" data-favorite="${game.id}" type="button"
+                aria-label="${isFavorite(game) ? "取消收藏" : "收藏"}${game.name}" aria-pressed="${isFavorite(game)}"
+                title="${isFavorite(game) ? "取消收藏" : "收藏"}" ${favoritesBusy ? "disabled" : ""}>${isFavorite(game) ? "★" : "☆"}</button>`}
+            </span>
             <span class="card-enter">${enterLabel}</span>
-          </button>
+          </article>
         `;
       }).join("");
       if (!query && lockedPlaceholders[filter]) {
@@ -7252,9 +7384,15 @@
           </button>
         `);
       }
+      document.querySelectorAll("[data-favorite]").forEach(button => {
+        button.addEventListener("click", event => {
+          event.stopPropagation();
+          toggleFavorite(button.dataset.favorite);
+        });
+      });
       document.querySelectorAll(".game-card[data-game]").forEach((card) => {
         card.addEventListener("mouseenter", () => previewGame(card.dataset.game));
-        card.addEventListener("focus", () => previewGame(card.dataset.game));
+        card.querySelector(".card-open").addEventListener("focus", () => previewGame(card.dataset.game));
         card.addEventListener("click", () => {
           if (window.matchMedia("(max-width: 599px)").matches) {
             selectGame(card.dataset.game, true);
@@ -9802,6 +9940,9 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        resetFavorites();
+        renderGames();
+        loadFavorites();
         refreshAutochessStatsAccess();
         refreshCraftAuthorAccess();
         refreshFeedbackUnread();
@@ -9814,6 +9955,7 @@
     });
 
     document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && !favoritesBusy) loadFavorites();
       if (!document.hidden) refreshFeedbackUnread();
     });
     window.addEventListener("focus", () => { if (!document.hidden) refreshFeedbackUnread(); });
@@ -10051,6 +10193,8 @@
       loadMeAbort = controller;
       if (!token()) {
         me = null;
+        resetFavorites();
+        renderGames();
         renderAuth();
         await loadAnnouncements();
         return;
@@ -10080,6 +10224,7 @@
       }
       if (controller.signal.aborted) return;
       renderAuth();
+      loadFavorites();
       renderGames();
       renderDetail();
       if (me && (me.pending_deletion || me.user?.deletion)) {
@@ -10147,6 +10292,8 @@
         localStorage.setItem("cedartoy_user_id", data.user.id);
         const needsBindings = endpoint === "/api/auth/login" && !data.pending_deletion && !data.user.deletion;
         me = {user: data.user, bindings: needsBindings ? null : [], pending_deletion: Boolean(data.pending_deletion)};
+        resetFavorites();
+        loadFavorites();
         if (needsBindings) loadLoginBindings();
         machineState = {loaded: false, loading: false, machines: [], error: ""};
         emailSecurityState = {loaded: false, loading: false, bound: false, maskedEmail: "", error: ""};
@@ -10779,6 +10926,7 @@
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem("cedartoy_user_id");
       me = null;
+      resetFavorites();
       arcadeBankState.status = null;
       arcadeBankState.aiUserId = "";
       arcadeBankState.message = "";

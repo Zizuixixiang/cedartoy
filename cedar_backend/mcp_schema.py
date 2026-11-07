@@ -24,10 +24,10 @@ def _build_platform_tools(*, avatar_max_codepoints, max_invite_question, feedbac
         },
         {
             "name": "list_games",
-            "description": "List games. 列出所有可用游戏，返回分类列表（测试类、小游戏类）及简介",
+            'description': '游戏索引；收藏见 get_guide(game="list_games")',
             "inputSchema": {
                 "type": "object",
-                "properties": {},
+                "properties": {"action": {"type": "string"}, "game": {"type": "string"}},
                 "additionalProperties": True,
             },
         },

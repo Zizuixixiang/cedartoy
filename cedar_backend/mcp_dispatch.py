@@ -100,7 +100,7 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                     content.append({"type": "text", "text": reminder})
             try:
                 if name == "list_games":
-                    text = _tool_list_games(path_token=path_token or bearer_token)
+                    text = _tool_list_games(path_token=path_token or bearer_token, arguments=arguments)
                 elif name == "get_guide":
                     text = _tool_get_guide(arguments, path_token=path_token or bearer_token)
                 elif name == "play":

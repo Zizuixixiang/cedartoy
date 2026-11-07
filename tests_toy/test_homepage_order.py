@@ -46,6 +46,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
                 "garden_cat",
                 "camping_plaza",
                 "nowhere",
+                "autochess",
                 "moonlit",
                 "workkk",
                 "ai_life",
@@ -53,6 +54,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
                 "market",
                 "ciyuwu",
                 "crucible_echoes",
+                "shared_craft",
                 "arcade",
                 "puzzle_box",
                 "leek",
@@ -69,7 +71,7 @@ class HomepageGameOrderingTests(unittest.TestCase):
         self.assertIn("const HUMAN_FRONTEND_GAME_IDS = new Set([", self.home)
         self.assertIn('return left.name.localeCompare(right.name, "zh-CN");', self.home)
         self.assertIn("const visibleGames = homepageGames.filter(canShowGame);", self.home)
-        self.assertIn('$("gameList").innerHTML = homepageGames.map((game) => {', self.home)
+        self.assertIn('$("gameList").innerHTML = orderedGames.map((game) => {', self.home)
 
 
 if __name__ == "__main__":
