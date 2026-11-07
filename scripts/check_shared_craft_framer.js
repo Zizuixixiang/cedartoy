@@ -93,10 +93,12 @@ const {bridge} = require('./shared_craft_test_bridge');
       await page.evaluate(() => document.fonts.ready);
       const preview = () => page.locator('#framer-canvas').evaluate(c => c.toDataURL('image/png'));
       const exportWork = async () => {
-        const downloadPromise = page.waitForEvent('download');
         await page.locator('#framer-export').click();
+        await page.waitForFunction(() => document.querySelector('#framer-cloud-status').textContent.includes('已保存'));
+        const downloadPromise = page.waitForEvent('download');
+        await page.locator('#framer-download').click();
         const download = await downloadPromise;
-        await page.waitForFunction(() => document.querySelector('#framer-hint').textContent.includes('已保存到后端'));
+        await page.waitForFunction(() => document.querySelector('#framer-download-status').textContent.includes('已发起下载'));
         const save = posts.filter(p => p.body?.action === 'decoration').at(-1);
         assert(save, 'original save button must POST decoration over HTTP');
         assert.equal(save.result.status, 200);
@@ -118,10 +120,11 @@ const {bridge} = require('./shared_craft_test_bridge');
             width: r.width, height: r.height, font: s.fontFamily, size: s.fontSize,
             lineHeight: s.lineHeight, border: s.borderWidth, shadow: s.boxShadow, padding: s.padding};
         };
-        return Object.fromEntries(['#framer-canvas', '#framer-export', '#framer-hint', '.framer-head strong']
+        return Object.fromEntries(['#framer-canvas', '#framer-export', '#framer-download',
+          '.framer-transfer', '#framer-cloud-status', '#framer-hint', '.framer-head strong']
           .map(selector => [selector, measure(selector)]));
       });
-      for (const selector of ['#framer-canvas', '#framer-export']) {
+      for (const selector of ['#framer-canvas', '#framer-export', '#framer-download', '.framer-transfer']) {
         const r = geometry[selector];
         assert(r.left >= 0 && r.right <= width && r.top >= 0 && r.bottom <= 900, JSON.stringify(geometry));
       }

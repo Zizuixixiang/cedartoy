@@ -47,6 +47,20 @@ def framer_script(text):
                             "function assembledDataURL(){try{draw(false);return canvas.toDataURL('image/png')}finally{draw(true)}}\n"
                             "function finishedDataURL(){")
         text = text.replace(legacy, "dataUrl=assembledDataURL(),pieceUrl=pieceDataURL()")
+    else:
+        # Only the reviewed composed exporter gets the independent save/download
+        # workflow. Do not alter the author's renderers or downloadCanvas helper.
+        draft = re.search(r"^function saveDraft\(\).*?(?=^function scheduleSave)", text, re.M | re.S)
+        if (not draft or hashlib.sha256(draft[0].encode()).hexdigest()
+                != "f5e0654e12941eb35e4402099200b0d1aee8b44adf3fd776d509de80b04a98ee"):
+            raise ValueError("上游装裱草稿已变化，需重新核验适配")
+        text = text.replace(draft[0], draft[0].replace(
+            "localStorage.setItem(draftKey(),JSON.stringify(data))",
+            "localStorage.setItem(draftKey(),JSON.stringify(data));return true"
+        ).replace("暂时没有存下' }", "暂时没有存下';return false }"))
+        start = text.index("$('#framer-export').textContent=")
+        end = text.index("$('#framer-gallery').onclick=", start)
+        text = text[:start] + (ASSETS / "framer-transfer.js").read_text() + "\n" + text[end:]
     return text
 
 

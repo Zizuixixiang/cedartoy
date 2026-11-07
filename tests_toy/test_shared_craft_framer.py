@@ -67,7 +67,7 @@ class SharedCraftFramerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "装裱导出"):
                     ui.asset("beads-framer.js")
 
-    def test_composed_export_keeps_author_implementation_and_only_rewrites_two_urls(self):
+    def test_composed_export_preserves_renderers_and_splits_transfers(self):
         original = upstream_source(COMPOSED)
         prefix = "/api/${encodeURIComponent(location.pathname.split('/').filter(Boolean)[1])}"
         expected = original
@@ -76,12 +76,26 @@ class SharedCraftFramerTests(unittest.TestCase):
         with patch.object(type(ui.STATIC), "read_bytes", return_value=original.encode()):
             response = ui.asset("beads-framer.js")
         text = response.body.decode()
-        self.assertEqual(text, expected)
+        marker = "$('#framer-export').textContent="
+        # Everything outside the explicitly reviewed draft/transfer changes
+        # remains byte-for-byte upstream, including all image exporters.
+        before = expected.split(marker)[0].replace(
+            "localStorage.setItem(draftKey(),JSON.stringify(data))",
+            "localStorage.setItem(draftKey(),JSON.stringify(data));return true"
+        ).replace("暂时没有存下' }", "暂时没有存下';return false }")
+        self.assertTrue(text.startswith(before))
+        self.assertEqual(text.split("$('#framer-gallery').onclick=")[1],
+                         expected.split("$('#framer-gallery').onclick=")[1])
         self.assertEqual(text.count("fetch(`/shared-craft/api"), 2)
         self.assertNotIn(prefix, text)
         self.assertNotIn("assembledDataURL", text)
-        self.assertIn("exportCanvas=composedCanvas(),dataUrl=exportCanvas.toDataURL('image/png'),pieceUrl=pieceDataURL()", text)
-        self.assertIn("data_url:dataUrl,piece_data_url:pieceUrl", text)
+        save = text.split("cloudButton.onclick = async () => {")[1].split("downloadButton.onclick")[0]
+        download = text.split("downloadButton.onclick = async () => {")[1].split("$('#framer-gallery').onclick=")[0]
+        self.assertNotIn("downloadCanvas(", save)
+        self.assertNotIn("fetch(", download)
+        self.assertIn("data_url:dataUrl", save)
+        self.assertIn("piece_data_url:pieceUrl", save)
+        self.assertIn("downloadCanvas(composedCanvas()", download)
         checked = subprocess.run(["node", "--check"], input=response.body, capture_output=True, timeout=15)
         self.assertEqual(checked.returncode, 0, checked.stderr.decode())
         # Execute the actual unchanged exporters with instrumented canvas/object
@@ -123,6 +137,12 @@ assert.equal(pieceDataURL(),'piece');assert.equal(piece.shell,true);assert.equal
         self.assertEqual(response.status_code, 200)
         checked = subprocess.run(["node", "--check"], input=response.body, capture_output=True, timeout=15)
         self.assertEqual(checked.returncode, 0, checked.stderr.decode())
+
+    def test_changed_draft_fails_closed(self):
+        original = upstream_source(COMPOSED)
+        altered = original.replace("localStorage.setItem(draftKey()", "sessionStorage.setItem(draftKey()")
+        with self.assertRaisesRegex(ValueError, "装裱草稿"):
+            ui.framer_script(altered)
 
     def test_finished_decoration_and_gallery_survive_app_restart(self):
         fixture = test_shared_craft.SharedCraftTests()

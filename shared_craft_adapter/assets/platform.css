@@ -19,3 +19,9 @@
 #share-form button[type=submit]{background:#d98c9a;color:#fff}
 #share-form [hidden],#stock-actor[hidden]{display:none}
 #share-status:empty{display:none}
+/* Framer transfers use the existing warm controls and 11px supporting scale. */
+.framer-transfer{display:flex;align-items:center;gap:8px;margin-top:7px;min-height:64px}
+.framer-transfer>button{flex:none;min-height:38px;padding:7px 13px;border:1px solid #b99a8066;border-radius:12px;background:#fffaf4;color:#66554b;font:600 12px system-ui,-apple-system,"PingFang SC",sans-serif;box-shadow:0 2px 6px #6d4a3020}
+.framer-transfer>div{min-width:0;flex:1;color:#66554b;font-size:11px;line-height:16px}
+.framer-transfer p{margin:0;overflow-wrap:anywhere}
+.framer-transfer>button:disabled{opacity:.65;cursor:wait}
