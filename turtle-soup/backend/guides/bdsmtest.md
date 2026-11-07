@@ -1,4 +1,4 @@
-# bdsmtest · BDSMTest
+# bdsmtest · 属性测试（BDSMTest）
 了解性癖倾向，调用 bdsmtest.org 官方接口算分。通常93题，题数/题号以start返回为准；题目与原型名称使用原站中文（lang=zh），非本地翻译。
 normal逐题；fast一次返回全题。score为1–7整数：1完全不同意、4中立、7完全同意，不接受0。
 整套题库文本：原站实时出题，题干与选项 Token 总量未测；不能由通常93题推算。

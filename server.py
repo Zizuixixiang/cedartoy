@@ -3653,11 +3653,11 @@ def _tool_list_games(path_token=None, *, arguments=None):
         f"（{camping_maintenance['label']}）" if camping_maintenance else ""
     )
     tests = (
-        "mbti·人格类型·南山君 | enneagram·九型人格·Max Ross | dnd·道德阵营·南山君 | love·爱语偏好·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度·南山君 | sins_virtues·罪与美德·南山君 | bdsmtest·性癖倾向·南山君"
+        "mbti·MBTI 人格·南山君 | enneagram·九型人格·Max Ross | dnd·九阵营·南山君 | love·爱之语·南山君 | ecr·依恋类型·南山君 | humanity·人类浓度检测·南山君 | sins_virtues·七宗罪 VS 七美德·南山君 | bdsmtest·属性测试·南山君"
     )
     games = (
-        f"turtle_soup·情境推理·南山君 | duel·棋牌对弈·南山君&Clio | tarot·塔罗占卜·林默Moon | ai_life·人生策略·乐诶雷女士 | detroit·仿生人叙事·如火如風的容 | fishing·钓鱼收集·初一 | bar·酒馆经营·西兰花 | forest·童话抉择·阿尢 | moonlit·卡牌闯关·苏苏脆脆 | eco·生态模拟·南山君&Clio | ciyuwu·言语求生·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·股市交易·贰拾壹 | delve·下矿寻宝·包工头 | nowhere·乌有乡（地球漫游）·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·虚拟旅行·沈澈&sevenleft | arcade·街机博彩·多肉饲养员 | burger·汉堡店经营·飞鸢 | crucible_echoes·炼金构筑·athok | imitator_td·随机塔防·すみか | puzzle_box·解码谜题·Runsheng_ | memoria·车站探案·雨刀 | white_room·自由叙事·雨刀 | candle·文字观影·略略 | shared_craft·共同手作·嘞噫黎 | market·买菜做饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·打工模拟·💤 | garden_cat·种花养猫·乐诶雷女士 | "
-        f"{camping_label}·露营地经营·乐诶雷女士"
+        f"turtle_soup·海龟汤·南山君 | duel·双弈·南山君&Clio | tarot·{RITUAL_DISPLAY_NAME}·林默Moon | ai_life·AI人生桌游·乐诶雷女士 | detroit·底特律：变人·如火如風的容 | fishing·AI钓鱼·初一 | bar·空杯俱乐部·西兰花 | forest·格林童话境遇·阿尢 | moonlit·月幕万象·苏苏脆脆 | eco·瓶中生态·南山君&Clio | ciyuwu·词与物·{AUTHORS['ciyuwu']['name'].split('（', 1)[0]} | leek·韭菜修炼之道·贰拾壹 | delve·下矿·包工头 | nowhere·乌有乡·{AUTHORS['nowhere']['name'].split('（', 1)[0]} | travel·旅行·沈澈&sevenleft | arcade·街机厅·多肉饲养员 | burger·午间汉堡铺·飞鸢 | crucible_echoes·坩埚余响·athok | imitator_td·植物大战丧尸随机版·すみか | puzzle_box·解谜盲盒·Runsheng_ | memoria·Memoria Station·雨刀 | white_room·白房间·雨刀 | candle·烛·略略 | shared_craft·共同手作间·嘞噫黎 | market·出门买菜上桌吃饭·{AUTHORS['market']['name'].split('（', 1)[0]} | workkk·AI打工人·💤 | garden_cat·花园与猫咪·乐诶雷女士 | "
+        f"{camping_label}·露营广场·乐诶雷女士"
     )
     if autochess_adapter.enabled():
         games += " | autochess·弈间·江川雪"

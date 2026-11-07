@@ -157,13 +157,15 @@ async function browserChecks() {
         const x = r.right - parseFloat(style.borderRightWidth) - parseFloat(target.right) - 44;
         const y = r.y + r.height / 2 - 22;
         return getComputedStyle(level).visibility === 'hidden' && level.getAttribute('aria-hidden') === 'true'
-          && r.width >= 26 && r.width <= 28 && r.height >= 26 && r.height <= 28
+          && r.width >= 23 && r.width <= 25 && r.height >= 23 && r.height <= 25
           && parseFloat(style.fontSize) >= 16 && parseFloat(style.fontSize) <= 18 && style.borderWidth === '1px'
-          && style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'rgb(255, 255, 255)'
+          && style.backgroundColor === 'rgb(255, 255, 255)' && el.textContent.trim() === '★'
+          && style.color === getComputedStyle(el.closest('.game-card')).color
+          && el.closest('.game-card').getBoundingClientRect().right - r.right >= 14
           && target.width === '44px' && target.height === '44px'
           && [[2, 2], [42, 2], [2, 42], [42, 42], [22, 22]].every(([dx, dy]) =>
             document.elementFromPoint(x + dx, y + dy) === el);
-      }), 'Hidden level, compact filled favorite button, and transparent 44px target receiving hits');
+      }), 'Hidden level, inset white button with dark solid star, and transparent 44px target receiving hits');
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({path: path.join(out, `${width}-mini.png`), fullPage: false});
       await page.locator('[data-filter="test"]').click();

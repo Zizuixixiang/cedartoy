@@ -1,16 +1,14 @@
 """Favorites use real credentials and isolated account storage, never production data."""
 import io
 import json
-import re
 import sqlite3
-import subprocess
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import server
 from cedar_backend import favorites
 from tests_toy import test_account_rename
+from tests_toy import test_list_games
 
 
 class FavoritesTests(unittest.TestCase):
@@ -123,11 +121,8 @@ class FavoritesTests(unittest.TestCase):
             conn.execute('DELETE FROM ai_access_tokens WHERE user_id = ?', (self.fixture.other_machine_id,))
             conn.execute('DELETE FROM toy_users WHERE id = ?', (self.fixture.other_machine_id,))
             self.assertEqual(conn.execute('SELECT count(*) FROM account_game_favorites').fetchone()[0], 0)
-        home = Path('index.html').read_text()
-        catalog = home[home.index('    const games = ['):home.index('    let selected = "soup";')]
-        ids = json.loads(subprocess.check_output(['node', '-e', catalog +
-            ';console.log(JSON.stringify(games.filter(g=>!g.adminOnly).map(g=>g.id)))'], text=True))
-        ids += re.findall(r"(?:^|[ |:])([a-z][a-z0-9_]*)[·（]", server._tool_list_games(), re.MULTILINE)
+        ids = list(test_list_games.ListGamesTests.homepage_names())
+        ids += [game for game, _, _ in test_list_games.ListGamesTests.entries(server._tool_list_games())]
         for game in ids:
             self.assertIn({'soup': 'turtle_soup', 'attribute': 'bdsmtest'}.get(game, game), favorites.GAME_NAMES)
 
@@ -142,3 +137,12 @@ class FavoritesTests(unittest.TestCase):
         guide = json.loads(server._tool_get_guide({'game': 'list_games'}))['guide']
         for text in ('list_games()', 'favorite_add', 'favorite_remove', '直接绑定', 'Bearer'):
             self.assertIn(text, guide)
+
+    def test_favorite_responses_use_homepage_names_and_canonical_ids(self):
+        names = test_list_games.ListGamesTests.homepage_names()
+        for game in names:
+            self.call('favorite_add', game)
+        result = self.call()
+        self.assertEqual(result['self']['games'], [
+            {'id': game, 'name': names[game]} for game in sorted(names)
+        ])

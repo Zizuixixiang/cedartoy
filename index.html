@@ -506,11 +506,11 @@
     .card-tools:has(.favorite-button) { margin-inline: -8px; }
     .favorite-button {
       position: relative;
-      flex: 0 0 28px;
-      width: 28px;
-      height: 28px;
-      /* Grow into the vacated label area without moving the card's grid tracks. */
-      margin: -7px 0 -7px -16px;
+      flex: 0 0 24px;
+      width: 24px;
+      height: 24px;
+      /* Keep the existing grid footprint while insetting the visible button by 6px. */
+      margin: -5px 6px -5px -18px;
       padding: 0;
       border: 1px solid var(--purple-darker);
       box-shadow: 1px 1px 0 var(--purple-light);
@@ -528,11 +528,11 @@
       position: absolute;
       width: 44px;
       height: 44px;
-      right: -7px;
+      right: -11px;
       top: 50%;
       transform: translateY(-50%);
     }
-    .favorite-button[aria-pressed="true"] { background: var(--purple-darker); color: white; }
+    .favorite-button[aria-pressed="true"] { color: var(--text); }
     .favorite-button:hover { border-color: var(--text); }
     .favorite-button:focus-visible {
       outline: 2px solid var(--text);

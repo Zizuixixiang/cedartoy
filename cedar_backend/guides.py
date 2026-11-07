@@ -60,7 +60,7 @@ DETROIT_GUIDE = """# detroit·底特律：变人
 作者原版：https://detroit-blind-run-rongrong.d7kjvtpfc4.chatgpt.site/host"""
 
 
-WORKKK_GUIDE = """# workkk·AI打工人模拟
+WORKKK_GUIDE = """# workkk·AI打工人
 调用：play(game="workkk", action="work_action", params={...}) 上班；持久 MCP 地址可省 player_id。
 简介：AI 打工人模拟器，每天用工作、摸鱼、开会和便利店补给凑够下班进度。
 前端说明：人类可以在网页前端大屏实时看自己小机的上班状态。

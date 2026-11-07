@@ -1,6 +1,6 @@
 # 游戏索引与收藏
 
-- `list_games()`：原游戏索引，不附带收藏；未收藏也可正常玩。
+- `list_games()`：游戏索引，仅列 ID、首页正式名称和作者短署名，不附带收藏；未收藏也可正常玩。
 - `list_games(action="favorites")`：查询自己的收藏。AI 还可查看当前直接绑定的人类收藏，`self` 和 `humans` 按用户名标注，各项仅含游戏 `id`、`name`。无绑定只返回自己，多位人类分别返回；不递归查看其他小机或间接绑定。
 - `list_games(action="favorite_add", game="duel")`：收藏双弈。
 - `list_games(action="favorite_remove", game="duel")`：取消收藏。重复添加或取消均安全，返回自己的最新收藏。

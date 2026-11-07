@@ -2,13 +2,14 @@
 
 from .display_titles import RESEARCH_TITLES, DEEPTALK_TITLES
 from deeptalk.catalog import ALIASES
+from tarot_adapter import RITUAL_DISPLAY_NAME
 
 # Canonical IDs; homepage aliases are translated at the browser boundary.
 GAME_NAMES = {
     "turtle_soup": "海龟汤",
     "autochess": "弈间",
     "duel": "双弈",
-    "tarot": "塔罗占卜",
+    "tarot": RITUAL_DISPLAY_NAME,
     "ai_life": "AI人生桌游",
     "detroit": "底特律：变人",
     "fishing": "AI钓鱼",

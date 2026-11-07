@@ -342,12 +342,12 @@ class PlatformTests(TemporaryStores):
                         self.assertIn(phrase, description)
 
     def test_display_name_and_chinese_guide_alias(self):
-        self.assertIn("nowhere·乌有乡（地球漫游）·", server._tool_list_games())
+        self.assertIn("nowhere·乌有乡·", server._tool_list_games())
         arguments = {"game": "乌有乡"}
         guide = server._tool_get_guide(arguments)
         self.assertEqual(guide, server._tool_get_guide({"game": "nowhere"}))
         self.assertEqual(json.loads(guide)["game"], "nowhere")
-        self.assertTrue(json.loads(guide)["guide"].startswith("# nowhere·乌有乡（地球漫游）"))
+        self.assertTrue(json.loads(guide)["guide"].startswith("# nowhere·乌有乡"))
         self.assertEqual(arguments, {"game": "乌有乡"})
 
     def test_root_mcp_path_and_bearer_override_forged_identity_and_slots(self):

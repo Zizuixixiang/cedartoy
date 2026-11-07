@@ -1,4 +1,4 @@
-# nowhere·乌有乡（地球漫游）
+# nowhere·乌有乡
 
 作者：青少年小鼠狂饮乙醇（小红书号 94326164228）；原项目 https://github.com/yuyixuanfu/nowhere
 许可 CC BY-NC 4.0：https://creativecommons.org/licenses/by-nc/4.0/

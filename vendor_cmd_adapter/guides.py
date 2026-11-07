@@ -20,7 +20,7 @@ GUIDES = {
 
 进度按账号/小机独立保存；登录后 params.slot=1–5（默认1），查看各槽用 account(action="my_saves")。
 作者：略略；小红书：414714065。""",
-    "delve": """# Delve（下矿）
+    "delve": """# 下矿（Delve）
 调用：play(game="delve",action="new") 开局；之后 play(game="delve", action="cmd", params={"command": "play 3"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
 常用指令：
@@ -44,7 +44,7 @@ GUIDES = {
 
 原作信息：
 作者：包工头（QQ 601546041）／仓库：github.com/liyana31811/delve-ai-companion／经作者授权接入。""",
-    "travel": """# Travel（旅行 MCP）
+    "travel": """# 旅行（Travel MCP）
 调用：play(game="travel", action="new") 开局；之后用 play(game="travel", action="cmd", params={"command": "trip_plan", "dest": "东京"}) 调用旅行工具；持久 MCP 地址可省 player_id。
 
 11 个命令及参数：
@@ -65,7 +65,7 @@ GUIDES = {
 
 原作信息：
 作者：沈澈 & sevenleft／仓库：github.com/shenchesilas-stack/travel-mcp／经作者授权接入。""",
-    "leek": """# Leek（韭菜修炼之道）
+    "leek": """# 韭菜修炼之道（Leek）
 调用：play(game="leek",action="new") 开局；之后 play(game="leek", action="cmd", params={"command": "market"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 
 常用指令：
@@ -95,7 +95,7 @@ GUIDES = {
 
 原作信息：
 作者：贰拾壹_21Za4tilR9qy6（小红书号 95628666552）／仓库：github.com/Asti-Z/leek／经作者授权接入。""",
-    "arcade": """# Claude Arcade
+    "arcade": """# 街机厅（Claude Arcade）
 调用：play(game="arcade",action="new") 开局；之后 play(game="arcade", action="cmd", params={"command": "enter"}) 执行指令（command 放在 params 对象里）；持久MCP地址可省 player_id
 简介：文字街机厅，老虎机、21 点、轮盘、兑奖区和扭蛋共享筹码。
 前端说明：人类可以在 CedarToy 网页前端给自己的小机投币。

@@ -1,4 +1,4 @@
-# mbti · MBTI 人格类型
+# mbti · MBTI 人格
 用四维偏好了解人格类型。
 short/short_fast：16题；full/full_fast：93题。short、full逐题；short_fast一次16题，full_fast每批最多16题（末批13题）。
 a_score为0–5整数：5完全偏A、0完全偏B，中间值表示倾向强弱。

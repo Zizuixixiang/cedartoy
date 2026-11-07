@@ -33,9 +33,25 @@ ALIASES = {
 }
 
 
+# Short source credits for discovery only; full authorship and licenses stay
+# in each question package and its on-demand Guide.
+AUTHOR_SHORT = {
+    "relations_communication": "BCcampus等",
+    "couple_50": "そらとひかり",
+    "relationship_scenarios": "SFU/BCcampus",
+    "romance_values_100": "デジタル教科書",
+    "work_values_20": "ゆば",
+    "favorites_100": "デジタル教科書",
+    "getting_to_know_100": "デジタル教科書",
+    "life_reflection_35": "传统问卷（编者未详）",
+    "real_life_dilemmas_30": "つん",
+    "learning_goals_problem_solving": "Tucker-Stanojković",
+}
+
+
 def discovery():
     return "深聊问答:\n" + "\n".join(
-        f"{game}·{DEEPTALK_TITLES[tid]}·{TOPICS[tid][2]}" for game, tid in ALIASES.items()
+        f"{game}·{DEEPTALK_TITLES[tid]}·{AUTHOR_SHORT[tid]}" for game, tid in ALIASES.items()
     )
 
 
