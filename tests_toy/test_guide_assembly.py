@@ -28,7 +28,7 @@ class GuideAssemblyTests(unittest.TestCase):
         self.assertNotRegex(guide, r"账号id:slot|81:2|target_player_id|tombstone|\.db\b|data/vendor_saves|test_sessions|test_results|命名空间")
         for contract in (
             "身份由服务端根据token确定", "自报player_id被忽略", "互相隔离",
-            "slot=1-5选择存档槽，默认1", "游客忽略slot", "永久停用",
+            "slot=1-5选择存档槽（仅detroit为1-12），默认1", "游客忽略slot", "永久停用",
             "guest_claim_code：", "guest:abc", 'claim_code="你的认领码", slot=2',
             "其他槽已有档不影响认领", "不覆盖、不删档", "认领码也不会消耗",
             "play的params中传相同slot续档", "my_saves（需token）", "human:true",
@@ -42,9 +42,9 @@ class GuideAssemblyTests(unittest.TestCase):
         "mbti enneagram dnd love ecr humanity sins_virtues bdsmtest eco ciyuwu "
         "ai_life bar leek delve travel nowhere arcade burger crucible_echoes "
         "fishing forest moonlit imitator_td memoria white_room market workkk "
-        "garden_cat camping_plaza detroit"
+        "garden_cat camping_plaza"
     ).split())
-    non_slot_guides = {"account", "duel", "tarot", "turtle_soup", "puzzle_box"}
+    non_slot_guides = {"account", "duel", "tarot", "turtle_soup", "puzzle_box", "detroit"}
 
     def test_only_slot_games_get_the_short_note_and_no_guide_has_announcements(self):
         note = server.SAVE_SLOT_GUIDE_NOTE
