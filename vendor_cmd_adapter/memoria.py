@@ -155,6 +155,58 @@ def configure_module(mod, level, cfg, level_save_dir):
             return text
 
         mod._cmd_rest = _rest_with_persisted_offset
+
+        # L3 stores combination outputs separately from scene clues. Give hint
+        # a read-only merged view; do not migrate saves or change clue counts.
+        original_hint = mod._cmd_hint
+
+        def _hint_with_generated_cards(state):
+            found = dict(state.get("clues_found", {}))
+            found.update({card["id"]: True for card in state.get("generated_cards", [])})
+            return original_hint(dict(state, clues_found=found))
+
+        mod._cmd_hint = _hint_with_generated_cards
+        original_combine = mod._cmd_combine
+
+        def _combine_without_duplicate_penalty(args, state):
+            # Preserve the author's lockout, availability checks and matching
+            # semantics. One input can match multiple outputs (handwriting/ink).
+            if not args or state.get("turn", 0) < state.get("combination_lockout_until", 0):
+                return original_combine(args, state)
+            supplied = set(args.split())
+            available = mod._get_all_available_card_ids(state)
+            generated = {card["id"] for card in state.get("generated_cards", [])}
+            recipes = mod.COMBINATION_RECIPES.values()
+            matches = [recipe for recipe in recipes
+                       if recipe["required"] <= supplied
+                       and supplied <= recipe["required"] | recipe.get("optional", set())]
+            if supplied <= available and matches and all(
+                recipe["output_card"]["id"] in generated for recipe in matches
+            ):
+                names = "、".join(recipe["output_card"]["name"] for recipe in matches)
+                return f"✅ 该组合已完成：{names}。\n\n{mod._status_bar()}"
+
+            attempts_before = state.get("combination_attempts", 0)
+            text = original_combine(args, state)
+            if state.get("combination_attempts", 0) > attempts_before:
+                # Keep the original failure/penalty/warnings; replace only its
+                # suggestion line, which otherwise recommends completed recipes.
+                pending = next((recipe for recipe in recipes
+                                if recipe["required"] <= available
+                                and recipe["output_card"]["id"] not in generated
+                                and not recipe.get("is_trap")), None)
+                guide = "💡 用 clues 查看已有线索，用 combine 查看所有可用组合配方"
+                if pending:
+                    ingredients = " ".join(sorted(pending["required"]))
+                    guide = f"💡 试试{pending['name']}：combine {ingredients}"
+                text = re.sub(
+                    r"(?m)^💡 (?:试试[^\n]*|用 clues 查看已有线索，用 combine 查看所有可用组合配方)$",
+                    lambda match: guide,
+                    text,
+                )
+            return text
+
+        mod._cmd_combine = _combine_without_duplicate_penalty
     if level in {"1", "4"} and hasattr(mod, "_dispatch"):
         original_dispatch = mod._dispatch
 
