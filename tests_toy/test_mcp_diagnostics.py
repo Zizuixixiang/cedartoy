@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -251,10 +252,14 @@ class DiagnosticTests(unittest.TestCase):
         trace=diag.start(self.sink,"edge","POST")
         trace.identify(self.db,self.token)
         before=self.sink.path.read_bytes()
+        waiting = diag.start(self.sink, "main", "POST")
         with patch.object(diag.time,"time",return_value=self.sink.deadline+1):
             self.assertIsNone(diag.start(self.sink,"edge","POST"))
             trace.finish()
             self.assertFalse(self.sink.admit("target"))
+            with patch.object(diag, "match_account") as lookup:
+                waiting.identify(self.db, self.token)
+                lookup.assert_not_called()
         self.assertEqual(self.sink.path.read_bytes(),before)
         self.assertFalse(disabled.path.exists())
 
@@ -303,3 +308,336 @@ class DiagnosticTests(unittest.TestCase):
         trace.finish()
         self.assertIsNone(self.records()[-1]["rpc_error_code"])
         self.assertNotIn(self.token,self.sink.path.read_text())
+
+    def persistent_sink(self, **kwargs):
+        self.sink = diag.Sink(self.root / "persistent.jsonl", persistent=True, account_id=7, **kwargs)
+        return self.sink
+
+    def trace(self, token=None):
+        trace = diag.start(self.sink, "main", "POST")
+        trace.identify(self.db, self.token if token is None else token)
+        return trace
+
+    def test_persistent_configuration_is_explicit_strict_and_restart_scoped(self):
+        directory = self.root / "data"
+        directory.mkdir()
+        legacy = directory / "mcp_diagnostics_activation.json"
+        config = directory / "mcp_diagnostics_config.json"
+        now = int(time.time())
+        with patch.object(diag, "ROOT", self.root):
+            self.assertEqual(diag.configuration(), {"deadline": 0})
+            legacy.write_text(json.dumps({"account_id": 7, "enabled_at": now-90000, "expires_at": now-3600}))
+            self.assertEqual(diag.configuration(), {"deadline": 0})
+            legacy.write_text(json.dumps({"account_id": 7, "enabled_at": now, "expires_at": now+86400}))
+            self.assertEqual(diag.configuration(), {"deadline": now+86400})
+            valid = {"mode": "persistent", "enabled": True, "account_id": 8}
+            config.write_text(json.dumps(valid))
+            running = diag.Sink(self.root / "configured.jsonl", **diag.configuration())
+            self.assertEqual(running.account_id, 8)
+            with patch.object(diag.time, "time", return_value=now+86400*365):
+                self.assertTrue(running.enabled())
+            invalid = [None, [], {}, {**valid, "enabled": False}, {**valid, "enabled": 1},
+                       {**valid, "mode": "always"}, {**valid, "account_id": "8"},
+                       {**valid, "account_id": True}, {**valid, "account_id": 0},
+                       {**valid, "account_id": -1}, {**valid, "account_id": 2**63},
+                       {**valid, "extra": "typo"}]
+            for record in invalid:
+                with self.subTest(config=record):
+                    config.write_text(json.dumps(record))
+                    self.assertEqual(diag.configuration(), {})  # Never fall back to active legacy.
+                    stopped = diag.Sink(self.root / "off.jsonl", **diag.configuration())
+                    with patch.object(diag, "match_account") as lookup:
+                        self.assertIsNone(diag.start(stopped, "main", "POST"))
+                        lookup.assert_not_called()
+            for raw in ('{bad', ' ' * 4097, '{"mode":"persistent","enabled":false,"enabled":true,"account_id":8}'):
+                config.write_text(raw)
+                self.assertEqual(diag.configuration(), {})
+            self.assertTrue(running.enabled())  # Config edits are applied only on restart.
+            config.unlink()
+            config.symlink_to(directory / "missing.json")
+            self.assertEqual(diag.configuration(), {})
+            config.unlink()
+            config.mkdir()
+            self.assertEqual(diag.configuration(), {})
+
+    def test_persistent_cache_limits_db_cost_and_never_logs_known_other_accounts(self):
+        self.persistent_sink()
+        other = "fixture-other-account"
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO toy_users VALUES(8,1,2,NULL,NULL,NULL,'unchanged')")
+            conn.execute("INSERT INTO ai_access_tokens VALUES(?,8,2,NULL)",
+                         (hashlib.sha256(other.encode()).hexdigest(),))
+        before = self.db.read_bytes()
+        with patch.object(diag.time, "monotonic", return_value=1000), patch.object(
+                diag, "match_account", wraps=diag.match_account) as lookup:
+            for _ in range(500):
+                self.trace().finish()
+                trace = self.trace(other)
+                self.assertFalse(trace.active)
+                trace.http_status = 500
+                trace.finish("exception")
+            self.assertEqual(lookup.call_count, 2)
+            self.assertEqual(len(self.records()), 3)  # One sampled successful request.
+            self.assertEqual({r["account_id"] for r in self.records()}, {7})
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertNotIn(self.token, repr(self.sink._cache))
+        # Changing the configured target is sufficient; no source change needed.
+        self.sink = diag.Sink(self.root / "other-target.jsonl", persistent=True, account_id=8)
+        self.assertFalse(self.trace().active)
+        self.trace(other).finish()
+        self.assertEqual({r["account_id"] for r in self.records()}, {8})
+
+    def test_persistent_rotation_and_ownership_changes_refresh_after_five_seconds(self):
+        self.persistent_sink()
+        rotated = "fixture-rotated-token"
+        with patch.object(diag.time, "monotonic", return_value=1000) as clock:
+            self.assertEqual(self.sink.identity(self.db, self.token)["identity"], "current_hash_match")
+            self.assertEqual(self.sink.identity(self.db, self.legacy)["identity"], "current_hash_match")
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("UPDATE ai_access_tokens SET revoked_at_epoch=1")
+                conn.execute("UPDATE toy_users SET ai_token_version=3")
+                conn.execute("INSERT INTO ai_access_tokens VALUES(?,7,3,NULL)",
+                             (hashlib.sha256(rotated.encode()).hexdigest(),))
+            clock.return_value = 1004
+            cached = self.sink.identity(self.db, self.token)
+            self.assertEqual(cached["identity"], "current_hash_match")
+            self.assertEqual(cached["identity_age_ms"], 4000)
+            clock.return_value = 1005
+            self.assertEqual(self.sink.identity(self.db, self.token)["identity"], "revoked")
+            self.assertEqual(self.sink.identity(self.db, self.legacy)["identity"], "generation_mismatch")
+            self.assertEqual(self.sink.identity(self.db, rotated)["identity"], "current_hash_match")
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("UPDATE toy_users SET deletion_requested_at_epoch=1")
+            clock.return_value = 1010
+            self.assertEqual(self.sink.identity(self.db, rotated)["identity"], "pending_deletion")
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("INSERT INTO toy_users VALUES(8,1,3,NULL,NULL,NULL,'unchanged')")
+                conn.execute("UPDATE ai_access_tokens SET user_id=8")
+            clock.return_value = 1015
+            self.assertFalse(self.trace(rotated).active)
+
+    def test_persistent_lookup_flood_is_bounded_and_target_refresh_reserved(self):
+        self.persistent_sink()
+        with patch.object(diag.time, "monotonic", return_value=1000) as clock, patch.object(
+                diag, "match_account", wraps=diag.match_account) as lookup:
+            self.trace().finish()
+            for n in range(1000):
+                self.trace("fixture-unknown-" + str(n)).finish("exception")
+            self.assertEqual(lookup.call_count, 60)
+            self.assertIsNone(self.sink.identity(self.db, "fixture-new-rotated"))
+            clock.return_value = 1005
+            self.assertEqual(self.sink.identity(self.db, self.token)["account_id"], 7)
+            self.assertEqual(lookup.call_count, 61)
+            for _ in range(11):
+                self.assertTrue(self.sink.budget("target_refresh", 12))
+            clock.return_value = 1010
+            self.assertIsNone(self.sink.identity(self.db, self.token))  # No expired fallback.
+            self.assertEqual(lookup.call_count, 61)
+            unknown = [r for r in self.records() if r["scope"] == "unattributed"]
+            self.assertEqual(len(unknown), 3)
+            self.assertFalse(any("account_id" in r for r in unknown))
+
+    def test_persistent_cache_memory_bound_and_nonblocking_single_flight(self):
+        self.persistent_sink()
+        with patch.object(diag.time, "monotonic", return_value=1000) as clock, patch.object(
+                diag, "match_account", return_value={"identity": "current_hash_match", "account_id": 8}):
+            # Populate beyond the cap across many windows, without real DB I/O.
+            for n in range(700):
+                clock.return_value = 1000 + n * 6
+                self.sink.identity(self.db, "fixture-" + str(n))
+            self.assertEqual(len(self.sink._cache), diag.CACHE_SIZE)
+        entered, release = threading.Event(), threading.Event()
+        def blocked(*args):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return {"identity": "current_hash_match", "account_id": 7}
+        with patch.object(diag, "match_account", side_effect=blocked) as lookup, ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(self.sink.identity, self.db, self.token)
+            try:
+                self.assertTrue(entered.wait(5))
+                self.assertIsNone(self.sink.identity(self.db, self.legacy))
+                self.assertEqual(lookup.call_count, 1)
+            finally:
+                release.set()
+            self.assertEqual(pending.result()["account_id"], 7)
+
+    def test_persistent_unsampled_errors_slow_threshold_and_phase_evidence(self):
+        self.persistent_sink()
+        with patch.object(diag.time, "monotonic", return_value=1000):
+            self.trace().finish()  # Consume entry sample, not the anomaly budget.
+            baseline = len(self.records())
+            for outcome, status, payload, elapsed, reasons in (
+                    ("completed", 200, {"result": {}}, 4999, []),
+                    ("completed", 200, {"result": {}}, 5000, ["slow"]),
+                    ("completed", 429, {}, 0, ["http_error"]),
+                    ("completed", 200, {"error": {"code": -32601, "message": self.token}}, 0, ["rpc_error"]),
+                    ("completed", 200, {"result": {"isError": True}}, 0, ["tool_error"]),
+                    ("completed", 502, {"error": "private"}, 0, ["http_error", "transport_error"]),
+                    ("exception", None, {}, 0, ["exception"]),
+                    ("disconnected", None, {}, 0, ["disconnected"]),
+                    ("cancelled", None, {}, 0, ["cancelled"])):
+                trace = self.trace()
+                self.assertFalse(trace.sampled)
+                trace.payload({"method": "tools/call", "params": {"private": self.token}})
+                trace.emit("proxy_dispatch")
+                trace.http_status = status
+                trace.response(payload)
+                trace.started -= elapsed / 1000
+                trace.finish(outcome)
+                trace.finish(outcome)  # No duplicate terminal records.
+                if reasons:
+                    baseline += 1
+                    record = self.records()[-1]
+                    self.assertEqual(record["reasons"], reasons)
+                    self.assertFalse(record["entry_sampled"])
+                    self.assertIn("parsed", record["phases_ms"])
+                    self.assertIn("proxy_dispatch", record["phases_ms"])
+                    self.assertEqual(record["stage"], outcome)
+                self.assertEqual(len(self.records()), baseline)
+            for secret in (self.token, hashlib.sha256(self.token.encode()).hexdigest(), "private", str(self.db)):
+                self.assertNotIn(secret, self.sink.path.read_text())
+
+    def test_persistent_sampling_anomaly_and_unknown_budgets_are_independent(self):
+        self.persistent_sink()
+        with patch.object(diag.time, "monotonic", return_value=1200) as clock:
+            for _ in range(100):
+                self.trace("").finish("exception")
+            for _ in range(100):
+                self.trace().finish("exception")
+            target = [r for r in self.records() if r["scope"] == "target"]
+            self.assertEqual(len(target), 3 + 12)  # One entry group plus independent anomalies.
+            self.assertEqual(len(self.records()) - len(target), 3)
+            # Anomaly saturation cannot suppress a sampled in-flight marker.
+            clock.return_value = 1210
+            trace = self.trace()
+            self.assertTrue(trace.sampled)
+            trace.payload({"method": "initialize"})
+            trace.emit("proxy_dispatch")
+            self.assertEqual(self.records()[len(target) + 3]["stage"], "proxy_dispatch")
+            self.assertNotIn("completed", [r["stage"] for r in self.records() if r["request_id"] == trace.fields["request_id"]])
+            self.assertFalse(self.trace().sampled)
+            clock.return_value = 1499
+            self.assertFalse(self.trace("").active)
+            clock.return_value = 1500
+            self.assertTrue(self.trace("").active)
+
+    def test_persistent_rotation_permissions_record_size_and_io_backoff(self):
+        self.persistent_sink(max_bytes=2048)
+        with patch.object(diag.time, "monotonic", return_value=1200) as clock:
+            for n in range(120):
+                clock.return_value = 1200 + n * 10
+                self.trace().finish("exception")
+                self.trace("").finish("exception")
+            paths = list(self.root.glob("persistent.jsonl*"))
+            self.assertEqual(len(paths), 6)
+            self.assertLessEqual(sum(p.stat().st_size for p in paths), 6 * 2048)
+            for path in paths:
+                self.assertLessEqual(path.stat().st_size, 2048)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                for line in path.read_text().splitlines():
+                    json.loads(line)
+            before = self.sink.path.read_bytes()
+            self.sink.write({"scope": "target", "oversize": "x" * 2048})
+            self.assertEqual(self.sink.path.read_bytes(), before)
+            with patch.object(diag.os, "open", side_effect=OSError("private-file-error")) as opened:
+                for n in range(4):
+                    clock.return_value = 3000 + n * 10
+                    self.trace().finish("exception")
+                self.assertEqual(opened.call_count, 2)  # At 0 and 30s, never per stage.
+
+    def test_persistent_delayed_finishes_and_write_contention_remain_bounded(self):
+        self.persistent_sink()
+        with patch.object(diag.time, "monotonic", return_value=1200) as clock:
+            pending = []
+            for n in range(6):
+                clock.return_value = 1200 + n * 10
+                pending.append(self.trace())
+            before = len(self.records())
+            for n in range(6):
+                clock.return_value = 1260 + n * 10
+                trace = self.trace()
+                for stage in diag.STAGES:
+                    trace.emit(stage)
+                trace.finish()
+            for trace in pending:
+                trace.finish()
+            self.assertEqual(len(self.records()) - before, 48)
+            for _ in range(20):
+                self.trace().finish("exception")
+            self.assertEqual(len(self.records()) - before, 60)
+            # A stuck writer does not hold rate/cache locks or wait other calls.
+            clock.return_value = 1320
+            with self.sink._write_lock, patch.object(diag.os, "open") as opened:
+                self.trace().finish("exception")
+                opened.assert_not_called()
+
+    def test_persistent_main_and_gateway_keep_existing_transport_and_privacy_contracts(self):
+        for n, check in enumerate((self.test_main_initialize_no_authentication_or_active_time_write,
+                                   self.test_main_body_read_exception_records_entered_and_failure,
+                                   self.test_real_gateway_proxy_error_and_rpc_response)):
+            with self.subTest(check=check.__name__):
+                self.sink = diag.Sink(self.root / ("integration-%s.jsonl" % n), persistent=True, account_id=7)
+                check()
+
+    def test_persistent_main_http_errors_survive_success_sampling(self):
+        self.persistent_sink()
+        with patch.object(diag, "MAIN_SINK", self.sink), patch.object(server, "TURTLE_DB_PATH", self.db), patch.object(
+                server, "_request_rate_limit_identity", return_value="fixture"), patch.object(
+                server, "_check_request_rate_limit", return_value=False):
+            for raw, status in ((b"{bad", 400), (b'{"method":"notifications/initialized"}', 202),
+                                (b'{"method":"tools/list","id":1}', 429)):
+                before = len(self.records())
+                handler = self.handler(raw)
+                handler.do_POST()
+                handler.send_response.assert_called_once_with(status)
+                if status == 202:
+                    self.assertEqual(len(self.records()), before)
+                else:
+                    self.assertEqual(self.records()[-1]["http_status"], status)
+                    self.assertIn("http_error", self.records()[-1]["reasons"])
+            handler = self.handler(method="GET")
+            handler.headers["Accept"] = "text/event-stream"
+            handler.do_GET()
+            self.assertEqual(self.records()[-1]["http_status"], 405)
+
+    def test_persistent_db_and_log_io_failure_does_not_change_main_response(self):
+        self.persistent_sink()
+        before = self.db.read_bytes()
+        with patch.object(diag, "MAIN_SINK", self.sink), patch.object(server, "TURTLE_DB_PATH", self.db), patch.object(
+                diag.sqlite3, "connect", side_effect=sqlite3.OperationalError("private-db-error")), patch.object(
+                diag.os, "open", side_effect=OSError("private-log-error")), patch.object(
+                server, "_request_rate_limit_identity", return_value="fixture"), patch.object(
+                server, "_check_request_rate_limit", return_value=True):
+            handler = self.handler()
+            handler.do_POST()
+            self.assertIn("result", json.loads(handler.wfile.getvalue()))
+            handler.send_response.assert_called_once_with(200)
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertEqual(self.records(), [])
+
+    def test_persistent_edge_skips_unselected_unknown_inspection_and_preserves_failures(self):
+        self.persistent_sink()
+        async def run():
+            async def app(scope, receive, send):
+                trace = scope.get("mcp_diagnostic")
+                if trace is not None:
+                    trace.payload({"method": "initialize"})
+                await send({"type": "http.response.start", "status": 200})
+                await send({"type": "http.response.body", "body": b"unchanged"})
+            wrapper = diag.Middleware(app, sink=self.sink, db_path=self.db, candidate=lambda path: True)
+            async def send(message):
+                pass
+            for _ in range(2):
+                scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": []}
+                await wrapper(scope, None, send)
+            self.assertNotIn("mcp_diagnostic", scope)
+            for error, stage in ((asyncio.CancelledError(), "cancelled"),
+                                 (RuntimeError("private"), "exception")):
+                async def failing(scope, receive, send):
+                    raise error
+                wrapper.app = failing
+                scope = {"type": "http", "method": "POST", "path": "/" + self.token, "headers": []}
+                with self.assertRaises(type(error)):
+                    await wrapper(scope, None, send)
+                self.assertEqual([r for r in self.records() if r["scope"] == "target"][-1]["stage"], stage)
+        asyncio.run(run())
