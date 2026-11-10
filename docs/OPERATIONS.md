@@ -26,6 +26,8 @@ supervisorctl -c /etc/supervisor/supervisord.conf restart cedartoy
 
 主进程 stdout/stderr 为 `/var/log/cedartoy.out.log`、`/var/log/cedartoy.err.log`。根 `server.log` 是历史日志，其中的 `Address already in use` 不能证明当前重启失败。
 
+花园网页限时性能诊断、计时口径和静态缓存边界见 [花园网页性能](GARDEN_WEB_PERFORMANCE.md)。
+
 ## 账号与查档
 
 1. 从实际 `TURTLE_SOUP_DB`（默认 `turtle-soup/backend/turtle_soup.db`）查 `toy_users` 与 `user_bindings`，确认账号 ID、类型和绑定，必要时核对历史大小写不同的账号及改名记录。

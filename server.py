@@ -7986,6 +7986,9 @@ a{{color:#c9afff}}
         ))
 
     def send_response(self, code, message=None):
+        garden_trace = getattr(self, "_garden_trace", None)
+        if garden_trace is not None:
+            garden_trace.status = code
         trace = getattr(self, "_mcp_diagnostic", None)
         if trace is not None:
             trace.http_status = code
@@ -8600,6 +8603,18 @@ a{{color:#c9afff}}
         }
 
     def _handle_garden_cat_proxy(self, method):
+        # Starts at this handler, NOT at socket acceptance or Cloudflare ingress.
+        from cedar_backend import garden_diagnostics
+        trace = garden_diagnostics.Trace(self.headers.get("X-Garden-Request-Id"),
+                                        self.path.split("?", 1)[0][len("/garden-cat"):])
+        self._garden_trace = trace
+        try:
+            self._handle_garden_cat_proxy_inner(method)
+        finally:
+            trace.finish(logger)
+            self._garden_trace = None
+
+    def _handle_garden_cat_proxy_inner(self, method):
         full = self.path
         path = full.split("?", 1)[0]
         query_string = full.partition("?")[2]
@@ -8624,7 +8639,9 @@ a{{color:#c9afff}}
                 self._send_json({"error": "未登录，请先在首页登录", "code": 401}, status=401)
                 return
             requested_player = (params.get("player") or [""])[0]
+            self._garden_trace.identify(int(user["id"]))
             target = self._garden_cat_bound_target(user, requested_player)
+            self._garden_trace.mark("binding_ms")
             if not target:
                 self._send_json({"error": "你没有绑定这只小机或槽位无效", "code": 403}, status=403)
                 return
@@ -8653,23 +8670,33 @@ a{{color:#c9afff}}
         """Bound, authenticated startup telemetry; never proxy to game/save APIs."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if self.headers.get("Transfer-Encoding") or not 0 < length <= 2048:
+            if self.headers.get("Transfer-Encoding") or not 0 < length <= 4096:
                 raise ValueError("invalid length")
             report = self._read_json_body()
+            if not isinstance(report, dict):
+                raise ValueError("invalid report")
             request_id = report.get("request_id")
             if not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id):
                 raise ValueError("invalid id")
             event = report.get("event")
             phase = report.get("phase")
-            if event not in ("page_start", "ready", "error", "timeout"):
+            if event not in ("page_start", "ready", "error", "timeout", "request"):
                 raise ValueError("invalid event")
             if phase not in ("script_load", "script_start", "catalog_request",
-                             "catalog_ready", "state_request", "ready"):
+                             "catalog_ready", "state_request", "ready", "request"):
                 raise ValueError("invalid phase")
         except (TypeError, ValueError):
             self.close_connection = True
             self._send_json({"error": "invalid diagnostic"}, status=400)
             return
+
+        from cedar_backend import garden_diagnostics
+        if event == "request":
+            garden_diagnostics.log_browser(logger, int(user["id"]), report)
+            self._send_json({"ok": True}, extra_headers={"Cache-Control": "no-store"})
+            return
+        if "resources" in report:
+            garden_diagnostics.log_browser(logger, int(user["id"]), report)
 
         def number(key):
             value = report.get(key)
@@ -8710,18 +8737,30 @@ a{{color:#c9afff}}
         except ValueError:
             length = 0
         body = self.rfile.read(length) if length > 0 else None
+        trace = getattr(self, "_garden_trace", None)
+        if trace:
+            trace.mark("body_read_ms")
         headers = satellite_proxy.garden_cat_request_headers(
             self.headers, hop_by_hop_headers=HOP_BY_HOP_HEADERS,
             forwarded_for=self.client_address[0] if self.client_address else "unknown",
             prefix=getattr(self, "_gc_prefix_override", "/garden-cat"),
             target=target, human_name=human_name,
         )
+        if trace and trace.active:
+            headers["X-Garden-Request-Id"] = trace.request_id
+            headers["X-Garden-Diagnostic-Until"] = str(trace.until)
 
         conn = http.client.HTTPConnection(GARDEN_CAT_HOST, GARDEN_CAT_PORT, timeout=60)
         try:
             conn.request(method, request_target, body=body, headers=headers)
+            if trace:
+                trace.mark("upstream_send_ms")
             resp = conn.getresponse()
+            if trace:
+                trace.mark("upstream_headers_ms")
             raw = resp.read()
+            if trace:
+                trace.mark("upstream_body_ms")
             status, reason = resp.status, resp.reason
             resp_headers = resp.getheaders()
         except Exception as exc:
@@ -8730,8 +8769,12 @@ a{{color:#c9afff}}
         finally:
             conn.close()
         _record_web_game_activity("garden_cat", method, upstream_path, status, raw, activity_user, body)
+        if trace:
+            trace.mark("activity_ms")
         try:
             self.send_response(status, reason)
+            if trace and trace.active:
+                self.send_header("X-Garden-Request-Id", trace.request_id)
             for key, value in resp_headers:
                 lower = key.lower()
                 if lower in HOP_BY_HOP_HEADERS or lower == "content-length":
@@ -8747,7 +8790,11 @@ a{{color:#c9afff}}
             self.end_headers()
             if self.command != "HEAD" and status != 304:
                 self.wfile.write(raw)
+            if trace:
+                trace.mark("response_write_ms")
         except BrokenPipeError:
+            if trace and trace.active:
+                trace.fields["disconnected"] = True
             pass
 
     # ── Camping Plaza 人类入口（/camping-plaza/* → 127.0.0.1:8773）─────────
