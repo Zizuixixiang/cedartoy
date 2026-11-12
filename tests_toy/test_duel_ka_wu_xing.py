@@ -19,7 +19,7 @@ from app.games import GAMES
 
 
 OPTIONS = dict(double_hu=True, gang_discard_double=True, liang_liability=True,
-               consecutive_kong_double=True, horse_count=1, piao=3, joker='red', rounds=4)
+               consecutive_kong_double=True, horse_count=1, piao=3, joker='red')
 
 
 class KaWuXingRootTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class KaWuXingRootTests(unittest.TestCase):
         for option in OPTIONS:
             self.assertIn(option, guide)
         self.assertNotIn('明确不支持', guide)
-        self.assertIn('next_round:', guide)
+        self.assertNotIn('next_round:', guide)
         self.assertNotIn('kong_ledger', server.DUEL_GUIDE)
         for tools in (server._PLATFORM_TOOLS, server._KELIVO_PLATFORM_TOOLS):
             serialized = json.dumps(tools)
@@ -132,6 +132,8 @@ class KaWuXingRootTests(unittest.TestCase):
             current = framework.project_room_for_viewer(room, pid)
             self.assertEqual(restored['private_state'], current['private_state'])
             self.assertEqual(restored['game_options'], OPTIONS)
+            # Establish v2 context before explicitly testing standalone recovery.
+            self.rpc('state', {'room_id': room['room_id'], 'wait': False}, token=token)
             snapshot = self.rpc('state', {'room_id': room['room_id'], 'full_state': True,
                                           'wait': False}, token=token)['snapshot']
             self.assertEqual(snapshot['private_state']['hand'], current['private_state']['hand'])
@@ -166,7 +168,7 @@ class KaWuXingRootTests(unittest.TestCase):
 
     def test_invalid_options_are_rejected_by_authenticated_root_without_rooms(self):
         for options in ({'double_hu': 1}, {'double_hu': 'true'}, {'piao': True},
-                        {'piao': 2}, {'horse_count': 2}, {'rounds': 2},
+                        {'piao': 2}, {'horse_count': 2}, {'rounds': 2}, {'rounds': 4}, {'rounds': 8},
                         {'joker': 'wild'}, {'unexpected': True}):
             for action in ('new', 'invite'):
                 with self.subTest(options=options, action=action):
@@ -184,7 +186,45 @@ class KaWuXingRootTests(unittest.TestCase):
         with database.connect() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM rooms').fetchone()[0], 0)
 
-    def test_four_rounds_root_reconnect_and_wallet_is_settled_only_once(self):
+    def test_web_creation_and_invitation_reject_multihand_before_writes(self):
+        import base64
+        machines = base64.urlsafe_b64encode(json.dumps([
+            {'id': '202', 'name': 'one'}, {'id': '303', 'name': 'two'}
+        ]).encode()).decode().rstrip('=')
+        headers = {'X-Duel-Human-Player': '101', 'X-Duel-Bound-Ais': machines}
+        for rounds in (4, 8):
+            for endpoint in ('/api/rooms', '/api/invites'):
+                with self.subTest(rounds=rounds, endpoint=endpoint):
+                    response = self.http('POST', endpoint, headers=headers, json={
+                        'player_id': '101', 'ai_players': ['202', '303'] if endpoint == '/api/rooms' else [],
+                        'game_type': 'ka_wu_xing', 'target_player_count': 3,
+                        'game_options': {**OPTIONS, 'rounds': rounds}})
+                    self.assertEqual(response.status_code, 400, response.text)
+                    self.assertIn('rounds', response.text)
+        with database.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM rooms').fetchone()[0], 0)
+
+    def test_old_single_hand_save_keeps_options_and_can_finish(self):
+        room = self.create_three_ai_room({**OPTIONS, 'rounds': 1})
+        self.assertEqual(room['game_options'], OPTIONS)
+        state = room['board_state']
+        state['options']['rounds'] = 1
+        state.update(round_number=1, round_results=[], cumulative_scores=dict.fromkeys(self.tokens, 0))
+        with database.write_transaction() as conn:
+            conn.execute('UPDATE rooms SET board_state=? WHERE room_id=?', (json.dumps(state), room['room_id']))
+        loaded = self.fresh_process_projection(room, room['current_player_id'])
+        self.assertEqual(loaded['game_options'], OPTIONS)
+        self.assertNotIn('cumulative_scores', loaded['board_state'])
+        move = GAMES['ka_wu_xing'].choose_local_npc_action(state, {'player_id': room['current_player_id']}, room['participants'])
+        self.rpc('move', {'room_id': room['room_id'], 'revision': room['revision'], 'move': move},
+                 token=self.tokens[room['current_player_id']])
+        self.rpc('resign', {'room_id': room['room_id']})
+        finished = framework.get_room(room['room_id'])
+        self.assertEqual(finished['status'], 'finished')
+        for pid in self.tokens:
+            self.assertEqual(framework.project_room_for_viewer(finished, pid)['private_state']['legal_actions'], [])
+
+    def test_single_hand_root_reconnect_and_wallet_is_settled_only_once(self):
         room = self.create_three_ai_room({**OPTIONS, 'joker': 'none'}, stake=1)
         rid = room['room_id']
         order = room['board_state']['participant_order']
@@ -194,49 +234,37 @@ class KaWuXingRootTests(unittest.TestCase):
             for pid, balance in zip(losers, (1, 0)):
                 wallet = chips._ensure_wallet(conn, 'ai', pid)
                 conn.execute('UPDATE chip_wallets SET balance=? WHERE id=?', (balance, wallet['id']))
-            ledger_before = conn.execute('SELECT COUNT(*) FROM chip_ledger').fetchone()[0]
-        for number in range(1, 5):
+        room = framework.get_room(rid)
+        state = room['board_state']
+        # A deterministic exhaustive-draw fixture in the disposable room:
+        # move remaining wall tiles into public discards, preserving all 84
+        # physical tile IDs. The lifecycle, authenticated actions, persistence
+        # and settlement still pass through the real root and Duel handlers.
+        state['discards'][dealer].extend(state['wall'])
+        state['wall'] = []
+        state['revealed'] = {p: {'hand': list(state['hands'][p]), 'waits': ['J1']}
+                             for p in losers}
+        with database.write_transaction() as conn:
+            conn.execute('UPDATE rooms SET board_state=? WHERE room_id=?', (json.dumps(state), rid))
+        for _ in range(4):
             room = framework.get_room(rid)
-            state = room['board_state']
-            # A deterministic exhaustive-draw fixture in the disposable room:
-            # move remaining wall tiles into public discards, preserving all 84
-            # physical tile IDs. The lifecycle, authenticated actions, persistence
-            # and settlement still pass through the real root and Duel handlers.
-            state['discards'][dealer].extend(state['wall'])
-            state['wall'] = []
-            state['revealed'] = {p: {'hand': list(state['hands'][p]), 'waits': ['J1']}
-                                 for p in losers}
-            with database.write_transaction() as conn:
-                conn.execute('UPDATE rooms SET board_state=? WHERE room_id=?', (json.dumps(state), rid))
-            for _ in range(4):
-                room = framework.get_room(rid)
-                if room['board_state']['phase'] in ('round_end', 'finished'):
-                    break
-                pid = room['current_player_id']
-                legal = GAMES['ka_wu_xing'].legal_actions_for(room['board_state'], pid)
-                chosen = next(a for a in legal if a['kind'] in ('discard', 'pass'))
-                self.rpc('move', {'room_id': rid, 'revision': room['revision'],
-                                  'move': {'action': 'act', 'action_id': chosen['action_id']}},
-                         token=self.tokens[pid], auth='bearer_token')
-            room = framework.get_room(rid)
-            expected = {p: (-number if p in losers else 2 * number) for p in order}
-            self.assertEqual(room['board_state']['cumulative_scores'], expected)
-            self.assertEqual(len(room['board_state']['round_results']), number)
-            if number < 4:
-                self.assertEqual(room['status'], 'playing')
-                self.assertEqual(room['board_state']['phase'], 'round_end')
-                with database.connect() as conn:
-                    self.assertEqual(conn.execute('SELECT COUNT(*) FROM chip_ledger').fetchone()[0], ledger_before)
-                pid = room['current_player_id']
-                resumed = self.fresh_process_projection(room, pid)
-                self.assertEqual(resumed['board_state']['cumulative_scores'], expected)
-                self.assertEqual(resumed['private_state'], framework.project_room_for_viewer(room, pid)['private_state'])
-                action = resumed['private_state']['legal_actions'][0]
-                self.assertTrue(action['action_id'].startswith('next_round:'))
-                args = {'room_id': rid, 'revision': room['revision'],
-                        'move': {'action': 'act', 'action_id': action['action_id']}}
-                self.rpc('move', args, token=self.tokens[pid])
-                self.rpc('move', args, token=self.tokens[pid], expect_ok=False)
+            if room['board_state']['phase'] in ('round_end', 'finished'):
+                break
+            pid = room['current_player_id']
+            legal = GAMES['ka_wu_xing'].legal_actions_for(room['board_state'], pid)
+            chosen = next(a for a in legal if a['kind'] in ('discard', 'pass'))
+            self.rpc('move', {'room_id': rid, 'revision': room['revision'],
+                              'move': {'action': 'act', 'action_id': chosen['action_id']}},
+                     token=self.tokens[pid], auth='bearer_token')
+        room = framework.get_room(rid)
+        expected = {p: (-1 if p in losers else 2) for p in order}
+        self.assertNotIn('cumulative_scores', room['board_state'])
+        self.assertNotIn('round_results', room['board_state'])
+        resumed = self.fresh_process_projection(room, dealer)
+        self.assertEqual(resumed['private_state']['legal_actions'], [])
+        self.rpc('move', {'room_id': rid, 'revision': room['revision'],
+                          'move': {'action': 'act', 'action_id': 'next_round:1'}},
+                 token=self.tokens[dealer], expect_ok=False)
         self.assertEqual(room['status'], 'finished')
         self.assertEqual(room['result']['requested_settlement_deltas'], expected)
         actual = {dealer: 1, losers[0]: -1, losers[1]: 0}
