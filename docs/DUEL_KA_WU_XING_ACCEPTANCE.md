@@ -1,5 +1,7 @@
 # 主站卡五星接入交接（2026-11-04）
 
+> 本文记录2026-11-04阶段的验收快照；现行可选房规与完整玩法见 [卡五星 Guide](../vendor/duel/docs/KA_WU_XING.md)。
+
 工作区 `/tmp/cedartoy-kawuxing-20261104`，分支 `feat/kawuxing-platform-20261104`。未commit/push/部署。
 配套引擎 `/tmp/cedarduet-kawuxing-20261104`，完整功能、房规、未完成项与游戏文件清单见该仓库 `docs/KA_WU_XING_ACCEPTANCE.md`。
 

@@ -534,6 +534,10 @@ def _prepare_duel_payload(arguments, trusted_opponent_id, force_opponent, truste
         allowed_fields = {"action", "player_id"} | action_fields[action]
     if action in {"new", "invite"} and arguments.get("game_type") == "liars_dice":
         allowed_fields.add("move")  # Room-local rules; validated by the dice plugin.
+    if "game_options" in arguments:
+        if action not in {"new", "invite"} or arguments.get("game_type") != "ka_wu_xing":
+            raise _McpError(-32602, "game_options 仅用于创建卡五星房间，房规开局后不可修改")
+        allowed_fields.add("game_options")
     payload = {
         key: value
         for key, value in arguments.items()
