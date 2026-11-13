@@ -9,7 +9,7 @@ import secrets
 import time
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from auth_utils import hash_password
 from room_access import require_room_access
@@ -69,7 +69,7 @@ class PlayBody(BaseModel):
     style: str | None = None
     note_id: int | None = None
     log_id: int | None = None
-    log_limit: int | None = None
+    log_limit: int | None = None  # status pagination only
     accept: bool | None = None
     # Retained only to identify and reject obsolete ask calls.
     auto_hint_log_id: int | None = None
@@ -80,12 +80,26 @@ class PlayBody(BaseModel):
     confirm_hint: bool | None = None
     confirm: bool | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_action_log_limit(cls, data):
+        # Reject explicit presence (even null/invalid values) before field parsing.
+        # extra="allow" must never silently accept this obsolete action option.
+        if isinstance(data, dict) and data.get("action") in ("ask", "guess") and "log_limit" in data:
+            detail = (
+                "ask 不支持 log_limit；共享增量记录始终全部返回，不能关闭或截断。"
+                if data["action"] == "ask" else
+                "guess 不支持 log_limit；猜底结果不附带历史，请用 status 查看。"
+            )
+            raise HTTPException(status_code=400, detail=detail)
+        return data
+
 
 @router.post("/play")
 async def play(body: PlayBody):
     # Validate before authentication/gameplay can mutate state or call the judge.
-    if body.log_limit is not None and body.log_limit < 0:
-        raise HTTPException(status_code=400, detail="log_limit 不能为负数")
+    if body.log_limit is not None and body.log_limit <= 0:
+        raise HTTPException(status_code=400, detail="log_limit 必须为正整数，不能用 0 关闭共享记录；省略则返回完整历史。")
     if body.game != "turtle_soup":
         raise HTTPException(status_code=404, detail="未知游戏")
     if not body.action:
@@ -324,7 +338,7 @@ async def play(body: PlayBody):
             payload,
             body.room_id,
             previous_own_log["id"] if previous_own_log else None,
-            body.log_limit,
+            None,
             key="logs_since_last_own_action",
             exclude_log_ids=(payload["id"],),
             player_id=player["id"],
@@ -346,17 +360,7 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
-        previous_own_log = await _previous_own_public_log(body.room_id, player["id"]) if body.log_limit is not None else None
-        payload = await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 3000)), player)
-        # Preserve guess's existing no-history default and result_log contract.
-        if body.log_limit is not None:
-            await _attach_log_context(
-                payload, body.room_id,
-                previous_own_log["id"] if previous_own_log else None,
-                body.log_limit, key="logs_since_last_own_action", player_id=player["id"],
-                exclude_log_ids=tuple(row["id"] for row in (payload, payload.get("result_log", {})) if "id" in row),
-            )
-        return payload
+        return await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 3000)), player)
     if body.action == "hint_respond":
         raise HTTPException(status_code=400, detail="自动提示改用 view_auto_hint(room_id, log_id)；主动提示直接 hint_request(room_id) 返回。")
     if body.action == "view_auto_hint":
@@ -531,7 +535,7 @@ async def _attach_log_context(
     player_id: int | None = None,
 ) -> None:
     rows, truncated = await _room_logs_after(room_id, after_log_id, log_limit, exclude_log_ids)
-    # A small/zero history window must not consume or lose hint notifications.
+    # A small status history window must not consume or lose hint notifications.
     # Read only unseen hints, never the omitted general history or hint secrets.
     pending = []
     if player_id is not None:
@@ -564,10 +568,8 @@ async def _room_logs_after(
     room_id: str, after_log_id: int | None, log_limit: int | None,
     exclude_log_ids: tuple[int, ...] = (),
 ) -> tuple[list[dict], bool]:
-    if log_limit is not None and log_limit < 0:
-        raise HTTPException(status_code=400, detail="log_limit 不能为负数")
-    if log_limit == 0:
-        return [], False
+    if log_limit is not None and log_limit <= 0:
+        raise HTTPException(status_code=400, detail="log_limit 必须为正整数，不能用 0 关闭共享记录；省略则返回完整历史。")
     params: list = [room_id]
     after_clause = ""
     if after_log_id is not None:

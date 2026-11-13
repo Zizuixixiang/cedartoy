@@ -218,29 +218,52 @@ class TurtleMcpTests(unittest.TestCase):
                         self.assertNotIn('include_finished', payload)
                     self.assertEqual(result, rows)
 
-    def test_log_limit_is_forwarded_without_expanding_root_schema(self):
+    def test_status_pagination_is_forwarded_without_expanding_root_schema(self):
         response = Mock(status_code=200)
         response.json.return_value = {'logs': []}
         with patch.object(server.httpx, 'post', return_value=response) as post:
-            for action in ['ask', 'guess', 'status']:
-                for limit in [0, 2, 100]:
-                    for identity in [{'path_token': 'ai-a'}, {'bearer_token': 'ai-b'}]:
-                        self.call('play', {'game': 'turtle_soup', 'action': action,
-                                          'params': {'room_id': 'ROOM', 'content': '问题', 'log_limit': limit}}, **identity)
-                        self.assertEqual(post.call_args.kwargs['json']['log_limit'], limit)
+            for limit in [2, 100]:
+                for identity in [{'path_token': 'ai-a'}, {'bearer_token': 'ai-b'}]:
+                    self.call('play', {'game': 'turtle_soup', 'action': 'status',
+                                      'params': {'room_id': 'ROOM', 'log_limit': limit}}, **identity)
+                    self.assertEqual(post.call_args.kwargs['json']['log_limit'], limit)
         schema = server._handle_root_mcp({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
         play = next(t for t in schema['result']['tools'] if t['name'] == 'play')
         self.assertNotIn('log_limit', play['inputSchema']['properties'])
         self.assertNotIn('log_limit', play['inputSchema']['properties']['params']['properties'])
 
+    def test_unsupported_log_limits_reach_backend_and_errors_reach_clients(self):
+        for action, limits in [('ask', [0, 2, None]), ('guess', [0, 2, None]), ('status', [0])]:
+            message = (f'{action} 不支持 log_limit' if action != 'status'
+                       else 'log_limit 必须为正整数，不能用 0 关闭共享记录')
+            response = Mock(status_code=400)
+            response.json.return_value = {'detail': message}
+            for identity in [{'path_token': 'ai-a'}, {'bearer_token': 'ai-b'}]:
+                for ua in ['', 'openai-mcp/1.0.0']:
+                    for limit in limits:
+                        with self.subTest(action=action, limit=limit, identity=identity, ua=ua):
+                            with patch.object(server.httpx, 'post', return_value=response) as post:
+                                rpc = server._handle_root_mcp({
+                                    'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                                    'params': {'name': 'play', 'arguments': {
+                                        'game': 'turtle_soup', 'action': action,
+                                        'params': {'room_id': 'ROOM', 'content': '问题', 'log_limit': limit},
+                                    }},
+                                }, user_agent=ua, **identity)
+                            # Do not silently drop the obsolete field before backend validation.
+                            self.assertIn('log_limit', post.call_args.kwargs['json'])
+                            self.assertEqual(post.call_args.kwargs['json']['log_limit'], limit)
+                            self.assertTrue(rpc['result']['isError'])
+                            self.assertIn(message, rpc['result']['content'][0]['text'])
+
     def test_hint_reveal_guide_and_log_id_schema(self):
         guide = self.call('get_guide', {'game': 'turtle_soup'})
         expected = {
-            'ask': 'room_id, content, log_limit(可选) -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；返回本次结果和自上次自身操作以来的全部共享日志文本 logs_since_last_own_action（逐行“玩家：问题→判定”，不重复本次判定或 room）。',
+            'ask': 'room_id, content -> 向裁判提出海龟汤是/否问题，不是群聊发言；content 最多 200 字；默认返回本次结果及自上次自身操作以来全部新增公共问答、提示、动作的 logs_since_last_own_action 文本，逐行精简，不限条数，不重复本次问答或旧记录。',
             'hint_request': 'room_id -> 主动请求提示，直接返回；每玩家每房最多3次。',
             'view_auto_hint': 'room_id, log_id -> 查看收到的自动提示；通知只出现一次。',
             'reveal_answer': '达到当前查看门槛（默认 50 题）后，传 room_id 查看；查看后不能再进入或操作本房间。',
-            'status': 'room_id, log_limit(可选) -> 查看完整汤面和全部结构化日志；指定 N 则只取最新 N 条；自动提示和汤底资格只通知一次；未查看自动提示不泄露正文。',
+            'status': 'room_id, log_limit(可选) -> 查看完整汤面和全部结构化日志；指定正整数 N 则只取最新 N 条，不接受 0；自动提示和汤底资格只通知一次；未查看自动提示不泄露正文。',
         }
         for action, description in expected.items():
             self.assertEqual(guide['actions'][action], description)
@@ -250,8 +273,12 @@ class TurtleMcpTests(unittest.TestCase):
         # The three action descriptions above retain the parameters, conditions
         # and consequences; notes need not repeat their routing summary.
         self.assertEqual(hint_notes, [])
-        self.assertIn('log_limit(可选，默认0)', guide['actions']['guess'])
-        for text in ['0 不附带历史', 'logs_truncated=true', 'auto_hint_notifications']:
+        for action in ['ask', 'guess']:
+            self.assertNotIn('log_limit', guide['actions'][action])
+        self.assertIn('不附带历史', guide['actions']['guess'])
+        for text in ['默认0', '0 不附带历史', '非负整数', '20 条']:
+            self.assertNotIn(text, str(guide))
+        for text in ['logs_truncated=true', 'auto_hint_notifications']:
             self.assertIn(text, str(guide))
         self.assertTrue(any('线索汤格式' in note for note in guide['notes']))
         for client in ['', 'Kelivo/1.2.6']:

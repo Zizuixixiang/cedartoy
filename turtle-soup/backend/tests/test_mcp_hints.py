@@ -47,9 +47,9 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
     async def status(self, rid, uid=102, **params):
         return self.ok(await self.mcp('status', rid, uid, **params))
 
-    async def test_default_full_incremental_text_and_explicit_limits(self):
+    async def test_full_multiplayer_incremental_text_and_status_pagination(self):
         rid = await self.create()
-        for i in range(25):
+        for i in range(75):
             await database.execute(
                 "INSERT INTO game_logs(room_id,player_id,type,content,judgment) VALUES (?,?,'ask',?,'yes')",
                 (rid, self.players[103]['id'], f'共享问题{i}'),
@@ -60,7 +60,6 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('logs_truncated', status)
         self.assertIn('surface', status['room'])
         self.assertIn('created_at', status['logs'][0])
-        self.assertEqual((await self.status(rid, log_limit=0))['logs'], [])
         short = await self.status(rid, log_limit=2)
         self.assertEqual([r['id'] for r in short['logs']], [r['id'] for r in before[-2:]])
         self.assertTrue(short['logs_truncated'])
@@ -69,19 +68,43 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
             history = first['logs_since_last_own_action']
             self.assertIsInstance(history, str)
             self.assertEqual(len(history.splitlines()), len(before))
-            self.assertEqual(history.splitlines()[1:], [f"{self.players[103]['username']}：共享问题{i}→是" for i in range(25)])
+            self.assertEqual(history.splitlines()[1:], [f"{self.players[103]['username']}：共享问题{i}→是" for i in range(75)])
             self.assertNotIn('本次独有问题', history)
             self.assertNotIn('logs_truncated', first)
             self.assertNotIn('room', first)
             self.assertEqual(first['room_id'], rid)
-            for i in range(3):
-                await database.execute("INSERT INTO game_logs(room_id,type,content,judgment) VALUES (?,'ask',?,'no')", (rid, f'新问题{i}'))
-            next_ask = self.ok(await self.mcp('ask', rid, 102, content='后续独有问题', log_limit=2))
-            self.assertEqual(next_ask['logs_since_last_own_action'].splitlines(), ['系统：新问题1→否', '系统：新问题2→否'])
-            self.assertTrue(next_ask['logs_truncated'])
-            zero = self.ok(await self.mcp('ask', rid, 102, content='不要历史', log_limit=0))
-            self.assertEqual(zero['logs_since_last_own_action'], '')
-            self.assertEqual(zero['judgment'], 'yes')
+            expected = []
+            for i in range(125):
+                player = self.players[103 if i % 2 else 202]
+                await database.execute(
+                    "INSERT INTO game_logs(room_id,player_id,type,content,judgment) VALUES (?,?,'ask',?,'no')",
+                    (rid, player['id'], f'新问题{i}'),
+                )
+                expected.append(f"{player['username']}：新问题{i}→否")
+            # The INSERT trigger sets current time; age seeded traffic afterwards
+            # so it does not trip the normal per-player question cooldown.
+            await database.execute(
+                "UPDATE game_logs SET created_at=datetime('now','localtime','-1 minute') "
+                "WHERE room_id=? AND player_id IN (?,?)",
+                (rid, self.players[103]['id'], self.players[202]['id']),
+            )
+            await self.hint(rid, kind='hint_offer')
+            expected.append('系统[提示]：秘密线索正文')
+            self.ok(await self.mcp('note_add', rid, 103, content='不公开的笔记'))
+            expected.append('系统[系统]：【系统提示】记事本有新记录。')
+            next_ask = self.ok(await self.mcp('ask', rid, 102, content='后续独有问题'))
+            self.assertEqual(next_ask['logs_since_last_own_action'].splitlines(), expected)
+            self.assertNotIn('logs_truncated', next_ask)
+            # Each player's own cursor is independent; status did not consume it.
+            other = self.ok(await self.mcp('ask', rid, 103, content='另一个玩家的问题'))
+            self.assertEqual(other['logs_since_last_own_action'].splitlines(), expected[-3:] + ['own_ai：后续独有问题→是'])
+            last = self.ok(await self.mcp('ask', rid, 102, content='最后一个问题'))
+            self.assertEqual(last['logs_since_last_own_action'], 'own_ai_two：另一个玩家的问题→是')
+            empty = self.ok(await self.mcp('ask', rid, 102, content='没有新记录'))
+            self.assertEqual(empty['logs_since_last_own_action'], '')
+        full = await self.status(rid)
+        stored = await database.fetch_all('SELECT id FROM game_logs WHERE room_id=? ORDER BY id', (rid,))
+        self.assertEqual([r['id'] for r in full['logs']], [r['id'] for r in stored])
 
     def test_log_text_preserves_utterances_hint_events_and_line_boundaries(self):
         row = {'id': 7, 'player_id': 1, 'username': '阿狸', 'type': 'ask', 'content': '第一行\n第二行', 'judgment': 'partial'}
@@ -98,10 +121,10 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(result), {'id', 'room_id', 'player_id', 'type', 'content', 'judgment', 'hint_text', 'resolved', 'created_at', 'username', 'is_guest', 'is_ai'})
         self.assertEqual(broadcast.call_args.args, (rid, 'new_log', result))
 
-    async def test_zero_or_short_history_keeps_hint_and_reveal_notifications(self):
-        for limit in [0, 1]:
+    async def test_short_history_keeps_hint_and_reveal_notifications(self):
+        for limit in [1, 2]:
             with self.subTest(limit=limit):
-                rid = await self.create(101 if limit == 0 else 201)
+                rid = await self.create(101 if limit == 1 else 201)
                 lid = await self.hint(rid)
                 await self.seed_asks(rid, 50)
                 first = await self.status(rid, log_limit=limit)
@@ -115,20 +138,22 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(other['auto_hint_notifications'][0]['log_id'], lid)
                 self.assertEqual(self.ok(await self.mcp('view_auto_hint', rid, 102, log_id=lid))['hint_text'], '秘密线索正文')
 
-    async def test_concurrent_zero_history_claims_omitted_hint_once(self):
+    async def test_concurrent_short_history_claims_omitted_hint_once(self):
         rid = await self.create()
         lid = await self.hint(rid)
-        results = await asyncio.gather(*(self.status(rid, log_limit=0) for _ in range(4)))
+        await self.seed_asks(rid, 1)
+        results = await asyncio.gather(*(self.status(rid, log_limit=1) for _ in range(4)))
         notifications = [n for r in results for n in r.get('auto_hint_notifications', [])]
         self.assertEqual([n['log_id'] for n in notifications], [lid])
-        self.assertTrue(all(r['logs'] == [] for r in results))
+        self.assertTrue(all(len(r['logs']) == 1 and r['logs'][0]['type'] == 'ask' for r in results))
 
-    async def test_zero_history_ask_keeps_both_generated_hint_notifications(self):
+    async def test_full_history_ask_keeps_both_generated_hint_notifications(self):
         rid = await self.create()
         await self.seed_asks(rid, 29)
         with patch.object(game.judge, 'judge_ask', AsyncMock(return_value={'judgment': 'yes', 'clue': '问答秘密线索'})), patch.object(game.judge, 'generate_hint', AsyncMock(return_value='周期秘密提示')):
-            result = self.ok(await self.mcp('ask', rid, 102, content='触发提示', log_limit=0))
-        self.assertEqual(result['logs_since_last_own_action'], '')
+            result = self.ok(await self.mcp('ask', rid, 102, content='触发提示'))
+        self.assertEqual(result['logs_since_last_own_action'].count('系统：问题→未判定'), 29)
+        self.assertNotIn('触发提示', result['logs_since_last_own_action'])
         self.assertIn('log_id', result['auto_hint'])
         self.assertEqual(len(result['auto_hint_notifications']), 1)
         self.assertNotEqual(result['auto_hint']['log_id'], result['auto_hint_notifications'][0]['log_id'])
@@ -136,42 +161,70 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(secret, json.dumps(result, ensure_ascii=False))
         self.assertNotIn('auto_hint_notification', json.dumps(await self.status(rid)))
 
-    async def test_guess_opt_in_history_preserves_success_and_failure_results(self):
+    async def test_guess_without_history_preserves_success_failure_and_public_answer(self):
         rid = await self.create()
         await self.seed_asks(rid, 25)
+        await database.execute('UPDATE rooms SET answer=? WHERE id=?', ('公开汤底\n【隐藏后台设定】隐藏秘密', rid))
         with patch.object(game.judge, 'judge_guess', AsyncMock(return_value={'success': False, 'score': 20})):
             first = self.ok(await self.mcp('guess', rid, 102, content='汤底'))
             self.assertNotIn('logs_since_last_own_action', first)
             self.assertFalse(first['correct'])
             self.assertEqual(first['score'], 20)
             self.assertEqual(first['result_log']['judgment'], 'guess_result')
-            zero = self.ok(await self.mcp('guess', rid, 102, content='汤底', log_limit=0))
-            self.assertEqual(zero['logs_since_last_own_action'], '')
+            self.assertNotIn('logs_truncated', first)
             await self.seed_asks(rid, 3)
-        with patch.object(game.judge, 'judge_guess', AsyncMock(return_value={'success': True, 'score': 100, 'answer': '公开汤底'})):
-            won = self.ok(await self.mcp('guess', rid, 102, content='完整汤底', log_limit=2))
+        with patch.object(game.judge, 'judge_guess', AsyncMock(return_value={'success': True, 'score': 100, 'answer': '模型复述隐藏秘密'})):
+            won = self.ok(await self.mcp('guess', rid, 102, content='完整汤底'))
         self.assertTrue(won['correct'])
         self.assertEqual(won['result_log']['judgment'], 'game_over')
-        self.assertIn('公开汤底', won['result_log']['content'])
-        self.assertEqual(won['logs_since_last_own_action'].splitlines(), ['系统：问题→未判定'] * 2)
-        self.assertTrue(won['logs_truncated'])
-        self.assertNotIn('完整汤底', won['logs_since_last_own_action'])
-        self.assertNotIn('公开汤底', won['logs_since_last_own_action'])
+        self.assertEqual(won['result_log']['content'], '还原度：100%\n公开汤底')
+        self.assertNotIn('隐藏秘密', json.dumps(won, ensure_ascii=False))
+        self.assertNotIn('logs_since_last_own_action', won)
+        self.assertNotIn('logs_truncated', won)
 
     async def test_invalid_limit_rejected_before_auth_judge_or_notification_writes(self):
         rid = await self.create()
         await self.seed_asks(rid, 50)
         await self.hint(rid)
+        before_logs = await database.fetch_all('SELECT * FROM game_logs')
+        before_presence = await database.fetch_all('SELECT * FROM room_presence')
         with patch.object(mcp_app, '_mcp_player', AsyncMock()) as auth, patch.object(game.judge, 'judge_ask', AsyncMock()) as ask, patch.object(game.judge, 'judge_guess', AsyncMock()) as guess:
             for action in ['ask', 'guess', 'status']:
-                for limit in [-1, 1.5, 'invalid']:
-                    response = await self.mcp(action, rid, 102, content='问题', log_limit=limit)
-                    self.assertIn(response.status_code, [400, 422])
+                limits = [0, -1, 1.5, 'invalid']
+                if action in ['ask', 'guess']:
+                    limits += [1, 2, 100, None]
+                for limit in limits:
+                    with self.subTest(action=action, limit=limit):
+                        response = await self.mcp(action, rid, 102, content='问题', log_limit=limit)
+                        if action in ['ask', 'guess']:
+                            self.assertEqual(response.status_code, 400, response.text)
+                            self.assertIn(f'{action} 不支持 log_limit', response.json()['detail'])
+                        elif limit == 0:
+                            self.assertEqual(response.status_code, 400, response.text)
+                            self.assertIn('不能用 0 关闭共享记录', response.json()['detail'])
+                        else:
+                            self.assertIn(response.status_code, [400, 422])
             auth.assert_not_awaited()
             ask.assert_not_awaited()
             guess.assert_not_awaited()
+        self.assertEqual(await database.fetch_all('SELECT * FROM game_logs'), before_logs)
+        self.assertEqual(await database.fetch_all('SELECT * FROM room_presence'), before_presence)
         self.assertEqual(await database.fetch_all('SELECT * FROM room_hint_views'), [])
         self.assertEqual(await database.fetch_all('SELECT * FROM room_answer_reveal_prompts'), [])
+
+    async def test_status_pagination_keeps_read_access_and_does_not_enter_room(self):
+        rid = await self.create(is_locked=True)
+        await self.seed_asks(rid, 3)
+        before = await database.fetch_all('SELECT * FROM room_presence')
+        for params in [{}, {'log_limit': 2}]:
+            for uid in [None, 202]:
+                response = await self.mcp('status', rid, uid, **params)
+                self.assertEqual(response.status_code, 403, response.text)
+            allowed = await self.status(rid, 102, **params)
+            self.assertEqual(len(allowed['logs']), 2 if params else 4)
+        public = await self.create(201)
+        self.assertTrue((await self.status(public, None))['logs'])
+        self.assertEqual(await database.fetch_all('SELECT * FROM room_presence WHERE room_id=?', (rid,)), before)
 
     async def test_reveal_and_guess_publish_story_without_private_rules(self):
         rizi = (Path(__file__).parent / 'fixtures/rizi_answer.txt').read_text()
