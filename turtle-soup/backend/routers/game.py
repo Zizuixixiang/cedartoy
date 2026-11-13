@@ -430,7 +430,15 @@ async def guess(body: GuessBody, player: dict = Depends(current_player)):
         raise
     correct = bool(result["success"])
     score = int(result["score"])
-    reveal_text = (result.get("answer") or judge.public_answer_from_full_answer(room["answer"])) if correct else None
+    reveal_text = None
+    if correct:
+        public_source = judge.public_answer_from_full_answer(room["answer"])
+        # Structured author answers are authoritative: a model can repeat private
+        # rules without their headings, which cannot be safely filtered afterward.
+        if public_source != room["answer"].strip():
+            reveal_text = public_source
+        else:
+            reveal_text = judge.public_answer_from_full_answer(result.get("answer") or room["answer"])
     result_content = (f"还原度：{score}%\n{reveal_text}" if correct
                       else result.get("error") or f"还原度：{score}%")
     db = await get_db()

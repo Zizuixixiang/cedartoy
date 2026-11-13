@@ -101,6 +101,21 @@ class FakeClient:
 
 
 class AskContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_versioned_rules_and_database_override_are_not_stacked(self):
+        rules = (judge.CONFIG_DIR / 'judge_prompt.txt').read_text()
+        for rule in ['是 / 不是 / 无关 / 是也不是', '同义或上位概念', '核心事实、身份或因果错误',
+                     '人物修饰语', 'A与B的关系', 'A或B是否成立', '确实独立被询问',
+                     '只有无法判断提问者所问阶段', '汤底未提及不等于事实为假']:
+            self.assertIn(rule, rules)
+        for override in [None, {'value': '数据库规则'}, {'value': ' '}]:
+            with self.subTest(override=override), patch.object(judge, 'fetch_one', AsyncMock(return_value=override)), patch.object(judge, '_chat_validated', AsyncMock(return_value='不是')) as chat:
+                result = await judge.judge_ask('汤面', '汤底', '问题')
+            self.assertEqual(result['judgment'], 'no')
+            messages = chat.call_args.args[0]
+            self.assertEqual(messages[0]['content'], '数据库规则' if override and override['value'].strip() else rules)
+            self.assertNotIn('上位概念', messages[1]['content'])
+            self.assertLessEqual(len(messages[1]['content']), 204)
+
     async def test_only_last_three_questions_are_reference_context(self):
         history = ["过早的问题", "那个人在实验室吗？", "他拿着探测器吗？", "它打开了吗？"]
         question = "这个实验没有被观测时会怎样？"
@@ -135,6 +150,53 @@ class AskContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("【上文，仅用于理解指代】\n（无）\n【本次唯一需要判定的问题】\n当前问题", prompt)
         self.assertNotIn("历史问题", prompt)
         self.assertNotIn("此前的问题", prompt)
+
+
+class GuessScoringTests(unittest.IsolatedAsyncioTestCase):
+    def assert_score(self, missing, score, expected_score, expected_success):
+        for reported_success in [False, True]:
+            with self.subTest(missing=missing, score=score, reported_success=reported_success):
+                result = judge._parse_guess_json(json.dumps({
+                    "success": reported_success, "score": score,
+                    "missing_core_count": missing, "core_checks": [],
+                    "public_answer": "公开汤底",
+                }))
+                self.assertEqual(result["score"], expected_score)
+                self.assertEqual(result["success"], expected_success)
+                self.assertEqual(result["missing_core_count"], missing)
+
+    def test_no_missing_core_conditions_has_75_floor(self):
+        for score, expected in [(0, 75), (60, 75), (74, 75), (75, 75),
+                                (76, 76), (79, 79), (80, 80), (100, 100)]:
+            self.assert_score(0, score, expected, True)
+
+    def test_other_missing_core_bands_keep_existing_bounds(self):
+        for missing, score, expected_score, success in [
+            (1, 0, 60, False), (1, 59, 60, False), (1, 60, 60, False),
+            (1, 74, 74, False), (1, 75, 75, True), (1, 79, 79, True),
+            (1, 80, 79, True), (1, 100, 79, True),
+            (2, 0, 59, False), (2, 39, 59, False), (2, 40, 40, False),
+            (2, 59, 59, False), (2, 60, 59, False), (2, 75, 59, False),
+            (2, 100, 59, False), (3, 0, 0, False), (3, 39, 39, False),
+            (3, 40, 39, False), (3, 75, 39, False), (4, 100, 39, False),
+        ]:
+            self.assert_score(missing, score, expected_score, success)
+
+    async def test_guess_request_and_result_preserve_75_point_pass(self):
+        raw = json.dumps({"success": True, "score": 75, "missing_core_count": 0,
+                          "core_checks": [], "public_answer": "公开汤底"})
+        with (
+            patch.object(judge, "_get_judge_prompt_guess", AsyncMock(return_value="75 分通关")),
+            patch.object(judge, "_chat", AsyncMock(return_value=raw)) as chat,
+        ):
+            result = await judge.judge_guess("汤面", "汤底", "完整的故事还原")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["score"], 75)
+        self.assertEqual(result["answer"], "公开汤底")
+        instruction = chat.call_args.args[0][1]["content"]
+        self.assertIn("missing_core_count == 0 且 score >= 75 才允许 success=true", instruction)
+        self.assertNotIn("score >= 80", instruction)
+        self.assertTrue(chat.call_args.kwargs["validator"](raw))
 
 
 class ClueParsingTests(unittest.IsolatedAsyncioTestCase):
@@ -177,6 +239,49 @@ class ClueParsingTests(unittest.IsolatedAsyncioTestCase):
         answer = "汤底\n【线索公布】旧格式具体线索\n【隐藏后台设定】不要公开"
         clue = judge._extract_clue_from_answer(answer, "旧格式具体线索")
         self.assertEqual(clue, "旧格式具体线索")
+
+
+class HintContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hint_config_priority_and_last_sixty_player_records(self):
+        rules = (judge.CONFIG_DIR / 'judge_prompt_hint.txt').read_text()
+        self.assertNotIn('无法看到', rules)
+        for rule in ['最近最多60条', '不得暗示汤底不成立或未支持的事实', '不做猜底式剧透']:
+            self.assertIn(rule, rules)
+        with patch.object(judge, 'fetch_one', AsyncMock(return_value={'value': '数据库提示规则'})):
+            self.assertEqual(await judge._get_judge_prompt_hint(), '数据库提示规则')
+        records = [{'player_id': 1, 'type': 'ask', 'content': f'问题{i}', 'judgment': 'no'} for i in range(65)]
+        records.append({'type': 'auto_hint', 'hint_text': '已经提供的方向'})
+        with patch.object(judge, 'fetch_one', AsyncMock(return_value=None)), patch.object(judge, '_chat_validated', AsyncMock(return_value='【提示】注意两种字色对应的状态')) as chat:
+            await judge.generate_hint('汤面', '汤底', records)
+        messages = chat.call_args.args[0]
+        self.assertEqual(messages[0]['content'], rules)
+        sent = json.loads(messages[-1]['content'].split('最近60条玩家记录（提问与猜汤底）：', 1)[1])
+        self.assertEqual([r['content'] for r in sent], [f'问题{i}' for i in range(5, 65)])
+        self.assertIn('不得为追求新方向虚构事实', messages[1]['content'])
+
+
+class PublicAnswerTests(unittest.TestCase):
+    def test_rizi_keeps_all_story_and_explanation_without_private_tail(self):
+        answer = (BACKEND_DIR / 'tests/fixtures/rizi_answer.txt').read_text()
+        expected = answer.split('**三、 核心判定引擎', 1)[0].strip()
+        self.assertEqual(judge.public_answer_from_full_answer(answer), expected)
+        self.assertIn('核心设定与诡计拆解', expected)
+        self.assertIn('意外流产的孩子', expected)
+
+    def test_normal_story_and_inline_mentions_are_unchanged(self):
+        for answer in ['母亲只是想保护孩子。', '【完整汤底】\n第一段\n【核心设定与诡计拆解】\n正常解释',
+                       '他把“【通关判定条件】”这几个字写在了纸上。\n她看完后笑了。']:
+            with self.subTest(answer=answer):
+                self.assertEqual(judge.public_answer_from_full_answer(answer), answer)
+
+    def test_private_sections_do_not_remove_later_public_sections(self):
+        answer = '【完整汤底】\n正文\n【通关判定条件】\n后台秘密\n【结局】\n公开结局'
+        self.assertEqual(judge.public_answer_from_full_answer(answer), '【完整汤底】\n正文\n【结局】\n公开结局')
+        answer = '# 真相\n正文\n## 裁判专用配置\n后台\n### 内部检查\n秘密\n## 后记\n公开后记'
+        self.assertEqual(judge.public_answer_from_full_answer(answer), '# 真相\n正文\n## 后记\n公开后记')
+        answer = '正文\n【专属提示线索池】\n**仅供裁判阅读**\n私密线索\n【结局】\n公开结局'
+        self.assertEqual(judge.public_answer_from_full_answer(answer), '正文\n【结局】\n公开结局')
+        self.assertEqual(judge.public_answer_from_full_answer('正文\n【隐藏后台设定】秘密'), '正文')
 
 
 class JudgeResilienceTests(unittest.IsolatedAsyncioTestCase):

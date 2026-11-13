@@ -47,6 +47,158 @@ class McpHintsTests(unittest.IsolatedAsyncioTestCase):
     async def status(self, rid, uid=102, **params):
         return self.ok(await self.mcp('status', rid, uid, **params))
 
+    async def test_default_full_incremental_text_and_explicit_limits(self):
+        rid = await self.create()
+        for i in range(25):
+            await database.execute(
+                "INSERT INTO game_logs(room_id,player_id,type,content,judgment) VALUES (?,?,'ask',?,'yes')",
+                (rid, self.players[103]['id'], f'共享问题{i}'),
+            )
+        before = await database.fetch_all('SELECT id FROM game_logs WHERE room_id=? ORDER BY id', (rid,))
+        status = await self.status(rid)
+        self.assertEqual([r['id'] for r in status['logs']], [r['id'] for r in before])
+        self.assertNotIn('logs_truncated', status)
+        self.assertIn('surface', status['room'])
+        self.assertIn('created_at', status['logs'][0])
+        self.assertEqual((await self.status(rid, log_limit=0))['logs'], [])
+        short = await self.status(rid, log_limit=2)
+        self.assertEqual([r['id'] for r in short['logs']], [r['id'] for r in before[-2:]])
+        self.assertTrue(short['logs_truncated'])
+        with patch.object(game.judge, 'judge_ask', AsyncMock(return_value={'judgment': 'yes'})), patch.object(game, '_maybe_auto_hint_safely', AsyncMock(return_value=None)):
+            first = self.ok(await self.mcp('ask', rid, 102, content='本次独有问题'))
+            history = first['logs_since_last_own_action']
+            self.assertIsInstance(history, str)
+            self.assertEqual(len(history.splitlines()), len(before))
+            self.assertEqual(history.splitlines()[1:], [f"{self.players[103]['username']}：共享问题{i}→是" for i in range(25)])
+            self.assertNotIn('本次独有问题', history)
+            self.assertNotIn('logs_truncated', first)
+            self.assertNotIn('room', first)
+            self.assertEqual(first['room_id'], rid)
+            for i in range(3):
+                await database.execute("INSERT INTO game_logs(room_id,type,content,judgment) VALUES (?,'ask',?,'no')", (rid, f'新问题{i}'))
+            next_ask = self.ok(await self.mcp('ask', rid, 102, content='后续独有问题', log_limit=2))
+            self.assertEqual(next_ask['logs_since_last_own_action'].splitlines(), ['系统：新问题1→否', '系统：新问题2→否'])
+            self.assertTrue(next_ask['logs_truncated'])
+            zero = self.ok(await self.mcp('ask', rid, 102, content='不要历史', log_limit=0))
+            self.assertEqual(zero['logs_since_last_own_action'], '')
+            self.assertEqual(zero['judgment'], 'yes')
+
+    def test_log_text_preserves_utterances_hint_events_and_line_boundaries(self):
+        row = {'id': 7, 'player_id': 1, 'username': '阿狸', 'type': 'ask', 'content': '第一行\n第二行', 'judgment': 'partial'}
+        self.assertEqual(mcp_app._log_text(row), '阿狸：第一行\\n第二行→是也不是')
+        row.update(type='hint_offer', content='hint:30', hint_text='提示原文', judgment=None)
+        self.assertEqual(mcp_app._log_text(row), '阿狸[提示]：提示原文')
+        row.update(type='auto_hint', auto_hint_accepted=True)
+        self.assertEqual(mcp_app._log_text(row), '自动提示[log_id=7，已查看]：提示原文')
+
+    async def test_rest_ask_keeps_log_object_and_broadcast_structure(self):
+        rid = await self.create()
+        with patch.object(game.judge, 'judge_ask', AsyncMock(return_value={'judgment': 'yes'})), patch.object(game, '_maybe_auto_hint_safely', AsyncMock(return_value=None)), patch.object(game, 'broadcast', AsyncMock()) as broadcast:
+            result = self.ok(await self.client.post('/soup/api/game/ask', headers=self.headers(103), json={'room_id': rid, 'content': '网页提问'}))
+        self.assertEqual(set(result), {'id', 'room_id', 'player_id', 'type', 'content', 'judgment', 'hint_text', 'resolved', 'created_at', 'username', 'is_guest', 'is_ai'})
+        self.assertEqual(broadcast.call_args.args, (rid, 'new_log', result))
+
+    async def test_zero_or_short_history_keeps_hint_and_reveal_notifications(self):
+        for limit in [0, 1]:
+            with self.subTest(limit=limit):
+                rid = await self.create(101 if limit == 0 else 201)
+                lid = await self.hint(rid)
+                await self.seed_asks(rid, 50)
+                first = await self.status(rid, log_limit=limit)
+                self.assertEqual(first['auto_hint_notifications'][0]['log_id'], lid)
+                self.assertIn('answer_reveal_prompt', first)
+                self.assertNotIn('秘密线索正文', json.dumps(first, ensure_ascii=False))
+                repeated = await self.status(rid, log_limit=limit)
+                self.assertNotIn('auto_hint_notifications', repeated)
+                self.assertNotIn('answer_reveal_prompt', repeated)
+                other = await self.status(rid, 103, log_limit=limit)
+                self.assertEqual(other['auto_hint_notifications'][0]['log_id'], lid)
+                self.assertEqual(self.ok(await self.mcp('view_auto_hint', rid, 102, log_id=lid))['hint_text'], '秘密线索正文')
+
+    async def test_concurrent_zero_history_claims_omitted_hint_once(self):
+        rid = await self.create()
+        lid = await self.hint(rid)
+        results = await asyncio.gather(*(self.status(rid, log_limit=0) for _ in range(4)))
+        notifications = [n for r in results for n in r.get('auto_hint_notifications', [])]
+        self.assertEqual([n['log_id'] for n in notifications], [lid])
+        self.assertTrue(all(r['logs'] == [] for r in results))
+
+    async def test_zero_history_ask_keeps_both_generated_hint_notifications(self):
+        rid = await self.create()
+        await self.seed_asks(rid, 29)
+        with patch.object(game.judge, 'judge_ask', AsyncMock(return_value={'judgment': 'yes', 'clue': '问答秘密线索'})), patch.object(game.judge, 'generate_hint', AsyncMock(return_value='周期秘密提示')):
+            result = self.ok(await self.mcp('ask', rid, 102, content='触发提示', log_limit=0))
+        self.assertEqual(result['logs_since_last_own_action'], '')
+        self.assertIn('log_id', result['auto_hint'])
+        self.assertEqual(len(result['auto_hint_notifications']), 1)
+        self.assertNotEqual(result['auto_hint']['log_id'], result['auto_hint_notifications'][0]['log_id'])
+        for secret in ['问答秘密线索', '周期秘密提示']:
+            self.assertNotIn(secret, json.dumps(result, ensure_ascii=False))
+        self.assertNotIn('auto_hint_notification', json.dumps(await self.status(rid)))
+
+    async def test_guess_opt_in_history_preserves_success_and_failure_results(self):
+        rid = await self.create()
+        await self.seed_asks(rid, 25)
+        with patch.object(game.judge, 'judge_guess', AsyncMock(return_value={'success': False, 'score': 20})):
+            first = self.ok(await self.mcp('guess', rid, 102, content='汤底'))
+            self.assertNotIn('logs_since_last_own_action', first)
+            self.assertFalse(first['correct'])
+            self.assertEqual(first['score'], 20)
+            self.assertEqual(first['result_log']['judgment'], 'guess_result')
+            zero = self.ok(await self.mcp('guess', rid, 102, content='汤底', log_limit=0))
+            self.assertEqual(zero['logs_since_last_own_action'], '')
+            await self.seed_asks(rid, 3)
+        with patch.object(game.judge, 'judge_guess', AsyncMock(return_value={'success': True, 'score': 100, 'answer': '公开汤底'})):
+            won = self.ok(await self.mcp('guess', rid, 102, content='完整汤底', log_limit=2))
+        self.assertTrue(won['correct'])
+        self.assertEqual(won['result_log']['judgment'], 'game_over')
+        self.assertIn('公开汤底', won['result_log']['content'])
+        self.assertEqual(won['logs_since_last_own_action'].splitlines(), ['系统：问题→未判定'] * 2)
+        self.assertTrue(won['logs_truncated'])
+        self.assertNotIn('完整汤底', won['logs_since_last_own_action'])
+        self.assertNotIn('公开汤底', won['logs_since_last_own_action'])
+
+    async def test_invalid_limit_rejected_before_auth_judge_or_notification_writes(self):
+        rid = await self.create()
+        await self.seed_asks(rid, 50)
+        await self.hint(rid)
+        with patch.object(mcp_app, '_mcp_player', AsyncMock()) as auth, patch.object(game.judge, 'judge_ask', AsyncMock()) as ask, patch.object(game.judge, 'judge_guess', AsyncMock()) as guess:
+            for action in ['ask', 'guess', 'status']:
+                for limit in [-1, 1.5, 'invalid']:
+                    response = await self.mcp(action, rid, 102, content='问题', log_limit=limit)
+                    self.assertIn(response.status_code, [400, 422])
+            auth.assert_not_awaited()
+            ask.assert_not_awaited()
+            guess.assert_not_awaited()
+        self.assertEqual(await database.fetch_all('SELECT * FROM room_hint_views'), [])
+        self.assertEqual(await database.fetch_all('SELECT * FROM room_answer_reveal_prompts'), [])
+
+    async def test_reveal_and_guess_publish_story_without_private_rules(self):
+        rizi = (Path(__file__).parent / 'fixtures/rizi_answer.txt').read_text()
+        public = rizi.split('**三、 核心判定引擎', 1)[0].strip()
+        for owner, answer, expected in [(101, rizi, public), (201, '她离开只是为了保护家人。', '她离开只是为了保护家人。')]:
+            with self.subTest(owner=owner):
+                rid = await self.create(owner)
+                await database.execute('UPDATE rooms SET answer=? WHERE id=?', (answer, rid))
+                await self.seed_asks(rid, 49)
+                self.assertEqual((await self.mcp('reveal_answer', rid, 102)).status_code, 400)
+                await self.seed_asks(rid, 1)
+                reveal = self.ok(await self.mcp('reveal_answer', rid, 102))
+                self.assertEqual(reveal, {'answer': expected, 'answer_revealed': True})
+                self.assertEqual((await self.mcp('ask', rid, 102, content='继续')).status_code, 400)
+                self.assertNotEqual((await database.fetch_one('SELECT status FROM rooms WHERE id=?', (rid,)))['status'], 'finished')
+                # Model output may paraphrase backend rules without headings.
+                model_answer = '裁判必须检查四个条件并选线索' if owner == 101 else answer + '\n【通关判定条件】\n后台规则'
+                with patch.object(game.judge, 'judge_guess', AsyncMock(return_value={'success': True, 'score': 100, 'answer': model_answer})), patch.object(game, 'broadcast', AsyncMock()) as broadcast:
+                    response = self.ok(await self.client.post('/soup/api/game/guess', headers=self.headers(103), json={'room_id': rid, 'content': '完整故事还原'}))
+                self.assertTrue(response['correct'])
+                self.assertEqual(response['result_log']['content'], '还原度：100%\n' + expected)
+                self.assertEqual(response['result_log']['judgment'], 'game_over')
+                game_over = next(call.args[2] for call in broadcast.call_args_list if call.args[1] == 'game_over')
+                self.assertEqual(game_over['answer'], expected)
+                stored = await database.fetch_one('SELECT content FROM game_logs WHERE id=?', (response['result_log']['id'],))
+                self.assertEqual(stored['content'], response['result_log']['content'])
+
     async def test_answer_prompt_persists_at_50_through_100_and_isolates_players_rooms(self):
         rid = await self.create()
         await self.seed_asks(rid, 49)
@@ -274,7 +426,8 @@ asyncio.run(main())
         self.assertEqual(result['auto_hint']['message'], '收到一条自动提示。调用 view_auto_hint，传当前 room_id 和 log_id 查看。')
         self.assertNotIn('周期秘密提示', json.dumps(result, ensure_ascii=False))
         self.assertNotIn('问答秘密线索', json.dumps(result, ensure_ascii=False))
-        self.assertEqual(sum('auto_hint_notification' in log for log in result['logs_since_last_own_action']), 1)
+        self.assertEqual(len(result['auto_hint_notifications']), 1)
+        self.assertIn(f"log_id={result['auto_hint']['log_id']}", result['logs_since_last_own_action'])
         repeated = await self.status(rid)
         self.assertNotIn('auto_hint_notification', json.dumps(repeated))
         self.assertEqual(self.ok(await self.mcp('view_auto_hint', rid, 102, log_id=result['auto_hint']['log_id']))['hint_text'], '周期秘密提示')

@@ -117,7 +117,8 @@ async def _get_judge_prompt_hint() -> str:
     row = await fetch_one("SELECT value FROM settings WHERE key = 'judge_prompt_hint'")
     if row and str(row.get("value") or "").strip():
         return str(row["value"])
-    return _file_judge_prompt()
+    path = CONFIG_DIR / "judge_prompt_hint.txt"
+    return path.read_text(encoding="utf-8") if path.exists() else _file_judge_prompt()
 
 
 async def _get_judge_prompt_guess() -> str:
@@ -1552,8 +1553,8 @@ def _parse_guess_json(text: str) -> dict[str, Any] | None:
         success = score >= 75
     else:
         success = True
-        if not 80 <= score <= 100:
-            score = 80
+        if not 75 <= score <= 100:
+            score = 75
     return {
         "success": success,
         "score": score,
@@ -1613,7 +1614,7 @@ async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
                 "逐条判断 core_conditions 中每一条是否被玩家猜测明确盘出；missing_core_count >= 2 时必须判定 success=false。"
                 "score 必须遵守：missing_core_count >= 3 时只能 0-39；missing_core_count == 2 时只能 40-59；"
                 "missing_core_count == 1 时只能 60-79，只有 score >= 75 才允许 success=true；"
-                "missing_core_count == 0 且 score >= 80 才允许 success=true。"
+                "missing_core_count == 0 且 score >= 75 才允许 success=true。"
                 "success=true 时 public_answer 必须输出面向玩家的完整汤底；success=false 时 public_answer 必须为 null。"
                 "只输出以下 JSON 对象："
                 '{"success":false,"score":0,"missing_core_count":0,'
@@ -1656,11 +1657,49 @@ async def judge_guess(surface: str, answer: str, guess: str) -> dict[str, Any]:
     }
 
 
+_PRIVATE_ANSWER_HEADINGS = frozenset({
+    "核心判定引擎", "特殊机制适配", "本题专属判定干预", "通关判定条件",
+    "专属提示线索池", "可用提示线索", "致命错误检查", "裁判专用配置",
+    "隐藏后台设定",
+})
+
+
+def _answer_heading(line: str) -> tuple[str, int] | None:
+    """Recognize section headings, never keywords embedded in story prose."""
+    text = re.sub(r"^\s*[-*+]\s+", "", line).strip()
+    markdown = re.match(r"^(#{1,6})\s+", text)
+    level = len(markdown[1]) if markdown else 2
+    if markdown:
+        text = text[markdown.end():]
+    text = text.replace("**", "").strip()
+    outline = re.match(r"^[一二三四五六七八九十]+[、．.]\s*", text)
+    if outline:
+        level = 1
+        text = text[outline.end():]
+    bracket = re.match(r"^【([^】]+)】", text)
+    title = bracket[1] if bracket else text.rstrip("：: #")
+    title = re.sub(r"[（(][^）)]*[）)]$", "", title).strip()
+    if bracket or markdown or outline or title in _PRIVATE_ANSWER_HEADINGS:
+        return title, level
+    return None
+
+
 def public_answer_from_full_answer(answer: str) -> str:
-    marker = "【隐藏后台设定】"
-    if marker in answer:
-        return answer.split(marker, 1)[0].strip()
-    return answer.strip()
+    # The explicit legacy marker still makes the entire tail private.
+    answer = answer.split("【隐藏后台设定】", 1)[0]
+    public_lines = []
+    private_level = None
+    for line in answer.splitlines():
+        heading = _answer_heading(line)
+        if heading:
+            title, level = heading
+            if private_level is not None and level <= private_level:
+                private_level = None
+            if title in _PRIVATE_ANSWER_HEADINGS:
+                private_level = min(private_level, level) if private_level is not None else level
+        if private_level is None:
+            public_lines.append(line)
+    return "\n".join(public_lines).strip()
 
 
 def _recent_user_utterances(game_log: list[dict[str, Any]], limit: int = 60) -> list[dict[str, Any]]:
@@ -1704,7 +1743,7 @@ async def generate_hint(surface: str, answer: str, game_log: list[dict[str, Any]
             f"{index}. {hint}" for index, hint in enumerate(previous_hints, start=1)
         )
         hint_system_content += (
-            "\n\n已经提供过以下提示，请给出完全不同方向的新线索，不要重复任何已有提示：\n"
+            "\n\n已经提供过以下提示，请避免重复；不得为追求新方向虚构事实：\n"
             f"{numbered_list}"
         )
     messages = [

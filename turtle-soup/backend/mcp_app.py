@@ -83,6 +83,9 @@ class PlayBody(BaseModel):
 
 @router.post("/play")
 async def play(body: PlayBody):
+    # Validate before authentication/gameplay can mutate state or call the judge.
+    if body.log_limit is not None and body.log_limit < 0:
+        raise HTTPException(status_code=400, detail="log_limit 不能为负数")
     if body.game != "turtle_soup":
         raise HTTPException(status_code=404, detail="未知游戏")
     if not body.action:
@@ -316,19 +319,24 @@ async def play(body: PlayBody):
         prompt = await _answer_reveal_prompt(body.room_id, player["id"])
         if prompt:
             payload["answer_reveal_prompt"] = prompt
-        # join/status already provide the full surface; avoid repeating it on every ask.
-        payload["room"] = await _public_room(body.room_id, include_surface=False)
-        payload["logs_since_last_own_action"] = await _room_logs_after(
+        # join/status provide room details; the result already carries room_id.
+        await _attach_log_context(
+            payload,
             body.room_id,
             previous_own_log["id"] if previous_own_log else None,
-            None,
-            current_log_id=payload.get("id"),
+            body.log_limit,
+            key="logs_since_last_own_action",
+            exclude_log_ids=(payload["id"],),
             player_id=player["id"],
         )
         if hint_result:
-            for log in payload["logs_since_last_own_action"]:
-                if log["id"] == hint_result["log_id"] and "auto_hint_notification" in log:
-                    payload["auto_hint"] = log.pop("auto_hint_notification")
+            notifications = payload.get("auto_hint_notifications", [])
+            for notification in notifications[:]:
+                if notification["log_id"] == hint_result["log_id"]:
+                    payload["auto_hint"] = notification
+                    notifications.remove(notification)
+            if not notifications:
+                payload.pop("auto_hint_notifications", None)
         return payload
     if body.action == "guess":
         if not body.room_id or not body.content:
@@ -338,7 +346,17 @@ async def play(body: PlayBody):
             raise HTTPException(status_code=404, detail="房间不存在")
         if room["status"] == "finished":
             raise HTTPException(status_code=400, detail=ROOM_FINISHED_STATUS_HINT)
-        return await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 3000)), player)
+        previous_own_log = await _previous_own_public_log(body.room_id, player["id"]) if body.log_limit is not None else None
+        payload = await game_guess(GuessBody(room_id=body.room_id, content=clean_content(body.content, 3000)), player)
+        # Preserve guess's existing no-history default and result_log contract.
+        if body.log_limit is not None:
+            await _attach_log_context(
+                payload, body.room_id,
+                previous_own_log["id"] if previous_own_log else None,
+                body.log_limit, key="logs_since_last_own_action", player_id=player["id"],
+                exclude_log_ids=tuple(row["id"] for row in (payload, payload.get("result_log", {})) if "id" in row),
+            )
+        return payload
     if body.action == "hint_respond":
         raise HTTPException(status_code=400, detail="自动提示改用 view_auto_hint(room_id, log_id)；主动提示直接 hint_request(room_id) 返回。")
     if body.action == "view_auto_hint":
@@ -423,10 +441,8 @@ async def _public_room(room_id: str, *, include_surface: bool = True) -> dict:
 
 
 async def _room_context(room_id: str, log_limit: int | None = None, player: dict | None = None) -> dict:
-    data = {
-        "room": await _public_room(room_id),
-        "logs": await _room_logs_after(room_id, None, log_limit, latest_limit=True, player_id=player["id"] if player else None),
-    }
+    data = {"room": await _public_room(room_id)}
+    await _attach_log_context(data, room_id, None, log_limit, key="logs", player_id=player["id"] if player else None)
     prompt = await _answer_reveal_prompt(room_id, player["id"] if player else None)
     if prompt:
         data["answer_reveal_prompt"] = prompt
@@ -481,65 +497,101 @@ async def _previous_own_public_log(room_id: str, player_id: int) -> dict | None:
     )
 
 
-async def _room_logs_after(
+def _log_text(row: dict) -> str:
+    # Escape line breaks rather than discard content or let a question spoof a new event.
+    def inline(value) -> str:
+        return str(value or "").replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+
+    name = row.get("username") or (f"游客{row['player_id']}" if row.get("player_id") else "系统")
+    kind = row.get("type")
+    content = inline(row.get("content"))
+    judgment = {"yes": "是", "no": "否", "partial": "是也不是", "unrelated": "无关"}.get(row.get("judgment"))
+    if kind == "auto_hint" or row.get("judgment") == "auto_hint":
+        state = "已查看" if row.get("auto_hint_accepted") else "已拒绝" if row.get("auto_hint_rejected") else "未查看"
+        return f"自动提示[log_id={row['id']}，{state}]：{inline(row.get('hint_text') or row.get('content'))}"
+    if kind == "ask":
+        return f"{inline(name)}：{content}→{judgment or row.get('judgment') or '未判定'}"
+    label = {"guess": "猜汤底", "hint_offer": "提示", "hint_accept": "接受提示", "hint_reject": "拒绝提示", "system": "系统"}.get(kind, kind or "事件")
+    hint = inline(row.get("hint_text"))
+    if hint and (not content or content == hint or re.fullmatch(r"hint:\d+", content)):
+        content = hint
+    elif hint:
+        content += f"；提示：{hint}"
+    return f"{inline(name)}[{inline(label)}]：{content}" + (f"→{judgment}" if judgment else "")
+
+
+async def _attach_log_context(
+    payload: dict,
     room_id: str,
     after_log_id: int | None,
-    log_limit: int | None = None,
-    current_log_id: int | None = None,
-    latest_limit: bool = False,
+    log_limit: int | None,
+    *,
+    key: str,
+    exclude_log_ids: tuple[int, ...] = (),
     player_id: int | None = None,
-) -> list[dict]:
+) -> None:
+    rows, truncated = await _room_logs_after(room_id, after_log_id, log_limit, exclude_log_ids)
+    # A small/zero history window must not consume or lose hint notifications.
+    # Read only unseen hints, never the omitted general history or hint secrets.
+    pending = []
+    if player_id is not None:
+        pending = await fetch_all(
+            """
+            SELECT gl.id, gl.type, gl.judgment
+            FROM game_logs gl
+            WHERE gl.room_id = ? AND (gl.type = 'auto_hint' OR gl.judgment = 'auto_hint')
+              AND NOT EXISTS (
+                  SELECT 1 FROM room_hint_views hv WHERE hv.log_id = gl.id AND hv.player_id = ?
+              )
+            ORDER BY gl.id ASC
+            """,
+            (room_id, player_id),
+        )
+    visible_ids = {row["id"] for row in rows}
+    omitted_hints = [row for row in pending if row["id"] not in visible_ids]
+    await _mask_auto_hints_for_mcp(rows + omitted_hints, player_id)
+    # status retains its structured records; only action histories become text.
+    payload[key] = rows if key == "logs" else "\n".join(_log_text(row) for row in rows)
+    if truncated:
+        payload["logs_truncated"] = True
+    notification_rows = omitted_hints if key == "logs" else rows + omitted_hints
+    notifications = [row["auto_hint_notification"] for row in notification_rows if "auto_hint_notification" in row]
+    if notifications:
+        payload["auto_hint_notifications"] = notifications
+
+
+async def _room_logs_after(
+    room_id: str, after_log_id: int | None, log_limit: int | None,
+    exclude_log_ids: tuple[int, ...] = (),
+) -> tuple[list[dict], bool]:
     if log_limit is not None and log_limit < 0:
         raise HTTPException(status_code=400, detail="log_limit 不能为负数")
+    if log_limit == 0:
+        return [], False
     params: list = [room_id]
     after_clause = ""
     if after_log_id is not None:
         after_clause = "AND gl.id > ?"
         params.append(after_log_id)
-    if log_limit is not None and latest_limit:
-        params.append(log_limit)
-        rows = await fetch_all(
-            f"""
-            SELECT *
-            FROM (
-                SELECT gl.id, gl.player_id, gl.type, gl.content, gl.judgment,
-                       gl.hint_text, gl.resolved, gl.created_at,
-                       p.username, p.is_guest, p.is_ai
-                FROM game_logs gl
-                LEFT JOIN players p ON p.id = gl.player_id
-                WHERE gl.room_id = ?
-                  {after_clause}
-                ORDER BY gl.id DESC
-                LIMIT ?
-            ) recent_logs
-            ORDER BY id ASC
-            """,
-            tuple(params),
-        )
-    else:
-        limit_clause = ""
-        if log_limit is not None:
-            limit_clause = "LIMIT ?"
-            params.append(log_limit)
-        rows = await fetch_all(
-            f"""
-            SELECT gl.id, gl.player_id, gl.type, gl.content, gl.judgment,
-                   gl.hint_text, gl.resolved, gl.created_at,
-                   p.username, p.is_guest, p.is_ai
-            FROM game_logs gl
-            LEFT JOIN players p ON p.id = gl.player_id
-            WHERE gl.room_id = ?
-              {after_clause}
-            ORDER BY gl.id ASC
-            {limit_clause}
-            """,
-            tuple(params),
-        )
-    if current_log_id is not None:
-        for row in rows:
-            row["is_current_ask_result"] = int(row["id"]) == int(current_log_id)
-    await _mask_auto_hints_for_mcp(rows, player_id)
-    return rows
+    if exclude_log_ids:
+        after_clause += " AND gl.id NOT IN (" + ",".join("?" for _ in exclude_log_ids) + ")"
+        params.extend(exclude_log_ids)
+    limit_clause = ""
+    if log_limit is not None:
+        limit_clause = "LIMIT ?"
+        params.append(log_limit + 1)
+    rows = await fetch_all(
+        f"""
+        SELECT gl.id, gl.player_id, gl.type, gl.content, gl.judgment,
+               gl.hint_text, gl.resolved, gl.created_at, p.username, p.is_guest, p.is_ai
+        FROM game_logs gl
+        LEFT JOIN players p ON p.id = gl.player_id
+        WHERE gl.room_id = ? {after_clause}
+        ORDER BY gl.id DESC {limit_clause}
+        """,
+        tuple(params),
+    )
+    return list(reversed(rows[:log_limit])), log_limit is not None and len(rows) > log_limit
 
 
 def _masked_auto_hint_prompt(log_id: int) -> dict:
