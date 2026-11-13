@@ -4,6 +4,8 @@ Dependencies are explicit keyword-only arguments supplied by server wrappers at
 call time. Nested calls therefore retain the existing server patch points.
 Database paths, mutable state and configuration remain owned by the caller.
 """
+import json
+
 import autochess_adapter
 
 from shared_craft_adapter.client import ContentResult
@@ -11,6 +13,23 @@ from shared_craft_adapter.client import ContentResult
 import research_scales
 from deeptalk.catalog import ALIASES as DEEPTALK_ALIASES
 from scale_test_engine import JsonRpcError as ScaleError
+
+
+def _openai_turtle_soup_result_text(text):
+    # ChatGPT shows {} when the business object has a top-level `content` key.
+    # Only rename that key in the serialized game object, never nested records
+    # or the standard JSON-RPC result.content envelope built by the caller.
+    if not isinstance(text, str):
+        return text
+    try:
+        response = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    if not isinstance(response, dict) or "content" not in response:
+        return text
+    response["content_text"] = response.pop("content")
+    return json.dumps(response, ensure_ascii=False)
+
 
 def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *,
     schema_mode="",
@@ -105,6 +124,11 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
                     text = _tool_get_guide(arguments, path_token=path_token or bearer_token)
                 elif name == "play":
                     text = _tool_play(arguments, path_token=path_token or bearer_token)
+                    if (
+                        (user_agent or "").startswith("openai-mcp/")
+                        and arguments.get("game") == "turtle_soup"
+                    ):
+                        text = _openai_turtle_soup_result_text(text)
                 elif name == "account":
                     text = _tool_account(
                         arguments,

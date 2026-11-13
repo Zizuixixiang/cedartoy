@@ -1,4 +1,5 @@
 """Root MCP discovery and soup forwarding; backend HTTP tests use a temp DB."""
+import copy
 import json
 import unittest
 from contextlib import ExitStack
@@ -16,6 +17,7 @@ class TurtleMcpTests(unittest.TestCase):
             ('_authenticated_ai_player_id', None),
             ('_duel_unread_request_reminder', ''),
             ('_mcp_forced_announcement', ''),
+            ('_feedback_unread_reminder', ''),
             ('_game_maintenance', None),
             ('_anti_addiction_context', None),
             ('_anti_addiction_preflight', None),
@@ -27,14 +29,104 @@ class TurtleMcpTests(unittest.TestCase):
         stack.enter_context(patch.object(
             server, '_finalize_play_response', side_effect=lambda response, **kwargs: response,
         ))
+        stack.enter_context(patch.object(
+            server.sqlite3, 'connect', side_effect=AssertionError('unexpected database access'),
+        ))
 
-    def call(self, name, arguments, **identity):
+    def call_response(self, name, arguments, **identity):
         response = server._handle_root_mcp({
             'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
             'params': {'name': name, 'arguments': arguments},
         }, **identity)
         self.assertFalse(response['result']['isError'], response)
+        return response
+
+    def call(self, name, arguments, **identity):
+        response = self.call_response(name, arguments, **identity)
         return json.loads(response['result']['content'][0]['text'])
+
+    def test_openai_content_compatibility_for_key_actions_and_each_identity(self):
+        for action in ('ask', 'guess', 'note_add', 'note_edit'):
+            for identity in ({'path_token': 'ai-a'}, {'bearer_token': 'ai-b'}):
+                for ua in ('openai-mcp/1.0.0', 'openai-mcp/2.0.0', '',
+                           'ExampleMcpClient/1.0', 'Kelivo/1.2.6',
+                           'proxy openai-mcp/1.0.0', 'openai-mcp-other/1.0'):
+                    with self.subTest(action=action, identity=identity, ua=ua):
+                        raw = {
+                            'id': 7, 'room_id': 'ROOM', 'player_id': 102,
+                            'content': '问题或记事', 'text': '正常提示',
+                            'question_text': '其他字段', 'created_at': '2026-11-14 12:00:00',
+                        }
+                        if action == 'ask':
+                            raw.update(answer='是', logs_since_last_own_action='其他玩家：问题→否')
+                        elif action == 'guess':
+                            raw.update(correct=False, score=30,
+                                       result_log={'id': 8, 'content': '裁判判定'})
+                        original = copy.deepcopy(raw)
+                        upstream = Mock(status_code=200)
+                        upstream.json.return_value = raw
+                        params = {'room_id': 'ROOM', 'note_id': 7, 'content': '原始请求'}
+                        with patch.object(server.httpx, 'post', return_value=upstream) as post:
+                            rpc = self.call_response('play', {
+                                'game': 'turtle_soup', 'action': action, 'params': params,
+                            }, user_agent=ua, **identity)
+                        expected = {**original, 'slot': 1}
+                        if ua.startswith('openai-mcp/'):
+                            expected['content_text'] = expected.pop('content')
+                        # Assert the full business object and standard MCP envelope.
+                        self.assertEqual(rpc, {
+                            'jsonrpc': '2.0', 'id': 1, 'result': {
+                                'isError': False,
+                                'content': [{'type': 'text', 'text': json.dumps(expected, ensure_ascii=False)}],
+                            },
+                        })
+                        sent = post.call_args.kwargs['json']
+                        self.assertEqual(sent['content'], '原始请求')
+                        self.assertNotIn('content_text', sent)
+                        self.assertEqual(sent['action'], action)
+                        self.assertEqual(sent['path_token'], next(iter(identity.values())))
+                        self.assertEqual(params['content'], '原始请求')
+                        self.assertEqual(raw, original)
+
+    def test_openai_preserves_nested_content_and_non_object_responses(self):
+        for action, raw in (
+            ('status', {'text': '正常状态', 'question_text': '问题',
+                        'logs': [{'content': '公开日志'}], 'notes': [{'content': '记事'}]}),
+            ('status', {'content': '顶层', 'logs': [{'content': '公开日志'}],
+                        'notes': [{'content': '记事'}]}),
+            ('note_list', [{'id': 7, 'content': '记事'}]),
+            ('status', {'content': ''}),
+            ('status', {'content': None}),
+            ('status', None),
+        ):
+            with self.subTest(action=action, raw=raw):
+                original = copy.deepcopy(raw)
+                upstream = Mock(status_code=200)
+                upstream.json.return_value = raw
+                with patch.object(server.httpx, 'post', return_value=upstream):
+                    result = self.call('play', {
+                        'game': 'turtle_soup', 'action': action, 'params': {'room_id': 'ROOM'},
+                    }, user_agent='openai-mcp/1.0.0', path_token='ai-a')
+                expected = copy.deepcopy(original)
+                if isinstance(expected, dict):
+                    expected['slot'] = 1
+                    if 'content' in expected:
+                        expected['content_text'] = expected.pop('content')
+                self.assertEqual(result, expected)
+                self.assertEqual(raw, original)
+
+    def test_openai_leaves_other_games_tools_and_plain_text_unchanged(self):
+        text = '{ "content": "原文", "nested": {"content": "嵌套"} }'
+        for tool, arguments, patch_name, output in (
+            ('play', {'game': 'forest', 'action': 'status'}, '_tool_play', text),
+            ('get_guide', {'game': 'turtle_soup'}, '_tool_get_guide', text),
+            ('play', {'game': 'turtle_soup', 'action': 'status'}, '_tool_play', '普通文本'),
+            ('play', {'game': 'turtle_soup', 'action': 'status'}, '_tool_play', '{ "text": "状态" }'),
+        ):
+            with self.subTest(tool=tool, arguments=arguments, output=output):
+                with patch.object(server, patch_name, return_value=output):
+                    rpc = self.call_response(tool, arguments, user_agent='openai-mcp/1.0.0')
+                self.assertEqual(rpc['result']['content'], [{'type': 'text', 'text': output}])
 
     def test_schema_and_guide_expose_lock_and_ownership(self):
         for client in ['', 'Kelivo/1.2.6']:
