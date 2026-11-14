@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import threading
 import time
 import uuid
@@ -27,13 +28,17 @@ TARGET_ACCOUNT_ID = 10604
 CACHE_TTL = 5.0
 CACHE_SIZE = 256
 SLOW_MS = 5000
+MAX_ACCOUNTS = 8
+CONFIG_INTERVAL = 5.0
+TOTAL_RECORDS = 128  # Per layer/minute, independent of allowlist size.
+TOTAL_BYTES = 24 * 1024 * 1024  # Includes retired accounts and legacy files.
 STAGES = frozenset(("entered", "identity_checked", "parsed", "proxy_dispatch",
                     "duel_dispatch", "autochess_dispatch", "response_ready"))
 
 class Sink:
     """Independent target/unknown budgets and files; other known accounts are omitted."""
     def __init__(self, path, max_bytes=1024*1024, per_minute=120, deadline=0,
-                 *, persistent=False, account_id=None):
+                 *, persistent=False, account_id=None, authorization=None, storage=None):
         self.path = Path(path)
         self.deadline = deadline
         self.persistent = persistent
@@ -49,14 +54,31 @@ class Sink:
         self._retry_write = {}
         self._identity_lock = threading.Lock()
         self._cache = OrderedDict()
+        self._authorization = authorization
+        self._storage = storage
 
     def enabled(self):
-        return self.persistent or self.deadline - 86400 <= time.time() < self.deadline
+        return ((self.persistent or self.deadline - 86400 <= time.time() < self.deadline)
+                and (self._authorization is None or self._authorization(self)))
+
+    def is_target(self, account_id):
+        return account_id == self.account_id
+
+    def for_account(self, account_id):
+        return self if account_id is None or self.is_target(account_id) else None
+
+    def lookup_budget(self, target, account_id=None):
+        return self.budget("target_refresh" if target else "lookup", 12 if target else 60)
 
     def budget(self, name, limit, period=60, spacing=0):
         """Fixed-size, process-local budgets; no per-client rate-limit state."""
+        if self._storage is not None and name in ("unknown", "unknown_records"):
+            # Config failures/mode changes must not restart unknown sampling.
+            return self._storage.budget(name, limit, period, spacing)
         now = time.monotonic()
-        with self.lock:
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
             window, count = self._budgets.get(name, (-1, 0))
             current = int(now // period)
             if current != window:
@@ -66,6 +88,8 @@ class Sink:
             self._budgets[name] = (window, count + 1)
             self._next_sample[name] = now + spacing
             return True
+        finally:
+            self.lock.release()
 
     def identity(self, db_path, token):
         if not self.enabled():
@@ -89,8 +113,8 @@ class Sink:
                 return {**cached[1], "identity_age_ms": round((now-cached[0])*1000, 2)}
             # Known target refreshes have a reserved budget: unrelated traffic
             # cannot consume it. Expired identities are never used as fallback.
-            target = cached and cached[1].get("account_id") == self.account_id
-            if not self.budget("target_refresh" if target else "lookup", 12 if target else 60):
+            target = cached and self.is_target(cached[1].get("account_id"))
+            if not self.lookup_budget(target, cached[1].get("account_id") if cached else None):
                 return None
             identity = match_account(db_path, token)
             self._cache[key] = (time.monotonic(), identity)
@@ -98,7 +122,7 @@ class Sink:
             if len(self._cache) > CACHE_SIZE:
                 # Preserve a target entry under unrelated-token floods.
                 victim = next((k for k, (_, v) in self._cache.items()
-                               if v.get("account_id") != self.account_id), next(iter(self._cache)))
+                               if not self.is_target(v.get("account_id"))), next(iter(self._cache)))
                 del self._cache[victim]
             return {**identity, "identity_age_ms": 0}
         except Exception:
@@ -109,6 +133,8 @@ class Sink:
     def admit(self, bucket="target"):
         if not self.enabled():
             return False
+        if bucket == "unattributed" and self._storage is not None:
+            return self._storage.budget("legacy_unknown", 10)
         with self.lock:
             window = int(time.monotonic() // 60)
             if window != self.window:
@@ -139,6 +165,9 @@ class Sink:
                     admitted = self.budget("anomaly_records", 12)
                 if not admitted:
                     return
+            if self._storage is not None and not self._storage.budget(
+                    "total_records", TOTAL_RECORDS if self.persistent else 1040):
+                return
             path = self.path if record.get("scope") == "target" else self.path.with_name(self.path.name + ".unknown")
             # Persistent callers drop contended writes instead of queueing
             # behind slow filesystem I/O. Rate/cache locks never cover I/O.
@@ -148,6 +177,9 @@ class Sink:
                 if time.monotonic() < self._retry_write.get(bucket, 0):
                     return
                 try:
+                    if self._storage is not None:
+                        self._storage.append(self, path, line)
+                        return
                     if path.exists() and path.stat().st_size + len(line) > self.max_bytes:
                         old = path.with_name(path.name + ".2")
                         old.unlink(missing_ok=True)
@@ -264,9 +296,11 @@ class Trace:
         if identity is None:
             return
         account_id = identity.get("account_id")
-        if account_id is not None and account_id != self.sink.account_id:
+        selected = self.sink.for_account(account_id)
+        if selected is None or not selected.enabled():
             return
-        bucket = "target" if account_id == self.sink.account_id else "unattributed"
+        self.sink = selected
+        bucket = "target" if account_id is not None else "unattributed"
         if self.sink.persistent:
             if bucket == "target":
                 self.active = True
@@ -330,18 +364,20 @@ class Trace:
         if self.sampled or (reasons and self.fields["scope"] == "target" and self.sink.budget("anomaly", 12)):
             self.record(outcome, reasons=reasons)
 
-def start(sink, transport, method):
+def start(sink, transport, method, *, refresh=True):
     try:
-        return Trace(sink, transport, method) if sink.enabled() else None
+        enabled = sink.enabled(refresh=refresh) if isinstance(sink, RuntimeSink) else sink.enabled()
+        return Trace(sink, transport, method) if enabled else None
     except Exception:
         return None
 
-def activation_deadline():
+def activation_deadline(root=None):
     # Absolute persisted deadline: restarts never grant another 24h.
     try:
-        record = read_config(ROOT / "data/mcp_diagnostics_activation.json")
+        record = read_config((ROOT if root is None else root) / "data/mcp_diagnostics_activation.json")
         started, until = record["enabled_at"], record["expires_at"]
-        if (type(started) is int and type(until) is int and until-started == 86400
+        if (set(record) == {"account_id", "enabled_at", "expires_at"}
+                and type(started) is int and type(until) is int and until-started == 86400
                 and started <= time.time() < until and type(record["account_id"]) is int
                 and record["account_id"] == TARGET_ACCOUNT_ID):
             return until
@@ -358,38 +394,250 @@ def read_config(path):
                 raise ValueError("duplicate configuration key")
             result[key] = value
         return result
-    with path.open("rb") as source:
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise ValueError("configuration is not a regular file")
         raw = source.read(4097)
     if len(raw) > 4096:
         raise ValueError("configuration too large")
     return json.loads(raw, object_pairs_hook=unique)
 
 
-def configuration():
-    """Read once at process startup; changes require restarting both services.
+def validate_configuration(record):
+    """No implicit deadlines: only the operator helper creates seven-day grants."""
+    if not isinstance(record, dict) or type(record.get("enabled")) is not bool:
+        raise ValueError("invalid configuration")
+    if record.get("mode") == "persistent" and set(record) == {"mode", "enabled", "account_id"}:
+        account = record["account_id"]
+        if type(account) is not int or not 0 < account < 2**63:
+            raise ValueError("invalid account")
+        return {"persistent": True, "account_id": account} if record["enabled"] else {}
+    if record.get("mode") != "allowlist" or set(record) != {"mode", "enabled", "accounts"}:
+        raise ValueError("invalid configuration fields")
+    entries = record["accounts"]
+    if not isinstance(entries, list) or len(entries) > MAX_ACCOUNTS:
+        raise ValueError("invalid allowlist size")
+    accounts = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {"account_id", "expires_at"}:
+            raise ValueError("invalid account fields")
+        account, until = entry["account_id"], entry["expires_at"]
+        if (type(account) is not int or not 0 < account < 2**63 or account in accounts
+                or type(until) is not int or not 0 < until <= 253402300799):
+            raise ValueError("invalid account or absolute expiry")
+        accounts[account] = until
+    return {"persistent": True, "accounts": accounts} if record["enabled"] else {}
 
-    A present new config always overrides legacy activation, even when invalid.
-    Missing/expired legacy activation never grants persistent authorization.
-    """
-    path = ROOT / "data/mcp_diagnostics_config.json"
+
+def configuration(root=None, *, allow_legacy=True):
+    """Present/invalid explicit config never falls back to legacy authorization."""
+    root = ROOT if root is None else root
+    path = root / "data/mcp_diagnostics_config.json"
     try:
         record = read_config(path)
     except FileNotFoundError:
         if path.is_symlink():
             return {}  # A broken explicit config is not a legacy opt-in.
-        return {"deadline": activation_deadline()}
+        return {"deadline": activation_deadline(root)} if allow_legacy else {}
     except Exception:
         return {}
-    if (isinstance(record, dict) and set(record) == {"mode", "enabled", "account_id"}
-            and record["mode"] == "persistent" and record["enabled"] is True
-            and type(record["account_id"]) is int and 0 < record["account_id"] < 2**63):
-        return {"persistent": True, "account_id": record["account_id"]}
-    return {}
+    try:
+        return validate_configuration(record)
+    except ValueError:
+        return {}
 
 
-_CONFIGURATION = configuration()
-MAIN_SINK = Sink(ROOT / "data/mcp_main_diagnostics.jsonl", **_CONFIGURATION)
-EDGE_SINK = Sink(ROOT / "data/mcp_edge_diagnostics.jsonl", **_CONFIGURATION)
+class RuntimeSink(Sink):
+    """One bounded identity cache and disk budget; independent account sinks.
+
+    Readers use an atomically published snapshot. The sole refresher does I/O
+    without holding cache/rate/write locks; concurrent readers omit diagnostics.
+    """
+    def __init__(self, path, *, root=None, max_bytes=1024*1024, total_bytes=TOTAL_BYTES):
+        super().__init__(path, persistent=True, max_bytes=max_bytes)
+        self.root = ROOT if root is None else Path(root)
+        self.total_bytes = total_bytes
+        self._snapshot = ({}, {})
+        self._config_lock = threading.Lock()
+        self._refreshing = False
+        self._refresh_scheduled = False
+        self._next_config = 0
+        self._config_delay = CONFIG_INTERVAL
+        self._allow_legacy = True
+        self._disk_bytes = None
+        self._next_disk_scan = 0
+        self._disk_retry = 0
+
+    def refresh_due(self):
+        return time.monotonic() >= self._next_config
+
+    async def refresh_async(self):
+        # One worker handoff per check, even when many gateway requests arrive
+        # before the worker starts. This flag belongs to the gateway event loop.
+        if self._refresh_scheduled or self._refreshing or not self.refresh_due():
+            return
+        self._refresh_scheduled = True
+        try:
+            await asyncio.to_thread(self.refresh)
+        except Exception:
+            # No stale authorization or per-request retry storm if the worker
+            # executor itself is unavailable.
+            self._snapshot = ({}, {})
+            self._next_config = time.monotonic() + 30
+        finally:
+            self._refresh_scheduled = False
+
+    def refresh(self):
+        if not self.refresh_due() or not self._config_lock.acquire(blocking=False):
+            return
+        try:
+            if not self.refresh_due():
+                return
+            self._refreshing = True
+            # Once an explicit configuration has been observed, deletion must
+            # not revive a previously superseded legacy incident in this process.
+            policy = configuration(self.root, allow_legacy=self._allow_legacy)
+            if not policy or policy.get("persistent"):
+                self._allow_legacy = False
+            old_policy, old_children = self._snapshot
+            children = {}
+            if policy.get("persistent"):
+                accounts = policy.get("accounts", {policy.get("account_id"): None})
+            elif policy.get("deadline"):
+                accounts = {TARGET_ACCOUNT_ID: policy["deadline"]}
+            else:
+                accounts = {}
+            same_mode = (bool(policy.get("persistent")), "accounts" in policy) == (
+                bool(old_policy.get("persistent")), "accounts" in old_policy)
+            for account in [*accounts, None] if accounts else []:
+                child = old_children.get(account) if same_mode else None
+                if child is None or (not policy.get("persistent") and child.deadline != policy["deadline"]):
+                    path = self.path
+                    if account is not None and "accounts" in policy:
+                        path = path.with_name(path.name + ".account-" + str(account))
+                    elif account is None and "accounts" in policy:
+                        path = path.with_name(path.name + ".allowlist")
+                    child = Sink(path, max_bytes=self.max_bytes,
+                                 persistent=bool(policy.get("persistent")),
+                                 account_id=account, deadline=policy.get("deadline", 0),
+                                 authorization=lambda sink, key=account: self.authorized(key, sink),
+                                 storage=self)
+                children[account] = child
+            self._snapshot = (policy, children)
+            self._config_delay = CONFIG_INTERVAL if policy else min(30, self._config_delay * 2)
+        except Exception:
+            self._snapshot = ({}, {})
+            self._allow_legacy = False
+            self._config_delay = min(30, self._config_delay * 2)
+        finally:
+            self._next_config = time.monotonic() + self._config_delay
+            self._refreshing = False
+            self._config_lock.release()
+
+    def enabled(self, *, refresh=True):
+        if refresh:
+            self.refresh()
+        if self._refreshing or self.refresh_due():
+            return False
+        policy, _ = self._snapshot
+        if "accounts" in policy:
+            return any(until > time.time() for until in policy["accounts"].values())
+        if policy.get("persistent"):
+            return True
+        until = policy.get("deadline", 0)
+        return until - 86400 <= time.time() < until
+
+    def is_target(self, account_id):
+        policy, _ = self._snapshot
+        if "accounts" in policy:
+            return policy["accounts"].get(account_id, 0) > time.time()
+        return account_id == policy.get("account_id", TARGET_ACCOUNT_ID)
+
+    def authorized(self, account, sink):
+        return (self.enabled() and self._snapshot[1].get(account) is sink
+                and (account is None or self.is_target(account)))
+
+    def for_account(self, account_id):
+        if not self.enabled() or (account_id is not None and not self.is_target(account_id)):
+            return None
+        return self._snapshot[1].get(account_id)
+
+    def lookup_budget(self, target, account_id=None):
+        # Fixed global DB ceiling, not multiplied by the number of targets.
+        if target:
+            child = self._snapshot[1].get(account_id)
+            if child is None or not child.budget("identity_refresh", 12):
+                return False
+        return self.budget("target_refresh" if target else "lookup", 48 if target else 60)
+
+    def identity(self, db_path, token):
+        if not self.enabled():
+            return None
+        if not self._snapshot[0].get("persistent"):
+            return match_account(db_path, token)
+        return super().identity(db_path, token)
+
+    def _scan_bytes(self):
+        total = 0
+        # Include old base/.unknown files and every retired account, but never
+        # delete or migrate them. Bound work even in an unexpectedly huge dir.
+        with os.scandir(self.path.parent) as entries:
+            for n, entry in enumerate(entries):
+                if n >= 4096:
+                    raise OSError("diagnostic directory scan limit")
+                suffix = entry.name.removeprefix(self.path.name)
+                if suffix == entry.name:
+                    continue
+                if suffix.endswith((".1", ".2")):
+                    suffix = suffix[:-2]
+                owned = suffix in ("", ".unknown", ".allowlist.unknown") or (
+                    suffix.startswith(".account-") and suffix[9:].isascii() and suffix[9:].isdigit())
+                if owned:
+                    if not entry.is_file(follow_symlinks=False):
+                        raise OSError("invalid diagnostic file")
+                    total += entry.stat(follow_symlinks=False).st_size
+        return total
+
+    def append(self, sink, path, line):
+        if not self._write_lock.acquire(blocking=False):
+            return
+        try:
+            now = time.monotonic()
+            if now < self._disk_retry or not sink.enabled():
+                return
+            if self._disk_bytes is None or now >= self._next_disk_scan:
+                try:
+                    self._disk_bytes = self._scan_bytes()
+                except Exception:
+                    self._disk_retry = now + 30
+                    raise
+                self._next_disk_scan = now + 30
+            size = path.stat().st_size if path.exists() else 0
+            rotate = size + len(line) > sink.max_bytes
+            old = path.with_name(path.name + ".2")
+            reclaimed = old.stat().st_size if rotate and old.exists() else 0
+            if self._disk_bytes + len(line) - reclaimed > self.total_bytes:
+                return  # Retired evidence is kept; operator may archive it later.
+            if rotate:
+                old.unlink(missing_ok=True)
+                previous = path.with_name(path.name + ".1")
+                if previous.exists():
+                    previous.replace(old)
+                if path.exists():
+                    path.replace(previous)
+            with os.fdopen(os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "ab") as output:
+                output.write(line)
+            self._disk_bytes += len(line) - reclaimed
+        except Exception:
+            self._disk_bytes = None
+            raise
+        finally:
+            self._write_lock.release()
+
+
+MAIN_SINK = RuntimeSink(ROOT / "data/mcp_main_diagnostics.jsonl")
+EDGE_SINK = RuntimeSink(ROOT / "data/mcp_edge_diagnostics.jsonl")
 
 class Middleware:
     """Outermost application entry, before body read, routing and upstream I/O."""
@@ -399,7 +647,9 @@ class Middleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("method") != "POST" or not self.candidate(scope.get("path", "")):
             return await self.app(scope, receive, send)
-        trace = start(self.sink, "edge", "POST")
+        if isinstance(self.sink, RuntimeSink) and self.sink.refresh_due():
+            await self.sink.refresh_async()
+        trace = start(self.sink, "edge", "POST", refresh=False)
         if trace is None:
             return await self.app(scope, receive, send)
         scope["mcp_diagnostic"] = trace
