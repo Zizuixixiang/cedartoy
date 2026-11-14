@@ -54,6 +54,15 @@ function discards(fixture, counts, longNames=false) {
   return f;
 }
 const stress = fixture => discards(fixture,30,true);
+function sideHands(fixture, count) {
+  const f = structuredClone(fixture);
+  const viewer = f.participants.find(p=>p.player_id===f.viewer.player_id);
+  for (const p of f.participants) {
+    const relative = (p.seat_index-viewer.seat_index+f.participants.length)%f.participants.length;
+    if (relative===1 || relative===f.participants.length-1) f.board_state.hand_counts[p.player_id]=count;
+  }
+  return f;
+}
 function checkDOM(doc, game) {
   assert.equal(doc.querySelectorAll('.mahjong-seat').length, game === 'mahjong' ? 4 : 3);
   assert.equal(doc.querySelectorAll('.position-top.mahjong-seat').length, game === 'mahjong' ? 1 : 0);
@@ -118,7 +127,8 @@ async function domChecks() {
         assert.equal(w.getComputedStyle(side).overflow,'hidden');
         assert.equal(w.getComputedStyle(side).whiteSpace,'nowrap');
         assert.equal(w.getComputedStyle(side).maxHeight,'148px');
-        assert.equal(w.getComputedStyle(doc.querySelector('.position-left.mahjong-seat')).alignSelf,'start');
+        assert.equal(w.getComputedStyle(doc.querySelector('.position-left.mahjong-seat')).alignSelf,'stretch');
+        assert.equal(w.getComputedStyle(doc.querySelector('.position-left.mahjong-seat')).alignContent,'start');
         assert.equal(w.getComputedStyle(doc.querySelector('.position-left .mahjong-seat-identity')).alignSelf,'start');
         assert.equal(w.getComputedStyle(doc.querySelector('.mahjong-board-layout')).maxWidth,'1100px');
         assert.equal(w.getComputedStyle(doc.querySelector('.mahjong-own-hand-scroll')).overflowX,'auto');
@@ -166,7 +176,13 @@ async function browserChecks() {
       }
       await page.evaluate(()=>window.DuelGameUI.load('mahjong'));
       for(const [game,states] of Object.entries(fixtures)) {
-        for(const [state,fixture] of [['waiting',states.waiting],['playing',states.playing],['midgame',discards(states.playing,[11,10,10,10])],['full',discards(states.playing,15)],['stress',stress(states.playing)]]) {
+        const cases = [['waiting',states.waiting],['playing',states.playing],['midgame',discards(states.playing,[11,10,10,10])],['full',discards(states.playing,15)],['stress',stress(states.playing)]];
+        if(width>=900) for(const count of [13,14]) for(const long of [false,true]) {
+          for(const [phase,discardsCount] of [['empty',0],['mid',[11,10,10,10]],['full',15]]) {
+            cases.push([`backs-${count}-${long?'long':'normal'}-${phase}`,sideHands(discards(states.playing,discardsCount,long),count)]);
+          }
+        }
+        for(const [state,fixture] of cases) {
           // Full-page screenshots can reset Chromium's touch emulation after a
           // tall fixture. Restore the input device before measuring the next one.
           if(width<900) await device.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
@@ -177,8 +193,8 @@ async function browserChecks() {
             const rect=s=>document.querySelector(s).getBoundingClientRect().toJSON();
             const hand=document.querySelector('.mahjong-own-hand-scroll');
             return {viewport:{inner:innerWidth,fine:matchMedia('(pointer: fine)').matches},page:document.documentElement.scrollWidth,table:rect('.mahjong-table'),tile:rect('.mahjong-own-hand-scroll button'),hand:{width:hand.clientWidth,scroll:hand.scrollWidth},chat:rect('.game-chat-area'),center:rect('.mahjong-center'),top:[...document.querySelectorAll('.position-top .mahjong-tile-back')].map(e=>e.getBoundingClientRect().toJSON()),side:[...document.querySelectorAll('.mahjong-seat:is(.position-left,.position-right)')].map(s=>{
-              const r=c=>s.querySelector(c).getBoundingClientRect().toJSON();return {seat:s.getBoundingClientRect().toJSON(),avatar:r('.mahjong-seat-avatar'),name:r('.mahjong-seat-name'),badges:r('.mahjong-seat-badges'),hand:r('.mahjong-opponent-hand'),writing:getComputedStyle(s.querySelector('.mahjong-seat-name')).writingMode,orientation:getComputedStyle(s.querySelector('.mahjong-seat-name')).textOrientation};
-            }),discards:[...document.querySelectorAll('.mahjong-discard-grid')].map(g=>[...g.children].map(t=>t.getBoundingClientRect().toJSON()))};
+              const r=c=>s.querySelector(c).getBoundingClientRect().toJSON();return {player:s.dataset.playerId,seat:s.getBoundingClientRect().toJSON(),avatar:r('.mahjong-seat-avatar'),name:r('.mahjong-seat-name'),badges:r('.mahjong-seat-badges'),hand:r('.mahjong-opponent-hand'),backs:[...s.querySelectorAll('.mahjong-tile-back')].map(t=>t.getBoundingClientRect().toJSON()),writing:getComputedStyle(s.querySelector('.mahjong-seat-name')).writingMode,orientation:getComputedStyle(s.querySelector('.mahjong-seat-name')).textOrientation};
+            }),status:[...document.querySelector('.mahjong-center-status').children].map(e=>e.getBoundingClientRect().toJSON()),discards:[...document.querySelectorAll('.mahjong-discard-grid')].map(g=>[...g.children].map(t=>t.getBoundingClientRect().toJSON()))};
           });
           assert.equal(m.viewport.fine,width>=900,'input device must match viewport fixture');
           assert.ok(m.page<=width,JSON.stringify(m));
@@ -197,15 +213,27 @@ async function browserChecks() {
               assert.ok(s.avatar.y-s.seat.y<=8,'avatar must stay at top of group');
               assert.ok(s.hand.y-s.seat.y<=8,'backs must start beside identity');
               assert.ok(s.name.height>=14 && s.name.height<=148.5,'vertical name must be visible and bounded');
-              assert.ok(s.seat.height<=Math.max(s.hand.height,s.badges.bottom-s.avatar.y)+16,'side seat must hug its contents');
+              assert.ok(Math.abs(s.seat.bottom-m.center.bottom)<1,'side frame must end level with center');
+              assert.equal(s.backs.length,fixture.board_state.hand_counts[s.player]);
+              for(const [i,tile] of s.backs.entries()) {
+                assert.ok(tile.height>=19.9 && tile.height<=24.1 && tile.width>=30.9 && tile.width<=37.3,'side backs must stay legible without shrinking');
+                assert.ok(tile.x>=s.hand.x && tile.right<=s.hand.right+0.1 && tile.y>=s.hand.y && tile.bottom<=s.hand.bottom+0.1,'back clipped by hand');
+                assert.ok(tile.x>=s.seat.x+1 && tile.right<=s.seat.right-1 && tile.y>=s.seat.y+1 && tile.bottom<=s.seat.bottom-1,'back clipped by frame');
+                if(i) assert.ok(tile.y>=s.backs[i-1].bottom-0.1,'side backs overlap');
+              }
             }
           }
           if(width>=1200){assert.ok(m.hand.scroll<=m.hand.width,'14 tiles must fit');assert.ok(m.chat.width<=300.5);}
           if(width>=900)assert.ok(m.table.width<=1100.5,'table must not stretch into a wide empty field');
+          if(width>=900){
+            if(state==='playing') assert.ok(m.table.height>=600 && m.table.height<=700.5,'preserve desktop table height');
+            assert.ok(m.status.every(t=>Math.abs((t.y+t.height/2)-(m.status[0].y+m.status[0].height/2))<1),'center status must stay on one line');
+          }
           if(width>=1280)assert.ok(m.table.width>=900,'do not return to a 760px card table');
           if(game==='mahjong'){
             assert.equal(m.top.length,13);
             assert.ok(m.top.every(t=>Math.abs(t.y-m.top[0].y)<1),'top player backs stay on one row');
+            if(width>=900) assert.ok(Math.abs(m.top[0].width-Math.max(16,Math.min(22,m.table.width*0.018)))<0.1,'side enlargement must not change top backs');
           }
           if(width>=900 || game==='ka_wu_xing')for(const grid of m.discards){
             for(let i=1;i<grid.length;i++)if(grid[i].y>grid[i-1].y)assert.ok(grid[i].y>=grid[i-1].bottom-1,'discard rows overlap');
@@ -217,14 +245,16 @@ async function browserChecks() {
             await device.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
             await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
           }
-          await page.screenshot({path:path.join(output,`${game}-${width}-${state}.png`),fullPage:width>=900});
+          if(!state.startsWith('backs-') || state==='backs-14-long-full') {
+            await page.screenshot({path:path.join(output,`${game}-${width}-${state}.png`),fullPage:width>=900});
+          }
           if(width<900) await page.setViewportSize({width,height:1000});
           if(state==='playing') {
             await page.locator('.mahjong-own-hand-scroll button:not(:disabled)').first().focus();
             await page.keyboard.press('Enter');
             assert.equal(await page.locator('.mahjong-own-hand-scroll button.selected').count(),1);
           }
-          console.log(JSON.stringify({game,width,state,viewport:m.viewport,table:m.table.width,tile:[m.tile.width,m.tile.height],hand:m.hand,side:m.side.map(s=>({height:s.seat.height,nameHeight:s.name.height,orientation:s.orientation}))}));
+          console.log(JSON.stringify({game,width,state,viewport:m.viewport,table:[m.table.width,m.table.height],tile:[m.tile.width,m.tile.height],hand:m.hand,side:m.side.map(s=>({height:s.seat.height,bottomDelta:s.seat.bottom-m.center.bottom,back:[s.backs[0]?.width,s.backs[0]?.height],count:s.backs.length,nameHeight:s.name.height,orientation:s.orientation}))}));
         }
       }
       assert.deepEqual(errors,[]); await page.close();
