@@ -1,5 +1,6 @@
 // Local renderer, disposable SQLite fixtures and intercepted requests only.
 // node scripts/check_mahjong_interaction.cjs --dom
+// Add --hands-only for remaining terminal hands, privacy and meld geometry.
 // Add --review-only to focus on terminal typography/header and shared chat layout.
 // PLAYWRIGHT_MODULE=... PLAYWRIGHT_BROWSERS_PATH=... node scripts/check_mahjong_interaction.cjs
 const assert = require('node:assert/strict');
@@ -94,8 +95,8 @@ async function domChecks() {
         const player=terminal.participants.find(p=>p.player_id===row.dataset.playerId);
         const tiles=terminal.board_state.terminal_hands[player.player_id];
         const count=row.querySelector('.mahjong-terminal-player .mahjong-terminal-hand-count');
-        assert.equal(count.textContent,`手牌 · ${tiles.length} 张`);
-        assert.equal((row.textContent.match(/手牌 · /g)||[]).length,1);
+        assert.equal(count.textContent,`手牌 ${tiles.length}张`);
+        assert.equal((row.textContent.match(/手牌 \d+张/g)||[]).length,1);
         assert.equal(row.querySelector('.mahjong-terminal-name').textContent,player.display_name);
         assert.equal(row.querySelector('.mahjong-terminal-hand').children.length,tiles.length);
         assert.equal(row.querySelector('.mahjong-terminal-score').textContent,player.player_id===terminal.viewer.player_id?'+32':'-16');
@@ -158,6 +159,73 @@ async function browserChecks() {
       assert.ok(Math.abs(a.controls.height-b.controls.height)<=1,`${label}: controls ${a.controls.height} -> ${b.controls.height}`);
     };
     for(const game of Object.keys(fixtures)) {
+      if(process.argv.includes('--hands-only')) {
+        for(const terminal of [false,true]) {
+          const f=fixture(game,terminal?'terminal':'discard');
+          const hand=f.private_state.hand.slice(-10);
+          f.private_state.hand=hand;
+          const meld={kind:'peng',tiles:Array.from({length:3},(_,i)=>({id:`peng-${i}`,code:'B1',label:'1筒',suit:'B',rank:1}))};
+          f.private_state.own_melds=[meld];
+          f.board_state.melds=Object.fromEntries(f.participants.map(p=>[p.player_id,[meld]]));
+          f.board_state.hand_counts=Object.fromEntries(f.participants.map(p=>[p.player_id,10]));
+          // Public terminal tiles must never be consulted in a live room.
+          f.board_state.terminal_hands=Object.fromEntries(f.participants.map(p=>[p.player_id,p.player_id===f.viewer.player_id?hand:hand.map((t,i)=>({...t,id:`secret-${p.player_id}-${i}`}))]));
+          f.board_state.discards=Object.fromEntries(f.participants.map(p=>[p.player_id,hand.map((t,i)=>({...t,id:`discard-${p.player_id}-${i}`}))]));
+          for(const reentry of [false,true]) {
+            await render(f);await settle();
+            const geometry=await page.evaluate(()=>{
+              const rect=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return {w:r.width,h:r.height,font:parseFloat(getComputedStyle(e.querySelector('.mahjong-tile-face')).fontSize)}};
+              const table=document.querySelector('.mahjong-table').getBoundingClientRect();
+              const review=document.querySelector('.mahjong-terminal-review')?.getBoundingClientRect();
+              const center=document.querySelector('.mahjong-center').getBoundingClientRect();
+              const sides=[...document.querySelectorAll('.position-left,.position-right')].map(e=>{
+                const frame=e.getBoundingClientRect();
+                return {bottom:frame.bottom,contained:[...e.querySelectorAll('.mahjong-meld .mahjong-tile')].every(t=>{const r=t.getBoundingClientRect();return r.left>=frame.left&&r.right<=frame.right&&r.bottom<=frame.bottom;})};
+              });
+              return {centerBottom:center.bottom,sides,reviewMeld:review?rect('.mahjong-terminal-melds .mahjong-tile'):null,left:rect('.position-left .mahjong-meld .mahjong-tile'),right:rect('.position-right .mahjong-meld .mahjong-tile'),bottom:rect('.position-bottom .mahjong-meld .mahjong-tile'),scroll:document.documentElement.scrollWidth,tableBottom:table.bottom,reviewTop:review?.top};
+            });
+            console.log(JSON.stringify({game,width,terminal,reentry,geometry}));
+            for(const side of ['left','right'])for(const dim of ['w','h','font'])assert.ok(geometry[side][dim]<=geometry.bottom[dim]+0.1,`${side} meld ${dim} exceeds bottom`);
+            assert.ok(geometry.scroll<=width);
+            assert.ok(geometry.sides.every(s=>s.contained),'melds must stay inside side frames');
+            if(width>=900)assert.ok(geometry.sides.every(s=>Math.abs(s.bottom-geometry.centerBottom)<=1),'side frames still align with center');
+            if(terminal)for(const side of ['left','right'])for(const dim of ['w','h','font'])assert.ok(geometry[side][dim]<=geometry.reviewMeld[dim]+0.1,`${side} exceeds review meld ${dim}`);
+            assert.equal(await page.locator('.position-bottom .mahjong-meld .mahjong-tile').count(),3);
+            const own=page.locator('.mahjong-own-hand-scroll .mahjong-tile');
+            assert.equal(await own.count(),10);
+            assert.deepEqual(await own.evaluateAll(es=>es.map(e=>e.dataset.cardId)),hand.map(t=>String(t.id)));
+            if(terminal) {
+              assert.ok(geometry.reviewTop>geometry.tableBottom);
+              assert.equal(await page.locator('.mahjong-own-hand-scroll button:not(:disabled)').count(),0);
+              assert.equal(await page.locator('.mahjong-controls button:not(:disabled)').count(),0);
+              await own.first().evaluate(e=>e.click());
+              assert.equal(await page.locator('.mahjong-own-hand-scroll .selected').count(),0);
+              assert.equal(await page.locator('.mahjong-terminal-row').count(),f.participants.length);
+              assert.ok(await page.locator('.mahjong-own-hand-scroll').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'all ten remaining tiles fit');
+              if(!reentry) {
+                // Tall locator screenshots resize the viewport and reset touch
+                // emulation in Chromium. Keep the phone media queries active.
+                if(width<900) {
+                  const height=await page.evaluate(()=>document.documentElement.scrollHeight);
+                  await page.setViewportSize({width,height});
+                  await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+                  await page.evaluate(()=>scrollTo(0,0));await settle();
+                }
+                const box=await page.locator('#board').boundingBox();
+                assert.ok(box.x>=0&&box.x+box.width<=width+1,'capture keeps board inside viewport');
+                if(width<900)await page.screenshot({path:path.join(output,`${game}-${width}-terminal-table.png`),clip:box});
+                else await page.locator('#board').screenshot({path:path.join(output,`${game}-${width}-terminal-table.png`)});
+                if(width<900)await page.setViewportSize({width,height:900});
+              }
+            } else {
+              assert.equal(await page.locator('[data-card-id^="secret-"]').count(),0);
+              for(const side of ['left','right'])assert.equal(await page.locator(`.position-${side} .mahjong-opponent-hand .mahjong-tile-back`).count(),10);
+              assert.equal(await page.locator('.mahjong-terminal-review').count(),0);
+            }
+          }
+        }
+        continue;
+      }
       if(!process.argv.includes('--review-only')) {
       const live=fixture(game);await render(live);
       await page.locator('.mahjong-controls').scrollIntoViewIfNeeded();await settle();
@@ -246,6 +314,7 @@ async function browserChecks() {
         }
       }
     }
+    if(process.argv.includes('--hands-only')) {assert.deepEqual(errors,[]);await page.close();continue;}
     // Actual shared chat renderer: short feed starts at top; long feed follows
     // new messages until the reader scrolls up, retaining the visible anchor.
     await render(fixture('ka_wu_xing'));

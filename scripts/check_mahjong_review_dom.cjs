@@ -11,13 +11,18 @@ const assets = path.join(root, 'vendor/duel/app/static');
 import json, tempfile
 from pathlib import Path
 from scripts import create_mahjong_review_demo as demo
+from app import invites,framework
 with tempfile.TemporaryDirectory(prefix='mj-dom-') as tmp:
     demo.database.DB_PATH = Path(tmp) / 'fixture.db'
     demo.database.init_db()
-    print(json.dumps(demo.create_at(demo.database.DB_PATH, 'MJDOM001')))
+    fixture=demo.create_at(demo.database.DB_PATH, 'MJDOM001')
+    r=invites.create_invite('ka_wu_xing','human','human:1',target_player_count=3,display_name='南杉')
+    for i in range(2,4): r=invites.join_invite(r['invite_code'],'human',f'human:{i}',display_name=f'牌友{i}')
+    r=invites.start_invite(r['room_id'],'human','human:1')
+    print(json.dumps(dict(fixture=fixture,kwx=framework.project_room_for_viewer(r,r['current_player_id']))))
 `], {cwd:root,encoding:'utf8'});
   assert.equal(generated.status,0,generated.stderr);
-  const fixture=JSON.parse(generated.stdout);
+  const {fixture,kwx}=JSON.parse(generated.stdout);
   const dom=new JSDOM(fs.readFileSync(path.join(assets,'index.html'),'utf8'), {url:'https://duel.test/',runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window, doc=w.document;
   w.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});
@@ -68,6 +73,45 @@ with tempfile.TemporaryDirectory(prefix='mj-dom-') as tmp:
     w.run(`room=null;renderGame(window.fixture);`);
     assert.equal(doc.querySelectorAll('.mahjong-terminal-row.winner,.winning-tile,.mahjong-fan-row').length,0);
     assert.ok(!$('mahjongTerminalReview').textContent.includes('总计'));
+  }
+  for(const base of [fixture,kwx]) {
+    const terminal=structuredClone(base),viewer=terminal.viewer.player_id;
+    const hand=(terminal.private_state.hand||terminal.board_state.terminal_hands[viewer]).slice(-10);
+    const meld={kind:'peng',tiles:Array.from({length:3},(_,i)=>({id:`peng-${i}`,code:'B1',label:'1筒'}))};
+    terminal.status='finished';terminal.board_state.phase='finished';
+    terminal.private_state.hand=hand;terminal.private_state.own_melds=[meld];
+    terminal.board_state.melds[viewer]=[meld];
+    terminal.board_state.terminal_hands=Object.fromEntries(terminal.participants.map(p=>[p.player_id,hand]));
+    for(const source of ['private','public','result']) {
+      const f=structuredClone(terminal);
+      if(source!=='private')delete f.private_state.hand;
+      if(source==='result') {
+        f.board_state.game_result={...f.board_state.game_result,terminal_hands:f.board_state.terminal_hands};
+        delete f.board_state.terminal_hands;
+      }
+      w.fixture=f;
+      for(const reentry of [false,true]) {
+        w.run('room=null;renderGame(fixture);');
+        const tiles=[...doc.querySelectorAll('.mahjong-own-hand-scroll .mahjong-tile')];
+        assert.deepEqual(tiles.map(t=>t.dataset.cardId),hand.map(t=>String(t.id)));
+        assert.ok(tiles.every(t=>t.disabled&&t.getAttribute('aria-pressed')==='false'));
+        tiles[0].click();assert.equal(doc.querySelector('.mahjong-own-hand-scroll .selected'),null);
+        assert.equal(doc.querySelectorAll('.position-bottom .mahjong-meld .mahjong-tile').length,3);
+        assert.equal(doc.querySelectorAll('.mahjong-controls button:not(:disabled)').length,0);
+        const rows=[...doc.querySelectorAll('.mahjong-terminal-row')];assert.equal(rows.length,terminal.participants.length);
+        for(const row of rows) {
+          assert.equal(row.querySelectorAll('.mahjong-terminal-player .mahjong-terminal-hand-count').length,1);
+          assert.equal((row.textContent.match(/手牌 \d+张/g)||[]).length,1);
+          assert.equal(row.querySelector('.mahjong-terminal-hand-count').textContent,'手牌 10张');
+        }
+      }
+    }
+    const live=structuredClone(terminal);live.status='playing';live.board_state.phase='discard';
+    if(live.board_state.flow)live.board_state.flow.phase='discard';
+    delete live.private_state.hand;
+    w.fixture=live;w.run('room=null;renderGame(fixture);');
+    assert.equal(doc.querySelector('.mahjong-terminal-review'),null);
+    assert.equal(doc.querySelectorAll('.mahjong-own-hand-scroll .mahjong-tile').length,0,'live room cannot fall back to injected public hands');
   }
   console.log(`Real DOM: terminal review, reentry, original popup unchanged, original actions, ${games.length} other game modals passed.`);
   dom.window.close();
