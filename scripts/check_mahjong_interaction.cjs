@@ -1,5 +1,6 @@
 // Local renderer, disposable SQLite fixtures and intercepted requests only.
 // node scripts/check_mahjong_interaction.cjs --dom
+// Add --review-only to focus on terminal typography/header and shared chat layout.
 // PLAYWRIGHT_MODULE=... PLAYWRIGHT_BROWSERS_PATH=... node scripts/check_mahjong_interaction.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -81,11 +82,26 @@ async function domChecks() {
     const readonly=fixture(game);Object.assign(readonly,{read_only:true,demo:true,spectating:true});show(w,readonly);
     assert.equal(d.querySelectorAll('.mahjong-controls button:not(:disabled)').length,0);
     assert.equal(d.querySelectorAll('.mahjong-own-hand-scroll button:not(:disabled)').length,0);
-    show(w,fixture(game,'terminal',true));
-    assert.equal(d.querySelectorAll('.mahjong-terminal-row').length,game==='ka_wu_xing'?3:4);
-    assert.equal(d.querySelectorAll('.winning-tile').length,1);
-    if(game==='ka_wu_xing')assert.equal(d.querySelectorAll('.mahjong-terminal-score').length,3);
-    assert.equal(d.querySelector('#mahjongTerminalTitle').tagName,'H3');
+    for(const long of [false,true]) {
+      const terminal=fixture(game,'terminal',long);
+      terminal.participants.forEach((p,i)=>terminal.board_state.terminal_hands[p.player_id]=terminal.board_state.terminal_hands[p.player_id].slice(-(10+i)));
+      show(w,terminal);
+      const rows=[...d.querySelectorAll('.mahjong-terminal-row')];
+      assert.equal(rows.length,game==='ka_wu_xing'?3:4);
+      assert.equal(d.querySelectorAll('.winning-tile').length,1);
+      assert.equal(d.querySelectorAll('.mahjong-terminal-score').length,rows.length);
+      for(const row of rows) {
+        const player=terminal.participants.find(p=>p.player_id===row.dataset.playerId);
+        const tiles=terminal.board_state.terminal_hands[player.player_id];
+        const count=row.querySelector('.mahjong-terminal-player .mahjong-terminal-hand-count');
+        assert.equal(count.textContent,`手牌 · ${tiles.length} 张`);
+        assert.equal((row.textContent.match(/手牌 · /g)||[]).length,1);
+        assert.equal(row.querySelector('.mahjong-terminal-name').textContent,player.display_name);
+        assert.equal(row.querySelector('.mahjong-terminal-hand').children.length,tiles.length);
+        assert.equal(row.querySelector('.mahjong-terminal-score').textContent,player.player_id===terminal.viewer.player_id?'+32':'-16');
+      }
+      assert.equal(d.querySelector('#mahjongTerminalTitle').tagName,'H3');
+    }
   }
   console.log('PASS DOM: retained selection/focus, one response bar, Escape, stale revision, read-only, terminal scores (both variants)');
   } finally {dom.window.close();}
@@ -98,10 +114,15 @@ async function browserChecks() {
   try {for(const width of (process.env.DUEL_UI_WIDTHS||'360,390,430,1280,1700').split(',').map(Number)) {
     const page=await browser.newPage({viewport:{width,height:900},hasTouch:width<900,isMobile:width<900});
     const cdp=await page.context().newCDPSession(page),errors=[],requests=[];
-    let nextResponse=null,failNext=false;
+    let nextResponse=null,chatResponse=null,failNext=false;
+    const messages=[];
     page.on('pageerror',e=>errors.push(e.message));
     await page.route('**/*',route=>{
       const u=new URL(route.request().url());if(u.host!=='duel.test')return route.abort();
+      if(u.pathname.endsWith('/messages')) {
+        messages.push(route.request().postDataJSON());
+        assert.ok(chatResponse,'unexpected message');return route.fulfill({json:chatResponse});
+      }
       if(u.pathname.endsWith('/move')) {
         requests.push(route.request().postDataJSON());
         if(failNext){failNext=false;return route.fulfill({status:409,json:{detail:'测试：请重试'}});}
@@ -137,6 +158,7 @@ async function browserChecks() {
       assert.ok(Math.abs(a.controls.height-b.controls.height)<=1,`${label}: controls ${a.controls.height} -> ${b.controls.height}`);
     };
     for(const game of Object.keys(fixtures)) {
+      if(!process.argv.includes('--review-only')) {
       const live=fixture(game);await render(live);
       await page.locator('.mahjong-controls').scrollIntoViewIfNeeded();await settle();
       await page.evaluate(()=>{window.originalTable=document.querySelector('.mahjong-table');window.originalHand=document.querySelector('.mahjong-own-hand-scroll');originalHand.scrollLeft=30;});
@@ -195,23 +217,76 @@ async function browserChecks() {
       const demo=fixture(game);Object.assign(demo,{demo:true,read_only:true,spectating:true});await render(demo);
       assert.equal(await page.locator('.mahjong-controls button:not(:disabled)').count(),0);
       assert.equal(await page.locator('.mahjong-own-hand-scroll button:not(:disabled)').count(),0);
+      console.log(JSON.stringify({game,width,controlHeight:selected.controls.height,selectDelta:selected.y-initial.y,submitDelta:submitted.y-beforeSubmit.y,status:'PASS'}));
+      }
       for(const long of [false,true]) {
         await render(fixture(game,'terminal',long));await settle();
         const fonts=await page.evaluate(()=>{
           const f=s=>{const c=getComputedStyle(document.querySelector(s));return {size:parseFloat(c.fontSize),weight:+c.fontWeight}};
           return {title:f('.mahjong-terminal-title'),summary:f('.mahjong-terminal-summary'),body:f('.mahjong-terminal-review'),name:f('.mahjong-terminal-name'),note:f('.mahjong-terminal-note'),score:f('.mahjong-terminal-score'),scroll:document.documentElement.scrollWidth};
         });
-        assert.ok(fonts.title.size>=fonts.body.size+5 && fonts.title.weight>=700);
+        assert.ok(fonts.title.size>=fonts.body.size+(width<900?3:5) && fonts.title.weight>=700);
         assert.ok(fonts.summary.size>fonts.body.size && fonts.summary.weight>=700);
         assert.ok(fonts.name.size>fonts.body.size && fonts.name.weight>=700);
         assert.ok(fonts.score.size>fonts.name.size && fonts.score.weight>=700);
+        assert.equal(fonts.title.size,width<900?16:24);
+        assert.equal(fonts.summary.size,width<900?13:19);
+        assert.equal(fonts.name.size,width<900?13:17);
+        assert.equal(fonts.score.size,width<900?17:23);
         assert.ok(fonts.note.size<fonts.body.size);assert.ok(fonts.scroll<=width,JSON.stringify(fonts));
+        const headings=await page.locator('.mahjong-terminal-player').evaluateAll(nodes=>nodes.map(e=>{
+          const name=e.querySelector('.mahjong-terminal-name').getBoundingClientRect();
+          const count=e.querySelector('.mahjong-terminal-hand-count').getBoundingClientRect();
+          return {nameTop:name.top,nameBottom:name.bottom,countTop:count.top,countBottom:count.bottom};
+        }));
+        if(!long)assert.ok(headings.every(r=>r.countTop<r.nameBottom&&r.countBottom>r.nameTop),'normal name and hand count share a line');
+        console.log(JSON.stringify({game,width,long,fonts,status:'PASS review'}));
         if(!long||width===360) {
           await page.locator('#mahjongTerminalReview').screenshot({path:path.join(output,`${game}-${width}-review${long?'-long':''}.png`)});
         }
       }
-      console.log(JSON.stringify({game,width,controlHeight:selected.controls.height,selectDelta:selected.y-initial.y,submitDelta:submitted.y-beforeSubmit.y,status:'PASS'}));
     }
+    // Actual shared chat renderer: short feed starts at top; long feed follows
+    // new messages until the reader scrolls up, retaining the visible anchor.
+    await render(fixture('ka_wu_xing'));
+    const list=page.locator('#recentChatMessages');
+    const chat=async count=>{
+      await page.evaluate(count=>{
+        window.events=Array.from({length:count},(_,i)=>({sequence:i+1,event_type:'message',is_public:true,
+          sender:{player_id:fixture.participants[0].player_id,role:'human',name:'朋友'},text:`消息 ${i+1}`}));
+        run('renderRecentChat(events)');
+      },count);await settle();
+      assert.deepEqual(await list.locator('li').evaluateAll(es=>es.map(e=>+e.dataset.sequence)),Array.from({length:count},(_,i)=>i+1));
+    };
+    await chat(1);
+    const short=await list.evaluate(e=>({top:e.scrollTop,offset:e.firstElementChild.getBoundingClientRect().top-e.getBoundingClientRect().top,height:e.clientHeight}));
+    assert.equal(short.top,0);assert.ok(Math.abs(short.offset)<=1,JSON.stringify(short));
+    if(width>=900)await page.locator('#gameChatArea').screenshot({path:path.join(output,`${width}-chat-short.png`)});
+    await chat(200);
+    const bottom=()=>list.evaluate(e=>Math.abs(e.scrollTop+e.clientHeight-e.scrollHeight)<=1);
+    assert.ok(await list.evaluate(e=>e.scrollHeight>e.clientHeight));assert.ok(await bottom());
+    await chat(201);assert.ok(await bottom(),'new messages follow bottom');
+    await list.evaluate(e=>{e.scrollTop=600;e.dispatchEvent(new Event('scroll'));});
+    const anchor=()=>list.evaluate(e=>{
+      const top=e.getBoundingClientRect().top,row=[...e.children].find(r=>r.getBoundingClientRect().bottom>top);
+      return {sequence:row.dataset.sequence,offset:row.getBoundingClientRect().top-top};
+    });
+    const before=await anchor();await chat(202);const after=await anchor();
+    assert.equal(after.sequence,before.sequence);assert.ok(Math.abs(after.offset-before.offset)<=1);
+    await page.evaluate(()=>{events=events.slice(2);run('renderRecentChat(events)');});await settle();
+    const trimmed=await anchor();assert.equal(trimmed.sequence,before.sequence);assert.ok(Math.abs(trimmed.offset-before.offset)<=1);
+    await list.evaluate(e=>{e.scrollTop=e.scrollHeight;e.dispatchEvent(new Event('scroll'));});
+    await chat(203);assert.ok(await bottom(),'scrolling down resumes following');
+    if(width>=900)await page.locator('#gameChatArea').screenshot({path:path.join(output,`${width}-chat-full.png`)});
+    chatResponse=await page.evaluate(()=>({room:run('room'),timeline:[...events,{...events[0],sequence:204,text:'发送检查'}]}));
+    await page.locator('#chatInput').fill('发送检查');
+    await page.locator('#sendMessageButton').click();
+    await page.waitForFunction(()=>document.querySelector('#recentChatMessages').children.length===204);
+    assert.deepEqual(messages,[{message:'发送检查'}]);
+    assert.equal(await page.locator('#chatInput').inputValue(),'');
+    assert.equal(await list.locator('li').last().locator('p').innerText(),'发送检查');
+    assert.ok(await bottom(),'sending retains bottom follow');
+    console.log(JSON.stringify({width,short,status:'PASS chat order/top/overflow/follow/history/send'}));
     assert.deepEqual(errors,[]);await page.close();
   }} finally {await browser.close();if(!process.env.DUEL_UI_SCREENSHOTS)fs.rmSync(output,{recursive:true,force:true});}
 }
