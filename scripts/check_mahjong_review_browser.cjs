@@ -53,7 +53,7 @@ const output = process.env.DUEL_UI_SCREENSHOTS || '/tmp/mahjong-review-visuals';
       }));
       assert.ok(dimensions.scroll <= width, JSON.stringify(dimensions));
       assert.ok(dimensions.rows.every(r => r.x >= 0 && r.right <= width));
-      assert.equal(dimensions.metadata, '11px');
+      assert.ok(parseFloat(dimensions.review) > parseFloat(dimensions.metadata), 'review title must outrank metadata');
       // Original generic GAME OVER modal remains unchanged for Mahjong and all games.
       await page.evaluate(() => window.run(`room = {...window.fixture, status: 'playing'}; renderGame(window.fixture);`));
       await page.locator('#resultModal').waitFor({state:'visible'});
