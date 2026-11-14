@@ -135,3 +135,39 @@ python3 -m uvicorn duel_async_gateway:app --host 127.0.0.1 --port 8003 --workers
 
 不要把 8003 暴露为新的用户地址，也不要删除 `server.py` 的同步 Duel fallback；后者
 用于未切流、紧急回滚和本地诊断。
+
+## 按账号 MCP 传输证据
+
+`data/mcp_diagnostics_config.json` 的已有允许列表、到期时间、采样和总量上限仍由
+`scripts/mcp_diagnostics_config.py` 管理。新增字段只写入已允许监控的账号记录；
+不记录凭据、JSON-RPC 原始 ID、请求/响应正文或任意客户端方法名。已知根工具名可识别为
+`method=get_guide` 等直调，或 `method=tools/call, tool=get_guide`。仅 `get_guide` 直调兼容
+标准 `tools/call` 执行链路，支持原始参数对象与 `arguments` 包装，不新增公开 schema；
+其他工具名的直调仅作诊断分类，仍返回 `-32601`。网关保持原样代理，诊断保留原始调用方式。
+
+普通 MCP 代理链路用 `trace_id` 关联 edge/main，`request_id` 仍是每层独立事件 ID。
+网关剥离外部追踪头，用现有共享密钥签发绑定账号、有效期 300 秒的内部证明；主服务只在
+本地连接、独立识别为获准监控账号且证明通过时采纳。主服务的
+`delivery.gateway_link_verified` 与网关的 `delivery.upstream_trace_match` 可确认关联。
+追踪头不会转发给客户端，也不参与业务鉴权。Duel/自走棋的独立 prepare/finalize 链路
+不使用这套普通代理关联；其外层 ASGI 发送阶段仍可观察。
+
+`boundary_ms` 是相对各层请求开始时间的观测时刻，不能跨层直接相减。字段只随既有日志
+记录输出，不为每个数据块新增日志；缺少记录也可能是采样、配额或写日志失败。
+
+| 字段 | 能证明的边界 |
+| --- | --- |
+| `main_headers_write_returned` / `main_body_write_returned` | 主服务本地写接口返回；不代表对端接收 |
+| `upstream_headers_received` / `upstream_body_read_complete` | 网关拿到上游响应头 / 完整读完上游响应体 |
+| `asgi_headers_send_returned` | ASGI 响应头 send 返回；服务器可能仍在缓冲 |
+| `asgi_final_body_send_returned` | `more_body=false` 的最终响应体 send 返回；不代表 Nginx、隧道或客户端已收到 |
+| `*_failed` / `*_cancelled` | 对应接口抛出异常 / 取消；不记录异常原文 |
+| `asgi_disconnect_observed` | 应用实际读到了 ASGI disconnect 事件；没有该字段不能证明连接一直正常 |
+
+`delivery` 包含主服务预期/已写字节数、网关上游已读字节数、ASGI send 返回的数据块数及
+字节数；中途异常时只累计已返回的数据块。`reasons=delivery_incomplete` 表示已开始发送
+但未观察到最终返回。原 `response_ready` 只表示已生成或解析响应，`response_started`
+在发送前设置，`completed` 只表示处理函数退出，均不能单独当作客户端回执。
+
+若关联成功且完整读入、最终 ASGI send 均已返回，下一步需要 Nginx/隧道与真实客户端
+同次请求的接收、解析及 JSON-RPC 匹配证据；不能从服务端 `-32601` 推断客户端超时原因。

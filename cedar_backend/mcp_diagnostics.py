@@ -3,14 +3,17 @@ import asyncio
 from collections import OrderedDict
 from contextlib import closing
 import hashlib
+import hmac
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import stat
 import threading
 import time
 import uuid
+from .mcp_schema import _ROOT_TOOL_NAMES
 
 METHODS = frozenset((
     "initialize", "ping", "tools/list", "tools/call",
@@ -34,6 +37,62 @@ TOTAL_RECORDS = 128  # Per layer/minute, independent of allowlist size.
 TOTAL_BYTES = 24 * 1024 * 1024  # Includes retired accounts and legacy files.
 STAGES = frozenset(("entered", "identity_checked", "parsed", "proxy_dispatch",
                     "duel_dispatch", "autochess_dispatch", "response_ready"))
+TRACE_ID_HEADER = "X-CedarToy-MCP-Trace-ID"
+TRACE_PROOF_HEADER = "X-CedarToy-MCP-Trace-Proof"
+TRACE_HEADERS = frozenset((TRACE_ID_HEADER.lower().encode(), TRACE_PROOF_HEADER.lower().encode()))
+BOUNDARIES = frozenset((
+    "main_headers_write_started", "main_headers_write_returned", "main_headers_write_failed",
+    "main_body_write_started", "main_body_write_returned", "main_body_write_failed",
+    "upstream_request_started", "upstream_headers_received", "upstream_body_read_started",
+    "upstream_body_read_complete", "upstream_read_failed", "upstream_read_cancelled",
+    "asgi_headers_send_started", "asgi_headers_send_returned", "asgi_headers_send_failed",
+    "asgi_headers_send_cancelled", "asgi_body_send_started", "asgi_body_first_send_returned",
+    "asgi_final_body_send_returned", "asgi_body_send_failed", "asgi_body_send_cancelled",
+    "asgi_disconnect_observed",
+))
+
+
+def _trace_proof(secret, trace_id, account_id, timestamp):
+    message = f"mcp-trace-v1:{trace_id}:{account_id}:{timestamp}".encode()
+    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+def _verified_trace_id(headers, secret, account_id, peer_host):
+    """Only a local gateway proof for this independently identified account."""
+    if not secret or peer_host not in {"127.0.0.1", "::1"}:
+        return None
+    try:
+        trace_id = headers.get(TRACE_ID_HEADER, "")
+        proof = headers.get(TRACE_PROOF_HEADER, "")
+        if not re.fullmatch(r"[0-9a-f]{32}", trace_id) or not re.fullmatch(r"[0-9]{1,12}\.[0-9a-f]{64}", proof):
+            return None
+        timestamp, signature = proof.split(".")
+        if abs(time.time() - int(timestamp)) > 300:
+            return None
+        if hmac.compare_digest(signature, _trace_proof(secret, trace_id, account_id, timestamp)):
+            return trace_id
+    except Exception:
+        pass  # Diagnostics must never become authentication or reject traffic.
+    return None
+
+
+def observe_main_send(handler, part, operation, size=None):
+    """Observe local HTTP writer return, never claim that a peer received bytes."""
+    trace = getattr(handler, "_mcp_diagnostic", None)
+    if trace is None or not trace.target:
+        return operation()
+    trace.boundary(part + "_started")
+    if size is not None:
+        trace.delivery["main_body_expected_bytes"] = size
+    try:
+        result = operation()
+    except BaseException:
+        trace.boundary(part + "_failed")
+        raise
+    if size is not None and type(result) is int:
+        trace.delivery["main_body_written_bytes"] = result
+    trace.boundary(part + "_returned")
+    return result
 
 class Sink:
     """Independent target/unknown budgets and files; other known accounts are omitted."""
@@ -258,6 +317,25 @@ class Trace:
         self.http_status = None
         self.rpc_result = "unobserved"
         self.rpc_error_code = None
+        self.boundaries = {}
+        self.delivery = {}
+
+    @property
+    def target(self):
+        return self.active and self.fields.get("scope") == "target"
+
+    def boundary(self, stage):
+        # Summary only: no extra records or per-chunk writes, budgets unchanged.
+        if self.target and stage in BOUNDARIES:
+            self.boundaries.setdefault(stage, self.elapsed())
+
+    def forward_headers(self, secret):
+        if not self.target or not secret:
+            return {}
+        trace_id = self.fields["trace_id"]
+        timestamp = str(int(time.time()))
+        proof = _trace_proof(secret, trace_id, self.fields["account_id"], timestamp)
+        return {TRACE_ID_HEADER: trace_id, TRACE_PROOF_HEADER: timestamp + "." + proof}
 
     @property
     def http_status(self):
@@ -278,6 +356,8 @@ class Trace:
                   "rpc_result": self.rpc_result, "rpc_error_code": self.rpc_error_code}
         if self.sink.persistent:
             record.update(mode="persistent", entry_sampled=self.sampled, phases_ms=dict(self.phases))
+        if self.target:
+            record.update(boundary_ms=dict(self.boundaries), delivery=dict(self.delivery))
         self.sink.write({**record, **extra})
 
     def emit(self, stage):
@@ -291,7 +371,7 @@ class Trace:
                 return
         self.record(stage)
 
-    def identify(self, db_path, token):
+    def identify(self, db_path, token, *, upstream_headers=None, shared_secret="", peer_host=""):
         identity = self.sink.identity(db_path, token)
         if identity is None:
             return
@@ -313,12 +393,31 @@ class Trace:
             return
         self.fields.update(identity)
         self.fields["scope"] = bucket
+        if self.target:
+            self.fields["trace_id"] = self.fields["request_id"]
+            if self.fields["transport"] == "main" and upstream_headers is not None:
+                trace_id = _verified_trace_id(upstream_headers, shared_secret, account_id, peer_host)
+                if trace_id:
+                    self.fields["trace_id"] = trace_id
+                    self.delivery["gateway_link_verified"] = True
         self.emit("entered")
         self.emit("identity_checked")
 
     def payload(self, payload):
         method = payload.get("method") if isinstance(payload, dict) else None
         self.fields["method"] = method if isinstance(method, str) and method in METHODS else "other"
+        self.fields.pop("tool", None)
+        # Extra classification is only for an explicitly monitored account.
+        # Never retain arbitrary method/tool names, IDs, arguments or tokens.
+        if self.active and self.fields.get("scope") == "target":
+            if isinstance(method, str) and method in _ROOT_TOOL_NAMES:
+                self.fields["method"] = method
+                self.fields["tool"] = method
+            elif method == "tools/call":
+                params = payload.get("params")
+                name = params.get("name") if isinstance(params, dict) else None
+                if isinstance(name, str) and name in _ROOT_TOOL_NAMES:
+                    self.fields["tool"] = name
         self.emit("parsed")
 
     def response(self, payload):
@@ -361,6 +460,9 @@ class Trace:
             reasons.append(self.rpc_result)
         if self.elapsed() >= SLOW_MS:
             reasons.append("slow")
+        if (("asgi_headers_send_started" in self.boundaries and "asgi_final_body_send_returned" not in self.boundaries)
+                or ("main_headers_write_started" in self.boundaries and "main_body_write_returned" not in self.boundaries)):
+            reasons.append("delivery_incomplete")
         if self.sampled or (reasons and self.fields["scope"] == "target" and self.sink.budget("anomaly", 12)):
             self.record(outcome, reasons=reasons)
 
@@ -661,9 +763,36 @@ class Middleware:
                     token = value[7:].decode("latin-1").strip()
                     break
         async def observed_send(message):
-            if message["type"] == "http.response.start":
+            kind = message["type"]
+            if kind == "http.response.start":
                 trace.http_status = message["status"]
-            await send(message)
+            part = ("asgi_headers_send" if kind == "http.response.start" else
+                    "asgi_body_send" if kind == "http.response.body" else None)
+            if part:
+                trace.boundary(part + "_started")
+            try:
+                await send(message)
+            except asyncio.CancelledError:
+                if part:
+                    trace.boundary(part + "_cancelled")
+                raise
+            except Exception:
+                if part:
+                    trace.boundary(part + "_failed")
+                raise
+            if kind == "http.response.start":
+                trace.boundary("asgi_headers_send_returned")
+            elif kind == "http.response.body" and trace.target:
+                trace.delivery["asgi_body_bytes"] = trace.delivery.get("asgi_body_bytes", 0) + len(message.get("body", b""))
+                trace.delivery["asgi_body_chunks"] = trace.delivery.get("asgi_body_chunks", 0) + 1
+                trace.boundary("asgi_body_first_send_returned")
+                if not message.get("more_body", False):
+                    trace.boundary("asgi_final_body_send_returned")
+        async def observed_receive():
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                trace.boundary("asgi_disconnect_observed")
+            return message
         outcome = "completed"
         try:
             await asyncio.to_thread(trace.identify, self.db_path, token)
@@ -673,7 +802,7 @@ class Middleware:
                 # unrelated, throttled or unselected unknown traffic.
                 scope.pop("mcp_diagnostic", None)
                 return await self.app(scope, receive, send)
-            await self.app(scope, receive, observed_send)
+            await self.app(scope, observed_receive, observed_send)
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise

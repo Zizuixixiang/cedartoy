@@ -4,6 +4,14 @@ The compatibility methods retain their signatures and all per-game handler and
 proxy boundaries. Route order and response bytes are preserved.
 """
 
+from cedar_backend import mcp_diagnostics
+
+
+def _diagnostic_headers(self):
+    trace = getattr(self, "_mcp_diagnostic", None)
+    if trace is not None and trace.target and trace.delivery.get("gateway_link_verified"):
+        self.send_header(mcp_diagnostics.TRACE_ID_HEADER, trace.fields["trace_id"])
+
 
 def _send_json(self, payload, status, extra_headers, *, json):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -15,8 +23,9 @@ def _send_json(self, payload, status, extra_headers, *, json):
     if extra_headers:
         for key, value in extra_headers.items():
             self.send_header(key, value)
-    self.end_headers()
-    self.wfile.write(body)
+    _diagnostic_headers(self)
+    mcp_diagnostics.observe_main_send(self, "main_headers_write", self.end_headers)
+    mcp_diagnostics.observe_main_send(self, "main_body_write", lambda: self.wfile.write(body), len(body))
 
 
 def _send_empty(self, status, extra_headers):
@@ -26,7 +35,9 @@ def _send_empty(self, status, extra_headers):
     if extra_headers:
         for key, value in extra_headers.items():
             self.send_header(key, value)
-    self.end_headers()
+    _diagnostic_headers(self)
+    mcp_diagnostics.observe_main_send(self, "main_headers_write", self.end_headers)
+    mcp_diagnostics.observe_main_send(self, "main_body_write", lambda: 0, 0)
 
 
 def _send_html_bytes(self, body, etag, extra_headers):

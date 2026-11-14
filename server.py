@@ -4851,7 +4851,11 @@ class CedarToyHandler(BaseHTTPRequestHandler):
             return
         self._mcp_diagnostic = mcp_diagnostics.start(mcp_diagnostics.MAIN_SINK, "main", self.command)
         if self._mcp_diagnostic is not None:
-            self._mcp_diagnostic.identify(TURTLE_DB_PATH, path_token or _extract_bearer(self.headers))
+            self._mcp_diagnostic.identify(
+                TURTLE_DB_PATH, path_token or _extract_bearer(self.headers),
+                upstream_headers=self.headers, shared_secret=DUEL_GATEWAY_SHARED_SECRET,
+                peer_host=self.client_address[0] if self.client_address else "",
+            )
 
     def do_POST(self):
         self._mcp_diagnostic = None

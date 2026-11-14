@@ -86,6 +86,12 @@ def _handle_root_mcp(payload, user_agent, path_token, client_ip, bearer_token, *
         if method == "tools/list":
             logger.info("MCP tools/list UA: %s", user_agent)
             return _json_rpc_result(request_id, {"tools": _root_tools(user_agent=user_agent, schema_mode=schema_mode)})
+        # Narrow legacy alias; keep the original payload for transport diagnostics.
+        # All validation, authentication, errors and notices use tools/call below.
+        if method == "get_guide":
+            arguments = params.get("arguments", params) if isinstance(params, dict) else params
+            method = "tools/call"
+            params = {"name": "get_guide", "arguments": arguments}
         if method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}

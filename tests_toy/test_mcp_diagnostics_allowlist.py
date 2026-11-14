@@ -60,6 +60,47 @@ class AllowlistTests(unittest.TestCase):
         self.clock.return_value += seconds
         self.mono.return_value += seconds
 
+    def test_known_tool_classification_is_allowlisted_private_and_revocable(self):
+        self.runtime()
+        for account in (7, 8):
+            for method in ("list_games", "get_guide", "play", "account", "feedback", "tools/call"):
+                trace = self.trace(account)
+                trace.payload({"method": method, "id": self.token,
+                               "params": {"name": "get_guide", "arguments": {"secret": self.token}}})
+                trace.response({"error": {"code": -32601, "message": self.token}})
+                trace.finish()
+                record = self.records(".account-" + str(account))[-1]
+                self.assertEqual(record["method"], method)
+                self.assertEqual(record["tool"], "get_guide" if method == "tools/call" else method)
+                self.assertEqual(record["rpc_error_code"], -32601)
+        before = self.records()
+        trace = self.trace(9)
+        trace.payload({"method": "get_guide"})
+        trace.finish()
+        self.assertEqual(self.records(), before)
+        trace = self.trace(token="unknown-fixture")
+        trace.payload({"method": "get_guide"})
+        trace.finish()
+        unknown = self.records(".allowlist.unknown")[-1]
+        self.assertEqual(unknown["method"], "other")
+        self.assertNotIn("tool", unknown)
+        self.tick(10)
+        trace = self.trace()
+        trace.payload({"method": "get_guide"})
+        trace.payload({"method": "tools/call", "params": {"name": self.token}})
+        trace.finish()
+        self.assertNotIn("tool", self.records(".account-7")[-1])
+        before = self.records()
+        trace = self.trace()
+        self.replace({8: self.now + 3600})
+        self.tick()
+        trace.payload({"method": "get_guide"})
+        trace.finish()
+        self.assertEqual(self.records(), before)
+        serialized = json.dumps(self.records())
+        for secret in (self.token, "secret", "arguments", "unknown-fixture"):
+            self.assertNotIn(secret, serialized)
+
     def test_strict_allowlist_and_helper_absolute_default(self):
         valid = config_cli.update(None, "set", [7, 8], now=1800000000)
         self.assertEqual(diag.validate_configuration(valid)["accounts"], {7: 1800604800, 8: 1800604800})

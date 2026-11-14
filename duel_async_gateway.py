@@ -142,14 +142,19 @@ def _duel_rpc_payload(raw_body, path):
 
 
 def _forward_request_headers(request):
-    return [
+    headers = [
         (key, value)
         for key, value in request.headers.raw
-        if key.lower() not in HOP_BY_HOP_HEADERS
+        if key.lower() not in HOP_BY_HOP_HEADERS | mcp_diagnostics.TRACE_HEADERS
     ]
+    trace = request.scope.get("mcp_diagnostic")
+    if trace is not None:
+        headers.extend((key.encode(), value.encode()) for key, value in
+                       trace.forward_headers(request.app.state.shared_secret).items())
+    return headers
 
 
-async def _raw_http_request(client, method, url, *, body, headers, timeout):
+async def _raw_http_request(client, method, url, *, body, headers, timeout, trace=None):
     outgoing = client.build_request(
         method,
         url,
@@ -157,21 +162,48 @@ async def _raw_http_request(client, method, url, *, body, headers, timeout):
         headers=headers,
         timeout=httpx.Timeout(timeout),
     )
-    upstream = await client.send(outgoing, stream=True)
+    observed = trace is not None and trace.target
+    if observed:
+        trace.boundary("upstream_request_started")
+    upstream = None
     try:
+        upstream = await client.send(outgoing, stream=True)
+        if observed:
+            trace.boundary("upstream_headers_received")
+            trace.delivery["upstream_http_status"] = upstream.status_code
+            trace.delivery["upstream_trace_match"] = (
+                upstream.headers.get(mcp_diagnostics.TRACE_ID_HEADER) == trace.fields["trace_id"])
+            trace.delivery["upstream_body_bytes"] = 0
+            trace.boundary("upstream_body_read_started")
         if upstream.is_stream_consumed:
             raw = upstream.content
         else:
-            chunks = [chunk async for chunk in upstream.aiter_raw()]
+            chunks = []
+            async for chunk in upstream.aiter_raw():
+                chunks.append(chunk)
+                if observed:
+                    trace.delivery["upstream_body_bytes"] += len(chunk)
             raw = b"".join(chunks)
+        if observed:
+            trace.delivery["upstream_body_bytes"] = len(raw)
+            trace.boundary("upstream_body_read_complete")
         response_headers = [
             (key, value)
             for key, value in upstream.headers.raw
             if key.lower() not in HOP_BY_HOP_HEADERS
         ]
         return upstream.status_code, response_headers, raw
+    except asyncio.CancelledError:
+        if observed:
+            trace.boundary("upstream_read_cancelled")
+        raise
+    except Exception:
+        if observed:
+            trace.boundary("upstream_read_failed")
+        raise
     finally:
-        await upstream.aclose()
+        if upstream is not None:
+            await upstream.aclose()
 
 
 def _raw_response(status_code, headers, body):
@@ -247,6 +279,7 @@ async def _internal_json_call(client, url, body, headers):
 
 async def _proxy_to_cedartoy(request, body):
     client = request.app.state.cedartoy_client
+    trace = request.scope.get("mcp_diagnostic")
     status, headers, raw = await _raw_http_request(
         client,
         request.method,
@@ -254,13 +287,16 @@ async def _proxy_to_cedartoy(request, body):
         body=body,
         headers=_forward_request_headers(request),
         timeout=PROXY_TIMEOUT_SECONDS,
+        trace=trace,
     )
-    trace = request.scope.get("mcp_diagnostic")
     if trace is not None and len(raw) <= 65536:
         try:
             await asyncio.to_thread(trace.response, json.loads(raw))
         except Exception:
             pass
+    # Internal correlation is never reflected to clients, including forged
+    # headers from an upstream. Payload and ordinary response headers are intact.
+    headers = [(key, value) for key, value in headers if key.lower() not in mcp_diagnostics.TRACE_HEADERS]
     return _raw_response(status, headers, raw)
 
 
