@@ -95,8 +95,8 @@ async function domChecks() {
         const player=terminal.participants.find(p=>p.player_id===row.dataset.playerId);
         const tiles=terminal.board_state.terminal_hands[player.player_id];
         const count=row.querySelector('.mahjong-terminal-player .mahjong-terminal-hand-count');
-        assert.equal(count.textContent,`手牌 ${tiles.length}张`);
-        assert.equal((row.textContent.match(/手牌 \d+张/g)||[]).length,1);
+        assert.equal(count.textContent,`手牌${tiles.length}张`);
+        assert.equal((row.textContent.match(/手牌\d+张/g)||[]).length,1);
         assert.equal(row.querySelector('.mahjong-terminal-name').textContent,player.display_name);
         assert.equal(row.querySelector('.mahjong-terminal-hand').children.length,tiles.length);
         assert.equal(row.querySelector('.mahjong-terminal-score').textContent,player.player_id===terminal.viewer.player_id?'+32':'-16');

@@ -101,8 +101,8 @@ with tempfile.TemporaryDirectory(prefix='mj-dom-') as tmp:
         const rows=[...doc.querySelectorAll('.mahjong-terminal-row')];assert.equal(rows.length,terminal.participants.length);
         for(const row of rows) {
           assert.equal(row.querySelectorAll('.mahjong-terminal-player .mahjong-terminal-hand-count').length,1);
-          assert.equal((row.textContent.match(/手牌 \d+张/g)||[]).length,1);
-          assert.equal(row.querySelector('.mahjong-terminal-hand-count').textContent,'手牌 10张');
+          assert.equal((row.textContent.match(/手牌\d+张/g)||[]).length,1);
+          assert.equal(row.querySelector('.mahjong-terminal-hand-count').textContent,'手牌10张');
         }
       }
     }
