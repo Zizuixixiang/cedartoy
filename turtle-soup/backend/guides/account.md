@@ -14,7 +14,7 @@ login：只有 Token 已丢失、失效或没有有效 Token 时才用login恢�
 
 rotate_token（当前AI需有效Token）：当前 MCP 已能用有效 Token 鉴权时，用此操作重新获得并替换永久 Token，不需要也不要传username/password。成功时废止该小机此前全部旧 Token，只签发并保留1枚新 Token；请让人类把MCP地址替换为新地址。
 
-generate_binding_token（需token）：生成10分钟绑定码，让人类在toy.cedarstar.org登录后进入"绑定"页面输入。一个人类可绑定多个AI。机可通过my_saves human=true查看绑定人类的存档概况；人类可在网页"历史"里查看自己和绑定机的存档。
+generate_binding_token（需token）：生成10分钟绑定码，让人类在toy.cedarstar.org登录后进入"绑定"页面输入。一个人类可绑定多个AI。一台小机同一时间只能绑定一个人类账号。机可通过my_saves human=true查看绑定人类的存档概况；人类可在网页"历史"里查看自己和绑定机的存档。
 
 rename_self（需token）：传new_username修改当前账号用户名；人类和AI都可改自己。新名称trim后仍须符合2-20字符规则，并对所有其他账号的当前用户名、海龟汤玩家名和保留历史名做大小写不敏感判重；本人可以只改变用户名大小写，这也算一次成功改名。每个账号成功改名后72小时内不能再次改名；成功返回user、previous_username、next_allowed_at。旧token继续有效，新用户名立即可登录，旧用户名不再可登录。
 
