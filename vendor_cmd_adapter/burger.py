@@ -18,9 +18,11 @@ RUNNER_CODE = r'''
 import contextlib
 import io
 import json
+import os
 import random
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 payload = json.load(sys.stdin)
@@ -36,6 +38,82 @@ import game
 game.SAVE_FILE = save_dir / "save.json"
 
 SIGN_STYLES = {"温馨", "复古", "极简", "怪诞"}
+
+def atomic_save(state, *, backup=False):
+    path = game.SAVE_FILE
+    fd, temporary = tempfile.mkstemp(prefix=".save-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            json.dump(state, out, ensure_ascii=False, indent=2)
+            out.flush()
+            os.fsync(out.fileno())
+        if backup:
+            # Keep the original inode. All runner writes replace save.json, and
+            # the parent holds this slot's lock through the entire command.
+            original = path.with_name("save.json.pre-vegetarian.bak")
+            try:
+                os.link(path, original)
+            except FileExistsError:
+                if original.is_symlink() or not original.is_file():
+                    raise
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+game.save = atomic_save
+
+def repair_vegetarian_order(state, index, order):
+    name = order.get("customer")
+    if name not in ("宁枝", "伊芙") and order.get("archetype") != "素食客":
+        return False
+    profiles = {c["name"]: c for c in game.CUSTOMERS}
+    profile = profiles.get(name, profiles["宁枝"])
+    customer = dict(profile, name=name, vegetarian=True,
+                    focus=order.get("focus", profile["focus"]),
+                    archetype=order.get("archetype", profile.get("archetype", "常客")))
+    saved_dislikes = order.get("dislikes", [])
+    customer["dislikes"] = saved_dislikes + [x for x in profile["dislikes"] if x not in saved_dislikes]
+    dislikes = game.dietary_dislikes(customer)
+    ingredients = [order.get("bun"), order.get("protein"), order.get("sauce"),
+                   *order.get("toppings", []), *order.get("required_layers", [])]
+    if (order.get("vegetarian") is True and order.get("vegetarian_rule")
+            and not any(item in dislikes for item in ingredients)):
+        if saved_dislikes == dislikes:
+            return False
+        order["dislikes"] = dislikes
+        return True
+
+    # Reuse the live generator for layers, description, timing, batch and
+    # event prices. The command's RNG is seeded separately after loading.
+    day = state["day"]
+    random.seed(json.dumps([day, index, order], sort_keys=True, ensure_ascii=False))
+    recipe = game.generate_order(state, day, customer, force_batch=order.get("batch_count") == 2)
+    # The hidden-menu event may add a free pickle after the generator checks dislikes.
+    if recipe["event_key"] == "隐藏菜单传闻" and "酸黄瓜" in dislikes and "酸黄瓜" in recipe["toppings"]:
+        recipe["toppings"].remove("酸黄瓜")
+        recipe["required_layers"].remove("酸黄瓜")
+    for key in ("bun", "protein", "doneness", "toppings", "sauce", "sauce_amount",
+                "required_layers", "dislikes", "vegetarian", "vegetarian_rule",
+                "patience", "base_price"):
+        order[key] = recipe[key]
+    return True
+
+def repair_pending_orders(state):
+    orders = state.get("current_orders")
+    pointer = state.get("order_pointer")
+    if not isinstance(orders, list) or type(pointer) is not int or not 0 <= pointer < len(orders):
+        return False
+    grill = state.get("grill", {})
+    started = (state.get("current_order_accepted") or state.get("turn") or state.get("layers")
+               or state.get("cooked") or state.get("sauces") or not isinstance(grill, dict)
+               or any(item is not None for item in grill.values()))
+    first = max(pointer + bool(started), len(state.get("scores", [])))
+    changed = False
+    for index in range(first, len(orders)):
+        order = orders[index]
+        if isinstance(order, dict) and repair_vegetarian_order(state, index, order):
+            changed = True
+    return changed
 
 def clone_default(value):
     return json.loads(json.dumps(value, ensure_ascii=False))
@@ -302,7 +380,6 @@ if payload.get("reset"):
     except FileNotFoundError:
         pass
 
-random.seed(str(game.SAVE_FILE) + ":" + command)
 load_warning = ""
 if not payload.get("reset") and game.SAVE_FILE.exists():
     try:
@@ -313,7 +390,11 @@ if not payload.get("reset") and game.SAVE_FILE.exists():
         corrupt_path = game.SAVE_FILE.with_name(game.SAVE_FILE.name + ".corrupt")
         game.SAVE_FILE.replace(corrupt_path)
         load_warning = f"⚠️ 检测到损坏存档，已备份为 {corrupt_path.name}，本次已重建新档。"
+    else:
+        if repair_pending_orders(saved_data):
+            atomic_save(saved_data, backup=True)
 
+random.seed(str(game.SAVE_FILE) + ":" + command)
 state = game.fresh_state() if payload.get("reset") or load_warning else game.load()
 ensure_started(state)
 
