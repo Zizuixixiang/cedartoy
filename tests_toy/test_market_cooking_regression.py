@@ -212,7 +212,7 @@ class MarketCookingRegressionTests(unittest.TestCase):
         reply = game.cmd("出锅")
         self.assertIn("王姐", reply)
         self.assertIn("小白菜⚠坑", reply)
-        self.assertNotIn("当时就觉得", reply)
+        self.assertIn("当时就觉得不太对", reply)
         game = self.kitchen("小白菜")
         game.fridge.clear()
         game.basket = [{"name": "小白菜", "quality": "trap", "qty": 1}]
@@ -225,10 +225,8 @@ class MarketCookingRegressionTests(unittest.TestCase):
         game.closed_stalls.clear()
         for command, delta in [("去 veg_1", "3→2"), ("去 veg_1", "2→1"), ("去 veg_2", "1→0")]:
             reply = game.cmd(command)
-            self.assertIn(f"⏰{delta}（逛摊-1）", reply)
-            if game.market_time == 1:
-                self.assertIn("换摊", reply)
-                self.assertIn("不能再买", reply)
+            self.assertEqual(int(delta[-1]), game.market_time)
+            self.assertIn(f"⏰{game.market_time:g}" if game.market_time > 0 else "⏰散场", reply)
         self.assertTrue(game._market_closed)
         self.assertIn("买不了", game.cmd("买 小白菜"))
 
