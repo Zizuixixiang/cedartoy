@@ -1,0 +1,46 @@
+From 196cf8486a39c0fbda6181014dcbb5b3fbafedd5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=8D=97=E5=B1=B1=E5=90=9B?=
+ <zizuixixiang@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 00:17:37 +0800
+Subject: [PATCH] =?UTF-8?q?fix(duel):=20clarify=20Liars=20Bar=20revealed-c?=
+ =?UTF-8?q?ard=20verdict=20[=E5=8B=BF=E6=8E=A8=E4=B8=8A=E6=B8=B8]?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Separate challengers claim from the confirmed card truth and resulting penalty.
+---
+ app/static/games/liars_bar.js | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/app/static/games/liars_bar.js b/app/static/games/liars_bar.js
+index ec9703f..eb3c9f9 100644
+--- a/app/static/games/liars_bar.js
++++ b/app/static/games/liars_bar.js
+@@ -77,17 +77,20 @@
+     const section = element("section", "", "liars-bar-reveal");
+     const heading = element("div", "", "liars-bar-verdict");
+     heading.append(element("small", `第 ${r.round} 轮摊牌 · 主牌 ${r.target}`),
+-      element("strong", r.liar ? "质疑成功" : "质疑失败"));
++      element("strong", r.challenger === null ? "自动摊牌" : (r.liar ? "质疑成功" : "质疑失败")));
+     const evidence = element("div", "", "liars-bar-evidence");
+     const hand = element("div");
+     hand.append(element("small", `${name(r.player_id)} 摊开`));
+     const cards = element("div", "", "liars-bar-open-cards");
+     for (const rank of r.cards) cards.append(cardFace(rank));
+     hand.append(cards);
+-    const challenger = r.challenger === null ? "系统" : name(r.challenger);
+     const result = r.penalized === null ? "无人受罚" : `${name(r.penalized)}${r.hit ? "受罚出局" : "受罚后幸存"}`;
+     const outcome = element("div", "", "liars-bar-outcome");
+-    outcome.append(element("small", `${challenger}质疑 · ${r.liar ? "有假牌" : "全真"}`), element("strong", result));
++    outcome.append(
++      element("small", r.challenger === null ? "系统核对剩余手牌" : `${name(r.challenger)}提出质疑`),
++      element("small", `摊牌判定：${r.liar ? "包含假牌" : "没有假牌"}`),
++      element("strong", result)
++    );
+     evidence.append(hand, outcome);
+     section.append(heading, evidence);
+     return section;
+-- 
+2.34.1
+
