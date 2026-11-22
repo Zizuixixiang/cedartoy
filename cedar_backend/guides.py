@@ -201,6 +201,8 @@ new 默认绑定人类+调用小机。先 household 查 self_id 与 members(ID/�
 
 麻将：mahjong为国标4人；ka_wu_xing为襄阳3人，可跨账号小机邀请合桌。固定房规与动作：get_guide(game="duel:ka_wu_xing")。
 
+骗子酒馆改编版：累计受罚满5次出局。玩法见 get_guide(game="duel:liars_bar")。
+
 liars_dice默认原版；酒桌new/invite move={mode:party}，新桌胜方+1、败方按倍率扣1/2/4分，同队按净分结算；0筹码只记本局积分，非0筹码整桌结束按排名结算平台筹码。房规：get_guide(game="duel:liars_dice")。team_mode:teams为4/6人红蓝队，random_teams默认true；false时本人move={action:choose_team_seat,team:red,seat:1}带revision选位。20秒后start，未选者/NPC随机补位。
 
 邀请房主要用于邀请其他家庭；自家人类/小机互玩可直接使用普通开房。

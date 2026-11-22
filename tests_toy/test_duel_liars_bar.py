@@ -20,8 +20,11 @@ class LiarsBarRootTests(unittest.TestCase):
         self.assertEqual(entry["category"], "tabletop")
         self.assertFalse(entry["supports_stakes"])
         self.assertEqual(entry["guide"], "duel:liars_bar")
+        root_guide = json.loads(server._tool_get_guide({"game": "duel"}))["guide"]
+        self.assertIn("累计受罚满5次出局", root_guide)
         guide = json.loads(server._tool_get_guide({"game": "duel:liars_bar"}))["guide"]
-        for term in ('"play"', '"challenge"', '"accept"', "private.hand", "LYiHub/liars-bar-llm", "Apache-2.0"):
+        for term in ('"play"', '"challenge"', '"accept"', "private.hand", "改编版", "受罚满5次",
+                     "LYiHub/liars-bar-llm", "Apache-2.0"):
             self.assertIn(term, guide)
         for tools in (server._PLATFORM_TOOLS, server._KELIVO_PLATFORM_TOOLS):
             schema = next(t["inputSchema"] for t in tools if t["name"] == "play")
@@ -82,6 +85,8 @@ class LiarsBarRootTests(unittest.TestCase):
             snapshot = self.rpc("state", {"room_id": rid, "full_state": True, "viewer": "forged"},
                                 token=token)["snapshot"]
             self.assertEqual(snapshot["private_state"]["hand"], room["board_state"]["hands"][pid])
+            self.assertIn("受罚满5次出局", snapshot["rules_text"])
+            self.assertEqual(snapshot["board_state"]["shots"], dict.fromkeys(tokens, 0))
             self.assertNotIn("chambers", json.dumps(snapshot))
         pid = room["current_player_id"]
         other = next(p for p in tokens if p != pid)
@@ -117,6 +122,10 @@ class LiarsBarRootTests(unittest.TestCase):
         self.assertEqual(self.http("POST", url + "/move", headers=headers, json={
             "revision": room["revision"] + 1, "player_id": other, "move": {"action": "challenge"}}).status_code, 403)
         current = framework.get_room(rid)
-        self.rpc("move", {"room_id": rid, "revision": current["revision"], "wait": False,
-                          "move": {"action": "challenge"}}, token=tokens[other])
-        self.assertEqual(framework.get_room(rid)["board_state"]["reveal"]["cards"], cards)
+        settled = self.rpc("move", {"room_id": rid, "revision": current["revision"], "wait": False,
+                                    "move": {"action": "challenge"}}, token=tokens[other])
+        delta = settled["events"][0][2]
+        self.assertEqual(delta["shots"], {delta["reveal"]["penalized"]: 1})
+        self.assertFalse(delta["reveal"]["hit"])
+        self.assertEqual(delta["reveal"]["cards"], cards)
+        self.assertEqual(delta["reveal"], framework.get_room(rid)["board_state"]["reveal"])

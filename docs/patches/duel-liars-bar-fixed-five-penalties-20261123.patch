@@ -1,0 +1,574 @@
+From 33f6db6e68e479a8b5490aed2e82835938c477e4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=8D=97=E5=B1=B1=E5=90=9B?=
+ <zizuixixiang@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 00:40:05 +0800
+Subject: [PATCH] =?UTF-8?q?feat(duel):=20replace=20random=20Liars=20Bar=20?=
+ =?UTF-8?q?penalty=20with=20fixed=20five=20[=E5=8B=BF=E6=8E=A8=E4=B8=8A?=
+ =?UTF-8?q?=E6=B8=B8]?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Keep cumulative penalty count and historical results; adjust UI and compact MCP. Do not push to upstream vendor.
+---
+ app/games/liars_bar.py                 |  42 +++++---
+ app/mcp_minimal.py                     |   4 +-
+ app/npc_limits.py                      |   6 +-
+ app/static/app.js                      |   2 +-
+ app/static/games/liars_bar.js          |  43 ++++++---
+ app/static/styles.css                  |   2 +
+ docs/LIARS_BAR.md                      |   6 +-
+ tests/test_hidden_information_audit.py |   2 +-
+ tests/test_liars_bar.py                | 127 +++++++++++++++++--------
+ third_party/THIRD_PARTY_NOTICES.md     |   3 +-
+ 10 files changed, 165 insertions(+), 72 deletions(-)
+
+diff --git a/app/games/liars_bar.py b/app/games/liars_bar.py
+index 2b24aa4..9787a6b 100644
+--- a/app/games/liars_bar.py
++++ b/app/games/liars_bar.py
+@@ -1,6 +1,6 @@
+ """Standard Liar's Deck adapted from LYiHub/liars-bar-llm (Apache-2.0).
+ 
+-CedarToy adaptation: seat-based room transitions, local NPC actions and
++CedarToy adaptation: elimination at five penalties, local NPC actions and
+ viewer-scoped state. See third_party/liars-bar-llm/LICENSE.
+ """
+ from copy import deepcopy
+@@ -15,6 +15,7 @@ DECK = RANKS * 6 + ("Joker",) * 2
+ 
+ 
+ class LiarsBar(GamePlugin):
++    penalty_limit = 5
+     game_type = "liars_bar"
+     display_name = "骗子酒馆"
+     category = "tabletop"
+@@ -26,12 +27,13 @@ class LiarsBar(GamePlugin):
+         "【暗出与质疑】\n暗出 1–3 张，声称全是主牌；Joker 当主牌。顺座跳过淘汰和空手者，"
+         "下家可以质疑，或放过并出牌。仅剩自己有牌时仍可质疑上一手；放过即由系统摊验自己的全部余牌。\n\n"
+         "【结算】\n有假牌则出牌者受罚，全真则质疑者受罚（系统质疑失败无人受罚）。"
+-        "每人六个虚拟弹膛中一格命中，每次依次检查一格，跨轮保留。命中淘汰，最后一人获胜。"
++        "双弈改编版：每人受罚从 0 次起，跨轮累计满5次立即出局，最后一人获胜。"
+         "受罚者存活先手，淘汰则顺延；无人受罚随机先手。"
+     )
+     mcp_rules = ("A/K/Q 各6、Joker 2。每轮存活者各5张，主牌随机。暗出1–3张，主牌和Joker为真。"
+                  "顺座跳过空手和淘汰者。质疑遇假罚出牌者，全真罚质疑者。仅自己有牌时放过即摊验全部余牌，全真无人受罚。"
+-                 "每人6膛1中，跨轮逐格受罚。命中淘汰，独活获胜。幸存受罚者下轮先手，淘汰则顺延，首轮或无人受罚随机。")
++                 "双弈改编：每人跨轮累计受罚满5次出局，独活获胜。旧局已满5次仍在场者再受罚出局。"
++                 "受罚者下轮先手，出局则顺延，首轮或无人受罚随机。")
+     move_format = 'params.move={"action":"play","cards":["K","Joker"]}、{"action":"challenge"} 或 {"action":"accept"}（放过并摊验余牌）。'
+ 
+     def __init__(self, rng=None):
+@@ -45,8 +47,7 @@ class LiarsBar(GamePlugin):
+         state = {
+             "order": order,
+             "alive": [p["player_id"] for p in participants if p.get("active", True)],
+-            "shots": dict.fromkeys(order, 0),
+-            "chambers": {pid: self._rng.randrange(6) for pid in order},
++            "shots": dict.fromkeys(order, 0),  # Persisted/API name for each player's cumulative penalties.
+             "round": 0, "reveal": None, "winner_player_id": None,
+         }
+         self._deal(state, self._rng.choice(state["alive"]))
+@@ -120,21 +121,33 @@ class LiarsBar(GamePlugin):
+             claim = {"player_id": pid, "cards": state["hands"][pid].copy()} if system else state["pending"]
+             liar = any(card not in (state["target"], "Joker") for card in claim["cards"])
+             penalized = claim["player_id"] if liar else (None if system else pid)
+-            hit = False
++            eliminated = False
++            already_at_limit = False
++            outcome = "无人受罚"
+             if penalized is not None:
+-                hit = state["shots"][penalized] == state["chambers"][penalized]
+-                state["shots"][penalized] += 1
+-                if hit:
++                previous_count = state["shots"][penalized]
++                already_at_limit = previous_count >= self.penalty_limit
++                # An active legacy seat already at five keeps playing until its own next penalty.
++                total = min(previous_count + 1, self.penalty_limit)
++                state["shots"][penalized] = total
++                eliminated = total == self.penalty_limit
++                recipient = "出牌者" if liar else "质疑者"
++                outcome = f"{recipient}受罚 +1（累计{total}/{self.penalty_limit}）"
++                if eliminated:
+                     state["alive"].remove(penalized)
+                     state["hands"].pop(penalized)
+                     activity[penalized] = "eliminated"
++                    outcome = (f"{recipient}累计5次出局" if not already_at_limit
++                               else f"{recipient}旧局已满5次，本次受罚出局")
+             state["reveal"] = {
+                 **claim, "target": state["target"], "round": state["round"],
+                 "challenger": None if system else pid, "liar": liar,
+-                "penalized": penalized, "hit": hit,
++                "penalized": penalized, "hit": eliminated,  # Legacy wire key means eliminated on this reveal.
+             }
++            state["penalty_limit"] = self.penalty_limit  # Identifies the rule used for this saved reveal.
++            if already_at_limit:
++                state["reveal"]["already_at_limit"] = True
+             verdict = "有假牌" if liar else "全真"
+-            outcome = "无人受罚" if penalized is None else ("受罚者淘汰" if hit else "受罚者幸存")
+             note = f"第 {state['round']} 轮摊牌 {'、'.join(claim['cards'])}，{verdict}，{outcome}。"
+             state["pending"] = None
+             if system and pid in state["hands"]:
+@@ -144,7 +157,7 @@ class LiarsBar(GamePlugin):
+             else:
+                 if penalized is None:
+                     first = self._rng.choice(state["alive"])
+-                elif hit:
++                elif eliminated:
+                     first = self._next(state, penalized, with_cards=False)
+                 else:
+                     first = penalized
+@@ -178,11 +191,14 @@ class LiarsBar(GamePlugin):
+ 
+     def public_state(self, state, participants):
+         claim = state["pending"]
++        reveal = deepcopy(state["reveal"])
++        if reveal and "penalty_limit" not in state:
++            reveal["legacy"] = True
+         return {"round": state["round"], "target": state["target"], "alive": state["alive"].copy(),
+                 "counts": {pid: len(hand) for pid, hand in state["hands"].items()},
+                 "shots": state["shots"].copy(), "turn_player_id": state["turn_player_id"],
+                 "claim": {"player_id": claim["player_id"], "count": len(claim["cards"])} if claim else None,
+-                "reveal": deepcopy(state["reveal"])}
++                "reveal": reveal}
+ 
+     @staticmethod
+     def mcp_event(event, previous):
+diff --git a/app/mcp_minimal.py b/app/mcp_minimal.py
+index 61658ab..e46184c 100644
+--- a/app/mcp_minimal.py
++++ b/app/mcp_minimal.py
+@@ -339,6 +339,8 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+             else:
+                 private = changed(now_private,ctx.get('private',{}))
+                 if name == 'liars_bar':
++                    if ctx.get('penalty_limit') != game.penalty_limit and room['status'] == 'playing':
++                        out['rules_text'] = game.mcp_rules
+                     delivered = ctx.get('played_count')
+                     if delivered is None:
+                         # A pre-upgrade cursor keeps its unread events and learns the new delta once.
+@@ -369,7 +371,7 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+                 DO UPDATE SET last_event_id=excluded.last_event_id,mcp_bootstrapped=1''',(room_id,pid,last_delivered))
+             ctx = dict(v=VERSION,public=baseline(game,state),private=now_private)
+             if name == 'liars_bar':
+-                ctx.update(round=state['round'], played_count=len(played))
++                ctx.update(round=state['round'], played_count=len(played), penalty_limit=game.penalty_limit)
+             if name in FOUR_COLOR_GAMES: ctx['revision'] = room['revision']
+             if first_unread_text is not None:
+                 ctx['snapshot_event_id'] = newest
+diff --git a/app/npc_limits.py b/app/npc_limits.py
+index 4efc8be..5021584 100644
+--- a/app/npc_limits.py
++++ b/app/npc_limits.py
+@@ -9,9 +9,9 @@ MAX_NPC_ACTIONS_PER_TURN = 512
+ 
+ def unattended_turn_limit(room: dict) -> int:
+     if room.get("game_type") == "liars_bar":
+-        # This local-only policy challenges the preceding NPC. Each two NPC
+-        # turns spend a chamber, including when all real seats were eliminated.
+-        return 2 + 2 * 6 * len(room["participants"])
++        # Two local NPC turns resolve a penalty. Keep the existing scheduling
++        # headroom for saved rooms with unattended turns already on the counter.
++        return 2 + 12 * len(room["participants"])
+     return NPC_UNATTENDED_ROUNDS * sum(
+         p.get("join_status") == "joined"
+         and p.get("active", True)
+diff --git a/app/static/app.js b/app/static/app.js
+index 995ece6..83672e5 100644
+--- a/app/static/app.js
++++ b/app/static/app.js
+@@ -4400,7 +4400,7 @@ function renderGame(nextRoom, message = "", timeline = []) {
+   if (room.game_type === "liars_bar") {
+     const source = document.createElement("a");
+     source.href = "https://github.com/LYiHub/liars-bar-llm";
+-    source.textContent = "原版玩法 · LYiHub（Apache-2.0）";
++    source.textContent = "原作 · LYiHub（Apache-2.0）";
+     source.target = "_blank";
+     source.rel = "noopener noreferrer";
+     $("rulesText").append(source);
+diff --git a/app/static/games/liars_bar.js b/app/static/games/liars_bar.js
+index eb3c9f9..9624aeb 100644
+--- a/app/static/games/liars_bar.js
++++ b/app/static/games/liars_bar.js
+@@ -19,8 +19,10 @@
+ 
+   function playerTable(state, room, participants, viewer, helpers) {
+     const table = element("table", "", "liars-bar-roster");
++    const historical = room.status !== "playing" && state.reveal?.legacy;
++    table.createCaption().textContent = historical ? "旧规对局 · 保留当时结算" : "累计满5次出局";
+     const header = table.createTHead().insertRow();
+-    for (const title of ["玩家", "余牌", "已受罚"]) {
++    for (const title of ["玩家", "余牌", "累计受罚"]) {
+       const cell = element("th", title);
+       cell.scope = "col";
+       header.append(cell);
+@@ -29,6 +31,8 @@
+     for (const p of participants) {
+       const id = p.player_id;
+       const alive = state.alive.includes(id);
++      const total = state.shots[id];
++      const legacyExit = !alive && p.activity_state === "eliminated" && (historical || total !== 5);
+       const current = room.status === "playing" && state.turn_player_id === id;
+       const row = body.insertRow();
+       row.className = `seat-${p.seat_index}`;
+@@ -49,8 +53,12 @@
+       }
+       if (room.winner_player_id === id) status.push("获胜");
+       else if (current) status.push("行动中");
+-      else if (!alive) status.push(p.join_status === "left" ? "已离席" : "已出局");
+-      else if (state.counts[id] === 0) status.push("本轮已出完");
++      else if (!alive) {
++        if (p.join_status === "left") status.push("已离席");
++        else if (p.activity_state === "inactive") status.push("认输出局");
++        else status.push(legacyExit ? "旧规受罚出局" : "累计5次出局");
++      } else if (state.counts[id] === 0) status.push("本轮已出完");
++      if (alive && total === 5 && room.status === "playing") status.push("旧局满额，再受罚出局");
+       if (status.length) details.append(element("small", status.join(" · ")));
+       player.append(avatar, details);
+       identity.append(player);
+@@ -59,13 +67,16 @@
+       remaining.append(element("strong", alive ? state.counts[id] : "—"));
+       if (alive) remaining.append(" 张");
+       const risk = row.insertCell();
+-      const shots = state.shots[id];
+-      risk.append(`${shots} 次`);
++      if (historical || legacyExit) {
++        risk.textContent = `受罚 ${total} 次`;
++        continue;
++      }
++      risk.append(`受罚 ${total}/5`);
+       const meter = element("span", "", "liars-bar-meter");
+       meter.setAttribute("aria-hidden", "true");
+-      for (let i = 0; i < 6; i++) {
++      for (let i = 0; i < 5; i++) {
+         const tick = element("i");
+-        if (i < shots) tick.className = "liars-bar-used";
++        if (i < total) tick.className = "liars-bar-used";
+         meter.append(tick);
+       }
+       risk.append(meter);
+@@ -73,7 +84,7 @@
+     return table;
+   }
+ 
+-  function revealedPlay(r, name) {
++  function revealedPlay(r, name, penalties) {
+     const section = element("section", "", "liars-bar-reveal");
+     const heading = element("div", "", "liars-bar-verdict");
+     heading.append(element("small", `第 ${r.round} 轮摊牌 · 主牌 ${r.target}`),
+@@ -84,12 +95,22 @@
+     const cards = element("div", "", "liars-bar-open-cards");
+     for (const rank of r.cards) cards.append(cardFace(rank));
+     hand.append(cards);
+-    const result = r.penalized === null ? "无人受罚" : `${name(r.penalized)}${r.hit ? "受罚出局" : "受罚后幸存"}`;
++    const result = element("strong", "无人受罚");
++    if (r.penalized !== null) {
++      const player = name(r.penalized);
++      const total = penalties[r.penalized];
++      if (r.legacy) result.textContent = `${player}旧规受罚（累计${total}次）${r.hit ? "，出局" : ""}`;
++      else if (r.already_at_limit) result.textContent = `${player}旧局已满5次，本次受罚出局`;
++      else {
++        result.textContent = `${player}受罚 +1${r.hit ? "，" : ""}`;
++        result.append(element("span", r.hit ? "累计5次出局" : `（累计${total}/5）`, "liars-bar-total"));
++      }
++    }
+     const outcome = element("div", "", "liars-bar-outcome");
+     outcome.append(
+       element("small", r.challenger === null ? "系统核对剩余手牌" : `${name(r.challenger)}提出质疑`),
+       element("small", `摊牌判定：${r.liar ? "包含假牌" : "没有假牌"}`),
+-      element("strong", result)
++      result
+     );
+     evidence.append(hand, outcome);
+     section.append(heading, evidence);
+@@ -128,7 +149,7 @@
+     }
+     panel.append(playerTable(state, room, participants, viewer, helpers));
+     board.append(panel);
+-    if (state.reveal) board.append(revealedPlay(state.reveal, name));
++    if (state.reveal) board.append(revealedPlay(state.reveal, name, state.shots));
+ 
+     if (room.spectating) return;
+     const hand = privateState?.hand || [];
+diff --git a/app/static/styles.css b/app/static/styles.css
+index 7ae3a69..a9eb43e 100644
+--- a/app/static/styles.css
++++ b/app/static/styles.css
+@@ -2805,6 +2805,7 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+   font-variant-numeric: tabular-nums;
+ }
+ .liars-bar-roster th, .liars-bar-roster td { text-align: start; vertical-align: middle; }
++.liars-bar-roster caption { caption-side: bottom; text-align: end; padding: 4px; font-size: 12px; }
+ .liars-bar-roster thead th { padding: 6px 4px 4px; font-size: 12px; font-weight: 500; }
+ .liars-bar-roster thead th:nth-child(2) { width: 48px; }
+ .liars-bar-roster thead th:last-child { width: 64px; }
+@@ -2858,6 +2859,7 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+ :is(.liars-bar-open-cards, .liars-bar-recall) .liars-bar-face.joker { width: 35px; font-size: 12px; }
+ :is(.liars-bar-open-cards, .liars-bar-recall) .liars-bar-face small { top: 2px; left: 2px; font-size: 8px; }
+ .liars-bar-outcome { border-left: 1px solid var(--pink); padding-left: 10px; }
++.liars-bar-total { display: inline-block; }
+ .liars-current-round {
+   padding: 12px;
+   display: grid;
+diff --git a/docs/LIARS_BAR.md b/docs/LIARS_BAR.md
+index b2f5765..8b528c3 100644
+--- a/docs/LIARS_BAR.md
++++ b/docs/LIARS_BAR.md
+@@ -1,4 +1,4 @@
+-# 骗子酒馆 · 标准扑克牌
++# 骗子酒馆 · 双弈扑克牌改编版
+ 
+ 2–4 人娱乐桌，支持邀请和本地 NPC。开房用 `play(game="duel",action="new",params={"game_type":"liars_bar"})`。行动用 `move`，params 带 room_id、revision=最新 r 和以下 move 对象。
+ 
+@@ -6,8 +6,8 @@
+ - `{"action":"challenge"}` 质疑上一手。有假罚出牌者，全真罚质疑者。
+ - 仅自己有牌时仍可质疑，或 `{"action":"accept"}` 摊验自己全部余牌，全真无人受罚。
+ 
+-A/K/Q 各6、Joker 2。每轮各发5张，主牌随机，跳过空手和淘汰者。各自六膛一中，跨轮逐格受罚。命中淘汰，独活获胜。受罚者幸存先手，淘汰则顺延，首轮或无人受罚随机。双弈认输或离席导致质疑无法继续时重新发牌。
++A/K/Q 各6、Joker 2。每轮各发5张，主牌随机，跳过空手和出局者。每人从0次起，跨轮累计受罚满5次立即出局，最后一人获胜。受罚者下轮先手，出局则顺延，首轮或无人受罚随机。认输或离席导致质疑无法继续时重新发牌。
+ 
+-快照 private_state 是己方手牌与可选动作；增量 private.hand 仅在变化时替换。claim 为暗出张数，reveal 为最近摊牌。
++private_state 仅含己方手牌、动作和本轮已出牌，private.hand 变化时替换。claim 只给出牌人和张数，reveal 为最近摊牌。兼容字段 shots 是累计受罚次数，reveal.hit 表示本次是否出局。旧局已满5次仍在场者，下次本人受罚出局，计数保持5。
+ 
+ 原作 [LYiHub/liars-bar-llm](https://github.com/LYiHub/liars-bar-llm)（Apache-2.0）。
+diff --git a/tests/test_hidden_information_audit.py b/tests/test_hidden_information_audit.py
+index 35a6d8a..c1732e8 100644
+--- a/tests/test_hidden_information_audit.py
++++ b/tests/test_hidden_information_audit.py
+@@ -28,7 +28,7 @@ FULL_TERMINAL_REVIEW_REASONS = {
+ }
+ 
+ RULE_SCOPED_REVEAL_REASONS = {
+-    "liars_bar": "only challenged cards are revealed; unchallenged cards and future chambers stay private at terminal",
++    "liars_bar": "only the resolved hand is revealed; other concealed cards stay private at terminal",
+     "four_color_tenhu": "exposed melds/discards/offers and rule-scoped winning/scoring cards are public; other concealed cards and unrevealed wall stay private at terminal",
+     "four_color_jiuzhi": "exposed melds/discards/offers and rule-scoped winning/scoring cards are public; other concealed cards and unrevealed wall stay private at terminal",
+     "four_color_qunhu": "exposed melds/discards/offers and rule-scoped winning/scoring cards are public; other concealed cards and unrevealed wall stay private at terminal",
+diff --git a/tests/test_liars_bar.py b/tests/test_liars_bar.py
+index 6a415d4..10bfe19 100644
+--- a/tests/test_liars_bar.py
++++ b/tests/test_liars_bar.py
+@@ -24,7 +24,6 @@ class Rules(unittest.TestCase):
+         self.game = LiarsBar(random.Random(17))
+         self.state = self.game.initialize(seats(3))
+         self.state.update(target="A", turn_player_id="p0")
+-        self.state["chambers"] = dict.fromkeys(self.state["alive"], 5)
+ 
+     def act(self, action, **args):
+         player = {"player_id": self.state["turn_player_id"]}
+@@ -46,7 +45,8 @@ class Rules(unittest.TestCase):
+                 self.assertEqual(cards, deck)
+                 openers.add(state["turn_player_id"])
+             targets.add(state["target"])
+-            self.assertTrue(all(0 <= x < 6 for x in state["chambers"].values()))
++            self.assertNotIn("chambers", state)
++            self.assertEqual(state["shots"], dict.fromkeys(state["alive"], 0))
+         self.assertEqual(openers, {"p0", "p1", "p2", "p3"})
+         self.assertEqual(targets, {"A", "K", "Q"})
+ 
+@@ -62,38 +62,62 @@ class Rules(unittest.TestCase):
+             self.assertEqual(self.state["turn_player_id"], loser)
+             self.assertEqual(self.state["shots"][loser], 1)
+             self.assertEqual(self.state["round"], 2)
+-            self.assertEqual(self.state["chambers"], initial["chambers"])
+             self.assertIsNone(self.state["pending"])
+ 
+-    def test_each_chamber_advances_once_and_only_past_results_are_public(self):
+-        for position in range(6):
+-            state = self.game.initialize(seats(2))
+-            state["chambers"]["p0"] = position
+-            for prior in range(position + 1):
+-                state.update(target="A", turn_player_id="p0")
+-                state["hands"]["p0"] = ["Q"]
+-                self.state = state
+-                self.act("play", cards=["Q"])
+-                public = self.game.public_state(self.state, [])
+-                private = self.game.private_state(self.state, {"player_id": "p1"}, [])
+-                alternate = deepcopy(self.state)
+-                alternate["chambers"]["p0"] = (position + 1) % 6
+-                alternate["pending"]["cards"] = ["A"]
+-                self.assertEqual(public, self.game.public_state(alternate, []))
+-                self.assertEqual(private, self.game.private_state(alternate, {"player_id": "p1"}, []))
+-                outcome = self.act("challenge")
+-                state = outcome.state
+-                self.assertEqual(state["shots"]["p0"], prior + 1)
+-                self.assertEqual(bool(outcome.participant_activity), prior == position)
+-                self.assertEqual(state["reveal"]["hit"], prior == position)
+-            self.assertEqual(state["winner_player_id"], "p1")
+-            self.assertEqual(state["round"], position + 1)
+-            self.assertEqual(state["alive"], ["p1"])
+-            self.assertIsNone(state["turn_player_id"])
++    def test_fifth_penalty_eliminates_every_seat_in_two_to_four_player_rooms(self):
++        for n in (2, 3, 4):
++            people = seats(n)
++            for seat in range(n):
++                with self.subTest(n=n, seat=seat):
++                    actor = people[seat]["player_id"]
++                    successor = people[(seat + 1) % n]["player_id"]
++                    self.state = self.game.initialize(people)
++                    self.state["turn_player_id"] = actor
++                    for total in range(1, 6):
++                        self.assertEqual(self.state["turn_player_id"], actor)
++                        self.state["target"] = "A"
++                        self.state["hands"][actor] = ["Q"]
++                        self.act("play", cards=["Q"])
++                        result = self.act("challenge")
++                        counts = dict.fromkeys(self.state["order"], 0)
++                        counts[actor] = total
++                        self.assertEqual(self.state["shots"], counts)
++                        self.assertEqual(actor in self.state["alive"], total < 5)
++                        self.assertEqual(self.state["reveal"]["hit"], total == 5)
++                        if total < 5:
++                            self.assertEqual(result.participant_activity, {})
++                            self.assertIn(f"受罚 +1（累计{total}/5）", result.note)
++                        else:
++                            self.assertEqual(result.participant_activity, {actor: "eliminated"})
++                            self.assertIn("累计5次出局", result.note)
++                    self.assertNotIn(actor, self.state["hands"])
++                    self.assertEqual(self.state["winner_player_id"], successor if n == 2 else None)
++                    self.assertEqual(self.state["turn_player_id"], None if n == 2 else successor)
++
++    def test_legacy_limit_waits_for_that_players_next_penalty(self):
++        self.state["chambers"] = {"p0": 5, "p1": 0, "p2": 2}
++        self.state["shots"].update(p0=5, p2=3)
++        self.state["hands"]["p0"] = ["A", "K"]
++        self.act("play", cards=["A"])
++        self.assertEqual(self.state["hands"]["p0"], ["K"])
++        self.act("challenge")  # The challenger takes this penalty.
++        self.assertEqual(self.state["shots"], {"p0":5, "p1":1, "p2":3})
++        self.assertEqual(self.state["alive"], ["p0", "p1", "p2"])
++        # Each following player covers the claim until p0 can be challenged.
++        for actor in ("p1", "p2", "p0"):
++            self.assertEqual(self.state["turn_player_id"], actor)
++            self.state["target"] = "A"
++            self.state["hands"][actor] = ["Q", "K"]
++            self.act("play", cards=["Q"])
++        result = self.act("challenge")
++        self.assertEqual(self.state["shots"], {"p0":5, "p1":1, "p2":3})
++        self.assertTrue(self.state["reveal"]["already_at_limit"])
++        self.assertNotIn("+1", result.note)
++        self.assertEqual(self.state["alive"], ["p1", "p2"])
+ 
+     def test_skip_empty_and_eliminated_wrap_to_next_alive(self):
+         self.state["hands"].update(p0=["K"], p1=[], p2=["Joker"])
+-        self.state["chambers"]["p0"] = 0
++        self.state["shots"]["p0"] = 4
+         self.act("play", cards=["K"])
+         self.assertEqual(self.state["turn_player_id"], "p2")
+         self.act("challenge")
+@@ -157,7 +181,7 @@ class Rules(unittest.TestCase):
+         self.assertNotIn("p0", self.state["previous_plays"])
+         self.assertEqual(self.game.private_state(self.state, {"player_id":"p0"}, [])["played"], [])
+ 
+-    def test_local_choice_is_independent_of_concealed_cards_and_chambers(self):
++    def test_local_choice_is_independent_of_concealed_cards(self):
+         self.state["hands"].update(p0=["A", "Q"], p1=["K", "A"], p2=["A"])
+         self.act("play", cards=["A"])
+         other = deepcopy(self.state)
+@@ -165,7 +189,6 @@ class Rules(unittest.TestCase):
+         other["previous_plays"] = {"p0":[["Q"]], "p1":[["Joker"]]}
+         other["hands"]["p0"] = ["Joker"]
+         other["hands"]["p2"] = ["Q"]
+-        other["chambers"]["p1"] = 0
+         for seed in range(12):
+             actor = {"player_id": "p1"}
+             observed = LiarsBar(random.Random(seed)).choose_local_npc_action(self.state, actor, seats(3))
+@@ -286,9 +309,6 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+                 state = room["board_state"]
+                 owner = room["current_player_id"]
+                 expected = {p: [] for p in state["alive"]}
+-                state["chambers"] = dict.fromkeys(expected, 5)
+-                with database.write_transaction() as conn:
+-                    conn.execute("UPDATE rooms SET board_state=? WHERE room_id=?", (json.dumps(state), rid))
+                 for p in expected:
+                     self.assertEqual(mcp_minimal.response(rid, p)["room"]["private_state"]["played"], [])
+                 for turn in range(count + 1):
+@@ -339,20 +359,22 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+         state = room["board_state"]
+         # A truthful one-card play makes the challenger take the next opening turn.
+         state["target"] = state["hands"][owner][0] if state["hands"][owner][0] != "Joker" else "A"
+-        state["chambers"] = dict.fromkeys(state["alive"], 5)
+         with database.write_transaction() as conn:
+             conn.execute("UPDATE rooms SET board_state=? WHERE room_id=?", (json.dumps(state), rid))
+         mcp_minimal.response(rid, owner)
+         with database.write_transaction() as conn:
+-            conn.execute("""UPDATE mcp_minimal_contexts SET context=json_remove(context, '$.round', '$.played_count')
++            conn.execute("""UPDATE mcp_minimal_contexts SET context=json_remove(context, '$.round', '$.played_count', '$.penalty_limit')
+                             WHERE room_id=? AND player_id=?""", (rid, owner))
+         first = state["hands"][owner][:1]
+         room = self.play(room, {"action":"play", "cards":first})
+         recovered = mcp_minimal.response(rid, owner)
+         self.assertEqual(recovered["private"]["played"], [first])
+         self.assertIn("played_add", recovered["protocol_guide"])
++        self.assertIn("满5次出局", recovered["rules_text"])
+         self.assertEqual(recovered["events"], [[owner, "play", 1, room["current_player_id"]]])
+-        self.assertNotIn("protocol_guide", mcp_minimal.response(rid, owner))
++        repeat = mcp_minimal.response(rid, owner)
++        self.assertNotIn("protocol_guide", repeat)
++        self.assertNotIn("rules_text", repeat)
+         room = self.play(room, {"action":"challenge"})
+         while room["current_player_id"] != owner:
+             actor = room["current_player_id"]
+@@ -375,7 +397,7 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+         state = room["board_state"]
+         state.update(target="A", turn_player_id="p0")
+         state["hands"]["p0"] = ["K"]
+-        state["chambers"]["p0"] = 0
++        state["shots"]["p0"] = 4
+         with database.write_transaction() as conn:
+             conn.execute("UPDATE rooms SET board_state=?,current_player_id='p0' WHERE room_id=?",
+                          (json.dumps(state), room["room_id"]))
+@@ -416,6 +438,14 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+             room = self.play(room, {"action": "play", "cards": cards})
+         expected = framework.project_room_for_viewer(room, actor)["private_state"]["played"]
+         self.assertEqual(len(expected), 2)
++        state = room["board_state"]
++        liar = any(c not in (state["target"], "Joker") for c in state["pending"]["cards"])
++        loser = actor if liar else room["current_player_id"]
++        winner = next(p for p in state["alive"] if p != loser)
++        state["shots"].update({loser:4, winner:2})
++        state["chambers"] = {loser:5, winner:3}  # Pre-upgrade unfinished room.
++        with database.write_transaction() as conn:
++            conn.execute("UPDATE rooms SET board_state=? WHERE room_id=?", (json.dumps(state), room["room_id"]))
+         code = """import json, sys
+ from app import framework
+ room = framework.get_room(sys.argv[1])
+@@ -429,3 +459,24 @@ print(json.dumps([room['board_state'],played,next_room['revision']]))"""
+         self.assertEqual(played, expected)
+         self.assertEqual(restored, room["board_state"])
+         self.assertEqual(revision, room["revision"] + 1)
++        ended = framework.get_room(room["room_id"])
++        self.assertEqual(ended["winner_player_id"], winner)
++        self.assertEqual(ended["board_state"]["shots"], {loser:5, winner:2})
++        history = framework.list_timeline(room["room_id"])
++        self.assertIn("累计5次出局", json.dumps(history, ensure_ascii=False))
++
++        # Stored pre-upgrade results can include six penalties. Opening a replay
++        # must not reinterpret its result or modify its room or recorded events.
++        old = deepcopy(ended["board_state"])
++        old.pop("penalty_limit")
++        old["shots"][loser] = 6
++        with database.write_transaction() as conn:
++            conn.execute("UPDATE rooms SET board_state=? WHERE room_id=?", (json.dumps(old), room["room_id"]))
++        replay = framework.get_room(room["room_id"])
++        view = framework.project_room_for_viewer(replay, winner)["board_state"]
++        self.assertTrue(view["reveal"]["legacy"])
++        self.assertTrue(view["reveal"]["hit"])
++        self.assertEqual(view["shots"][loser], 6)
++        self.assertEqual(replay["winner_player_id"], winner)
++        self.assertEqual(framework.get_room(room["room_id"])["board_state"], old)
++        self.assertEqual(framework.list_timeline(room["room_id"]), history)
+diff --git a/third_party/THIRD_PARTY_NOTICES.md b/third_party/THIRD_PARTY_NOTICES.md
+index 6f4d589..6d411f6 100644
+--- a/third_party/THIRD_PARTY_NOTICES.md
++++ b/third_party/THIRD_PARTY_NOTICES.md
+@@ -29,4 +29,5 @@
+ 
+ Standard card rules and round resolution adapted from [LYiHub/liars-bar-llm](https://github.com/LYiHub/liars-bar-llm)
+ under the [Apache License 2.0](liars-bar-llm/LICENSE). CedarToy implements
+-the rules in the Duel room plugin with viewer-specific projections and local NPCs.
++the card play in the Duel room plugin with viewer-specific projections and local NPCs.
++In the CedarToy adaptation, a player is eliminated on their fifth cumulative penalty.
+-- 
+2.34.1
+

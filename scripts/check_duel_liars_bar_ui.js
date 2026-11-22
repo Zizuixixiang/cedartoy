@@ -24,7 +24,6 @@ with isolated_scenario_database():
     state['hands'] = {'human':['A','A','K','Q','Joker'],'ai':['K','K','Q','A']}
     room.update(current_player_id='human', turn='human')
     view = framework.project_room_for_viewer(framework._decorate(room), 'human')
-    state['chambers']['ai'] = 5
     with database.write_transaction() as conn:
         conn.execute("UPDATE rooms SET board_state=?,current_player_id='human',turn='human' WHERE room_id=?",
                      (json.dumps(state),room['room_id']))
@@ -52,6 +51,7 @@ with isolated_scenario_database():
     started = invites.start_invite(waiting['room_id'],'human','human')
     # Exercise the room header with the longest unbroken name on every run.
     started['board_state']['turn_player_id'] = 'guest'
+    started['board_state']['shots'].update(ai=1, friend=3, guest=4)
     started.update(current_player_id='guest', turn='ai')
     invite_play = framework.project_room_for_viewer(framework._decorate(started),'human')
     state['hands']['ai'] = []
@@ -72,7 +72,7 @@ with isolated_scenario_database():
         state = match['board_state']
         state.update(turn_player_id='human', target='K', pending={'player_id':'ai','cards':[card]})
         state['hands']['ai'] = ['Q']
-        state['shots'][penalized] = state['chambers'][penalized] = 3
+        state['shots'][penalized] = 4
         with database.write_transaction() as conn:
             conn.execute("UPDATE rooms SET board_state=?,current_player_id='human',turn='human' WHERE room_id=?",
                          (json.dumps(state),match['room_id']))
@@ -80,6 +80,11 @@ with isolated_scenario_database():
                                      expected_revision=match['revision'])
         assert result['status'] == 'finished'
         endings[key] = framework.project_room_for_viewer(result,'human')
+        if key == 'win':
+            old_state = result['board_state']
+            old_state.pop('penalty_limit')
+            old_state['shots'][penalized] = 2
+            endings['old_finish'] = framework.project_room_for_viewer(result, 'human')
     print(json.dumps(dict(catalog=game_catalog(), view=view, last=last, empty=empty, play_view=play_view, cover_view=cover_view,
                           reveal=reveal, spectator=spectator, invitation=invitation, invite_play=invite_play, system_last=system_last, system_view=system_view, **endings)))
 `;
@@ -235,6 +240,10 @@ async function inspectScreens(page, width) {
   await show("invite_play");
   await take("invite-table", "#board");
   assert.equal(await page.locator(".liars-bar-player").count(), 4);
+  const meters = page.locator(".liars-bar-meter");
+  assert.deepEqual(await meters.evaluateAll(nodes => nodes.map(n => n.children.length)), [5,5,5,5]);
+  assert.deepEqual(await meters.evaluateAll(nodes => nodes.map(n => n.querySelectorAll(".liars-bar-used").length).sort()), [0,1,3,4]);
+  assert.equal(await page.locator(".liars-bar-roster caption").innerText(), "累计满5次出局");
   assert.ok(await page.locator("#turn").evaluate(el => el.scrollWidth <= el.clientWidth + 1));
   assert.match(await page.locator("#turn").innerText(), /CedarTableLongNicknameWithoutSpaces/);
   assert.equal(await page.locator(".liars-bar-roster [aria-current=true]").count(), 1);
@@ -289,7 +298,8 @@ async function inspectScreens(page, width) {
   await take("challenge", "#board");
   assert.equal(await recall.count(), 0);
   assert.deepEqual(await page.locator(".liars-bar-open-cards .liars-bar-face").evaluateAll(faces => faces.map(face => face.firstChild.textContent)), ["A"]);
-  assert.equal(await page.locator(".liars-bar-outcome strong").innerText(), "小机受罚后幸存");
+  assert.equal(await page.locator(".liars-bar-outcome strong").innerText(), "小机受罚 +1（累计1/5）");
+  assert.equal(await page.getByText("受罚 1/5", {exact:true}).count(), 1);
   // The forced hand is a different branch from the same source revision.
   await show("view");
   await show("system_last");
@@ -320,9 +330,16 @@ async function inspectScreens(page, width) {
     if (await close.isVisible()) await close.click();
     assert.equal(await page.locator("#board input,#board button").count(), 0);
     assert.ok((await page.locator(".liars-bar-roster tbody tr").filter({hasText:"获胜"}).innerText()).includes(winner));
-    assert.equal(await page.locator(".liars-bar-roster tbody tr").filter({hasText:"已出局"}).count(), 1);
+    const out = page.locator(".liars-bar-roster tbody tr").filter({hasText:"累计5次出局"});
+    assert.equal(await out.count(), 1);
+    assert.equal(await out.locator(".liars-bar-used").count(), 5);
+    assert.match(await out.innerText(), /受罚 5\/5/);
+    assert.match(await page.locator(".liars-bar-outcome strong").innerText(), /受罚 \+1，累计5次出局/);
     await take(key, "#board");
   }
+  await show("old_finish");
+  assert.match(await page.locator(".liars-bar-outcome strong").innerText(), /旧规受罚（累计2次），出局/);
+  assert.match(await page.locator(".liars-bar-roster").innerText(), /旧规受罚出局/);
   console.log(width, "hand", boxes[0].width, "×", boxes[0].height, "all five in one row");
 }
 
