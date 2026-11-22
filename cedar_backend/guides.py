@@ -261,8 +261,8 @@ def _tool_get_guide(
         return json.dumps({"game": "camping_plaza", "guide": guide}, ensure_ascii=False)
     if game == "crucible_echoes":
         return json.dumps({"game": "crucible_echoes", "guide": guide_with_slot_note(guide_texts["CRUCIBLE_ECHOES_GUIDE"])}, ensure_ascii=False)
-    if game in {"duel:liars_dice", "duel:ka_wu_xing"}:
-        filename = "KA_WU_XING.md" if game == "duel:ka_wu_xing" else "LIARS_DICE.md"
+    if game in {"duel:liars_dice", "duel:ka_wu_xing", "duel:liars_bar"}:
+        filename = game.split(":")[1].upper() + ".md"
         path = Path(__file__).resolve().parent.parent / "vendor/duel/docs" / filename
         return json.dumps({"game": game, "guide": path.read_text(encoding="utf-8")}, ensure_ascii=False)
     if game == "duel":

@@ -1,0 +1,1402 @@
+From e5ce3939a8a639df81008f2cda9f3225e6161ccd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=8D=97=E5=B1=B1=E5=90=9B?=
+ <zizuixixiang@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 22:53:32 +0800
+Subject: [PATCH] =?UTF-8?q?feat(duel):=20add=20original=20Liars=20Bar=20ca?=
+ =?UTF-8?q?rd=20game=20[=E5=8B=BF=E6=8E=A8=E4=B8=8A=E6=B8=B8]?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Privacy-preserving rooms, compact MCP deltas, local NPC, and responsive tabletop controls.
+---
+ app/framework.py                       |  10 +-
+ app/games/__init__.py                  |   3 +
+ app/games/base.py                      |   2 +
+ app/games/liars_bar.py                 | 236 ++++++++++++++++++
+ app/main.py                            |   5 +-
+ app/mcp_minimal.py                     |  36 ++-
+ app/npc_controller.py                  |   2 +-
+ app/npc_limits.py                      |   4 +
+ app/static/app.js                      |  30 ++-
+ app/static/games/liars_bar.js          |  98 ++++++++
+ app/static/index.html                  |   4 +-
+ app/static/styles.css                  |  56 ++++-
+ docs/LIARS_BAR.md                      |  13 +
+ tests/catalog_support.py               |   2 +-
+ tests/test_hidden_information_audit.py |   1 +
+ tests/test_identity.py                 |   1 +
+ tests/test_liars_bar.py                | 322 +++++++++++++++++++++++++
+ tests/test_npc_scheduler.py            |   1 +
+ tests/test_spectator.py                |   2 +-
+ third_party/THIRD_PARTY_NOTICES.md     |   6 +
+ third_party/liars-bar-llm/LICENSE      | 201 +++++++++++++++
+ 21 files changed, 1021 insertions(+), 14 deletions(-)
+ create mode 100644 app/games/liars_bar.py
+ create mode 100644 app/static/games/liars_bar.js
+ create mode 100644 docs/LIARS_BAR.md
+ create mode 100644 tests/test_liars_bar.py
+ create mode 100644 third_party/liars-bar-llm/LICENSE
+
+diff --git a/app/framework.py b/app/framework.py
+index b7db10b..4a3afd3 100644
+--- a/app/framework.py
++++ b/app/framework.py
+@@ -2973,6 +2973,8 @@ def play_move(
+             raise DuelError("演示房为只读中盘，请创建普通房间开始游戏。", 409)
+         if room.get("room_kind") == "invite" and expected_revision is None:
+             raise DuelError("邀请联机行动必须携带 revision", 409)
++        if room["game_type"] == "liars_bar" and expected_revision is None:
++            raise DuelError("骗子酒馆行动必须携带 revision", 409)
+         if room["game_type"] == "rummikub" and expected_revision is None:
+             raise DuelError("拉密整回合行动必须携带 revision", 409)
+         if room["game_type"] == "bomb_plane" and expected_revision is None:
+@@ -3141,7 +3143,7 @@ def play_move(
+             item for item in room["participants"]
+             if item.get("join_status") == "joined" and item.get("active", True)
+         ]
+-        if game_result is None and remaining and all(
++        if game_result is None and remaining and room["game_type"] != "liars_bar" and all(
+             item.get("participant_kind") == "system_npc" for item in remaining
+         ) and not (
+             room['game_type'] == 'liars_dice' and state.get('mode') == 'party'
+@@ -3276,7 +3278,8 @@ def play_move(
+             event_type="move",
+             text=message,
+             move_label=move_label,
+-            move_payload=move,
++            move_payload=(applied.public_move if isinstance(applied, MoveResult)
++                          and applied.public_move is not None else move),
+             visible_to_player_ids=event_visible_to_player_ids,
+         )
+         if public_event is not None:
+@@ -3402,7 +3405,8 @@ def _forfeit_active_participant(
+         len(remaining)
+     )
+     only_system_npcs_remaining = (
+-        bool(remaining)
++        room["game_type"] != "liars_bar"
++        and bool(remaining)
+         and all(
+             item.get("participant_kind") == "system_npc" for item in remaining
+         )
+diff --git a/app/games/__init__.py b/app/games/__init__.py
+index d1464fb..8e42d15 100644
+--- a/app/games/__init__.py
++++ b/app/games/__init__.py
+@@ -16,6 +16,7 @@ from .gandengyan import Gandengyan
+ from .guandan import Guandan
+ from .jungle import Jungle
+ from .junqi import Junqi
++from .liars_bar import LiarsBar
+ from .liars_dice import LiarsDice
+ from .mahjong import Mahjong
+ from .ka_wu_xing import KaWuXing
+@@ -75,6 +76,7 @@ GAMES = {
+     ChineseCheckers.game_type: ChineseCheckers(),
+     DotsBoxes.game_type: DotsBoxes(),
+     Doudizhu.game_type: Doudizhu(),
++    LiarsBar.game_type: LiarsBar(),
+     LiarsDice.game_type: LiarsDice(),
+     Mahjong.game_type: Mahjong(),
+     KaWuXing.game_type: KaWuXing(),
+@@ -134,6 +136,7 @@ def game_catalog() -> list[dict]:
+             "supports_stakes": plugin.supports_stakes,
+             "supports_multiplayer_stakes": plugin.supports_multiplayer_stakes,
+             "uses_custom_stake_settlement": plugin.uses_custom_stake_settlement,
++            **({"guide": "duel:liars_bar"} if plugin.game_type == "liars_bar" else {}),
+             **stake_presentation(plugin.game_type),
+         })
+     return catalog
+diff --git a/app/games/base.py b/app/games/base.py
+index ce1aa9f..98dbb91 100644
+--- a/app/games/base.py
++++ b/app/games/base.py
+@@ -28,6 +28,8 @@ class MoveResult:
+     # this explicitly when passing temporary action rights (auction/response).
+     # True marks ONE completed outer player turn, even if its owner stays next.
+     turn_completed: bool | None = None
++    # A hidden move can persist a public summary instead of the submitted payload.
++    public_move: dict[str, Any] | None = None
+ 
+ 
+ class GamePlugin(ABC):
+diff --git a/app/games/liars_bar.py b/app/games/liars_bar.py
+new file mode 100644
+index 0000000..1c94e46
+--- /dev/null
++++ b/app/games/liars_bar.py
+@@ -0,0 +1,236 @@
++"""Standard Liar's Deck adapted from LYiHub/liars-bar-llm (Apache-2.0).
++
++CedarToy adaptation: seat-based room transitions, local NPC actions and
++viewer-scoped state. See third_party/liars-bar-llm/LICENSE.
++"""
++from copy import deepcopy
++from itertools import combinations
++from random import SystemRandom
++
++from .base import GamePlugin, MoveResult
++from .mcp_incremental import changed
++
++RANKS = ("A", "K", "Q")
++DECK = RANKS * 6 + ("Joker",) * 2
++
++
++class LiarsBar(GamePlugin):
++    game_type = "liars_bar"
++    display_name = "骗子酒馆"
++    category = "tabletop"
++    max_players = recommended_players = 4
++    supports_npcs = uses_local_npc_strategy = True
++    mcp_event_key = "liars_bar_delta"
++    rules_text = (
++        "【牌桌】\nA、K、Q 各 6 张，Joker 2 张。每轮重洗，每位存活玩家发 5 张，随机公布主牌。首轮随机先手。\n\n"
++        "【暗出与质疑】\n暗出 1–3 张，声称全是主牌；Joker 当主牌。顺座跳过淘汰和空手者，"
++        "下家可以质疑，或放过并出牌。仅剩自己有牌时仍可质疑上一手；放过即由系统摊验自己的全部余牌。\n\n"
++        "【结算】\n有假牌则出牌者受罚，全真则质疑者受罚（系统质疑失败无人受罚）。"
++        "每人六个虚拟弹膛中一格命中，每次依次检查一格，跨轮保留。命中淘汰，最后一人获胜。"
++        "受罚者存活先手，淘汰则顺延；无人受罚随机先手。"
++    )
++    mcp_rules = ("A/K/Q 各6、Joker 2。每轮存活者各5张，主牌随机。暗出1–3张，主牌和Joker为真。"
++                 "顺座跳过空手和淘汰者。质疑遇假罚出牌者，全真罚质疑者。仅自己有牌时放过即摊验全部余牌，全真无人受罚。"
++                 "每人6膛1中，跨轮逐格受罚。命中淘汰，独活获胜。幸存受罚者下轮先手，淘汰则顺延，首轮或无人受罚随机。")
++    move_format = 'params.move={"action":"play","cards":["K","Joker"]}、{"action":"challenge"} 或 {"action":"accept"}（放过并摊验余牌）。'
++
++    def __init__(self, rng=None):
++        self._rng = rng or SystemRandom()
++
++    def initial_state(self):
++        return self.initialize([{"player_id": "X"}, {"player_id": "O"}])
++
++    def initialize(self, participants):
++        order = [p["player_id"] for p in participants]
++        state = {
++            "order": order,
++            "alive": [p["player_id"] for p in participants if p.get("active", True)],
++            "shots": dict.fromkeys(order, 0),
++            "chambers": {pid: self._rng.randrange(6) for pid in order},
++            "round": 0, "reveal": None, "winner_player_id": None,
++        }
++        self._deal(state, self._rng.choice(state["alive"]))
++        return state
++
++    def resolve_opening_player_id(self, state, proposed_player_id, participants):
++        return state["turn_player_id"]
++
++    def _deal(self, state, first):
++        deck = list(DECK)
++        self._rng.shuffle(deck)
++        hands = {pid: [] for pid in state["alive"]}
++        for _ in range(5):
++            for hand in hands.values():
++                hand.append(deck.pop())
++        state.update(round=state["round"] + 1, hands=hands, target=self._rng.choice(RANKS),
++                     pending=None, turn_player_id=first)
++
++    @staticmethod
++    def _last_hand(state, pid):
++        return all(not hand for other, hand in state["hands"].items() if other != pid)
++
++    @staticmethod
++    def _next(state, pid, *, with_cards):
++        order = state["order"]
++        start = order.index(pid)
++        return next(other for other in order[start + 1:] + order[:start + 1]
++                    if other in state["alive"] and (not with_cards or state["hands"][other]))
++
++    def validate_action(self, state, move, actor):
++        pid = actor["player_id"]
++        if state["turn_player_id"] != pid or pid not in state["alive"]:
++            raise ValueError("当前不能行动")
++        if move == {"action": "challenge"} and state["pending"]:
++            return
++        if self._last_hand(state, pid):
++            if state["pending"] and move == {"action": "accept"}:
++                return
++            raise ValueError("请选择质疑上一手或放过并摊验余牌")
++        if set(move) != {"action", "cards"} or move["action"] != "play":
++            raise ValueError("请选择暗出手牌或质疑上一手")
++        cards = move["cards"]
++        if not isinstance(cards, list) or not 1 <= len(cards) <= 3:
++            raise ValueError("每次暗出 1–3 张")
++        remaining = state["hands"][pid].copy()
++        for card in cards:
++            if card not in remaining:
++                raise ValueError("所选牌不在你的手牌中")
++            remaining.remove(card)
++
++    def apply_action(self, state, move, actor):
++        self.validate_action(state, move, actor)
++        before = self.public_state(state, [])
++        state = deepcopy(state)
++        pid = actor["player_id"]
++        activity = {}
++        note = ""
++        if move["action"] == "play":
++            for card in move["cards"]:
++                state["hands"][pid].remove(card)
++            state["pending"] = {"player_id": pid, "cards": move["cards"].copy()}
++            state["turn_player_id"] = self._next(state, pid, with_cards=True)
++        else:
++            system = move["action"] == "accept"
++            claim = {"player_id": pid, "cards": state["hands"][pid].copy()} if system else state["pending"]
++            liar = any(card not in (state["target"], "Joker") for card in claim["cards"])
++            penalized = claim["player_id"] if liar else (None if system else pid)
++            hit = False
++            if penalized is not None:
++                hit = state["shots"][penalized] == state["chambers"][penalized]
++                state["shots"][penalized] += 1
++                if hit:
++                    state["alive"].remove(penalized)
++                    state["hands"].pop(penalized)
++                    activity[penalized] = "eliminated"
++            state["reveal"] = {
++                **claim, "target": state["target"], "round": state["round"],
++                "challenger": None if system else pid, "liar": liar,
++                "penalized": penalized, "hit": hit,
++            }
++            verdict = "有假牌" if liar else "全真"
++            outcome = "无人受罚" if penalized is None else ("受罚者淘汰" if hit else "受罚者幸存")
++            note = f"第 {state['round']} 轮摊牌 {'、'.join(claim['cards'])}，{verdict}，{outcome}。"
++            state["pending"] = None
++            if system and pid in state["hands"]:
++                state["hands"][pid].clear()
++            if len(state["alive"]) == 1:
++                state.update(winner_player_id=state["alive"][0], turn_player_id=None)
++            else:
++                if penalized is None:
++                    first = self._rng.choice(state["alive"])
++                elif hit:
++                    first = self._next(state, penalized, with_cards=False)
++                else:
++                    first = penalized
++                self._deal(state, first)
++        public_move = {"action": move["action"]}
++        if move["action"] == "play":
++            public_move["count"] = len(move["cards"])
++        return MoveResult(state, next_player_id=state["turn_player_id"], turn_completed=True,
++                          participant_activity=activity, public_move=public_move, note=note,
++                          public_event={self.mcp_event_key: changed(self.public_state(state, []), before)})
++
++    def apply_resignation(self, state, resigned_player_id, participants):
++        if resigned_player_id not in state["alive"]:
++            return
++        state["alive"].remove(resigned_player_id)
++        state["hands"].pop(resigned_player_id)
++        if len(state["alive"]) == 1:
++            state.update(winner_player_id=state["alive"][0], turn_player_id=None, pending=None)
++            return
++        claimant = (state["pending"] or {}).get("player_id")
++        if claimant == resigned_player_id or not any(state["hands"].values()):
++            self._deal(state, self._next(state, resigned_player_id, with_cards=False))
++        elif state["turn_player_id"] == resigned_player_id:
++            responder = self._next(state, resigned_player_id, with_cards=True)
++            if responder == claimant:
++                # No one left can challenge this claim; never ask a seat to challenge itself.
++                self._deal(state, responder)
++            else:
++                state["turn_player_id"] = responder
++
++    def public_state(self, state, participants):
++        claim = state["pending"]
++        return {"round": state["round"], "target": state["target"], "alive": state["alive"].copy(),
++                "counts": {pid: len(hand) for pid, hand in state["hands"].items()},
++                "shots": state["shots"].copy(), "turn_player_id": state["turn_player_id"],
++                "claim": {"player_id": claim["player_id"], "count": len(claim["cards"])} if claim else None,
++                "reveal": deepcopy(state["reveal"])}
++
++    @staticmethod
++    def mcp_event(event, previous):
++        # Waiting-room legacy reads may deliver chat before the v2 bootstrap.
++        return event
++
++    def private_state(self, state, viewer, participants):
++        pid = viewer["player_id"]
++        hand = state["hands"].get(pid, []).copy()
++        actions = []
++        if hand and pid == state["turn_player_id"] and len(state["alive"]) > 1:
++            actions.append("accept" if self._last_hand(state, pid) else "play")
++            if state["pending"]:
++                actions.append("challenge")
++        return {"hand": hand, "actions": actions}
++
++    def npc_legal_actions(self, state, actor, participants):
++        pid = actor["player_id"]
++        if pid != state["turn_player_id"] or pid not in state["alive"]:
++            return []
++        actions = [{"action": "challenge"}] if state["pending"] else []
++        if self._last_hand(state, pid):
++            return actions + [{"action": "accept"}]
++        hand = sorted(state["hands"][pid])
++        for count in range(1, 4):
++            actions.extend({"action": "play", "cards": list(cards)}
++                           for cards in dict.fromkeys(combinations(hand, count)))
++        return actions
++
++    def choose_local_npc_action(self, state, actor, participants):
++        actions = self.npc_legal_actions(state, actor, participants)
++        if state["pending"]:
++            claimant = state["pending"]["player_id"]
++            # A local-only sequence resolves a penalty at least every two turns.
++            if any(p["player_id"] == claimant and p.get("participant_kind") == "system_npc"
++                   for p in participants) or self._rng.randrange(3) == 0:
++                return {"action": "challenge"}
++            actions = [a for a in actions if a["action"] != "challenge"]
++        return self._rng.choice(actions)
++
++    def format_action(self, state, move, actor):
++        if move.get("action") == "play" and isinstance(move.get("cards"), list):
++            return f"暗出 {len(move['cards'])} 张"
++        return "质疑上一手" if move.get("action") == "challenge" else "放过，系统摊验余牌"
++
++    def result_for(self, state, participants):
++        if state["winner_player_id"] is not None:
++            return {"winner_player_id": state["winner_player_id"], "draw": False}
++        return None
++
++    def check_winner(self, state):
++        return state["winner_player_id"]
++
++    def validate_move(self, state, move, mark):
++        self.validate_action(state, move, {"player_id": mark})
++
++    def apply_move(self, state, move, mark):
++        return self.apply_action(state, move, {"player_id": mark})
+diff --git a/app/main.py b/app/main.py
+index 4e1c5f8..48e725e 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -1535,7 +1535,10 @@ def spectator_response(room: dict, request: Request, perspective: str | None) ->
+     projected["spectator_choices"] = choices
+     # This is the web projection, including games with specialized MCP wire
+     # protocols. Never bootstrap/consume an AI's incremental protocol context.
+-    timeline = list_timeline(room["room_id"], viewer_player_id=viewer_id)
++    public_only = room["game_type"] == "liars_bar"
++    if public_only:
++        projected["private_state"] = {}
++    timeline = list_timeline(room["room_id"], viewer_player_id=viewer_id, public_only=public_only)
+     return {
+         "ok": True, "status": "ok", "message": "", "room": projected,
+         **_web_room_clock(room),
+diff --git a/app/mcp_minimal.py b/app/mcp_minimal.py
+index 5f7f55c..6e46fc5 100644
+--- a/app/mcp_minimal.py
++++ b/app/mcp_minimal.py
+@@ -13,7 +13,7 @@ from .games.mcp_incremental import changed, table_patch
+ from .games.four_color_cards.mcp import FORMAT as FOUR_COLOR_FORMAT
+ from .games.four_color_cards.common import GAME_TYPES as FOUR_COLOR_GAMES
+ 
+-GAMES = frozenset(('monopoly', 'rummikub', 'bomb_plane', 'carcassonne', 'ka_wu_xing')) | FOUR_COLOR_GAMES
++GAMES = frozenset(('monopoly', 'rummikub', 'bomb_plane', 'carcassonne', 'ka_wu_xing', 'liars_bar')) | FOUR_COLOR_GAMES
+ VERSION = 2
+ 
+ 
+@@ -40,6 +40,8 @@ def baseline(game, state):
+ 
+ 
+ def private_baseline(name, state, pid):
++    if name == 'liars_bar':
++        return get_game(name).private_state(state, {'player_id': pid}, [])
+     if name == 'ka_wu_xing':
+         game = get_game(name)
+         viewer = {'player_id': pid}
+@@ -67,6 +69,11 @@ COMMON = ('MCP v2: retain context. Ordinary reply r is the authoritative revisio
+           'Unknown/v1 contexts automatically get this v2 bootstrap. '
+           'private is only your delta. Notifications appear once when new; rooms/chips retain unread access.')
+ FORMATS = {
++    'liars_bar': ('保留房间上下文，move 带 revision=r。按序处理所有 events（含自己的）。'
++                  '[玩家,play,张数,下家]：从该玩家 counts 减去张数，更新 claim 和 turn_player_id。'
++                  '质疑/摊验为 [玩家,动作,补丁]。counts=5 即所有存活者各5张；shots 按玩家合并，其余字段替换。'
++                  'private 仅替换己方变化字段；缺省不变，null 清空。public_state 如有则替换桌面。'
++                  'wait 为正在等待的玩家。state(full_state=true) 可恢复当前桌面；未读消息另行送达。'),
+     'ka_wu_xing': ('events=[actor,action,delta]. delta uses mahjong_delta fields: '
+         'discard_added appends to player_id river; discard_removed removes the named tile; '
+         'meld_added appends, meld_changed replaces by index; response replaces response_window. '
+@@ -111,6 +118,17 @@ FORMATS = {
+ 
+ 
+ def snapshot(room, pid, full):
++    if room['game_type'] == 'liars_bar':
++        from . import framework as f
++        game = get_game('liars_bar')
++        value = f.project_mcp_snapshot_for_viewer(f._decorate(room), pid)
++        # The turn and revision are already in board_state and the response envelope.
++        del value['current_actor'], value['revision']
++        value['participants'] = [{k: p[k] for k in ('player_id', 'name')} for p in value['participants']]
++        value.update(viewer_player_id=pid, rules_text=game.mcp_rules, move_format=game.move_format)
++        if full:
++            value['protocol_guide'] = FORMATS[game.game_type]
++        return value
+     if room['game_type'] == 'ka_wu_xing':
+         from . import framework as f
+         from .full_state import project_full_state
+@@ -158,6 +176,18 @@ def snapshot(room, pid, full):
+ 
+ def encode_result(name, raw, prior, actor, action):
+     """Encode canonical public results; no hidden state is accepted here."""
++    if name == "liars_bar":
++        delta = raw["liars_bar_delta"]
++        if action == 'play':
++            return [actor, action, delta['claim']['count'], delta['turn_player_id']]
++        if action in ('challenge', 'accept'):
++            delta = delta.copy()
++            if 'round' in delta and 'counts' in delta:
++                delta['counts'] = 5
++            if 'shots' in delta:
++                penalized = delta['reveal']['penalized']
++                delta['shots'] = {penalized: delta['shots'][penalized]}
++        return [actor, action, delta]
+     if name == 'ka_wu_xing':
+         delta = deepcopy(raw['mahjong_delta'])
+         if 'round_state' in delta:
+@@ -241,7 +271,7 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+         ctx = json.loads(saved[0]) if saved else {}
+         boot = ctx.get('v') != VERSION or (name in FOUR_COLOR_GAMES and 'revision' not in ctx)
+         covered = ctx.get('snapshot_event_id', 0)
+-        consume = consume or full or boot or bool(covered) or _participant_response_due(room,pid)
++        consume = consume or full or boot or bool(covered) or name == 'liars_bar' or _participant_response_due(room,pid)
+         out = {'r':room['revision']}
+         if name in FOUR_COLOR_GAMES:
+             consume = True
+@@ -296,7 +326,7 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+                     events.append({'actor':actor,'message':e['text']})
+             now_private = private_baseline(name,state,pid)
+             if boot:
+-                out.update(protocol=VERSION, protocol_guide=COMMON+' '+FORMATS[name])
++                out.update(protocol=VERSION, protocol_guide=FORMATS[name] if name == 'liars_bar' else COMMON+' '+FORMATS[name])
+                 out['bootstrap'] = True
+                 out['room'] = snapshot(room,pid,False)
+                 out['resync'] = 'MCP v2 bootstrap replaces earlier context, including rules and static data.'
+diff --git a/app/npc_controller.py b/app/npc_controller.py
+index a8df1b6..c0972f0 100644
+--- a/app/npc_controller.py
++++ b/app/npc_controller.py
+@@ -498,7 +498,7 @@ def _finish_npc_action(
+         return None
+     claim = complete_npc_full_turn(
+         updated["room_id"], npc_player_id, int(updated["revision"]),
+-        allow_speech=updated["game_type"] != "monopoly",
++        allow_speech=updated["game_type"] not in {"monopoly", "liars_bar"},
+     )
+     if claim is None:
+         return None
+diff --git a/app/npc_limits.py b/app/npc_limits.py
+index 0121f27..4efc8be 100644
+--- a/app/npc_limits.py
++++ b/app/npc_limits.py
+@@ -8,6 +8,10 @@ MAX_NPC_ACTIONS_PER_TURN = 512
+ 
+ 
+ def unattended_turn_limit(room: dict) -> int:
++    if room.get("game_type") == "liars_bar":
++        # This local-only policy challenges the preceding NPC. Each two NPC
++        # turns spend a chamber, including when all real seats were eliminated.
++        return 2 + 2 * 6 * len(room["participants"])
+     return NPC_UNATTENDED_ROUNDS * sum(
+         p.get("join_status") == "joined"
+         and p.get("active", True)
+diff --git a/app/static/app.js b/app/static/app.js
+index 075253e..b470d01 100644
+--- a/app/static/app.js
++++ b/app/static/app.js
+@@ -1737,8 +1737,27 @@ function resolvedStakeMetadata(game, stake) {
+ 
+ function renderSelectedStakeHint() {
+   const party = selectedGameOptions($("gameType"))?.mode === "party";
+-  $("stake").disabled = false;
+   const gameType = selectedGameType($("gameType"));
++  const standardDeck = gameType === "liars_bar";
++  const mode = $("mode");
++  if (standardDeck && !mode.disabled) {
++    mode.dataset.previousMode = mode.value;
++    $("stake").dataset.previousStake = $("stake").value;
++    mode.value = "random";
++  } else if (!standardDeck && mode.dataset.previousMode) {
++    mode.value = mode.dataset.previousMode;
++    delete mode.dataset.previousMode;
++    $("stake").value = $("stake").dataset.previousStake;
++    delete $("stake").dataset.previousStake;
++  }
++  $("participantHint").classList.toggle("hidden", standardDeck);
++  mode.disabled = standardDeck;
++  $("stake").disabled = standardDeck;
++  if (standardDeck) {
++    $("stake").value = "0";
++    $("gameStakeHint").textContent = "娱乐局";
++    return;
++  }
+   const game = identity && Array.isArray(identity.games)
+     ? identity.games.find((item) => item.game_type === gameType)
+     : null;
+@@ -3581,6 +3600,7 @@ function renderTimeline(timeline = []) {
+     return;
+   }
+   timeline.forEach((event) => {
++    if (event.move?.liars_bar_delta && !event.text) return;
+     const senderRole = event.sender_role
+       || (typeof event.sender === "string" ? event.sender : event.sender.role);
+     const speaker = (
+@@ -4370,6 +4390,14 @@ function renderGame(nextRoom, message = "", timeline = []) {
+   $("roundSeparator").classList.toggle("hidden", !roundText);
+   $("rulesTitle").textContent = `${room.game_name}规则`;
+   renderRulesText(room.rules_text);
++  if (room.game_type === "liars_bar") {
++    const source = document.createElement("a");
++    source.href = "https://github.com/LYiHub/liars-bar-llm";
++    source.textContent = "原版玩法 · LYiHub（Apache-2.0）";
++    source.target = "_blank";
++    source.rel = "noopener noreferrer";
++    $("rulesText").append(source);
++  }
+   if (isInviteWaiting(room)) {
+     closeHistory();
+     closeRules();
+diff --git a/app/static/games/liars_bar.js b/app/static/games/liars_bar.js
+new file mode 100644
+index 0000000..d0c116d
+--- /dev/null
++++ b/app/static/games/liars_bar.js
+@@ -0,0 +1,98 @@
++(function () {
++  "use strict";
++
++  function element(tag, text, className) {
++    const node = document.createElement(tag);
++    if (text) node.textContent = text;
++    if (className) node.className = className;
++    return node;
++  }
++
++  function renderBoard({board, room, state, privateState, participants, canMove, helpers, uiState}) {
++    if (!state.round) return;
++    const name = id => participants.find(p => p.player_id === id)?.display_name || "玩家";
++    const panel = element("section", "", "liars-current-round liars-bar-table");
++    const heading = element("div", "", "liars-round-heading");
++    heading.append(element("strong", `第 ${state.round} 轮 · 主牌 ${state.target}`));
++    panel.append(heading);
++    if (state.claim) {
++      panel.append(element("p", `${name(state.claim.player_id)} 暗出了 ${state.claim.count} 张`));
++    }
++    for (const p of participants) {
++      const id = p.player_id;
++      const status = state.alive.includes(id) ? `余牌 ${state.counts[id]} 张` : "已出局";
++      panel.append(element("p", `${name(id)} · ${status} · 已受罚 ${state.shots[id]} 次`));
++    }
++    board.append(panel);
++    if (state.reveal) {
++      const r = state.reveal;
++      const who = r.challenger === null ? "系统" : name(r.challenger);
++      const outcome = r.penalized === null ? "无人受罚" : `${name(r.penalized)}${r.hit ? "淘汰" : "受罚后幸存"}`;
++      const reveal = element("section", "", "liars-current-round liars-bar-table");
++      reveal.append(element("strong", `第 ${r.round} 轮摊牌 · 主牌 ${r.target}`),
++        element("p", `${who}质疑${name(r.player_id)}，摊开 ${r.cards.join("、")}。${r.liar ? "有假牌" : "全真"}，${outcome}。`));
++      board.append(reveal);
++    }
++
++    const hand = privateState?.hand || [];
++    if (room.spectating || !hand.length) return;
++    const field = element("fieldset", "", "liars-bar-hand");
++    const actions = canMove ? (privateState.actions || []) : [];
++    const selectable = actions.includes("play");
++    field.append(element("legend", selectable ? "你的手牌 · 选 1–3 张" : "你的手牌"));
++    const selected = new Set(uiState.cardIndexes || []);
++    const checkboxes = [];
++    const play = element("button", "暗出所选牌", "pixel-btn");
++    function syncSelection() {
++      play.disabled = !selected.size;
++      checkboxes.forEach(box => { box.disabled = !box.checked && selected.size >= 3; });
++      uiState.cardIndexes = [...selected];
++    }
++    hand.forEach((rank, index) => {
++      const face = element("span", rank, "liars-bar-face");
++      const corner = element("small", rank === "Joker" ? "★" : rank);
++      corner.setAttribute("aria-hidden", "true");
++      face.append(corner);
++      if (rank === "Joker") face.classList.add("joker");
++      if (!selectable) {
++        field.append(face);
++        return;
++      }
++      const label = element("label");
++      const box = element("input");
++      box.type = "checkbox";
++      box.setAttribute("aria-label", `第 ${index + 1} 张，${rank}`);
++      box.checked = selected.has(index);
++      box.addEventListener("change", () => {
++        if (box.checked) selected.add(index);
++        else selected.delete(index);
++        syncSelection();
++      });
++      label.append(box, face);
++      field.append(label);
++      checkboxes.push(box);
++    });
++    board.append(field);
++    const buttons = element("div", "", "liars-bar-buttons");
++    if (selectable) {
++      syncSelection();
++      play.type = "button";
++      play.onclick = () => helpers.submitMove({action: "play", cards: [...selected].map(i => hand[i])});
++      buttons.append(play);
++    }
++    for (const [action, label] of [["challenge", "质疑上一手"], ["accept", "放过并摊验余牌"]]) {
++      if (!actions.includes(action)) continue;
++      const button = element("button", label, action === "accept" ? "pixel-btn" : "pixel-btn secondary");
++      button.type = "button";
++      button.onclick = () => helpers.submitMove({action});
++      buttons.append(button);
++    }
++    if (buttons.childElementCount) board.append(buttons);
++  }
++
++  window.DuelGameUI.register("liars_bar", {
++    usesStandardMoveConfirmation: false,
++    ownsPrivateStatePresentation: true,
++    renderBoard,
++  });
++}());
+diff --git a/app/static/index.html b/app/static/index.html
+index 46eb112..98ceb2f 100644
+--- a/app/static/index.html
++++ b/app/static/index.html
+@@ -7,7 +7,7 @@
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+-  <link rel="stylesheet" href="/static/styles.css?v=0.9.60">
++  <link rel="stylesheet" href="/static/styles.css?v=0.9.61">
+   <link rel="stylesheet" href="/static/games/checkers.css?v=0.1.0">
+ </head>
+ <body>
+@@ -509,6 +509,6 @@
+   <script src="/static/game_ui_registry.js?v=0.9.1"></script>
+   <script src="/static/games/liars_dice.js?v=0.1.20"></script>
+   <!-- Non-legacy game renderers autoload from catalog before app interaction. -->
+-  <script src="/static/app.js?v=0.9.86"></script>
++  <script src="/static/app.js?v=0.9.87"></script>
+ </body>
+ </html>
+diff --git a/app/static/styles.css b/app/static/styles.css
+index d1818bc..fdd6226 100644
+--- a/app/static/styles.css
++++ b/app/static/styles.css
+@@ -2656,6 +2656,7 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+   background: color-mix(in srgb, var(--seat-soft) 72%, white);
+ }
+ 
++.board.liars_bar,
+ .board.liars_dice {
+   width: min(700px, 100%);
+   padding: 16px;
+@@ -2672,15 +2673,68 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+ }
+ /* Keep every dice room the same width regardless of roster or copy length.
+    The shared .board-frame uses fit-content for square board games. */
++#battleStage[data-game-type="liars_bar"] .board-frame,
+ #battleStage[data-game-type="liars_dice"] .board-frame {
+   width: 100%;
+   max-width: 640px;
+ }
++#battleStage[data-game-type="liars_bar"] .board-frame > .board.liars_bar,
+ #battleStage[data-game-type="liars_dice"] .board-frame > .board.liars_dice {
+   width: 100%;
+   max-width: 100%;
+   box-sizing: border-box;
+ }
++.liars-bar-hand, .liars-bar-buttons {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 8px;
++}
++.liars-bar-hand { min-width: 0; margin: 0; padding: 8px; gap: 6px; border: 2px solid var(--pink); }
++.liars-bar-hand label { position: relative; cursor: pointer; }
++.liars-bar-hand input {
++  position: absolute;
++  inset: 0;
++  width: 100%;
++  height: 100%;
++  margin: 0;
++  opacity: 0;
++  cursor: inherit;
++}
++.liars-bar-face {
++  position: relative;
++  pointer-events: none;
++  display: grid;
++  place-items: center;
++  box-sizing: border-box;
++  width: 44px;
++  height: 60px;
++  border: 2px solid var(--purple-dark);
++  border-radius: 4px;
++  box-shadow: inset 0 0 0 2px white, inset 0 0 0 3px var(--purple-light), 1px 2px var(--purple);
++  background: white;
++  color: var(--text);
++  font: bold 24px/1 Georgia, serif;
++}
++.liars-bar-face small { position: absolute; top: 4px; left: 4px; font: bold 10px/1 Georgia, serif; }
++.liars-bar-face.joker { font-size: 14px; }
++.liars-bar-hand :checked + .liars-bar-face {
++  transform: translateY(-3px);
++  border-color: var(--text);
++  background: var(--purple-light);
++}
++.liars-bar-hand :checked + .liars-bar-face::after {
++  content: "✓";
++  position: absolute;
++  top: 2px;
++  right: 3px;
++  font: bold 11px/1 sans-serif;
++}
++.liars-bar-hand :focus-visible + .liars-bar-face { outline: 2px solid var(--text); outline-offset: 2px; }
++.liars-bar-hand :disabled + .liars-bar-face { opacity: .65; }
++.liars-bar-buttons .pixel-btn { min-height: 44px; color: var(--text); }
++.liars-bar-table, .liars-bar-hand { color: var(--text); }
++.liars-bar-table p { margin: 0; overflow-wrap: anywhere; }
+ .liars-current-round {
+   padding: 12px;
+   display: grid;
+@@ -4429,7 +4483,7 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+   .board.connect4 .cell::before { inset: 1px; }
+   .board.connect4 .cell.human-piece .piece,
+   .board.connect4 .cell.ai-piece .piece { border-width: 2px; }
+-  .board.liars_dice { width: 100%; padding: 10px; }
++  .board.liars_bar, .board.liars_dice { width: 100%; padding: 10px; }
+   .liars-round-result { padding: 14px; gap: 0; }
+   .liars-reveal-details summary { padding-top: 3px; }
+   .liars-revealed-dice { grid-template-columns: 1fr; }
+diff --git a/docs/LIARS_BAR.md b/docs/LIARS_BAR.md
+new file mode 100644
+index 0000000..b2f5765
+--- /dev/null
++++ b/docs/LIARS_BAR.md
+@@ -0,0 +1,13 @@
++# 骗子酒馆 · 标准扑克牌
++
++2–4 人娱乐桌，支持邀请和本地 NPC。开房用 `play(game="duel",action="new",params={"game_type":"liars_bar"})`。行动用 `move`，params 带 room_id、revision=最新 r 和以下 move 对象。
++
++- `{"action":"play","cards":["A","Joker"]}` 暗出己方 1–3 张。主牌和 Joker 为真。
++- `{"action":"challenge"}` 质疑上一手。有假罚出牌者，全真罚质疑者。
++- 仅自己有牌时仍可质疑，或 `{"action":"accept"}` 摊验自己全部余牌，全真无人受罚。
++
++A/K/Q 各6、Joker 2。每轮各发5张，主牌随机，跳过空手和淘汰者。各自六膛一中，跨轮逐格受罚。命中淘汰，独活获胜。受罚者幸存先手，淘汰则顺延，首轮或无人受罚随机。双弈认输或离席导致质疑无法继续时重新发牌。
++
++快照 private_state 是己方手牌与可选动作；增量 private.hand 仅在变化时替换。claim 为暗出张数，reveal 为最近摊牌。
++
++原作 [LYiHub/liars-bar-llm](https://github.com/LYiHub/liars-bar-llm)（Apache-2.0）。
+diff --git a/tests/catalog_support.py b/tests/catalog_support.py
+index ea82ff7..2ec067a 100644
+--- a/tests/catalog_support.py
++++ b/tests/catalog_support.py
+@@ -11,7 +11,7 @@ EXPECTED_GAMES_BY_CATEGORY = {
+     'card': {'four_color_tenhu', 'four_color_jiuzhi', 'four_color_qunhu', 'blackjack', 'doudizhu', 'gandengyan', 'guandan', 'mahjong', 'ka_wu_xing',
+              'texas_holdem', 'train_cards', 'uno', 'zhajinhua'},
+     'dice': {'liars_dice', 'yahtzee'},
+-    'tabletop': {'bomb_plane', 'monopoly', 'rummikub', 'carcassonne', 'gem_merchant', 'monopoly_plus'},
++    'tabletop': {'liars_bar', 'bomb_plane', 'monopoly', 'rummikub', 'carcassonne', 'gem_merchant', 'monopoly_plus'},
+ }
+ 
+ EXPECTED_GAME_TYPES = frozenset().union(*EXPECTED_GAMES_BY_CATEGORY.values())
+diff --git a/tests/test_hidden_information_audit.py b/tests/test_hidden_information_audit.py
+index e165967..35a6d8a 100644
+--- a/tests/test_hidden_information_audit.py
++++ b/tests/test_hidden_information_audit.py
+@@ -28,6 +28,7 @@ FULL_TERMINAL_REVIEW_REASONS = {
+ }
+ 
+ RULE_SCOPED_REVEAL_REASONS = {
++    "liars_bar": "only challenged cards are revealed; unchallenged cards and future chambers stay private at terminal",
+     "four_color_tenhu": "exposed melds/discards/offers and rule-scoped winning/scoring cards are public; other concealed cards and unrevealed wall stay private at terminal",
+     "four_color_jiuzhi": "exposed melds/discards/offers and rule-scoped winning/scoring cards are public; other concealed cards and unrevealed wall stay private at terminal",
+     "four_color_qunhu": "exposed melds/discards/offers and rule-scoped winning/scoring cards are public; other concealed cards and unrevealed wall stay private at terminal",
+diff --git a/tests/test_identity.py b/tests/test_identity.py
+index 10917b1..56d9dca 100644
+--- a/tests/test_identity.py
++++ b/tests/test_identity.py
+@@ -176,6 +176,7 @@ class HumanIdentityApiTests(unittest.IsolatedAsyncioTestCase):
+                 "rummikub": "拉密",
+                 "bomb_plane": "炸飞机",
+                 "carcassonne": "卡卡颂",
++                "liars_bar": "骗子酒馆",
+                 "gem_merchant": "宝石商人",
+                 "monopoly_plus": "大富翁·改",
+                 "tictactoe": "井字棋",
+diff --git a/tests/test_liars_bar.py b/tests/test_liars_bar.py
+new file mode 100644
+index 0000000..5a778ba
+--- /dev/null
++++ b/tests/test_liars_bar.py
+@@ -0,0 +1,322 @@
++from collections import Counter
++from copy import deepcopy
++import json
++import os
++import random
++import subprocess
++import sys
++import unittest
++from unittest.mock import patch
++
++from app import database, framework, invites, mcp_minimal, npc_controller, takeover
++from app.games import GAMES
++from app.games.liars_bar import LiarsBar
++from tests.full_state_support import isolated_scenario_database
++
++
++def seats(count):
++    return [dict(player_id=f"p{i}", role="ai", participant_kind="bound_machine",
++                 display_name=f"玩家{i}") for i in range(count)]
++
++
++class Rules(unittest.TestCase):
++    def setUp(self):
++        self.game = LiarsBar(random.Random(17))
++        self.state = self.game.initialize(seats(3))
++        self.state.update(target="A", turn_player_id="p0")
++        self.state["chambers"] = dict.fromkeys(self.state["alive"], 5)
++
++    def act(self, action, **args):
++        player = {"player_id": self.state["turn_player_id"]}
++        result = self.game.apply_action(self.state, dict(action=action, **args), player)
++        self.state = result.state
++        return result
++
++    def test_deal_and_random_openers(self):
++        openers = set()
++        targets = set()
++        for i in range(72):
++            n = 2 + i % 3
++            state = self.game.initialize(seats(n))
++            cards = Counter(card for hand in state["hands"].values() for card in hand)
++            self.assertEqual([len(h) for h in state["hands"].values()], [5] * n)
++            deck = Counter(A=6, K=6, Q=6, Joker=2)
++            self.assertLessEqual(cards, deck)
++            if n == 4:
++                self.assertEqual(cards, deck)
++                openers.add(state["turn_player_id"])
++            targets.add(state["target"])
++            self.assertTrue(all(0 <= x < 6 for x in state["chambers"].values()))
++        self.assertEqual(openers, {"p0", "p1", "p2", "p3"})
++        self.assertEqual(targets, {"A", "K", "Q"})
++
++    def test_truth_joker_mixed_lie_and_penalty_starter(self):
++        initial = deepcopy(self.state)
++        for cards, loser in [(["A", "Joker"], "p1"), (["Joker"], "p1"), (["A", "K"], "p0")]:
++            self.state = deepcopy(initial)
++            self.state["hands"]["p0"] = cards + ["Q"]
++            self.act("play", cards=cards)
++            self.act("challenge")
++            self.assertEqual(self.state["reveal"]["cards"], cards)
++            self.assertEqual(self.state["reveal"]["penalized"], loser)
++            self.assertEqual(self.state["turn_player_id"], loser)
++            self.assertEqual(self.state["shots"][loser], 1)
++            self.assertEqual(self.state["round"], 2)
++            self.assertEqual(self.state["chambers"], initial["chambers"])
++            self.assertIsNone(self.state["pending"])
++
++    def test_each_chamber_advances_once_and_only_past_results_are_public(self):
++        for position in range(6):
++            state = self.game.initialize(seats(2))
++            state["chambers"]["p0"] = position
++            for prior in range(position + 1):
++                state.update(target="A", turn_player_id="p0")
++                state["hands"]["p0"] = ["Q"]
++                self.state = state
++                self.act("play", cards=["Q"])
++                public = self.game.public_state(self.state, [])
++                private = self.game.private_state(self.state, {"player_id": "p1"}, [])
++                alternate = deepcopy(self.state)
++                alternate["chambers"]["p0"] = (position + 1) % 6
++                alternate["pending"]["cards"] = ["A"]
++                self.assertEqual(public, self.game.public_state(alternate, []))
++                self.assertEqual(private, self.game.private_state(alternate, {"player_id": "p1"}, []))
++                outcome = self.act("challenge")
++                state = outcome.state
++                self.assertEqual(state["shots"]["p0"], prior + 1)
++                self.assertEqual(bool(outcome.participant_activity), prior == position)
++                self.assertEqual(state["reveal"]["hit"], prior == position)
++            self.assertEqual(state["winner_player_id"], "p1")
++            self.assertEqual(state["round"], position + 1)
++            self.assertEqual(state["alive"], ["p1"])
++            self.assertIsNone(state["turn_player_id"])
++
++    def test_skip_empty_and_eliminated_wrap_to_next_alive(self):
++        self.state["hands"].update(p0=["K"], p1=[], p2=["Joker"])
++        self.state["chambers"]["p0"] = 0
++        self.act("play", cards=["K"])
++        self.assertEqual(self.state["turn_player_id"], "p2")
++        self.act("challenge")
++        self.assertEqual(self.state["turn_player_id"], "p1")
++        self.assertEqual(set(self.state["hands"]), {"p1", "p2"})
++        self.state.update(turn_player_id="p2")
++        self.act("play", cards=self.state["hands"]["p2"][:1])
++        self.assertEqual(self.state["turn_player_id"], "p1")
++
++    def test_last_hand_may_challenge_or_accept_system_reveal(self):
++        for hand, loser in [(["A"] * 4 + ["Joker"], None), (["A"] * 3 + ["K"], "p1")]:
++            self.state["hands"].update(p0=["K"], p1=hand, p2=[])
++            self.state.update(target="A", turn_player_id="p0", pending=None)
++            self.act("play", cards=["K"])
++            waiting = deepcopy(self.state)
++            self.assertEqual(self.game.private_state(waiting, {"player_id": "p1"}, [])["actions"],
++                             ["accept", "challenge"])
++            with self.assertRaises(ValueError):
++                self.act("play", cards=["A"])
++            self.act("challenge")
++            self.assertEqual(self.state["reveal"]["penalized"], "p0")
++            self.state = waiting
++            previous = self.state["shots"].copy()
++            self.act("accept")
++            self.assertEqual(self.state["reveal"]["cards"], hand)
++            self.assertIsNone(self.state["reveal"]["challenger"])
++            self.assertEqual(self.state["reveal"]["penalized"], loser)
++            if loser is None:
++                self.assertEqual(self.state["shots"], previous)
++            self.assertIn(self.state["turn_player_id"], self.state["alive"])
++
++    def test_responder_forfeits_without_self_challenge(self):
++        self.state["hands"] = {"p0":["A", "K"], "p1":["Q"], "p2":[]}
++        self.act("play", cards=["A"])
++        self.game.apply_resignation(self.state, "p1", seats(3))
++        self.assertEqual(self.state["round"], 2)
++        self.assertIsNone(self.state["pending"])
++        self.assertEqual(self.state["alive"], ["p0", "p2"])
++        self.assertEqual(self.state["turn_player_id"], "p0")
++        self.assertEqual(self.state["shots"], dict.fromkeys(["p0", "p1", "p2"], 0))
++
++    def test_invalid_actions_are_atomic(self):
++        self.state["hands"]["p0"] = ["A", "A", "K"]
++        previous = deepcopy(self.state)
++        for move in ({"action": "challenge"}, {"action": "accept"}, {"action": "play", "cards": "A"},
++                     *({"action": "play", "cards": v} for v in ([], ["K","K"], ["A"] * 4, ["Q"], [{}])),
++                     {"action": "play", "cards": ["A"], "player_id": "p1"}):
++            with self.assertRaises(ValueError):
++                self.game.apply_action(self.state, move, {"player_id": "p0"})
++        self.assertEqual(self.state, previous)
++
++    def test_local_choice_is_independent_of_concealed_cards_and_chambers(self):
++        self.state["hands"].update(p0=["A", "Q"], p1=["K", "A"], p2=["A"])
++        self.act("play", cards=["A"])
++        other = deepcopy(self.state)
++        other["pending"]["cards"] = ["K"]
++        other["hands"]["p0"] = ["Joker"]
++        other["hands"]["p2"] = ["Q"]
++        other["chambers"]["p1"] = 0
++        for seed in range(12):
++            actor = {"player_id": "p1"}
++            observed = LiarsBar(random.Random(seed)).choose_local_npc_action(self.state, actor, seats(3))
++            self.assertEqual(observed, LiarsBar(random.Random(seed)).choose_local_npc_action(other, actor, seats(3)))
++
++    def test_local_games_reach_one_winner(self):
++        for n in (2, 3, 4):
++            people = seats(n)
++            for _ in range(12):
++                state = self.game.initialize(people)
++                for turn in range(300):
++                    actor = {"player_id": state["turn_player_id"]}
++                    action = self.game.choose_local_npc_action(state, actor, people)
++                    state = self.game.apply_action(state, action, actor).state
++                    if self.game.result_for(state, people):
++                        break
++                self.assertEqual(state["alive"], [state["winner_player_id"]])
++
++
++class Rooms(unittest.IsolatedAsyncioTestCase):
++    def setUp(self):
++        scratch = isolated_scenario_database()
++        scratch.__enter__()
++        self.addCleanup(scratch.__exit__, None, None, None)
++        self.game = LiarsBar(random.Random(11))
++        plugin = patch.dict(GAMES, liars_bar=self.game)
++        plugin.start()
++        self.addCleanup(plugin.stop)
++
++    def ordinary(self, people):
++        return framework.create_room("liars_bar", "ai_first", "ai", "p0",
++                                     ordered_participants=people, require_confirmations=False)
++
++    def play(self, room, move):
++        return framework.play_move(room["room_id"], "ai", room["current_player_id"],
++                                   move, expected_revision=room["revision"])
++
++    def test_incremental_projection_privacy_chat_and_resync(self):
++        room = self.ordinary(seats(3))
++        rid = room["room_id"]
++        actor = room["current_player_id"]
++        viewer = self.game._next(room["board_state"], actor, with_cards=True)
++        initial = mcp_minimal.response(rid, viewer)["room"]
++        board = initial["board_state"]
++        self.assertEqual(initial["private_state"]["hand"], room["board_state"]["hands"][viewer])
++        move = {"action": "play", "cards": room["board_state"]["hands"][actor][:2]}
++        framework.post_message(rid, "ai", actor, "一起玩")
++        room = self.play(room, move)
++        wire = mcp_minimal.response(rid, viewer)
++        self.assertIn({"actor": actor, "message": "一起玩"}, wire["events"])
++        action = next(e for e in wire["events"] if isinstance(e, list))
++        self.assertEqual(action[:2], [actor, "play"])
++        _, _, count, next_player = action
++        self.assertEqual(count, 2)
++        board["counts"][actor] -= count
++        board.update(claim={"player_id":actor, "count":count}, turn_player_id=next_player)
++        self.assertEqual(board, self.game.public_state(room["board_state"], []))
++        for event in framework.list_timeline(rid):
++            if event["event_type"] == "move":
++                self.assertEqual(event["move"], {"action": "play", "count": 2})
++        for hidden in ('"hands"', '"cards"', '"chambers"', '"pending"'):
++            self.assertNotIn(hidden, json.dumps(wire))
++        self.assertNotIn("events", mcp_minimal.response(rid, viewer))
++        with self.assertRaises(framework.DuelError):
++            framework.play_move(rid, "ai", actor, {"action": "challenge"}, expected_revision=room["revision"])
++        with self.assertRaises(framework.DuelError):
++            framework.play_move(rid, "ai", viewer, {"action": "challenge"}, expected_revision=room["revision"] - 1)
++        room = self.play(room, {"action": "challenge"})
++        wire = mcp_minimal.response(rid, viewer)
++        reveal = wire["events"][0][2]["reveal"]
++        self.assertEqual(reveal["cards"], move["cards"])
++        full = mcp_minimal.response(rid, viewer, full=True)["snapshot"]
++        self.assertEqual(full["board_state"], self.game.public_state(room["board_state"], []))
++        self.assertEqual(full["private_state"], self.game.private_state(room["board_state"], {"player_id": viewer}, []))
++        self.assertNotIn("chambers", json.dumps(full))
++        self.assertNotIn("events", mcp_minimal.response(rid, viewer))
++
++    def test_multi_round_cursor_replays_public_actions_once(self):
++        room = self.ordinary(seats(4))
++        rid = room["room_id"]
++        viewer = "p0"
++        initial = mcp_minimal.response(rid, viewer)["room"]
++        board, private = initial["board_state"], initial["private_state"]
++        for turn in range(12):
++            actor = room["current_player_id"]
++            move = ({"action":"challenge"} if turn % 3 == 2 else
++                    {"action":"play", "cards":room["board_state"]["hands"][actor][:1]})
++            room = self.play(room, move)
++            if turn % 3 != 2:
++                continue  # Three actions can arrive in a single state reply.
++            wire = mcp_minimal.response(rid, viewer)
++            self.assertEqual(len(wire["events"]), 3)
++            for actor, action, *fields in wire["events"]:
++                if action == "play":
++                    count, next_player = fields
++                    board["counts"][actor] -= count
++                    board.update(claim={"player_id":actor, "count":count}, turn_player_id=next_player)
++                else:
++                    patch, = fields
++                    self.assertEqual(set(patch["reveal"]).intersection({"cards", "hands", "chambers"}), {"cards"})
++                    board["shots"].update(patch.pop("shots", {}))
++                    if patch.get("counts") == 5:
++                        patch["counts"] = dict.fromkeys(patch.get("alive", board["alive"]), 5)
++                    board.update(patch)
++            private.update(wire.get("private", {}))
++            self.assertEqual(board, self.game.public_state(room["board_state"], []))
++            self.assertEqual(private, self.game.private_state(room["board_state"], {"player_id":viewer}, []))
++            self.assertTrue(set(wire.get("private", {})) <= {"hand", "actions"})
++            self.assertTrue({"events", "private"}.isdisjoint(mcp_minimal.response(rid, viewer)))
++            if room["status"] != "playing":
++                break
++
++    async def test_real_npc_runner_finishes_after_last_machine_is_eliminated(self):
++        people = seats(4)
++        for i, p in enumerate(people[1:], 1):
++            p.update(participant_kind="system_npc", npc_persona_id=f"test{i}")
++        room = self.ordinary(people)
++        state = room["board_state"]
++        state.update(target="A", turn_player_id="p0")
++        state["hands"]["p0"] = ["K"]
++        state["chambers"]["p0"] = 0
++        with database.write_transaction() as conn:
++            conn.execute("UPDATE rooms SET board_state=?,current_player_id='p0' WHERE room_id=?",
++                         (json.dumps(state), room["room_id"]))
++        room = self.play(framework.get_room(room["room_id"]), {"action": "play", "cards": ["K"]})
++        room = self.play(room, {"action": "challenge"})
++        self.assertEqual(room["status"], "playing")
++        with patch.object(npc_controller, "get_npc_provider", side_effect=AssertionError("external call")):
++            for _ in range(50):
++                result = await npc_controller.run_current_npc_turn(room["room_id"])
++                self.assertEqual(result.source, "local")
++                self.assertIsNone(result.speech_task)
++                room = result.room
++                if room["status"] == "finished":
++                    break
++        self.assertIn(room["winner_player_id"], ("p1","p2","p3"))
++        self.assertEqual(room["board_state"]["alive"], [room["winner_player_id"]])
++
++    async def test_invite_and_takeover(self):
++        room = invites.create_invite("liars_bar", "ai", "p0", target_player_count=4, timeout_takeover_seconds=90)
++        for p in seats(4)[1:]:
++            invites.join_invite(room["invite_code"], "ai", p["player_id"])
++        room = invites.start_invite(room["room_id"], "ai", "p0")
++        actor = next(p for p in room["participants"] if p["player_id"] == room["current_player_id"])
++        action = self.game.choose_local_npc_action(room["board_state"], actor, room["participants"])
++        self.assertIn(action, takeover.timeout_legal_actions(room, actor))
++        with patch.object(takeover, "is_due", return_value=True), patch.object(
++            takeover, "get_npc_provider", side_effect=AssertionError("external call")
++        ):
++            updated = await takeover.run_timeout_turn(room["room_id"])
++        self.assertEqual(updated["revision"], room["revision"] + 1)
++
++    def test_cross_process_restore_and_challenge(self):
++        room = self.ordinary(seats(2))
++        actor = room["current_player_id"]
++        room = self.play(room, {"action": "play", "cards": room["board_state"]["hands"][actor][:1]})
++        code = """import json, sys
++from app import framework
++room = framework.get_room(sys.argv[1])
++next_room = framework.play_move(sys.argv[1], 'ai', room['current_player_id'], {'action':'challenge'},
++                                expected_revision=room['revision'])
++print(json.dumps([room['board_state'],next_room['revision']]))"""
++        env = {**os.environ, "DUEL_DB_PATH": str(database.DB_PATH)}
++        output = subprocess.check_output([sys.executable, "-c", code, room["room_id"]], env=env, text=True, timeout=20)
++        restored, revision = json.loads(output)
++        self.assertEqual(restored, room["board_state"])
++        self.assertEqual(revision, room["revision"] + 1)
+diff --git a/tests/test_npc_scheduler.py b/tests/test_npc_scheduler.py
+index f6dcb0e..3b74e3a 100644
+--- a/tests/test_npc_scheduler.py
++++ b/tests/test_npc_scheduler.py
+@@ -75,6 +75,7 @@ class NpcVisibleActionPacingTests(unittest.IsolatedAsyncioTestCase):
+         "go",
+         "guandan",
+         "junqi",
++        "liars_bar",
+         "ka_wu_xing",
+         "liars_dice",
+         "mahjong",
+diff --git a/tests/test_spectator.py b/tests/test_spectator.py
+index 34b4724..819db64 100644
+--- a/tests/test_spectator.py
++++ b/tests/test_spectator.py
+@@ -86,7 +86,7 @@ class SpectatorTests(unittest.IsolatedAsyncioTestCase):
+                         expected = framework.project_room_for_viewer(room, pid)
+                         actual = data['room']
+                         self.assertEqual(actual['board_state'], expected['board_state'])
+-                        self.assertEqual(actual['private_state'], expected['private_state'])
++                        self.assertEqual(actual['private_state'], {} if game == 'liars_bar' else expected['private_state'])
+                         self.assertEqual(actual['viewer'], expected['viewer'])
+                         self.assertEqual(sorted(p['id'] for p in actual['spectator_choices']), ['101', '102'])
+                         self.assertEqual(data['poll_after_ms'], 3000)
+diff --git a/third_party/THIRD_PARTY_NOTICES.md b/third_party/THIRD_PARTY_NOTICES.md
+index 989f8a0..6f4d589 100644
+--- a/third_party/THIRD_PARTY_NOTICES.md
++++ b/third_party/THIRD_PARTY_NOTICES.md
+@@ -24,3 +24,9 @@
+ 不要仅依赖本汇总判断“是否原样”。每个目录的 `NOTICE.md` 是该 vendor 的细粒度真源，记录了复制范围、固定 SHA/版本以及本地修改。升级第三方核心时必须同步更新对应 `NOTICE.md`、许可证文件（若上游变化）和本汇总。
+ 
+ 大富翁另阅读 `hencter/monopoly-3d-ai` 的 MIT LICENSE 与 `src/core/engine.js`（`fec44211e930ba42ad98d9172e0830aa55a170a6`），其3D、行业/金融及联机代码均未采用，也不是运行依赖。详见 `intrepid_monopoly/NOTICE.md`。
++
++## Liar's Deck (骗子酒馆)
++
++Standard card rules and round resolution adapted from [LYiHub/liars-bar-llm](https://github.com/LYiHub/liars-bar-llm)
++under the [Apache License 2.0](liars-bar-llm/LICENSE). CedarToy implements
++the rules in the Duel room plugin with viewer-specific projections and local NPCs.
+diff --git a/third_party/liars-bar-llm/LICENSE b/third_party/liars-bar-llm/LICENSE
+new file mode 100644
+index 0000000..d0b734b
+--- /dev/null
++++ b/third_party/liars-bar-llm/LICENSE
+@@ -0,0 +1,201 @@
++                                 Apache License
++                           Version 2.0, January 2004
++                        http://www.apache.org/licenses/
++
++   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
++
++   1. Definitions.
++
++      "License" shall mean the terms and conditions for use, reproduction,
++      and distribution as defined by Sections 1 through 9 of this document.
++
++      "Licensor" shall mean the copyright owner or entity authorized by
++      the copyright owner that is granting the License.
++
++      "Legal Entity" shall mean the union of the acting entity and all
++      other entities that control, are controlled by, or are under common
++      control with that entity. For the purposes of this definition,
++      "control" means (i) the power, direct or indirect, to cause the
++      direction or management of such entity, whether by contract or
++      otherwise, or (ii) ownership of fifty percent (50%) or more of the
++      outstanding shares, or (iii) beneficial ownership of such entity.
++
++      "You" (or "Your") shall mean an individual or Legal Entity
++      exercising permissions granted by this License.
++
++      "Source" form shall mean the preferred form for making modifications,
++      including but not limited to software source code, documentation
++      source, and configuration files.
++
++      "Object" form shall mean any form resulting from mechanical
++      transformation or translation of a Source form, including but
++      not limited to compiled object code, generated documentation,
++      and conversions to other media types.
++
++      "Work" shall mean the work of authorship, whether in Source or
++      Object form, made available under the License, as indicated by a
++      copyright notice that is included in or attached to the work
++      (an example is provided in the Appendix below).
++
++      "Derivative Works" shall mean any work, whether in Source or Object
++      form, that is based on (or derived from) the Work and for which the
++      editorial revisions, annotations, elaborations, or other modifications
++      represent, as a whole, an original work of authorship. For the purposes
++      of this License, Derivative Works shall not include works that remain
++      separable from, or merely link (or bind by name) to the interfaces of,
++      the Work and Derivative Works thereof.
++
++      "Contribution" shall mean any work of authorship, including
++      the original version of the Work and any modifications or additions
++      to that Work or Derivative Works thereof, that is intentionally
++      submitted to Licensor for inclusion in the Work by the copyright owner
++      or by an individual or Legal Entity authorized to submit on behalf of
++      the copyright owner. For the purposes of this definition, "submitted"
++      means any form of electronic, verbal, or written communication sent
++      to the Licensor or its representatives, including but not limited to
++      communication on electronic mailing lists, source code control systems,
++      and issue tracking systems that are managed by, or on behalf of, the
++      Licensor for the purpose of discussing and improving the Work, but
++      excluding communication that is conspicuously marked or otherwise
++      designated in writing by the copyright owner as "Not a Contribution."
++
++      "Contributor" shall mean Licensor and any individual or Legal Entity
++      on behalf of whom a Contribution has been received by Licensor and
++      subsequently incorporated within the Work.
++
++   2. Grant of Copyright License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      copyright license to reproduce, prepare Derivative Works of,
++      publicly display, publicly perform, sublicense, and distribute the
++      Work and such Derivative Works in Source or Object form.
++
++   3. Grant of Patent License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      (except as stated in this section) patent license to make, have made,
++      use, offer to sell, sell, import, and otherwise transfer the Work,
++      where such license applies only to those patent claims licensable
++      by such Contributor that are necessarily infringed by their
++      Contribution(s) alone or by combination of their Contribution(s)
++      with the Work to which such Contribution(s) was submitted. If You
++      institute patent litigation against any entity (including a
++      cross-claim or counterclaim in a lawsuit) alleging that the Work
++      or a Contribution incorporated within the Work constitutes direct
++      or contributory patent infringement, then any patent licenses
++      granted to You under this License for that Work shall terminate
++      as of the date such litigation is filed.
++
++   4. Redistribution. You may reproduce and distribute copies of the
++      Work or Derivative Works thereof in any medium, with or without
++      modifications, and in Source or Object form, provided that You
++      meet the following conditions:
++
++      (a) You must give any other recipients of the Work or
++          Derivative Works a copy of this License; and
++
++      (b) You must cause any modified files to carry prominent notices
++          stating that You changed the files; and
++
++      (c) You must retain, in the Source form of any Derivative Works
++          that You distribute, all copyright, patent, trademark, and
++          attribution notices from the Source form of the Work,
++          excluding those notices that do not pertain to any part of
++          the Derivative Works; and
++
++      (d) If the Work includes a "NOTICE" text file as part of its
++          distribution, then any Derivative Works that You distribute must
++          include a readable copy of the attribution notices contained
++          within such NOTICE file, excluding those notices that do not
++          pertain to any part of the Derivative Works, in at least one
++          of the following places: within a NOTICE text file distributed
++          as part of the Derivative Works; within the Source form or
++          documentation, if provided along with the Derivative Works; or,
++          within a display generated by the Derivative Works, if and
++          wherever such third-party notices normally appear. The contents
++          of the NOTICE file are for informational purposes only and
++          do not modify the License. You may add Your own attribution
++          notices within Derivative Works that You distribute, alongside
++          or as an addendum to the NOTICE text from the Work, provided
++          that such additional attribution notices cannot be construed
++          as modifying the License.
++
++      You may add Your own copyright statement to Your modifications and
++      may provide additional or different license terms and conditions
++      for use, reproduction, or distribution of Your modifications, or
++      for any such Derivative Works as a whole, provided Your use,
++      reproduction, and distribution of the Work otherwise complies with
++      the conditions stated in this License.
++
++   5. Submission of Contributions. Unless You explicitly state otherwise,
++      any Contribution intentionally submitted for inclusion in the Work
++      by You to the Licensor shall be under the terms and conditions of
++      this License, without any additional terms or conditions.
++      Notwithstanding the above, nothing herein shall supersede or modify
++      the terms of any separate license agreement you may have executed
++      with Licensor regarding such Contributions.
++
++   6. Trademarks. This License does not grant permission to use the trade
++      names, trademarks, service marks, or product names of the Licensor,
++      except as required for reasonable and customary use in describing the
++      origin of the Work and reproducing the content of the NOTICE file.
++
++   7. Disclaimer of Warranty. Unless required by applicable law or
++      agreed to in writing, Licensor provides the Work (and each
++      Contributor provides its Contributions) on an "AS IS" BASIS,
++      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++      implied, including, without limitation, any warranties or conditions
++      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
++      PARTICULAR PURPOSE. You are solely responsible for determining the
++      appropriateness of using or redistributing the Work and assume any
++      risks associated with Your exercise of permissions under this License.
++
++   8. Limitation of Liability. In no event and under no legal theory,
++      whether in tort (including negligence), contract, or otherwise,
++      unless required by applicable law (such as deliberate and grossly
++      negligent acts) or agreed to in writing, shall any Contributor be
++      liable to You for damages, including any direct, indirect, special,
++      incidental, or consequential damages of any character arising as a
++      result of this License or out of the use or inability to use the
++      Work (including but not limited to damages for loss of goodwill,
++      work stoppage, computer failure or malfunction, or any and all
++      other commercial damages or losses), even if such Contributor
++      has been advised of the possibility of such damages.
++
++   9. Accepting Warranty or Additional Liability. While redistributing
++      the Work or Derivative Works thereof, You may choose to offer,
++      and charge a fee for, acceptance of support, warranty, indemnity,
++      or other liability obligations and/or rights consistent with this
++      License. However, in accepting such obligations, You may act only
++      on Your own behalf and on Your sole responsibility, not on behalf
++      of any other Contributor, and only if You agree to indemnify,
++      defend, and hold each Contributor harmless for any liability
++      incurred by, or claims asserted against, such Contributor by reason
++      of your accepting any such warranty or additional liability.
++
++   END OF TERMS AND CONDITIONS
++
++   APPENDIX: How to apply the Apache License to your work.
++
++      To apply the Apache License to your work, attach the following
++      boilerplate notice, with the fields enclosed by brackets "[]"
++      replaced with your own identifying information. (Don't include
++      the brackets!)  The text should be enclosed in the appropriate
++      comment syntax for the file format. We also recommend that a
++      file or class name and description of purpose be included on the
++      same "printed page" as the copyright notice for easier
++      identification within third-party archives.
++
++   Copyright [UNITEC MEDIA COMPANY LIMITED] [name of copyright owner]
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
+-- 
+2.34.1
+
