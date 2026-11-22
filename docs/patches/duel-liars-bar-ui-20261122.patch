@@ -1,0 +1,352 @@
+From e993d5660c24c020a12e0d3a46332f91d466560d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=8D=97=E5=B1=B1=E5=90=9B?=
+ <zizuixixiang@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 23:38:23 +0800
+Subject: [PATCH] =?UTF-8?q?fix(duel):=20clarify=20Liars=20Bar=20table=20hi?=
+ =?UTF-8?q?erarchy=20and=20token=20estimate=20[=E5=8B=BF=E6=8E=A8=E4=B8=8A?=
+ =?UTF-8?q?=E6=B8=B8]?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Improve player status, card counts, penalty severity and reveals; show sampled token cost in lobby.
+---
+ app/static/app.js             |   7 ++
+ app/static/games/liars_bar.js | 126 +++++++++++++++++++++++++++-------
+ app/static/index.html         |   4 +-
+ app/static/styles.css         | 112 +++++++++++++++++++++++++++++-
+ 4 files changed, 220 insertions(+), 29 deletions(-)
+
+diff --git a/app/static/app.js b/app/static/app.js
+index b470d01..995ece6 100644
+--- a/app/static/app.js
++++ b/app/static/app.js
+@@ -1597,6 +1597,9 @@ function gameTokenEstimateLabel(gameType) {
+     chinese_checkers: "约40–200 token/轮",
+     dots_boxes: "约30–120 token/轮",
+     doudizhu: "约300–600 token/轮",
++    // 2–4 seats, seeds 7/11/37: 353 ordinary state + move pairs, cl100k_base.
++    // Compact root content P10/median/P90 = 64/132/172, excluding the RPC envelope.
++    liars_bar: "约60–180 token/轮",
+     liars_dice: "约50–150 token/轮",
+     mahjong: "约600–900 token/轮",
+     // scripts/sample_ka_wu_xing_mcp.py in CedarToy: seeds 7/11/37, 0 stake,
+@@ -1622,6 +1625,10 @@ function updateGameTokenEstimate() {
+   if (!label) return;
+   const estimate = gameTokenEstimateLabel(selectedGameType($("gameType")));
+   label.textContent = estimate ? `（${estimate}）` : "";
++  if (selectedGameType($("gameType")) === "liars_bar") {
++    label.title = "cl100k_base 实测一次 state + move 的压缩响应正文。首次进入、复杂结算另计，不含协议包装、聊天和模型思考。";
++    return;
++  }
+   if (selectedGameType($("gameType")) === "ka_wu_xing") {
+     label.title = "常见回合参考：默认中位412、全选中位514 token（cl100k_base 实测 state+move 压缩JSON正文）。复杂回合95分位约900–980 token，非上限。首次进入/手动完整同步/终局另计；根工具包装另计（中位约645–798），不含guide/chat/模型思考；不是计费上限。";
+     return;
+diff --git a/app/static/games/liars_bar.js b/app/static/games/liars_bar.js
+index d0c116d..42861ac 100644
+--- a/app/static/games/liars_bar.js
++++ b/app/static/games/liars_bar.js
+@@ -3,36 +3,114 @@
+ 
+   function element(tag, text, className) {
+     const node = document.createElement(tag);
+-    if (text) node.textContent = text;
++    if (text != null) node.textContent = text;
+     if (className) node.className = className;
+     return node;
+   }
+ 
+-  function renderBoard({board, room, state, privateState, participants, canMove, helpers, uiState}) {
++  function cardFace(rank) {
++    const face = element("span", rank, "liars-bar-face");
++    const corner = element("small", rank === "Joker" ? "★" : rank);
++    corner.setAttribute("aria-hidden", "true");
++    face.append(corner);
++    if (rank === "Joker") face.classList.add("joker");
++    return face;
++  }
++
++  function playerTable(state, room, participants, viewer, helpers) {
++    const table = element("table", "", "liars-bar-roster");
++    const header = table.createTHead().insertRow();
++    for (const title of ["玩家", "余牌", "已受罚"]) {
++      const cell = element("th", title);
++      cell.scope = "col";
++      header.append(cell);
++    }
++    const body = table.createTBody();
++    for (const p of participants) {
++      const id = p.player_id;
++      const alive = state.alive.includes(id);
++      const current = room.status === "playing" && state.turn_player_id === id;
++      const row = body.insertRow();
++      row.className = `seat-${p.seat_index}`;
++      if (current) row.setAttribute("aria-current", "true");
++      const identity = element("th");
++      identity.scope = "row";
++      const player = element("div", "", "liars-bar-player");
++      const avatar = element("span", "", "liars-bar-avatar");
++      helpers.renderParticipantAvatar(avatar, p);
++      avatar.setAttribute("aria-hidden", "true");
++      const details = element("div", "", "liars-bar-identity");
++      details.append(element("strong", p.display_name || "玩家"));
++      const status = [];
++      if (id === viewer?.player_id) status.push(room.spectating ? "观战视角" : "你");
++      else {
++        const kind = {system_npc: "NPC", bound_machine: "小机", human: "人类"}[p.participant_kind];
++        if (kind && kind !== p.display_name) status.push(kind);
++      }
++      if (room.winner_player_id === id) status.push("获胜");
++      else if (current) status.push("行动中");
++      else if (!alive) status.push(p.join_status === "left" ? "已离席" : "已出局");
++      else if (state.counts[id] === 0) status.push("本轮已出完");
++      if (status.length) details.append(element("small", status.join(" · ")));
++      player.append(avatar, details);
++      identity.append(player);
++      row.append(identity);
++      const remaining = row.insertCell();
++      remaining.append(element("strong", alive ? state.counts[id] : "—"));
++      if (alive) remaining.append(" 张");
++      const risk = row.insertCell();
++      const shots = state.shots[id];
++      risk.append(`${shots} 次`);
++      const meter = element("span", "", "liars-bar-meter");
++      meter.setAttribute("aria-hidden", "true");
++      for (let i = 0; i < 6; i++) {
++        const tick = element("i");
++        if (i < shots) tick.className = "liars-bar-used";
++        meter.append(tick);
++      }
++      risk.append(meter);
++    }
++    return table;
++  }
++
++  function revealedPlay(r, name) {
++    const section = element("section", "", "liars-bar-reveal");
++    const heading = element("div", "", "liars-bar-verdict");
++    heading.append(element("small", `第 ${r.round} 轮摊牌 · 主牌 ${r.target}`),
++      element("strong", r.liar ? "质疑成功" : "质疑失败"));
++    const evidence = element("div", "", "liars-bar-evidence");
++    const hand = element("div");
++    hand.append(element("small", `${name(r.player_id)} 摊开`));
++    const cards = element("div", "", "liars-bar-open-cards");
++    for (const rank of r.cards) cards.append(cardFace(rank));
++    hand.append(cards);
++    const challenger = r.challenger === null ? "系统" : name(r.challenger);
++    const result = r.penalized === null ? "无人受罚" : `${name(r.penalized)}${r.hit ? "受罚出局" : "受罚后幸存"}`;
++    const outcome = element("div", "", "liars-bar-outcome");
++    outcome.append(element("small", `${challenger}质疑 · ${r.liar ? "有假牌" : "全真"}`), element("strong", result));
++    evidence.append(hand, outcome);
++    section.append(heading, evidence);
++    return section;
++  }
++
++  function renderBoard({board, room, state, privateState, participants, viewer, canMove, helpers, uiState}) {
+     if (!state.round) return;
+     const name = id => participants.find(p => p.player_id === id)?.display_name || "玩家";
+-    const panel = element("section", "", "liars-current-round liars-bar-table");
+-    const heading = element("div", "", "liars-round-heading");
+-    heading.append(element("strong", `第 ${state.round} 轮 · 主牌 ${state.target}`));
++    const panel = element("section", "", "liars-bar-table");
++    const heading = element("header", "", "liars-bar-heading");
++    heading.append(element("b", state.target, "liars-bar-trump"), element("strong", "主牌"),
++      element("small", `第 ${state.round} 轮`));
+     panel.append(heading);
+     if (state.claim) {
+-      panel.append(element("p", `${name(state.claim.player_id)} 暗出了 ${state.claim.count} 张`));
+-    }
+-    for (const p of participants) {
+-      const id = p.player_id;
+-      const status = state.alive.includes(id) ? `余牌 ${state.counts[id]} 张` : "已出局";
+-      panel.append(element("p", `${name(id)} · ${status} · 已受罚 ${state.shots[id]} 次`));
++      const claim = element("div", "", "liars-bar-claim");
++      const count = element("span", "", "liars-bar-count");
++      count.append("暗出 ", element("b", state.claim.count), " 张");
++      claim.append(element("small", "上一手"), element("strong", name(state.claim.player_id)), count);
++      panel.append(claim);
+     }
++    panel.append(playerTable(state, room, participants, viewer, helpers));
+     board.append(panel);
+-    if (state.reveal) {
+-      const r = state.reveal;
+-      const who = r.challenger === null ? "系统" : name(r.challenger);
+-      const outcome = r.penalized === null ? "无人受罚" : `${name(r.penalized)}${r.hit ? "淘汰" : "受罚后幸存"}`;
+-      const reveal = element("section", "", "liars-current-round liars-bar-table");
+-      reveal.append(element("strong", `第 ${r.round} 轮摊牌 · 主牌 ${r.target}`),
+-        element("p", `${who}质疑${name(r.player_id)}，摊开 ${r.cards.join("、")}。${r.liar ? "有假牌" : "全真"}，${outcome}。`));
+-      board.append(reveal);
+-    }
++    if (state.reveal) board.append(revealedPlay(state.reveal, name));
+ 
+     const hand = privateState?.hand || [];
+     if (room.spectating || !hand.length) return;
+@@ -49,11 +127,7 @@
+       uiState.cardIndexes = [...selected];
+     }
+     hand.forEach((rank, index) => {
+-      const face = element("span", rank, "liars-bar-face");
+-      const corner = element("small", rank === "Joker" ? "★" : rank);
+-      corner.setAttribute("aria-hidden", "true");
+-      face.append(corner);
+-      if (rank === "Joker") face.classList.add("joker");
++      const face = cardFace(rank);
+       if (!selectable) {
+         field.append(face);
+         return;
+@@ -93,6 +167,8 @@
+   window.DuelGameUI.register("liars_bar", {
+     usesStandardMoveConfirmation: false,
+     ownsPrivateStatePresentation: true,
++    participantPresentation: "embedded",
++    multiplayerTable: true,
+     renderBoard,
+   });
+ }());
+diff --git a/app/static/index.html b/app/static/index.html
+index 98ceb2f..f883948 100644
+--- a/app/static/index.html
++++ b/app/static/index.html
+@@ -7,7 +7,7 @@
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+-  <link rel="stylesheet" href="/static/styles.css?v=0.9.61">
++  <link rel="stylesheet" href="/static/styles.css?v=0.9.62">
+   <link rel="stylesheet" href="/static/games/checkers.css?v=0.1.0">
+ </head>
+ <body>
+@@ -509,6 +509,6 @@
+   <script src="/static/game_ui_registry.js?v=0.9.1"></script>
+   <script src="/static/games/liars_dice.js?v=0.1.20"></script>
+   <!-- Non-legacy game renderers autoload from catalog before app interaction. -->
+-  <script src="/static/app.js?v=0.9.87"></script>
++  <script src="/static/app.js?v=0.9.88"></script>
+ </body>
+ </html>
+diff --git a/app/static/styles.css b/app/static/styles.css
+index fdd6226..e363cf9 100644
+--- a/app/static/styles.css
++++ b/app/static/styles.css
+@@ -2733,8 +2733,116 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+ .liars-bar-hand :focus-visible + .liars-bar-face { outline: 2px solid var(--text); outline-offset: 2px; }
+ .liars-bar-hand :disabled + .liars-bar-face { opacity: .65; }
+ .liars-bar-buttons .pixel-btn { min-height: 44px; color: var(--text); }
+-.liars-bar-table, .liars-bar-hand { color: var(--text); }
+-.liars-bar-table p { margin: 0; overflow-wrap: anywhere; }
++.liars-bar-table, .liars-bar-hand, .liars-bar-reveal { min-width: 0; color: var(--text); }
++.liars-bar-table, .liars-bar-reveal {
++  border: 2px solid var(--purple);
++  background: white;
++  font: 14px/1.4 system-ui, sans-serif;
++  overflow-wrap: anywhere;
++}
++.game-view:has(.liars-bar-table):not(.spectating-view) #turn {
++  display: block;
++  max-width: 100%;
++  height: auto;
++  white-space: normal;
++  overflow-wrap: anywhere;
++  text-align: center;
++}
++.liars-bar-heading {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  padding: 8px 12px;
++  background: var(--purple-light);
++  border-bottom: 2px solid var(--purple);
++}
++.liars-bar-heading strong { font-size: 16px; }
++.liars-bar-heading small { margin-inline-start: auto; }
++.liars-bar-table small, .liars-bar-verdict small { font-size: 12px; }
++.liars-bar-trump {
++  display: grid;
++  place-items: center;
++  width: 36px;
++  height: 44px;
++  border: 2px solid var(--text);
++  border-radius: 3px;
++  background: white;
++  box-shadow: 2px 2px var(--purple);
++  font: bold 28px/1 Georgia, serif;
++}
++.liars-bar-claim {
++  display: grid;
++  grid-template-columns: auto minmax(0, 1fr) auto;
++  align-items: baseline;
++  gap: 8px;
++  margin: 10px 10px 0;
++  padding: 6px 8px;
++  border-left: 3px solid var(--pink-dark);
++  background: var(--bg);
++}
++.liars-bar-count { white-space: nowrap; font-size: 12px; }
++.liars-bar-count b { font-size: 18px; }
++.liars-bar-roster {
++  width: calc(100% - 20px);
++  margin: 4px 10px 6px;
++  border-spacing: 0;
++  table-layout: fixed;
++  font-variant-numeric: tabular-nums;
++}
++.liars-bar-roster th, .liars-bar-roster td { text-align: start; vertical-align: middle; }
++.liars-bar-roster thead th { padding: 6px 4px 4px; font-size: 12px; font-weight: 500; }
++.liars-bar-roster thead th:nth-child(2) { width: 48px; }
++.liars-bar-roster thead th:last-child { width: 64px; }
++.liars-bar-roster tbody :is(th, td) { padding: 6px 4px; border-top: 1px solid var(--purple-light); }
++.liars-bar-roster td { font-size: 12px; }
++.liars-bar-roster td strong { font-size: 15px; }
++.liars-bar-player { display: flex; gap: 7px; align-items: center; }
++.liars-bar-avatar {
++  flex: 0 0 25px;
++  height: 25px;
++  display: grid;
++  place-items: center;
++  color: var(--seat-ink);
++  background: var(--seat-soft);
++  border: 1px solid var(--seat-color);
++  font-size: 13px;
++}
++.liars-bar-avatar img { width: 100%; height: 100%; object-fit: cover; }
++.liars-bar-identity { min-width: 0; }
++.liars-bar-identity strong { display: block; font-size: 15px; }
++.liars-bar-identity small { display: block; font-weight: 500; }
++.liars-bar-roster [aria-current="true"] .liars-bar-identity small { font-weight: 700; color: var(--seat-ink); }
++.liars-bar-meter { display: flex; gap: 2px; margin-top: 3px; }
++.liars-bar-meter i { width: 6px; height: 4px; background: var(--purple-light); }
++.liars-bar-meter .liars-bar-used { background: var(--pink-dark); }
++.liars-bar-reveal {
++  display: grid;
++  gap: 5px;
++  padding: 8px 12px;
++  background: var(--bg);
++  border-color: var(--pink);
++  border-left: 4px solid var(--pink-dark);
++}
++.liars-bar-verdict, .liars-bar-open-cards { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
++.liars-bar-verdict {
++  justify-content: space-between;
++  padding-bottom: 5px;
++  border-bottom: 1px solid var(--pink);
++}
++.liars-bar-verdict strong { color: #7d2940; }
++.liars-bar-evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
++.liars-bar-evidence > div { min-width: 0; }
++.liars-bar-evidence small { display: block; margin-bottom: 4px; font-size: 12px; }
++.liars-bar-open-cards .liars-bar-face {
++  width: 30px;
++  height: 39px;
++  border-width: 1px;
++  box-shadow: 1px 1px var(--purple);
++  font-size: 18px;
++}
++.liars-bar-open-cards .liars-bar-face.joker { width: 35px; font-size: 12px; }
++.liars-bar-open-cards .liars-bar-face small { top: 2px; left: 2px; font-size: 8px; }
++.liars-bar-outcome { border-left: 1px solid var(--pink); padding-left: 10px; }
+ .liars-current-round {
+   padding: 12px;
+   display: grid;
+-- 
+2.34.1
+
