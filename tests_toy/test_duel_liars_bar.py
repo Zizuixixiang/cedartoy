@@ -57,8 +57,13 @@ class LiarsBarRootTests(unittest.TestCase):
                     "player_id":"101", "move":move, "revision":room["revision"]})
                 self.assertEqual(moved.status_code, 200, moved.text)
                 self.assertEqual(moved.json()["room"]["board_state"]["claim"]["count"], 1)
+                self.assertEqual(moved.json()["room"]["private_state"]["played"], [move["cards"]])
+                human_cards = move["cards"]
             else:
-                self.rpc("move", {"room_id":rid, "move":move, "revision":room["revision"], "wait":False})
+                reply = self.rpc("move", {"room_id":rid, "move":move, "revision":room["revision"], "wait":False})
+                self.assertEqual(reply["private"]["played_add"], [move["cards"]])
+        refreshed = self.http("GET", f"/api/rooms/{rid}", headers=headers).json()
+        self.assertEqual(refreshed["room"]["private_state"]["played"], [human_cards])
         self.assertEqual(framework.get_room(rid)["revision"], view["revision"] + 2)
 
     def test_invite_and_public_spectator_through_real_auth(self):
@@ -84,18 +89,29 @@ class LiarsBarRootTests(unittest.TestCase):
         args = {"room_id": rid, "revision": room["revision"], "player_id": pid, "wait": False,
                 "move": {"action": "play", "cards": cards}}
         self.rpc("move", args, token=tokens[other], expect_ok=False)
-        self.rpc("move", args, token=tokens[pid], auth="bearer_token")
+        reply = self.rpc("move", args, token=tokens[pid], auth="bearer_token")
+        self.assertEqual(reply["private"]["played_add"], [cards])
         self.rpc("move", args, token=tokens[pid], expect_ok=False)
-        events = self.rpc("state", {"room_id": rid, "wait": False}, token=tokens[other])["events"]
-        self.assertNotIn('"cards"', json.dumps(events))
-        bound = base64.urlsafe_b64encode(json.dumps([{"id":"202", "name":"小机"}]).encode()).decode()
+        opponent = self.rpc("state", {"room_id": rid, "wait": False, "player_id": pid}, token=tokens[other])
+        self.assertNotIn('"cards"', json.dumps(opponent["events"]))
+        self.assertNotIn("played_add", json.dumps(opponent))
+        snapshot = self.rpc("state", {"room_id":rid, "full_state":True, "viewer":pid}, token=tokens[other])["snapshot"]
+        self.assertEqual(snapshot["private_state"]["played"], [])
+        bound = base64.urlsafe_b64encode(json.dumps([{"id":pid, "name":"小机"}]).encode()).decode()
         headers = {"X-Duel-Human-Player": "101", "X-Duel-Bound-Ais": bound}
         url = f"/api/rooms/{rid}"
-        blocked = self.http("GET", url, params={"perspective": "303"}, headers=headers)
+        self.assertEqual(self.http("GET", url, headers={}).status_code, 403)
+        blocked = self.http("GET", url, params={"perspective": other}, headers=headers)
         self.assertEqual(blocked.status_code, 403)
         spectator = self.http("GET", url, headers=headers).json()
         self.assertTrue(spectator["room"]["spectating"])
         self.assertEqual(spectator["room"]["private_state"], {})
+        explicit = self.http("GET", url, params={"perspective": pid}, headers=headers)
+        self.assertEqual(explicit.status_code, 200)
+        self.assertEqual(explicit.json()["room"]["private_state"], {})
+        for view in (spectator, explicit.json()):
+            for hidden in ('"cards"', '"played"', '"played_add"', '"previous_plays"'):
+                self.assertNotIn(hidden, json.dumps(view))
         self.assertEqual(spectator["room"]["board_state"]["claim"], {"player_id": pid, "count": 2})
         self.assertNotIn('"cards"', json.dumps(spectator["timeline"]))
         self.assertEqual(self.http("POST", url + "/move", headers=headers, json={

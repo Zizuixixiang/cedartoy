@@ -28,25 +28,60 @@ with isolated_scenario_database():
     with database.write_transaction() as conn:
         conn.execute("UPDATE rooms SET board_state=?,current_player_id='human',turn='human' WHERE room_id=?",
                      (json.dumps(state),room['room_id']))
-    played = game.apply_action(state, {'action':'play','cards':['A','A']}, {'player_id':'human'})
+    played = game.apply_action(state, {'action':'play','cards':['A','K','Joker']}, {'player_id':'human'})
     after_play = dict(room, board_state=played.state, revision=room['revision'] + 1,
                       current_player_id=played.next_player_id, turn='ai')
     play_view = framework.project_room_for_viewer(framework._decorate(after_play), 'human')
+    covered = game.apply_action(played.state, {'action':'play','cards':['K']}, {'player_id':'ai'})
+    after_cover = dict(room, board_state=covered.state, revision=after_play['revision']+1,
+                       current_player_id='human', turn='human')
+    cover_view = framework.project_room_for_viewer(framework._decorate(after_cover), 'human')
+    spent = game.apply_action(covered.state, {'action':'play','cards':['A','Q']}, {'player_id':'human'})
+    spent_room = dict(room, board_state=spent.state, revision=after_cover['revision']+1,
+                      current_player_id='ai', turn='ai')
+    empty = framework.project_room_for_viewer(framework._decorate(spent_room), 'human')
     decided = framework.play_move(room['room_id'], 'human', 'human', {'action':'challenge'},
                                   expected_revision=room['revision'])
     reveal = framework.project_room_for_viewer(decided, 'human')
     req = Request(dict(type='http',headers=[(b'x-duel-human-player', b'outsider'),(b'x-duel-ai-player',b'ai')]))
-    spectator = main.spectator_response(decided, req, None)['room']
+    spectator = main.spectator_response(framework._decorate(after_cover), req, None)['room']
     waiting = invites.create_invite('liars_bar','human','human', display_name='南杉',target_player_count=4)
     invitation = framework.project_room_for_viewer(waiting, 'human')
-    for pid,name in [('ai','小机'),('friend','林间来客'),('guest','同桌')]:
+    for pid,name in [('ai','小机'),('friend','在杉树林听晚风的林间来客'),('guest','CedarTableLongNicknameWithoutSpaces')]:
         invites.join_invite(waiting['invite_code'],'ai',pid,display_name=name)
     started = invites.start_invite(waiting['room_id'],'human','human')
-    invite_play = framework.project_room_for_viewer(started,'human')
+    # Exercise the room header with the longest unbroken name on every run.
+    started['board_state']['turn_player_id'] = 'guest'
+    started.update(current_player_id='guest', turn='ai')
+    invite_play = framework.project_room_for_viewer(framework._decorate(started),'human')
     state['hands']['ai'] = []
     room['revision'] += 1
     last = framework.project_room_for_viewer(framework._decorate(room), 'human')
-    print(json.dumps(dict(catalog=game_catalog(), view=view, last=last, play_view=play_view, reveal=reveal, spectator=spectator, invitation=invitation, invite_play=invite_play)))
+    # A separate legal last hand lets the real accept transition expose five cards at once.
+    state['hands']['human'] = ['K','K','Joker','K','K']
+    system_last = framework.project_room_for_viewer(framework._decorate(room), 'human')
+    resolved = game.apply_action(state, {'action':'accept'}, {'player_id':'human'})
+    next_id = resolved.next_player_id
+    next_room = dict(room, board_state=resolved.state, revision=room['revision']+1,
+                     current_player_id=next_id, turn=next_id)
+    system_view = framework.project_room_for_viewer(framework._decorate(next_room), 'human')
+    endings = {}
+    for key, penalized, card in [('win','ai','A'),('loss','human','K')]:
+        match = framework.create_room('liars_bar','human_first','human','human',opponent_id='ai',
+                                      participant_names={'human':'南杉','ai':'小机'})
+        state = match['board_state']
+        state.update(turn_player_id='human', target='K', pending={'player_id':'ai','cards':[card]})
+        state['hands']['ai'] = ['Q']
+        state['shots'][penalized] = state['chambers'][penalized] = 3
+        with database.write_transaction() as conn:
+            conn.execute("UPDATE rooms SET board_state=?,current_player_id='human',turn='human' WHERE room_id=?",
+                         (json.dumps(state),match['room_id']))
+        result = framework.play_move(match['room_id'],'human','human',{'action':'challenge'},
+                                     expected_revision=match['revision'])
+        assert result['status'] == 'finished'
+        endings[key] = framework.project_room_for_viewer(result,'human')
+    print(json.dumps(dict(catalog=game_catalog(), view=view, last=last, empty=empty, play_view=play_view, cover_view=cover_view,
+                          reveal=reveal, spectator=spectator, invitation=invitation, invite_play=invite_play, system_last=system_last, system_view=system_view, **endings)))
 `;
 function loadFixture() {
   const temp = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "duel-bar-ui-"));
@@ -102,6 +137,13 @@ async function exercise(measure) {
   for (const selector of ["#gameType", "#inviteGame"]) {
     expect(q(selector).querySelector('option[value="liars_bar"]').textContent.includes("骗子酒馆"), selector);
   }
+  const picker = q("#gameType");
+  picker.selectedIndex = -1;
+  updateGameTokenEstimate();
+  expect(q("#gameTokenEstimate").textContent === "" && q("#gameTokenEstimate").title === "", "empty token hint");
+  picker.value = "liars_bar";
+  updateGameTokenEstimate();
+  expect(q("#gameTokenEstimate").textContent.includes("60–180"), "restored token hint");
   expect(q("#mode").disabled && q("#mode").value === "random", "random opener");
   expect(q("#stake").disabled && q("#stake").value === "0", "entertainment only");
   showRoom(fixture.view);
@@ -152,14 +194,34 @@ async function inspectScreens(page, width) {
   await page.locator("#gameCategory").selectOption("tabletop");
   const gamePicker = page.locator("#gameType");
   await gamePicker.selectOption("carcassonne");
+  const estimate = page.locator("#gameTokenEstimate");
+  const previousHint = await estimate.textContent();
+  const previousTitle = await estimate.getAttribute("title");
+  const labelHeight = await estimate.locator("..").evaluate(el => el.getBoundingClientRect().height);
   await page.locator("#stake").fill("2");
   await gamePicker.selectOption("liars_bar");
   assert.equal(await page.locator("#participantHint").isVisible(), false);
+  assert.equal(await estimate.textContent(), "（约60–180 token/轮）");
+  assert.match(await estimate.getAttribute("title"), /cl100k_base.*state.*move.*复杂结算/);
+  assert.equal(await estimate.locator("..").evaluate(el => el.getBoundingClientRect().height), labelHeight);
   await gamePicker.selectOption("carcassonne");
   assert.equal(await page.locator("#stake").inputValue(), "2");
+  assert.equal(await estimate.textContent(), previousHint);
+  assert.equal(await estimate.getAttribute("title"), previousTitle);
   await gamePicker.selectOption("liars_bar");
   assert.ok(await page.locator("#mode").isDisabled());
   assert.ok(await page.locator("#stake").isDisabled());
+  const formHeight = await estimate.evaluate(label => {
+    const form = label.closest(".create-panel");
+    const text = label.textContent;
+    const withEstimate = form.offsetHeight;
+    label.textContent = "";
+    const withoutEstimate = form.offsetHeight;
+    label.textContent = text;
+    return {withEstimate, withoutEstimate};
+  });
+  assert.ok(formHeight.withEstimate > 0);
+  assert.equal(formHeight.withEstimate, formHeight.withoutEstimate, "estimate reflow");
   await take("ordinary-entry", "#gameType");
   await page.locator("#inviteCreateEntry").click();
   await page.locator("#inviteCategory").selectOption("tabletop");
@@ -172,8 +234,21 @@ async function inspectScreens(page, width) {
   await take("invite-waiting", "#inviteRoomPanel");
   await show("invite_play");
   await take("invite-table", "#board");
+  assert.equal(await page.locator(".liars-bar-player").count(), 4);
+  assert.ok(await page.locator("#turn").evaluate(el => el.scrollWidth <= el.clientWidth + 1));
+  assert.match(await page.locator("#turn").innerText(), /CedarTableLongNicknameWithoutSpaces/);
+  assert.equal(await page.locator(".liars-bar-roster [aria-current=true]").count(), 1);
+  for (const cell of await page.locator(".liars-bar-identity").all()) {
+    assert.ok(await cell.evaluate(el => el.scrollWidth <= el.clientWidth + 1));
+  }
   await show("view");
   await take("ordinary", "#board");
+  const recall = page.locator(".liars-bar-recall");
+  const playedFaces = () => recall.locator(".liars-bar-play").evaluateAll(groups =>
+    groups.map(group => [...group.children].map(face => face.firstChild.textContent)));
+  assert.equal(await recall.count(), 0);
+  assert.equal(await page.locator(".liars-bar-claim").innerText(), "上一手\n小机\n暗出 1 张");
+  assert.equal(await page.locator(".liars-bar-open-cards").count(), 0);
   const faces = page.locator(".liars-bar-hand label");
   const boxes = await faces.evaluateAll(labels => labels.map(el => {
     const {x,y,width,height} = el.getBoundingClientRect();
@@ -191,30 +266,63 @@ async function inspectScreens(page, width) {
   }
   const touch = async el => width < 500 ? el.tap() : el.click();
   await touch(faces.nth(0));
-  await touch(faces.nth(1));
-  assert.equal(await page.locator(".liars-bar-hand :checked").count(), 2);
+  await touch(faces.nth(2));
+  await touch(faces.nth(4));
+  assert.equal(await page.locator(".liars-bar-hand :checked").count(), 3);
   await take("selected", "#board");
   await page.evaluate(() => { window.replyRoom = fixture.play_view; });
   await touch(page.getByRole("button", {name:"暗出所选牌"}));
   await page.waitForFunction(() => window.posts.at(-1)?.move.action === "play");
-  assert.deepEqual(await page.evaluate(() => posts.at(-1).move.cards), ["A","A"]);
+  const firstPlay = ["A","K","Joker"];
+  assert.deepEqual(await page.evaluate(() => posts.at(-1).move.cards), firstPlay);
   await page.getByRole("button", {name:"暗出所选牌"}).waitFor({state:"hidden"});
+  assert.deepEqual(await playedFaces(), [firstPlay]);
+  assert.ok(await recall.getByText("仅自己可见").isVisible());
+  await show("cover_view");
+  assert.deepEqual(await playedFaces(), [firstPlay]);
+  assert.ok(await page.getByRole("button", {name:"质疑上一手"}).isVisible());
+  await take("private-play", ".liars-bar-hand");
   await show("view");
   await page.evaluate(() => { window.replyRoom = fixture.reveal; });
   await touch(page.getByRole("button", {name:"质疑上一手"}));
   await page.getByText(/第 1 轮摊牌/).waitFor();
   await take("challenge", "#board");
+  assert.equal(await recall.count(), 0);
+  assert.deepEqual(await page.locator(".liars-bar-open-cards .liars-bar-face").evaluateAll(faces => faces.map(face => face.firstChild.textContent)), ["A"]);
+  assert.equal(await page.locator(".liars-bar-outcome strong").innerText(), "小机受罚后幸存");
   // The forced hand is a different branch from the same source revision.
   await show("view");
-  await show("last");
+  await show("system_last");
   assert.ok(await page.getByRole("button", {name:"放过并摊验余牌"}).isVisible());
   assert.ok(await page.getByRole("button", {name:"质疑上一手"}).isVisible());
   assert.equal(await page.locator("#board input").count(), 0);
   await take("last-hand", "#board");
+  await page.evaluate(() => { window.replyRoom = fixture.system_view; });
+  await touch(page.getByRole("button", {name:"放过并摊验余牌"}));
+  await page.locator(".liars-bar-outcome strong", {hasText:"无人受罚"}).waitFor();
+  assert.equal(await page.locator(".liars-bar-open-cards .liars-bar-face").count(), 5);
+  await take("system-reveal", "#board");
+  await show("view");
+  await show("empty");
+  assert.equal(await page.locator("#board input,#board button").count(), 0);
+  assert.ok(await page.getByText(/本轮已出完/).isVisible());
+  assert.deepEqual(await playedFaces(), [firstPlay, ["A","Q"]]);
+  assert.ok(await recall.evaluate(el => el.scrollWidth <= el.clientWidth + 1));
+  await take("empty-hand", ".liars-bar-recall");
   await show("spectator");
+  assert.equal(await recall.count(), 0);
   assert.equal(await page.locator("#board .liars-bar-hand,#board button").count(), 0);
   assert.equal(await page.locator("#sendMessageButton").isDisabled(), true);
   await take("spectator", "#board");
+  for (const [key, winner] of [["win","南杉"], ["loss","小机"]]) {
+    await show(key);
+    const close = page.locator("#finishGameButton");
+    if (await close.isVisible()) await close.click();
+    assert.equal(await page.locator("#board input,#board button").count(), 0);
+    assert.ok((await page.locator(".liars-bar-roster tbody tr").filter({hasText:"获胜"}).innerText()).includes(winner));
+    assert.equal(await page.locator(".liars-bar-roster tbody tr").filter({hasText:"已出局"}).count(), 1);
+    await take(key, "#board");
+  }
   console.log(width, "hand", boxes[0].width, "×", boxes[0].height, "all five in one row");
 }
 

@@ -1,0 +1,427 @@
+From f5942d367115c67cb4ceb948e45393f9650227f1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=8D=97=E5=B1=B1=E5=90=9B?=
+ <zizuixixiang@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 00:01:53 +0800
+Subject: [PATCH] =?UTF-8?q?fix(duel):=20allow=20owner-only=20review=20of?=
+ =?UTF-8?q?=20played=20Liars=20Bar=20cards=20[=E5=8B=BF=E6=8E=A8=E4=B8=8A?=
+ =?UTF-8?q?=E6=B8=B8]?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Persist within-round private plays and send compact per-owner increments; exclude from opponents and spectators.
+---
+ app/games/liars_bar.py        |  21 ++++--
+ app/mcp_minimal.py            |  23 +++++--
+ app/npc_controller.py         |   2 +
+ app/static/games/liars_bar.js |  23 ++++++-
+ app/static/index.html         |   2 +-
+ app/static/styles.css         |  21 +++++-
+ tests/test_liars_bar.py       | 119 ++++++++++++++++++++++++++++++++--
+ 7 files changed, 193 insertions(+), 18 deletions(-)
+
+diff --git a/app/games/liars_bar.py b/app/games/liars_bar.py
+index 1c94e46..2b24aa4 100644
+--- a/app/games/liars_bar.py
++++ b/app/games/liars_bar.py
+@@ -63,7 +63,7 @@ class LiarsBar(GamePlugin):
+             for hand in hands.values():
+                 hand.append(deck.pop())
+         state.update(round=state["round"] + 1, hands=hands, target=self._rng.choice(RANKS),
+-                     pending=None, turn_player_id=first)
++                     pending=None, previous_plays={}, turn_player_id=first)
+ 
+     @staticmethod
+     def _last_hand(state, pid):
+@@ -107,6 +107,12 @@ class LiarsBar(GamePlugin):
+         if move["action"] == "play":
+             for card in move["cards"]:
+                 state["hands"][pid].remove(card)
++            # pending already persists the latest hand, including in older rooms.
++            # Keep it for its owner when another play takes its place.
++            previous = state["pending"]
++            if previous:
++                plays = state.setdefault("previous_plays", {})
++                plays.setdefault(previous["player_id"], []).append(previous["cards"])
+             state["pending"] = {"player_id": pid, "cards": move["cards"].copy()}
+             state["turn_player_id"] = self._next(state, pid, with_cards=True)
+         else:
+@@ -134,7 +140,7 @@ class LiarsBar(GamePlugin):
+             if system and pid in state["hands"]:
+                 state["hands"][pid].clear()
+             if len(state["alive"]) == 1:
+-                state.update(winner_player_id=state["alive"][0], turn_player_id=None)
++                state.update(winner_player_id=state["alive"][0], turn_player_id=None, previous_plays={})
+             else:
+                 if penalized is None:
+                     first = self._rng.choice(state["alive"])
+@@ -155,8 +161,9 @@ class LiarsBar(GamePlugin):
+             return
+         state["alive"].remove(resigned_player_id)
+         state["hands"].pop(resigned_player_id)
++        state.get("previous_plays", {}).pop(resigned_player_id, None)
+         if len(state["alive"]) == 1:
+-            state.update(winner_player_id=state["alive"][0], turn_player_id=None, pending=None)
++            state.update(winner_player_id=state["alive"][0], turn_player_id=None, pending=None, previous_plays={})
+             return
+         claimant = (state["pending"] or {}).get("player_id")
+         if claimant == resigned_player_id or not any(state["hands"].values()):
+@@ -190,7 +197,13 @@ class LiarsBar(GamePlugin):
+             actions.append("accept" if self._last_hand(state, pid) else "play")
+             if state["pending"]:
+                 actions.append("challenge")
+-        return {"hand": hand, "actions": actions}
++        played = []
++        if pid in state["alive"] and viewer.get("join_status", "joined") == "joined":
++            played = deepcopy(state.get("previous_plays", {}).get(pid, []))
++            pending = state["pending"]
++            if pending and pending["player_id"] == pid:
++                played.append(pending["cards"].copy())
++        return {"hand": hand, "actions": actions, "played": played}
+ 
+     def npc_legal_actions(self, state, actor, participants):
+         pid = actor["player_id"]
+diff --git a/app/mcp_minimal.py b/app/mcp_minimal.py
+index 6e46fc5..61658ab 100644
+--- a/app/mcp_minimal.py
++++ b/app/mcp_minimal.py
+@@ -69,11 +69,11 @@ COMMON = ('MCP v2: retain context. Ordinary reply r is the authoritative revisio
+           'Unknown/v1 contexts automatically get this v2 bootstrap. '
+           'private is only your delta. Notifications appear once when new; rooms/chips retain unread access.')
+ FORMATS = {
+-    'liars_bar': ('保留房间上下文，move 带 revision=r。按序处理所有 events（含自己的）。'
+-                  '[玩家,play,张数,下家]：从该玩家 counts 减去张数，更新 claim 和 turn_player_id。'
++    'liars_bar': ('move 带 revision=r。按序应用 events（含己方）。'
++                  '[玩家,play,张数,下家]：该玩家 counts 减张数，更新 claim、turn_player_id。'
+                   '质疑/摊验为 [玩家,动作,补丁]。counts=5 即所有存活者各5张；shots 按玩家合并，其余字段替换。'
+-                  'private 仅替换己方变化字段；缺省不变，null 清空。public_state 如有则替换桌面。'
+-                  'wait 为正在等待的玩家。state(full_state=true) 可恢复当前桌面；未读消息另行送达。'),
++                  'private.played_add 追加到 played（本轮自己的暗牌，按手分组）；其余替换，缺省不变，null 清空。public_state 替换桌面。'
++                  'wait=行动者；state(full_state=true) 恢复桌面，未读消息另送。'),
+     'ka_wu_xing': ('events=[actor,action,delta]. delta uses mahjong_delta fields: '
+         'discard_added appends to player_id river; discard_removed removes the named tile; '
+         'meld_added appends, meld_changed replaces by index; response replaces response_window. '
+@@ -325,6 +325,9 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+                 if e.get('text') and kind != 'result' and actor != pid and not full:
+                     events.append({'actor':actor,'message':e['text']})
+             now_private = private_baseline(name,state,pid)
++            if name == 'liars_bar':
++                # Keep only the delivery position in the cursor. The room owns the cards.
++                played = now_private.pop('played')
+             if boot:
+                 out.update(protocol=VERSION, protocol_guide=FORMATS[name] if name == 'liars_bar' else COMMON+' '+FORMATS[name])
+                 out['bootstrap'] = True
+@@ -335,6 +338,16 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+                 out['snapshot'] = snapshot(room,pid,True)
+             else:
+                 private = changed(now_private,ctx.get('private',{}))
++                if name == 'liars_bar':
++                    delivered = ctx.get('played_count')
++                    if delivered is None:
++                        # A pre-upgrade cursor keeps its unread events and learns the new delta once.
++                        out['protocol_guide'] = FORMATS[name]
++                        private['played'] = played
++                    elif ctx['round'] == state['round'] and len(played) > delivered:
++                        private['played_add'] = played[delivered:]
++                    elif len(played) < delivered or (ctx['round'] != state['round'] and played):
++                        private['played'] = played
+                 if name in ('rummikub', 'ka_wu_xing') or name in FOUR_COLOR_GAMES:
+                     before = ctx.get('private',{}).get('hand',[]); after = now_private['hand']
+                     added = [t for t in after if t not in before]; removed = [t for t in before if t not in after]
+@@ -355,6 +368,8 @@ def response(room_id, pid, *, consume=False, full=False, submitted=None, source_
+                 VALUES(?,?,?,'1970-01-01T00:00:00+00:00',1) ON CONFLICT(room_id,player_id)
+                 DO UPDATE SET last_event_id=excluded.last_event_id,mcp_bootstrapped=1''',(room_id,pid,last_delivered))
+             ctx = dict(v=VERSION,public=baseline(game,state),private=now_private)
++            if name == 'liars_bar':
++                ctx.update(round=state['round'], played_count=len(played))
+             if name in FOUR_COLOR_GAMES: ctx['revision'] = room['revision']
+             if first_unread_text is not None:
+                 ctx['snapshot_event_id'] = newest
+diff --git a/app/npc_controller.py b/app/npc_controller.py
+index c0972f0..e42849c 100644
+--- a/app/npc_controller.py
++++ b/app/npc_controller.py
+@@ -159,6 +159,8 @@ def _npc_projected_states(
+         deepcopy(projected_room["participants"]),
+     )
+     private_state = deepcopy(projected_room["private_state"])
++    if game.game_type == "liars_bar":
++        private_state.pop("played", None)  # Seat-owner recall is not a decision or speech input.
+     # These are sent separately as an authoritative shortlist for decisions.
+     # For speech they are stale after the completed move and add no value.
+     for key in (
+diff --git a/app/static/games/liars_bar.js b/app/static/games/liars_bar.js
+index 42861ac..ec9703f 100644
+--- a/app/static/games/liars_bar.js
++++ b/app/static/games/liars_bar.js
+@@ -93,6 +93,21 @@
+     return section;
+   }
+ 
++  function playedCards(plays) {
++    const recall = element("div", "", "liars-bar-recall");
++    const heading = element("div", "", "liars-bar-recall-title");
++    heading.append(element("strong", "本轮我已出的牌"), element("small", "仅自己可见"));
++    recall.append(heading);
++    plays.forEach((cards, index) => {
++      const group = element("span", "", "liars-bar-play");
++      group.setAttribute("role", "group");
++      group.setAttribute("aria-label", `第 ${index + 1} 手`);
++      cards.forEach(rank => group.append(cardFace(rank)));
++      recall.append(group);
++    });
++    return recall;
++  }
++
+   function renderBoard({board, room, state, privateState, participants, viewer, canMove, helpers, uiState}) {
+     if (!state.round) return;
+     const name = id => participants.find(p => p.player_id === id)?.display_name || "玩家";
+@@ -112,8 +127,13 @@
+     board.append(panel);
+     if (state.reveal) board.append(revealedPlay(state.reveal, name));
+ 
++    if (room.spectating) return;
+     const hand = privateState?.hand || [];
+-    if (room.spectating || !hand.length) return;
++    const plays = privateState?.played || [];
++    if (!hand.length) {
++      if (plays.length) board.append(playedCards(plays));
++      return;
++    }
+     const field = element("fieldset", "", "liars-bar-hand");
+     const actions = canMove ? (privateState.actions || []) : [];
+     const selectable = actions.includes("play");
+@@ -146,6 +166,7 @@
+       field.append(label);
+       checkboxes.push(box);
+     });
++    if (plays.length) field.append(playedCards(plays));
+     board.append(field);
+     const buttons = element("div", "", "liars-bar-buttons");
+     if (selectable) {
+diff --git a/app/static/index.html b/app/static/index.html
+index f883948..4e2f026 100644
+--- a/app/static/index.html
++++ b/app/static/index.html
+@@ -7,7 +7,7 @@
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+-  <link rel="stylesheet" href="/static/styles.css?v=0.9.62">
++  <link rel="stylesheet" href="/static/styles.css?v=0.9.63">
+   <link rel="stylesheet" href="/static/games/checkers.css?v=0.1.0">
+ </head>
+ <body>
+diff --git a/app/static/styles.css b/app/static/styles.css
+index e363cf9..7ae3a69 100644
+--- a/app/static/styles.css
++++ b/app/static/styles.css
+@@ -2691,6 +2691,21 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+   gap: 8px;
+ }
+ .liars-bar-hand { min-width: 0; margin: 0; padding: 8px; gap: 6px; border: 2px solid var(--pink); }
++.liars-bar-recall {
++  flex: 0 0 100%;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 4px 8px;
++  align-items: center;
++  padding-top: 6px;
++  border-top: 1px solid var(--purple);
++  color: var(--text);
++  font: 12px/1.4 system-ui, sans-serif;
++}
++.liars-bar-recall-title { margin-right: 2px; }
++.liars-bar-recall-title small { display: block; font-size: 11px; }
++.liars-bar-play { display: inline-flex; align-items: center; gap: 3px; }
++.liars-bar-play + .liars-bar-play { padding-left: 7px; border-left: 1px solid var(--purple); }
+ .liars-bar-hand label { position: relative; cursor: pointer; }
+ .liars-bar-hand input {
+   position: absolute;
+@@ -2833,15 +2848,15 @@ h2 { color: var(--purple-darker); font-size: 15px; }
+ .liars-bar-evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+ .liars-bar-evidence > div { min-width: 0; }
+ .liars-bar-evidence small { display: block; margin-bottom: 4px; font-size: 12px; }
+-.liars-bar-open-cards .liars-bar-face {
++:is(.liars-bar-open-cards, .liars-bar-recall) .liars-bar-face {
+   width: 30px;
+   height: 39px;
+   border-width: 1px;
+   box-shadow: 1px 1px var(--purple);
+   font-size: 18px;
+ }
+-.liars-bar-open-cards .liars-bar-face.joker { width: 35px; font-size: 12px; }
+-.liars-bar-open-cards .liars-bar-face small { top: 2px; left: 2px; font-size: 8px; }
++:is(.liars-bar-open-cards, .liars-bar-recall) .liars-bar-face.joker { width: 35px; font-size: 12px; }
++:is(.liars-bar-open-cards, .liars-bar-recall) .liars-bar-face small { top: 2px; left: 2px; font-size: 8px; }
+ .liars-bar-outcome { border-left: 1px solid var(--pink); padding-left: 10px; }
+ .liars-current-round {
+   padding: 12px;
+diff --git a/tests/test_liars_bar.py b/tests/test_liars_bar.py
+index 5a778ba..6a415d4 100644
+--- a/tests/test_liars_bar.py
++++ b/tests/test_liars_bar.py
+@@ -145,11 +145,24 @@ class Rules(unittest.TestCase):
+                 self.game.apply_action(self.state, move, {"player_id": "p0"})
+         self.assertEqual(self.state, previous)
+ 
++    def test_old_round_recovers_latest_play_and_discards_departed_seat(self):
++        self.act("play", cards=self.state["hands"]["p0"][:2])
++        self.state.pop("previous_plays")  # A room saved by the previous version.
++        first = self.state["pending"]["cards"].copy()
++        self.assertEqual(self.game.private_state(self.state, {"player_id":"p0"}, [])["played"], [first])
++        self.act("play", cards=self.state["hands"]["p1"][:1])
++        self.assertEqual(self.game.private_state(self.state, {"player_id":"p0"}, [])["played"], [first])
++        self.game.apply_resignation(self.state, "p0", seats(3))
++        self.assertEqual(self.state["round"], 1)
++        self.assertNotIn("p0", self.state["previous_plays"])
++        self.assertEqual(self.game.private_state(self.state, {"player_id":"p0"}, [])["played"], [])
++
+     def test_local_choice_is_independent_of_concealed_cards_and_chambers(self):
+         self.state["hands"].update(p0=["A", "Q"], p1=["K", "A"], p2=["A"])
+         self.act("play", cards=["A"])
+         other = deepcopy(self.state)
+         other["pending"]["cards"] = ["K"]
++        other["previous_plays"] = {"p0":[["Q"]], "p1":[["Joker"]]}
+         other["hands"]["p0"] = ["Joker"]
+         other["hands"]["p2"] = ["Q"]
+         other["chambers"]["p1"] = 0
+@@ -260,11 +273,100 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+             private.update(wire.get("private", {}))
+             self.assertEqual(board, self.game.public_state(room["board_state"], []))
+             self.assertEqual(private, self.game.private_state(room["board_state"], {"player_id":viewer}, []))
+-            self.assertTrue(set(wire.get("private", {})) <= {"hand", "actions"})
++            self.assertTrue(set(wire.get("private", {})) <= {"hand", "actions", "played"})
+             self.assertTrue({"events", "private"}.isdisjoint(mcp_minimal.response(rid, viewer)))
+             if room["status"] != "playing":
+                 break
+ 
++    def test_personal_plays_across_turns_and_new_deal(self):
++        for count in (2, 3, 4):
++            with self.subTest(count=count):
++                room = self.ordinary(seats(count))
++                rid = room["room_id"]
++                state = room["board_state"]
++                owner = room["current_player_id"]
++                expected = {p: [] for p in state["alive"]}
++                state["chambers"] = dict.fromkeys(expected, 5)
++                with database.write_transaction() as conn:
++                    conn.execute("UPDATE rooms SET board_state=? WHERE room_id=?", (json.dumps(state), rid))
++                for p in expected:
++                    self.assertEqual(mcp_minimal.response(rid, p)["room"]["private_state"]["played"], [])
++                for turn in range(count + 1):
++                    actor = room["current_player_id"]
++                    n = 2 if turn == 0 else (3 if turn == count else 1)
++                    cards = room["board_state"]["hands"][actor][:n]
++                    room = self.play(room, {"action":"play", "cards":cards})
++                    expected[actor].append(cards)
++                    for p in expected:
++                        projected = framework.project_room_for_viewer(framework.get_room(rid), p)
++                        self.assertEqual(projected["private_state"]["played"], expected[p])
++                        board = projected["board_state"]
++                        self.assertEqual(board["claim"], {"player_id":actor, "count":n})
++                        self.assertIsNone(board["reveal"])
++                        for for_speech in (True, False):
++                            context = npc_controller._npc_projected_states(self.game, projected, p, for_speech=for_speech)
++                            self.assertNotIn('"played"', json.dumps(context))
++                            self.assertNotIn('"previous_plays"', json.dumps(context))
++                        wire = mcp_minimal.response(rid, p)
++                        self.assertEqual(wire["events"], [[actor, "play", n, room["current_player_id"]]])
++                        delta = wire.get("private", {})
++                        self.assertNotIn("played", delta)
++                        if p == actor:
++                            self.assertEqual(delta["played_add"], [cards])
++                        else:
++                            self.assertNotIn("played_add", delta)
++                        self.assertNotIn("private", mcp_minimal.response(rid, p))
++                full = mcp_minimal.response(rid, owner, full=True)["snapshot"]["private_state"]
++                self.assertEqual(full["hand"], [])
++                self.assertEqual(list(map(len, full["played"])), [2, 3])
++                self.assertEqual(full["played"], expected[owner])
++                room = self.play(room, {"action":"challenge"})
++                for p in expected:
++                    wire = mcp_minimal.response(rid, p)
++                    self.assertEqual(wire["private"]["played"], [])
++                    self.assertNotIn("played_add", wire["private"])
++                    reveal = wire["events"][0][2]["reveal"]
++                    self.assertEqual(reveal["cards"], expected[owner][-1])
++                    self.assertEqual(reveal["player_id"], owner)
++                    self.assertFalse(reveal["hit"])
++                    self.assertEqual(framework.project_room_for_viewer(room, p)["private_state"]["played"], [])
++                self.assertEqual(room["board_state"]["previous_plays"], {})
++
++    def test_reconnect_old_cursor_and_skip_across_a_deal(self):
++        room = self.ordinary(seats(3))
++        rid = room["room_id"]
++        owner = room["current_player_id"]
++        state = room["board_state"]
++        # A truthful one-card play makes the challenger take the next opening turn.
++        state["target"] = state["hands"][owner][0] if state["hands"][owner][0] != "Joker" else "A"
++        state["chambers"] = dict.fromkeys(state["alive"], 5)
++        with database.write_transaction() as conn:
++            conn.execute("UPDATE rooms SET board_state=? WHERE room_id=?", (json.dumps(state), rid))
++        mcp_minimal.response(rid, owner)
++        with database.write_transaction() as conn:
++            conn.execute("""UPDATE mcp_minimal_contexts SET context=json_remove(context, '$.round', '$.played_count')
++                            WHERE room_id=? AND player_id=?""", (rid, owner))
++        first = state["hands"][owner][:1]
++        room = self.play(room, {"action":"play", "cards":first})
++        recovered = mcp_minimal.response(rid, owner)
++        self.assertEqual(recovered["private"]["played"], [first])
++        self.assertIn("played_add", recovered["protocol_guide"])
++        self.assertEqual(recovered["events"], [[owner, "play", 1, room["current_player_id"]]])
++        self.assertNotIn("protocol_guide", mcp_minimal.response(rid, owner))
++        room = self.play(room, {"action":"challenge"})
++        while room["current_player_id"] != owner:
++            actor = room["current_player_id"]
++            room = self.play(room, {"action":"play", "cards":room["board_state"]["hands"][actor][:1]})
++        new_cards = room["board_state"]["hands"][owner][:2]
++        room = self.play(room, {"action":"play", "cards":new_cards})
++        delta = mcp_minimal.response(rid, owner)["private"]
++        self.assertEqual(delta["played"], [new_cards])
++        self.assertNotIn("played_add", delta)
++        room = framework.leave_room(rid, "ai", owner)
++        self.assertEqual(mcp_minimal.response(rid, owner, full=True), {"r":room["revision"], "status":"left"})
++        with self.assertRaises(framework.DuelError):
++            framework.project_room_for_viewer(room, owner)
++
+     async def test_real_npc_runner_finishes_after_last_machine_is_eliminated(self):
+         people = seats(4)
+         for i, p in enumerate(people[1:], 1):
+@@ -280,6 +382,7 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+         room = self.play(framework.get_room(room["room_id"]), {"action": "play", "cards": ["K"]})
+         room = self.play(room, {"action": "challenge"})
+         self.assertEqual(room["status"], "playing")
++        self.assertEqual(framework.project_room_for_viewer(room, "p0")["private_state"]["played"], [])
+         with patch.object(npc_controller, "get_npc_provider", side_effect=AssertionError("external call")):
+             for _ in range(50):
+                 result = await npc_controller.run_current_npc_turn(room["room_id"])
+@@ -308,15 +411,21 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
+     def test_cross_process_restore_and_challenge(self):
+         room = self.ordinary(seats(2))
+         actor = room["current_player_id"]
+-        room = self.play(room, {"action": "play", "cards": room["board_state"]["hands"][actor][:1]})
++        for _ in range(3):
++            cards = room["board_state"]["hands"][room["current_player_id"]][:1]
++            room = self.play(room, {"action": "play", "cards": cards})
++        expected = framework.project_room_for_viewer(room, actor)["private_state"]["played"]
++        self.assertEqual(len(expected), 2)
+         code = """import json, sys
+ from app import framework
+ room = framework.get_room(sys.argv[1])
++played = framework.project_room_for_viewer(room, sys.argv[2])['private_state']['played']
+ next_room = framework.play_move(sys.argv[1], 'ai', room['current_player_id'], {'action':'challenge'},
+                                 expected_revision=room['revision'])
+-print(json.dumps([room['board_state'],next_room['revision']]))"""
++print(json.dumps([room['board_state'],played,next_room['revision']]))"""
+         env = {**os.environ, "DUEL_DB_PATH": str(database.DB_PATH)}
+-        output = subprocess.check_output([sys.executable, "-c", code, room["room_id"]], env=env, text=True, timeout=20)
+-        restored, revision = json.loads(output)
++        output = subprocess.check_output([sys.executable, "-c", code, room["room_id"], actor], env=env, text=True, timeout=20)
++        restored, played, revision = json.loads(output)
++        self.assertEqual(played, expected)
+         self.assertEqual(restored, room["board_state"])
+         self.assertEqual(revision, room["revision"] + 1)
+-- 
+2.34.1
+
