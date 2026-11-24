@@ -1,0 +1,104 @@
+From 1330f8c04df68717cef64020dd6d02264b866254 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E5=8D=97=E5=B1=B1=E5=90=9B?=
+ <zizuixixiang@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 14:03:12 +0800
+Subject: [PATCH] =?UTF-8?q?fix(duel):=20suggest=20close=20legal=20UNO=20ac?=
+ =?UTF-8?q?tions=20on=20rejection=20[=E5=8B=BF=E6=8E=A8=E4=B8=8A=E6=B8=B8]?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/games/uno.py  | 34 ++++++++++++++++++++++++++++++++--
+ tests/test_uno.py | 22 ++++++++++++++++++++++
+ 2 files changed, 54 insertions(+), 2 deletions(-)
+
+diff --git a/app/games/uno.py b/app/games/uno.py
+index 6aa7aa4..63626be 100644
+--- a/app/games/uno.py
++++ b/app/games/uno.py
+@@ -1,7 +1,9 @@
+ from __future__ import annotations
+ 
++import json
+ import random
+ from copy import deepcopy
++from difflib import SequenceMatcher
+ from typing import Any
+ 
+ from .base import GamePlugin, MoveResult
+@@ -334,8 +336,36 @@ class Uno(GamePlugin):
+         if not isinstance(move, dict):
+             raise ValueError("move 必须是对象")
+         player_id = str(actor["player_id"])
+-        if move not in self._legal_actions_for(state, player_id):
+-            raise ValueError("该动作不在服务端权威 legal_actions 中")
++        legal = self._legal_actions_for(state, player_id)
++        if move not in legal:
++            message = f"该动作不在服务端权威 legal_actions 中。提交动作：{json.dumps(move, ensure_ascii=False)}"
++            closest = self._closest_legal_action(move, legal)
++            if closest is not None:
++                message += f"。最接近的当前合法动作：{json.dumps(closest, ensure_ascii=False)}"
++            raise ValueError(message)
++
++    @staticmethod
++    def _closest_legal_action(
++        move: dict[str, Any], legal: list[dict[str, Any]]
++    ) -> dict[str, Any] | None:
++        closest = None
++        best_score = 0.0
++        for candidate in legal:
++            if move.keys() != candidate.keys():
++                continue
++            score = 1.0
++            for key, value in candidate.items():
++                submitted = move[key]
++                if submitted == value:
++                    continue
++                if not isinstance(submitted, str) or not isinstance(value, str):
++                    score = 0.0
++                    break
++                matcher = SequenceMatcher(None, submitted.replace("-", "_"), value.replace("-", "_"))
++                score = min(score, matcher.ratio())
++            if score >= 0.85 and score > best_score:
++                closest, best_score = candidate, score
++        return closest
+ 
+     def validate_move(
+         self, state: dict[str, Any], move: dict[str, Any], mark: str
+diff --git a/tests/test_uno.py b/tests/test_uno.py
+index 23afd53..ef3cc17 100644
+--- a/tests/test_uno.py
++++ b/tests/test_uno.py
+@@ -217,6 +217,28 @@ class UnoRulesTests(unittest.TestCase):
+             "play", {item["action"] for item in self.game._legal_actions_for(state, "player-2")}
+         )
+ 
++    def test_illegal_play_echoes_move_and_only_suggests_close_legal_action(self):
++        state = self.scenario({
++            "player-1": ["red-draw_two-2", "red-draw_two-1"],
++            "player-2": ["blue-number-5-1"],
++        }, "red-number-5-1")
++        before = deepcopy(state)
++        for card_id, suggestion in (
++            ("red-draw-two-1", {"action": "play", "card_id": "red-draw_two-1", "uno": True}),
++            ("blue-number-5-1", None),
++        ):
++            with self.subTest(card_id=card_id):
++                move = {"action": "play", "card_id": card_id, "uno": True}
++                with self.assertRaises(ValueError) as error:
++                    self.game.apply_action(state, move, self.actor(0))
++                message = str(error.exception)
++                self.assertIn(json.dumps(move), message)
++                if suggestion is None:
++                    self.assertNotIn("最接近", message)
++                else:
++                    self.assertIn(json.dumps(suggestion), message)
++                self.assertEqual(state, before)
++
+     def test_two_player_reverse_is_skip(self):
+         game = Uno(random.Random(2))
+         players = seats(2)
+-- 
+2.34.1
+
