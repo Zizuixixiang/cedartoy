@@ -1946,9 +1946,10 @@
       form.elements.mode.value = rule?.mode || "tokens";
       for (const key of ["per_request", "input", "output", "cache"]) form.elements[key].value = rule?.[key] ?? "";
       const scope = form.querySelector("[data-price-scope]");
+      const shared = (row || cfg)?.config_ids?.length > 1;
       scope.textContent = priceScope(row || cfg);
-      scope.hidden = !(cfg?.config_ids?.length > 1);
-      form.querySelector("button").textContent = cfg?.config_ids?.length > 1 ? "统一保存价格" : "保存价格";
+      scope.hidden = !shared;
+      form.querySelector("button").textContent = shared ? "统一保存价格" : "保存价格";
       setPriceMode(form);
     }
     function orderedPriceEntries(rows) {
@@ -1956,7 +1957,7 @@
       // follow, and entirely unconfigured merchants stay at the end.
       const groups = new Map();
       const entries = rows.map((row, index) => {
-        const group = (row.config_ids?.length ? row.config_ids : [row.config_id]).join(",");
+        const group = row.config_id;
         const priced = Boolean(row.price || (row.price_variants || []).some(item => item.price));
         if (!groups.has(group)) groups.set(group, {first: index, priced: false, unset: false});
         const info = groups.get(group);

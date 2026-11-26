@@ -727,6 +727,88 @@ class AdminApiConfigRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         judge.reset_fail_counts()
 
+    async def test_saved_and_draft_probe_expose_only_safe_diagnostics(self):
+        saved = {**CONFIG, "api_url": "https://fixture-user:fixture-password@example.test/v1?token=query-fixture"}
+        secrets = (saved["api_key"], "draft-fixture", "bearer-fixture", "fixture-user", "fixture-password", "query-fixture")
+        echoed = f"{saved['api_key']} draft-fixture Bearer bearer-fixture {saved['api_url']}"
+        request = httpx.Request("POST", saved["api_url"])
+        structured = {"type": "rate_limit_error", "code": "rate_limit_exceeded",
+                      "message": f"Too many requests: {echoed}"}
+        cases = [
+            (httpx.Response(429, json={"error": structured, "debug": echoed}), 429,
+             "类型 rate_limit_error · 错误码 rate_limit_exceeded · 上游限制了请求频率"),
+            (httpx.Response(400, json={"code": 1211, "message": f"model not found: {echoed}"}), 400,
+             "错误码 1211 · 上游模型不可用"),
+            (httpx.Response(401, json={"error": f"Incorrect API key provided: {echoed}"}), 401, "上游鉴权失败"),
+            (httpx.Response(401, json={"error": {"type": "fixture-password", "code": "draft-fixture",
+                                                  "message": echoed}}), 401, "HTTP 错误"),
+            (httpx.Response(502, text=echoed), 502, "HTTP 错误"),
+            (httpx.Response(200, json={"error": structured}, request=request), 200, "rate_limit_exceeded"),
+            (httpx.Response(200, json={"error": structured, "choices": [{"message": {"content": "测试成功"}}]},
+                            request=request), 200, "rate_limit_exceeded"),
+            (httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {"content": echoed}}]},
+                            request=request), 200, "max_tokens（1024），回复被截断"),
+            (httpx.Response(200, text=echoed, request=request), 200, "响应格式无效"),
+            (httpx.ReadTimeout(echoed), None, "超时"),
+            (RuntimeError(echoed), None, "未取得有效的上游响应"),
+        ]
+        with patch.object(admin_router, "fetch_one", AsyncMock(return_value=saved)), \
+             patch.object(judge.httpx, "AsyncClient", FakeClient), \
+             patch.object(FakeClient, "payloads", []):
+            for draft in (False, True):
+                for outcome, status, detail in cases:
+                    with self.subTest(draft=draft, status=status, detail=detail), patch.object(FakeClient, "outcomes", [outcome]):
+                        if draft:
+                            body = admin_router.ApiTestBody(config_id=saved["id"], api_key="draft-fixture")
+                            result = await admin_router.test_api_config_draft(body, admin={})
+                        else:
+                            result = await admin_router.test_api_config(saved["id"], admin={})
+                        self.assertFalse(result["success"])
+                        self.assertEqual(result["data"]["http_status"], status)
+                        self.assertIn(detail, result["data"]["error_detail"])
+                        self.assertFalse(any(secret in json.dumps(result) for secret in secrets))
+                        self.assertEqual(FakeClient.payloads[-1]["max_tokens"], 1024)
+            with patch.object(FakeClient, "outcomes", [response(200, content=echoed)]):
+                result = await admin_router.test_api_config(saved["id"], admin={})
+            self.assertTrue(result["success"])
+            self.assertFalse(any(secret in json.dumps(result) for secret in secrets))
+            self.assertNotIn("raw", result["data"])
+
+    async def test_only_success_on_same_node_clears_probe_health(self):
+        node = judge.register_config_runtime_node(CONFIG)
+        alias = {**CONFIG, "id": CONFIG["id"] + 1}
+        judge.register_config_runtime_node(alias)
+        with patch.object(admin_router, "fetch_one", AsyncMock(return_value=CONFIG)), \
+             patch.object(judge.httpx, "AsyncClient", FakeClient):
+            for draft in (True, False):
+                for _ in range(judge.FAIL_LIMIT):
+                    judge._record_failure(node, TimeoutError(), was_probe=False)
+                state = judge._state(node)
+                before = vars(state).copy()
+                for override in ({"model": "another"}, {"api_url": "https://different.test"}, {"api_key": "another"}):
+                    with patch.object(FakeClient, "outcomes", [response(200)]):
+                        body = admin_router.ApiTestBody(config_id=CONFIG["id"], **override)
+                        result = await admin_router.test_api_config_draft(body, admin={})
+                        self.assertTrue(result["success"])
+                        self.assertEqual(vars(state), before)
+                for outcome, success in ((response(429), False),
+                                         (response(200, content="Sorry, I can't help with that."), False),
+                                         (response(200), True)):
+                    with patch.object(FakeClient, "outcomes", [outcome]):
+                        if draft:
+                            body = admin_router.ApiTestBody(config_id=CONFIG["id"], name="改名草稿")
+                            result = await admin_router.test_api_config_draft(body, admin={})
+                        else:
+                            result = await admin_router.test_api_config(CONFIG["id"], admin={})
+                        self.assertEqual(result["success"], success)
+                        if not success:
+                            self.assertEqual(vars(state), before)
+                status = judge.get_config_runtime_status(alias["id"])
+                self.assertEqual(status["runtime_status"], "healthy")
+                self.assertEqual(status["consecutive_failures"], 0)
+                self.assertEqual(status["cooldown_remaining_seconds"], 0)
+                self.assertIsNone(status["last_error"])
+
     async def test_draft_accounting_keeps_id_only_for_same_channel(self):
         for override, expected_id in [({}, CONFIG["id"]), ({"api_url": "https://other.test/v1"}, 0),
                                       ({"api_key": "another-test-key"}, 0)]:

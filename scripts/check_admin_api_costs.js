@@ -43,7 +43,7 @@ function fixture() {
   const members = id => ({31: [31,32,33], 11: [11,17,24], 28: [28,29,30]}[id] || [id]);
   for (const cfg of configs) cfg.config_ids = members(cfg.id);
   for (const row of [...channels, ...prices]) {
-    row.config_ids = members(row.config_id);
+    row.config_ids = row.model === '[正向量3]deepseek-v4.1-flash' ? [28] : members(row.config_id);
     row.price_versions = Object.fromEntries(row.config_ids.map(id => [id, row.price ? 1 : 0]));
     row.price_variants = row.config_ids.map((id, i) => ({config_id: id, label: ['海龟汤','NPC','塔罗'][i], price: row.price || null}));
   }
@@ -202,6 +202,8 @@ async function checkDOM() {
     form = d.querySelector('[data-cost-form="new"]');
     await change(form.elements.config_id, '28');
     assert.equal(form.elements.mode.value, 'tokens');
+    assert.equal(form.querySelector('[data-price-scope]').hidden, true);
+    assert.equal(form.querySelector('button').textContent, '保存价格');
     await change(form.elements.model, '[按量1]glm-5.3-flash');
     assert.equal(form.elements.mode.value, 'tokens');
     assert.equal(form.elements.cache.value, '');

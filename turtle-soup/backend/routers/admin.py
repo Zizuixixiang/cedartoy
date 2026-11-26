@@ -1,4 +1,9 @@
-from typing import Optional
+import asyncio
+import sqlite3
+from typing import Literal, Optional
+
+import api_costs
+import pool_order
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -12,7 +17,7 @@ from judge import (
     mark_config_success,
     model_node_fingerprint,
     register_config_runtime_node,
-    reset_fail_counts,
+    snapshot_unavailable_configs,
     test_config,
 )
 from models import NormalizedRoomId, RoomCreateBody
@@ -544,18 +549,22 @@ async def remove_ban(ban_id: int, admin: dict = Depends(admin_player)):
 @router.get("/api-configs")
 async def api_configs(admin: dict = Depends(admin_player)):
     del admin
-    rows = await fetch_all("SELECT * FROM judge_api_configs ORDER BY priority ASC, id ASC")
+    priorities = ", ".join(f"{pool_order.priority_sql(p)} AS {p}_priority" for p in pool_order.PURPOSES)
+    rows = await fetch_all(f"SELECT *, {priorities} FROM judge_api_configs ORDER BY priority, id")
     pool_runtime = get_pool_runtime_status()
-    for row in rows:
-        register_config_runtime_node(row)
+    # Register ALL aliases before sampling: a later row may carry an unbound
+    # legacy failure. Sample each node once, even at a cooldown boundary.
+    nodes = [register_config_runtime_node(row) for row in rows]
+    statuses = {}
+    for row, node in zip(rows, nodes):
+        if node not in statuses:
+            statuses[node] = get_config_runtime_status(int(row["id"]))
+        row.update(statuses[node])
+        row["node_status"] = row["runtime_status"]
+        if not row.get("enabled"):
+            row["runtime_status"] = "disabled"  # existing API contract
         key = row.get("api_key") or ""
         row["api_key"] = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
-        row.update(
-            get_config_runtime_status(
-                int(row["id"]),
-                enabled=bool(row.get("enabled")),
-            )
-        )
         if row.get("purpose") in {
             "npc",
             "npc_decision",
@@ -564,6 +573,53 @@ async def api_configs(admin: dict = Depends(admin_player)):
         }:
             row["npc_pool_runtime"] = pool_runtime["npc"]
     return rows
+
+
+Pool = Literal["soup", "npc", "tarot"]
+Direction = Literal["asc", "desc"]
+
+
+class ApplyPriceOrder(BaseModel):
+    direction: Direction
+    cutoff: float
+    revision: str = Field(min_length=64, max_length=64)
+
+
+async def _price_order(pool, direction, **preview):
+    try:
+        return await asyncio.to_thread(pool_order.price_order, pool, direction,
+                                       unavailable=snapshot_unavailable_configs(), **preview)
+    except pool_order.StalePreview as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=503, detail="暂时无法读取或保存排序，请稍后重新预览") from exc
+
+
+@router.get("/api-pools/{pool}/price-order")
+async def preview_price_order(pool: Pool, direction: Direction = "asc", admin: dict = Depends(admin_player)):
+    return await _price_order(pool, direction)
+
+
+@router.put("/api-pools/{pool}/price-order")
+async def apply_price_order(pool: Pool, body: ApplyPriceOrder, admin: dict = Depends(admin_player)):
+    await _price_order(pool, body.direction, cutoff=body.cutoff, revision=body.revision)
+    return {"ok": True}
+
+
+@router.put("/api-pools/{pool}/configs/{config_id}/price")
+async def save_config_price(pool: Pool, config_id: int, body: dict, admin: dict = Depends(admin_player)):
+    fields = {"model", "group_revision", "config_ids", "price_versions", "mode", "reference_only",
+              "per_request", "input", "output", "cache"}
+    if body.keys() - fields:
+        raise HTTPException(status_code=400, detail="报价参数无效")
+    try:
+        return await asyncio.to_thread(pool_order.save_config_price, pool, config_id, body)
+    except api_costs.PriceConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=503, detail="报价暂时无法保存，请稍后重试") from exc
 
 
 @router.post("/api-configs")
@@ -583,7 +639,6 @@ async def add_api_config(body: ApiConfigBody, admin: dict = Depends(admin_player
         "INSERT INTO judge_api_configs (name, api_url, api_key, model, purpose, enabled, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (body.name, body.api_url, body.api_key, body.model, purpose, body.enabled, body.priority),
     )
-    reset_fail_counts(config_id=cid, purpose=purpose)
     return {"id": cid}
 
 
@@ -618,9 +673,10 @@ async def test_api_config_draft(body: ApiTestBody, admin: dict = Depends(admin_p
     }
     # Drafts using another endpoint/credential must not inherit this channel's tariff.
     cfg["id"] = body.config_id if existing and cfg["api_url"] == existing["api_url"] and cfg["api_key"] == existing["api_key"] else 0
+    node = register_config_runtime_node(existing) if existing else None
     result = await test_config(cfg)
-    if result.get("success") and body.config_id:
-        mark_config_success(body.config_id)
+    if result.get("success") and node and node == model_node_fingerprint(cfg):
+        mark_config_success(node)
     return result
 
 
@@ -646,7 +702,6 @@ async def update_api_config(config_id: int, body: ApiConfigBody, admin: dict = D
         "UPDATE judge_api_configs SET name=?, api_url=?, api_key=?, model=?, purpose=?, enabled=?, priority=? WHERE id=?",
         (body.name, body.api_url, key, body.model, purpose, body.enabled, body.priority, config_id),
     )
-    reset_fail_counts(config_id=config_id)
     return {"ok": True}
 
 
@@ -654,7 +709,6 @@ async def update_api_config(config_id: int, body: ApiConfigBody, admin: dict = D
 async def delete_api_config(config_id: int, admin: dict = Depends(admin_player)):
     del admin
     await execute("DELETE FROM judge_api_configs WHERE id = ?", (config_id,))
-    reset_fail_counts(config_id=config_id)
     return {"ok": True}
 
 
@@ -664,21 +718,25 @@ async def test_api_config(config_id: int, admin: dict = Depends(admin_player)):
     cfg = await fetch_one("SELECT * FROM judge_api_configs WHERE id = ?", (config_id,))
     if not cfg:
         raise HTTPException(status_code=404, detail="配置不存在")
+    node = register_config_runtime_node(cfg)
     result = await test_config(cfg)
     if result.get("success"):
-        mark_config_success(config_id)
+        mark_config_success(node)
     return result
 
 
 @router.get("/settings")
 async def settings(admin: dict = Depends(admin_player)):
     del admin
-    return await fetch_all("SELECT key, value FROM settings ORDER BY key ASC")
+    return await fetch_all("SELECT key, value FROM settings WHERE key NOT IN (?, ?, ?) ORDER BY key",
+                           pool_order.SETTING_KEYS)
 
 
 @router.put("/settings/{key}")
 async def update_setting(key: str, body: SettingBody, admin: dict = Depends(admin_player)):
     del admin
+    if key in pool_order.SETTING_KEYS:
+        raise HTTPException(status_code=400, detail="请在模型 API 的用途分组预览并确认排序")
     await execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, body.value))
     return {"ok": True}
 
@@ -686,5 +744,7 @@ async def update_setting(key: str, body: SettingBody, admin: dict = Depends(admi
 @router.delete("/settings/{key}")
 async def delete_setting(key: str, admin: dict = Depends(admin_player)):
     del admin
+    if key in pool_order.SETTING_KEYS:
+        raise HTTPException(status_code=400, detail="请在模型 API 的用途分组预览并确认排序")
     await execute("DELETE FROM settings WHERE key = ?", (key,))
     return {"ok": True}

@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 import httpx
 import api_costs
+from pool_order import priority_sql
 from fastapi import HTTPException
 
 from database import DEFAULT_SETTINGS, fetch_all, fetch_one
@@ -146,15 +147,25 @@ def _pool_name(pool: str) -> str:
     return pool if pool in POOL_NAMES else "judge"
 
 
+def _normalized_endpoint(cfg: dict[str, Any]) -> str:
+    endpoint = _endpoint(str(cfg.get("api_url") or "").strip())
+    try:
+        parts = urlsplit(endpoint)
+    except ValueError:
+        return endpoint
+    userinfo, sep, host = parts.netloc.rpartition("@")
+    return parts._replace(scheme=parts.scheme.lower(), netloc=userinfo + sep + host.lower()).geturl()
+
+
 def _credential_key(cfg: dict[str, Any]) -> str:
-    endpoint = _endpoint(str(cfg.get("api_url") or "").strip()).lower()
+    endpoint = _normalized_endpoint(cfg)
     api_key = str(cfg.get("api_key") or "").strip()
     material = f"{endpoint}\0{api_key}".encode("utf-8")
     return "credential:" + hashlib.sha256(material).hexdigest()
 
 
 def _node_key(cfg: dict[str, Any]) -> str:
-    endpoint = _endpoint(str(cfg.get("api_url") or "").strip()).lower()
+    endpoint = _normalized_endpoint(cfg)
     api_key = str(cfg.get("api_key") or "").strip()
     model = str(cfg.get("model") or "").strip()
     material = f"{endpoint}\0{api_key}\0{model}".encode("utf-8")
@@ -187,28 +198,20 @@ def register_config_runtime_node(cfg: dict[str, Any]) -> str:
     config_id = int(cfg["id"])
     key = _node_key(cfg)
     lock_key = _credential_key(cfg)
-    previous = _config_node_keys.get(config_id)
-    previous_lock = _config_lock_keys.get(config_id)
     _config_node_keys[config_id] = key
     _config_lock_keys[config_id] = lock_key
     legacy_key = f"config:{config_id}"
     if legacy_key in _runtime_states:
         legacy = _runtime_states.pop(legacy_key)
         _merge_runtime_state(_runtime_states.setdefault(key, ConfigRuntimeState()), legacy)
-    if previous and previous != key and not any(
-        mapped == previous for cid, mapped in _config_node_keys.items()
-        if cid != config_id
-    ):
-        _runtime_states.pop(previous, None)
-    if previous_lock and previous_lock != lock_key and not any(
-        mapped == previous_lock for cid, mapped in _config_lock_keys.items()
-        if cid != config_id
-    ):
-        _config_locks.pop(previous_lock, None)
+    # A row edit does not retire the physical node. Other aliases (including
+    # disabled rows) or in-flight calls can still own its health and lock.
     return key
 
 
-def _runtime_key(config_id: int) -> str:
+def _runtime_key(config_id: int | str) -> str:
+    if isinstance(config_id, str) and config_id.startswith("node:"):
+        return config_id
     return _config_node_keys.get(int(config_id), f"config:{int(config_id)}")
 
 
@@ -230,7 +233,7 @@ def _wall_now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def _state(config_id: int) -> ConfigRuntimeState:
+def _state(config_id: int | str) -> ConfigRuntimeState:
     return _runtime_states.setdefault(_runtime_key(config_id), ConfigRuntimeState())
 
 
@@ -251,6 +254,7 @@ def get_config_runtime_status(config_id: int, *, enabled: bool = True) -> dict[s
         "runtime_status": "disabled" if not enabled else _runtime_status(state, now),
         "consecutive_failures": state.consecutive_failures,
         "cooldown_remaining_seconds": remaining,
+        "probe_in_flight": state.probe_in_flight,
         "last_error": state.last_error,
         "last_success_at": state.last_success_at,
     }
@@ -313,7 +317,27 @@ def _config_available(config_id: int, now: float | None = None) -> bool:
     return state.cooldown_until <= now and not state.probe_in_flight
 
 
-def _claim_attempt(config_id: int) -> bool | None:
+def snapshot_unavailable_configs():
+    """Freeze eligibility on the event loop before the price-preview DB read."""
+    now = _now()
+    blocked = {key: "节点冷却中" if state.cooldown_until > now else "节点正在半开探测"
+               for key, state in _runtime_states.items()
+               if state.cooldown_until > now or state.probe_in_flight}
+
+    def reasons_for(rows):
+        if not blocked:
+            return {}
+        nodes = {r["id"]: _node_key(r) for r in rows}
+        reasons = blocked.copy()
+        for cid, node in nodes.items():
+            if f"config:{cid}" in blocked:
+                reasons.setdefault(node, blocked[f"config:{cid}"])
+        return {cid: reasons[node] for cid, node in nodes.items() if node in reasons}
+
+    return reasons_for
+
+
+def _claim_attempt(config_id: int | str) -> bool | None:
     """Return whether this attempt is half-open, or None when it must be skipped."""
     state = _state(config_id)
     now = _now()
@@ -355,7 +379,7 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
     return "response", f"{type(exc).__name__}: {exc}"
 
 
-def _record_failure(config_id: int, exc: Exception, *, was_probe: bool) -> str:
+def _record_failure(config_id: int | str, exc: Exception, *, was_probe: bool) -> str:
     state = _state(config_id)
     state.probe_in_flight = False
     state.consecutive_failures += 1
@@ -375,7 +399,7 @@ def _record_failure(config_id: int, exc: Exception, *, was_probe: bool) -> str:
     return state.last_error
 
 
-def _record_success(config_id: int) -> None:
+def _record_success(config_id: int | str) -> None:
     state = _state(config_id)
     state.consecutive_failures = 0
     state.cooldown_stage = -1
@@ -385,11 +409,11 @@ def _record_success(config_id: int) -> None:
     state.last_success_at = _wall_now_iso()
 
 
-def mark_config_success(config_id: int) -> None:
+def mark_config_success(config_id: int | str) -> None:
     _record_success(config_id)
 
 
-def _release_probe(config_id: int) -> None:
+def _release_probe(config_id: int | str) -> None:
     state = _runtime_states.get(_runtime_key(config_id))
     if state is not None:
         state.probe_in_flight = False
@@ -399,7 +423,7 @@ async def _configs(
     pool: str = "judge", model: str | None = None
 ) -> list[dict[str, Any]]:
     pool = _pool_name(pool)
-    rows = await _enabled_configs()
+    rows = await _enabled_configs(pool)
     now = _now()
     available = [row for row in rows if _config_available(int(row["id"]), now)]
     return _select_configs_for_pool(available, pool, model=model)
@@ -409,15 +433,19 @@ async def _matching_configs(
     pool: str = "judge", model: str | None = None
 ) -> list[dict[str, Any]]:
     pool = _pool_name(pool)
-    rows = await _enabled_configs()
+    rows = await _enabled_configs(pool)
     return _select_configs_for_pool(rows, pool, model=model)
 
 
-async def _enabled_configs() -> list[dict[str, Any]]:
+async def _enabled_configs(pool: str) -> list[dict[str, Any]]:
+    scope = "npc" if pool in NPC_POOL_NAMES else "tarot" if pool == TAROT_POOL_NAME else "soup"
     rows = await fetch_all(
-        "SELECT * FROM judge_api_configs WHERE enabled = 1 ORDER BY priority ASC, id ASC"
+        f"SELECT *, {priority_sql(scope)} AS pool_priority FROM judge_api_configs "
+        "WHERE enabled = 1 ORDER BY pool_priority, id"
     )
     for row in rows:
+        if "pool_priority" in row:
+            row["priority"] = row.pop("pool_priority")
         register_config_runtime_node(row)
     return rows
 
@@ -487,7 +515,9 @@ def reset_fail_counts(config_id: int | None = None, purpose: str | None = None) 
         _config_node_keys.clear()
         _config_lock_keys.clear()
     else:
-        _runtime_states.pop(_runtime_key(config_id), None)
+        key = _runtime_key(config_id)
+        if not any(cid != config_id and node == key for cid, node in _config_node_keys.items()):
+            _runtime_states.pop(key, None)
 
 
 def _endpoint(base: str) -> str:
@@ -978,7 +1008,7 @@ async def _chat_from_pool(
             ):
                 continue
             async with config_lock:
-                is_probe = _claim_attempt(cid)
+                is_probe = _claim_attempt(node)
                 if is_probe is None:
                     continue
                 attempted_nodes.add(node)
@@ -998,26 +1028,26 @@ async def _chat_from_pool(
                     resp = await asyncio.wait_for(request, timeout=node_timeout)
                     text = _completion_text(resp, validator)
                 except asyncio.CancelledError:
-                    _release_probe(cid)
+                    _release_probe(node)
                     raise
                 except CompletionRejected as exc:
                     # Do not clear an existing cooldown/failure history or mark
                     # success. A content-specific refusal only excludes this
                     # physical node for this request, including alias rows.
-                    _release_probe(cid)
+                    _release_probe(node)
                     last_rejection = exc
                     errors.append(f"config_id={cid}: {exc}")
                     logger.warning("%s completion rejected config_id=%s reason=%s; trying fallback", pool, cid, exc)
                     continue
                 except ProviderDailyCallsUnavailable as exc:
-                    _release_probe(cid)
+                    _release_probe(node)
                     errors.append(str(exc))
                     continue
                 except Exception as exc:
-                    error = _record_failure(cid, exc, was_probe=is_probe)
+                    error = _record_failure(node, exc, was_probe=is_probe)
                     errors.append(f"{cfg.get('name')}: {error}")
                     continue
-                _record_success(cid)
+                _record_success(node)
                 if pool == TAROT_POOL_NAME:
                     return {"content": text.strip(), "model": cfg["model"]}
                 return text.strip()
@@ -1227,83 +1257,132 @@ async def _chat_validated(
         return None
 
 
-def _extract_reply(raw: Any) -> str:
-    if not isinstance(raw, dict):
-        return str(raw)[:2000]
-    choices = raw.get("choices")
-    if isinstance(choices, list) and choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            content = msg.get("content")
-            if isinstance(content, str) and content.strip():
-                return content.strip()
-    for key in ("output_text", "text", "content"):
-        val = raw.get(key)
-        if isinstance(val, str) and val.strip():
-            return val.strip()
-    return json.dumps(raw, ensure_ascii=False)[:2000]
+# Upstream error fields can contain credentials even when named "type" or "code".
+# Only render recognized identifiers and local descriptions, never arbitrary text.
+_TEST_MAX_TOKENS = 1024
+_TEST_ERROR_IDS = frozenset({
+    "invalid_request_error", "authentication_error", "invalid_api_key", "permission_denied",
+    "permission_error", "rate_limit_error", "rate_limit_exceeded", "too_many_requests",
+    "insufficient_quota", "insufficient_balance", "model_not_found", "invalid_model",
+    "context_length_exceeded", "content_policy_violation", "server_error", "api_error",
+    "upstream_error", "service_unavailable", "overloaded_error", "new_api_error",
+    "invalid_parameter", "invalid_value", "billing_error", "timeout",
+    "400", "401", "403", "404", "408", "429", "500", "502", "503", "504",
+    "1113", "1211", "1301", "1302", "1303", "1305",
+})
+_TEST_ERROR_HINTS = (
+    (r"quota|insufficient.balance|额度|余额", "上游额度或余额不足"),
+    (r"rate.limit|too many requests|限流|请求过于频繁", "上游限制了请求频率"),
+    (r"invalid.*(?:api.key|token)|incorrect api key|authentication|鉴权|密钥无效", "上游鉴权失败"),
+    (r"model.*(?:not found|does not exist|unavailable)|模型不存在|无可用渠道", "上游模型不可用"),
+    (r"context.length|context window|maximum context|上下文长度", "请求超过上游上下文限制"),
+    (r"max.tokens|output.token.limit|输出截断", "上游报告输出 token 限制"),
+    (r"unsupported parameter|unknown parameter|不支持的参数", "上游不支持请求参数"),
+    (r"timed?.?out|timeout|超时", "上游请求超时"),
+)
+
+
+def _test_upstream_detail(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except (ValueError, RecursionError):
+        return ""
+    error = body.get("error", body) if isinstance(body, dict) else None
+    if isinstance(error, str):
+        error = {"message": error}
+    if not isinstance(error, dict):
+        return ""
+    details = []
+    for field, label in (("type", "类型"), ("code", "错误码")):
+        value = error.get(field)
+        if isinstance(value, (str, int)) and str(value) in _TEST_ERROR_IDS:
+            details.append(f"{label} {value}")
+    message = error.get("message")
+    if isinstance(message, str):
+        for pattern, hint in _TEST_ERROR_HINTS:
+            if re.search(pattern, message[:1024], re.I):
+                details.append(hint)
+                break
+    return " · ".join(details)
 
 
 async def test_config(cfg: dict[str, Any]) -> dict[str, Any]:
     api_key = (cfg.get("api_key") or "").strip()
     api_url = (cfg.get("api_url") or "").strip()
     model = (cfg.get("model") or "").strip()
-    name = cfg.get("name") or ""
+    t0 = time.perf_counter()
+    response = None
+
+    def failure(detail: str) -> dict[str, Any]:
+        status = response.status_code if response is not None else None
+        return {
+            "success": False,
+            "message": f"HTTP {status} · {detail}" if status is not None else detail,
+            "data": {
+                "error_detail": detail,
+                "http_status": status,
+                "llm_ms": int((time.perf_counter() - t0) * 1000),
+            },
+        }
 
     if not api_url or not api_key:
-        return {"success": False, "data": None, "message": "配置缺少 API Key 或接口地址"}
+        return failure("配置缺少 API Key 或接口地址")
     if not model:
-        return {"success": False, "data": None, "message": "请先填写模型名再测试"}
+        return failure("请先填写模型名再测试")
+
+    reply = ""
+
+    def validate(received: httpx.Response) -> None:
+        nonlocal response, reply
+        response = received
+        if not received.is_error:
+            body = received.json()
+            if isinstance(body, dict) and body.get("error"):
+                raise ValueError("upstream error envelope")
+            reply = _completion_text(received)
 
     messages = [
         {"role": "system", "content": "你是连通性测试助手。"},
         {"role": "user", "content": "请只回复：测试成功"},
     ]
-    t0 = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=45) as client:
-            resp = await _send_chat_completion(
+            response = await _send_chat_completion(
                 client, api_url, api_key, {
                     "model": model,
                     "messages": messages,
                     "temperature": 0.1,
-                    "max_tokens": 32,
-                }, cfg=cfg, pool="test",
-                validate=lambda response: None if response.is_error else _completion_text(response),
+                    "max_tokens": _TEST_MAX_TOKENS,
+                }, cfg=cfg, pool="test", validate=validate,
             )
-            try:
-                raw = resp.json()
-            except Exception:
-                raw = {"_raw_text": (resp.text or "")[:4000]}
-            llm_ms = int((time.perf_counter() - t0) * 1000)
-            if resp.status_code >= 400:
-                detail = raw if isinstance(raw, dict) else {"_raw_text": str(raw)}
-                return {
-                    "success": False,
-                    "data": {
-                        "http_status": resp.status_code,
-                        "raw": detail,
-                        "config_name": name,
-                        "model": model,
-                        "llm_ms": llm_ms,
-                    },
-                    "message": f"测试失败: HTTP {resp.status_code}",
-                }
-            reply_text = _extract_reply(raw) or "(无文本回复)"
-            return {
-                "success": True,
-                "data": {
-                    "reply": reply_text,
-                    "raw": raw,
-                    "http_status": resp.status_code,
-                    "config_name": name,
-                    "model": model,
-                    "llm_ms": llm_ms,
-                },
-                "message": "测试成功",
-            }
+        if response.is_error:
+            return failure(_test_upstream_detail(response) or "上游接口返回 HTTP 错误")
+        return {
+            "success": True, "message": "测试成功",
+            "data": {
+                "reply": "测试成功" if reply == "测试成功" else "已收到模型的文本回复",
+                "http_status": response.status_code,
+                "llm_ms": int((time.perf_counter() - t0) * 1000),
+            },
+        }
+    except (httpx.TimeoutException, asyncio.TimeoutError):
+        return failure("等待上游接口超时")
+    except httpx.HTTPStatusError:
+        return failure("上游接口返回非成功 HTTP 状态")
+    except httpx.RequestError:
+        return failure("无法完成与上游接口的网络连接")
+    except ProviderDailyCallsUnavailable as exc:
+        return failure(str(exc))  # Local quota guard supplies fixed, credential-free messages.
+    except CompletionRejected:
+        return failure("上游拒绝了测试请求")
     except Exception as exc:
-        return {"success": False, "data": None, "message": f"测试请求失败: {exc}"}
+        if isinstance(exc, RuntimeError) and exc.args == ("response truncated due to max_tokens",):
+            return failure(f"上游输出达到 max_tokens（{_TEST_MAX_TOKENS}），回复被截断")
+        if isinstance(exc, RuntimeError) and exc.args == ("empty response content",):
+            return failure("上游未返回文本回复")
+        if response is not None:
+            return failure(_test_upstream_detail(response) or "上游响应格式无效")
+        return failure("未取得有效的上游响应，请检查接口地址和配置")
 
 
 SYSTEM_BUSY_NOTICE = "【系统提示】系统开小差了，请再次提问"

@@ -592,8 +592,8 @@ class AdminCostTests(unittest.TestCase):
                 db.executescript('''CREATE TABLE toy_users(id INTEGER PRIMARY KEY,username TEXT,is_ai INTEGER,
                     is_admin INTEGER,ai_token_version INTEGER DEFAULT 0,deleted_at TEXT,last_active_at TEXT);
                     INSERT INTO toy_users(id,username,is_ai,is_admin) VALUES (1,'admin',0,1),(2,'reader',0,0);
-                    CREATE TABLE judge_api_configs(id INTEGER,name TEXT,model TEXT,purpose TEXT,enabled INTEGER,api_url TEXT);
-                    INSERT INTO judge_api_configs VALUES (31,'巧克力 · NPC','gemini-3.1-flash-lite','npc',1,'https://fixture.test/v1');''')
+                    CREATE TABLE judge_api_configs(id INTEGER,name TEXT,model TEXT,purpose TEXT,enabled INTEGER,api_url TEXT,api_key TEXT);
+                    INSERT INTO judge_api_configs VALUES (31,'巧克力 · NPC','gemini-3.1-flash-lite','npc',1,'https://fixture.test/v1','PRIVATE_KEY');''')
             def call(token, save=False, body=None, range_name='today'):
                 handler = object.__new__(server.CedarToyHandler)
                 handler.headers = {'Authorization': 'Bearer '+token} if token else {}
@@ -616,9 +616,9 @@ class AdminCostTests(unittest.TestCase):
                 self.assertEqual({r['model'] for r in call(admin)[1]['prices']}, {'new-model', 'another-model', CFG['model']})
                 self.assertEqual(call(admin)[1]['channels'], [])
                 with sqlite3.connect(account) as db:
-                    db.executemany('INSERT INTO judge_api_configs VALUES (?,?,?,?,?,?)', [
-                        (32, '巧克力 · 塔罗解读', CFG['model'], 'tarot', 1, CFG['api_url']),
-                        (33, '巧克力 · 海龟汤判题与提示', CFG['model'], 'both', 1, CFG['api_url'])])
+                    db.executemany('INSERT INTO judge_api_configs(id,name,model,purpose,enabled,api_url,api_key) VALUES (?,?,?,?,?,?,?)', [
+                        (32, '巧克力 · 塔罗解读', CFG['model'], 'tarot', 1, CFG['api_url'], CFG['api_key']),
+                        (33, '巧克力 · 海龟汤判题与提示', CFG['model'], 'both', 1, CFG['api_url'], CFG['api_key'])])
                 grouped = next(r for r in call(admin)[1]['prices'] if r['model'] == CFG['model'])
                 batch = dict(config_id=31, config_ids=grouped['config_ids'], model=CFG['model'],
                              price_versions=grouped['price_versions'], mode='tokens', input='0.1', output='0.6', cache='0.01')

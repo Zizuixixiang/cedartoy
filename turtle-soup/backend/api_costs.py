@@ -7,6 +7,7 @@ This is best-effort telemetry: abrupt process death or a full queue can lose
 unflushed events. Storage/queue failures emit privacy-safe operational warnings.
 """
 import atexit
+import hashlib
 import json
 import logging
 import os
@@ -117,12 +118,41 @@ def _provider_key(cfg):
     name = _provider_name(cfg)
     endpoint = str(cfg.get('api_url') or '').rstrip('/').removesuffix('/chat/completions')
     # Historical deleted IDs have no trustworthy endpoint; keep them separate.
-    return (name, endpoint) if name and endpoint else ('config', cfg['id'])
+    return (name, endpoint, cfg.get('api_key') or '') if name and endpoint else ('config', cfg['id'])
 
 
-def _members(cid, configs):
+def provider_config_ids(cid, configs):
     cfg = next((c for c in configs if c['id'] == cid), None)
     return sorted({c['id'] for c in configs if _provider_key(c) == _provider_key(cfg)}) if cfg else [cid]
+
+
+def _model_price_ids(ids, model, by_id, historical):
+    current = [i for i in ids if i in by_id and by_id[i]['model'] == model]
+    # The main admin also supports merchant-wide manual and retired models.
+    # For a live model, include its current configs and real ledger history,
+    # without manufacturing a quote on a sibling that only serves another model.
+    if not current:
+        return ids
+    return [i for i in ids if i in current or (i, model) in historical]
+
+
+def _observed_models(db, config_ids):
+    if not config_ids:
+        return set()
+    marks = ','.join('?' for _ in config_ids)
+    return {tuple(r) for r in db.execute(
+        f'SELECT DISTINCT config_id,model FROM events WHERE config_id IN ({marks})', tuple(config_ids))}
+
+
+def price_group_revision(members):
+    # Bind the editor to the exact config identities and scope it displayed.
+    fields = ('id', 'name', 'purpose', 'model', 'api_url', 'api_key')
+    snapshot = [[c.get(k) for k in fields] for c in members]
+    return hashlib.sha256(json.dumps(snapshot).encode()).hexdigest()
+
+
+class PriceConflict(ValueError):
+    pass
 
 
 def _latest_prices(db):
@@ -149,21 +179,29 @@ def save_price(body, configs, path=None):
                 and not db.execute("SELECT 1 FROM prices WHERE config_id=? AND model=? AND source='user' LIMIT 1",
                                    (cid, model)).fetchone()):
             raise ValueError('渠道不存在且无历史记录，请刷新后重试')
-        # Preserve default history before recording the first manual override.
-        seed(db, configs)
         ids = [cid]
         if 'config_ids' in body:
+            provider = provider_config_ids(cid, configs)
+            by_id = {c['id']: c for c in configs}
+            latest = _latest_prices(db)
+            siblings = [i for i in provider if i in by_id and by_id[i]['model'] != model]
+            historical = latest
+            if 0 < len(siblings) < len(provider):
+                historical = latest.keys() | _observed_models(db, siblings)
+            scope = _model_price_ids(provider, model, by_id, historical)
             ids = body['config_ids']
             if (not isinstance(ids, list) or not ids
                     or any(type(i) is not int for i in ids) or len(ids) != len(set(ids))
-                    or sorted(ids) != _members(cid, configs)):
-                raise ValueError('渠道分组已变化，请刷新后重试')
-            latest = _latest_prices(db)
+                    or sorted(ids) != scope):
+                raise PriceConflict('渠道分组已变化，请刷新后重试')
             expected = body.get('price_versions')
             versions = {str(i): latest.get((i, model), (0, None))[0] for i in ids}
             if (not isinstance(expected, dict) or any(type(v) is not int for v in expected.values())
                     or expected != versions):
-                raise ValueError('价格已变化，请刷新查看最新价格后再保存')
+                raise PriceConflict('价格已变化，请刷新查看最新价格后再保存')
+        # A read-only preview can see an unseeded default at version zero.
+        # Compare against the stored versions before inserting that default.
+        seed(db, configs)
         # One transaction/effective time for all purposes. Never partly save a
         # group, and never rewrite any previous price version or event snapshot.
         effective = time.time()
@@ -203,6 +241,84 @@ def calculate(rule, counts, success):
             + cache*Decimal(rule['cache'])) / Decimal(1_000_000)
     # completion_tokens already includes thinking/reasoning tokens.
     return format(cost, 'f'), 'estimated' if rule.get('reference_only') else 'known'
+
+
+# One comparable workload per business. New events after the preview cutoff
+# belong to the next preview, even when applying on a busy server.
+SAMPLE_DAYS = 30
+SAMPLE_LIMIT = 200
+SAMPLE_MIN = 10
+
+
+def pool_estimates(pool, configs, candidates, cutoff, path=None):
+    path = Path(path or DB_PATH)
+    latest = {}
+    sample = []
+    by_id = {c['id']: c for c in configs}
+    providers = {c['id']: provider_config_ids(c['id'], configs) for c in candidates}
+    siblings = {i for c in candidates for i in providers[c['id']] if by_id[i]['model'] != c['model']}
+    observed = set()
+    if path.exists():
+        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=0.25)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute('BEGIN')
+            for row in db.execute('SELECT * FROM prices WHERE effective<=? ORDER BY effective,id',
+                                  (time.time(),)):
+                latest[row['config_id'], row['model']] = row
+            observed = _observed_models(db, siblings)
+            sample = db.execute("""SELECT input_tokens,output_tokens,cache_tokens FROM events
+                WHERE purpose=? AND started BETWEEN ? AND ? AND status='success'
+                AND input_tokens>=0 AND output_tokens>=0 AND cache_tokens BETWEEN 0 AND input_tokens
+                ORDER BY started DESC,id DESC LIMIT ?""",
+                (pool, cutoff - SAMPLE_DAYS * 86400, cutoff, SAMPLE_LIMIT)).fetchall()
+
+    totals = [sum(r[k] for r in sample) for k in ('input_tokens', 'output_tokens', 'cache_tokens')]
+    means = [Decimal(total) / len(sample) for total in totals] if sample else []
+    usage = dict(count=len(sample), days=SAMPLE_DAYS, limit=SAMPLE_LIMIT, minimum=SAMPLE_MIN,
+                 means=[format(v, 'f') for v in means], cutoff=cutoff)
+    historical = latest.keys() | observed
+
+    def quote(cid, model):
+        row = latest.get((cid, model))
+        if row:
+            try:
+                rule = validate_rule(dict(json.loads(row['rule']), config_id=cid, model=model))[2]
+            except (TypeError, ValueError):
+                return None, row['id'], 'unsupported'
+            return rule, row['id'], row['source']
+        cfg = by_id[cid]
+        rule = default_rule(cfg) if cfg['model'] == model else None
+        return rule, 0, 'default' if rule else None
+
+    estimates = {}
+    for cfg in candidates:
+        cid, model = cfg['id'], cfg['model']
+        provider = providers[cid]
+        ids = _model_price_ids(provider, model, by_id, historical)
+        variants = {i: quote(i, model) for i in ids}
+        rule, version, source = variants[cid]
+        cost, reason = None, None
+        if any(v[2] == 'unsupported' for v in variants.values()):
+            reason = '报价规则不支持估算'
+        elif len({_rule_key(v[0]) for v in variants.values()}) > 1:
+            reason = '同渠道同模型报价冲突'
+        elif not rule:
+            reason = '暂无该渠道与模型的报价'
+        elif rule['mode'] == 'tokens' and len(sample) < SAMPLE_MIN:
+            reason = '本池完整用量样本不足'
+        else:
+            cost, _ = calculate(rule, (*totals, None), True)
+            if rule['mode'] == 'tokens':
+                cost = format(Decimal(cost) / len(sample), 'f')
+        estimates[cid] = dict(cost=cost, reason=reason, mode=rule['mode'] if rule else None,
+                              source=source if rule else None, version=version,
+                              reference_only=bool(rule and rule.get('reference_only')),
+                              versions={i: v[1] for i, v in variants.items()},
+                              group_revision=price_group_revision([by_id[i] for i in provider]),
+                              quotes=[dict(id=i, name=by_id[i]['name'], purpose=by_id[i]['purpose'],
+                                           rule=v[0], source=v[2], historical=by_id[i]['model'] != model)
+                                      for i, v in variants.items()])
+    return usage, estimates
 
 
 def make_event(cfg, pool, started, response=None):
@@ -288,7 +404,7 @@ atexit.register(_drain)
 def read_configs(account_path):
     with closing(sqlite3.connect(Path(account_path).resolve().as_uri()+'?mode=ro', uri=True, timeout=0.05)) as db:
         db.row_factory = sqlite3.Row
-        return [dict(r) for r in db.execute('SELECT id,name,api_url,model,purpose,enabled FROM judge_api_configs ORDER BY id')]
+        return [dict(r) for r in db.execute('SELECT id,name,api_url,api_key,model,purpose,enabled FROM judge_api_configs ORDER BY id')]
 
 
 def _empty():
@@ -362,9 +478,11 @@ def report(range_name, configs, path=None, now=None):
     purposes = {key: dict(purpose=key, label=label, **_empty()) for key,label in PURPOSES.items()}
     config_map = {c['id']: c for c in configs}
     historical_names = {cid: name for (cid, _model), name in observed.items()}
+    historical = latest.keys() | observed.keys()
     def identity(key, name=''):
         cid, model = key
-        ids = _members(cid, configs)
+        provider = provider_config_ids(cid, configs)
+        ids = _model_price_ids(provider, model, config_map, historical)
         members = [config_map[i] for i in ids if i in config_map]
         variants = [dict(config_id=i,
                          label=PURPOSES.get({'both': 'soup', 'judge': 'soup', 'hint': 'soup',
@@ -373,7 +491,7 @@ def report(range_name, configs, path=None, now=None):
                                                 config_map.get(i, {}).get('purpose')), '共用'),
                          price=latest.get((i, model), (0, None))[1]) for i in ids]
         conflict = len({_rule_key(v['price']) for v in variants}) > 1
-        return dict(config_id=min(ids), config_ids=ids,
+        return dict(config_id=min(provider), config_ids=ids,
                     name=_provider_name(members[0]) if members else name or historical_names.get(cid, ''),
                     model=model, current=any(c['model'] == model for c in members),
                     enabled=any(c['enabled'] for c in members), deleted=not members,
@@ -409,7 +527,7 @@ def report(range_name, configs, path=None, now=None):
         prices[(row['config_id'], row['model'])] = row
     groups = {}
     for cfg in configs:
-        ids = _members(cfg['id'], configs)
+        ids = provider_config_ids(cfg['id'], configs)
         groups.setdefault(min(ids), dict(id=min(ids), config_ids=ids, name=_provider_name(cfg),
                                         model=cfg['model'], enabled=any(config_map[i]['enabled'] for i in ids)))
     return {'range': range_name, 'since': first, 'total': total,

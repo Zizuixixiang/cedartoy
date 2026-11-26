@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, post, put, del, ensureAdminSession } from '../api'
 import { formatDbDateTime } from '../utils/display.js'
 import '../styles/admin-api.css'
@@ -60,6 +60,11 @@ const fieldLabels = {
   model: '模型',
   purpose: '用途',
   priority: '优先级',
+  probe_in_flight: '正在半开探测',
+  node_status: '物理节点状态',
+  soup_priority: '海龟汤有效优先级',
+  npc_priority: 'NPC 有效优先级',
+  tarot_priority: '塔罗有效优先级',
   runtime_summary: '运行状态',
   runtime_status: '运行状态',
   consecutive_failures: '连续失败',
@@ -80,7 +85,7 @@ const tabDescriptions = {
   bans: '按 IP 封禁访问，命中后会阻止继续使用海龟汤。',
   reports: '玩家对房间发言或用户的举报记录。',
   flags: '系统或管理员标记的风险内容，用于后续处理。',
-  'api-configs': '裁判、对局 NPC 与塔罗的 LLM 节点配置。both 用于裁判+提示；npc_decision 与 npc_speech 分别用于 NPC 操作和发言，未配置专用用途时依次使用 all、旧 npc；all 不进入塔罗。塔罗需单独配置 purpose=tarot，按 priority 从小到大自动选取配置的模型并回退，同层轮询；停用节点不参与。同一 endpoint + API Key + model 可跨用途复用，但塔罗池内只允许一条启用记录。同一接口密钥共享串行锁，同一模型节点共享健康与冷却；NPC 与塔罗各有独立并发上限。裁判/提示优先于尚未发出的 NPC 请求。',
+  'api-configs': '裁判、对局 NPC 与塔罗的 LLM 节点配置。both 用于裁判+提示；npc_decision 与 npc_speech 分别用于 NPC 操作和发言，未配置专用用途时依次使用 all、旧 npc；all 不进入塔罗。塔罗需单独配置 purpose=tarot，按本池优先级从小到大自动选取配置的模型并回退，同层轮询；停用节点不参与。同一 endpoint + API Key + model 可跨用途复用，但塔罗池内只允许一条启用记录。同一接口密钥共享串行锁，同一模型节点共享健康与冷却；NPC 与塔罗各有独立并发上限。裁判/提示优先于尚未发出的 NPC 请求。',
   settings: '运行参数。修改后会影响新请求或后续流程。',
 }
 
@@ -225,14 +230,22 @@ function apiGroupFor(row) {
 }
 
 function runtimeSummary(row) {
-  if (!Number(row.enabled)) return '已停用 · 不参与调用'
+  const status = row.node_status || row.runtime_status
   const failures = Number(row.consecutive_failures || 0)
-  if (row.runtime_status === 'cooling') {
+  if (status === 'cooling') {
     return `冷却中 · 剩余 ${Number(row.cooldown_remaining_seconds || 0)} 秒 · 连续失败 ${failures} 次`
   }
-  if (row.runtime_status === 'half_open') return `等待重试 · 连续失败 ${failures} 次`
-  if (row.runtime_status === 'healthy') return '未记录异常 · 可参与调用'
+  if (status === 'half_open') return `${row.probe_in_flight ? '半开探测中' : '等待重试'} · 连续失败 ${failures} 次`
+  if (status === 'healthy' && failures) return `连续失败 ${failures} 次`
+  if (status === 'healthy') return row.last_success_at ? '最近调用成功' : '未记录异常'
   return '状态未知 · 可用性待确认'
+}
+
+function nodeStatusClass(row) {
+  const status = row.node_status || row.runtime_status
+  if (status === 'healthy' && row.consecutive_failures) return 'cooling'
+  if (status === 'healthy' && !row.last_success_at) return 'unknown'
+  return status || 'unknown'
 }
 
 function displayValue(key, value) {
@@ -303,24 +316,21 @@ function redactTestText(value, secret = '') {
     .replace(/(["']?(?:api[_-]?key|authorization)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi, '$1[密钥已隐藏]')
 }
 
-async function runApiConfigTest(configId, payload = null) {
+async function runApiConfigTest(config, payload = null) {
   const data = payload
     ? await post('/admin/api-configs/test', payload)
-    : await post(`/admin/api-configs/${configId}/test`)
-  const reply = data.data?.reply || ''
-
-  if (data.success) {
-    return {
-      success: true,
-      title: '测试成功',
-      body: redactTestText(formatTestResultBody(data.data, reply), payload?.api_key),
-    }
+    : await post(`/admin/api-configs/${config.id}/test`)
+  const meta = {
+    config_name: config.name, model: config.model,
+    http_status: data.data?.http_status, llm_ms: data.data?.llm_ms,
   }
-  const errDetail = '请求未成功，请检查接口地址、密钥、模型及供应商额度。原始错误内容已隐藏，以免泄露凭据。'
+  const detail = data.success
+    ? data.data?.reply
+    : data.data?.error_detail || '请求未成功，请检查接口地址、密钥、模型及供应商额度。'
   return {
-    success: false,
-    title: '测试失败',
-    body: redactTestText(formatTestResultBody(data.data, errDetail), payload?.api_key),
+    success: Boolean(data.success),
+    title: data.success ? '测试成功' : '测试失败',
+    body: redactTestText(formatTestResultBody(meta, detail), payload?.api_key),
   }
 }
 
@@ -389,10 +399,12 @@ export default function Admin() {
         const group = apiGroupFor(row)
         const inGroup = apiGroup === 'all-groups' || group.id === apiGroup
           || (group.id === 'shared' && ['soup', 'npc'].includes(apiGroup))
-        const searchable = [row.name, row.api_url, row.model, row.purpose, statusText[row.purpose], group.title,
-          `优先级 ${row.priority}`, Number(row.enabled) ? '已启用' : '已停用', runtimeSummary(row)].join(' ').toLowerCase()
+        const scopes = group.id === 'shared' ? ['soup', 'npc'] : [group.id]
+        const priorities = scopes.map(pool => `优先级 ${row[`${pool}_priority`] ?? row.priority}`)
+        const searchable = [row.name, row.api_url, row.model, row.purpose, statusText[row.purpose],
+          group.title, ...priorities, Number(row.enabled) ? '已启用' : '已停用', runtimeSummary(row)].join(' ').toLowerCase()
         return inGroup && (!needle || searchable.includes(needle))
-      }).sort((a, b) => Number(a.priority ?? 0) - Number(b.priority ?? 0) || Number(a.id) - Number(b.id))
+      })
     }
     if (!needle) return rows
     const cols = columns[tab] || Object.keys(rows[0] || {})
@@ -469,7 +481,7 @@ export default function Admin() {
     setTestingConfigId(row.id)
     setTestResult(null)
     try {
-      const result = await runApiConfigTest(row.id)
+      const result = await runApiConfigTest(row)
       setTestResult({ configId: row.id, ...result })
     } catch (e) {
       setTestResult({
@@ -508,7 +520,7 @@ export default function Admin() {
       <div className="admin-heading">
         <div>
           <h2>管理后台</h2>
-          {tab === 'api-configs' ? <p>按游戏管理渠道。优先级数字越小越优先，同级轮询。</p> : <p>{tabDescriptions[tab]}</p>}
+          {tab === 'api-configs' ? <p>本池优先级越小越先调用，同级轮询。未设置池内顺序时使用配置优先级。</p> : <p>{tabDescriptions[tab]}</p>}
         </div>
         {tab !== 'overview' && <input className="admin-search" aria-label={`查找${tableNames[tab]}`} placeholder={`查找${tableNames[tab]}`} value={query} onChange={(e) => setQuery(e.target.value)} />}
       </div>
@@ -531,8 +543,6 @@ export default function Admin() {
                   ))}
                 </select>
               </label>
-              <p role="status">{loadedAt ? `状态读取于 ${loadedAt}。` : ''}仅代表后台已记录的运行状态，不是实时探测或可用保证；刷新可读取最新记录。{error && loadedAt ? '刷新失败，以下为上次记录。' : ''}</p>
-              <details className="api-routing-notes"><summary>用途与调度说明</summary><p>{tabDescriptions[tab]}</p></details>
             </div>
           )}
           {error && <p className="error" role="alert">{error}</p>}
@@ -544,7 +554,7 @@ export default function Admin() {
             />
           )}
           {tab === 'overview' ? <Overview data={rows} onOpen={(nextTab) => setTab(nextTab)} /> : tab === 'api-configs' ? (
-            <ApiConfigGroups rows={Array.isArray(rows) ? filteredRows : null} allRows={rows} groupFilter={apiGroup} query={query} error={error}
+            <ApiConfigGroups rows={Array.isArray(rows) ? filteredRows : null} allRows={rows} groupFilter={apiGroup} query={query} error={error} onReload={load}
               onView={openView} onEdit={openEdit} onDelete={removeRow} onTest={handleTestConfig} testingConfigId={testingConfigId} />
           ) : (
             <AdminTable
@@ -623,7 +633,9 @@ function Overview({ data, onOpen }) {
   )
 }
 
-function ApiConfigGroups({ rows, allRows, groupFilter, query, error, onView, onEdit, onDelete, onTest, testingConfigId }) {
+function ApiConfigGroups({ rows, allRows, groupFilter, query, error, onReload, onView, onEdit, onDelete, onTest, testingConfigId }) {
+  const [sorting, setSorting] = useState(null)
+  const [notice, setNotice] = useState('')
   if (rows === null) return <p className="loading">{error ? '暂时无法显示配置，请点击刷新重试。' : '正在读取配置…'}</p>
   const hasShared = allRows?.some(row => row.purpose === 'all')
   const groups = apiGroups.filter(group => {
@@ -633,13 +645,27 @@ function ApiConfigGroups({ rows, allRows, groupFilter, query, error, onView, onE
   })
   return (
     <div className="api-config-groups">
+      {notice && <p role="status">{notice}</p>}
+      {sorting && <PriceOrderPreview group={sorting} onClose={() => setSorting(null)} onApplied={() => {
+        setNotice(`${sorting.title}的调用顺序已保存。`)
+        setSorting(null)
+        onReload()
+      }} />}
       {query.trim() && !rows.length && <p className="loading" role="status">没有匹配的渠道，请调整搜索或用途分组。</p>}
       {groups.map(group => {
+        const rank = row => row[`${group.id}_priority`] ?? row.priority ?? 0
         const items = rows.filter(row => apiGroupFor(row).id === group.id)
+          .sort((a, b) => {
+            const tier = group.id === 'npc' ? group.purposes.indexOf(a.purpose) - group.purposes.indexOf(b.purpose) : 0
+            return tier || rank(a) - rank(b) || a.id - b.id
+          })
+        const sortable = ['soup', 'npc', 'tarot'].includes(group.id)
         return (
           <section className="api-config-group" key={group.id} aria-labelledby={`api-group-${group.id}`}>
             <header className="api-config-group-head">
-              <h3 id={`api-group-${group.id}`}>{group.title}<span>{items.length} 条</span></h3>
+              <div className="api-group-title"><h3 id={`api-group-${group.id}`}>{group.title}<span>{items.length} 条</span></h3>
+                {sortable && <button onClick={() => { setNotice(''); setSorting(group) }}>按价格排序</button>}
+              </div>
               <p>{group.description}{hasShared && ['soup', 'npc'].includes(group.id) ? ' · 共用渠道见下方共用组' : ''}</p>
             </header>
             {!items.length ? <p className="api-config-empty">{query.trim() ? '此组没有匹配的渠道。' : hasShared && ['soup', 'npc'].includes(group.id) ? '暂无专用配置；另有共用配置，实际调用取决于启用和运行状态。' : '暂无配置。可选择此用途分组后新增。'}</p> : (
@@ -647,10 +673,12 @@ function ApiConfigGroups({ rows, allRows, groupFilter, query, error, onView, onE
                 {items.map(row => (
                   <li className="api-config-row" key={row.id}>
                     <div className="api-config-name"><strong>{row.name || '未命名渠道'}</strong><span>{statusText[row.purpose] || '未识别用途'}</span></div>
-                    <span className="api-config-priority">优先级 <b>{row.priority ?? '未设置'}</b></span>
+                    <span className="api-config-priority">{group.id === 'shared'
+                      ? <>海龟汤 <b>{row.soup_priority ?? row.priority}</b><br />NPC <b>{row.npc_priority ?? row.priority}</b></>
+                      : <>优先级 <b>{rank(row)}</b></>}</span>
                     <div className="api-config-state">
-                      <span className={`runtime-status runtime-status--${Number(row.enabled) ? row.runtime_status || 'unknown' : 'disabled'}`}>{Number(row.enabled) ? '已启用' : '已停用'}</span>
-                      <span>{runtimeSummary(row)}</span>
+                      <span>{Number(row.enabled) ? '已启用' : '已停用 · 不参与调用'}</span>
+                      <span className={`runtime-status runtime-status--${nodeStatusClass(row)}`}>节点{runtimeSummary(row)}</span>
                     </div>
                     <div className="row-actions" role="group" aria-label={`${row.name || '未命名渠道'}的操作`}>
                       <button onClick={() => onView(row)}>查看</button>
@@ -666,6 +694,173 @@ function ApiConfigGroups({ rows, allRows, groupFilter, query, error, onView, onE
         )
       })}
     </div>
+  )
+}
+
+function describeQuote(quote) {
+  const rule = quote.rule
+  if (!rule) return quote.source === 'unsupported' ? '报价规则无法读取' : '未设置'
+  const rate = rule.mode === 'request' ? `按次 ¥${rule.per_request} / 次`
+    : `按 Token · 输入 ${rule.input} / 输出 ${rule.output} / 缓存 ${rule.cache} 元/百万`
+  return `${rate} · ${quote.source === 'user' ? '自定义报价' : '默认报价'}${rule.reference_only ? ' · 参考价' : ''}`
+}
+
+function QuoteForm({ row, busy, onSave, failure }) {
+  const current = row.quotes.find(q => q.id === row.id)
+  const [draft, setDraft] = useState({ mode: 'request', ...current.rule })
+  const update = (key, value) => setDraft(d => ({ ...d, [key]: value }))
+  const fields = draft.mode === 'request' ? [['per_request', '单价（元/次）']]
+    : [['input', '输入'], ['output', '输出'], ['cache', '缓存命中']]
+  function submit(event) {
+    event.preventDefault()
+    if (busy || failure?.stale) return
+    onSave({ mode: draft.mode, reference_only: draft.mode === 'tokens' && Boolean(draft.reference_only),
+      ...Object.fromEntries(fields.map(([key]) => [key, draft[key]])) })
+  }
+  return <form id="quote-form" className="admin-form quote-form" onSubmit={submit}>
+    <div className="api-config-name"><strong>{row.name}</strong><span>{row.purpose === 'all' && '海龟汤 / NPC 共用 · '}{row.model}</span></div>
+    <p>当前报价：{describeQuote(current)}</p>
+    {row.quotes.length > 1 && <div><strong>同时更新此模型报价</strong>
+      <ul>{row.quotes.filter(q => q.id !== row.id).map(q => <li key={q.id}>{q.name} · {q.purpose === 'all' ? '海龟汤 / NPC 共用' : statusText[q.purpose] || q.purpose}{q.historical && ' · 历史模型'}
+        {describeQuote(q) !== describeQuote(current) && ` · ${describeQuote(q)}`}</li>)}</ul>
+    </div>}
+    <label className="admin-field">计费模式
+      <select autoFocus value={draft.mode} disabled={busy} onChange={e => update('mode', e.target.value)}>
+        <option value="request">按次</option><option value="tokens">按 Token</option>
+      </select>
+    </label>
+    {fields.map(([key, label]) => <label className="admin-field" key={key}>
+      {draft.mode === 'tokens' ? `${label}（元/百万 Token）` : label}
+      <input required inputMode="decimal" pattern="[0-9]{1,9}([.][0-9]{1,12})?" title="最多 9 位整数、12 位小数"
+        value={draft[key] ?? ''} disabled={busy} onChange={e => update(key, e.target.value)} />
+    </label>)}
+    {draft.mode === 'tokens' && <label className="admin-field quote-reference"><input type="checkbox"
+      checked={Boolean(draft.reference_only)} disabled={busy} onChange={e => update('reference_only', e.target.checked)} />仅作参考估算</label>}
+    {failure && <p className="error" role="alert">{failure.message}</p>}
+  </form>
+}
+
+function PriceOrderPreview({ group, onClose, onApplied }) {
+  const dialog = useRef(null)
+  const [direction, setDirection] = useState('asc')
+  const [attempt, setAttempt] = useState(0)
+  const [preview, setPreview] = useState(null)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [quoteFailure, setQuoteFailure] = useState(null)
+  const [notice, setNotice] = useState('')
+  const returnTo = useRef(null)
+  const path = `/admin/api-pools/${group.id}/price-order`
+  useLayoutEffect(() => {
+    const element = dialog.current
+    const trigger = document.activeElement
+    element.showModal()
+    return () => { element.close(); trigger?.focus() }
+  }, [])
+  useEffect(() => {
+    let current = true
+    api(`${path}?direction=${direction}`).then(data => {
+      if (current) setPreview(data)
+    }).catch(e => { if (current) setError(formatApiError(e)) })
+    return () => { current = false }
+  }, [path, direction, attempt])
+
+  useLayoutEffect(() => {
+    if (!editing && preview && returnTo.current !== null) {
+      dialog.current.querySelector(`[data-edit-quote="${returnTo.current}"]`)?.focus()
+      returnTo.current = null
+    }
+  }, [editing, preview])
+
+  function endEdit(refresh) {
+    returnTo.current = editing.id
+    setEditing(null)
+    setQuoteFailure(null)
+    if (refresh) reload(direction)
+  }
+  async function saveQuote(rule) {
+    setSaving(true)
+    setQuoteFailure(null)
+    try {
+      await put(`/admin/api-pools/${group.id}/configs/${editing.id}/price`, {
+        model: editing.model, group_revision: editing.group_revision, config_ids: editing.quotes.map(q => q.id),
+        price_versions: editing.versions, ...rule
+      })
+      setNotice('报价已保存。')
+      endEdit(true)
+    } catch (e) {
+      setQuoteFailure({ message: formatApiError(e), stale: e.status === 409 })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function reload(next) {
+    setError('')
+    setPreview(null)
+    setDirection(next)
+    setAttempt(n => n + 1)
+  }
+  async function apply() {
+    setSaving(true)
+    try {
+      await put(path, { direction, cutoff: preview.usage.cutoff, revision: preview.revision })
+      onApplied()
+    } catch (e) {
+      setError(formatApiError(e))
+      setPreview(null)
+      setSaving(false)
+    }
+  }
+  const usage = preview?.usage
+  const number = value => Number(value).toLocaleString('zh-CN', { maximumSignificantDigits: 6 })
+  return (
+    <dialog ref={dialog} className="admin-modal api-config-modal price-preview" aria-labelledby="price-preview-title"
+      onCancel={e => {
+        e.preventDefault()
+        if (saving) return
+        if (editing) endEdit(quoteFailure?.stale)
+        else onClose()
+      }}>
+      <div className="modal-head">
+        <h3 id="price-preview-title">{group.title} · {editing ? '编辑报价' : '价格排序预览'}</h3>
+        <button onClick={onClose} disabled={saving}>关闭</button>
+      </div>
+      <div className="price-preview-content" role="region" aria-label={editing ? '模型报价' : '排序依据及渠道顺序'} tabIndex={0}>
+        {editing ? <QuoteForm key={editing.id} row={editing} busy={saving} failure={quoteFailure} onSave={saveQuote} /> : <>
+          {notice && <p role="status">{notice}</p>}
+          <label className="price-direction">预计单次成本
+            <select value={direction} onChange={e => { setNotice(''); reload(e.target.value) }} disabled={saving}>
+              <option value="asc">从低到高</option><option value="desc">从高到低</option>
+            </select>
+          </label>
+          {error ? <p className="error" role="alert">{error}</p> : !preview ? <p role="status">正在读取报价和用量…</p> : <>
+            <p>截至 {new Date(usage.cutoff * 1000).toLocaleString('zh-CN', { hour12: false })}，取近 {usage.days} 天本池最近 {usage.limit} 次以内的完整成功用量，共 {usage.count} 个样本。
+              {usage.count >= usage.minimum ? ` 平均输入 ${number(usage.means[0])}、输出 ${number(usage.means[1])}、输入中缓存命中 ${number(usage.means[2])} Token。` : ` 按量估算至少需要 ${usage.minimum} 个样本。`}</p>
+            <p>按次使用单价，按量使用本池平均用量。价格未知或暂不可调用的节点保留队列位置，停用不参排。{group.id === 'npc' && '决策和发言各自先选专用，再选共用，最后选旧版备用。'}</p>
+            <ul className="api-config-list">
+              {preview.rows.map(row => <li key={row.id} className="price-preview-row">
+                <div className="api-config-name" id={`quote-config-${row.id}`}><strong>{row.name}</strong><span>{row.purpose === 'all' ? '海龟汤 / NPC 共用' : statusText[row.purpose]} · {row.model}</span></div>
+                <div><b>{row.cost === null ? '价格未知' : `¥${number(row.cost)} / 次`}</b>
+                  <span>{row.reason || `${row.source === 'user' ? '自定义报价' : '默认报价'} · ${row.mode === 'request' ? '按次' : '按量估算'}${row.reference_only ? ' · 参考价' : ''}`}</span></div>
+                <span>{Boolean(row.enabled) && row.hold_reason && `${row.hold_reason} · `}{row.enabled ? `优先级 ${row.before}${row.before === row.after ? '（保留）' : ` → ${row.after}`}` : '已停用 · 不参与排序'}</span>
+                <button data-edit-quote={row.id} aria-describedby={`quote-config-${row.id}`} disabled={saving} onClick={() => { setNotice(''); setEditing(row) }}>编辑报价</button>
+              </li>)}
+            </ul>
+            {!preview.changed && <p role="status">{preview.rows.length ? '当前没有需要调整的优先级。' : '本池暂无配置。'}</p>}
+          </>}
+        </>}
+      </div>
+      <div className="modal-actions">
+        {editing ? <>
+          {!quoteFailure?.stale && <button disabled={saving} onClick={() => endEdit(false)}>取消</button>}
+          {quoteFailure?.stale ? <button onClick={() => endEdit(true)}>刷新预览</button>
+            : <button className="primary" form="quote-form" type="submit" disabled={saving}>{saving ? '保存中…' : '保存报价'}</button>}
+        </> : error ? <button onClick={() => reload(direction)}>重新预览</button>
+          : <button className="primary" onClick={apply} disabled={!preview?.changed || saving}>{saving ? '正在保存…' : '确认应用到本池'}</button>}
+      </div>
+    </dialog>
   )
 }
 
@@ -717,7 +912,7 @@ function extraActions(tab, row, onAction, onTest, testingConfigId) {
 
 function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
   const dialogRef = useRef(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (modal.tab !== 'api-configs') return
     const previous = document.activeElement
     const dialog = dialogRef.current
@@ -727,11 +922,17 @@ function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
       if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
       if (event.key !== 'Tab') return
       const items = controls(), first = items[0], last = items[items.length - 1]
+      if (!dialog.contains(document.activeElement)) {
+        event.preventDefault()
+        const target = event.shiftKey ? last : first
+        target?.focus()
+        return
+      }
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
-    dialog.addEventListener('keydown', onKey)
-    return () => { dialog.removeEventListener('keydown', onKey); previous?.focus() }
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('keydown', onKey); previous?.focus() }
   }, [modal])
   const fields = modal.mode === 'view'
     ? Object.keys(draft).map((key) => ({ key, label: fieldLabels[key] || key, readOnly: true }))
@@ -755,7 +956,7 @@ function FormModal({ modal, draft, setDraft, error, onClose, onSave }) {
     setTesting(true)
     setModalTestResult(null)
     try {
-      const result = await runApiConfigTest(draft.id, {
+      const result = await runApiConfigTest(draft, {
         config_id: draft.id || null,
         name: draft.name || '',
         api_url: draft.api_url || '',
