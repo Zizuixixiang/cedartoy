@@ -336,6 +336,11 @@
     .aidep-sharing p { margin: 8px 0; }
     .aidep-sharing .share-help { color: var(--muted); font-size: 12px; }
     .aidep-sharing select { flex: 1 1 220px; width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 3px solid var(--purple-light); background: #fff; color: var(--text); font-size: 13px; }
+    @supports (-webkit-touch-callout: none) {
+      @media (any-pointer: coarse) {
+        .compare-form input:read-write, .aidep-sharing select:enabled { font-size: max(16px, 1rem); }
+      }
+    }
     .aidep-sharing button { min-height: 44px; font-size: 12px; }
     .aidep-sharing :focus-visible { outline: 2px solid var(--purple-darker); outline-offset: 3px; }
     .aidep-sharing pre { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }

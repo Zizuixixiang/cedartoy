@@ -649,6 +649,12 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+    @supports (-webkit-touch-callout: none) {
+      @media (any-pointer: coarse) {
+        input:read-write, textarea:read-write, select:enabled { font-size: max(16px, 1rem); }
+      }
+    }
+
     @media (max-width: 760px) {
       .shell {
         width: min(calc(100vw - 16px), 1180px);

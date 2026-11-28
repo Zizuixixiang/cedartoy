@@ -43,6 +43,11 @@ button:disabled { cursor:default; opacity:.55; box-shadow:none; }
 #roundDescription { margin:4px 0; }
 .question-picker { margin-top:10px; }
 #questionJump { width:100%; min-width:0; padding:6px 10px; font-size:14px; }
+@supports (-webkit-touch-callout: none) {
+  @media (any-pointer: coarse) {
+    #questionJump:enabled { font-size: max(16px, 1rem); }
+  }
+}
 #answerLabel { margin:10px 0 4px; }
 .quick-options { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
 .quick-option { max-width:100%; min-height:44px; padding:8px 12px; border:2px solid var(--purple-dark); background:#fff; font-size:14px; line-height:1.5; text-align:left; overflow-wrap:anywhere; }

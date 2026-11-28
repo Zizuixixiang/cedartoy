@@ -1,7 +1,7 @@
 /* Model API: reuse the admin page's type scale, borders and controls. */
 .api-config-tools { display: grid; gap: 8px; min-width: 0; }
 .api-config-tools label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-.api-config-tools select { width: auto; max-width: 100%; font-size: 14px; }
+.api-config-tools select { width: auto; max-width: 100%; font-size: var(--ios-edit-size, 14px); }
 .api-config-groups { display: grid; gap: 12px; min-width: 0; }
 .api-config-group { min-width: 0; background: #fff; border: 1px solid #dbe2de; border-radius: 8px; overflow: hidden; }
 .api-config-group-head { padding: 12px; background: #f2f5f4; border-bottom: 1px solid #eef2ef; }

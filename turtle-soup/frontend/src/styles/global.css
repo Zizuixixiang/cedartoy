@@ -1,6 +1,14 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Inter, "Noto Sans SC", system-ui, sans-serif; background: #f6f7f8; color: #1d2522; }
 button, input, textarea, select { font: inherit; }
+@supports (-webkit-touch-callout: none) {
+  @media (any-pointer: coarse) {
+    input:read-write, textarea:read-write, select:enabled {
+      --ios-edit-size: max(16px, 1rem);
+      font-size: var(--ios-edit-size);
+    }
+  }
+}
 button { border: 1px solid #c7d0ca; background: #fff; color: #1d2522; border-radius: 8px; padding: 9px 12px; cursor: pointer; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { background: #16745f; color: #fff; border-color: #16745f; }
@@ -660,7 +668,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   background: transparent;
   color: var(--pixel-text);
   font-family: "Courier New", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 14px;
+  font-size: var(--ios-edit-size, 14px);
 }
 
 .room-search input:focus {
@@ -1065,7 +1073,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   outline: 0;
   padding: 12px;
   font-family: "Courier New", ui-monospace, monospace;
-  font-size: 15px;
+  font-size: var(--ios-edit-size, 15px);
 }
 
 .terminal-label select {
@@ -1149,7 +1157,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   background: transparent;
   color: rgba(255,255,255,0.88);
   font-family: "Courier New", ui-monospace, monospace;
-  font-size: 13px;
+  font-size: var(--ios-edit-size, 13px);
 }
 
 .puzzle-search input::placeholder {
@@ -1548,12 +1556,12 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   }
   .lobby-page .terminal-label :is(select, textarea),
   .lobby-page .terminal-preview {
-    font-size: 16px;
+    font-size: var(--ios-edit-size, 16px);
   }
   .lobby-page :is(.terminal-head small, .room-lock-option, .puzzle-tag-filter,
     .puzzle-search input, .puzzle-search-count, .puzzle-result-title,
     .puzzle-search-empty, .terminal-note, .terminal-error) {
-    font-size: 14px;
+    font-size: var(--ios-edit-size, 14px);
     line-height: 1.5;
   }
   .lobby-page .terminal-label textarea::placeholder {
@@ -2056,7 +2064,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
   padding: 9px 10px;
   outline: 0;
   font-family: "Courier New", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 14px;
+  font-size: var(--ios-edit-size, 14px);
 }
 
 .toy-modal .password-input-wrap {
@@ -3919,7 +3927,7 @@ body:has(.room-page) {
     max-height: 56px;
     padding: 5px 7px;
     border-width: 1px;
-    font-size: 13px;
+    font-size: var(--ios-edit-size, 13px);
     line-height: 1.35;
   }
   .composer-row .send-btn,
