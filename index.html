@@ -935,6 +935,29 @@
       background: var(--pink);
       border-color: var(--pink);
     }
+    #travelCards {
+      width: min(520px, calc(100vw - 36px));
+      max-height: calc(var(--visual-viewport-height) - 36px);
+      margin: auto;
+      align-items: stretch;
+      color: var(--text);
+      font: 14px/1.6 system-ui, sans-serif;
+      overflow-wrap: anywhere;
+    }
+    #travelCards[open] { display: flex; flex-direction: column; }
+    #travelCards .travel-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+    #travelCards::backdrop { background: rgba(92, 84, 99, 0.55); }
+    #travelCards [hidden] { display: none; }
+    #travelCards header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+    #travelCards h2 { margin: 0; color: var(--text); }
+    #travelCards .pixel-btn { flex: none; min-height: 44px; color: var(--text); font-size: 12px; }
+    #travelSlot { max-width: 100%; min-height: 44px; padding: 4px 8px; border: 2px solid var(--purple); background: white; color: inherit; font: inherit; }
+    #travelCards :is(.travel-body, select, #travelOwner) { margin-top: 10px; }
+    #travelCards .bank-picker-option { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 44px; }
+    #travelCards time, #travelOwner { font-size: 12px; }
+    #travelCards time { flex: none; }
+    #travelCards img { display: block; width: 100%; max-height: 48dvh; object-fit: contain; image-rendering: auto; }
+    #travelCards p { margin: 8px 0 0; white-space: pre-wrap; }
     .garden-picker-option-main,
     .garden-picker-option-meta { display: block; }
     .garden-picker-option-main { line-height: 1.45; }
@@ -4268,6 +4291,20 @@
     </section>
   </div>
 
+  <dialog class="modal-box" id="travelCards" aria-labelledby="travelCardsTitle">
+    <header>
+      <h2 class="modal-title" id="travelCardsTitle">旅行明信片</h2>
+      <button class="pixel-btn secondary" id="travelDismiss" type="button">关闭</button>
+    </header>
+    <select id="travelSlot" aria-label="选择账号与存档槽" hidden></select>
+    <div id="travelOwner" hidden></div>
+    <div class="travel-body">
+      <div id="travelStatus" role="status"></div>
+      <div class="bank-picker-options" id="travelList"></div>
+      <div id="travelDetail" hidden></div>
+    </div>
+  </dialog>
+
   <div class="pixel-toast" id="pixelToast" role="status" aria-live="polite"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" referrerpolicy="no-referrer"></script>
@@ -4825,6 +4862,8 @@
       {
         id: "travel",
         category: "mini",
+        watch: true,
+        watchLabel: "查看明信片 →",
         name: "旅行",
         mission: "MISSION: TRAVEL TOGETHER",
         location: "LOCATION: REAL WORLD",
@@ -7922,6 +7961,115 @@
       }
     }
 
+    function openTravelCards() {
+      const dialog = $("travelCards");
+      if (dialog.open) return;
+      dialog.onclose?.(); // A native close event can still be queued when reopening.
+      const select = $("travelSlot"), owner = $("travelOwner"), list = $("travelList");
+      const title = $("travelCardsTitle"), dismiss = $("travelDismiss");
+      const detail = $("travelDetail"), status = $("travelStatus");
+      const loginToken = token();
+      let request, readingRow;
+
+      function showList() {
+        title.textContent = "旅行明信片";
+        dismiss.textContent = "关闭";
+        select.hidden = select.length < 2;
+        owner.hidden = select.length !== 1;
+        list.hidden = false;
+        detail.hidden = true;
+        detail.replaceChildren();
+        readingRow?.focus();
+        readingRow = null;
+      }
+
+      function showCard(card, row) {
+        readingRow = row;
+        select.hidden = owner.hidden = list.hidden = true;
+        title.textContent = card.destination;
+        dismiss.textContent = "返回列表";
+        const date = document.createElement("time");
+        date.dateTime = date.textContent = card.date;
+        const message = document.createElement("p");
+        message.textContent = card.message;
+        const missing = document.createElement("p");
+        missing.textContent = "原图暂不可用";
+        if (card.image) {
+          const image = document.createElement("img");
+          image.alt = card.destination + "的明信片水彩画";
+          image.onerror = () => image.replaceWith(missing);
+          image.src = card.image;
+          detail.append(image);
+        } else detail.append(missing);
+        detail.append(date, message);
+        detail.hidden = false;
+        detail.parentElement.scrollTop = 0;
+        dismiss.focus();
+      }
+
+      async function load(player) {
+        request?.abort();
+        const controller = request = new AbortController();
+        list.replaceChildren();
+        status.textContent = "正在读取明信片…";
+        try {
+          const url = "/api/travel/postcards" + (player ? "?player=" + encodeURIComponent(player) : "");
+          const response = await fetch(url, {headers: headers(false), cache: "no-store", signal: controller.signal});
+          if (!response.ok) {
+            if (controller.signal.aborted || !dialog.open || token() !== loginToken) return;
+            status.textContent = response.status === 401 ? "请重新登录后查看明信片。"
+              : response.status === 403 ? "当前账号无权查看这个存档。" : "明信片读取失败，请关闭后重试。";
+            return;
+          }
+          const data = await response.json();
+          if (!dialog.open || controller.signal.aborted || loginToken !== token()) return;
+          if (!player) {
+            for (const slot of data.slots) {
+              select.add(new Option(slot.owner + " · 槽" + slot.slot, slot.player));
+            }
+            if (select.length) {
+              owner.textContent = select.options[0].text;
+              showList();
+              return load(select.value);
+            }
+          } else {
+            for (const card of data.postcards) {
+              const row = document.createElement("button");
+              row.className = "bank-picker-option";
+              row.type = "button";
+              const place = document.createElement("span"), date = document.createElement("time");
+              place.textContent = card.destination;
+              date.dateTime = date.textContent = card.date;
+              row.append(place, date);
+              row.onclick = () => showCard(card, row);
+              list.append(row);
+            }
+          }
+          status.textContent = list.childElementCount ? "" : (player ? "这个槽位还没有明信片。" : "还没有收到旅行明信片。");
+        } catch {
+          if (!controller.signal.aborted && dialog.open && loginToken === token()) {
+            status.textContent = "明信片读取失败，请关闭后重试。";
+          }
+        }
+      }
+
+      select.onchange = () => load(select.value);
+      dismiss.onclick = () => readingRow ? showList() : dialog.close();
+      dialog.onkeydown = event => { if (event.key === "Escape") event.stopPropagation(); };
+      dialog.onclose = () => {
+        if (dialog.open) return;
+        request?.abort();
+        readingRow = null;
+        select.replaceChildren();
+        list.replaceChildren();
+        owner.textContent = status.textContent = "";
+        showList();
+        select.onchange = dismiss.onclick = dialog.onclose = null;
+      };
+      dialog.showModal();
+      load();
+    }
+
     function watchWorkkk(playerId, slot = 1) {
       const canonicalPlayer = Number(slot) === 1 ? String(playerId) : `${playerId}:${slot}`;
       const url = `/workkk/?player=${encodeURIComponent(canonicalPlayer)}&token=${encodeURIComponent(token())}`;
@@ -8678,6 +8826,15 @@
     }
 
     async function enterWatch() {
+      if (currentGame().id === "travel") {
+        if (me && token()) openTravelCards();
+        else {
+          closeDrawers();
+          openModal("loginModal");
+          showToast("请先登录再查看旅行明信片");
+        }
+        return;
+      }
       if (currentGame().id === "shared_craft") {
         await openCraftRoom();
         return;
@@ -9968,6 +10125,7 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        if ($("travelCards").open) $("travelCards").close();
         resetFavorites();
         renderGames();
         loadFavorites();
@@ -10949,6 +11107,7 @@
     }
 
     function logout() {
+      if ($("travelCards").open) $("travelCards").close();
       craftRoomPending = false;
       loadMeAbort?.abort();
       localStorage.removeItem(TOKEN_KEY);

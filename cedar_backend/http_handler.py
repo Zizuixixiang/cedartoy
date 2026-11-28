@@ -7,6 +7,7 @@ proxy boundaries. Route order and response bytes are preserved.
 from urllib.parse import parse_qs
 
 from research_scales import SCALES
+from . import travel_postcards
 
 
 def do_POST(
@@ -532,6 +533,11 @@ def do_GET(
     if path == "/api/nowhere/saves":
         self._handle_api_nowhere_saves()
         return
+
+    if path == "/api/travel/postcards":
+        return travel_postcards.serve(self, params, sys.modules[__name__])
+    if path.startswith(travel_postcards.ART_PREFIX):
+        return travel_postcards.serve_art(self, path)
 
     if path == "/api/auth/saves":
         self._handle_api_auth_saves()
