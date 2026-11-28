@@ -935,6 +935,11 @@
       background: var(--pink);
       border-color: var(--pink);
     }
+    #bankPicker[data-travel] .bank-picker {
+      max-height: calc(var(--visual-viewport-height) - 36px);
+      overflow-y: auto;
+      overflow-wrap: anywhere;
+    }
     #travelCards {
       width: min(520px, calc(100vw - 36px));
       max-height: calc(var(--visual-viewport-height) - 36px);
@@ -945,14 +950,12 @@
       overflow-wrap: anywhere;
     }
     #travelCards[open] { display: flex; flex-direction: column; }
-    #travelCards .travel-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+    #travelCards .travel-body { margin-top: 10px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
     #travelCards::backdrop { background: rgba(92, 84, 99, 0.55); }
     #travelCards [hidden] { display: none; }
     #travelCards header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
     #travelCards h2 { margin: 0; color: var(--text); }
     #travelCards .pixel-btn { flex: none; min-height: 44px; color: var(--text); font-size: 12px; }
-    #travelSlot { max-width: 100%; min-height: 44px; padding: 4px 8px; border: 2px solid var(--purple); background: white; color: inherit; font: inherit; }
-    #travelCards :is(.travel-body, select, #travelOwner) { margin-top: 10px; }
     #travelCards .bank-picker-option { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 44px; }
     #travelCards time, #travelOwner { font-size: 12px; }
     #travelCards time { flex: none; }
@@ -4296,8 +4299,7 @@
       <h2 class="modal-title" id="travelCardsTitle">旅行明信片</h2>
       <button class="pixel-btn secondary" id="travelDismiss" type="button">关闭</button>
     </header>
-    <select id="travelSlot" aria-label="选择账号与存档槽" hidden></select>
-    <div id="travelOwner" hidden></div>
+    <div id="travelOwner"></div>
     <div class="travel-body">
       <div id="travelStatus" role="status"></div>
       <div class="bank-picker-options" id="travelList"></div>
@@ -7230,8 +7232,13 @@
     }
 
     function closeBankPicker() {
-      $("bankPicker").classList.remove("show");
-      $("bankPicker").setAttribute("aria-hidden", "true");
+      const picker = $("bankPicker");
+      picker.classList.remove("show");
+      picker.setAttribute("aria-hidden", "true");
+      if (picker.hasAttribute("data-travel")) {
+        $("bankPickerOptions").replaceChildren();
+        picker.removeAttribute("data-travel");
+      }
     }
 
     async function loadArcadeBankStatus() {
@@ -7961,21 +7968,24 @@
       }
     }
 
-    function openTravelCards() {
+    function openTravelCards(owner, slot) {
       const dialog = $("travelCards");
       if (dialog.open) return;
       dialog.onclose?.(); // A native close event can still be queued when reopening.
-      const select = $("travelSlot"), owner = $("travelOwner"), list = $("travelList");
+      const list = $("travelList");
       const title = $("travelCardsTitle"), dismiss = $("travelDismiss");
       const detail = $("travelDetail"), status = $("travelStatus");
+      const player = slot === 1 ? owner.id : owner.id + ":" + slot;
+      const source = $("travelOwner");
+      source.textContent = owner.name + " · 槽" + slot;
       const loginToken = token();
-      let request, readingRow;
+      const controller = new AbortController();
+      let readingRow;
 
       function showList() {
         title.textContent = "旅行明信片";
         dismiss.textContent = "关闭";
-        select.hidden = select.length < 2;
-        owner.hidden = select.length !== 1;
+        source.hidden = false;
         list.hidden = false;
         detail.hidden = true;
         detail.replaceChildren();
@@ -7985,7 +7995,7 @@
 
       function showCard(card, row) {
         readingRow = row;
-        select.hidden = owner.hidden = list.hidden = true;
+        source.hidden = list.hidden = true;
         title.textContent = card.destination;
         dismiss.textContent = "返回列表";
         const date = document.createElement("time");
@@ -8007,13 +8017,11 @@
         dismiss.focus();
       }
 
-      async function load(player) {
-        request?.abort();
-        const controller = request = new AbortController();
+      async function load() {
         list.replaceChildren();
         status.textContent = "正在读取明信片…";
         try {
-          const url = "/api/travel/postcards" + (player ? "?player=" + encodeURIComponent(player) : "");
+          const url = "/api/travel/postcards?player=" + encodeURIComponent(player);
           const response = await fetch(url, {headers: headers(false), cache: "no-store", signal: controller.signal});
           if (!response.ok) {
             if (controller.signal.aborted || !dialog.open || token() !== loginToken) return;
@@ -8023,29 +8031,18 @@
           }
           const data = await response.json();
           if (!dialog.open || controller.signal.aborted || loginToken !== token()) return;
-          if (!player) {
-            for (const slot of data.slots) {
-              select.add(new Option(slot.owner + " · 槽" + slot.slot, slot.player));
-            }
-            if (select.length) {
-              owner.textContent = select.options[0].text;
-              showList();
-              return load(select.value);
-            }
-          } else {
-            for (const card of data.postcards) {
-              const row = document.createElement("button");
-              row.className = "bank-picker-option";
-              row.type = "button";
-              const place = document.createElement("span"), date = document.createElement("time");
-              place.textContent = card.destination;
-              date.dateTime = date.textContent = card.date;
-              row.append(place, date);
-              row.onclick = () => showCard(card, row);
-              list.append(row);
-            }
+          for (const card of data.postcards) {
+            const row = document.createElement("button");
+            row.className = "bank-picker-option";
+            row.type = "button";
+            const place = document.createElement("span"), date = document.createElement("time");
+            place.textContent = card.destination;
+            date.dateTime = date.textContent = card.date;
+            row.append(place, date);
+            row.onclick = () => showCard(card, row);
+            list.append(row);
           }
-          status.textContent = list.childElementCount ? "" : (player ? "这个槽位还没有明信片。" : "还没有收到旅行明信片。");
+          status.textContent = list.childElementCount ? "" : "这个槽位还没有明信片。";
         } catch {
           if (!controller.signal.aborted && dialog.open && loginToken === token()) {
             status.textContent = "明信片读取失败，请关闭后重试。";
@@ -8053,18 +8050,16 @@
         }
       }
 
-      select.onchange = () => load(select.value);
       dismiss.onclick = () => readingRow ? showList() : dialog.close();
       dialog.onkeydown = event => { if (event.key === "Escape") event.stopPropagation(); };
       dialog.onclose = () => {
         if (dialog.open) return;
-        request?.abort();
+        controller.abort();
         readingRow = null;
-        select.replaceChildren();
         list.replaceChildren();
-        owner.textContent = status.textContent = "";
+        source.textContent = status.textContent = "";
         showList();
-        select.onchange = dismiss.onclick = dialog.onclose = null;
+        dismiss.onclick = dialog.onclose = null;
       };
       dialog.showModal();
       load();
@@ -8212,78 +8207,99 @@
       }
     }
 
-    function renderWorkkkSlotPicker(machine) {
-      $("bankPickerPanel").setAttribute("aria-label", "选择存档");
-      $("bankPickerTitle").textContent = "选择存档";
-      $("bankPickerOptions").innerHTML = machine.slots.map((save) => `
-        <button class="bank-picker-option" data-workkk-slot-option="${escapeHtml(machine.aiUserId)}" data-workkk-slot="${escapeHtml(save.slot)}" type="button">
-          <span class="garden-picker-option-main">槽${escapeHtml(save.slot)}${Number.isFinite(save.day) ? ` · 第${escapeHtml(save.day)}天` : ""}</span>
-        </button>
-      `).join("");
-      document.querySelectorAll("[data-workkk-slot-option]").forEach((option) => {
-        option.addEventListener("click", () => {
-          closeBankPicker();
-          watchCurrentGame(option.dataset.workkkSlotOption, Number(option.dataset.workkkSlot));
+    function openWorkkkPicker(bindings) {
+      return openMachineSavePicker("workkk", "/api/auth/saves?game=workkk", data => {
+        const machines = Array.isArray(data.machines) ? data.machines : [];
+        const saves = new Map(machines.map(machine => [String(machine?.user?.id), machine?.saves]));
+        return bindings.map(user => {
+          const slots = saves.get(String(user.id))?.workkk?.slots;
+          return {id: String(user.id), name: user.username, slots: Array.isArray(slots) ? slots : []};
         });
       });
     }
 
-    async function openWorkkkPicker(bindings) {
-      $("bankPickerPanel").setAttribute("aria-label", "选择小机");
-      $("bankPickerTitle").textContent = "选择小机";
-      $("bankPickerOptions").innerHTML = `<p class="garden-picker-hint">正在读取存档...</p>`;
-      $("bankPicker").classList.add("show");
-      $("bankPicker").setAttribute("aria-hidden", "false");
-      try {
-        const res = await fetch("/api/auth/saves?game=workkk", {
-          headers: headers(false),
-          cache: "no-store",
+    function openTravelPicker() {
+      return openMachineSavePicker("travel", "/api/travel/postcards", data => {
+        const slotsFor = id => data.slots.filter(save => save.player.split(":")[0] === String(id));
+        const owners = data.machines.map(user => ({
+          id: String(user.id), name: user.username, slots: slotsFor(user.id),
+        }));
+        const ownSlots = slotsFor(me.user.id);
+        if (ownSlots.length) owners.push({id: String(me.user.id), name: "本人存档", slots: ownSlots});
+        return owners;
+      });
+    }
+
+    async function openMachineSavePicker(game, url, getOwners) {
+      const picker = $("bankPicker"), options = $("bankPickerOptions");
+      const session = me, loginToken = token(), trigger = document.activeElement;
+      const initialGame = currentGame().id;
+      const active = () => picker.classList.contains("show") && token() === loginToken &&
+        me === session && currentGame().id === initialGame;
+      function setTitle(title) {
+        $("bankPickerPanel").setAttribute("aria-label", title);
+        $("bankPickerTitle").textContent = title;
+      }
+      function enter(owner, slot) {
+        if (!active()) return;
+        closeBankPicker();
+        if (game === "travel") {
+          trigger?.focus({preventScroll: true});
+          openTravelCards(owner, slot);
+        } else {
+          watchCurrentGame(owner.id, slot);
+        }
+      }
+      function selectOwner(owner) {
+        if (!active()) return;
+        if (owner.slots.length <= 1) {
+          enter(owner, owner.slots[0]?.slot || 1);
+          return;
+        }
+        setTitle("选择存档");
+        options.innerHTML = owner.slots.map(save => `
+          <button class="bank-picker-option" data-${game}-slot-option="${escapeHtml(owner.id)}" data-${game}-slot="${escapeHtml(save.slot)}" type="button">
+            <span class="garden-picker-option-main">槽${escapeHtml(save.slot)}${Number.isFinite(save.day) ? ` · 第${escapeHtml(save.day)}天` : ""}</span>
+          </button>
+        `).join("");
+        options.querySelectorAll("button").forEach((button, index) => {
+          button.onclick = () => enter(owner, owner.slots[index].slot);
         });
+        if (game === "travel") options.querySelector("button").focus();
+      }
+      setTitle("选择小机");
+      options.innerHTML = `<p class="garden-picker-hint">正在读取存档...</p>`;
+      const loading = options.firstElementChild;
+      picker.toggleAttribute("data-travel", game === "travel");
+      picker.classList.add("show");
+      picker.setAttribute("aria-hidden", "false");
+      try {
+        const res = await fetch(url, {headers: headers(false), cache: "no-store"});
         if (res.status === 401) throw new Error("登录已失效，请重新登录");
         if (!res.ok) throw new Error("存档列表读取失败，请稍后再试");
         const data = await res.json();
-        const savedMachines = new Map(
-          (Array.isArray(data.machines) ? data.machines : []).map((machine) => [
-            String(machine?.user?.id),
-            machine,
-          ])
-        );
-        const machines = bindings.map((user) => {
-          const savedMachine = savedMachines.get(String(user.id));
-          const slots = savedMachine?.saves?.workkk?.slots;
-          return {
-            aiUserId: String(user.id),
-            machineName: user.username,
-            slots: Array.isArray(slots) ? slots : [],
-          };
-        });
-        const selectMachine = (machine) => {
-          if (machine.slots.length <= 1) {
-            const slot = Number(machine.slots[0]?.slot) || 1;
-            closeBankPicker();
-            watchCurrentGame(machine.aiUserId, slot);
-            return;
-          }
-          renderWorkkkSlotPicker(machine);
-        };
-        if (machines.length === 1) {
-          if (!$("bankPicker").classList.contains("show") || currentGame().id !== "workkk") return;
-          selectMachine(machines[0]);
+        if (!active() || !loading.isConnected) return;
+        const owners = getOwners(data);
+        if (!owners.length && game === "travel") {
+          setTitle("旅行明信片");
+          options.innerHTML = `<p class="garden-picker-empty">还没有绑定小机，本人也暂无旅行存档。</p>`;
           return;
         }
-        const machinesById = new Map(machines.map((machine) => [machine.aiUserId, machine]));
-        $("bankPickerOptions").innerHTML = machines.map((machine) => `
-          <button class="bank-picker-option" data-workkk-machine-option="${escapeHtml(machine.aiUserId)}" type="button">${escapeHtml(machine.machineName)}</button>
+        if (owners.length === 1) {
+          if (currentGame().id === game) selectOwner(owners[0]);
+          return;
+        }
+        options.innerHTML = owners.map(owner => `
+          <button class="bank-picker-option" data-${game}-machine-option="${escapeHtml(owner.id)}" type="button">${escapeHtml(owner.name)}</button>
         `).join("");
-        document.querySelectorAll("[data-workkk-machine-option]").forEach((option) => {
-          option.addEventListener("click", () => {
-            const machine = machinesById.get(option.dataset.workkkMachineOption);
-            if (!machine) return;
-            selectMachine(machine);
-          });
+        options.querySelectorAll("button").forEach((button, index) => {
+          button.onclick = () => selectOwner(owners[index]);
         });
+        if (game === "travel") options.querySelector("button").focus();
       } catch (err) {
-        $("bankPickerOptions").innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "存档列表读取失败，请稍后再试")}</p>`;
+        if (active() && loading.isConnected) {
+          options.innerHTML = `<p class="garden-picker-empty">${escapeHtml(err.message || "存档列表读取失败，请稍后再试")}</p>`;
+        }
       }
     }
 
@@ -8826,15 +8842,6 @@
     }
 
     async function enterWatch() {
-      if (currentGame().id === "travel") {
-        if (me && token()) openTravelCards();
-        else {
-          closeDrawers();
-          openModal("loginModal");
-          showToast("请先登录再查看旅行明信片");
-        }
-        return;
-      }
       if (currentGame().id === "shared_craft") {
         await openCraftRoom();
         return;
@@ -8848,7 +8855,8 @@
         return;
       }
       if (!me || !token()) {
-        const loginHint = currentGame().id === "nowhere"
+        const loginHint = currentGame().id === "travel" ? "请先登录再查看旅行明信片"
+          : currentGame().id === "nowhere"
           ? "请在此安全页面登录后查看旅程；HTTP 与 HTTPS 的登录状态不共用。"
           : currentGame().id === "garden_cat"
           ? "请先登录再进入花园"
@@ -8888,6 +8896,10 @@
         }
       }
       const bindings = aiBindings();
+      if (currentGame().id === "travel") {
+        await openTravelPicker();
+        return;
+      }
       if (!bindings.length) {
         showToast("你还没有绑定小机，先绑定再围观");
         return;
@@ -10125,6 +10137,7 @@
     });
     window.addEventListener("storage", event => {
       if (event.key === TOKEN_KEY || event.key === null) {
+        if ($("bankPicker").hasAttribute("data-travel")) closeBankPicker();
         if ($("travelCards").open) $("travelCards").close();
         resetFavorites();
         renderGames();
@@ -11107,6 +11120,7 @@
     }
 
     function logout() {
+      if ($("bankPicker").hasAttribute("data-travel")) closeBankPicker();
       if ($("travelCards").open) $("travelCards").close();
       craftRoomPending = false;
       loadMeAbort?.abort();

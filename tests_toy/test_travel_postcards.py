@@ -101,7 +101,37 @@ class TravelPostcardTests(unittest.TestCase):
         with self.accounts._connect() as conn:
             conn.execute("DELETE FROM user_bindings WHERE ai_user_id=?", (self.ai,))
         self.history(self.ai, expected=403)
-        self.assertEqual(self.history()["slots"], [])
+        self.assertEqual(self.history(), {"slots": [], "machines": []})
+
+    def test_five_bound_machines_two_travel_saves_one_history(self):
+        extra = [self.accounts._add_user(f"TravelBot{i}", is_ai=True) for i in range(3)]
+        with self.accounts._connect() as conn:
+            conn.executemany("INSERT INTO user_bindings (human_user_id, ai_user_id) VALUES (?, ?)",
+                             [(self.human, uid) for uid in [self.other, *extra]])
+        self.save(self.ai + ":3", [{"dest_id": "paris", "at": "2025-07-25", "line": "旧明信片"}])
+        journey = self.root / (self.other + ":5")
+        journey.mkdir()
+        (journey / "state.json").write_text("{}")
+        locks_only = self.root / str(extra[0])
+        locks_only.mkdir()
+        (locks_only / ".lock").touch()
+        (locks_only / "wallet.json").symlink_to(journey / "state.json")
+
+        discovery = self.history()
+        self.assertEqual({str(machine["id"]) for machine in discovery["machines"]},
+                         {self.ai, self.other, *map(str, extra)})
+        self.assertEqual({s["player"] for s in discovery["slots"]}, {self.ai + ":3", self.other + ":5"})
+        self.assertEqual(self.history(self.ai + ":3")["postcards"][0]["message"], "旧明信片")
+        self.assertEqual(self.history(self.other + ":5")["postcards"], [])
+        self.assertEqual(self.history(str(extra[-1]))["postcards"], [])
+        self.assertFalse((self.root / str(extra[-1])).exists())
+
+        wallet = self.root / (self.other + ":2")
+        wallet.mkdir()
+        (wallet / "wallet.json").write_text("{}")
+        self.save(self.human + ":4", [])
+        self.assertEqual({s["player"] for s in self.history()["slots"]},
+                         {self.ai + ":3", self.other + ":5", self.other + ":2", self.human + ":4"})
 
     def test_missing_empty_unreadable_and_unsafe_files(self):
         self.assertEqual(self.history()["slots"], [])

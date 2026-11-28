@@ -5,6 +5,8 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, unquote
 
+from vendor_cmd_adapter.travel import SAVE_FILES
+
 from . import player_identity
 
 UPSTREAM = Path(__file__).resolve().parents[1] / "vendor/travel-mcp"
@@ -113,9 +115,12 @@ def serve(handler, params, platform):
                 except (OSError, ValueError, RecursionError):
                     return handler._send_json({"error": "明信片存档读取失败"}, 500, PRIVATE)
                 return handler._send_json({"postcards": cards}, 200, PRIVATE)
-            if path.is_file():
+            if directory.is_dir() and any(
+                not entry.is_symlink() and entry.is_file()
+                for entry in map(directory.joinpath, SAVE_FILES)
+            ):
                 slots.append({"player": player, "owner": "我" if owner is user else owner["username"],
                               "slot": slot})
     if requested is not None:
         return handler._send_json({"error": "无权查看这个存档"}, 403, PRIVATE)
-    return handler._send_json({"slots": slots}, 200, PRIVATE)
+    return handler._send_json({"slots": slots, "machines": [dict(row) for row in machines]}, 200, PRIVATE)
